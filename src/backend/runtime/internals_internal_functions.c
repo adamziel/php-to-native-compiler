@@ -108996,6 +108996,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Africa/Addis_Ababa", 1, 0 },
     { "Africa/Casablanca", 1, 0 },
     { "America/Bogota", 2, 0 },
+    { "America/Boise", 2, 0 },
     { "America/Chicago", 2, 0 },
     { "America/Havana", 2, 0 },
     { "America/Halifax", 2, 0 },
@@ -109050,6 +109051,7 @@ static const PtnTimezoneLocation ptn_timezone_locations[] = {
     { "Africa/Addis_Ababa", "ET", 9.03333, 38.7, "Ethiopia" },
     { "Africa/Casablanca", "MA", 33.65, -7.58334, "" },
     { "America/Bogota", "CO", 4.6, -74.08334, "" },
+    { "America/Boise", "US", 43.61361, -116.2025, "Mountain - ID (south); OR (east)" },
     { "America/Chicago", "US", 41.85, -87.65, "Central (most areas)" },
     { "America/Havana", "CU", 23.13333, -82.36667, "" },
     { "America/Halifax", "CA", 44.65, -63.6, "Atlantic - NS (most areas), PE" },
@@ -109541,7 +109543,8 @@ static int ptn_timezone_us_standard_offset(const char *name, int *standard_offse
         *standard_offset = -21600;
         return 1;
     }
-    if (ptn_ascii_case_equal(name, "America/Denver")) {
+    if (ptn_ascii_case_equal(name, "America/Boise") ||
+        ptn_ascii_case_equal(name, "America/Denver")) {
         *standard_offset = -25200;
         return 1;
     }
@@ -109721,7 +109724,8 @@ static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
         return ptn_timezone_us_wall_offset_for_standard_offset(wall_timestamp, -21600);
     }
-    if (ptn_ascii_case_equal(name, "America/Denver")) {
+    if (ptn_ascii_case_equal(name, "America/Boise") ||
+        ptn_ascii_case_equal(name, "America/Denver")) {
         return ptn_timezone_us_wall_offset_for_standard_offset(wall_timestamp, -25200);
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles") ||
@@ -109793,7 +109797,8 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "America/Lima")) {
         return -18000;
     }
-    if (ptn_ascii_case_equal(name, "America/Denver")) {
+    if (ptn_ascii_case_equal(name, "America/Boise") ||
+        ptn_ascii_case_equal(name, "America/Denver")) {
         int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -25200);
         return us_dst ? -21600 : -25200;
     }
@@ -109926,7 +109931,8 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
         return "EST";
     }
-    if (ptn_ascii_case_equal(name, "America/Denver")) {
+    if (ptn_ascii_case_equal(name, "America/Boise") ||
+        ptn_ascii_case_equal(name, "America/Denver")) {
         int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -25200);
         return us_dst ? "MDT" : "MST";
     }
@@ -112709,6 +112715,7 @@ static int ptn_timezone_is_us_dst_zone_name(const char *timezone) {
     return ptn_ascii_case_equal(timezone, "America/New_York") ||
         ptn_ascii_case_equal(timezone, "US/Eastern") ||
         ptn_ascii_case_equal(timezone, "America/Chicago") ||
+        ptn_ascii_case_equal(timezone, "America/Boise") ||
         ptn_ascii_case_equal(timezone, "America/Denver") ||
         ptn_ascii_case_equal(timezone, "America/Los_Angeles") ||
         ptn_ascii_case_equal(timezone, "America/Vancouver") ||
