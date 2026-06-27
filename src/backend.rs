@@ -34566,6 +34566,9 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    if name.eq_ignore_ascii_case("filter_input") {
+        requirements.request_context = true;
+    }
     if name.eq_ignore_ascii_case("file_get_contents")
         && (arguments.len() >= 3
             || argument_names.iter().any(|name| {

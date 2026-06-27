@@ -5562,6 +5562,7 @@ static void ptn_throw_internal_argument_count_error_with_actual(PtnRuntime *runt
 static PtnValue ptn_declared_class_new_instance(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
@@ -20427,6 +20428,54 @@ static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
     return ptn_filter_validate_ipv4_operand_with_flags(input, 0);
 }
 
+static int ptn_filter_parse_ipv6_operand(PtnStringOperand input, unsigned char out[16]) {
+    if (input.len == 0 || memchr(input.data, '\0', input.len) != NULL) {
+        return 0;
+    }
+#if defined(_WIN32)
+    (void)out;
+    return ptn_filter_validate_ipv6_literal(input.data, input.len);
+#else
+    char *copy = ptn_duplicate_string_len(input.data, input.len);
+    int ok = inet_pton(AF_INET6, copy, out) == 1;
+    free(copy);
+    return ok;
+#endif
+}
+
+static int ptn_filter_ipv6_is_all_zero(const unsigned char address[16]) {
+    for (size_t i = 0; i < 16; i++) {
+        if (address[i] != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_ipv6_operand_with_flags(PtnStringOperand input, int64_t flags) {
+    unsigned char address[16] = {0};
+    if (!ptn_filter_parse_ipv6_operand(input, address)) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_PRIV_RANGE) != 0 && (address[0] & 0xfe) == 0xfc) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_RES_RANGE) != 0 &&
+        (ptn_filter_ipv6_is_all_zero(address) ||
+         (memcmp(address, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1", 16) == 0) ||
+         (address[0] == 0xfe && (address[1] & 0xc0) == 0x80))) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_ip_operand(PtnStringOperand input, int64_t flags) {
+    int allow_ipv4 = (flags & PTN_FILTER_FLAG_IPV6) == 0 || (flags & PTN_FILTER_FLAG_IPV4) != 0;
+    int allow_ipv6 = (flags & PTN_FILTER_FLAG_IPV4) == 0 || (flags & PTN_FILTER_FLAG_IPV6) != 0;
+    return (allow_ipv4 && ptn_filter_validate_ipv4_operand_with_flags(input, flags)) ||
+        (allow_ipv6 && ptn_filter_validate_ipv6_operand_with_flags(input, flags));
+}
+
 static int ptn_filter_validate_mac_operand(PtnStringOperand input) {
     if (input.len != 17) {
         return 0;
@@ -20451,6 +20500,7 @@ static int ptn_filter_validate_mac_operand(PtnStringOperand input) {
 
 static int ptn_filter_validate_regexp_operand(PtnRuntime *runtime, PtnStringOperand input, const PtnFilterOptions *options, size_t line) {
     if (!options->has_regexp) {
+        ptn_throw_exception(runtime, "ValueError", "filter_var(): \"regexp\" option is missing");
         return 0;
     }
     PtnStringOperand pattern = ptn_value_to_string_operand_with_runtime(runtime, options->regexp, line);
@@ -20458,16 +20508,20 @@ static int ptn_filter_validate_regexp_operand(PtnRuntime *runtime, PtnStringOper
         ptn_string_operand_free(pattern);
         return 0;
     }
-    int ok = 0;
-    if (pattern.len >= 4 && pattern.data[0] == '/' && pattern.data[1] == '^' && pattern.data[pattern.len - 1] == '/') {
-        if (pattern.len >= 5 && pattern.data[pattern.len - 2] == '$') {
-            size_t exact_len = pattern.len - 4;
-            ok = input.len == exact_len && memcmp(input.data, pattern.data + 2, exact_len) == 0;
-        } else if (pattern.len >= 5 && pattern.data[pattern.len - 3] == '.' && pattern.data[pattern.len - 2] == '*') {
-            size_t prefix_len = pattern.len - 5;
-            ok = input.len >= prefix_len && memcmp(input.data, pattern.data + 2, prefix_len) == 0;
-        }
+    PtnValue match_args[2] = {
+        ptn_owned_string_len(ptn_duplicate_string_len(pattern.data, pattern.len), pattern.len),
+        ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len),
+    };
+    PtnValue match = ptn_internal_preg_match(runtime, 2, match_args, line);
+    ptn_value_destroy(&match_args[0]);
+    ptn_value_destroy(&match_args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&match);
+        ptn_string_operand_free(pattern);
+        return 0;
     }
+    int ok = match.type == PTN_INT && match.as.integer == 1;
+    ptn_value_destroy(&match);
     ptn_string_operand_free(pattern);
     return ok;
 }
@@ -20529,7 +20583,7 @@ static PtnValue ptn_filter_apply_scalar(
         } else if (filter_id == PTN_FILTER_VALIDATE_DOMAIN) {
             ok = ptn_filter_validate_domain_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_IP) {
-            ok = ptn_filter_validate_ipv4_operand_with_flags(input, options->flags);
+            ok = ptn_filter_validate_ip_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_MAC) {
             ok = ptn_filter_validate_mac_operand(input);
         } else {
@@ -20542,8 +20596,9 @@ static PtnValue ptn_filter_apply_scalar(
         return result;
     }
     if (filter_id == PTN_FILTER_CALLBACK) {
-        if (!options->has_callback) {
-            return ptn_filter_failure_value(runtime, options, "filter validation failed");
+        if (!options->has_callback || !ptn_callable_is_valid(runtime, options->callback, 0)) {
+            ptn_throw_exception(runtime, "TypeError", "filter_var(): Option must be a valid callback");
+            return ptn_null();
         }
         PtnValue callback_arg = ptn_value_clone_deref(value);
         PtnValue result = ptn_call_callable(runtime, options->callback, 1, &callback_arg, line, 0);
@@ -20594,6 +20649,13 @@ static PtnValue ptn_filter_apply_value(
         return result;
     }
     return filtered;
+}
+
+static PtnValue ptn_filter_input_missing_value(const PtnFilterOptions *options) {
+    if (options->has_default) {
+        return ptn_value_clone_deref(options->default_value);
+    }
+    return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_bool(0) : ptn_null();
 }
 
 static int ptn_filter_validate_id(PtnRuntime *runtime, const char *function_name, int64_t filter_id, size_t line) {
@@ -20697,9 +20759,7 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
             return ptn_filter_failure_owned_message(runtime, &options, message);
         }
         ptn_string_operand_free(variable_name);
-        return options.has_default
-            ? ptn_value_clone_deref(options.default_value)
-            : ptn_null();
+        return ptn_filter_input_missing_value(&options);
     }
     PtnArrayKey key = ptn_array_string_key_len(variable_name.data, variable_name.len);
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
@@ -20731,9 +20791,7 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
             return ptn_filter_failure_owned_message(runtime, &options, message);
         }
         ptn_string_operand_free(variable_name);
-        return options.has_default
-            ? ptn_value_clone_deref(options.default_value)
-            : ptn_null();
+        return ptn_filter_input_missing_value(&options);
     }
     ptn_string_operand_free(variable_name);
     return ptn_filter_apply_value(runtime, entry->value, filter_id, &options, line);
@@ -20757,6 +20815,52 @@ static int ptn_filter_spec_from_value(
     return 1;
 }
 
+static const char *ptn_filter_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static int ptn_filter_var_array_definition_type_is_valid(PtnRuntime *runtime, PtnValue definition, size_t line) {
+    definition = ptn_value_deref(definition);
+    if (definition.type == PTN_ARRAY || definition.type == PTN_INT) {
+        return 1;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "filter_var_array(): Argument #2 ($options) must be of type array|int, %s given",
+        ptn_filter_argument_type_name(definition)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    (void)line;
+    return 0;
+}
+
+static int ptn_filter_definition_key_is_empty(PtnArrayKey key) {
+    return key.type == PTN_ARRAY_KEY_STRING && key.string_len == 0;
+}
+
+static PtnValue ptn_filter_var_array_empty_key_error(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "ValueError", "filter_var_array(): Argument #2 ($options) cannot contain empty keys");
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue data = ptn_value_deref(args[0]);
     if (data.type != PTN_ARRAY) {
@@ -20764,6 +20868,9 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
     }
     int add_empty = argc < 3 || ptn_is_truthy(args[2]);
     PtnValue definition = argc >= 2 ? ptn_value_deref(args[1]) : ptn_int(PTN_FILTER_DEFAULT);
+    if (!ptn_filter_var_array_definition_type_is_valid(runtime, definition, line)) {
+        return ptn_null();
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
 
     if (definition.type != PTN_ARRAY) {
@@ -20795,6 +20902,9 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
 
     for (size_t i = 0; i < definition.as.array->len; i++) {
         PtnArrayEntry *spec_entry = &definition.as.array->entries[i];
+        if (ptn_filter_definition_key_is_empty(spec_entry->key)) {
+            return ptn_filter_var_array_empty_key_error(runtime);
+        }
         PtnArrayEntry *data_entry = ptn_array_entry_for_key(data.as.array, spec_entry->key);
         if (data_entry == NULL) {
             if (add_empty) {

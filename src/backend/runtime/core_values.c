@@ -32,6 +32,7 @@
 #include <iconv.h>
 #include <langinfo.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <regex.h>

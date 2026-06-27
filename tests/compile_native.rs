@@ -72637,9 +72637,35 @@ fn phpc_filter_validation_and_input_semantics() {
         "<?php\n\
 var_dump(filter_input(INPUT_ENV, 'PTN_FILTER_ENV_TEST'));\n\
 var_dump(filter_input(INPUT_GET, 'missing', FILTER_VALIDATE_INT, ['options' => ['default' => 23]]));\n\
+var_dump(filter_input(INPUT_GET, 'missing', FILTER_DEFAULT, FILTER_NULL_ON_FAILURE));\n\
+var_dump(filter_input(INPUT_SERVER, 'PHP_SELF') !== null);\n\
 var_dump(filter_var('10.0.0.1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE));\n\
 var_dump(filter_var('127.255.255.255', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
 var_dump(filter_var('100.64.0.0', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('0b15:23::3:67.98.234.17', FILTER_VALIDATE_IP, FILTER_FLAG_IPV6));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/.*/']]));\n\
+try {\n\
+    filter_var('data', FILTER_VALIDATE_REGEXP);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+function ptn_filter_upper($value) { return strtoupper($value); }\n\
+var_dump(filter_var('data', FILTER_CALLBACK, ['options' => 'ptn_filter_upper']));\n\
+try {\n\
+    filter_var('data', FILTER_CALLBACK, ['options' => 'ptn_filter_missing_callback']);\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    filter_var_array([], '');\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    filter_var_array(['a' => ''], ['a' => FILTER_DEFAULT, '' => '']);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
 var_dump(filter_var(\"!@#$%^&*()><<>+_\\\"'<br><p /><li />\", 513));\n\
 var_dump(filter_var('\"verî.uñusual.@.uñusual.com\"@example.com', FILTER_VALIDATE_EMAIL, FILTER_FLAG_EMAIL_UNICODE));\n\
 try {\n\
@@ -72665,8 +72691,17 @@ try {\n\
         "string(9) \"env-value\"\n\
 int(23)\n\
 bool(false)\n\
+bool(true)\n\
+bool(false)\n\
 bool(false)\n\
 string(10) \"100.64.0.0\"\n\
+string(23) \"0b15:23::3:67.98.234.17\"\n\
+string(4) \"data\"\n\
+filter_var(): \"regexp\" option is missing\n\
+string(4) \"DATA\"\n\
+filter_var(): Option must be a valid callback\n\
+filter_var_array(): Argument #2 ($options) must be of type array|int, string given\n\
+filter_var_array(): Argument #2 ($options) cannot contain empty keys\n\
 string(11) \"!@#$%^&*()>\"\n\
 string(43) \"\"verî.uñusual.@.uñusual.com\"@example.com\"\n\
 Filter\\FilterFailedException: filter validation failed: filter validate_email not satisfied by '1'\n"
