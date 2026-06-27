@@ -2430,6 +2430,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let modeled_mbstring_mail_ini = classify(
+        "--TEST--\nmbstring mail ini\n--INI--\nzend.multibyte=On\nzend.script_encoding=UTF-8\nsendmail_path=tee /tmp/mail.eml >/dev/null\nmail.add_x_header=off\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n",
+    );
+    assert_eq!(
+        modeled_mbstring_mail_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let residual_extension_ini = classify(
         "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
     );

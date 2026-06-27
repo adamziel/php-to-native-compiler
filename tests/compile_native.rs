@@ -33202,6 +33202,128 @@ var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML
 }
 
 #[test]
+fn compile_mbstring_residual_row_pack_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-mbstring-residual-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-residual-row-pack.php");
+    let output = root.join("mbstring-residual-row-pack-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+try {\n\
+    var_dump(mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$map = [0, 0xFFFFFFFF, 0, 0xFFFFFFFF];\n\
+$ucs4 = mb_convert_encoding('&#1000000000&#65;', 'UCS-4BE', 'ASCII');\n\
+echo bin2hex(mb_decode_numericentity($ucs4, $map, 'UCS-4BE')), \"\\n\";\n\
+echo mb_decode_numericentity('&#7001492542&#65;', $map, 'ASCII'), \"\\n\";\n\
+echo mb_decode_numericentity('&#7,', [0x22FFFF11, 0xBF111189, 0x67726511, 0x1161E719], 'ASCII'), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xF0\\x90\\x90\\xB8\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xE2\\xB0\\xB0\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xD4\\xA5\", 'UTF-8')), \"\\n\";\n\
+mb_strstr('abc', 'b', null);\n\
+mb_strrchr('abcabc', 'b', null);\n\
+mb_stristr('ABC', 'b', null);\n\
+mb_strrichr('ABCABC', 'b', null);\n\
+echo mb_strimwidth('abcdef', 0, 3, null, 'UTF-8'), \"\\n\";\n\
+$raw = \"***,*-S,\\xac,,\\xb7,l,,,,\\xb6UTF7,\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5K\\xb5\\xb5!\\xa4\\xa4\\xa4\\xa4\\xa4\\xbd\\xb5,\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5&\";\n\
+$expected = \"***,*-S,=AC,,=B7,l,,,,=B6UTF7,=B5=B5=B5=B5=B5=B5K=B5=B5!=A4=A4=A4=A4=A4=BD=\\r\\n=B5,=B5=B5=B5=B5=B5=B5=B5=B5=B5&\";\n\
+echo mb_convert_encoding($raw, 'QPrint', '8bit') === $expected ? \"qp-ok\\n\" : \"qp-bad\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("3b9aca0000000041\n"), "{stdout}");
+    assert!(stdout.contains("&#7001492542A\n"), "{stdout}");
+    assert!(stdout.contains("?,\n"), "{stdout}");
+    assert!(stdout.contains("f0909090\n"), "{stdout}");
+    assert!(stdout.contains("e2b080\n"), "{stdout}");
+    assert!(stdout.contains("d4a4\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "mb_strstr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strrchr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_stristr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strrichr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strimwidth(): Passing null to parameter #4 ($trim_marker) of type string is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("abc\n"), "{stdout}");
+    assert!(stdout.contains("qp-ok\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_mb_send_mail_uses_sendmail_path_to_native_binary() {
+    let root = temp_dir("ptn-phpc-mb-send-mail-sendmail-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-send-mail.php");
+    let mail_file = root.join("mb_send_mail06.eml");
+    fs::write(
+        &input,
+        "<?php\n\
+$to = 'example@example.com';\n\
+mb_language('traditional chinese');\n\
+mb_internal_encoding('BIG5');\n\
+mb_send_mail($to, \"\\xb4\\xfa\\xc5\\xe7 \".mb_language(), \"\\xb4\\xfa\\xc5\\xe7\");\n",
+    )
+    .unwrap();
+
+    let sendmail_path = format!("sendmail_path=tee {} >/dev/null", mail_file.display());
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg(sendmail_path)
+        .arg("-d")
+        .arg("mail.add_x_header=off")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let mail = fs::read(&mail_file).unwrap();
+    let rendered = String::from_utf8_lossy(&mail);
+    assert!(
+        rendered.contains(
+            "To: example@example.com\nSubject: =?BIG5?B?tPrF5yBUcmFkaXRpb25hbCBDaGluZXNl?=\n"
+        ),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("MIME-Version: 1.0\nContent-Type: text/plain; charset=BIG5\nContent-Transfer-Encoding: 8bit\n\n"),
+        "{rendered}"
+    );
+    assert!(mail.ends_with(b"\xb4\xfa\xc5\xe7\n"), "{mail:?}");
+}
+
+#[test]
 fn compile_mb_parse_str_converts_decoded_query_encoding_to_native_binary() {
     let root = temp_dir("ptn-native-mb-parse-str-query-encoding");
     fs::create_dir_all(&root).unwrap();
@@ -58042,6 +58164,26 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!("before\nint({expected_offset})\nint({expected_offset})\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_halt_compiler_offset_uses_source_bytes_before_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-halt-compiler-byte-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-compiler-byte-offset.php");
+    let output = root.join("halt-compiler-byte-offset-bin");
+    let source = "<?php var_dump(substr(file_get_contents(__FILE__), __COMPILER_HALT_OFFSET__)); var_dump(bin2hex(\"äëü\")); __halt_compiler();payload\n";
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"payload\n\"\nstring(12) \"c3a4c3abc3bc\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

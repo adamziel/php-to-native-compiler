@@ -79830,6 +79830,30 @@ static const char *ptn_mb_current_substitute_character(void) {
     return ptn_mb_env_or_state("PTN_MBSTRING_SUBSTITUTE_CHARACTER", ptn_mb_substitute_character_name, "63");
 }
 
+static void ptn_mb_emit_null_parameter_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *type_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Passing null to parameter #%zu ($%s) of type %s is deprecated",
+        function_name,
+        position,
+        argument_name,
+        type_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
 static const char *ptn_mb_auto_detect_order(void) {
     const char *language = ptn_mb_current_language();
     if (ptn_ascii_case_equal(language, "Japanese") || ptn_ascii_case_equal(language, "ja")) {
@@ -87247,6 +87271,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if (cp >= 0x0430 && cp <= 0x044f) {
             return cp - 32;
         }
+        if (cp >= 0x0501 && cp <= 0x0527 && (cp & 1u) != 0) {
+            return cp - 1;
+        }
+        if (cp >= 0x2c30 && cp <= 0x2c5e) {
+            return cp - 0x30;
+        }
+        if (cp >= 0x10428 && cp <= 0x1044f) {
+            return cp - 0x28;
+        }
         if (cp >= 0xff41 && cp <= 0xff5a) {
             return cp - 32;
         }
@@ -87265,6 +87298,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         }
         if (cp >= 0x0410 && cp <= 0x042f) {
             return cp + 32;
+        }
+        if (cp >= 0x0500 && cp <= 0x0526 && (cp & 1u) == 0) {
+            return cp + 1;
+        }
+        if (cp >= 0x2c00 && cp <= 0x2c2e) {
+            return cp + 0x30;
+        }
+        if (cp >= 0x10400 && cp <= 0x10427) {
+            return cp + 0x28;
         }
         if (cp >= 0xff21 && cp <= 0xff3a) {
             return cp + 32;
@@ -87472,7 +87514,19 @@ static PtnValue ptn_internal_mb_language(PtnRuntime *runtime, size_t argc, const
         return ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language()));
     }
     PtnStringOperand language = ptn_value_to_string_operand(args[0]);
-    char *copy = ptn_duplicate_string_len(language.data, language.len);
+    const char *canonical = NULL;
+    if (ptn_string_operand_ascii_case_equal(language, "traditional chinese")) {
+        canonical = "Traditional Chinese";
+    } else if (ptn_string_operand_ascii_case_equal(language, "simplified chinese")) {
+        canonical = "Simplified Chinese";
+    } else if (ptn_string_operand_ascii_case_equal(language, "japanese")) {
+        canonical = "Japanese";
+    } else if (ptn_string_operand_ascii_case_equal(language, "neutral")) {
+        canonical = "neutral";
+    }
+    char *copy = canonical != NULL
+        ? ptn_duplicate_string(canonical)
+        : ptn_duplicate_string_len(language.data, language.len);
     ptn_string_operand_free(language);
     ptn_mb_copy_state_string(ptn_mb_language_name, sizeof(ptn_mb_language_name), copy);
     free(copy);
@@ -87600,6 +87654,91 @@ static PtnValue ptn_mb_base64_encode_wrapped(PtnRuntime *runtime, PtnStringOpera
     return ptn_owned_string_len(output, out);
 }
 
+static int ptn_mb_qprint_byte_is_newline(unsigned char byte) {
+    return byte == '\r' || byte == '\n';
+}
+
+static int ptn_mb_qprint_should_escape(unsigned char byte, unsigned char next, int at_end) {
+    if (byte == '=') {
+        return 1;
+    }
+    if (byte >= 0x80) {
+        return 1;
+    }
+    if (byte < 0x20 && byte != '\t') {
+        return 1;
+    }
+    if ((byte == ' ' || byte == '\t') && (at_end || ptn_mb_qprint_byte_is_newline(next))) {
+        return 1;
+    }
+    return 0;
+}
+
+static size_t ptn_mb_qprint_unit_len(const char *data, size_t len, size_t offset) {
+    if (offset >= len || ptn_mb_qprint_byte_is_newline((unsigned char)data[offset])) {
+        return 0;
+    }
+    unsigned char byte = (unsigned char)data[offset];
+    unsigned char next = offset + 1 < len ? (unsigned char)data[offset + 1] : '\0';
+    return ptn_mb_qprint_should_escape(byte, next, offset + 1 >= len) ? 3u : 1u;
+}
+
+static void ptn_mb_qprint_append_soft_break(PtnStringBuffer *output, size_t *line_len) {
+    ptn_string_buffer_append(output, "=\r\n");
+    *line_len = 0;
+}
+
+static void ptn_mb_qprint_append_encoded_byte(PtnStringBuffer *output, unsigned char byte) {
+    static const char hex[] = "0123456789ABCDEF";
+    char encoded[3] = { '=', hex[(byte >> 4) & 0x0f], hex[byte & 0x0f] };
+    ptn_string_buffer_append_len(output, encoded, sizeof(encoded));
+}
+
+static PtnValue ptn_mb_qprint_encode(PtnStringOperand input) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t line_len = 0;
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte == '\r') {
+            if (i + 1 < input.len && input.data[i + 1] == '\n') {
+                i++;
+            }
+            ptn_string_buffer_append(&output, "\r\n");
+            line_len = 0;
+            continue;
+        }
+        if (byte == '\n') {
+            ptn_string_buffer_append(&output, "\r\n");
+            line_len = 0;
+            continue;
+        }
+
+        size_t unit_len = ptn_mb_qprint_unit_len(input.data, input.len, i);
+        int allow_wide_escape = unit_len == 3 && line_len < 72 && line_len + unit_len <= 74;
+        if (line_len > 0 && line_len + unit_len > 72 && !allow_wide_escape) {
+            ptn_mb_qprint_append_soft_break(&output, &line_len);
+        }
+
+        unsigned char next = i + 1 < input.len ? (unsigned char)input.data[i + 1] : '\0';
+        if (ptn_mb_qprint_should_escape(byte, next, i + 1 >= input.len)) {
+            ptn_mb_qprint_append_encoded_byte(&output, byte);
+        } else {
+            ptn_string_buffer_append_char(&output, (char)byte);
+        }
+        line_len += unit_len;
+
+        size_t next_unit_len = ptn_mb_qprint_unit_len(input.data, input.len, i + 1);
+        if (next_unit_len > 0) {
+            size_t next_limit = next_unit_len == 3 ? 74u : 72u;
+            if (line_len >= 72 && line_len + next_unit_len > next_limit) {
+                ptn_mb_qprint_append_soft_break(&output, &line_len);
+            }
+        }
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PtnValue ptn_mb_base64_or_qp_convert(
     PtnRuntime *runtime,
     const char *function_name,
@@ -87612,10 +87751,8 @@ static PtnValue ptn_mb_base64_or_qp_convert(
         ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling Base64 via mbstring is deprecated; use base64_encode/base64_decode instead", line);
         result = ptn_mb_base64_encode_wrapped(runtime, input, line);
     } else {
-        PtnValue temp = ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len);
         ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling QPrint via mbstring is deprecated; use quoted_printable_encode/quoted_printable_decode instead", line);
-        result = ptn_internal_quoted_printable_encode(runtime, 1, &temp, line);
-        ptn_value_destroy(&temp);
+        result = ptn_mb_qprint_encode(input);
     }
     (void)function_name;
     return result;
@@ -87646,7 +87783,6 @@ static PtnValue ptn_mb_convert_string_operand(
         return decoded;
     }
     if (ptn_ascii_case_equal(from_encoding, "Quoted-Printable")) {
-        ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling QPrint via mbstring is deprecated; use quoted_printable_encode/quoted_printable_decode instead", line);
         size_t decoded_len = 0;
         char *decoded = ptn_quoted_printable_decode_string(input.data, input.len, &decoded_len);
         size_t out_len = 0;
@@ -87861,6 +87997,13 @@ static PtnValue ptn_internal_mb_strcut(PtnRuntime *runtime, size_t argc, const P
             ptn_string_operand_free(input);
             return ptn_null();
         }
+        if (ptn_ascii_case_equal(encoding, "HTML-ENTITIES")) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "mb_strcut(): Handling HTML entities via mbstring is deprecated; use htmlspecialchars, htmlentities, or mb_encode_numericentity/mb_decode_numericentity instead",
+                line
+            );
+        }
     }
     size_t start = raw_start < 0 ? 0 : ((uint64_t)raw_start > input.len ? input.len : (size_t)raw_start);
     size_t len = input.len - start;
@@ -87991,7 +88134,14 @@ static PtnValue ptn_internal_mb_strripos(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_mb_strstr_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line, int reverse, int case_insensitive) {
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
     PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
-    int before_needle = argc >= 3 && ptn_is_truthy(args[2]);
+    int before_needle = 0;
+    if (argc >= 3) {
+        if (ptn_value_deref(args[2]).type == PTN_NULL) {
+            ptn_mb_emit_null_parameter_deprecation(runtime, function_name, 3, "before_needle", "bool", line);
+        } else {
+            before_needle = ptn_is_truthy(args[2]);
+        }
+    }
     const char *encoding = argc >= 4
         ? ptn_mb_encoding_from_value(runtime, function_name, 4, "encoding", args[3], line, ptn_mb_current_internal_encoding(runtime), 1)
         : ptn_mb_current_internal_encoding(runtime);
@@ -88783,7 +88933,17 @@ static PtnValue ptn_internal_mb_strimwidth(PtnRuntime *runtime, size_t argc, con
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_strimwidth", 1, "string", args[0], line);
     int64_t start_width = ptn_internal_expect_integer_arg(runtime, "mb_strimwidth", 2, "start", args[1], line);
     int64_t width_limit = ptn_internal_expect_integer_arg(runtime, "mb_strimwidth", 3, "width", args[2], line);
-    PtnStringOperand marker = argc >= 4 ? ptn_value_to_string_operand(args[3]) : ptn_string_operand_borrowed("");
+    PtnStringOperand marker;
+    if (argc >= 4) {
+        if (ptn_value_deref(args[3]).type == PTN_NULL) {
+            ptn_mb_emit_null_parameter_deprecation(runtime, "mb_strimwidth", 4, "trim_marker", "string", line);
+            marker = ptn_string_operand_borrowed("");
+        } else {
+            marker = ptn_internal_expect_string_arg(runtime, "mb_strimwidth", 4, "trim_marker", args[3], line);
+        }
+    } else {
+        marker = ptn_string_operand_borrowed("");
+    }
     const char *encoding = argc >= 5
         ? ptn_mb_encoding_from_value(runtime, "mb_strimwidth", 5, "encoding", args[4], line, ptn_mb_current_internal_encoding(runtime), 1)
         : ptn_mb_current_internal_encoding(runtime);
@@ -90288,17 +90448,157 @@ static PtnValue ptn_internal_mb_output_handler(PtnRuntime *runtime, size_t argc,
     return ptn_owned_string_len(converted, len);
 }
 
+static const char *ptn_mb_mime_charset_name(const char *encoding) {
+    if (encoding == NULL ||
+        ptn_ascii_case_equal(encoding, "UTF7-IMAP") ||
+        ptn_ascii_case_equal(encoding, "UTF-7") ||
+        ptn_ascii_case_equal(encoding, "BASE64") ||
+        ptn_ascii_case_equal(encoding, "UUENCODE") ||
+        ptn_ascii_case_equal(encoding, "Quoted-Printable") ||
+        ptn_ascii_case_equal(encoding, "HTML-ENTITIES") ||
+        ptn_ascii_case_equal(encoding, "pass") ||
+        ptn_ascii_case_equal(encoding, "8bit") ||
+        ptn_ascii_case_equal(encoding, "7bit")) {
+        return NULL;
+    }
+    if (ptn_ascii_case_equal(encoding, "BIG-5")) {
+        return "BIG5";
+    }
+    return encoding;
+}
+
+static char *ptn_mb_sendmail_target_path_alloc(const char *sendmail_path) {
+    if (sendmail_path == NULL || sendmail_path[0] == '\0') {
+        return NULL;
+    }
+    const char *cursor = sendmail_path;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (strncmp(cursor, "tee", 3) == 0 && isspace((unsigned char)cursor[3])) {
+        cursor += 3;
+        while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && !isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        return cursor > start ? ptn_duplicate_string_len(start, (size_t)(cursor - start)) : NULL;
+    }
+    const char *end = cursor;
+    while (*end != '\0' && !isspace((unsigned char)*end)) {
+        end++;
+    }
+    return end > cursor ? ptn_duplicate_string_len(cursor, (size_t)(end - cursor)) : NULL;
+}
+
+static int ptn_mb_operand_has_non_ascii(PtnStringOperand input) {
+    for (size_t i = 0; i < input.len; i++) {
+        if ((unsigned char)input.data[i] >= 0x80) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_mb_mail_append_subject(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    PtnStringOperand subject,
+    const char *charset,
+    size_t line
+) {
+    if (!ptn_mb_operand_has_non_ascii(subject)) {
+        ptn_string_buffer_append_len(output, subject.data, subject.len);
+        return;
+    }
+    PtnValue temp = ptn_owned_string_len(ptn_duplicate_string_len(subject.data, subject.len), subject.len);
+    PtnValue encoded = ptn_internal_base64_encode(runtime, 1, &temp, line);
+    PtnStringOperand encoded_string = ptn_value_to_string_operand(encoded);
+    ptn_string_buffer_append(output, "=?");
+    ptn_string_buffer_append(output, charset);
+    ptn_string_buffer_append(output, "?B?");
+    ptn_string_buffer_append_len(output, encoded_string.data, encoded_string.len);
+    ptn_string_buffer_append(output, "?=");
+    ptn_string_operand_free(encoded_string);
+    ptn_value_destroy(&encoded);
+    ptn_value_destroy(&temp);
+}
+
 static PtnValue ptn_internal_mb_send_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)args;
-    (void)line;
-    return ptn_bool(0);
+    PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "mb_send_mail", 1, "to", args[0], line);
+    PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "mb_send_mail", 2, "subject", args[1], line);
+    PtnStringOperand message = ptn_internal_expect_string_arg(runtime, "mb_send_mail", 3, "message", args[2], line);
+    const char *sendmail_path = getenv("PTN_SENDMAIL_PATH");
+    char *target_path = ptn_mb_sendmail_target_path_alloc(sendmail_path);
+    if (target_path == NULL) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        ptn_string_operand_free(message);
+        return ptn_bool(0);
+    }
+
+    FILE *file = fopen(target_path, "wb");
+    free(target_path);
+    if (file == NULL) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        ptn_string_operand_free(message);
+        return ptn_bool(0);
+    }
+
+    const char *charset = ptn_mb_mime_charset_name(ptn_mb_current_internal_encoding(runtime));
+    if (charset == NULL) {
+        charset = "UTF-8";
+    }
+    PtnStringBuffer subject_header;
+    ptn_string_buffer_init(&subject_header);
+    ptn_mb_mail_append_subject(runtime, &subject_header, subject, charset, line);
+
+    fputs("To: ", file);
+    fwrite(to.data, 1, to.len, file);
+    fputs("\nSubject: ", file);
+    fwrite(subject_header.data, 1, subject_header.len, file);
+    fputs("\nMIME-Version: 1.0\nContent-Type: text/plain; charset=", file);
+    fputs(charset, file);
+    fputs("\nContent-Transfer-Encoding: 8bit\n\n", file);
+    fwrite(message.data, 1, message.len, file);
+    fputc('\n', file);
+    fclose(file);
+    free(subject_header.data);
+    ptn_string_operand_free(to);
+    ptn_string_operand_free(subject);
+    ptn_string_operand_free(message);
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_mb_encode_mimeheader(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_encode_mimeheader", 1, "string", args[0], line);
+    const char *charset = argc >= 2
+        ? ptn_mb_encoding_from_value(runtime, "mb_encode_mimeheader", 2, "charset", args[1], line, ptn_mb_current_internal_encoding(runtime), 1)
+        : ptn_mb_current_internal_encoding(runtime);
+    if (charset == NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    const char *mime_charset = ptn_mb_mime_charset_name(charset);
+    if (mime_charset == NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "mb_encode_mimeheader(): Argument #2 ($charset) \"%s\" cannot be used for MIME header encoding",
+            charset
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_operand_free(input);
+        ptn_throw_exception(runtime, "ValueError", message);
+        return ptn_null();
+    }
     int ascii_only = 1;
     for (size_t i = 0; i < input.len; i++) {
         if ((unsigned char)input.data[i] >= 0x80) {
@@ -90317,7 +90617,9 @@ static PtnValue ptn_internal_mb_encode_mimeheader(PtnRuntime *runtime, size_t ar
     PtnStringOperand encoded_string = ptn_value_to_string_operand(encoded);
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-    ptn_string_buffer_append(&output, "=?UTF-8?B?");
+    ptn_string_buffer_append(&output, "=?");
+    ptn_string_buffer_append(&output, mime_charset);
+    ptn_string_buffer_append(&output, "?B?");
     ptn_string_buffer_append_len(&output, encoded_string.data, encoded_string.len);
     ptn_string_buffer_append(&output, "?=");
     ptn_string_operand_free(encoded_string);
@@ -91248,9 +91550,23 @@ static int ptn_mb_numeric_entity_map_apply(PtnValue map_value, uint32_t cp, uint
     return 0;
 }
 
-static int ptn_mb_numeric_entity_map_allows(PtnValue map_value, uint32_t cp) {
-    uint64_t mapped = 0;
-    return ptn_mb_numeric_entity_map_apply(map_value, cp, &mapped);
+static int ptn_mb_numeric_entity_map_deconvert(PtnValue map_value, uint32_t number, uint32_t *codepoint_out) {
+    PtnValue resolved = ptn_value_deref(map_value);
+    if (resolved.type != PTN_ARRAY) {
+        *codepoint_out = number;
+        return 1;
+    }
+    for (size_t i = 0; i + 3 < resolved.as.array->len; i += 4) {
+        uint32_t start = (uint32_t)ptn_value_to_integer(resolved.as.array->entries[i].value);
+        uint32_t end = (uint32_t)ptn_value_to_integer(resolved.as.array->entries[i + 1].value);
+        uint32_t offset = (uint32_t)ptn_value_to_integer(resolved.as.array->entries[i + 2].value);
+        uint32_t codepoint = number - offset;
+        if (codepoint >= start && codepoint <= end) {
+            *codepoint_out = codepoint;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int ptn_mb_numeric_entity_map_validate(PtnRuntime *runtime, const char *function_name, PtnValue map_value) {
@@ -91334,6 +91650,48 @@ static PtnValue ptn_internal_mb_encode_numericentity(PtnRuntime *runtime, size_t
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static int ptn_mb_numeric_entity_is_ucs4_output(const char *encoding, int *little_out) {
+    if (encoding == NULL || !ptn_mb_encoding_is_ucs4_family(encoding)) {
+        return 0;
+    }
+    size_t offset = 0;
+    ptn_mb_ucs4_endian_and_offset("", 0, encoding, little_out, &offset);
+    return 1;
+}
+
+static void ptn_mb_numeric_entity_append_u32(PtnStringBuffer *output, uint32_t codepoint, int little) {
+    char encoded[4];
+    if (little) {
+        encoded[0] = (char)(codepoint & 0xff);
+        encoded[1] = (char)((codepoint >> 8) & 0xff);
+        encoded[2] = (char)((codepoint >> 16) & 0xff);
+        encoded[3] = (char)((codepoint >> 24) & 0xff);
+    } else {
+        encoded[0] = (char)((codepoint >> 24) & 0xff);
+        encoded[1] = (char)((codepoint >> 16) & 0xff);
+        encoded[2] = (char)((codepoint >> 8) & 0xff);
+        encoded[3] = (char)(codepoint & 0xff);
+    }
+    ptn_string_buffer_append_len(output, encoded, sizeof(encoded));
+}
+
+static void ptn_mb_numeric_entity_append_codepoint(
+    PtnStringBuffer *output,
+    uint32_t codepoint,
+    int ucs4_output,
+    int little
+) {
+    if (ucs4_output) {
+        ptn_mb_numeric_entity_append_u32(output, codepoint, little);
+        return;
+    }
+    if (ptn_mb_ucs4_codepoint_valid(codepoint)) {
+        ptn_mb_utf8_append_codepoint(output, codepoint);
+    } else {
+        ptn_mb_append_utf8_substitute(output);
+    }
+}
+
 static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_decode_numericentity", 1, "string", args[0], line);
     if (!ptn_mb_numeric_entity_map_validate(runtime, "mb_decode_numericentity", args[1])) {
@@ -91343,37 +91701,65 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     const char *encoding = argc >= 3
         ? ptn_mb_encoding_from_value(runtime, "mb_decode_numericentity", 3, "encoding", args[2], line, ptn_mb_current_internal_encoding(runtime), 1)
         : ptn_mb_current_internal_encoding(runtime);
+    size_t utf8_len = 0;
+    char *utf8 = encoding == NULL || ptn_mb_encoding_is_raw(encoding)
+        ? ptn_duplicate_string_len(input.data, input.len)
+        : ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
+    if (encoding == NULL || ptn_mb_encoding_is_raw(encoding)) {
+        utf8_len = input.len;
+    }
+    int little = 0;
+    int ucs4_output = ptn_mb_numeric_entity_is_ucs4_output(encoding, &little);
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-    for (size_t i = 0; i < input.len; i++) {
-        if (input.data[i] == '&' && i + 3 < input.len && input.data[i + 1] == '#') {
+    for (size_t i = 0; i < utf8_len; i++) {
+        if (utf8[i] == '&' && i + 2 < utf8_len && utf8[i + 1] == '#') {
             size_t cursor = i + 2;
             int hex = 0;
-            if (cursor < input.len && (input.data[cursor] == 'x' || input.data[cursor] == 'X')) {
+            size_t max_entity_len = 12;
+            if (cursor < utf8_len && (utf8[cursor] == 'x' || utf8[cursor] == 'X')) {
                 hex = 1;
+                max_entity_len = 11;
                 cursor++;
             }
-            uint32_t cp = 0;
+            uint32_t number = 0;
             size_t digit_start = cursor;
-            while (cursor < input.len && input.data[cursor] != ';') {
-                int digit = hex ? ptn_hex_nibble((unsigned char)input.data[cursor]) :
-                    (isdigit((unsigned char)input.data[cursor]) ? input.data[cursor] - '0' : -1);
+            int too_big = 0;
+            while (cursor < utf8_len && utf8[cursor] != ';') {
+                int digit = hex ? ptn_hex_nibble((unsigned char)utf8[cursor]) :
+                    (isdigit((unsigned char)utf8[cursor]) ? utf8[cursor] - '0' : -1);
                 if (digit < 0) {
                     break;
                 }
-                cp = (uint32_t)(cp * (hex ? 16 : 10) + (uint32_t)digit);
+                if (!hex && number > 0x19999999u) {
+                    too_big = 1;
+                }
+                number = (uint32_t)(number * (hex ? 16u : 10u) + (uint32_t)digit);
                 cursor++;
             }
-            int has_semicolon = cursor < input.len && input.data[cursor] == ';';
-            if (cursor > digit_start && ptn_mb_numeric_entity_map_allows(args[1], cp)) {
-                ptn_mb_utf8_append_codepoint(&output, cp);
+            size_t entity_len = cursor - i;
+            int has_semicolon = cursor < utf8_len && utf8[cursor] == ';';
+            uint32_t codepoint = 0;
+            if (!too_big &&
+                cursor > digit_start &&
+                entity_len >= (hex ? 4u : 3u) &&
+                entity_len <= max_entity_len &&
+                ptn_mb_numeric_entity_map_deconvert(args[1], number, &codepoint)) {
+                ptn_mb_numeric_entity_append_codepoint(&output, codepoint, ucs4_output, little);
                 i = has_semicolon ? cursor : cursor - 1;
                 continue;
             }
         }
-        ptn_string_buffer_append_char(&output, input.data[i]);
+        uint32_t literal = 0;
+        ptn_mb_utf8_decode_one(utf8, utf8_len, &i, &literal);
+        ptn_mb_numeric_entity_append_codepoint(&output, literal, ucs4_output, little);
+        i--;
     }
+    free(utf8);
     ptn_string_operand_free(input);
+    if (ucs4_output) {
+        return ptn_owned_string_len(output.data, output.len);
+    }
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 

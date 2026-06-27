@@ -188,12 +188,14 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
         return Ok(decode_php_source_bytes(bytes));
     }
 
-    let source_encoding = options
-        .script_encoding
-        .as_deref()
-        .filter(|encoding| is_usable_source_encoding(encoding))
-        .map(str::to_string)
-        .or_else(|| sniff_declared_source_encoding(bytes))
+    let source_encoding = sniff_declared_source_encoding(bytes)
+        .or_else(|| {
+            options
+                .script_encoding
+                .as_deref()
+                .filter(|encoding| is_usable_source_encoding(encoding))
+                .map(str::to_string)
+        })
         .or_else(|| {
             options
                 .internal_encoding
