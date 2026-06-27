@@ -153930,6 +153930,8 @@ typedef struct {
     char *namespace_uri;
     char *name;
     PtnValue data;
+    int must_understand;
+    char *actor;
 } PtnSoapHeaderData;
 
 typedef struct {
@@ -153937,6 +153939,8 @@ typedef struct {
     size_t count;
     size_t capacity;
 } PtnSoapNamespaceList;
+
+static size_t ptn_soap_namespace_list_add(PtnSoapNamespaceList *namespaces, const char *uri);
 
 static PTN_UNUSED PtnValue ptn_call_declared_method(
     PtnRuntime *runtime,
@@ -153971,6 +153975,7 @@ static void ptn_soap_type_free(PtnSoapType *type) {
         free(type->fields[i].type);
         free(type->fields[i].namespace_uri);
     }
+    free(type->namespace_uri);
     free(type->fields);
 }
 
@@ -154033,6 +154038,7 @@ static void ptn_soap_header_data_free(void *data_ptr) {
     }
     free(data->namespace_uri);
     free(data->name);
+    free(data->actor);
     ptn_value_destroy(&data->data);
     free(data);
 }
@@ -154242,7 +154248,7 @@ static void ptn_soap_type_add_field_ex(
 }
 
 static void ptn_soap_type_add_field(PtnSoapType *type, const char *name, const char *xml_type) {
-    ptn_soap_type_add_field_ex(type, name, xml_type, type == NULL ? NULL : type->namespace_uri, 0, 0, 0, 0);
+    ptn_soap_type_add_field_ex(type, name, xml_type, "", 0, 0, 0, 0);
 }
 
 static void ptn_soap_type_copy_fields(PtnSoapType *target, const PtnSoapType *source) {
@@ -154314,7 +154320,8 @@ static void ptn_soap_parse_fields_in_range(
     PtnSoapType *groups,
     size_t group_count,
     const char *schema_namespace_uri,
-    int element_form_qualified
+    int element_default_qualified,
+    int attribute_default_qualified
 ) {
     const char *cursor = start;
     int repeated_stack[64];
@@ -154362,18 +154369,17 @@ static void ptn_soap_parse_fields_in_range(
             char *form = ptn_soap_attr_dup(tag, tag_end, "form");
             char *min_occurs = ptn_soap_attr_dup(tag, tag_end, "minOccurs");
             char *max_occurs = ptn_soap_attr_dup(tag, tag_end, "maxOccurs");
-            int qualified = form != NULL && ptn_ascii_case_equal(form, "qualified");
-            if (!is_attribute && form == NULL && element_form_qualified) {
-                qualified = 1;
-            }
             if (field_name != NULL) {
+                int is_qualified = form != NULL
+                    ? ptn_ascii_case_equal(form, "qualified")
+                    : (is_attribute ? attribute_default_qualified : element_default_qualified);
                 ptn_soap_type_add_field_ex(
                     type,
                     field_name,
                     field_type == NULL ? "string" : field_type,
-                    qualified ? schema_namespace_uri : NULL,
+                    is_qualified ? schema_namespace_uri : "",
                     is_attribute,
-                    qualified,
+                    is_qualified,
                     min_occurs != NULL && atoi(min_occurs) == 0,
                     repeated_container_depth > 0 ||
                         (max_occurs != NULL &&
@@ -154624,7 +154630,8 @@ static void ptn_soap_parse_complex_type_in_range(
     PtnSoapType *groups,
     size_t group_count,
     const char *schema_namespace_uri,
-    int element_form_qualified
+    int element_default_qualified,
+    int attribute_default_qualified
 ) {
     char *array_base = ptn_soap_first_attr_in_range(start, end, "restriction", "base");
     if (array_base != NULL) {
@@ -154713,7 +154720,8 @@ static void ptn_soap_parse_complex_type_in_range(
             groups,
             group_count,
             schema_namespace_uri,
-            element_form_qualified
+            element_default_qualified,
+            attribute_default_qualified
         );
         free(simple_base);
         return;
@@ -154734,9 +154742,58 @@ static void ptn_soap_parse_complex_type_in_range(
         groups,
         group_count,
         schema_namespace_uri,
-        element_form_qualified
+        element_default_qualified,
+        attribute_default_qualified
     );
     free(simple_base);
+}
+
+static void ptn_soap_schema_context_for_tag(
+    const char *source_start,
+    const char *source_end,
+    const char *target_tag,
+    char **namespace_uri_out,
+    int *element_default_qualified_out,
+    int *attribute_default_qualified_out
+) {
+    *namespace_uri_out = ptn_duplicate_string("");
+    *element_default_qualified_out = 0;
+    *attribute_default_qualified_out = 0;
+    const char *cursor = source_start;
+    while (cursor < source_end && cursor < target_tag) {
+        const char *tag = memchr(cursor, '<', (size_t)(source_end - cursor));
+        if (tag == NULL || tag >= target_tag) {
+            break;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, source_end);
+        if (tag_end == NULL) {
+            break;
+        }
+        if (ptn_soap_tag_is_closing_name(tag, tag_end, "schema")) {
+            cursor = tag_end;
+            continue;
+        }
+        if (ptn_soap_tag_name_is(tag, tag_end, "schema")) {
+            const char *close = ptn_soap_tag_is_self_closing(tag, tag_end)
+                ? tag_end
+                : ptn_soap_find_closing_tag(tag_end, source_end, "schema");
+            if (close != NULL && close > target_tag) {
+                char *target_namespace = ptn_soap_attr_dup(tag, tag_end, "targetNamespace");
+                char *element_form = ptn_soap_attr_dup(tag, tag_end, "elementFormDefault");
+                char *attribute_form = ptn_soap_attr_dup(tag, tag_end, "attributeFormDefault");
+                free(*namespace_uri_out);
+                *namespace_uri_out = target_namespace == NULL ? ptn_duplicate_string("") : target_namespace;
+                *element_default_qualified_out =
+                    element_form != NULL && ptn_ascii_case_equal(element_form, "qualified");
+                *attribute_default_qualified_out =
+                    attribute_form != NULL && ptn_ascii_case_equal(attribute_form, "qualified");
+                free(element_form);
+                free(attribute_form);
+                return;
+            }
+        }
+        cursor = tag_end;
+    }
 }
 
 static void ptn_soap_parse_wsdl_types_from_source(
@@ -154766,12 +154823,20 @@ static void ptn_soap_parse_wsdl_types_from_source(
             if (name != NULL) {
                 const char *close = ptn_soap_find_closing_tag(tag_end, end, "attributeGroup");
                 PtnSoapType *group = ptn_soap_type_list_add(&groups, &group_count, &group_capacity, name);
-                char *schema_namespace = ptn_soap_enclosing_schema_attr_dup(start, tag, end, "targetNamespace");
-                int element_form_qualified =
-                    ptn_soap_enclosing_schema_element_form_qualified(start, tag, end);
-                free(group->namespace_uri);
-                group->namespace_uri = ptn_duplicate_string(schema_namespace == NULL ? "" : schema_namespace);
                 if (close != NULL) {
+                    char *schema_namespace = NULL;
+                    int element_default_qualified = 0;
+                    int attribute_default_qualified = 0;
+                    ptn_soap_schema_context_for_tag(
+                        start,
+                        end,
+                        tag,
+                        &schema_namespace,
+                        &element_default_qualified,
+                        &attribute_default_qualified
+                    );
+                    free(group->namespace_uri);
+                    group->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_fields_in_range(
                         tag_end,
                         close,
@@ -154779,11 +154844,12 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         groups,
                         group_count,
                         schema_namespace,
-                        element_form_qualified
+                        element_default_qualified,
+                        attribute_default_qualified
                     );
+                    free(schema_namespace);
                     cursor = close;
                 }
-                free(schema_namespace);
             }
             free(name);
         }
@@ -154805,14 +154871,24 @@ static void ptn_soap_parse_wsdl_types_from_source(
             if (name != NULL) {
                 const char *close = ptn_soap_find_closing_tag(tag_end, end, "simpleType");
                 PtnSoapType *type = ptn_soap_type_list_add(types, type_count, type_capacity, name);
-                char *schema_namespace = ptn_soap_enclosing_schema_attr_dup(start, tag, end, "targetNamespace");
-                free(type->namespace_uri);
-                type->namespace_uri = ptn_duplicate_string(schema_namespace == NULL ? "" : schema_namespace);
                 if (close != NULL) {
+                    char *schema_namespace = NULL;
+                    int element_default_qualified = 0;
+                    int attribute_default_qualified = 0;
+                    ptn_soap_schema_context_for_tag(
+                        start,
+                        end,
+                        tag,
+                        &schema_namespace,
+                        &element_default_qualified,
+                        &attribute_default_qualified
+                    );
+                    free(type->namespace_uri);
+                    type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_simple_type_in_range(tag_end, close, type);
+                    free(schema_namespace);
                     cursor = close;
                 }
-                free(schema_namespace);
             }
             free(name);
         } else if (ptn_soap_tag_is_opening_name(tag, tag_end, "complexType")) {
@@ -154820,12 +154896,20 @@ static void ptn_soap_parse_wsdl_types_from_source(
             if (name != NULL) {
                 const char *close = ptn_soap_find_closing_tag(tag_end, end, "complexType");
                 PtnSoapType *type = ptn_soap_type_list_add(types, type_count, type_capacity, name);
-                char *schema_namespace = ptn_soap_enclosing_schema_attr_dup(start, tag, end, "targetNamespace");
-                int element_form_qualified =
-                    ptn_soap_enclosing_schema_element_form_qualified(start, tag, end);
-                free(type->namespace_uri);
-                type->namespace_uri = ptn_duplicate_string(schema_namespace == NULL ? "" : schema_namespace);
                 if (close != NULL) {
+                    char *schema_namespace = NULL;
+                    int element_default_qualified = 0;
+                    int attribute_default_qualified = 0;
+                    ptn_soap_schema_context_for_tag(
+                        start,
+                        end,
+                        tag,
+                        &schema_namespace,
+                        &element_default_qualified,
+                        &attribute_default_qualified
+                    );
+                    free(type->namespace_uri);
+                    type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_complex_type_in_range(
                         tag_end,
                         close,
@@ -154835,11 +154919,12 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         groups,
                         group_count,
                         schema_namespace,
-                        element_form_qualified
+                        element_default_qualified,
+                        attribute_default_qualified
                     );
+                    free(schema_namespace);
                     cursor = close;
                 }
-                free(schema_namespace);
             }
             free(name);
         } else if (ptn_soap_tag_is_opening_name(tag, tag_end, "element")) {
@@ -154849,17 +154934,25 @@ static void ptn_soap_parse_wsdl_types_from_source(
                 ? NULL
                 : ptn_soap_find_closing_tag(tag_end, end, "element");
             const char *scan_end = close == NULL ? tag_end : close;
-            char *schema_namespace = ptn_soap_enclosing_schema_attr_dup(start, tag, end, "targetNamespace");
-            int element_form_qualified =
-                ptn_soap_enclosing_schema_element_form_qualified(start, tag, end);
             if (name != NULL &&
                 declared_type == NULL &&
                 close != NULL &&
                 ptn_soap_type_list_find(*types, *type_count, name) == NULL) {
                 if (ptn_soap_range_has_tag(tag_end, scan_end, "complexType")) {
                     PtnSoapType *type = ptn_soap_type_list_add(types, type_count, type_capacity, name);
+                    char *schema_namespace = NULL;
+                    int element_default_qualified = 0;
+                    int attribute_default_qualified = 0;
+                    ptn_soap_schema_context_for_tag(
+                        start,
+                        end,
+                        tag,
+                        &schema_namespace,
+                        &element_default_qualified,
+                        &attribute_default_qualified
+                    );
                     free(type->namespace_uri);
-                    type->namespace_uri = ptn_duplicate_string(schema_namespace == NULL ? "" : schema_namespace);
+                    type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_complex_type_in_range(
                         tag_end,
                         scan_end,
@@ -154869,20 +154962,33 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         groups,
                         group_count,
                         schema_namespace,
-                        element_form_qualified
+                        element_default_qualified,
+                        attribute_default_qualified
                     );
+                    free(schema_namespace);
                     cursor = close;
                 } else if (ptn_soap_range_has_tag(tag_end, scan_end, "simpleType")) {
                     PtnSoapType *type = ptn_soap_type_list_add(types, type_count, type_capacity, name);
+                    char *schema_namespace = NULL;
+                    int element_default_qualified = 0;
+                    int attribute_default_qualified = 0;
+                    ptn_soap_schema_context_for_tag(
+                        start,
+                        end,
+                        tag,
+                        &schema_namespace,
+                        &element_default_qualified,
+                        &attribute_default_qualified
+                    );
                     free(type->namespace_uri);
-                    type->namespace_uri = ptn_duplicate_string(schema_namespace == NULL ? "" : schema_namespace);
+                    type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_simple_type_in_range(tag_end, scan_end, type);
+                    free(schema_namespace);
                     cursor = close;
                 }
             }
             free(name);
             free(declared_type);
-            free(schema_namespace);
         }
         cursor = tag_end;
     }
@@ -155088,6 +155194,21 @@ static int ptn_soap_object_property(PtnValue object_value, const char *name, Ptn
     }
     *out = ptn_value_deref(entry->value);
     return 1;
+}
+
+static int ptn_soap_value_named_entry(PtnValue value, const char *name, PtnValue *out) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        PtnArrayKey key = ptn_array_string_key(name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(value.as.array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            return 0;
+        }
+        *out = ptn_value_deref(entry->value);
+        return 1;
+    }
+    return ptn_soap_object_property(value, name, out);
 }
 
 static int ptn_soap_enum_backing_value(PtnRuntime *runtime, PtnValue value, PtnValue *backing_out) {
