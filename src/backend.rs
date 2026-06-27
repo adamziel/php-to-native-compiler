@@ -6582,6 +6582,8 @@ fn emit_class_constant_initializer_helper(
             let previous_initializing_class_temp = values.next_temp();
             let previous_initializing_key_class_temp = values.next_temp();
             let previous_initializing_constant_temp = values.next_temp();
+            let previous_constant_source_path_temp =
+                (class.source_file != source_file).then(|| values.next_temp());
             out.push_str("            char *");
             out.push_str(&initializing_key_temp);
             out.push_str(" = ptn_class_constant_key(\"");
@@ -6601,6 +6603,14 @@ fn emit_class_constant_initializer_helper(
             out.push_str("            const char *");
             out.push_str(&previous_initializing_constant_temp);
             out.push_str(" = runtime.current_class_constant_initializing_constant_name;\n");
+            if let Some(previous_constant_source_path_temp) = &previous_constant_source_path_temp {
+                out.push_str("            const char *");
+                out.push_str(previous_constant_source_path_temp);
+                out.push_str(" = runtime.current_class_constant_source_path;\n");
+                out.push_str("            runtime.current_class_constant_source_path = \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\";\n");
+            }
             out.push_str("            ptn_symbols_set(");
             out.push_str(&initializing_table_temp);
             out.push_str(", ");
@@ -6684,6 +6694,11 @@ fn emit_class_constant_initializer_helper(
             );
             out.push_str(&previous_initializing_constant_temp);
             out.push_str(";\n");
+            if let Some(previous_constant_source_path_temp) = &previous_constant_source_path_temp {
+                out.push_str("                runtime.current_class_constant_source_path = ");
+                out.push_str(previous_constant_source_path_temp);
+                out.push_str(";\n");
+            }
             out.push_str("                free(");
             out.push_str(&initializing_key_temp);
             out.push_str(");\n");
@@ -6707,6 +6722,13 @@ fn emit_class_constant_initializer_helper(
                     out.push_str("            ptn_throw_exception(&runtime, \"Error\", \"");
                     out.push_str(&c_string(&message));
                     out.push_str("\");\n");
+                    if let Some(previous_constant_source_path_temp) =
+                        &previous_constant_source_path_temp
+                    {
+                        out.push_str("            runtime.current_class_constant_source_path = ");
+                        out.push_str(previous_constant_source_path_temp);
+                        out.push_str(";\n");
+                    }
                     out.push_str("            return 0;\n");
                 }
                 let value_temp = values.next_temp();
@@ -6740,6 +6762,15 @@ fn emit_class_constant_initializer_helper(
                     out.push_str("                    ptn_abort_out_of_memory();\n");
                     out.push_str("                }\n");
                     out.push_str("                ptn_throw_exception(&runtime, \"TypeError\", ptn_enum_type_message);\n");
+                    if let Some(previous_constant_source_path_temp) =
+                        &previous_constant_source_path_temp
+                    {
+                        out.push_str(
+                            "                runtime.current_class_constant_source_path = ",
+                        );
+                        out.push_str(previous_constant_source_path_temp);
+                        out.push_str(";\n");
+                    }
                     out.push_str("                return 0;\n");
                     out.push_str("            }\n");
                     out.push_str("            PtnValue ");
@@ -6857,6 +6888,11 @@ fn emit_class_constant_initializer_helper(
             );
             out.push_str(&previous_initializing_constant_temp);
             out.push_str(";\n");
+            if let Some(previous_constant_source_path_temp) = &previous_constant_source_path_temp {
+                out.push_str("            runtime.current_class_constant_source_path = ");
+                out.push_str(previous_constant_source_path_temp);
+                out.push_str(";\n");
+            }
             out.push_str("            free(");
             out.push_str(&initializing_key_temp);
             out.push_str(");\n");

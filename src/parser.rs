@@ -8496,7 +8496,10 @@ impl Parser<'_> {
                                             Some(start_span),
                                         ));
                                     }
-                                    if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr)
+                                    if self.allow_unscoped_constant_relative_class_member_fetch == 0
+                                        && dynamic_class_name_fetch_has_illegal_literal_receiver(
+                                            &expr,
+                                        )
                                     {
                                         return Err(Diagnostic::new(
                                             "Illegal class name",
@@ -27118,9 +27121,9 @@ fn reject_array_literal_holes(expr: &Expr) -> Result<()> {
                 reject_array_literal_holes(index)?;
             }
         }
-        Expr::PropertyFetch { receiver, .. } | Expr::DynamicClassNameFetch { receiver, .. } => {
-            reject_array_literal_holes(receiver)?;
-        }
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::NullsafePropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. } => reject_array_literal_holes(receiver)?,
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             reject_array_literal_holes(receiver)?;
             reject_array_literal_holes(name)?;

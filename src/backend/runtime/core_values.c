@@ -1574,6 +1574,7 @@ struct PtnRuntime {
     const char *current_class_constant_initializing_class_name;
     const char *current_class_constant_initializing_key_class_name;
     const char *current_class_constant_initializing_constant_name;
+    const char *current_class_constant_source_path;
     const char *class_constant_deprecation_suppress_class;
     const char *class_constant_deprecation_suppress_constant;
     PtnObject *dynamic_property_deprecation_suppress_object;

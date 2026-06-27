@@ -1,0 +1,12 @@
+Zend/tests/constexpr/gh7771_2.phpt
+Zend/tests/lazy_objects/unset_hook.phpt
+Zend/tests/property_hooks/override_attribute_backed.phpt
+Zend/tests/property_hooks/override_by_plain_prop.phpt
+Zend/tests/constexpr/new.phpt
+Zend/tests/lazy_objects/reset_as_lazy_readonly.phpt
+Zend/tests/property_hooks/magic_interaction.phpt
+Zend/tests/constexpr/class_on_expression_in_constant_expression.phpt
+Zend/tests/constexpr/gh9138_2.phpt
+Zend/tests/lazy_objects/setRawValueWithoutLazyInitialization_readonly_variant.phpt
+Zend/tests/lazy_objects/isset_hooked_may_not_initialize.phpt
+Zend/tests/lazy_objects/init_fatal.phpt

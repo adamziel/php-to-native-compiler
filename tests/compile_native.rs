@@ -8691,6 +8691,11 @@ fn parser_reports_compile_time_constant_expression_diagnostics() {
             "(expression)::class cannot be used in constant expressions",
         ),
         (
+            "attribute nullsafe array hole",
+            "<?php #[Attribute([,]?->e)] class Test {}",
+            "Cannot use empty array elements in arrays",
+        ),
+        (
             "property new",
             "<?php class Test { public $prop = new stdClass; }",
             "New expressions are not supported in this context",
@@ -43677,6 +43682,50 @@ new C();
         "{stderr}"
     );
     assert!(stderr.contains("[constant expression]()"), "{stderr}");
+}
+
+#[test]
+fn compile_included_class_constant_initializer_error_uses_declaring_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-include-class-constant-error-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let definition = root.join("definition.inc");
+    let output = root.join("include-class-constant-error-source-bin");
+    fs::write(
+        &definition,
+        "<?php
+class Foo {
+    public const BAR =
+        self::BAZ
+        + NonExistent::CLASS_CONSTANT;
+    public const BAZ = 42;
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+require __DIR__ . '/definition.inc';
+new Foo();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Class \"NonExistent\" not found in {}:5\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 5\n",
+            definition.display(),
+            input.display(),
+            definition.display()
+        )
+    );
 }
 
 #[test]

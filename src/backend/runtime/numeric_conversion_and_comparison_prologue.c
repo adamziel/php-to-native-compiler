@@ -24,6 +24,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->current_class_constant_initializing_key_class_name;
     runtime->current_class_constant_initializing_constant_name =
         caller_runtime->current_class_constant_initializing_constant_name;
+    runtime->current_class_constant_source_path =
+        caller_runtime->current_class_constant_source_path;
     runtime->class_constant_deprecation_suppress_class =
         caller_runtime->class_constant_deprecation_suppress_class;
     runtime->class_constant_deprecation_suppress_constant =
@@ -6462,11 +6464,15 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    const char *source_path =
+        runtime != NULL && runtime->current_class_constant_source_path != NULL
+            ? runtime->current_class_constant_source_path
+            : (runtime != NULL ? runtime->source_path : NULL);
     ptn_throw_exception_at(
         runtime,
         "Error",
         message,
-        runtime != NULL ? runtime->source_path : NULL,
+        source_path,
         line
     );
     return ptn_null();
@@ -6625,11 +6631,15 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 ptn_abort_out_of_memory();
             }
             free(key);
+            const char *source_path =
+                runtime != NULL && runtime->current_class_constant_source_path != NULL
+                    ? runtime->current_class_constant_source_path
+                    : (runtime != NULL ? runtime->source_path : NULL);
             ptn_throw_exception_at(
                 runtime,
                 "Error",
                 message,
-                runtime != NULL ? runtime->source_path : NULL,
+                source_path,
                 line
             );
             return ptn_null();
