@@ -2713,6 +2713,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_phar_readonly = getenv("PTN_PHAR_READONLY");
     const char *configured_phar_require_hash = getenv("PTN_PHAR_REQUIRE_HASH");
     const char *configured_phar_cache_list = getenv("PTN_PHAR_CACHE_LIST");
+    const char *configured_zlib_output_compression = getenv("PTN_ZLIB_OUTPUT_COMPRESSION");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
@@ -2833,6 +2834,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->phar_cache_list = ptn_duplicate_string(
         configured_phar_cache_list == NULL ? "" : configured_phar_cache_list
+    );
+    runtime->zlib_output_compression = ptn_duplicate_string(
+        configured_zlib_output_compression == NULL ? "0" : configured_zlib_output_compression
     );
     runtime->internal_encoding = ptn_duplicate_string(
         configured_internal_encoding == NULL ? "" : configured_internal_encoding

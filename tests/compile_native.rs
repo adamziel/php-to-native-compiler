@@ -28495,6 +28495,24 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => ["hello", "wor\0ld"]]
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => [" ", new stdClass]]); } catch (Error $e) { echo $e->getMessage(), "\n"; }
 
 var_dump(zlib_get_coding_type());
+$resource = deflate_init(ZLIB_ENCODING_DEFLATE);
+foreach (range("a", "z") as $char) {
+    deflate_add($resource, $char);
+}
+deflate_add($resource, "", ZLIB_FINISH);
+$uncompressed = "";
+$compressed = "";
+foreach (range("a", "z") as $char) {
+    $uncompressed .= $char;
+    $compressed .= deflate_add($resource, $char, ZLIB_NO_FLUSH);
+}
+$compressed .= deflate_add($resource, "", ZLIB_FINISH);
+var_dump($uncompressed === zlib_decode($compressed));
+putenv("HTTP_ACCEPT_ENCODING=deflate");
+ini_set("zlib.output_compression", "On");
+var_dump(zlib_get_coding_type());
+ini_restore("zlib.output_compression");
+var_dump(zlib_get_coding_type());
 var_dump(ZLIB_VERSION, ZLIB_VERNUM >= 0x1240);
 "#,
     )
@@ -28535,6 +28553,9 @@ deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
 Object of class stdClass could not be converted to string\n\
 bool(false)\n\
+bool(true)\n\
+string(7) \"deflate\"\n\
+bool(false)\n\
 string(5) \"1.3.1\"\n\
 bool(true)\n"
     );
@@ -28544,6 +28565,7 @@ bool(true)\n"
     assert!(c_source.contains("ptn_internal_gzcompress"));
     assert!(c_source.contains("ptn_internal_gzgets"));
     assert!(c_source.contains("ptn_internal_deflate_add"));
+    assert!(c_source.contains("ptn_internal_zlib_decode"));
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE"));
 }
 
@@ -29235,6 +29257,12 @@ $errno = 99;
 $errstr = "old";
 $client = @stream_socket_client("[", $errno, $errstr);
 var_dump($client, $errno, $errstr);
+var_dump(STREAM_CLIENT_PERSISTENT, STREAM_CLIENT_ASYNC_CONNECT, STREAM_CLIENT_CONNECT);
+$errno = 99;
+$errstr = "old";
+$client = stream_socket_client("abc", $errno, $errstr, 0, STREAM_CLIENT_PERSISTENT);
+var_dump(is_resource($client), $errno, $errstr);
+fclose($client);
 "#,
     )
     .unwrap();
@@ -29259,7 +29287,13 @@ bool(false)\n\
 string(3) \"a,b\"\n\
 bool(false)\n\
 int(0)\n\
-string(27) \"Failed to parse address \"[\"\"\n"
+string(27) \"Failed to parse address \"[\"\"\n\
+int(1)\n\
+int(2)\n\
+int(4)\n\
+bool(true)\n\
+int(0)\n\
+string(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

@@ -1007,6 +1007,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->phar_require_hash = NULL;
         free(runtime->phar_cache_list);
         runtime->phar_cache_list = NULL;
+        free(runtime->zlib_output_compression);
+        runtime->zlib_output_compression = NULL;
         free(runtime->internal_encoding);
         runtime->internal_encoding = NULL;
         free(runtime->input_encoding);

@@ -316,6 +316,9 @@ typedef struct {
 #define PTN_STREAM_FILTER_ALL 3
 #define PTN_STREAM_OOB 1
 #define PTN_STREAM_PEEK 2
+#define PTN_STREAM_CLIENT_PERSISTENT 1
+#define PTN_STREAM_CLIENT_ASYNC_CONNECT 2
+#define PTN_STREAM_CLIENT_CONNECT 4
 #define PTN_ZLIB_ENCODING_RAW -15
 #define PTN_ZLIB_ENCODING_GZIP 31
 #define PTN_ZLIB_ENCODING_DEFLATE 15
@@ -1744,6 +1747,7 @@ struct PtnRuntime {
     char *phar_readonly;
     char *phar_require_hash;
     char *phar_cache_list;
+    char *zlib_output_compression;
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;

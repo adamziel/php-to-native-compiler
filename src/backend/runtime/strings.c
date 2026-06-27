@@ -3287,6 +3287,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_ZLIB_FINISH);
         return 1;
     }
+    if (strcmp(name, "STREAM_CLIENT_PERSISTENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_PERSISTENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CLIENT_ASYNC_CONNECT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_ASYNC_CONNECT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CLIENT_CONNECT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_CONNECT);
+        return 1;
+    }
     if (strcmp(name, "STREAM_PF_UNIX") == 0) {
         *out = ptn_int(PTN_STREAM_PF_UNIX);
         return 1;

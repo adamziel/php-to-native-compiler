@@ -302,6 +302,7 @@ struct RuntimeIni {
     phar_readonly: Option<String>,
     phar_require_hash: Option<String>,
     phar_cache_list: Option<String>,
+    zlib_output_compression: Option<String>,
     bcmath_scale: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
@@ -525,6 +526,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.phar_require_hash = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("phar.cache_list") {
         ini.phar_cache_list = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("zlib.output_compression") {
+        ini.zlib_output_compression = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("bcmath.scale") {
         if let Ok(parsed) = raw_value.parse::<i64>() {
             if (0..=2_147_483_647).contains(&parsed) {
@@ -1091,6 +1094,7 @@ fn compile_and_run(
         phar_readonly: ini.phar_readonly.clone(),
         phar_require_hash: ini.phar_require_hash.clone(),
         phar_cache_list: ini.phar_cache_list.clone(),
+        zlib_output_compression: ini.zlib_output_compression.clone(),
         bcmath_scale: ini.bcmath_scale.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
@@ -1285,6 +1289,9 @@ fn compile_and_run(
     }
     if let Some(phar_cache_list) = &ini.phar_cache_list {
         command.env("PTN_PHAR_CACHE_LIST", phar_cache_list);
+    }
+    if let Some(zlib_output_compression) = &ini.zlib_output_compression {
+        command.env("PTN_ZLIB_OUTPUT_COMPRESSION", zlib_output_compression);
     }
     if let Some(bcmath_scale) = &ini.bcmath_scale {
         command.env("PTN_BCMATH_SCALE", bcmath_scale);
