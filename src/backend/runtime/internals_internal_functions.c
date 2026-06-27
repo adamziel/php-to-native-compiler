@@ -110035,12 +110035,17 @@ static PtnValue ptn_internal_ob_clean(PtnRuntime *runtime, size_t argc, const Pt
         ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_clean", "delete", line);
         return ptn_bool(0);
     }
+    int64_t operation_flags = PTN_PHP_OUTPUT_HANDLER_CLEAN;
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_STARTED) == 0) {
+        operation_flags |= PTN_PHP_OUTPUT_HANDLER_START;
+    }
+    buffer->flags |= PTN_PHP_OUTPUT_HANDLER_STARTED | PTN_PHP_OUTPUT_HANDLER_PROCESSED;
     int handler_output_warned = 0;
     PtnValue output = ptn_output_buffer_apply_callback(
         runtime,
         buffer,
         line,
-        PTN_PHP_OUTPUT_HANDLER_CLEAN,
+        operation_flags,
         "ob_clean",
         0,
         &handler_output_warned
@@ -206606,6 +206611,25 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
         ptn_string_operand_free(name_arg);
         ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
         return ptn_null();
+    }
+    for (size_t i = 0; i + 1 < lookup_len; i++) {
+        if (lookup_name[i] == ':' && lookup_name[i + 1] == ':') {
+            char *class_name = ptn_duplicate_string_len(lookup_name, i);
+            char *constant_name = ptn_duplicate_string_len(
+                lookup_name + i + 2,
+                lookup_len - i - 2
+            );
+            PtnValue value = ptn_runtime_read_class_constant(
+                runtime,
+                class_name,
+                constant_name,
+                line
+            );
+            free(class_name);
+            free(constant_name);
+            ptn_string_operand_free(name_arg);
+            return value;
+        }
     }
     char *name = ptn_duplicate_string_len(lookup_name, lookup_len);
     PtnValue value = ptn_read_constant(runtime, name, runtime->source_path, line);

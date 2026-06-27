@@ -1,0 +1,14 @@
+# ptn-w17z.1023 core lang/basic/output residual row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T055128Z.tsv
+tests/lang/short_tags.004.phpt
+tests/lang/bug27354.phpt
+tests/output/bug75236.phpt
+tests/lang/bug28800.phpt
+tests/lang/bug21820.phpt
+tests/lang/bug44827.phpt
+tests/lang/static_variation_002.phpt
+tests/lang/bug24951.phpt
+tests/basic/gh20858.phpt
+tests/output/stream_isatty_non_castable_userwrapper.phpt
+tests/lang/integer_literals/binary_64bit.phpt
+tests/lang/bug71897.phpt

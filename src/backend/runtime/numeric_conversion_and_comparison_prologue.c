@@ -9120,6 +9120,22 @@ static PTN_UNUSED int ptn_string_has_embedded_nul(PtnString string) {
     return memchr(string.data, '\0', string.len) != NULL;
 }
 
+static PTN_UNUSED int ptn_numeric_string_can_start(const char *start, const char *limit) {
+    if (start >= limit) {
+        return 0;
+    }
+    if (*start == '+' || *start == '-') {
+        start++;
+        if (start >= limit) {
+            return 0;
+        }
+    }
+    if (isdigit((unsigned char)*start)) {
+        return 1;
+    }
+    return *start == '.' && start + 1 < limit && isdigit((unsigned char)start[1]);
+}
+
 static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
     const char *start = string;
     while (isspace((unsigned char)*start)) {
@@ -9133,6 +9149,9 @@ static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
         return ptn_number_int(0);
     }
     if (*start == '\0') {
+        return ptn_number_int(0);
+    }
+    if (!ptn_numeric_string_can_start(start, start + strlen(start))) {
         return ptn_number_int(0);
     }
 

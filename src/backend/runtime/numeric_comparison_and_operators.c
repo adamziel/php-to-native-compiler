@@ -1165,7 +1165,7 @@ static PTN_UNUSED int ptn_arithmetic_string_to_number(
     while (start < limit && isspace((unsigned char)*start)) {
         start++;
     }
-    if (start >= limit) {
+    if (!ptn_numeric_string_can_start(start, limit)) {
         return 0;
     }
 
@@ -1953,6 +1953,20 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
     return ptn_number_to_integer(number);
 }
 
+static PTN_UNUSED int64_t ptn_value_to_modulo_integer(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT && ptn_float_to_int_out_of_range(value.as.floating)) {
+        ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, value.as.floating, line);
+        return ptn_float_to_php_integer(value.as.floating);
+    }
+    return ptn_value_to_integer_with_precision_deprecation_at(
+        &runtime->diagnostics,
+        value,
+        runtime->source_path,
+        line
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -1982,18 +1996,8 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnVal
         return ptn_int(left_fast_integer % right_fast_integer);
     }
 
-    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation_at(
-        &runtime->diagnostics,
-        left,
-        runtime->source_path,
-        line
-    );
-    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation_at(
-        &runtime->diagnostics,
-        right,
-        runtime->source_path,
-        line
-    );
+    int64_t left_integer = ptn_value_to_modulo_integer(runtime, left, line);
+    int64_t right_integer = ptn_value_to_modulo_integer(runtime, right, line);
     if (right_integer == 0) {
         ptn_throw_exception_at(runtime, "DivisionByZeroError", "Modulo by zero", runtime->source_path, line);
         return ptn_null();
