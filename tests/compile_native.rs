@@ -1298,6 +1298,106 @@ $list->offsetGet("bad");
 }
 
 #[test]
+fn compile_spl_file_info_iterator_row_pack_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-file-info-iterator-row-pack-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-file-info-iterator-row-pack-edges.php");
+    let output = root.join("spl-file-info-iterator-row-pack-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach (["getGroup", "getInode", "getOwner", "getPerms"] as $method) {
+    try {
+        (new SplFileInfo("not_existing"))->$method();
+    } catch (RuntimeException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+foreach ([new SplQueue(), new SplStack()] as $structure) {
+    var_dump($structure->getIteratorMode());
+    try {
+        $structure->setIteratorMode($structure instanceof SplQueue
+            ? SplDoublyLinkedList::IT_MODE_LIFO
+            : SplDoublyLinkedList::IT_MODE_FIFO);
+    } catch (RuntimeException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+try {
+    new SplTempFileObject("invalid");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+ob_start();
+var_dump(new SplTempFileObject());
+$defaultDump = ob_get_clean();
+var_dump(
+    str_contains($defaultDump, 'string(10) "php://temp"'),
+    str_contains($defaultDump, 'string(2) "wb"')
+);
+ob_start();
+var_dump(new SplTempFileObject(1024));
+$maxMemoryDump = ob_get_clean();
+var_dump(str_contains($maxMemoryDump, 'string(25) "php://temp/maxmemory:1024"'));
+
+$objectRefDump = print_r(unserialize('a:2:{i:0;O:8:"stdClass":0:{}i:1;R:2;}'), true);
+var_dump(substr_count($objectRefDump, 'stdClass Object') === 2);
+
+class RowPackObj {
+    public $ryat;
+    public function __wakeup() {
+        $this->ryat = 1;
+    }
+}
+$fakezval = str_repeat("\0", 24);
+$inner = 'x:i:1;O:8:"stdClass":0:{},i:1;;m:a:0:{}';
+$exploit = 'a:5:{i:0;i:1;i:1;C:16:"SplObjectStorage":' . strlen($inner) . ':{' . $inner . '}i:2;O:10:"RowPackObj":1:{s:4:"ryat";R:3;}i:3;R:6;i:4;s:' . strlen($fakezval) . ':"' . $fakezval . '";}';
+$data = unserialize($exploit);
+var_dump($data[1], $data[2]->ryat, $data[3]);
+$data[1] = 9;
+var_dump($data[2]->ryat);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SplFileInfo::getGroup(): stat failed for not_existing\n",
+            "SplFileInfo::getInode(): stat failed for not_existing\n",
+            "SplFileInfo::getOwner(): stat failed for not_existing\n",
+            "SplFileInfo::getPerms(): stat failed for not_existing\n",
+            "int(0)\n",
+            "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\n",
+            "int(2)\n",
+            "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\n",
+            "SplTempFileObject::__construct(): Argument #1 ($maxMemory) must be of type int, string given\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(9)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_and_method_source_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-source-metadata");
     fs::create_dir_all(&root).unwrap();

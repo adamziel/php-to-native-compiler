@@ -1,0 +1,12 @@
+ext/spl/tests/DirectoryIterator_getInode_error.phpt
+ext/spl/tests/SplFileInfo_getGroup_error.phpt
+ext/spl/tests/SplFileInfo_getInode_error.phpt
+ext/spl/tests/SplFileInfo_getOwner_error.phpt
+ext/spl/tests/SplFileInfo_getPerms_error.phpt
+ext/spl/tests/SplObjectStorage/bug70365.phpt
+ext/spl/tests/SplQueue_setIteratorMode.phpt
+ext/spl/tests/SplQueue_setIteratorMode_param_lifo.phpt
+ext/spl/tests/SplStack_setIteratorMode.phpt
+ext/spl/tests/SplTempFileObject_constructor_basic.phpt
+ext/spl/tests/SplTempFileObject_constructor_error.phpt
+ext/spl/tests/SplTempFileObject_constructor_maxmemory_basic.phpt
