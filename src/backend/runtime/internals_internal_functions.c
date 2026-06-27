@@ -161579,6 +161579,17 @@ static PtnValue ptn_soap_set_soap_headers(
     return ptn_bool(1);
 }
 
+static PtnValue ptn_soap_wsdl_operation_call(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    PtnValue input_headers,
+    size_t line,
+    int *handled_out
+);
+
 static PtnValue ptn_soap_soap_call(
     PtnRuntime *runtime,
     PtnValue receiver,
