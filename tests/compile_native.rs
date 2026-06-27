@@ -28381,6 +28381,60 @@ option-error\n"
 }
 
 #[test]
+fn compile_zlib_row_pack_error_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-row-pack-error-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-row-pack-error-edges.php");
+    let output = root.join("zlib-row-pack-error-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/payload.gz";
+file_put_contents($path, gzencode("payload"));
+foreach ([100, 3] as $encoding) {
+    try {
+        var_dump(gzencode("", 1, $encoding));
+    } catch (ValueError $e) {
+        echo $encoding, ":", $e->getMessage(), "\n";
+    }
+}
+var_dump(gzencode("", -1, ZLIB_ENCODING_GZIP) !== false);
+var_dump(gzencode("", 9, ZLIB_ENCODING_DEFLATE) !== false);
+var_dump(readgzfile("missing.gz", false));
+var_dump(readgzfile("missing.gz", true));
+rename("compress.zlib://$path", __DIR__ . "/renamed.gz");
+var_dump(file_exists($path));
+@unlink($path);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "100:gzencode(): Argument #3 ($encoding) must be one of ZLIB_ENCODING_RAW, ZLIB_ENCODING_GZIP, or ZLIB_ENCODING_DEFLATE\n"
+    ));
+    assert!(stdout.contains(
+        "3:gzencode(): Argument #3 ($encoding) must be one of ZLIB_ENCODING_RAW, ZLIB_ENCODING_GZIP, or ZLIB_ENCODING_DEFLATE\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: readgzfile(missing.gz): Failed to open stream: No such file or directory"
+    ));
+    assert_eq!(
+        stdout
+            .matches("Warning: readgzfile(missing.gz): Failed to open stream")
+            .count(),
+        2
+    );
+    assert!(stdout.contains("Warning: rename(): ZLIB wrapper does not support renaming"));
+    assert!(stdout.ends_with("bool(true)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zlib_row_pack_frontier_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-row-pack-frontier");
     fs::create_dir_all(&root).unwrap();

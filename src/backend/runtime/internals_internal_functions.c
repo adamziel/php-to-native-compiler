@@ -59734,6 +59734,13 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
         free(source);
         return ptn_bool(renamed);
     }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(source, &zlib_path) || ptn_zlib_uri_path(dest, &zlib_path)) {
+        ptn_emit_warning(&runtime->diagnostics, "rename(): ZLIB wrapper does not support renaming", line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
     if (rename(source, dest) == 0) {
         free(dest);
         free(source);
@@ -140183,12 +140190,25 @@ static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const Pt
         ptn_zlib_throw_level_value_error(runtime, "gzencode");
         return ptn_null();
     }
+    int64_t encoding = PTN_ZLIB_ENCODING_GZIP;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        encoding = ptn_internal_expect_integer_arg(runtime, "gzencode", 3, "encoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_encoding_is_valid(encoding)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_encoding_value_error(runtime, "gzencode", 3, "encoding");
+        return ptn_null();
+    }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
         "gzencode",
         data,
         0,
-        PTN_ZLIB_ENCODING_GZIP,
+        encoding,
         level,
         0,
         line
@@ -140723,24 +140743,30 @@ static PtnValue ptn_internal_gzpassthru(PtnRuntime *runtime, size_t argc, const 
     return ptn_internal_fpassthru(runtime, argc, args, line);
 }
 
+static char *ptn_resolve_zlib_include_path(PtnRuntime *runtime, const char *path);
+
 static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "readgzfile", 1, "filename", args[0], line);
     if (path == NULL) {
         return ptn_null();
     }
+    int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
+    char *resolved_path = use_include_path ? ptn_resolve_zlib_include_path(runtime, path) : NULL;
+    const char *open_path = resolved_path == NULL ? path : resolved_path;
     unsigned char *data = NULL;
     size_t data_len = 0;
-    int ok = ptn_zlib_read_path_bytes(path, &data, &data_len);
+    int ok = ptn_zlib_read_path_bytes(open_path, &data, &data_len);
     if (ok <= 0) {
         char detail[192];
         int written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (written < 0 || (size_t)written >= sizeof(detail)) {
+            free(resolved_path);
             free(path);
             free(data);
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "readgzfile", path, detail, line);
+        free(resolved_path);
         free(path);
         free(data);
         return ptn_bool(0);
@@ -140748,6 +140774,7 @@ static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const 
     if (data_len != 0) {
         fwrite(data, 1, data_len, stdout);
     }
+    free(resolved_path);
     free(path);
     free(data);
     if (data_len > (size_t)INT64_MAX) {
@@ -157973,7 +158000,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "register_shutdown_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_shutdown_function },
         { "register_tick_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_tick_function },
         { "readdir", 0, 1, ptn_internal_readdir },
-        { "readgzfile", 1, 1, ptn_internal_readgzfile },
+        { "readgzfile", 1, 2, ptn_internal_readgzfile },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },
         { "realpath_cache_get", 0, 0, ptn_internal_realpath_cache_get },

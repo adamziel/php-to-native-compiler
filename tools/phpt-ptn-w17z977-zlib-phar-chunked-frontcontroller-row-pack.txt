@@ -1,0 +1,15 @@
+# ptn-w17z.977 exact current-red zlib/PHAR/chunked/frontcontroller row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T001945Z.tsv
+# Rows were selected as current FAIL entries from the full PHPT dashboard artifact.
+ext/zlib/tests/readgzfile_variation7.phpt
+ext/standard/tests/streams/stream_errors_error_has_code.phpt
+ext/standard/tests/streams/bug74951.phpt
+ext/phar/tests/bug77396.phpt
+ext/phar/tests/zip/frontcontroller18.phar.phpt
+ext/zlib/tests/gzencode_invalid.phpt
+ext/zlib/tests/gzfile-mb.phpt
+ext/standard/tests/filters/chunked_001.phpt
+ext/phar/tests/bug13786.phpt
+ext/phar/tests/phar_oo_iswriteable.phpt
+ext/zlib/tests/zlib_scheme_rename_basic.phpt
+ext/phar/tests/gh18642.phpt
