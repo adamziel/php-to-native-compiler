@@ -129961,7 +129961,38 @@ static char *ptn_dom_element_generated_attribute_prefix(PtnXmlNode *element, con
     }
 }
 
-static char *ptn_dom_element_attribute_prefix_for_namespace(PtnXmlNode *element, const char *requested_prefix, const char *uri) {
+static int ptn_dom_element_has_conflicting_attribute_local_name(PtnXmlNode *element, const char *local, const char *uri) {
+    if (element == NULL || local == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < element->attribute_count; i++) {
+        PtnXmlNode *attr = element->attributes[i];
+        if (attr == NULL || ptn_xml_attribute_is_namespace_declaration(attr)) {
+            continue;
+        }
+        const char *serialized = attr->serialized_name != NULL
+            ? attr->serialized_name
+            : (attr->name == NULL ? "" : attr->name);
+        if (strcmp(ptn_xml_local_name(serialized), local) != 0) {
+            continue;
+        }
+        const char *attr_uri = attr->namespace_uri == NULL ? "" : attr->namespace_uri;
+        if (uri == NULL || strcmp(attr_uri, uri) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_dom_element_default_namespace_matches(PtnXmlNode *element, const char *uri) {
+    if (element == NULL || uri == NULL || uri[0] == '\0') {
+        return 0;
+    }
+    const char *default_uri = ptn_xml_lookup_namespace_uri(element, "");
+    return default_uri != NULL && strcmp(default_uri, uri) == 0;
+}
+
+static char *ptn_dom_element_attribute_prefix_for_namespace(PtnXmlNode *element, const char *requested_prefix, const char *requested_local, const char *uri) {
     if (uri == NULL || uri[0] == '\0') {
         return ptn_duplicate_string(requested_prefix == NULL ? "" : requested_prefix);
     }
@@ -129973,6 +130004,7 @@ static char *ptn_dom_element_attribute_prefix_for_namespace(PtnXmlNode *element,
             return existing;
         }
     }
+    int requested_prefix_conflicts = 0;
     if (requested_prefix != NULL && requested_prefix[0] != '\0') {
         const char *bound = modern
             ? ptn_xml_lookup_local_namespace_uri(element, requested_prefix)
@@ -129980,12 +130012,20 @@ static char *ptn_dom_element_attribute_prefix_for_namespace(PtnXmlNode *element,
         if (bound == NULL || strcmp(bound, uri) == 0) {
             return ptn_duplicate_string(requested_prefix);
         }
+        requested_prefix_conflicts = 1;
     }
     char *existing = ptn_dom_element_find_prefix_for_namespace(element, uri);
     if (existing != NULL) {
         return existing;
     }
-    return ptn_dom_element_generated_attribute_prefix(element, uri, requested_prefix);
+    const char *base_hint = requested_prefix;
+    if (!modern &&
+        requested_prefix_conflicts &&
+        (ptn_dom_element_has_conflicting_attribute_local_name(element, requested_local, uri) ||
+            ptn_dom_element_default_namespace_matches(element, uri))) {
+        base_hint = NULL;
+    }
+    return ptn_dom_element_generated_attribute_prefix(element, uri, base_hint);
 }
 
 static char *ptn_dom_qualified_name_with_prefix_dup(const char *prefix, const char *local) {
@@ -130075,7 +130115,7 @@ static void ptn_dom_attribute_prepare_for_element(PtnRuntime *runtime, PtnXmlNod
         free(requested_prefix);
         return;
     }
-    char *prefix = ptn_dom_element_attribute_prefix_for_namespace(element, requested_prefix, uri);
+    char *prefix = ptn_dom_element_attribute_prefix_for_namespace(element, requested_prefix, ptn_xml_local_name(attr->name), uri);
     if (requested_prefix[0] == '\0') {
         ptn_dom_attribute_rename_with_prefix(attr, prefix);
     } else if (strcmp(requested_prefix, prefix) == 0) {
