@@ -467,6 +467,38 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
     if (name == NULL) {
         return NULL;
     }
+    if (ptn_ascii_case_equal(name, "mail")) {
+        switch (index) {
+            case 0:
+                return "to";
+            case 1:
+                return "subject";
+            case 2:
+                return "message";
+            case 3:
+                return "additional_headers";
+            case 4:
+                return "additional_params";
+            default:
+                return NULL;
+        }
+    }
+    if (ptn_ascii_case_equal(name, "dns_get_record")) {
+        switch (index) {
+            case 0:
+                return "hostname";
+            case 1:
+                return "type";
+            case 2:
+                return "authoritative_name_servers";
+            case 3:
+                return "additional_records";
+            case 4:
+                return "raw";
+            default:
+                return NULL;
+        }
+    }
     if (ptn_ascii_case_equal(name, "stream_socket_client")) {
         switch (index) {
             case 0:
@@ -29451,6 +29483,209 @@ static PtnValue ptn_internal_http_response_code(PtnRuntime *runtime, size_t argc
     root->http_response_code_initialized = 1;
     root->http_response_code = code;
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(1);
+}
+
+static int ptn_internal_mail_validate_header_array(PtnRuntime *runtime, PtnArray *headers, size_t line) {
+    for (size_t i = 0; i < headers->len; i++) {
+        PtnArrayEntry *entry = &headers->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_INT) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Header name cannot be numeric, %lld given",
+                (long long)entry->key.as.integer
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        PtnValue header_value = ptn_value_deref(entry->value);
+        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, header_value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(value);
+            return 0;
+        }
+        ptn_string_operand_free(value);
+    }
+    return 1;
+}
+
+static int ptn_internal_mail_validate_headers(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue headers_value,
+    size_t line
+) {
+    PtnValue headers = ptn_value_deref(headers_value);
+    if (headers.type == PTN_ARRAY) {
+        return ptn_internal_mail_validate_header_array(runtime, headers.as.array, line);
+    }
+    if (headers.type == PTN_NULL) {
+        return 1;
+    }
+    if (headers.type == PTN_OBJECT || headers.type == PTN_CLOSURE || headers.type == PTN_EXCEPTION) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #4 ($additional_headers) must be of type array|string, %s given",
+            function_name,
+            ptn_offset_container_type_name(headers)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    PtnStringOperand header_string =
+        ptn_value_to_string_operand_with_runtime(runtime, headers, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(header_string);
+        return 0;
+    }
+    ptn_string_operand_free(header_string);
+    return 1;
+}
+
+static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "mail", 1, "to", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(to);
+        return ptn_null();
+    }
+    PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "mail", 2, "subject", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        return ptn_null();
+    }
+    PtnStringOperand message = ptn_internal_expect_string_arg(runtime, "mail", 3, "message", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    if (argc >= 4 &&
+        !ptn_internal_mail_validate_headers(runtime, "mail", args[3], line)) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    if (argc >= 5) {
+        PtnStringOperand params = ptn_internal_expect_string_arg(
+            runtime,
+            "mail",
+            5,
+            "additional_params",
+            args[4],
+            line
+        );
+        ptn_string_operand_free(params);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            return ptn_null();
+        }
+    }
+    ptn_string_operand_free(to);
+    ptn_string_operand_free(subject);
+    ptn_string_operand_free(message);
+    return ptn_bool(0);
+}
+
+#define PTN_DNS_A 1
+#define PTN_DNS_NS 2
+#define PTN_DNS_CNAME 16
+#define PTN_DNS_SOA 32
+#define PTN_DNS_PTR 2048
+#define PTN_DNS_HINFO 4096
+#define PTN_DNS_CAA 8192
+#define PTN_DNS_MX 16384
+#define PTN_DNS_TXT 32768
+#define PTN_DNS_A6 16777216
+#define PTN_DNS_SRV 33554432
+#define PTN_DNS_NAPTR 67108864
+#define PTN_DNS_AAAA 134217728
+#define PTN_DNS_ANY 268435456
+#define PTN_DNS_ALL 251721779
+
+static int ptn_dns_record_type_is_valid(int64_t type) {
+    if (type == PTN_DNS_ANY) {
+        return 1;
+    }
+    return type > 0 && (type & ~((int64_t)PTN_DNS_ALL)) == 0;
+}
+
+static void ptn_dns_get_record_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
+    if (arg.type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, arg.as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_internal_dns_get_record(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(
+        runtime,
+        "dns_get_record",
+        1,
+        "hostname",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    int64_t type = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "dns_get_record", 2, "type", args[1], line)
+        : PTN_DNS_ANY;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    int raw = argc >= 5 ? ptn_is_truthy(args[4]) : 0;
+    if (raw) {
+        if (type < 1 || type > 65535) {
+            ptn_string_operand_free(hostname);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "dns_get_record(): Argument #2 ($type) must be between 1 and 65535 when argument #5 ($raw) is true"
+            );
+            return ptn_null();
+        }
+    } else if (!ptn_dns_record_type_is_valid(type)) {
+        ptn_string_operand_free(hostname);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "dns_get_record(): Argument #2 ($type) must be a DNS_* constant"
+        );
+        return ptn_null();
+    }
+    if (argc >= 3) {
+        ptn_dns_get_record_assign_reference(runtime, args[2], ptn_array_from_literal_entries(0, NULL));
+    }
+    if (argc >= 4) {
+        ptn_dns_get_record_assign_reference(runtime, args[3], ptn_array_from_literal_entries(0, NULL));
+    }
+    ptn_string_operand_free(hostname);
+    return ptn_bool(0);
 }
 
 static int ptn_internal_headers_sent_assign_filename(PtnRuntime *runtime, PtnReference *reference) {
@@ -104308,6 +104543,26 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_SHUT_RD", PTN_STREAM_SHUT_RD);
     ptn_get_defined_constants_add_int(table, "STREAM_SHUT_WR", PTN_STREAM_SHUT_WR);
     ptn_get_defined_constants_add_int(table, "STREAM_SHUT_RDWR", PTN_STREAM_SHUT_RDWR);
+    ptn_get_defined_constants_add_int(table, "STREAM_CLIENT_PERSISTENT", PTN_STREAM_CLIENT_PERSISTENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CLIENT_ASYNC_CONNECT", PTN_STREAM_CLIENT_ASYNC_CONNECT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CLIENT_CONNECT", PTN_STREAM_CLIENT_CONNECT);
+    ptn_get_defined_constants_add_int(table, "STREAM_SERVER_BIND", PTN_STREAM_SERVER_BIND);
+    ptn_get_defined_constants_add_int(table, "STREAM_SERVER_LISTEN", PTN_STREAM_SERVER_LISTEN);
+    ptn_get_defined_constants_add_int(table, "DNS_A", 1);
+    ptn_get_defined_constants_add_int(table, "DNS_NS", 2);
+    ptn_get_defined_constants_add_int(table, "DNS_CNAME", 16);
+    ptn_get_defined_constants_add_int(table, "DNS_SOA", 32);
+    ptn_get_defined_constants_add_int(table, "DNS_PTR", 2048);
+    ptn_get_defined_constants_add_int(table, "DNS_HINFO", 4096);
+    ptn_get_defined_constants_add_int(table, "DNS_CAA", 8192);
+    ptn_get_defined_constants_add_int(table, "DNS_MX", 16384);
+    ptn_get_defined_constants_add_int(table, "DNS_TXT", 32768);
+    ptn_get_defined_constants_add_int(table, "DNS_A6", 16777216);
+    ptn_get_defined_constants_add_int(table, "DNS_SRV", 33554432);
+    ptn_get_defined_constants_add_int(table, "DNS_NAPTR", 67108864);
+    ptn_get_defined_constants_add_int(table, "DNS_AAAA", 134217728);
+    ptn_get_defined_constants_add_int(table, "DNS_ANY", 268435456);
+    ptn_get_defined_constants_add_int(table, "DNS_ALL", 251721779);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_UNKNOWN", PTN_IMAGE_FILETYPE_UNKNOWN);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_GIF", PTN_IMAGE_FILETYPE_GIF);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPEG", PTN_IMAGE_FILETYPE_JPEG);
@@ -104842,6 +105097,26 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_SHUT_RD",
         "STREAM_SHUT_WR",
         "STREAM_SHUT_RDWR",
+        "STREAM_CLIENT_PERSISTENT",
+        "STREAM_CLIENT_ASYNC_CONNECT",
+        "STREAM_CLIENT_CONNECT",
+        "STREAM_SERVER_BIND",
+        "STREAM_SERVER_LISTEN",
+        "DNS_A",
+        "DNS_NS",
+        "DNS_CNAME",
+        "DNS_SOA",
+        "DNS_PTR",
+        "DNS_HINFO",
+        "DNS_CAA",
+        "DNS_MX",
+        "DNS_TXT",
+        "DNS_A6",
+        "DNS_SRV",
+        "DNS_NAPTR",
+        "DNS_AAAA",
+        "DNS_ANY",
+        "DNS_ALL",
         "IMAGETYPE_UNKNOWN",
         "IMAGETYPE_GIF",
         "IMAGETYPE_JPEG",
@@ -140937,10 +141212,26 @@ static void ptn_stream_socket_client_assign_reference(PtnRuntime *runtime, PtnVa
     ptn_value_destroy(&value);
 }
 
-static int ptn_stream_socket_address_is_unix(PtnStringOperand address) {
+static int ptn_stream_socket_address_is_unix_like(
+    PtnStringOperand address,
+    const char **prefix_out,
+    int *socktype_out
+) {
     const char *prefix = "unix://";
     size_t prefix_len = strlen(prefix);
-    return address.len >= prefix_len && memcmp(address.data, prefix, prefix_len) == 0;
+    if (address.len >= prefix_len && memcmp(address.data, prefix, prefix_len) == 0) {
+        *prefix_out = prefix;
+        *socktype_out = SOCK_STREAM;
+        return 1;
+    }
+    prefix = "udg://";
+    prefix_len = strlen(prefix);
+    if (address.len >= prefix_len && memcmp(address.data, prefix, prefix_len) == 0) {
+        *prefix_out = prefix;
+        *socktype_out = SOCK_DGRAM;
+        return 1;
+    }
+    return 0;
 }
 
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
@@ -141116,8 +141407,9 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
         return ptn_null();
     }
 #if !defined(_WIN32)
-    if (ptn_stream_socket_address_is_unix(address)) {
-        const char *prefix = "unix://";
+    const char *prefix = NULL;
+    int socktype = 0;
+    if (ptn_stream_socket_address_is_unix_like(address, &prefix, &socktype)) {
         size_t prefix_len = strlen(prefix);
         const char *socket_path = address.data + prefix_len;
         size_t socket_path_len = address.len - prefix_len;
@@ -141131,7 +141423,7 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
             return ptn_bool(0);
         }
 
-        int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+        int descriptor = socket(AF_UNIX, socktype, 0);
         if (descriptor < 0) {
             int error_code = errno;
             ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to create unix socket", line);
@@ -141475,15 +141767,16 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "not supported on this platform");
     return ptn_bool(0);
 #else
-    const char *prefix = "unix://";
-    size_t prefix_len = strlen(prefix);
-    if (address.len < prefix_len || memcmp(address.data, prefix, prefix_len) != 0) {
+    const char *prefix = NULL;
+    int socktype = 0;
+    if (!ptn_stream_socket_address_is_unix_like(address, &prefix, &socktype)) {
         ptn_string_operand_free(address);
-        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): only unix:// addresses are supported", line);
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): only unix:// and udg:// addresses are supported", line);
         ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "unsupported address scheme");
         return ptn_bool(0);
     }
 
+    size_t prefix_len = strlen(prefix);
     const char *socket_path = address.data + prefix_len;
     size_t socket_path_len = address.len - prefix_len;
     int abstract = socket_path_len > 0 && socket_path[0] == '\0';
@@ -141498,7 +141791,7 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
         socket_path_len = (size_t)max_len;
     }
 
-    int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+    int descriptor = socket(AF_UNIX, socktype, 0);
     if (descriptor < 0) {
         int error_code = errno;
         const char *message = strerror(error_code);
@@ -141519,7 +141812,7 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
     }
 
     if (bind(descriptor, (struct sockaddr *)&unix_addr, bind_len) != 0 ||
-        listen(descriptor, 32) != 0) {
+        (socktype == SOCK_STREAM && listen(descriptor, 32) != 0)) {
         int error_code = errno;
         char detail[192];
         int written = snprintf(
@@ -141550,8 +141843,12 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
         ptn_stream_socket_server_assign_error(runtime, argc, args, error_code, message);
         return ptn_bool(0);
     }
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
     ptn_string_operand_free(address);
-    return ptn_resource(ptn_resource_new_stream(stream, "unix://", "r+"));
+    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    free(uri);
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
+    return result;
 #endif
 }
 
@@ -162761,6 +163058,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "clamp", 3, 3, ptn_internal_clamp },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "clone", 1, 2, ptn_internal_clone },
+        { "closelog", 0, 0, ptn_internal_closelog },
         { "closedir", 0, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
@@ -162861,6 +163159,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
+        { "dns_get_record", 1, 5, ptn_internal_dns_get_record },
         { "deflate_add", 2, 3, ptn_internal_deflate_add },
         { "deflate_init", 1, 2, ptn_internal_deflate_init },
         { "doubleval", 1, 1, ptn_internal_floatval },
@@ -163206,6 +163505,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "log10", 1, 1, ptn_internal_log10 },
         { "log1p", 1, 1, ptn_internal_log1p },
         { "lstat", 1, 1, ptn_internal_lstat },
+        { "mail", 3, 5, ptn_internal_mail },
         { "mb_check_encoding", 0, 2, ptn_internal_mb_check_encoding },
         { "mb_chr", 1, 2, ptn_internal_mb_chr },
         { "mb_convert_case", 2, 3, ptn_internal_mb_convert_case },
