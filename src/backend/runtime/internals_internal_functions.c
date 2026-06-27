@@ -156898,15 +156898,16 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
         if (frame->function_name == NULL) {
             continue;
         }
-        if (
+        int hidden_fiber_boundary =
             ptn_ascii_case_equal(frame->function_name, "Fiber->start") ||
-            ptn_ascii_case_equal(frame->function_name, "Fiber->resume")
-        ) {
-            continue;
-        }
-        if (frame->file != NULL && frame->line != 0 && data->executing_file == NULL) {
+            ptn_ascii_case_equal(frame->function_name, "Fiber->resume");
+        int hidden_call_user_func = ptn_ascii_case_equal(frame->function_name, "call_user_func");
+        if (!hidden_fiber_boundary && frame->file != NULL && frame->line != 0 && data->executing_file == NULL) {
             data->executing_file = ptn_duplicate_string(frame->file);
             data->executing_line = frame->line;
+        }
+        if (hidden_fiber_boundary || hidden_call_user_func) {
+            continue;
         }
         ptn_array_set_entry(
             trace.as.array,
