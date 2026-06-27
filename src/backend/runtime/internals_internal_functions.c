@@ -206181,9 +206181,35 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
             ptn_value_destroy(&callback);
             ptn_abort_out_of_memory();
         }
+        char **new_scope_names = realloc(
+            root->autoload_callback_scope_class_names,
+            new_capacity * sizeof(char *)
+        );
+        if (new_scope_names == NULL) {
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        char **new_called_names = realloc(
+            root->autoload_callback_called_class_names,
+            new_capacity * sizeof(char *)
+        );
+        if (new_called_names == NULL) {
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
         root->autoload_callbacks = new_callbacks;
+        root->autoload_callback_scope_class_names = new_scope_names;
+        root->autoload_callback_called_class_names = new_called_names;
         root->autoload_callbacks_capacity = new_capacity;
     }
+
+    char *scope_name = runtime->current_class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(runtime->current_class_name);
+    const char *called_source = runtime->current_called_class_name != NULL
+        ? runtime->current_called_class_name
+        : runtime->current_class_name;
+    char *called_name = called_source == NULL ? NULL : ptn_duplicate_string(called_source);
 
     if (prepend && root->autoload_callbacks_len > 0) {
         memmove(
@@ -206191,9 +206217,23 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
             root->autoload_callbacks,
             root->autoload_callbacks_len * sizeof(PtnValue)
         );
+        memmove(
+            root->autoload_callback_scope_class_names + 1,
+            root->autoload_callback_scope_class_names,
+            root->autoload_callbacks_len * sizeof(char *)
+        );
+        memmove(
+            root->autoload_callback_called_class_names + 1,
+            root->autoload_callback_called_class_names,
+            root->autoload_callbacks_len * sizeof(char *)
+        );
         root->autoload_callbacks[0] = callback;
+        root->autoload_callback_scope_class_names[0] = scope_name;
+        root->autoload_callback_called_class_names[0] = called_name;
     } else {
         root->autoload_callbacks[root->autoload_callbacks_len] = callback;
+        root->autoload_callback_scope_class_names[root->autoload_callbacks_len] = scope_name;
+        root->autoload_callback_called_class_names[root->autoload_callbacks_len] = called_name;
     }
     root->autoload_callbacks_len++;
     (void)line;
@@ -206360,6 +206400,10 @@ static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t
             free(name);
             for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
                 ptn_value_destroy(&root->autoload_callbacks[i]);
+                free(root->autoload_callback_scope_class_names[i]);
+                root->autoload_callback_scope_class_names[i] = NULL;
+                free(root->autoload_callback_called_class_names[i]);
+                root->autoload_callback_called_class_names[i] = NULL;
             }
             root->autoload_callbacks_len = 0;
             ptn_value_destroy(&raw_callback);
@@ -206385,11 +206429,23 @@ static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t
             continue;
         }
         ptn_value_destroy(&root->autoload_callbacks[i]);
+        free(root->autoload_callback_scope_class_names[i]);
+        free(root->autoload_callback_called_class_names[i]);
         if (i + 1 < root->autoload_callbacks_len) {
             memmove(
                 root->autoload_callbacks + i,
                 root->autoload_callbacks + i + 1,
                 (root->autoload_callbacks_len - i - 1) * sizeof(PtnValue)
+            );
+            memmove(
+                root->autoload_callback_scope_class_names + i,
+                root->autoload_callback_scope_class_names + i + 1,
+                (root->autoload_callbacks_len - i - 1) * sizeof(char *)
+            );
+            memmove(
+                root->autoload_callback_called_class_names + i,
+                root->autoload_callback_called_class_names + i + 1,
+                (root->autoload_callbacks_len - i - 1) * sizeof(char *)
             );
         }
         root->autoload_callbacks_len--;

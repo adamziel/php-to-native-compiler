@@ -76810,6 +76810,65 @@ echo $object->label(), \"\\n\";
 }
 
 #[test]
+fn compile_spl_autoload_preserves_registration_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-registration-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-autoload-registration-scope.php");
+    let output = root.join("spl-autoload-registration-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class Registrator {
+    public static function call($callable, array $args) {
+        return call_user_func_array($callable, [$args]);
+    }
+}
+
+class teLoader {
+    public function __construct() {
+        Registrator::call('spl_autoload_register', [$this, 'autoload']);
+    }
+
+    public function __call($method, $args) {
+        $this->doSomething();
+    }
+
+    protected function autoload($class) {
+        die(\"Protected autoload() called!\\n\");
+    }
+
+    public function doSomething() {
+        throw new teException();
+    }
+}
+
+new teLoader();
+
+try {
+    new teChild();
+} catch (Throwable $e) {
+    echo \"Exception: \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception: Class \"teException\" not found\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("autoload_callback_scope_class_names"));
+    assert!(c_source.contains("saved_current_class_name"));
+}
+
+#[test]
 fn compile_unserialize_autoloads_missing_class_before_incomplete_object() {
     let root = temp_dir("ptn-native-unserialize-autoload-incomplete-class");
     fs::create_dir_all(&root).unwrap();

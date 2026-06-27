@@ -885,17 +885,29 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
     PtnTryFrame autoload_frame;
     int saved_suppress_user_call_frame_location =
         runtime->suppress_user_call_frame_location;
+    const char *saved_current_class_name = runtime->current_class_name;
+    const char *saved_current_called_class_name = runtime->current_called_class_name;
     ptn_runtime_push_autoloading_class(root, class_name);
     ptn_try_frame_push(runtime, &autoload_frame);
     if (setjmp(autoload_frame.jump) == 0) {
         for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
             active_callback = ptn_value_clone(root->autoload_callbacks[i]);
             PtnValue callback_args[1] = { ptn_string(class_name) };
+            runtime->current_class_name =
+                root->autoload_callback_scope_class_names != NULL
+                    ? root->autoload_callback_scope_class_names[i]
+                    : NULL;
+            runtime->current_called_class_name =
+                root->autoload_callback_called_class_names != NULL
+                    ? root->autoload_callback_called_class_names[i]
+                    : runtime->current_class_name;
             runtime->suppress_user_call_frame_location = 1;
             PtnValue result =
                 ptn_call_callable(runtime, active_callback, 1, callback_args, line, 0);
             runtime->suppress_user_call_frame_location =
                 saved_suppress_user_call_frame_location;
+            runtime->current_class_name = saved_current_class_name;
+            runtime->current_called_class_name = saved_current_called_class_name;
             ptn_value_destroy(&result);
             ptn_value_destroy(&active_callback);
             active_callback = ptn_null();
@@ -909,6 +921,8 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
         ptn_try_frame_pop(runtime, &autoload_frame);
         runtime->suppress_user_call_frame_location =
             saved_suppress_user_call_frame_location;
+        runtime->current_class_name = saved_current_class_name;
+        runtime->current_called_class_name = saved_current_called_class_name;
         ptn_value_destroy(&active_callback);
         ptn_runtime_pop_autoloading_class(root);
         ptn_rethrow_exception(runtime);

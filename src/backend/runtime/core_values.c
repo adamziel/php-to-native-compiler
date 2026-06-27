@@ -1731,6 +1731,8 @@ struct PtnRuntime {
     size_t included_files_len;
     size_t included_files_capacity;
     PtnValue *autoload_callbacks;
+    char **autoload_callback_scope_class_names;
+    char **autoload_callback_called_class_names;
     size_t autoload_callbacks_len;
     size_t autoload_callbacks_capacity;
     char *spl_autoload_extensions;

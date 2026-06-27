@@ -548,6 +548,26 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("->autoload_callbacks[ptn_preload_root_");
         out.push_str(&preload_index.to_string());
         out.push_str("->autoload_callbacks_len]);\n");
+        out.push_str("            free(ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callback_scope_class_names[ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len]);\n");
+        out.push_str("            ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callback_scope_class_names[ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len] = NULL;\n");
+        out.push_str("            free(ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callback_called_class_names[ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len]);\n");
+        out.push_str("            ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callback_called_class_names[ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len] = NULL;\n");
         out.push_str("        }\n");
         out.push_str("    }\n");
     }

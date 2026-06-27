@@ -1,0 +1,16 @@
+# ptn-w17z.1019 focused SPL autoload/ObjectStorage/FileObject residual row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260627T051111Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: spl-autoload-object-file-residual rows=12
+ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt
+ext/spl/tests/autoloading/bug52339.phpt
+ext/spl/tests/autoloading/spl_autoload_bug48541.phpt
+ext/spl/tests/autoloading/bug38325.phpt
+ext/spl/tests/autoloading/bug74372.phpt
+ext/spl/tests/SplObjectStorage/SplObjectStorage_unserialize_bad.phpt
+ext/spl/tests/SplFileObject/bug77024.phpt
+ext/spl/tests/SplFileObject/gh8561.phpt
+ext/spl/tests/autoloading/bug73896.phpt
+ext/spl/tests/autoloading/spl_autoload_012.phpt
+ext/spl/tests/autoloading/spl_autoload_002.phpt
+ext/spl/tests/SplFileObject/gh8273.phpt
