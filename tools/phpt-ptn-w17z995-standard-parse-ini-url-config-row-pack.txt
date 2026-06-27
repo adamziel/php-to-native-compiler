@@ -1,0 +1,14 @@
+# Source: current-red full-PHPT artifact partial-statuses-20260627T021011Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/standard/tests/general_functions/bug44394.phpt
+ext/standard/tests/general_functions/parse_ini_string_001.phpt
+ext/standard/tests/strings/htmlentities14.phpt
+ext/standard/tests/general_functions/bug76643.phpt
+ext/standard/tests/strings/parse_str_basic3.phpt
+ext/standard/tests/general_functions/parse_ini_booleans.phpt
+ext/standard/tests/general_functions/url_rewriting_basic2.phpt
+ext/standard/tests/general_functions/get_cfg_var_array.phpt
+ext/standard/tests/array/array_diff_max_elements.phpt
+ext/standard/tests/general_functions/error_get_last_002.phpt
+ext/standard/tests/general_functions/bug44394_2.phpt
+ext/standard/tests/general_functions/parse_ini_string_003.phpt

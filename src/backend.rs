@@ -35312,6 +35312,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(112)),
         },
     ];
+    static OUTPUT_ADD_REWRITE_VAR_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "name",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "value",
+            default: None,
+        },
+    ];
     static SINGLE_STRING_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
         name: "string",
         default: None,
@@ -36299,6 +36309,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("ob_start") {
         Some(&OB_START_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("output_add_rewrite_var") {
+        Some(&OUTPUT_ADD_REWRITE_VAR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("sprintf")
         || name.eq_ignore_ascii_case("printf")
         || name.eq_ignore_ascii_case("pack")

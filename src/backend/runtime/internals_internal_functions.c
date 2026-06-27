@@ -91779,9 +91779,7 @@ static int ptn_ini_expand_text(
             }
             if (last_concat_token &&
                 lookahead < text.len &&
-                (text.data[lookahead] == '"' ||
-                 text.data[lookahead] == '\'' ||
-                 ptn_ini_is_name_start((unsigned char)text.data[lookahead]))) {
+                (text.data[lookahead] == '"' || text.data[lookahead] == '\'')) {
                 continue;
             }
         }
@@ -106911,6 +106909,30 @@ static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const Pt
     if (has_callback) {
         ptn_value_destroy(&callback);
     }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_output_add_rewrite_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "output_add_rewrite_var", 1, "name", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand value = ptn_internal_expect_string_arg(runtime, "output_add_rewrite_var", 2, "value", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    ptn_string_operand_free(name);
+    ptn_string_operand_free(value);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_output_reset_rewrite_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
     return ptn_bool(1);
 }
 
@@ -159038,6 +159060,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "pdo_drivers", 0, 0, ptn_internal_pdo_drivers },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
+        { "output_add_rewrite_var", 2, 2, ptn_internal_output_add_rewrite_var },
+        { "output_reset_rewrite_vars", 0, 0, ptn_internal_output_reset_rewrite_vars },
         { "pow", 2, 2, ptn_internal_pow },
         { "preg_filter", 3, 5, ptn_internal_preg_filter },
         { "preg_grep", 2, 3, ptn_internal_preg_grep },

@@ -14827,6 +14827,35 @@ echo \"|\", $contents, \"|\", $length, \"|\", ob_get_level(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_output_rewrite_var_functions_are_bounded_noops_to_native_binary() {
+    let root = temp_dir("ptn-native-output-rewrite-vars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-rewrite-vars.php");
+    let output = root.join("output-rewrite-vars-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$_SERVER = 'foo';\n\
+var_dump(function_exists('output_add_rewrite_var'));\n\
+var_dump(output_add_rewrite_var(name: 'bar', value: 'baz'));\n\
+var_dump(output_reset_rewrite_vars());\n\
+?>\n\
+<form action=\"http://example.com/\"></form>\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\n<form action=\"http://example.com/\"></form>\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exit_flushes_throwing_output_buffer_handler_to_native_binary() {
     let root = temp_dir("ptn-native-exit-throwing-output-buffer");
     fs::create_dir_all(&root).unwrap();
@@ -29432,6 +29461,42 @@ string(0) \"\"\n\
 string(0) \"\"\n\
 string(0) \"\"\n\
 string(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_parse_ini_constant_spacing_and_bitwise_values_to_native_binary() {
+    let root = temp_dir("ptn-native-parse-ini-constant-spacing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parse-ini-constant-spacing.php");
+    let output = root.join("parse-ini-constant-spacing-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$ini = "[section]\nfoo = E_ALL E_NOTICE\nbar = E_ALL&~E_NOTICE\nbaz = E_ALL & ~E_NOTICE | E_PARSE\n";
+$values = parse_ini_string($ini, true);
+var_dump($values["section"]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"foo\"]=>\n",
+            "  string(7) \"30719 8\"\n",
+            "  [\"bar\"]=>\n",
+            "  string(5) \"30711\"\n",
+            "  [\"baz\"]=>\n",
+            "  string(5) \"30711\"\n",
+            "}\n"
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -73728,6 +73793,32 @@ echo ini_get('arg_separator.input'), \"\\n\";",
             "&\n"
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_filter_default_unsafe_raw_does_not_emit_startup_deprecation() {
+    let root = temp_dir("ptn-phpc-filter-default-unsafe-raw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-default-unsafe-raw.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo ini_get('filter.default'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("filter.default=unsafe_raw")
+        .arg("-d")
+        .arg("error_reporting=-1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "unsafe_raw\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
