@@ -1,0 +1,20 @@
+# ptn-w17z.1024 focused intl formatter/calendar/timezone current-red row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T061128Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+# Run with:
+#   PTN_PHPT_TEST_TIMEOUT=120 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1024-intl-formatter-calendar-timezone-row-pack.txt
+
+# bucket: ext/intl rows=12
+ext/intl/tests/intl_get_error_message.phpt
+ext/intl/tests/formatter_format8.phpt
+ext/intl/tests/formatter/currencies.phpt
+ext/intl/tests/msgfmt_errors.phpt
+ext/intl/tests/calendar_fromDateTime_error.phpt
+ext/intl/tests/bug50590.phpt
+ext/intl/tests/bug78912.phpt
+ext/intl/tests/transliterator_create_error.phpt
+ext/intl/tests/bug72533.phpt
+ext/intl/tests/calendar_set_date_time.phpt
+ext/intl/tests/timezone_getUnknown_basic.phpt
+ext/intl/tests/msgfmt_get_locale.phpt

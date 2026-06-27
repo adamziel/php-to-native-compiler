@@ -9643,6 +9643,7 @@ fn emit_class_metadata_helpers(
         "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
+        "Transliterator",
         "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
@@ -10536,6 +10537,7 @@ fn emit_class_metadata_helpers(
         "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
+        "Transliterator",
         "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
@@ -23879,6 +23881,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
+        "transliterator" => Some("Transliterator"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
         "collator" => Some("Collator"),
         "resourcebundle" => Some("ResourceBundle"),
@@ -34887,10 +34890,13 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
                 "PATTERN_RULEBASED",
                 "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED",
             ),
+            ("CURRENCY_ISO", "PTN_NUMBER_FORMATTER_CURRENCY_ISO"),
+            ("CURRENCY_PLURAL", "PTN_NUMBER_FORMATTER_CURRENCY_PLURAL"),
             (
                 "CURRENCY_ACCOUNTING",
                 "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING",
             ),
+            ("CASH_CURRENCY", "PTN_NUMBER_FORMATTER_CASH_CURRENCY"),
             (
                 "DECIMAL_COMPACT_SHORT",
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT",
@@ -34898,6 +34904,10 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             (
                 "DECIMAL_COMPACT_LONG",
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG",
+            ),
+            (
+                "CURRENCY_STANDARD",
+                "PTN_NUMBER_FORMATTER_CURRENCY_STANDARD",
             ),
             ("TYPE_DEFAULT", "PTN_NUMBER_FORMATTER_TYPE_DEFAULT"),
             ("TYPE_INT32", "PTN_NUMBER_FORMATTER_TYPE_INT32"),
@@ -35031,16 +35041,11 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
     name.eq_ignore_ascii_case("printf")
         || name.eq_ignore_ascii_case("var_export")
         || name.eq_ignore_ascii_case("is_null")
-        || name.eq_ignore_ascii_case("intl_get_error_code")
-        || name.eq_ignore_ascii_case("intl_get_error_message")
-        || name.eq_ignore_ascii_case("collator_create")
-        || name.eq_ignore_ascii_case("collator_get_locale")
         || name.eq_ignore_ascii_case("msgfmt_create")
         || name.eq_ignore_ascii_case("msgfmt_format")
         || name.eq_ignore_ascii_case("msgfmt_format_message")
         || name.eq_ignore_ascii_case("MessageFormatter::create")
         || name.eq_ignore_ascii_case("MessageFormatter::formatMessage")
-        || name.to_ascii_lowercase().starts_with("msgfmt_")
 }
 
 fn is_uri_whatwg_url_class_name(name: &str) -> bool {
@@ -59991,9 +59996,13 @@ fn c_property_default_int_value(value: &ValueExpr) -> Option<i64> {
                 "PTN_NUMBER_FORMATTER_ORDINAL" => Some(6),
                 "PTN_NUMBER_FORMATTER_DURATION" => Some(7),
                 "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED" => Some(9),
+                "PTN_NUMBER_FORMATTER_CURRENCY_ISO" => Some(10),
+                "PTN_NUMBER_FORMATTER_CURRENCY_PLURAL" => Some(11),
                 "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING" => Some(12),
+                "PTN_NUMBER_FORMATTER_CASH_CURRENCY" => Some(13),
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT" => Some(14),
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG" => Some(15),
+                "PTN_NUMBER_FORMATTER_CURRENCY_STANDARD" => Some(16),
                 "PTN_NUMBER_FORMATTER_TYPE_DEFAULT" => Some(0),
                 "PTN_NUMBER_FORMATTER_TYPE_INT32" => Some(1),
                 "PTN_NUMBER_FORMATTER_TYPE_INT64" => Some(2),

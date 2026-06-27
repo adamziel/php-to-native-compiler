@@ -48548,6 +48548,70 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_intl_formatter_calendar_timezone_locale_transliterator_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-formatter-calendar-timezone-locale-transliterator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-formatter-calendar-timezone-locale-transliterator.php");
+    let output = root.join("intl-formatter-calendar-timezone-locale-transliterator-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$tz = IntlTimeZone::getUnknown();\n\
+echo $tz->getID(), \"\\n\";\n\
+echo intltz_get_unknown()->getID(), \"\\n\";\n\
+$fmt = msgfmt_create('en_UK', 'Test');\n\
+echo msgfmt_get_locale($fmt), \"\\n\";\n\
+echo $fmt->getLocale(), \"\\n\";\n\
+var_dump(Locale::acceptFromHttp(str_repeat('x', 256)));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(locale_accept_from_http(str_repeat('en', 128)));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$cal = IntlCalendar::createInstance('UTC');\n\
+$cal->clear();\n\
+$cal->setDateTime(2012, 1, 29, 23, 58, 31);\n\
+var_dump($cal->getTime());\n\
+var_dump(Transliterator::create('inexistent id'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(transliterator_create(\"bad UTF-8 \\x8F\"));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$nf = new NumberFormatter('en_US', NumberFormatter::CURRENCY_ACCOUNTING);\n\
+var_dump($nf->formatCurrency(-12345.67, 'USD'));\n\
+var_dump(NumberFormatter::CURRENCY_ISO, NumberFormatter::CURRENCY_PLURAL, NumberFormatter::CASH_CURRENCY, NumberFormatter::CURRENCY_STANDARD);\n\
+$datefmt = new IntlDateFormatter('en_US', IntlDateFormatter::FULL, IntlDateFormatter::FULL);\n\
+var_dump($datefmt->parse('Wednesday, January 20, 2038 3:14:07 AM GMT'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Etc/Unknown\n\
+Etc/Unknown\n\
+en_UK\n\
+en_UK\n\
+bool(false)\n\
+Locale::acceptFromHttp(): locale string too long: U_ILLEGAL_ARGUMENT_ERROR\n\
+bool(false)\n\
+locale_accept_from_http(): locale string too long: U_ILLEGAL_ARGUMENT_ERROR\n\
+float(1330559911000)\n\
+NULL\n\
+Transliterator::create(): unable to open ICU transliterator with id \"inexistent id\": U_INVALID_ID\n\
+NULL\n\
+transliterator_create(): String conversion of id to UTF-16 failed: U_INVALID_CHAR_FOUND\n\
+string(12) \"($12,345.67)\"\n\
+int(10)\n\
+int(11)\n\
+int(13)\n\
+int(16)\n\
+int(2147570047)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();
