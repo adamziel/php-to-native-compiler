@@ -9213,7 +9213,10 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
-    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_declared_interface_exists(ptn_static_magic_resolved_class) || ptn_declared_trait_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_declared_interface_exists(ptn_static_magic_resolved_class) || ptn_declared_trait_exists(ptn_static_magic_resolved_class);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        ptn_static_magic_class_exists = ptn_static_magic_class_exists || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("#endif\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
@@ -9278,7 +9281,11 @@ fn emit_user_function_dispatch(
     );
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
-    out.push_str("        if (!ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) && !ptn_declared_trait_exists(ptn_static_call_resolved_class) && !ptn_internal_class_exists_name(ptn_static_call_resolved_class)) {\n");
+    out.push_str("        int ptn_static_call_class_exists = ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) || ptn_declared_trait_exists(ptn_static_call_resolved_class);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        ptn_static_call_class_exists = ptn_static_call_class_exists || ptn_internal_class_exists_name(ptn_static_call_resolved_class);\n");
+    out.push_str("#endif\n");
+    out.push_str("        if (!ptn_static_call_class_exists) {\n");
     out.push_str(
         "            ptn_runtime_autoload_class(runtime, ptn_static_call_resolved_class, line);\n",
     );
@@ -9374,16 +9381,32 @@ fn emit_user_function_dispatch(
     }
     out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
-    out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
-    out.push_str("    }\n");
-    out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
-    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
-    out.push_str(
-        "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
-    );
-    out.push_str("    }\n");
-    out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    if full_internal_dispatch {
+        out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
+        out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+        out.push_str("    }\n");
+        out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
+        out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+        out.push_str(
+            "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
+        );
+        out.push_str("    }\n");
+        out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    } else {
+        out.push_str("    (void)argc;\n");
+        out.push_str("    (void)args;\n");
+        out.push_str("    int ptn_undefined_function_needed = snprintf(NULL, 0, \"Call to undefined function %s()\", lookup_name);\n");
+        out.push_str("    if (ptn_undefined_function_needed < 0) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str("    char *ptn_undefined_function_message = malloc((size_t)ptn_undefined_function_needed + 1);\n");
+        out.push_str("    if (ptn_undefined_function_message == NULL) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str("    snprintf(ptn_undefined_function_message, (size_t)ptn_undefined_function_needed + 1, \"Call to undefined function %s()\", lookup_name);\n");
+        out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"Error\", ptn_undefined_function_message, runtime->source_path, line);\n");
+        out.push_str("    return ptn_null();\n");
+    }
     out.push_str("}\n");
 }
 
@@ -26190,13 +26213,18 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED const char *ptn_dynamic_call_effective_internal_name(PtnRuntime *runtime, const char *name) {\n",
     );
     out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
-    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || (!ptn_runtime_function_disabled(runtime, lookup_name) && ptn_find_internal_function(lookup_name) != NULL)) {\n");
+    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name)) {\n");
+    out.push_str("        return lookup_name;\n");
+    out.push_str("    }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (!ptn_runtime_function_disabled(runtime, lookup_name) && ptn_find_internal_function(lookup_name) != NULL) {\n");
     out.push_str("        return lookup_name;\n");
     out.push_str("    }\n");
     out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
     out.push_str("    if (namespace_separator != NULL && !ptn_runtime_function_disabled(runtime, namespace_separator + 1) && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
     out.push_str("        return namespace_separator + 1;\n");
     out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return lookup_name;\n");
     out.push_str("}\n");
 

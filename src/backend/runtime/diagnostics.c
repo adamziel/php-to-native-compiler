@@ -2172,7 +2172,7 @@ static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
         message,
         line,
         suppress_user_call_frame_location,
-        1
+        0
     );
 }
 
