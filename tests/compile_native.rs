@@ -1014,6 +1014,7 @@ fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     fs::create_dir_all(&root).unwrap();
     let data_path = root.join("rows.csv");
     fs::write(&data_path, "first\nsecond\n").unwrap();
+    let link_path = root.join("rows-link.csv");
     let seek_path = root.join("seek.txt");
     fs::write(&seek_path, "Line 1\nLine 2\nLine 3\nLine 4\n").unwrap();
     let include_dir = root.join("include");
@@ -1039,6 +1040,9 @@ $includeDir = {};\n\
 $includeFile = {};\n\
 $info = new SplFileInfo($path);\n\
 var_dump($info->getFilename(), $info->getExtension(), $info->getSize() > 0);\n\
+$linkPath = {};\n\
+@unlink($linkPath);\n\
+var_dump(symlink($path, $linkPath), (new SplFileInfo($linkPath))->isLink(), (new SplFileInfo($linkPath))->getLinkTarget() === $path);\n\
 $info->setInfoClass('MyInfoObject');\n\
 $info->setFileClass('MyFileObject');\n\
 echo get_class($info->getFileInfo()), \"\\n\";\n\
@@ -1109,7 +1113,8 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             php_string_literal(&data_path),
             php_string_literal(&seek_path),
             php_string_literal(&include_dir),
-            php_string_literal(&included_real_path)
+            php_string_literal(&included_real_path),
+            php_string_literal(&link_path)
         ),
     )
     .unwrap();
@@ -1128,6 +1133,9 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
         concat!(
             "string(8) \"rows.csv\"\n",
             "string(3) \"csv\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "MyInfoObject\n",
             "MyInfoObject\n",
@@ -2475,6 +2483,20 @@ class FruitProtected {
     public function __toString() { return $this->title; }
 }
 
+class RecursiveNode extends RecursiveArrayIterator {
+    protected array $children = [];
+    protected int $index = 0;
+    public function __construct(public string $name) {}
+    public function add(self $child): void { $this->children[] = $child; }
+    public function current(): mixed { return $this->children[$this->index]; }
+    public function key(): string|int|null { return $this->index; }
+    public function next(): void { ++$this->index; }
+    public function rewind(): void { $this->index = 0; }
+    public function valid(): bool { return array_key_exists($this->index, $this->children); }
+    public function hasChildren(): bool { return !empty($this->children); }
+    public function getChildren(): RecursiveArrayIterator { return new RecursiveArrayIterator($this->children); }
+}
+
 $nested = [1, 2 => [21, 22 => [221, 222], 23 => [231]], 3];
 foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nested), RecursiveIteratorIterator::LEAVES_ONLY) as $value) {
     echo "leaf:$value\n";
@@ -2497,6 +2519,24 @@ $nestedObjects = [1 => [1 => new FruitPublic("apple")], 2 => [1 => new FruitProt
 foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nestedObjects, RecursiveArrayIterator::CHILD_ARRAYS_ONLY)) as $key => $value) {
     echo "nested-child-arrays-only:$key=$value\n";
 }
+
+$root = new RecursiveNode("root");
+$branch = new RecursiveNode("branch");
+$leaf = new RecursiveNode("leaf");
+$root->add($branch);
+$branch->add($leaf);
+$hits = 0;
+foreach (new RecursiveIteratorIterator($root->getChildren(), RecursiveIteratorIterator::SELF_FIRST) as $node) {
+    if ($node instanceof RecursiveNode && $node->name === "leaf") {
+        $hits++;
+    }
+}
+echo "recursive-object-hits:$hits\n";
+
+$stack = new SplStack();
+$stack->push("bottom");
+$stack->push("top");
+echo "stack0:", $stack->offsetGet(0), "\n";
 
 $data = new stdClass();
 $data->props = ["hello" => 5, "props" => ["keyme" => ["test" => 5]]];
@@ -2541,6 +2581,8 @@ try {
             "child-arrays-only:1=grape\n",
             "nested-child-arrays-only:1=apple\n",
             "nested-child-arrays-only:1=grape\n",
+            "recursive-object-hits:2\n",
+            "stack0:top\n",
             "self:props\n",
             "self:hello\n",
             "self:props\n",
@@ -20677,6 +20719,57 @@ var_dump($arrayObject);
         4,
         "{stdout}"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_object_isset_and_assign_op_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-isset-assign-op");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-isset-assign-op.php");
+    let output = root.join("array-object-isset-assign-op-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class OffsetGetOnly extends ArrayObject {
+    public function offsetGet(mixed $key): mixed {
+        return parent::offsetGet($key);
+    }
+}
+
+$object = new OffsetGetOnly(["foo" => "value", "bar" => null]);
+var_dump(isset($object["foo"]), isset($object["bar"]), $object->offsetExists("bar"));
+
+$arrayObject = new ArrayObject();
+var_dump($arrayObject[NULL]);
+var_dump($arrayObject[NULL]++);
+var_dump($arrayObject[""]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(false)\nbool(true)\n"), "{stdout}");
+    assert_eq!(
+        stdout
+            .matches("Using null as an array offset is deprecated")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("Undefined array key \"\"").count(), 2, "{stdout}");
+    assert!(!stdout.contains("Indirect modification of overloaded element"), "{stdout}");
+    assert!(stdout.ends_with("NULL\nint(1)\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
