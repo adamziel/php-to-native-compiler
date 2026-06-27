@@ -48548,6 +48548,70 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_intl_formatter_calendar_timezone_locale_transliterator_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-formatter-calendar-timezone-locale-transliterator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-formatter-calendar-timezone-locale-transliterator.php");
+    let output = root.join("intl-formatter-calendar-timezone-locale-transliterator-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$tz = IntlTimeZone::getUnknown();\n\
+echo $tz->getID(), \"\\n\";\n\
+echo intltz_get_unknown()->getID(), \"\\n\";\n\
+$fmt = msgfmt_create('en_UK', 'Test');\n\
+echo msgfmt_get_locale($fmt), \"\\n\";\n\
+echo $fmt->getLocale(), \"\\n\";\n\
+var_dump(Locale::acceptFromHttp(str_repeat('x', 256)));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(locale_accept_from_http(str_repeat('en', 128)));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$cal = IntlCalendar::createInstance('UTC');\n\
+$cal->clear();\n\
+$cal->setDateTime(2012, 1, 29, 23, 58, 31);\n\
+var_dump($cal->getTime());\n\
+var_dump(Transliterator::create('inexistent id'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(transliterator_create(\"bad UTF-8 \\x8F\"));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$nf = new NumberFormatter('en_US', NumberFormatter::CURRENCY_ACCOUNTING);\n\
+var_dump($nf->formatCurrency(-12345.67, 'USD'));\n\
+var_dump(NumberFormatter::CURRENCY_ISO, NumberFormatter::CURRENCY_PLURAL, NumberFormatter::CASH_CURRENCY, NumberFormatter::CURRENCY_STANDARD);\n\
+$datefmt = new IntlDateFormatter('en_US', IntlDateFormatter::FULL, IntlDateFormatter::FULL);\n\
+var_dump($datefmt->parse('Wednesday, January 20, 2038 3:14:07 AM GMT'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Etc/Unknown\n\
+Etc/Unknown\n\
+en_UK\n\
+en_UK\n\
+bool(false)\n\
+Locale::acceptFromHttp(): locale string too long: U_ILLEGAL_ARGUMENT_ERROR\n\
+bool(false)\n\
+locale_accept_from_http(): locale string too long: U_ILLEGAL_ARGUMENT_ERROR\n\
+float(1330559911000)\n\
+NULL\n\
+Transliterator::create(): unable to open ICU transliterator with id \"inexistent id\": U_INVALID_ID\n\
+NULL\n\
+transliterator_create(): String conversion of id to UTF-16 failed: U_INVALID_CHAR_FOUND\n\
+string(12) \"($12,345.67)\"\n\
+int(10)\n\
+int(11)\n\
+int(13)\n\
+int(16)\n\
+int(2147570047)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();
@@ -63227,6 +63291,45 @@ var_dump($a);",
 }
 
 #[test]
+fn compile_array_assign_op_handler_type_error_chains_offset_type_error_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-assign-op-handler-type-error-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-assign-op-handler-type-error-chain.php");
+    let output = root.join("array-offset-assign-op-handler-type-error-chain-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function (y $y) {\n\
+});\n\
+$k = [];\n\
+$y[$k]++;\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught TypeError: {closure:")
+            && stderr.contains("Argument #1 ($y) must be of type y, int given")
+            && stderr.contains(&format!("#0 {}(5): {{closure:", input.display()))
+            && stderr.contains(&format!(
+                "Next TypeError: Cannot access offset of type array on array in {}:5",
+                input.display()
+            ))
+            && stderr.contains(&format!("thrown in {} on line 5", input.display())),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("Warning: Undefined variable $y"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_array_dim_false_conversion_is_visible_to_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-array-dim-false-conversion-handler");
     fs::create_dir_all(&root).unwrap();
@@ -74248,8 +74351,19 @@ var_dump(filter_input(INPUT_GET, 'missing', FILTER_VALIDATE_INT, ['options' => [
 var_dump(filter_var('10.0.0.1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE));\n\
 var_dump(filter_var('127.255.255.255', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
 var_dump(filter_var('100.64.0.0', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('::ffff:192.168.1.1', FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE));\n\
+var_dump(filter_var('0:0:0:0:0:0:0:1', FILTER_VALIDATE_IP, FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('foo@bar.com', FILTER_VALIDATE_DOMAIN));\n\
+var_dump(filter_var('01-23-45-67-89-ab', FILTER_VALIDATE_MAC, ['options' => ['separator' => '.']]));\n\
+var_dump(filter_var('0123.4567.89ab', FILTER_VALIDATE_MAC));\n\
+try {\n\
+    filter_var('01-23-45-67-89-ab', FILTER_VALIDATE_MAC, ['options' => ['separator' => '--']]);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
 var_dump(filter_var(\"!@#$%^&*()><<>+_\\\"'<br><p /><li />\", 513));\n\
 var_dump(filter_var('\"verî.uñusual.@.uñusual.com\"@example.com', FILTER_VALIDATE_EMAIL, FILTER_FLAG_EMAIL_UNICODE));\n\
+var_dump(filter_input_array(INPUT_GET, ['c' => ['flags' => FILTER_NULL_ON_FAILURE]], true));\n\
 try {\n\
     filter_var_array(['a' => true], ['a' => ['filter' => FILTER_VALIDATE_EMAIL, 'flags' => FILTER_THROW_ON_FAILURE]]);\n\
 } catch (Filter\\FilterFailedException $e) {\n\
@@ -74265,6 +74379,7 @@ try {\n\
         .arg(&input)
         .env("PTN_FILTER_ENV_TEST", "env-value")
         .env("QUERY_STRING", "")
+        .env("PATH", "/")
         .output()
         .unwrap();
     assert!(execution.status.success());
@@ -74275,8 +74390,15 @@ int(23)\n\
 bool(false)\n\
 bool(false)\n\
 string(10) \"100.64.0.0\"\n\
+string(18) \"::ffff:192.168.1.1\"\n\
+bool(false)\n\
+string(11) \"foo@bar.com\"\n\
+bool(false)\n\
+string(14) \"0123.4567.89ab\"\n\
+filter_var(): \"separator\" option must be one character long\n\
 string(11) \"!@#$%^&*()>\"\n\
 string(43) \"\"verî.uñusual.@.uñusual.com\"@example.com\"\n\
+NULL\n\
 Filter\\FilterFailedException: filter validation failed: filter validate_email not satisfied by '1'\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -77955,6 +78077,101 @@ function repeated_include_function() {\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Cannot redeclare function repeated_include_function"));
     assert!(c_source.contains("ptn_emit_fatal_error_at"));
+}
+
+#[test]
+fn compile_include_continue_warning_routes_through_current_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-include-continue-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("include-warning.inc");
+    let output = root.join("include-continue-warning-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {\n\
+    echo \"handler:$errno:$errstr:$errline\\n\";\n\
+});\n\
+require __DIR__ . '/include-warning.inc';\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function included_warning() {\n\
+    switch (1) {\n\
+        case 1:\n\
+            continue;\n\
+    }\n\
+}\n\
+echo \"included\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "handler:2:\"continue\" targeting switch is equivalent to \"break\":5\nincluded\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_emit_compile_warning"));
+}
+
+#[test]
+fn compile_include_warning_before_redeclare_fatal_bypasses_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-include-warning-function-redeclare-bypass-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("include-warning-fatal.inc");
+    let output = root.join("include-warning-function-redeclare-bypass-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $errstr) {\n\
+    echo \"handler:$errstr\\n\";\n\
+});\n\
+require __DIR__ . '/include-warning-fatal.inc';\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function duplicate_warning() {\n\
+    switch (1) {\n\
+        case 1:\n\
+            continue;\n\
+    }\n\
+}\n\
+function duplicate_warning() {}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: \"continue\" targeting switch is equivalent to \"break\" in {} on line 5\n",
+            included.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Cannot redeclare function duplicate_warning() (previously declared in {}:2) in {} on line 8\n",
+            included.display(),
+            included.display()
+        )
+    );
 }
 
 #[test]
@@ -100105,6 +100322,47 @@ foreach ([[C::class, new C()], [C::class, new B()], [D::class, new B()]] as [$cl
         "{stderr}"
     );
     assert!(stderr.contains("Stack trace:\n#0 {main}"), "{stderr}");
+}
+
+#[test]
+fn compile_tentative_return_before_signature_fatal_bypasses_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-tentative-return-before-internal-fatal-bypass-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tentative-return-before-internal-fatal-bypass-handler.php");
+    let output = root.join("tentative-return-before-internal-fatal-bypass-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $message) {
+    echo "handler:$message\n";
+});
+
+class C extends DateTime {
+    public function getTimezone() {}
+    public function getTimestamp(C $arg): int {}
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Deprecated: Return type of C::getTimezone() should either be compatible with DateTime::getTimezone(): DateTimeZone|false, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice in {} on line 7\n",
+            input.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Declaration of C::getTimestamp(C $arg): int must be compatible with DateTime::getTimestamp(): int in {} on line 8\n",
+            input.display()
+        )
+    );
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

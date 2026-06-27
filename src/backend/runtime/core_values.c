@@ -4,6 +4,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <float.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
@@ -25,6 +26,7 @@
 #include <sys/utime.h>
 #else
 #include <dirent.h>
+#include <arpa/inet.h>
 #include <dlfcn.h>
 #include <fnmatch.h>
 #include <grp.h>

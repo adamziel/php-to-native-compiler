@@ -100,6 +100,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Random\\IntervalBoundary",
     "StreamErrorCode",
     "StreamErrorMode",
     "StreamErrorStore",
@@ -579,7 +580,12 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         runtime_requirements.internal_function_dispatch,
     );
-    emit_compile_warnings(&mut out, &module.compile_warnings, &module.source_file);
+    emit_compile_warnings(
+        &mut out,
+        &module.compile_warnings,
+        &module.source_file,
+        false,
+    );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_parameter_default_diagnostics(
         &mut out,
@@ -595,14 +601,6 @@ pub fn emit_c(module: &Module) -> String {
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     emit_static_property_declarations(&mut out, &module.classes, &module.traits);
-    for warning in collect_module_control_warnings(module) {
-        emit_control_warning(
-            &mut out,
-            &warning.message,
-            &module.source_file,
-            warning.line,
-        );
-    }
     let mut control_targets = Vec::new();
     let mut finally_stack = Vec::new();
     let return_label = values.next_label("ptn_main_return");
@@ -6024,6 +6022,25 @@ fn internal_by_ref_temporary_argument_allowed(name: &str, argument_index: usize)
         )
 }
 
+fn include_has_duplicate_function_declaration(
+    include: &IncludeFile,
+    functions: &[FunctionDecl],
+) -> bool {
+    let mut declared = HashSet::new();
+    for instruction in &include.instructions {
+        let Instruction::DeclareFunction { function_index } = instruction else {
+            continue;
+        };
+        let Some(function) = functions.get(*function_index) else {
+            continue;
+        };
+        if !declared.insert(function.name.to_ascii_lowercase()) {
+            return true;
+        }
+    }
+    false
+}
+
 fn emit_include_helpers(
     out: &mut String,
     includes: &[IncludeFile],
@@ -6084,7 +6101,12 @@ fn emit_include_helpers(
             out.push_str(&return_label);
             out.push_str(";\n");
         }
-        emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
+        emit_compile_warnings(
+            out,
+            &include.compile_warnings,
+            &include.source_file,
+            include_has_duplicate_function_declaration(include, functions),
+        );
         emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
@@ -7114,11 +7136,20 @@ fn emit_magic_debug_info_return_deprecations(
     }
 }
 
-fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_file: &str) {
+fn emit_compile_warnings(
+    out: &mut String,
+    warnings: &[CompileWarning],
+    source_file: &str,
+    bypass_error_handler: bool,
+) {
     for warning in warnings {
         match warning.kind {
             CompileWarningKind::Warning => {
-                out.push_str("    ptn_emit_compile_warning(&runtime, \"");
+                out.push_str(if bypass_error_handler {
+                    "    ptn_emit_compile_warning_direct(&runtime, \""
+                } else {
+                    "    ptn_emit_compile_warning(&runtime, \""
+                });
                 out.push_str(&c_string(&warning.message));
                 out.push_str("\", \"");
                 out.push_str(&c_string(source_file));
@@ -7127,7 +7158,11 @@ fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_f
                 out.push_str(");\n");
             }
             CompileWarningKind::Deprecation => {
-                out.push_str("    ptn_emit_compile_deprecation(&runtime, \"");
+                out.push_str(if bypass_error_handler {
+                    "    ptn_emit_compile_deprecation_direct(&runtime, \""
+                } else {
+                    "    ptn_emit_compile_deprecation(&runtime, \""
+                });
                 out.push_str(&c_string(&warning.message));
                 out.push_str("\", \"");
                 out.push_str(&c_string(source_file));
@@ -9608,6 +9643,7 @@ fn emit_class_metadata_helpers(
         "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
+        "Transliterator",
         "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
@@ -10501,6 +10537,7 @@ fn emit_class_metadata_helpers(
         "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
+        "Transliterator",
         "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
@@ -20840,6 +20877,19 @@ fn tentative_internal_return_method(
                 TypeHint::False,
             ]),
         }),
+        ("datetime", "gettimestamp") | ("datetimeimmutable", "gettimestamp") => {
+            Some(TentativeInternalReturnMethod {
+                class_name: if normalized_class_name == "datetimeimmutable" {
+                    "DateTimeImmutable"
+                } else {
+                    "DateTime"
+                },
+                method_name: "getTimestamp",
+                signature: "getTimestamp(): int",
+                is_static: false,
+                return_type: TypeHint::Int,
+            })
+        }
         _ => None,
     }
 }
@@ -20864,6 +20914,38 @@ fn find_tentative_internal_parent_return_method(
     None
 }
 
+fn class_has_tentative_internal_return_signature_fatal(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> bool {
+    class.methods.iter().any(|method| {
+        if method.visibility == PropertyVisibility::Private {
+            return false;
+        }
+        let Some(tentative_method) =
+            find_tentative_internal_parent_return_method(class, &method.name, classes)
+        else {
+            return false;
+        };
+        if method.is_static != tentative_method.is_static
+            || !method
+                .name
+                .eq_ignore_ascii_case(tentative_method.method_name)
+            || method.attributes.return_type_will_change_count > 0
+        {
+            return false;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            return false;
+        };
+        function
+            .parameters
+            .iter()
+            .any(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+    })
+}
+
 fn emit_tentative_internal_return_signature_deprecations(
     out: &mut String,
     class: &ClassDecl,
@@ -20872,6 +20954,8 @@ fn emit_tentative_internal_return_signature_deprecations(
     class_index: usize,
     _source_path: &str,
 ) {
+    let bypass_deprecation_handler =
+        class_has_tentative_internal_return_signature_fatal(class, classes, functions);
     for method in &class.methods {
         if method.visibility == PropertyVisibility::Private {
             continue;
@@ -20939,7 +21023,11 @@ fn emit_tentative_internal_return_signature_deprecations(
         out.push_str(&class_index.to_string());
         out.push_str("] = 1;\n");
         out.push_str("        }\n");
-        out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
+        out.push_str(if bypass_deprecation_handler {
+            "        ptn_emit_compile_deprecation_direct(&runtime, \""
+        } else {
+            "        ptn_emit_compile_deprecation(&runtime, \""
+        });
         out.push_str(&c_string(&message));
         out.push_str("\", \"");
         out.push_str(&c_string(&method.source_file));
@@ -23793,6 +23881,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
+        "transliterator" => Some("Transliterator"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
         "collator" => Some("Collator"),
         "resourcebundle" => Some("ResourceBundle"),
@@ -23896,6 +23985,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "streamerrormode" => Some("StreamErrorMode"),
                 "hashcontext" => Some("HashContext"),
                 "sessionhandler" => Some("SessionHandler"),
+                "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
                 "random\\engine\\mt19937" => Some("Random\\Engine\\Mt19937"),
                 "random\\engine\\pcgoneseq128xslrr64" => {
@@ -28772,6 +28862,32 @@ fn emit_instruction(
         Instruction::DeclareFunction { function_index } => {
             let function = &values.user_functions[*function_index];
             out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
+            for (previous_index, previous_function) in values.user_functions.iter().enumerate() {
+                if previous_index == *function_index
+                    || !previous_function.name.eq_ignore_ascii_case(&function.name)
+                {
+                    continue;
+                }
+                out.push_str("        if (runtime.declared_user_functions[");
+                out.push_str(&previous_index.to_string());
+                out.push_str("]) {\n");
+                out.push_str("            char message[1024];\n");
+                out.push_str(
+                    "            snprintf(message, sizeof(message), \"Cannot redeclare function ",
+                );
+                out.push_str(&c_string(&function.name));
+                out.push_str("() (previously declared in %s:%zu)\", \"");
+                out.push_str(&c_string(&previous_function.source_file));
+                out.push_str("\", (size_t)");
+                out.push_str(&previous_function.line.to_string());
+                out.push_str(");\n");
+                out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+                out.push_str(&c_string(&function.source_file));
+                out.push_str("\", ");
+                out.push_str(&function.line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
+            }
             out.push_str("        if (runtime.declared_user_functions[");
             out.push_str(&function_index.to_string());
             out.push_str("]) {\n");
@@ -28786,7 +28902,7 @@ fn emit_instruction(
             out.push_str(&function.line.to_string());
             out.push_str(");\n");
             out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
-            out.push_str(&c_string(source_path));
+            out.push_str(&c_string(&function.source_file));
             out.push_str("\", ");
             out.push_str(&function.line.to_string());
             out.push_str(");\n");
@@ -31836,32 +31952,6 @@ fn concat_tree_needs_deferred_direct_variable_lhs(value: &ValueExpr) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControlTargetKind {
-    Loop,
-    Switch,
-}
-
-struct ControlWarning {
-    message: String,
-    line: usize,
-}
-
-fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning> {
-    let mut warnings = Vec::new();
-    collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
-    warnings
-}
-
-fn collect_module_control_warnings(module: &Module) -> Vec<ControlWarning> {
-    let mut warnings = Vec::new();
-    for function in &module.functions {
-        warnings.extend(collect_control_warnings(&function.body));
-    }
-    warnings.extend(collect_control_warnings(&module.instructions));
-    warnings
-}
-
 fn collect_module_legacy_dollar_brace_deprecations(
     module: &Module,
 ) -> Vec<LegacyDollarBraceDeprecation> {
@@ -34651,6 +34741,10 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    if name.eq_ignore_ascii_case("filter_input") || name.eq_ignore_ascii_case("filter_input_array")
+    {
+        requirements.request_context = true;
+    }
     if name.eq_ignore_ascii_case("file_get_contents")
         && (arguments.len() >= 3
             || argument_names.iter().any(|name| {
@@ -34796,10 +34890,13 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
                 "PATTERN_RULEBASED",
                 "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED",
             ),
+            ("CURRENCY_ISO", "PTN_NUMBER_FORMATTER_CURRENCY_ISO"),
+            ("CURRENCY_PLURAL", "PTN_NUMBER_FORMATTER_CURRENCY_PLURAL"),
             (
                 "CURRENCY_ACCOUNTING",
                 "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING",
             ),
+            ("CASH_CURRENCY", "PTN_NUMBER_FORMATTER_CASH_CURRENCY"),
             (
                 "DECIMAL_COMPACT_SHORT",
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT",
@@ -34807,6 +34904,10 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             (
                 "DECIMAL_COMPACT_LONG",
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG",
+            ),
+            (
+                "CURRENCY_STANDARD",
+                "PTN_NUMBER_FORMATTER_CURRENCY_STANDARD",
             ),
             ("TYPE_DEFAULT", "PTN_NUMBER_FORMATTER_TYPE_DEFAULT"),
             ("TYPE_INT32", "PTN_NUMBER_FORMATTER_TYPE_INT32"),
@@ -34940,16 +35041,11 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
     name.eq_ignore_ascii_case("printf")
         || name.eq_ignore_ascii_case("var_export")
         || name.eq_ignore_ascii_case("is_null")
-        || name.eq_ignore_ascii_case("intl_get_error_code")
-        || name.eq_ignore_ascii_case("intl_get_error_message")
-        || name.eq_ignore_ascii_case("collator_create")
-        || name.eq_ignore_ascii_case("collator_get_locale")
         || name.eq_ignore_ascii_case("msgfmt_create")
         || name.eq_ignore_ascii_case("msgfmt_format")
         || name.eq_ignore_ascii_case("msgfmt_format_message")
         || name.eq_ignore_ascii_case("MessageFormatter::create")
         || name.eq_ignore_ascii_case("MessageFormatter::formatMessage")
-        || name.to_ascii_lowercase().starts_with("msgfmt_")
 }
 
 fn is_uri_whatwg_url_class_name(name: &str) -> bool {
@@ -37081,118 +37177,6 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("unserialize")
 }
 
-fn collect_control_warnings_in(
-    instructions: &[Instruction],
-    contexts: &mut Vec<ControlTargetKind>,
-    warnings: &mut Vec<ControlWarning>,
-) {
-    for instruction in instructions {
-        match instruction {
-            Instruction::Branch {
-                then_body,
-                else_body,
-                ..
-            } => {
-                collect_control_warnings_in(then_body, contexts, warnings);
-                collect_control_warnings_in(else_body, contexts, warnings);
-            }
-            Instruction::Try {
-                body,
-                catches,
-                finally_body,
-            } => {
-                collect_control_warnings_in(body, contexts, warnings);
-                for catch in catches {
-                    collect_control_warnings_in(&catch.body, contexts, warnings);
-                }
-                collect_control_warnings_in(finally_body, contexts, warnings);
-            }
-            Instruction::While { body, .. } | Instruction::DoWhile { body, .. } => {
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-            }
-            Instruction::For {
-                initializers,
-                updates,
-                body,
-                ..
-            } => {
-                collect_control_warnings_in(initializers, contexts, warnings);
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-                collect_control_warnings_in(updates, contexts, warnings);
-            }
-            Instruction::Foreach { body, .. } => {
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-            }
-            Instruction::Switch { cases, .. } => {
-                contexts.push(ControlTargetKind::Switch);
-                for case in cases {
-                    collect_control_warnings_in(&case.body, contexts, warnings);
-                }
-                contexts.pop();
-            }
-            Instruction::Continue { level, line } if *level > 0 && *level <= contexts.len() => {
-                let target_index = contexts.len() - *level;
-                if contexts[target_index] == ControlTargetKind::Switch {
-                    warnings.push(ControlWarning {
-                        message: continue_targeting_switch_warning(*level, contexts, target_index),
-                        line: *line,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn continue_targeting_switch_warning(
-    level: usize,
-    contexts: &[ControlTargetKind],
-    target_index: usize,
-) -> String {
-    let mut message = format!(
-        "{} targeting switch is equivalent to {}",
-        quoted_control_operator("continue", level),
-        quoted_control_operator("break", level)
-    );
-    if let Some(suggested_level) = nearest_outer_loop_level(contexts, target_index) {
-        message.push_str(". Did you mean to use ");
-        message.push_str(&quoted_control_operator("continue", suggested_level));
-        message.push('?');
-    }
-    message
-}
-
-fn nearest_outer_loop_level(contexts: &[ControlTargetKind], target_index: usize) -> Option<usize> {
-    (0..target_index)
-        .rev()
-        .find(|index| contexts[*index] == ControlTargetKind::Loop)
-        .map(|index| contexts.len() - index)
-}
-
-fn quoted_control_operator(operator: &str, level: usize) -> String {
-    if level == 1 {
-        format!("\"{operator}\"")
-    } else {
-        format!("\"{operator} {level}\"")
-    }
-}
-
-fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line: usize) {
-    out.push_str("    ptn_emit_control_warning(\"");
-    out.push_str(&c_string(message));
-    out.push_str("\", \"");
-    out.push_str(&c_string(source_path));
-    out.push_str("\", ");
-    out.push_str(&line.to_string());
-    out.push_str(");\n");
-}
-
 fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &str, line: usize) {
     out.push_str(indent);
     out.push_str("ptn_emit_only_variables_assigned_by_reference_notice_at(&runtime, ");
@@ -37889,7 +37873,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             zlib_config.as_ref(),
         );
     }
-    let mut command = Command::new("cc");
+    let mut command = toolchain_command("cc", "CC");
     command.arg("-std=c11");
     add_pcre2_default_library_define(&mut command);
     if let Some(config) = openssl_config.as_ref() {
@@ -37950,7 +37934,7 @@ fn compile_c_with_ada_url(
     let c_object = output.with_extension("ptn-c.o");
     let ada_object = output.with_extension("ptn-ada-url.o");
 
-    let mut c_command = Command::new("cc");
+    let mut c_command = toolchain_command("cc", "CC");
     c_command.arg("-std=c11");
     add_pcre2_default_library_define(&mut c_command);
     if let Some(config) = openssl_config {
@@ -37985,7 +37969,7 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let mut ada_command = Command::new("c++");
+    let mut ada_command = toolchain_command("c++", "CXX");
     ada_command
         .arg("-std=c++20")
         .arg("-DADA_INCLUDE_URL_PATTERN=0");
@@ -38013,7 +37997,7 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let mut link_command = Command::new("c++");
+    let mut link_command = toolchain_command("c++", "CXX");
     link_command
         .arg(&c_object)
         .arg(&ada_object)
@@ -38046,6 +38030,44 @@ fn compile_c_with_ada_url(
             None,
         ))
     }
+}
+
+fn toolchain_command(program: &str, env_var: &str) -> Command {
+    Command::new(resolve_toolchain_binary(program, env_var))
+}
+
+fn resolve_toolchain_binary(program: &str, env_var: &str) -> PathBuf {
+    if let Some(value) = env::var_os(env_var) {
+        if !value.as_os_str().is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    if let Some(path) = find_program_on_path(program) {
+        return path;
+    }
+    for dir in [
+        "/run/current-system/sw/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ] {
+        let candidate = Path::new(dir).join(program);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from(program)
+}
+
+fn find_program_on_path(program: &str) -> Option<PathBuf> {
+    let paths = env::var_os("PATH")?;
+    for dir in env::split_paths(&paths) {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[derive(Debug)]
@@ -59757,9 +59779,17 @@ fn c_optional_string(value: Option<&str>) -> String {
     }
 }
 
+fn c_php_string_value(value: &str) -> String {
+    format!(
+        "ptn_string_literal(\"{}\", {})",
+        c_string(value),
+        php_string_byte_len(value)
+    )
+}
+
 fn c_property_default_value(value: Option<&ValueExpr>) -> String {
     match value {
-        Some(ValueExpr::String(value)) => format!("ptn_string(\"{}\")", c_string(value)),
+        Some(ValueExpr::String(value)) => c_php_string_value(value),
         Some(ValueExpr::Int(value)) => format!("ptn_int({})", c_i64_literal(*value)),
         Some(ValueExpr::Float(value)) => format!("ptn_float({})", c_f64_literal(*value)),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
@@ -59912,7 +59942,7 @@ fn c_static_variable_preview_array_value_for_class(
     let mut entries = Vec::with_capacity(elements.len());
     for element in elements {
         let (has_key, key) = match &element.key {
-            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::String(value)) => ("1", c_php_string_value(value)),
             Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
             Some(ValueExpr::Constant { .. }) | Some(ValueExpr::ClassConstantFetch { .. }) => (
                 "1",
@@ -59966,9 +59996,13 @@ fn c_property_default_int_value(value: &ValueExpr) -> Option<i64> {
                 "PTN_NUMBER_FORMATTER_ORDINAL" => Some(6),
                 "PTN_NUMBER_FORMATTER_DURATION" => Some(7),
                 "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED" => Some(9),
+                "PTN_NUMBER_FORMATTER_CURRENCY_ISO" => Some(10),
+                "PTN_NUMBER_FORMATTER_CURRENCY_PLURAL" => Some(11),
                 "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING" => Some(12),
+                "PTN_NUMBER_FORMATTER_CASH_CURRENCY" => Some(13),
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT" => Some(14),
                 "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG" => Some(15),
+                "PTN_NUMBER_FORMATTER_CURRENCY_STANDARD" => Some(16),
                 "PTN_NUMBER_FORMATTER_TYPE_DEFAULT" => Some(0),
                 "PTN_NUMBER_FORMATTER_TYPE_INT32" => Some(1),
                 "PTN_NUMBER_FORMATTER_TYPE_INT64" => Some(2),
@@ -60099,7 +60133,7 @@ fn c_property_default_array_value_for_class(
     let mut entries = Vec::with_capacity(elements.len());
     for element in elements {
         let (has_key, key) = match &element.key {
-            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::String(value)) => ("1", c_php_string_value(value)),
             Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
             Some(ValueExpr::ClassConstantFetch { .. }) if declaring_class.is_some() => (
                 "1",

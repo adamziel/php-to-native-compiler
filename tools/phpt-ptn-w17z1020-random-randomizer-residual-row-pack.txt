@@ -1,0 +1,13 @@
+# bucket: random-randomizer-residual rows=12
+ext/random/tests/03_randomizer/methods/nextInt.phpt
+ext/random/tests/01_functions/mt_srand_unknown_mode.phpt
+ext/random/tests/03_randomizer/methods/getFloat_equal_steps.phpt
+ext/random/tests/03_randomizer/engine_unsafe_nul.phpt
+ext/random/tests/03_randomizer/compatibility_user.phpt
+ext/random/tests/03_randomizer/methods/getInt_expansion_32.phpt
+ext/random/tests/01_functions/bug75170.phpt
+ext/random/tests/02_engine/user_compatibility.phpt
+ext/random/tests/03_randomizer/methods/getFloat_opposite_signs.phpt
+ext/random/tests/03_randomizer/serialize_disallowed.phpt
+ext/random/tests/01_functions/mt_rand_value.phpt
+ext/random/tests/03_randomizer/methods/getFloat_error.phpt
