@@ -1343,6 +1343,7 @@ struct PtnResource {
     char *filtered_read_buffer;
     size_t filtered_read_buffer_len;
     size_t filtered_read_buffer_offset;
+    size_t chunk_size;
     PtnResourceCloseHook close_hook;
     void *close_hook_data;
     PtnResourceHookDataFree close_hook_data_free;
@@ -4341,6 +4342,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->filtered_read_buffer = NULL;
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
+    resource->chunk_size = 8192;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4386,6 +4388,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->filtered_read_buffer = NULL;
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
+    resource->chunk_size = 8192;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4428,6 +4431,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->filtered_read_buffer = NULL;
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
+    resource->chunk_size = 8192;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4465,6 +4469,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->filtered_read_buffer = NULL;
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
+    resource->chunk_size = 8192;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4994,6 +4999,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         0,
         0,
+        8192,
         NULL,
         NULL,
         NULL,
@@ -5017,6 +5023,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         0,
         0,
+        8192,
         NULL,
         NULL,
         NULL,
@@ -5040,6 +5047,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         0,
         0,
+        8192,
         NULL,
         NULL,
         NULL,
