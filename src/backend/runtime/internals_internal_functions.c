@@ -9405,7 +9405,10 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
     ptn_var_dump_indent(indent);
     switch (value.type) {
         case PTN_REFERENCE:
-            printf("reference refcount(%zu) {\n", value.as.reference->refcount);
+            printf(
+                "reference refcount(%zu) {\n",
+                value.as.reference->refcount == 0 ? 0 : value.as.reference->refcount - 1
+            );
             ptn_debug_zval_dump_value_indented(value.as.reference->value, indent + 1, seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);

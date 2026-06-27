@@ -1410,6 +1410,11 @@ typedef struct {
     PtnErrorHandlerFrame *error_handler_stack;
     size_t error_handler_stack_len;
     size_t error_handler_stack_capacity;
+    int has_last_error;
+    int64_t last_error_type;
+    char *last_error_message;
+    char *last_error_file;
+    size_t last_error_line;
 } PtnDiagnosticSink;
 
 typedef PtnValue (*PtnMethodDispatchHandler)(

@@ -1167,6 +1167,11 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->error_handler_stack = NULL;
     diagnostics->error_handler_stack_len = 0;
     diagnostics->error_handler_stack_capacity = 0;
+    diagnostics->has_last_error = 0;
+    diagnostics->last_error_type = 0;
+    diagnostics->last_error_message = NULL;
+    diagnostics->last_error_file = NULL;
+    diagnostics->last_error_line = 0;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
         diagnostics->error_reporting = ptn_normalize_error_reporting(configured_error_reporting);
@@ -1179,6 +1184,41 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     if (ptn_parse_bool_env("PTN_PHP_HTML_ERRORS", &configured_html_errors)) {
         diagnostics->html_errors = configured_html_errors;
     }
+}
+
+static PTN_UNUSED const char *ptn_diagnostic_path(PtnDiagnosticSink *diagnostics, const char *path);
+
+static PTN_UNUSED void ptn_diagnostics_clear_last_error(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    free(diagnostics->last_error_message);
+    free(diagnostics->last_error_file);
+    diagnostics->has_last_error = 0;
+    diagnostics->last_error_type = 0;
+    diagnostics->last_error_message = NULL;
+    diagnostics->last_error_file = NULL;
+    diagnostics->last_error_line = 0;
+}
+
+static PTN_UNUSED void ptn_diagnostics_set_last_error(
+    PtnDiagnosticSink *diagnostics,
+    int64_t type,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    PtnRuntime *root = diagnostics->runtime == NULL ? NULL : ptn_runtime_root(diagnostics->runtime);
+    PtnDiagnosticSink *target = root == NULL ? diagnostics : &root->diagnostics;
+    ptn_diagnostics_clear_last_error(target);
+    target->has_last_error = 1;
+    target->last_error_type = type;
+    target->last_error_message = ptn_duplicate_string(message == NULL ? "" : message);
+    target->last_error_file = ptn_duplicate_string(ptn_diagnostic_path(diagnostics, path));
+    target->last_error_line = line;
 }
 
 static void ptn_diagnostics_clear_current_error_handler(PtnDiagnosticSink *diagnostics) {
@@ -1255,6 +1295,7 @@ static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *di
         return;
     }
     ptn_diagnostics_clear_current_error_handler(diagnostics);
+    ptn_diagnostics_clear_last_error(diagnostics);
     for (size_t i = 0; i < diagnostics->error_handler_stack_len; i++) {
         if (diagnostics->error_handler_stack[i].has_handler) {
             ptn_value_destroy(&diagnostics->error_handler_stack[i].handler);
@@ -1769,6 +1810,7 @@ static void ptn_emit_undefined_variable_warning(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Undefined variable $%s", name);
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);
         return;
@@ -1802,6 +1844,7 @@ static void ptn_emit_undefined_global_variable_warning(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Undefined global variable $%s", name);
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);
         return;
@@ -1973,6 +2016,7 @@ static PTN_UNUSED void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, cons
         return;
     }
     diagnostics->emitted_deprecation = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_DEPRECATED, message, NULL, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, NULL, line)) {
         return;
     }
@@ -1995,6 +2039,7 @@ static PTN_UNUSED void ptn_emit_deprecation_with_handler_frame(
         return;
     }
     diagnostics->emitted_deprecation = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_DEPRECATED, message, NULL, line);
     if (ptn_diagnostics_try_error_handler_with_frame(
         diagnostics,
         PTN_E_DEPRECATED,
@@ -2019,6 +2064,7 @@ static PTN_UNUSED void ptn_emit_user_deprecation(PtnDiagnosticSink *diagnostics,
         return;
     }
     diagnostics->emitted_deprecation = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_USER_DEPRECATED, message, NULL, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_DEPRECATED, message, NULL, line)) {
         return;
     }
@@ -2051,6 +2097,7 @@ static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const c
         return;
     }
     diagnostics->emitted_deprecation = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_DEPRECATED, message, runtime->source_path, line);
     if (ptn_diagnostics_try_error_handler(
         diagnostics,
         PTN_E_DEPRECATED,
@@ -2080,6 +2127,7 @@ static PTN_UNUSED void ptn_emit_warning_with_handler_frame_and_newline(
         return;
     }
     diagnostics->emitted_warning = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_WARNING, message, NULL, line);
     if (ptn_diagnostics_try_error_handler_with_frame(
         diagnostics,
         PTN_E_WARNING,
@@ -2133,6 +2181,7 @@ static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, con
         return;
     }
     diagnostics->emitted_warning = 1;
+    ptn_diagnostics_set_last_error(diagnostics, PTN_E_USER_WARNING, message, NULL, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_WARNING, message, NULL, line)) {
         return;
     }
