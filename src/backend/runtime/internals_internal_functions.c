@@ -52385,6 +52385,7 @@ typedef struct {
     char *read_buffer;
     size_t read_buffer_len;
     size_t read_buffer_offset;
+    int is_directory;
 } PtnUserStreamResourceData;
 
 typedef struct {
