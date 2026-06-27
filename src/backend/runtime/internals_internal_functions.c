@@ -19417,6 +19417,8 @@ typedef struct {
     PtnValue callback;
     int has_regexp;
     PtnValue regexp;
+    int has_separator;
+    char separator;
 } PtnFilterOptions;
 
 static PtnArrayEntry *ptn_filter_array_entry(PtnArray *array, const char *key_name) {
@@ -19440,6 +19442,8 @@ static void ptn_filter_options_init(PtnFilterOptions *options) {
     options->callback = ptn_null();
     options->has_regexp = 0;
     options->regexp = ptn_null();
+    options->has_separator = 0;
+    options->separator = '\0';
 }
 
 static PtnValue ptn_internal_filter_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -19539,6 +19543,28 @@ static int ptn_filter_read_thousand_option(
     return 1;
 }
 
+static int ptn_filter_read_separator_option(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnFilterOptions *filter_options,
+    size_t line
+) {
+    PtnStringOperand separator = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(separator);
+        return 0;
+    }
+    if (separator.len != 1) {
+        ptn_string_operand_free(separator);
+        ptn_throw_exception(runtime, "ValueError", "filter_var(): \"separator\" option must be one character long");
+        return 0;
+    }
+    filter_options->has_separator = 1;
+    filter_options->separator = separator.data[0];
+    ptn_string_operand_free(separator);
+    return 1;
+}
+
 static int ptn_filter_options_from_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -19600,6 +19626,11 @@ static int ptn_filter_options_from_value(
     if (regexp_entry != NULL) {
         filter_options->has_regexp = 1;
         filter_options->regexp = regexp_entry->value;
+    }
+    PtnArrayEntry *separator_entry = ptn_filter_array_entry(raw_options.as.array, "separator");
+    if (separator_entry != NULL &&
+        !ptn_filter_read_separator_option(runtime, separator_entry->value, filter_options, line)) {
+        return 0;
     }
     return 1;
 }
@@ -20197,6 +20228,7 @@ static PtnValue ptn_filter_sanitize_string(
 
 static int ptn_filter_validate_domain_operand(PtnStringOperand input, int64_t flags);
 static int ptn_filter_validate_ipv4_operand(PtnStringOperand input);
+static int ptn_filter_validate_ipv6_operand_with_flags(PtnStringOperand input, int64_t flags);
 
 static int ptn_filter_email_local_atext(unsigned char byte, int allow_unicode) {
     if (byte >= 128) {
@@ -20384,15 +20416,17 @@ static int ptn_filter_validate_domain_label(
     }
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = (unsigned char)data[i];
+        if (!require_hostname) {
+            if (byte == '\0') {
+                return 0;
+            }
+            continue;
+        }
         int alnum = isalnum(byte);
-        if (require_hostname) {
-            if (!(alnum || byte == '-')) {
-                return 0;
-            }
-            if ((i == 0 || i + 1 == len) && !alnum) {
-                return 0;
-            }
-        } else if (!(alnum || byte == '-' || byte == '_')) {
+        if (!(alnum || byte == '-')) {
+            return 0;
+        }
+        if ((i == 0 || i + 1 == len) && !alnum) {
             return 0;
         }
     }
@@ -20428,38 +20462,177 @@ static int ptn_filter_validate_domain_operand(PtnStringOperand input, int64_t fl
     return 1;
 }
 
-static int ptn_filter_validate_url_operand(PtnStringOperand input) {
-    const char marker[] = "://";
-    const char *found = NULL;
-    for (size_t i = 0; i + strlen(marker) <= input.len; i++) {
-        if (memcmp(input.data + i, marker, strlen(marker)) == 0) {
-            found = input.data + i;
+static int ptn_filter_url_scheme_byte(unsigned char byte, int first) {
+    if (isalpha(byte)) {
+        return 1;
+    }
+    return !first && (isdigit(byte) || byte == '+' || byte == '-' || byte == '.');
+}
+
+static int ptn_filter_url_slice_equals(PtnStringOperand slice, const char *literal) {
+    size_t len = strlen(literal);
+    return slice.len == len && ptn_filter_ascii_case_equal_len(slice.data, literal, len);
+}
+
+static int ptn_filter_url_has_control_bytes(PtnStringOperand input) {
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte <= 32 || byte == 127 || byte == '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_filter_url_port_valid(const char *data, size_t len) {
+    if (len == 0 || len > 5) {
+        return 0;
+    }
+    unsigned long value = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (!isdigit(byte)) {
+            return 0;
+        }
+        value = value * 10 + (unsigned long)(byte - '0');
+        if (value > 65535UL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_url_host(PtnStringOperand host) {
+    if (host.len == 0 || ptn_filter_url_has_control_bytes(host)) {
+        return 0;
+    }
+    if (host.data[0] == '[') {
+        if (host.len < 3 || host.data[host.len - 1] != ']') {
+            return 0;
+        }
+        PtnStringOperand literal = ptn_string_operand_borrowed_len(host.data + 1, host.len - 2);
+        return ptn_filter_validate_ipv6_operand_with_flags(literal, PTN_FILTER_FLAG_IPV6);
+    }
+    if (memchr(host.data, '[', host.len) != NULL || memchr(host.data, ']', host.len) != NULL) {
+        return 0;
+    }
+    return ptn_filter_validate_ipv4_operand(host) ||
+        ptn_filter_validate_domain_operand(host, PTN_FILTER_FLAG_HOSTNAME);
+}
+
+static int ptn_filter_validate_url_authority(PtnStringOperand scheme, PtnStringOperand authority) {
+    if (authority.len == 0) {
+        return ptn_filter_url_slice_equals(scheme, "file");
+    }
+
+    size_t host_start = 0;
+    for (size_t i = 0; i < authority.len; i++) {
+        if (authority.data[i] == '@') {
+            PtnStringOperand userinfo = ptn_string_operand_borrowed_len(authority.data, i);
+            if (ptn_filter_url_has_control_bytes(userinfo) ||
+                memchr(userinfo.data, '[', userinfo.len) != NULL ||
+                memchr(userinfo.data, ']', userinfo.len) != NULL ||
+                memchr(userinfo.data, '\\', userinfo.len) != NULL) {
+                return 0;
+            }
+            host_start = i + 1;
+        }
+    }
+    if (host_start >= authority.len) {
+        return 0;
+    }
+
+    size_t host_end = authority.len;
+    if (authority.data[host_start] == '[') {
+        const void *closing = memchr(authority.data + host_start, ']', authority.len - host_start);
+        if (closing == NULL) {
+            return 0;
+        }
+        host_end = (size_t)((const char *)closing - authority.data) + 1;
+        if (host_end < authority.len) {
+            if (authority.data[host_end] != ':' ||
+                !ptn_filter_url_port_valid(authority.data + host_end + 1, authority.len - host_end - 1)) {
+                return 0;
+            }
+        }
+    } else {
+        for (size_t i = authority.len; i > host_start; i--) {
+            if (authority.data[i - 1] == ':') {
+                host_end = i - 1;
+                if (!ptn_filter_url_port_valid(authority.data + i, authority.len - i)) {
+                    return 0;
+                }
+                break;
+            }
+        }
+    }
+
+    PtnStringOperand host = ptn_string_operand_borrowed_len(
+        authority.data + host_start,
+        host_end - host_start
+    );
+    return ptn_filter_validate_url_host(host);
+}
+
+static int ptn_filter_validate_url_operand(PtnStringOperand input, int64_t flags) {
+    if (input.len == 0 || ptn_filter_url_has_control_bytes(input)) {
+        return 0;
+    }
+    size_t colon = 0;
+    while (colon < input.len && input.data[colon] != ':') {
+        if (!ptn_filter_url_scheme_byte((unsigned char)input.data[colon], colon == 0)) {
+            return 0;
+        }
+        colon++;
+    }
+    if (colon == 0 || colon >= input.len) {
+        return 0;
+    }
+
+    PtnStringOperand scheme = ptn_string_operand_borrowed_len(input.data, colon);
+    size_t rest_start = colon + 1;
+    int has_authority = rest_start + 1 < input.len &&
+        input.data[rest_start] == '/' &&
+        input.data[rest_start + 1] == '/';
+    if (!has_authority) {
+        if (ptn_filter_url_slice_equals(scheme, "mailto") ||
+            ptn_filter_url_slice_equals(scheme, "news")) {
+            return rest_start < input.len;
+        }
+        return 0;
+    }
+
+    size_t authority_start = rest_start + 2;
+    size_t authority_end = authority_start;
+    while (authority_end < input.len &&
+        input.data[authority_end] != '/' &&
+        input.data[authority_end] != '?' &&
+        input.data[authority_end] != '#') {
+        authority_end++;
+    }
+    PtnStringOperand authority = ptn_string_operand_borrowed_len(
+        input.data + authority_start,
+        authority_end - authority_start
+    );
+    if (!ptn_filter_validate_url_authority(scheme, authority)) {
+        return 0;
+    }
+
+    int has_path = authority_end < input.len && input.data[authority_end] == '/';
+    int has_query = 0;
+    for (size_t i = authority_end; i < input.len; i++) {
+        if (input.data[i] == '?') {
+            has_query = 1;
             break;
         }
     }
-    if (found == NULL || found == input.data) {
+    if ((flags & PTN_FILTER_FLAG_PATH_REQUIRED) != 0 && !has_path) {
         return 0;
     }
-    size_t host_start = (size_t)(found - input.data) + strlen(marker);
-    if (host_start >= input.len) {
+    if ((flags & PTN_FILTER_FLAG_QUERY_REQUIRED) != 0 && !has_query) {
         return 0;
     }
-    size_t host_end = host_start;
-    while (host_end < input.len &&
-        input.data[host_end] != '/' &&
-        input.data[host_end] != '?' &&
-        input.data[host_end] != '#') {
-        host_end++;
-    }
-    if (host_end == host_start) {
-        return 0;
-    }
-    PtnStringOperand host = ptn_string_operand_borrowed_len(
-        input.data + host_start,
-        host_end - host_start
-    );
-    return memchr(host.data, '.', host.len) != NULL &&
-        ptn_filter_validate_domain_operand(host, PTN_FILTER_FLAG_HOSTNAME);
+    return 1;
 }
 
 static int ptn_filter_parse_ipv4_operand(PtnStringOperand input, uint32_t *out) {
@@ -20506,9 +20679,29 @@ static int ptn_filter_ipv4_in_cidr(uint32_t address, uint32_t network, unsigned 
     return (address & mask) == (network & mask);
 }
 
+static int ptn_filter_ipv4_is_non_global(uint32_t address) {
+    return ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(0, 0, 0, 0), 8) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(10, 0, 0, 0), 8) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(100, 64, 0, 0), 10) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(127, 0, 0, 0), 8) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(169, 254, 0, 0), 16) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(172, 16, 0, 0), 12) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(192, 0, 0, 0), 24) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(192, 0, 2, 0), 24) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(192, 168, 0, 0), 16) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(198, 18, 0, 0), 15) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(198, 51, 100, 0), 24) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(203, 0, 113, 0), 24) ||
+        ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(240, 0, 0, 0), 4);
+}
+
 static int ptn_filter_validate_ipv4_operand_with_flags(PtnStringOperand input, int64_t flags) {
     uint32_t address = 0;
     if (!ptn_filter_parse_ipv4_operand(input, &address)) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_GLOBAL_RANGE) != 0 &&
+        ptn_filter_ipv4_is_non_global(address)) {
         return 0;
     }
     if ((flags & PTN_FILTER_FLAG_NO_PRIV_RANGE) != 0 &&
@@ -20531,12 +20724,141 @@ static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
     return ptn_filter_validate_ipv4_operand_with_flags(input, 0);
 }
 
-static int ptn_filter_validate_mac_operand(PtnStringOperand input) {
+static int ptn_filter_ipv6_prefix_matches(
+    const unsigned char *address,
+    const unsigned char *network,
+    unsigned prefix_len
+) {
+    size_t full_bytes = prefix_len / 8;
+    unsigned remaining_bits = prefix_len % 8;
+    if (full_bytes > 0 && memcmp(address, network, full_bytes) != 0) {
+        return 0;
+    }
+    if (remaining_bits == 0) {
+        return 1;
+    }
+    unsigned char mask = (unsigned char)(0xffU << (8 - remaining_bits));
+    return (address[full_bytes] & mask) == (network[full_bytes] & mask);
+}
+
+static int ptn_filter_ipv6_is_unspecified(const unsigned char *address) {
+    static const unsigned char zero[16] = {0};
+    return memcmp(address, zero, sizeof(zero)) == 0;
+}
+
+static int ptn_filter_ipv6_is_loopback(const unsigned char *address) {
+    static const unsigned char loopback[16] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    };
+    return memcmp(address, loopback, sizeof(loopback)) == 0;
+}
+
+static int ptn_filter_ipv6_is_non_global(const unsigned char *address) {
+    static const unsigned char unspecified[16] = {0};
+    static const unsigned char loopback[16] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    };
+    static const unsigned char ipv4_mapped[16] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+    };
+    static const unsigned char discard_only[16] = {0x01, 0x00};
+    static const unsigned char ietf_protocol[16] = {0x20, 0x01};
+    static const unsigned char benchmarking[16] = {0x20, 0x01, 0x00, 0x02};
+    static const unsigned char documentation[16] = {0x20, 0x01, 0x0d, 0xb8};
+    static const unsigned char orchid[16] = {0x20, 0x01, 0x00, 0x10};
+    static const unsigned char unique_local[16] = {0xfc};
+    static const unsigned char link_local[16] = {0xfe, 0x80};
+
+    return memcmp(address, unspecified, sizeof(unspecified)) == 0 ||
+        memcmp(address, loopback, sizeof(loopback)) == 0 ||
+        ptn_filter_ipv6_prefix_matches(address, ipv4_mapped, 96) ||
+        ptn_filter_ipv6_prefix_matches(address, discard_only, 64) ||
+        ptn_filter_ipv6_prefix_matches(address, ietf_protocol, 23) ||
+        ptn_filter_ipv6_prefix_matches(address, benchmarking, 48) ||
+        ptn_filter_ipv6_prefix_matches(address, documentation, 32) ||
+        ptn_filter_ipv6_prefix_matches(address, orchid, 28) ||
+        ptn_filter_ipv6_prefix_matches(address, unique_local, 7) ||
+        ptn_filter_ipv6_prefix_matches(address, link_local, 10);
+}
+
+static int ptn_filter_validate_ipv6_operand_with_flags(PtnStringOperand input, int64_t flags) {
+    if (input.len == 0 || memchr(input.data, '\0', input.len) != NULL) {
+        return 0;
+    }
+    char *copy = ptn_duplicate_string_len(input.data, input.len);
+    struct in6_addr parsed;
+    int ok = inet_pton(AF_INET6, copy, &parsed) == 1;
+    free(copy);
+    if (!ok) {
+        return 0;
+    }
+    const unsigned char *bytes = (const unsigned char *)&parsed;
+    if ((flags & PTN_FILTER_FLAG_GLOBAL_RANGE) != 0 &&
+        ptn_filter_ipv6_is_non_global(bytes)) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_PRIV_RANGE) != 0) {
+        static const unsigned char unique_local[16] = {0xfc};
+        if (ptn_filter_ipv6_prefix_matches(bytes, unique_local, 7)) {
+            return 0;
+        }
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_RES_RANGE) != 0) {
+        static const unsigned char documentation[16] = {0x20, 0x01, 0x0d, 0xb8};
+        static const unsigned char link_local[16] = {0xfe, 0x80};
+        static const unsigned char multicast[16] = {0xff};
+        if (ptn_filter_ipv6_is_unspecified(bytes) ||
+            ptn_filter_ipv6_is_loopback(bytes) ||
+            ptn_filter_ipv6_prefix_matches(bytes, documentation, 32) ||
+            ptn_filter_ipv6_prefix_matches(bytes, link_local, 10) ||
+            ptn_filter_ipv6_prefix_matches(bytes, multicast, 8)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_ip_operand_with_flags(PtnStringOperand input, int64_t flags) {
+    if ((flags & PTN_FILTER_FLAG_IPV4) != 0) {
+        return ptn_filter_validate_ipv4_operand_with_flags(input, flags);
+    }
+    if ((flags & PTN_FILTER_FLAG_IPV6) != 0) {
+        return ptn_filter_validate_ipv6_operand_with_flags(input, flags);
+    }
+    return ptn_filter_validate_ipv4_operand_with_flags(input, flags) ||
+        ptn_filter_validate_ipv6_operand_with_flags(input, flags);
+}
+
+static int ptn_filter_mac_separator_allowed(char separator, const PtnFilterOptions *options) {
+    return !options->has_separator || options->separator == separator;
+}
+
+static int ptn_filter_validate_mac_operand(PtnStringOperand input, const PtnFilterOptions *options) {
+    if (input.len == 14) {
+        if (!ptn_filter_mac_separator_allowed('.', options)) {
+            return 0;
+        }
+        for (size_t i = 0; i < input.len; i++) {
+            if (i == 4 || i == 9) {
+                if (input.data[i] != '.') {
+                    return 0;
+                }
+                continue;
+            }
+            if (!isxdigit((unsigned char)input.data[i])) {
+                return 0;
+            }
+        }
+        return 1;
+    }
     if (input.len != 17) {
         return 0;
     }
     char separator = input.data[2];
     if (separator != ':' && separator != '-') {
+        return 0;
+    }
+    if (!ptn_filter_mac_separator_allowed(separator, options)) {
         return 0;
     }
     for (size_t i = 0; i < input.len; i++) {
@@ -20629,19 +20951,26 @@ static PtnValue ptn_filter_apply_scalar(
         if (filter_id == PTN_FILTER_VALIDATE_EMAIL) {
             ok = ptn_filter_validate_email_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_URL) {
-            ok = ptn_filter_validate_url_operand(input);
+            ok = ptn_filter_validate_url_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_DOMAIN) {
             ok = ptn_filter_validate_domain_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_IP) {
-            ok = ptn_filter_validate_ipv4_operand_with_flags(input, options->flags);
+            ok = ptn_filter_validate_ip_operand_with_flags(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_MAC) {
-            ok = ptn_filter_validate_mac_operand(input);
+            ok = ptn_filter_validate_mac_operand(input, options);
         } else {
             ok = ptn_filter_validate_regexp_operand(runtime, input, options, line);
         }
+        PtnFilterOptions ip_failure_options;
+        const PtnFilterOptions *failure_options = options;
+        if (filter_id == PTN_FILTER_VALIDATE_IP) {
+            ip_failure_options = *options;
+            ip_failure_options.flags &= ~PTN_FILTER_THROW_ON_FAILURE;
+            failure_options = &ip_failure_options;
+        }
         PtnValue result = ok
             ? ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len)
-            : ptn_filter_failure_unsatisfied(runtime, options, filter_id, input);
+            : ptn_filter_failure_unsatisfied(runtime, failure_options, filter_id, input);
         ptn_string_operand_free(input);
         return result;
     }
@@ -20841,6 +21170,27 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
     }
     ptn_string_operand_free(variable_name);
     return ptn_filter_apply_value(runtime, entry->value, filter_id, &options, line);
+}
+
+static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
+static PtnValue ptn_internal_filter_input_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t input_type = ptn_value_to_integer(args[0]);
+    const char *global_name = ptn_filter_input_global_name(input_type);
+    if (global_name == NULL) {
+        return ptn_null();
+    }
+    PtnLookupResult global = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+    PtnValue container = ptn_value_deref(global.value);
+    if (!global.exists || container.type != PTN_ARRAY || container.as.array->len == 0) {
+        return ptn_null();
+    }
+
+    PtnValue var_args[3];
+    var_args[0] = container;
+    var_args[1] = argc >= 2 ? args[1] : ptn_int(PTN_FILTER_DEFAULT);
+    var_args[2] = argc >= 3 ? args[2] : ptn_bool(1);
+    return ptn_internal_filter_var_array(runtime, argc >= 3 ? 3 : (argc >= 2 ? 2 : 1), var_args, line);
 }
 
 static int ptn_filter_spec_from_value(
@@ -162049,6 +162399,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "filetype", 1, 1, ptn_internal_filetype },
         { "filter_id", 1, 1, ptn_internal_filter_id },
         { "filter_input", 2, 4, ptn_internal_filter_input },
+        { "filter_input_array", 1, 3, ptn_internal_filter_input_array },
         { "filter_list", 0, 0, ptn_internal_filter_list },
         { "filter_var", 1, 3, ptn_internal_filter_var },
         { "filter_var_array", 1, 3, ptn_internal_filter_var_array },
