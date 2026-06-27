@@ -28235,6 +28235,8 @@ $constants = get_defined_constants(true);
 var_dump(ZLIB_ENCODING_DEFLATE, FORCE_GZIP, $constants["zlib"]["ZLIB_ENCODING_GZIP"]);
 var_dump(bin2hex(substr(gzencode("abc"), 0, 2)));
 $packed = gzcompress("abc");
+var_dump(bin2hex(substr(gzencode("abc", -1, ZLIB_ENCODING_DEFLATE), 0, 2)));
+var_dump(bin2hex(substr(gzencode("abc", -1, ZLIB_ENCODING_RAW), 0, 2)));
 var_dump(bin2hex(substr($packed, 0, 2)));
 $gzcompressed = gzcompress($data);
 var_dump(gzuncompress($gzcompressed) === $data);
@@ -28344,6 +28346,7 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => 42]); } catch (ValueError 
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => -2]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["memory" => 0]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["memory" => 10]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { gzencode("abc", -1, 99); } catch (ValueError $e) { echo "gzencode-encoding-error\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
 
 @unlink($path);
@@ -28377,6 +28380,8 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
 int(31)\n\
 int(31)\n\
 string(4) \"1f8b\"\n\
+string(4) \"789c\"\n\
+string(4) \"4b4c\"\n\
 string(4) \"789c\"\n\
 bool(true)\n\
 int(16)\n\
@@ -28419,6 +28424,7 @@ deflate_init(): \"level\" option must be between -1 and 9\n\
 deflate_init(): \"level\" option must be between -1 and 9\n\
 deflate_init(): \"memory\" option must be between 1 and 9\n\
 deflate_init(): \"memory\" option must be between 1 and 9\n\
+gzencode-encoding-error\n\
 option-error\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -53216,8 +53222,10 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     let input = root.join("manifest-cow-cache-list.phar.php");
     let output = root.join("manifest-cow-cache-list-bin");
 
+    let text_entry = b"hi\n";
+    let script_entry = b"<?php echo \"from phar include\\n\"; ?>";
     let mut manifest = Vec::new();
-    push_u32(&mut manifest, 1);
+    push_u32(&mut manifest, 2);
     push_u16(&mut manifest, 0x0011);
     push_u32(&mut manifest, 0x00010000);
     push_u32(&mut manifest, 0);
@@ -53225,9 +53233,17 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     manifest.extend_from_slice(b"s:2:\"hi\";");
     push_u32(&mut manifest, 8);
     manifest.extend_from_slice(b"test.txt");
-    push_u32(&mut manifest, 3);
+    push_u32(&mut manifest, text_entry.len() as u32);
     push_u32(&mut manifest, 0);
-    push_u32(&mut manifest, 3);
+    push_u32(&mut manifest, text_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 10);
+    manifest.extend_from_slice(b"script.php");
+    push_u32(&mut manifest, script_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, script_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
@@ -53238,6 +53254,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
 $phar = new Phar(__FILE__);\n\
 var_dump($phar->getMetadata());\n\
 echo $phar[\"test.txt\"]->getContent();\n\
+include \"phar://\" . __FILE__ . \"/script.php\";\n\
 $phar[\"test.txt\"] = \"changed\\n\";\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
@@ -53246,11 +53263,14 @@ Phar::mount(\"mounted.txt\", \"phar://\" . __FILE__ . \"/test.txt\");\n\
 echo file_get_contents(\"phar://\" . __FILE__ . \"/mounted.txt\");\n\
 rmdir(\"phar://\" . __FILE__ . \"/dir\");\n\
 var_dump(file_exists(\"phar://\" . __FILE__ . \"/dir\"));\n\
+ini_set(\"phar.readonly\", \"1\");\n\
+var_dump(@fopen(\"phar://\" . __FILE__ . \"/blocked.php\", \"wb\"));\n\
 __HALT_COMPILER(); ?>\r\n",
     );
     push_u32(&mut source, manifest.len() as u32);
     source.extend_from_slice(&manifest);
-    source.extend_from_slice(b"hi\n");
+    source.extend_from_slice(text_entry);
+    source.extend_from_slice(script_entry);
     fs::write(&input, source).unwrap();
 
     let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
@@ -53259,7 +53279,7 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"hi\"\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
+        "string(2) \"hi\"\nhi\nfrom phar include\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

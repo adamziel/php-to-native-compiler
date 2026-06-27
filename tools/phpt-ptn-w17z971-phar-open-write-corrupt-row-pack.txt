@@ -1,0 +1,15 @@
+# ptn-w17z.971 exact PHAR open/write/corrupt current-red row pack.
+# Source: partial-statuses-20260626T231925Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/open_for_write_newfile_c.phpt
+ext/phar/tests/tar/open_for_write_newfile_c.phpt
+ext/phar/tests/tar/tar_003.phpt
+ext/phar/tests/phar_metadata_write2.phpt
+ext/phar/tests/zip/corrupt_004.phpt
+ext/phar/tests/033a.phpt
+ext/phar/tests/zip/phar_buildfromiterator6.phpt
+ext/standard/tests/streams/gh8472.phpt
+ext/zlib/tests/gzencode_variation2.phpt
+ext/phar/tests/bug74991.phpt
+ext/phar/tests/024.phpt
+ext/phar/tests/zip/open_for_write_newfile_b.phpt

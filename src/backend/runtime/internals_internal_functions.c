@@ -5633,12 +5633,6 @@ static const char *ptn_phar_directory_next(PtnPharDirectoryData *directory);
 static void ptn_phar_directory_rewind(PtnPharDirectoryData *directory);
 static int ptn_phar_uri_chmod(const char *uri, int64_t permissions);
 static int ptn_phar_uri_unlink(PtnRuntime *runtime, const char *uri, size_t line);
-static int ptn_dynamic_execute_php_source(
-    PtnRuntime *runtime,
-    const char *code,
-    size_t code_len,
-    PtnValue *result_out
-);
 static int ptn_include_phar_php_entry(
     PtnRuntime *runtime,
     const char *uri,
@@ -5647,7 +5641,14 @@ static int ptn_include_phar_php_entry(
     int required,
     PtnValue *result_out
 );
-static int ptn_include_phar_plain_entry(PtnRuntime *runtime, const char *uri, PtnValue *result_out);
+static int ptn_include_phar_plain_entry(
+    PtnRuntime *runtime,
+    const char *kind,
+    const char *uri,
+    size_t line,
+    int required,
+    PtnValue *result_out
+);
 static int ptn_phar_uri_mkdir(const char *uri);
 static int ptn_phar_uri_rmdir(const char *uri);
 static void ptn_phar_object_data_free(void *data);
@@ -140996,12 +140997,25 @@ static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const Pt
         ptn_zlib_throw_level_value_error(runtime, "gzencode");
         return ptn_null();
     }
+    int64_t encoding = PTN_ZLIB_ENCODING_GZIP;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        encoding = ptn_internal_expect_integer_arg(runtime, "gzencode", 3, "encoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_encoding_is_valid(encoding)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_encoding_value_error(runtime, "gzencode", 3, "encoding");
+        return ptn_null();
+    }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
         "gzencode",
         data,
         0,
-        PTN_ZLIB_ENCODING_GZIP,
+        encoding,
         level,
         0,
         line
@@ -146487,12 +146501,140 @@ static int ptn_include_phar_php_entry(
     return 1;
 }
 
-static int ptn_include_phar_plain_entry(PtnRuntime *runtime, const char *uri, PtnValue *result_out) {
+static int ptn_include_phar_plain_entry(
+    PtnRuntime *runtime,
+    const char *kind,
+    const char *uri,
+    size_t line,
+    int required,
+    PtnValue *result_out
+) {
     unsigned char *data = NULL;
     size_t data_len = 0;
     if (!ptn_phar_uri_read_entry(uri, &data, &data_len)) {
         free(data);
-        return 0;
+        PtnPharArchiveState *archive = NULL;
+        char *entry_name = NULL;
+        if (!ptn_phar_uri_archive_and_entry(uri, &archive, &entry_name)) {
+            return 0;
+        }
+        const char *display_path = uri == NULL ? "" : uri;
+        const char *archive_path = archive == NULL || archive->path == NULL ? "" : archive->path;
+        const char *include_path = runtime != NULL && runtime->include_path != NULL
+            ? runtime->include_path
+            : ".";
+        const char *kind_name = kind == NULL ? "include" : kind;
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(%s): Failed to open stream: phar error: \"%s\" is not a file in phar \"%s\"",
+            kind_name,
+            display_path,
+            entry_name == NULL ? "" : entry_name,
+            archive_path
+        );
+        if (needed < 0) {
+            free(entry_name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(entry_name);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(%s): Failed to open stream: phar error: \"%s\" is not a file in phar \"%s\"",
+            kind_name,
+            display_path,
+            entry_name == NULL ? "" : entry_name,
+            archive_path
+        );
+        free(entry_name);
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+        free(message);
+        if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+            if (result_out != NULL) {
+                *result_out = ptn_null();
+            }
+            return 1;
+        }
+        if (required) {
+            needed = snprintf(
+                NULL,
+                0,
+                "Failed opening required '%s' (include_path='%s')",
+                display_path,
+                include_path
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "Failed opening required '%s' (include_path='%s')",
+                display_path,
+                include_path
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_owned_message_at(
+                runtime,
+                "Error",
+                message,
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
+            if (result_out != NULL) {
+                *result_out = ptn_null();
+            }
+            return 1;
+        }
+        needed = snprintf(
+            NULL,
+            0,
+            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+            kind_name,
+            display_path,
+            include_path
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+            kind_name,
+            display_path,
+            include_path
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+        free(message);
+        if (result_out != NULL) {
+            *result_out = ptn_bool(0);
+        }
+        return 1;
     }
     if (ptn_phar_bytes_contain_php_open_tag(data, data_len)) {
         const char *saved_source_path = runtime != NULL ? runtime->source_path : NULL;
