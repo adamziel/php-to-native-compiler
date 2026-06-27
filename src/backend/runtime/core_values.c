@@ -4179,8 +4179,23 @@ static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
 }
 
 static int64_t ptn_next_resource_id = 5;
+static int ptn_stream_filter_resource_id_four_used = 0;
 static PtnResource *ptn_resource_registry_head = NULL;
 static PtnResource *ptn_resource_registry_tail = NULL;
+
+static PTN_UNUSED int64_t ptn_resource_allocate_named_id(const char *type_name) {
+    if (type_name != NULL &&
+        strcmp(type_name, "stream filter") == 0 &&
+        !ptn_stream_filter_resource_id_four_used &&
+        ptn_next_resource_id == 5) {
+        ptn_stream_filter_resource_id_four_used = 1;
+        return 4;
+    }
+    if (ptn_next_resource_id == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_next_resource_id++;
+}
 
 static PTN_UNUSED void ptn_resource_register(PtnResource *resource) {
     if (resource == NULL || resource->persistent) {
@@ -4324,9 +4339,6 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
         }
         ptn_abort_out_of_memory();
     }
-    if (ptn_next_resource_id == INT64_MAX) {
-        ptn_abort_out_of_memory();
-    }
     resource->refcount = 1;
     resource->id = ptn_next_resource_id++;
     resource->type_name = "stream";
@@ -4452,7 +4464,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
         ptn_abort_out_of_memory();
     }
     resource->refcount = 1;
-    resource->id = ptn_next_resource_id++;
+    resource->id = ptn_resource_allocate_named_id(type_name);
     resource->type_name = type_name;
     resource->stream = NULL;
     resource->directory = NULL;

@@ -55208,6 +55208,39 @@ static PtnStreamFilter *ptn_stream_filter_new(
     return filter;
 }
 
+static int ptn_stream_filter_object_declares_property(PtnObject *object, const char *property_name) {
+    if (object == NULL || property_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (object->property_metadata[i].display_name != NULL &&
+            strcmp(object->property_metadata[i].display_name, property_name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_stream_filter_write_object_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *object_class,
+    const char *property_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue written = ptn_object_write_property(
+        runtime,
+        object,
+        property_name,
+        object_class,
+        ptn_value_clone_deref(value),
+        line
+    );
+    ptn_value_destroy(&written);
+    return runtime->exceptions->active_exception == NULL;
+}
+
 static int ptn_stream_filter_initialize_user_object(
     PtnRuntime *runtime,
     PtnStreamFilter *filter,
@@ -55227,53 +55260,43 @@ static int ptn_stream_filter_initialize_user_object(
     PtnObject *object_ptr = ptn_value_deref(object).as.object;
     const char *object_class = object_ptr->class_name;
     int native_php_user_filter = ptn_declared_class_is_same_or_descendant(object_class, "php_user_filter");
+    int declared_filtername = ptn_stream_filter_object_declares_property(object_ptr, "filtername");
 
     PtnValue filter_name_value = ptn_owned_string_len(
         ptn_duplicate_string_len(filter_name.data, filter_name.len),
         filter_name.len
     );
+    PtnValue params_value = ptn_value_clone_deref(filter_params);
     if (native_php_user_filter) {
         ptn_array_set_entry(
             object_ptr->properties,
             ptn_array_string_key("filtername"),
             ptn_value_clone_deref(filter_name_value)
         );
-    } else {
-        PtnValue written = ptn_object_write_property(
-            runtime,
-            object,
-            "filtername",
-            object_class,
-            filter_name_value,
-            line
-        );
-        ptn_value_destroy(&written);
-    }
-    ptn_value_destroy(&filter_name_value);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&object);
-        return 0;
-    }
-
-    PtnValue params_value = ptn_value_clone_deref(filter_params);
-    if (native_php_user_filter) {
         ptn_array_set_entry(
             object_ptr->properties,
             ptn_array_string_key("params"),
             ptn_value_clone_deref(params_value)
         );
+    } else if (declared_filtername) {
+        if (!ptn_stream_filter_write_object_property(runtime, object, object_class, "params", params_value, line) ||
+            !ptn_stream_filter_write_object_property(runtime, object, object_class, "filtername", filter_name_value, line)) {
+            ptn_value_destroy(&params_value);
+            ptn_value_destroy(&filter_name_value);
+            ptn_value_destroy(&object);
+            return 0;
+        }
     } else {
-        PtnValue written = ptn_object_write_property(
-            runtime,
-            object,
-            "params",
-            object_class,
-            params_value,
-            line
-        );
-        ptn_value_destroy(&written);
+        if (!ptn_stream_filter_write_object_property(runtime, object, object_class, "filtername", filter_name_value, line) ||
+            !ptn_stream_filter_write_object_property(runtime, object, object_class, "params", params_value, line)) {
+            ptn_value_destroy(&params_value);
+            ptn_value_destroy(&filter_name_value);
+            ptn_value_destroy(&object);
+            return 0;
+        }
     }
     ptn_value_destroy(&params_value);
+    ptn_value_destroy(&filter_name_value);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&object);
         return 0;
@@ -55863,6 +55886,29 @@ static char *ptn_stream_apply_user_filter_alloc(
     *out_len = 0;
     if (filter == NULL || !filter->has_user_filter_object || runtime == NULL || runtime->method_dispatch == NULL) {
         return ptn_duplicate_string_len(data, len);
+    }
+    if (!ptn_object_has_declared_method(runtime, filter->user_filter_object, "filter")) {
+        PtnValue object = ptn_value_deref(filter->user_filter_object);
+        const char *class_name = object.type == PTN_OBJECT &&
+            object.as.object != NULL &&
+            object.as.object->class_name != NULL
+            ? object.as.object->class_name
+            : "php_user_filter";
+        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Invalid callback %s::filter, class %s does not have a method \"filter\"",
+            class_name,
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        *ok = 0;
+        return NULL;
     }
 
     PtnResource *input_resource = ptn_stream_bucket_brigade_new(data, len);
@@ -63106,9 +63152,9 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
                 break;
             }
             PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, entry, line);
-            ptn_value_destroy(&entry);
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(name);
+                ptn_value_destroy(&entry);
                 for (size_t i = 0; i < len; i++) {
                     free(names[i]);
                 }
@@ -63131,6 +63177,7 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
             }
             names[len++] = ptn_duplicate_string_len(name.data, name.len);
             ptn_string_operand_free(name);
+            ptn_value_destroy(&entry);
         }
         PtnValue closed = ptn_internal_closedir(runtime, 1, &user_handle, line);
         ptn_value_destroy(&closed);
