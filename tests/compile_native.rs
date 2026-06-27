@@ -26135,6 +26135,76 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_gettimeofday_basic_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-gettimeofday-basic-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gettimeofday-basic-shape.php");
+    let output = root.join("gettimeofday-basic-shape-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"Asia/Calcutta\");\n\
+$float = gettimeofday(true);\n\
+$parts = gettimeofday();\n\
+$partsFalse = gettimeofday(false);\n\
+var_dump(is_float($float));\n\
+var_dump(array_keys($parts));\n\
+var_dump(is_int($parts[\"sec\"]), is_int($parts[\"usec\"]));\n\
+var_dump($parts[\"minuteswest\"], $parts[\"dsttime\"]);\n\
+var_dump(array_keys($partsFalse));\n\
+var_dump(function_exists(\"gettimeofday\"));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(-330)\n",
+            "int(0)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_gettimeofday("));
+    assert!(c_source.contains("{ \"gettimeofday\", 0, 1, ptn_internal_gettimeofday }"));
+}
+
+#[test]
 fn compile_strftime_locale_formatting_to_native_binary() {
     let root = temp_dir("ptn-native-strftime-locale-formatting");
     fs::create_dir_all(&root).unwrap();
