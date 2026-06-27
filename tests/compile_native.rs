@@ -43486,6 +43486,57 @@ try {
 }
 
 #[test]
+fn compile_enum_case_var_export_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-case-var-export");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-case-var-export.php");
+    let output = root.join("enum-case-var-export-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace {
+    enum Foo { case BAR; }
+}
+
+namespace A {
+    enum Foo { case BAR; }
+}
+
+namespace A\\B {
+    enum Foo { case BAR; }
+}
+
+namespace Test {
+    echo var_export(\\Foo::BAR, true), \"\\n\";
+    echo var_export(\\A\\Foo::BAR, true), \"\\n\";
+    echo var_export(\\A\\B\\Foo::BAR, true), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\\Foo::BAR\n\\A\\Foo::BAR\n\\A\\B\\Foo::BAR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let helper = generated_c_static_function_body(&c_source, "ptn_compact_append_var_export");
+    assert!(helper.contains("enum_case_name"));
+}
+
+#[test]
 fn compile_enum_cases_discard_releases_case_references_to_native_binary() {
     let root = temp_dir("ptn-native-enum-cases-discard-refcount");
     fs::create_dir_all(&root).unwrap();

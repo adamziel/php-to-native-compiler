@@ -1,0 +1,12 @@
+Zend/tests/traits/abstract_method_8.phpt
+Zend/tests/enum/__unset.phpt
+Zend/tests/type_declarations/mixed/inheritance/mixed_parameter_inheritance_success5.phpt
+Zend/tests/enum/__function__.phpt
+Zend/tests/enum/__wakeup.phpt
+Zend/tests/traits/bug61998.phpt
+Zend/tests/objects/objects_011.phpt
+Zend/tests/enum/traits.phpt
+Zend/tests/enum/enum-in-var-export.phpt
+Zend/tests/traits/bug74607.phpt
+Zend/tests/return_types/never_covariance.phpt
+Zend/tests/type_declarations/variance/static_variance_success.phpt
