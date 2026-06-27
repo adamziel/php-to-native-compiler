@@ -1,0 +1,14 @@
+# Focused current-red filter/string validation row pack for ptn-w17z.993.
+# Source: partial-statuses-20260627T014005Z.tsv.
+ext/filter/tests/017.phpt
+ext/filter/tests/bug48762.phpt
+ext/filter/tests/062.phpt
+ext/filter/tests/012.phpt
+ext/filter/tests/bug47435.phpt
+ext/filter/tests/039.phpt
+ext/filter/tests/029.phpt
+ext/filter/tests/bug44779.phpt
+ext/standard/tests/strings/bug72434.phpt
+ext/standard/tests/strings/bug72663.phpt
+ext/standard/tests/strings/bug72663_2.phpt
+ext/standard/tests/strings/htmlentities13.phpt
