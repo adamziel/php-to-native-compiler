@@ -56882,6 +56882,42 @@ static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnVa
         );
         return ptn_null();
     }
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    if (user_data != NULL) {
+        if (runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_method(runtime, user_data->wrapper_object, "stream_lock")) {
+            const char *class_name = ptn_user_stream_object_class_name(user_data->wrapper_object);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "flock(): %s::stream_lock is not implemented!",
+                class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
+            return ptn_bool(0);
+        }
+        PtnValue lock_arg = ptn_int(operation);
+        PtnValue lock_result = runtime->method_dispatch(
+            runtime,
+            user_data->wrapper_object,
+            "stream_lock",
+            1,
+            &lock_arg,
+            line
+        );
+        ptn_value_destroy(&lock_arg);
+        ptn_value_destroy(&lock_result);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
+        return ptn_bool(1);
+    }
     if (resource->stream == NULL) {
         ptn_throw_exception(
             runtime,
@@ -58704,7 +58740,6 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
     const PtnValue *args,
     size_t line
 ) {
-    (void)argc;
     PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, function_name, 1, "protocol", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
@@ -58713,6 +58748,15 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(protocol);
         return ptn_null();
+    }
+    int64_t flags = 0;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        flags = ptn_internal_expect_integer_arg(runtime, function_name, 3, "flags", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(protocol);
+            ptn_string_operand_free(class_name);
+            return ptn_null();
+        }
     }
     if (protocol.len == 0 || memchr(protocol.data, '\0', protocol.len) != NULL) {
         ptn_string_operand_free(protocol);
@@ -58747,10 +58791,41 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
         return ptn_bool(0);
     }
     if (!ptn_declared_runtime_user_class_exists(runtime, class_copy)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Argument #2 ($class) must be a valid class name, %s given",
+            function_name,
+            class_copy
+        );
+        if (needed < 0) {
+            free(scheme);
+            free(class_copy);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(scheme);
+            free(class_copy);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Argument #2 ($class) must be a valid class name, %s given",
+            function_name,
+            class_copy
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            free(scheme);
+            free(class_copy);
+            ptn_abort_out_of_memory();
+        }
         free(scheme);
         free(class_copy);
-        ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): class does not exist", line);
-        return ptn_bool(0);
+        ptn_throw_exception_owned_message(runtime, "TypeError", message);
+        return ptn_null();
     }
     if (ptn_user_stream_wrapper_count == ptn_user_stream_wrapper_capacity) {
         size_t new_capacity = ptn_user_stream_wrapper_capacity == 0 ? 8 : ptn_user_stream_wrapper_capacity * 2;
@@ -58768,6 +58843,7 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
     }
     ptn_user_stream_wrappers[ptn_user_stream_wrapper_count].scheme = scheme;
     ptn_user_stream_wrappers[ptn_user_stream_wrapper_count].class_name = class_copy;
+    ptn_user_stream_wrappers[ptn_user_stream_wrapper_count].is_url = (flags & PTN_STREAM_IS_URL) != 0;
     ptn_user_stream_wrapper_count++;
     return ptn_bool(1);
 }
@@ -58890,6 +58966,28 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         return ptn_data_url_stream_metadata(resource);
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    if (user_data != NULL) {
+        ptn_stream_meta_set(result.as.array, "timed_out", ptn_bool(0));
+        ptn_stream_meta_set(result.as.array, "blocked", ptn_bool(1));
+        ptn_stream_meta_set(result.as.array, "eof", ptn_bool(ptn_stream_eof(resource)));
+        ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("user-space"));
+        ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("user-space"));
+        ptn_stream_meta_set(
+            result.as.array,
+            "mode",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+        );
+        ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(ptn_stream_regular_file_unread_bytes(resource)));
+        ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
+        ptn_stream_meta_set(
+            result.as.array,
+            "uri",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+        );
+        ptn_stream_meta_set(result.as.array, "wrapper_data", ptn_value_clone(user_data->wrapper_object));
+        return result;
+    }
     if (resource->memory_stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_TEMP) {
         ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("PHP"));
         ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("TEMP"));
