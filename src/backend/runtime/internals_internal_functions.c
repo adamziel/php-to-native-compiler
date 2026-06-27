@@ -159504,6 +159504,7 @@ static PtnValue *ptn_soap_decode_args(
     size_t type_capacity = 0;
     PtnSoapMessagePart *input_parts = NULL;
     size_t input_part_count = 0;
+    int document_literal = 0;
     if (data != NULL && data->wsdl_cache != NULL) {
         ptn_soap_parse_wsdl_types_from_source(
             data->wsdl_cache,
@@ -159525,12 +159526,26 @@ static PtnValue *ptn_soap_decode_args(
             &input_parts,
             &input_part_count
         );
+        char *style = ptn_soap_binding_operation_child_attr(&wsdl_view, ptn_xml_local_name(operation->name), "operation", "style");
+        if (style == NULL) {
+            style = ptn_soap_operation_attr(&wsdl_view, ptn_xml_local_name(operation->name), "operation", "style");
+        }
+        if (style == NULL) {
+            style = ptn_soap_binding_attr(&wsdl_view, "style");
+        }
+        char *use = ptn_soap_operation_attr(&wsdl_view, ptn_xml_local_name(operation->name), "body", "use");
+        document_literal = style != NULL &&
+            use != NULL &&
+            ptn_ascii_case_equal(style, "document") &&
+            ptn_ascii_case_equal(use, "literal");
+        free(style);
+        free(use);
     }
     const char *expected_type_name = input_part_count == 0 ? NULL : input_parts[0].type_local;
     PtnSoapType *expected_type = expected_type_name == NULL
         ? NULL
         : ptn_soap_type_list_find(types, type_count, expected_type_name);
-    if (expected_type != NULL && ptn_soap_type_has_element_fields(expected_type)) {
+    if (document_literal && expected_type != NULL && ptn_soap_type_has_element_fields(expected_type)) {
         PtnValue *args = calloc(1, sizeof(PtnValue));
         if (args == NULL) {
             ptn_abort_out_of_memory();
