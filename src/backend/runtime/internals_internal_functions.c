@@ -76777,6 +76777,14 @@ static int ptn_intl_locale_tokens_equal_prefix(const char *language_tag, const c
 }
 
 static int ptn_intl_locale_tokens_equal_exact(const char *left, const char *right) {
+    const char *left_extension = strchr(left == NULL ? "" : left, '@');
+    const char *right_extension = strchr(right == NULL ? "" : right, '@');
+    if ((left_extension == NULL) != (right_extension == NULL)) {
+        return 0;
+    }
+    if (left_extension != NULL && !ptn_ascii_case_equal(left_extension, right_extension)) {
+        return 0;
+    }
     char left_tokens[32][32];
     char right_tokens[32][32];
     size_t left_count = ptn_intl_locale_split_tokens(left, left_tokens, 32);
@@ -170018,9 +170026,10 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_internal_function_name_has_prefix(name, "datefmt_") ||
         ptn_internal_function_name_has_prefix(name, "grapheme_") ||
         ptn_internal_function_name_has_prefix(name, "intltz_") ||
+        ptn_internal_function_name_has_prefix(name, "locale_") ||
+        ptn_internal_function_name_has_prefix(name, "msgfmt_") ||
         ptn_internal_function_name_has_prefix(name, "numfmt_") ||
-        ptn_ascii_case_equal(name, "locale_compose") ||
-        ptn_ascii_case_equal(name, "locale_lookup")) {
+        ptn_internal_function_name_has_prefix(name, "resourcebundle_")) {
         return "intl";
     }
     if (ptn_internal_function_name_has_prefix(name, "mb_")) {
@@ -170210,6 +170219,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "flags", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
         { "iteratorClass", "string", "string", 0, 1, 0, 0, 1, "\"ArrayIterator\"", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[] = {
+        { "languageTag", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[] = {
+        { "languageTag", "array", "array", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+        { "defaultLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",
@@ -170348,6 +170372,56 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             NULL,
             NULL,
             0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_get_display_language") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_name") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_region") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_script") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_variant")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS) / sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS,
+            0,
+            "string|false",
+            "string|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_filter_matches")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS) /
+                sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS,
+            0,
+            "bool",
+            "?bool",
+            1,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_lookup")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS) / sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS,
+            0,
+            "string",
+            "?string",
+            1,
             0
         );
     }
