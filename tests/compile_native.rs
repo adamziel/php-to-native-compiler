@@ -2601,6 +2601,17 @@ echo unserialize(serialize($offsetTz))->getName(), "\n";
 eval('$restored = ' . var_export(new DateTimeZone('America/New_York'), true) . ';');
 echo $restored->getName(), "\n";
 
+date_default_timezone_set('Etc/GMT+1');
+$rfcZone = new DateTime('Fri, 07 Dec 2007 19:05:14 +1000');
+echo $rfcZone->getTimezone()->getName(), "\n";
+
+date_default_timezone_set('UTC');
+$boise = new DateTime('@1604219400');
+$boise->setTimezone(new DateTimeZone('America/Boise'));
+echo $boise->format('Y-m-d H:i:s T'), "\n";
+$sunInfo = date_sun_info(strtotime('2006-12-12'), 31.7667, 35.2333);
+echo $sunInfo['sunrise'], '/', $sunInfo['sunset'], '/', $sunInfo['transit'], '/', $sunInfo['civil_twilight_begin'], '/', $sunInfo['astronomical_twilight_end'], "\n";
+
 $transitions = timezone_transitions_get(new DateTimeZone('Europe/London'), -306972000, -37241999);
 var_dump(count($transitions));
 var_dump($transitions[6]['abbr']);
@@ -2650,6 +2661,9 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "+01:00\n",
             "+01:00\n",
             "America/New_York\n",
+            "+10:00\n",
+            "2020-11-01 01:30:00 MST\n",
+            "1165897761/1165934160/1165915961/1165896156/1165939371\n",
             "int(18)\n",
             "string(3) \"BST\"\n",
             "string(2) \"NO\"\n",
@@ -26515,7 +26529,27 @@ var_dump($state['interval']->__serialize());\n\
 $restored = unserialize(serialize($period));\n\
 $restoredState = $restored->__serialize();\n\
 echo $restoredState['current']->format(DateTime::ISO8601), \"\\n\";\n\
-var_dump($restoredState['interval']->__serialize());\n",
+var_dump($restoredState['interval']->__serialize());\n\
+class NativeDatePeriodPrivateState extends DatePeriod {\n\
+    private int $var1;\n\
+    private $var2 = 2;\n\
+    protected int $var3 = 3;\n\
+    protected $var4;\n\
+    public function __construct($start, $interval, $end) {\n\
+        parent::__construct($start, $interval, $end);\n\
+        $this->var1 = 1;\n\
+        $this->var4 = 4;\n\
+    }\n\
+}\n\
+$privatePeriod = new NativeDatePeriodPrivateState(new DateTimeImmutable('2023-03-03 16:24'), DateInterval::createFromDateString('+1 hour'), new DateTimeImmutable('2023-03-09 16:24'));\n\
+$privateIntervalState = $privatePeriod->__serialize()['interval']->__serialize();\n\
+echo $privateIntervalState['h'], ' ', (int) $privateIntervalState['from_string'], \"\\n\";\n\
+$privateSerialized = str_replace(chr(0), '!', serialize($privatePeriod));\n\
+var_dump(str_contains($privateSerialized, 's:34:\"!NativeDatePeriodPrivateState!var1\";i:1;'));\n\
+var_dump(str_contains($privateSerialized, 's:7:\"!*!var4\";i:4;'));\n\
+$privateRestored = unserialize(serialize($privatePeriod));\n\
+$privateRestoredSerialized = str_replace(chr(0), '!', serialize($privateRestored));\n\
+var_dump(str_contains($privateRestoredSerialized, 's:34:\"!NativeDatePeriodPrivateState!var2\";i:2;'));\n",
     )
     .unwrap();
 
@@ -26572,6 +26606,10 @@ var_dump($restoredState['interval']->__serialize());\n",
             "  [\"from_string\"]=>\n",
             "  bool(false)\n",
             "}\n",
+            "1 0\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -27079,6 +27117,12 @@ echo $rfc->format(DATE_ISO8601), "\n";
 echo $rfc->format('U e'), "\n";
 echo DateTime::createFromFormat('Y-m-d|', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
 echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
+$offsetCases = [['O', 'GMT+0800'], ['P', 'GMT-08:00'], ['[O]', '[+0800]']];
+foreach ($offsetCases as $case) {
+    $dt = DateTime::createFromFormat($case[0], $case[1]);
+    echo $dt ? $dt->getOffset() : 'false', "\n";
+}
+var_dump(DateTime::createFromFormat('O', 'invalid'));
 "#,
     )
     .unwrap();
@@ -27119,6 +27163,10 @@ echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e')
             "-461203200 Europe/Budapest\n",
             "2011-02-02 00:00:00 UTC\n",
             "1970-01-01 00:00:00 UTC\n",
+            "28800\n",
+            "-28800\n",
+            "28800\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
