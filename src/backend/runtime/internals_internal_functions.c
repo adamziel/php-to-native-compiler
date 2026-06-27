@@ -114075,9 +114075,11 @@ static PtnValue ptn_object_named_public_properties_with_extra_storage_array(
             ptn_string_len_in_list(entry->key.as.string, entry->key.string_len, names, count)) {
             continue;
         }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
         ptn_array_set_entry(
             result.as.array,
-            ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
+            ptn_serialize_spl_property_table_key_from_metadata(metadata, entry->key),
             ptn_value_clone_deref(entry->value)
         );
     }
@@ -120032,7 +120034,7 @@ static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, con
         day,
         longitude,
         latitude,
-        -0.833333,
+        -0.853736,
         0,
         &hour_rise,
         &hour_set,
