@@ -5215,6 +5215,14 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     int create_if_missing,
     PtnValue *reference_out
 );
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out
+);
 static PTN_UNUSED int ptn_internal_array_object_bind_offset_reference(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -18509,7 +18517,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_from_inc_dec(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue reference = ptn_null();
-            if (ptn_internal_array_object_offset_reference(
+            if (ptn_internal_array_object_offset_reference_without_key_diagnostics(
                     runtime,
                     slot_value,
                     offset_value,
@@ -19210,7 +19218,7 @@ static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         PtnValue reference = ptn_null();
-        if (ptn_internal_array_object_offset_reference(
+        if (ptn_internal_array_object_offset_reference_without_key_diagnostics(
                 runtime,
                 *target_value,
                 offset_value,

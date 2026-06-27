@@ -187081,17 +187081,20 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
     return 1;
 }
 
-static int ptn_spl_offset_key_from_value(
+static int ptn_spl_offset_key_from_value_impl(
     PtnRuntime *runtime,
     const char *class_name,
     PtnValue offset,
     size_t line,
     int for_isset,
     int for_unset,
+    int emit_key_diagnostics,
     PtnArrayKey *key_out
 ) {
     offset = ptn_value_deref(offset);
-    ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, 1);
+    if (emit_key_diagnostics) {
+        ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, 1);
+    }
     if (ptn_array_offset_key_is_invalid(offset)) {
         const char *type_name = ptn_offset_key_type_name(offset);
         char message[256];
@@ -187127,6 +187130,48 @@ static int ptn_spl_offset_key_from_value(
         return 0;
     }
     return ptn_array_offset_key_from_value(runtime, offset, line, 0, key_out);
+}
+
+static int ptn_spl_offset_key_from_value(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue offset,
+    size_t line,
+    int for_isset,
+    int for_unset,
+    PtnArrayKey *key_out
+) {
+    return ptn_spl_offset_key_from_value_impl(
+        runtime,
+        class_name,
+        offset,
+        line,
+        for_isset,
+        for_unset,
+        1,
+        key_out
+    );
+}
+
+static int ptn_spl_offset_key_from_value_without_key_diagnostics(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue offset,
+    size_t line,
+    int for_isset,
+    int for_unset,
+    PtnArrayKey *key_out
+) {
+    return ptn_spl_offset_key_from_value_impl(
+        runtime,
+        class_name,
+        offset,
+        line,
+        for_isset,
+        for_unset,
+        0,
+        key_out
+    );
 }
 
 static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent) {
@@ -190329,12 +190374,13 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
     return 1;
 }
 
-static PTN_UNUSED int ptn_internal_array_object_offset_reference(
+static int ptn_internal_array_object_offset_reference_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
     const PtnValue *offset_value,
     size_t line,
     int create_if_missing,
+    int emit_key_diagnostics,
     PtnValue *reference_out
 ) {
     if (reference_out == NULL) {
@@ -190386,15 +190432,27 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     PtnArrayKey key;
     if (offset_value == NULL) {
         key = ptn_array_int_key(array->next_auto_key);
-    } else if (!ptn_spl_offset_key_from_value(
-                   runtime,
-                   "ArrayObject",
-                   ptn_value_deref(*offset_value),
-                   line,
-                   0,
-                   0,
-                   &key
-               )) {
+    } else if (
+        emit_key_diagnostics
+            ? !ptn_spl_offset_key_from_value(
+                  runtime,
+                  "ArrayObject",
+                  ptn_value_deref(*offset_value),
+                  line,
+                  0,
+                  0,
+                  &key
+              )
+            : !ptn_spl_offset_key_from_value_without_key_diagnostics(
+                  runtime,
+                  "ArrayObject",
+                  ptn_value_deref(*offset_value),
+                  line,
+                  0,
+                  0,
+                  &key
+              )
+    ) {
         *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         return 1;
     }
@@ -190434,6 +190492,44 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     ptn_array_key_free(key);
     ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
     return 1;
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out
+) {
+    return ptn_internal_array_object_offset_reference_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        create_if_missing,
+        1,
+        reference_out
+    );
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out
+) {
+    return ptn_internal_array_object_offset_reference_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        create_if_missing,
+        0,
+        reference_out
+    );
 }
 
 static PTN_UNUSED int ptn_internal_array_object_bind_offset_reference(
