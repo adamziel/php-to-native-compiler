@@ -78383,7 +78383,11 @@ static int ptn_mb_detect_order_buffer_from_value(
         }
         for (size_t i = 0; i < resolved.as.array->len; i++) {
             ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
-            PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
+            PtnStringOperand item = ptn_value_to_string_operand_with_runtime(runtime, resolved.as.array->entries[i].value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(item);
+                return 0;
+            }
             int ok = ptn_mb_detect_order_buffer_append_item(runtime, item, buffer, 1, line);
             ptn_string_operand_free(item);
             if (!ok) {
@@ -78392,7 +78396,11 @@ static int ptn_mb_detect_order_buffer_from_value(
         }
         return 1;
     }
-    PtnStringOperand order = ptn_value_to_string_operand(value);
+    PtnStringOperand order = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(order);
+        return 0;
+    }
     int ok = ptn_mb_detect_order_buffer_from_operand(runtime, order, buffer, 1, line);
     ptn_string_operand_free(order);
     return ok;
@@ -78407,7 +78415,6 @@ static const char *ptn_mb_encoding_list_first_from_value(
     size_t line,
     const char *fallback
 ) {
-    (void)line;
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_NULL) {
         return fallback;
@@ -78416,7 +78423,11 @@ static const char *ptn_mb_encoding_list_first_from_value(
         const char *first = NULL;
         for (size_t i = 0; i < resolved.as.array->len; i++) {
             ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
-            PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
+            PtnStringOperand item = ptn_value_to_string_operand_with_runtime(runtime, resolved.as.array->entries[i].value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(item);
+                return NULL;
+            }
             const char *canonical = ptn_mb_encoding_list_item_canonical_or_throw(
                 runtime,
                 function_name,
@@ -78438,7 +78449,11 @@ static const char *ptn_mb_encoding_list_first_from_value(
         }
         return first;
     }
-    PtnStringOperand list = ptn_value_to_string_operand(value);
+    PtnStringOperand list = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(list);
+        return NULL;
+    }
     const char *first = NULL;
     int saw_item = 0;
     size_t start = 0;
@@ -78543,7 +78558,6 @@ static char *ptn_mb_encoding_detect_list_from_value_alloc(
     size_t line,
     const char *fallback
 ) {
-    (void)line;
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_NULL) {
         return ptn_duplicate_string(fallback);
@@ -78558,7 +78572,12 @@ static char *ptn_mb_encoding_detect_list_from_value_alloc(
         }
         for (size_t i = 0; i < resolved.as.array->len; i++) {
             ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
-            PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
+            PtnStringOperand item = ptn_value_to_string_operand_with_runtime(runtime, resolved.as.array->entries[i].value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(item);
+                free(buffer.data);
+                return NULL;
+            }
             int ok = ptn_mb_detect_list_append_item(
                 runtime,
                 function_name,
@@ -78575,7 +78594,12 @@ static char *ptn_mb_encoding_detect_list_from_value_alloc(
         }
         return buffer.data == NULL ? ptn_duplicate_string(fallback) : buffer.data;
     }
-    PtnStringOperand list = ptn_value_to_string_operand(value);
+    PtnStringOperand list = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(list);
+        free(buffer.data);
+        return NULL;
+    }
     int saw_item = 0;
     size_t start = 0;
     while (start <= list.len) {
@@ -84898,6 +84922,15 @@ static size_t ptn_mb_utf8_char_index_for_byte(const char *data, size_t len, size
     return index;
 }
 
+static size_t ptn_mb_utf8_split_character_len(const char *data, size_t len, size_t offset) {
+    size_t sequence_len = 0;
+    if (ptn_mb_utf8_valid_sequence_len_at(data, len, offset, &sequence_len)) {
+        return sequence_len;
+    }
+    size_t invalid_len = ptn_mb_utf8_invalid_sequence_len_at(data, len, offset);
+    return invalid_len == 0 ? 1 : invalid_len;
+}
+
 static void ptn_mb_utf8_append_codepoint(PtnStringBuffer *buffer, uint32_t cp) {
     if (cp <= 0x7f) {
         ptn_string_buffer_append_char(buffer, (char)cp);
@@ -84971,6 +85004,9 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if ((cp >= 0x00e0 && cp <= 0x00f6) || (cp >= 0x00f8 && cp <= 0x00fe)) {
             return cp - 32;
         }
+        if (cp >= 0x0101 && cp <= 0x017e && cp != 0x0149 && (cp & 1u) == 1u) {
+            return cp - 1;
+        }
         if (cp >= 0x03b1 && cp <= 0x03c1) {
             return cp - 32;
         }
@@ -84990,6 +85026,9 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if ((cp >= 0x00c0 && cp <= 0x00d6) || (cp >= 0x00d8 && cp <= 0x00de)) {
             return cp + 32;
         }
+        if (cp >= 0x0100 && cp <= 0x017e && cp != 0x0130 && (cp & 1u) == 0u) {
+            return cp + 1;
+        }
         if (cp >= 0x0391 && cp <= 0x03a1) {
             return cp + 32;
         }
@@ -85006,34 +85045,257 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
     return cp;
 }
 
-static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mode, size_t *output_len) {
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
+static int ptn_mb_case_mode_valid(int64_t mode) {
+    return mode == PTN_MB_CASE_UPPER ||
+        mode == PTN_MB_CASE_LOWER ||
+        mode == PTN_MB_CASE_TITLE ||
+        mode == PTN_MB_CASE_FOLD ||
+        mode == PTN_MB_CASE_UPPER_SIMPLE ||
+        mode == PTN_MB_CASE_LOWER_SIMPLE ||
+        mode == PTN_MB_CASE_TITLE_SIMPLE ||
+        mode == PTN_MB_CASE_FOLD_SIMPLE;
+}
+
+static int ptn_mb_case_mode_is_simple(int mode) {
+    return mode == PTN_MB_CASE_UPPER_SIMPLE ||
+        mode == PTN_MB_CASE_LOWER_SIMPLE ||
+        mode == PTN_MB_CASE_TITLE_SIMPLE ||
+        mode == PTN_MB_CASE_FOLD_SIMPLE;
+}
+
+static int ptn_mb_case_encoding_is_turkish(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "ISO-8859-9") ||
+         ptn_ascii_case_equal(encoding, "Windows-1254") ||
+         ptn_ascii_case_equal(encoding, "CP1254"));
+}
+
+static int ptn_mb_case_is_decimal_digit(uint32_t cp) {
+    return (cp >= '0' && cp <= '9') || (cp >= 0xff10 && cp <= 0xff19);
+}
+
+static int ptn_mb_case_is_cased_letter(uint32_t cp) {
+    if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) {
+        return 1;
+    }
+    if ((cp >= 0x00c0 && cp <= 0x00d6) ||
+        (cp >= 0x00d8 && cp <= 0x00f6) ||
+        (cp >= 0x00f8 && cp <= 0x00ff) ||
+        cp == 0x0130 ||
+        cp == 0x0131 ||
+        (cp >= 0x0100 && cp <= 0x017f) ||
+        (cp >= 0x0391 && cp <= 0x03a1) ||
+        (cp >= 0x03a3 && cp <= 0x03cb) ||
+        cp == 0x03c2 ||
+        (cp >= 0x0410 && cp <= 0x044f) ||
+        (cp >= 0xff21 && cp <= 0xff3a) ||
+        (cp >= 0xff41 && cp <= 0xff5a) ||
+        cp == 0x00df ||
+        cp == 0xfb00) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_mb_case_is_case_ignorable(uint32_t cp) {
+    return cp == 0x0027 ||
+        cp == 0x002e ||
+        cp == 0x003a ||
+        cp == 0x00ad ||
+        cp == 0x00b7 ||
+        cp == 0x02bc ||
+        cp == 0x0387 ||
+        cp == 0x2019 ||
+        (cp >= 0x0300 && cp <= 0x036f) ||
+        (cp >= 0x1ab0 && cp <= 0x1aff) ||
+        (cp >= 0x1dc0 && cp <= 0x1dff) ||
+        (cp >= 0x20d0 && cp <= 0x20ff) ||
+        (cp >= 0xfe20 && cp <= 0xfe2f);
+}
+
+static int ptn_mb_case_sigma_is_final(const uint32_t *codepoints, size_t count, size_t index) {
+    int saw_cased_before = 0;
+    size_t ignored = 0;
+    for (size_t cursor = index; cursor > 0;) {
+        cursor--;
+        uint32_t cp = codepoints[cursor];
+        if (ptn_mb_case_is_case_ignorable(cp)) {
+            if (ignored >= 63) {
+                return 0;
+            }
+            ignored++;
+            continue;
+        }
+        saw_cased_before = ptn_mb_case_is_cased_letter(cp);
+        break;
+    }
+    if (!saw_cased_before) {
+        return 0;
+    }
+    for (size_t cursor = index + 1; cursor < count; cursor++) {
+        uint32_t cp = codepoints[cursor];
+        if (ptn_mb_case_is_case_ignorable(cp)) {
+            continue;
+        }
+        return !ptn_mb_case_is_cased_letter(cp);
+    }
+    return 1;
+}
+
+static void ptn_mb_case_append_upper(PtnStringBuffer *output, uint32_t cp, int simple, int turkish, int title) {
+    if (turkish && cp == 'i') {
+        ptn_mb_utf8_append_codepoint(output, 0x0130);
+        return;
+    }
+    if (cp == 0x0131) {
+        ptn_mb_utf8_append_codepoint(output, 'I');
+        return;
+    }
+    if (!simple && cp == 0x00df) {
+        ptn_string_buffer_append(output, title ? "Ss" : "SS");
+        return;
+    }
+    if (!simple && cp == 0xfb00) {
+        ptn_string_buffer_append(output, title ? "Ff" : "FF");
+        return;
+    }
+    if (!simple && cp == 0x0149) {
+        ptn_mb_utf8_append_codepoint(output, 0x02bc);
+        ptn_mb_utf8_append_codepoint(output, 'N');
+        return;
+    }
+    ptn_mb_utf8_append_codepoint(output, ptn_mb_case_map_codepoint(cp, 1));
+}
+
+static void ptn_mb_case_append_lower_or_fold(
+    PtnStringBuffer *output,
+    uint32_t cp,
+    int simple,
+    int turkish,
+    int fold,
+    int final_sigma
+) {
+    if (turkish) {
+        if (cp == 'I') {
+            ptn_mb_utf8_append_codepoint(output, 0x0131);
+            return;
+        }
+        if (cp == 0x0130) {
+            ptn_mb_utf8_append_codepoint(output, 'i');
+            return;
+        }
+    }
+    if (!simple && !fold && cp == 0x03a3 && final_sigma) {
+        ptn_mb_utf8_append_codepoint(output, 0x03c2);
+        return;
+    }
+    if (cp == 0x0130) {
+        if (fold && simple) {
+            ptn_mb_utf8_append_codepoint(output, cp);
+            return;
+        }
+        ptn_mb_utf8_append_codepoint(output, 'i');
+        if (!simple) {
+            ptn_mb_utf8_append_codepoint(output, 0x0307);
+        }
+        return;
+    }
+    if (fold && !simple && cp == 0x00df) {
+        ptn_string_buffer_append(output, "ss");
+        return;
+    }
+    if (fold && !simple && cp == 0xfb00) {
+        ptn_string_buffer_append(output, "ff");
+        return;
+    }
+    ptn_mb_utf8_append_codepoint(output, ptn_mb_case_map_codepoint(cp, 0));
+}
+
+static void ptn_mb_case_append_codepoint(
+    PtnStringBuffer *output,
+    uint32_t cp,
+    int mode,
+    const char *encoding,
+    int final_sigma
+) {
+    int simple = ptn_mb_case_mode_is_simple(mode);
+    int turkish = ptn_mb_case_encoding_is_turkish(encoding);
+    switch (mode) {
+        case PTN_MB_CASE_UPPER:
+        case PTN_MB_CASE_UPPER_SIMPLE:
+            ptn_mb_case_append_upper(output, cp, simple, turkish, 0);
+            break;
+        case PTN_MB_CASE_TITLE:
+        case PTN_MB_CASE_TITLE_SIMPLE:
+            ptn_mb_case_append_upper(output, cp, simple, turkish, 1);
+            break;
+        case PTN_MB_CASE_FOLD:
+        case PTN_MB_CASE_FOLD_SIMPLE:
+            ptn_mb_case_append_lower_or_fold(output, cp, simple, turkish, 1, 0);
+            break;
+        case PTN_MB_CASE_LOWER:
+        case PTN_MB_CASE_LOWER_SIMPLE:
+        default:
+            ptn_mb_case_append_lower_or_fold(output, cp, simple, turkish, 0, final_sigma);
+            break;
+    }
+}
+
+static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mode, const char *encoding, size_t *output_len) {
+    size_t codepoint_count = 0;
+    size_t codepoint_capacity = 0;
+    uint32_t *codepoints = NULL;
     size_t offset = 0;
-    int title_next = 1;
     while (offset < input_len) {
+        if (codepoint_count == codepoint_capacity) {
+            size_t next_capacity = codepoint_capacity == 0 ? 16 : codepoint_capacity * 2;
+            if (next_capacity < codepoint_capacity) {
+                ptn_abort_out_of_memory();
+            }
+            uint32_t *grown = realloc(codepoints, next_capacity * sizeof(uint32_t));
+            if (grown == NULL) {
+                free(codepoints);
+                ptn_abort_out_of_memory();
+            }
+            codepoints = grown;
+            codepoint_capacity = next_capacity;
+        }
         uint32_t cp = 0;
         ptn_mb_utf8_decode_one(input, input_len, &offset, &cp);
-        if (mode == PTN_MB_CASE_UPPER || mode == PTN_MB_CASE_UPPER_SIMPLE) {
-            if (cp == 0x00df) {
-                ptn_string_buffer_append(&output, "SS");
-                continue;
-            }
-            cp = ptn_mb_case_map_codepoint(cp, 1);
-        } else if (mode == PTN_MB_CASE_TITLE || mode == PTN_MB_CASE_TITLE_SIMPLE) {
-            if (title_next) {
-                cp = ptn_mb_case_map_codepoint(cp, 1);
-            } else {
-                cp = ptn_mb_case_map_codepoint(cp, 0);
-            }
-            title_next = cp <= 0x7f && cp != '\'' && !isalnum((unsigned char)cp);
-        } else {
-            cp = ptn_mb_case_map_codepoint(cp, 0);
-        }
-        ptn_mb_utf8_append_codepoint(&output, cp);
+        codepoints[codepoint_count++] = cp;
     }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    int title_next = 1;
+    for (size_t i = 0; i < codepoint_count; i++) {
+        uint32_t cp = codepoints[i];
+        int final_sigma = cp == 0x03a3 ? ptn_mb_case_sigma_is_final(codepoints, codepoint_count, i) : 0;
+        if (mode == PTN_MB_CASE_UPPER || mode == PTN_MB_CASE_UPPER_SIMPLE) {
+            ptn_mb_case_append_codepoint(&output, cp, mode, encoding, 0);
+        } else if (mode == PTN_MB_CASE_TITLE || mode == PTN_MB_CASE_TITLE_SIMPLE) {
+            if (ptn_mb_case_is_cased_letter(cp)) {
+                if (title_next) {
+                    ptn_mb_case_append_codepoint(&output, cp, mode, encoding, final_sigma);
+                } else {
+                    int lower_mode = mode == PTN_MB_CASE_TITLE_SIMPLE ? PTN_MB_CASE_LOWER_SIMPLE : PTN_MB_CASE_LOWER;
+                    ptn_mb_case_append_codepoint(&output, cp, lower_mode, encoding, final_sigma);
+                }
+                title_next = 0;
+            } else {
+                ptn_mb_utf8_append_codepoint(&output, cp);
+                if (ptn_mb_case_is_case_ignorable(cp)) {
+                    continue;
+                }
+                title_next = !ptn_mb_case_is_decimal_digit(cp);
+            }
+        } else {
+            ptn_mb_case_append_codepoint(&output, cp, mode, encoding, final_sigma);
+        }
+    }
+    free(codepoints);
     *output_len = output.len;
-    return output.data;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
 }
 
 static void ptn_mb_array_append_string(PtnValue array, int64_t *index, const char *value) {
@@ -85674,8 +85936,8 @@ static PtnValue ptn_internal_mb_strpos_named(PtnRuntime *runtime, const char *fu
     size_t search_hay_len = hay_utf8_len;
     size_t search_needle_len = needle_utf8_len;
     if (case_insensitive) {
-        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_utf8_len, PTN_MB_CASE_LOWER, &search_hay_len);
-        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_utf8_len, PTN_MB_CASE_LOWER, &search_needle_len);
+        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_utf8_len, PTN_MB_CASE_LOWER, encoding, &search_hay_len);
+        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_utf8_len, PTN_MB_CASE_LOWER, encoding, &search_needle_len);
     }
     size_t reverse_start = 0;
     size_t reverse_max_start = search_hay_len;
@@ -85742,8 +86004,8 @@ static PtnValue ptn_internal_mb_strstr_named(PtnRuntime *runtime, const char *fu
     size_t search_hay_len = hay_len;
     size_t search_needle_len = needle_len;
     if (case_insensitive) {
-        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_len, PTN_MB_CASE_LOWER, &search_hay_len);
-        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_len, PTN_MB_CASE_LOWER, &search_needle_len);
+        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_len, PTN_MB_CASE_LOWER, encoding, &search_hay_len);
+        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_len, PTN_MB_CASE_LOWER, encoding, &search_needle_len);
     }
     size_t match = reverse
         ? ptn_rfind_bytes_between(search_hay, search_hay_len, search_needle, search_needle_len, 0, search_hay_len, 0)
@@ -85785,6 +86047,11 @@ static PtnValue ptn_internal_mb_strrichr(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_mb_convert_case(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_convert_case", 1, "string", args[0], line);
     int64_t mode = ptn_internal_expect_integer_arg(runtime, "mb_convert_case", 2, "mode", args[1], line);
+    if (!ptn_mb_case_mode_valid(mode)) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(runtime, "ValueError", "mb_convert_case(): Argument #2 ($mode) must be one of the MB_CASE_* constants");
+        return ptn_null();
+    }
     const char *encoding = argc >= 3
         ? ptn_mb_encoding_from_value(runtime, "mb_convert_case", 3, "encoding", args[2], line, ptn_mb_current_internal_encoding(runtime), 1)
         : ptn_mb_current_internal_encoding(runtime);
@@ -85795,7 +86062,7 @@ static PtnValue ptn_internal_mb_convert_case(PtnRuntime *runtime, size_t argc, c
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
     size_t mapped_len = 0;
-    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, (int)mode, &mapped_len);
+    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, (int)mode, encoding, &mapped_len);
     free(utf8);
     ptn_string_operand_free(input);
     return ptn_mb_string_from_utf8(mapped, mapped_len, encoding);
@@ -85813,7 +86080,7 @@ static PtnValue ptn_internal_mb_convert_simple_case(PtnRuntime *runtime, const c
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
     size_t mapped_len = 0;
-    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, mode, &mapped_len);
+    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, mode, encoding, &mapped_len);
     free(utf8);
     ptn_string_operand_free(input);
     return ptn_mb_string_from_utf8(mapped, mapped_len, encoding);
@@ -86056,16 +86323,28 @@ static PtnValue ptn_internal_mb_str_split(PtnRuntime *runtime, size_t argc, cons
     }
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
-    size_t chars = ptn_mb_encoding_is_raw(encoding) ? utf8_len : ptn_mb_utf8_strlen(utf8, utf8_len);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t chunk_chars = (size_t)raw_length;
     int64_t index = 0;
-    for (size_t start = 0; start < chars; start += chunk_chars) {
-        size_t end = start + chunk_chars > chars ? chars : start + chunk_chars;
-        size_t byte_start = ptn_mb_encoding_is_raw(encoding) ? start : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, start);
-        size_t byte_end = ptn_mb_encoding_is_raw(encoding) ? end : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, end);
-        char *slice = ptn_duplicate_string_len(utf8 + byte_start, byte_end - byte_start);
-        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_mb_string_from_utf8(slice, byte_end - byte_start, encoding));
+    if (ptn_mb_encoding_is_utf8(encoding)) {
+        for (size_t start = 0; start < utf8_len;) {
+            size_t end = start;
+            for (size_t chars = 0; chars < chunk_chars && end < utf8_len; chars++) {
+                end += ptn_mb_utf8_split_character_len(utf8, utf8_len, end);
+            }
+            char *slice = ptn_duplicate_string_len(utf8 + start, end - start);
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_mb_string_from_utf8(slice, end - start, encoding));
+            start = end;
+        }
+    } else {
+        size_t chars = ptn_mb_encoding_is_raw(encoding) ? utf8_len : ptn_mb_utf8_strlen(utf8, utf8_len);
+        for (size_t start = 0; start < chars; start += chunk_chars) {
+            size_t end = start + chunk_chars > chars ? chars : start + chunk_chars;
+            size_t byte_start = ptn_mb_encoding_is_raw(encoding) ? start : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, start);
+            size_t byte_end = ptn_mb_encoding_is_raw(encoding) ? end : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, end);
+            char *slice = ptn_duplicate_string_len(utf8 + byte_start, byte_end - byte_start);
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_mb_string_from_utf8(slice, byte_end - byte_start, encoding));
+        }
     }
     free(utf8);
     ptn_string_operand_free(input);
@@ -86853,6 +87132,23 @@ static int ptn_mb_regex_options_apply(uint32_t *options, const char *extra_optio
     return 1;
 }
 
+static int ptn_mb_regex_options_contain_eval(const char *options_name) {
+    if (options_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; options_name[i] != '\0'; i++) {
+        if (options_name[i] == 'e') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_mb_regex_replacement_has_eval_option(const char *extra_options) {
+    return ptn_mb_regex_options_contain_eval(ptn_mb_regex_options_name) ||
+        ptn_mb_regex_options_contain_eval(extra_options);
+}
+
 static int ptn_mb_compile_regex_program(
     PtnRuntime *runtime,
     const char *function_name,
@@ -87524,6 +87820,14 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
         ptn_string_operand_free(options);
         extra_options = extra_options_copy;
     }
+    if (ptn_mb_regex_replacement_has_eval_option(extra_options)) {
+        free(extra_options_copy);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(replacement);
+        ptn_string_operand_free(subject);
+        ptn_throw_exception(runtime, "ValueError", "Option \"e\" is not supported");
+        return ptn_null();
+    }
     PtnValue result = ptn_mb_ereg_replace_impl(
         runtime,
         function_name,
@@ -87569,6 +87873,14 @@ static PtnValue ptn_internal_mb_ereg_replace_callback(PtnRuntime *runtime, size_
         ptn_string_operand_free(options);
         extra_options = extra_options_copy;
     }
+    if (ptn_mb_regex_replacement_has_eval_option(extra_options)) {
+        free(extra_options_copy);
+        ptn_value_destroy(&callback);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_throw_exception(runtime, "ValueError", "Option \"e\" is not supported");
+        return ptn_null();
+    }
     PtnValue result = ptn_mb_ereg_replace_impl(
         runtime,
         "mb_ereg_replace_callback",
@@ -87599,6 +87911,12 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
         return result;
+    }
+    if (ptn_mb_regex_uses_utf8(runtime) && !ptn_mb_utf8_is_valid(subject.data, subject.len)) {
+        ptn_value_destroy(&result);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
     }
 
     PtnPregProgram program;

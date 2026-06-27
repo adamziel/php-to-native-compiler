@@ -1,0 +1,14 @@
+# Source: current-red full-PHPT artifact partial-statuses-20260627T024026Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/mbstring/tests/bug77367.phpt
+ext/mbstring/tests/mb_str_split_utf8_utf16.phpt
+ext/mbstring/tests/casemapping.phpt
+ext/mbstring/tests/iso2022jp_2004_encoding.phpt
+ext/mbstring/tests/gh9535.phpt
+ext/mbstring/tests/cp5022x_encoding.phpt
+ext/mbstring/tests/mb_output_handler_runtime_ini_alteration-01.phpt
+ext/mbstring/tests/mb_convert_case_various_mode.phpt
+ext/mbstring/tests/bug79154.phpt
+ext/mbstring/tests/koi8u_encoding.phpt
+ext/mbstring/tests/bug72164.phpt
+ext/mbstring/tests/mb_strtolower_basic.phpt
