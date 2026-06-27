@@ -5861,6 +5861,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("curl_multi_info_read") && argument_index == 1 {
         return Some("queued_messages");
     }
+    if name.eq_ignore_ascii_case("dns_get_record") && argument_index == 2 {
+        return Some("authoritative_name_servers");
+    }
+    if name.eq_ignore_ascii_case("dns_get_record") && argument_index == 3 {
+        return Some("additional_records");
+    }
     if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") && argument_index == 2 {
         return Some("errors");
     }

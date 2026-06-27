@@ -30615,6 +30615,129 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_standard_mail_dns_and_closelog_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-mail-dns-closelog");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-mail-dns-closelog.php");
+    let output = root.join("standard-mail-dns-closelog-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    var_dump(mail("user@example.com", "", "", ["RandomHeader" => "Value", 5 => "invalid key"]));
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+var_dump(function_exists("mail"), function_exists("dns_get_record"), closelog());
+var_dump(STREAM_SERVER_BIND, STREAM_SERVER_LISTEN, STREAM_CLIENT_CONNECT, DNS_A, DNS_ALL);
+
+try {
+    dns_get_record("php.net", 15263480);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $auth = ["old"];
+    $additional = ["old"];
+    dns_get_record("php.net", 0, $auth, $additional, true);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $auth = ["old"];
+    $additional = ["old"];
+    dns_get_record("php.net", 15263480, $auth, $additional, true);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$auth = ["old"];
+$additional = ["old"];
+var_dump(dns_get_record("example.invalid", DNS_A, $auth, $additional));
+var_dump($auth, $additional);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TypeError: Header name cannot be numeric, 5 given\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(4)\n\
+int(8)\n\
+int(4)\n\
+int(1)\n\
+int(251721779)\n\
+dns_get_record(): Argument #2 ($type) must be a DNS_* constant\n\
+dns_get_record(): Argument #2 ($type) must be between 1 and 65535 when argument #5 ($raw) is true\n\
+dns_get_record(): Argument #2 ($type) must be between 1 and 65535 when argument #5 ($raw) is true\n\
+bool(false)\n\
+array(0) {\n\
+}\n\
+array(0) {\n\
+}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_mail"));
+    assert!(c_source.contains("ptn_internal_dns_get_record"));
+    assert!(c_source.contains("ptn_internal_closelog"));
+    assert!(c_source.contains("PTN_STREAM_SERVER_BIND"));
+}
+
+#[test]
+fn compile_unix_datagram_stream_socket_loopback_to_native_binary() {
+    let root = temp_dir("ptn-native-unix-datagram-stream-socket");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unix-datagram-stream-socket.php");
+    let output = root.join("unix-datagram-stream-socket-bin");
+    let socket_path = root.join("datagram.sock");
+    let php = format!(
+        "<?php\n\
+$sock = '{}';\n\
+@unlink($sock);\n\
+$server = stream_socket_server('udg://' . $sock, $errno, $errstr, STREAM_SERVER_BIND);\n\
+var_dump(is_resource($server), $errno, $errstr);\n\
+$client = stream_socket_client('udg://' . $sock);\n\
+var_dump(is_resource($client));\n\
+fwrite($client, \"ABCdef123\\n\");\n\
+var_dump(fread($server, 10));\n\
+fclose($client);\n\
+fclose($server);\n\
+@unlink($sock);\n",
+        socket_path.display()
+    );
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+int(0)\n\
+string(0) \"\"\n\
+bool(true)\n\
+string(10) \"ABCdef123\n\
+\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SOCK_DGRAM"));
+    assert!(c_source.contains("STREAM_SERVER_BIND"));
+}
+
+#[test]
 fn compile_stream_select_null_microseconds_validation_to_native_binary() {
     let root = temp_dir("ptn-native-stream-select-null-usec");
     fs::create_dir_all(&root).unwrap();
