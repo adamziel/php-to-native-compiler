@@ -2301,13 +2301,7 @@ fn heredoc_mixed_indentation_error(span: SourceSpan) -> Diagnostic {
 fn radix_integer_token_kind(text: &str, radix: u32, span: SourceSpan) -> Result<TokenKind> {
     match i64::from_str_radix(text, radix) {
         Ok(value) => Ok(TokenKind::Int(value)),
-        Err(_) => {
-            let mut value = radix_digits_to_f64(text, radix, span)?;
-            if radix == 2 {
-                value = php_binary_overflow_float(value);
-            }
-            Ok(TokenKind::Float(value))
-        }
+        Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(text, radix, span)?)),
     }
 }
 
@@ -2321,14 +2315,6 @@ fn radix_digits_to_f64(text: &str, radix: u32, span: SourceSpan) -> Result<f64> 
         value = value * radix_value + digit as f64;
     }
     Ok(value)
-}
-
-fn php_binary_overflow_float(value: f64) -> f64 {
-    if value.is_finite() && value > 0.0 {
-        f64::from_bits(value.to_bits() - 1)
-    } else {
-        value
-    }
 }
 
 fn decimal_integer_token_kind(text: &str, span: SourceSpan) -> Result<TokenKind> {

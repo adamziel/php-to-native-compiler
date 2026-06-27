@@ -2471,6 +2471,27 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_STDFLAGS);
         return 1;
     }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_WRITE") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_WRITE);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_START") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_START);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_CLEAN") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_CLEAN);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_FLUSH") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_FLUSH);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_FINAL") == 0 ||
+        strcmp(name, "PHP_OUTPUT_HANDLER_END") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_FINAL);
+        return 1;
+    }
     if (strcmp(name, "PHP_OUTPUT_HANDLER_STARTED") == 0) {
         *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_STARTED);
         return 1;
