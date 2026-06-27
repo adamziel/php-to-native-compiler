@@ -53198,6 +53198,23 @@ static void ptn_user_stream_materialize_reads(
         return;
     }
 
+    const char *stream_mode = resource->stream_mode == NULL ? "" : resource->stream_mode;
+    if ((stream_mode[0] == 'a' || stream_mode[0] == 'A') &&
+        strchr(stream_mode, '+') != NULL &&
+        ptn_object_has_declared_method(runtime, object, "stream_seek")) {
+        PtnValue seek_args[2] = {
+            ptn_int(0),
+            ptn_int(SEEK_SET)
+        };
+        PtnValue seek_result = runtime->method_dispatch(runtime, object, "stream_seek", 2, seek_args, line);
+        ptn_value_destroy(&seek_args[0]);
+        ptn_value_destroy(&seek_args[1]);
+        ptn_value_destroy(&seek_result);
+        if (runtime->exceptions->active_exception != NULL) {
+            return;
+        }
+    }
+
     for (size_t reads = 0; reads < 1024; reads++) {
         PtnValue read_arg = ptn_int(8192);
         PtnValue read_result = runtime->method_dispatch(runtime, object, "stream_read", 1, &read_arg, line);
@@ -53295,6 +53312,11 @@ static int ptn_runtime_allow_url_fopen(void) {
     return ptn_runtime_ini_bool(value == NULL ? "1" : value, 1);
 }
 
+static int ptn_runtime_allow_url_include(void) {
+    const char *value = getenv("PTN_ALLOW_URL_INCLUDE");
+    return ptn_runtime_ini_bool(value == NULL ? "0" : value, 0);
+}
+
 static void ptn_user_stream_emit_url_disabled_warning(
     PtnRuntime *runtime,
     const char *function_name,
@@ -53321,6 +53343,42 @@ static void ptn_user_stream_emit_url_disabled_warning(
         message,
         (size_t)needed + 1,
         "%s(): %s:// wrapper is disabled in the server configuration by allow_url_fopen=0",
+        function_name,
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_user_stream_emit_url_include_disabled_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnUserStreamWrapper *wrapper,
+    size_t line
+) {
+    const char *scheme = wrapper == NULL || wrapper->scheme == NULL ? "stream" : wrapper->scheme;
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): %s:// wrapper is disabled in the server configuration by allow_url_include=0",
+        function_name,
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): %s:// wrapper is disabled in the server configuration by allow_url_include=0",
         function_name,
         scheme
     );
@@ -55889,7 +55947,13 @@ static size_t ptn_stream_filtered_read_pending_take(PtnResource *resource, char 
     return take;
 }
 
-static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_t raw_want) {
+static size_t ptn_stream_filtered_read_fill_pending(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t raw_want,
+    size_t line
+) {
     if (ptn_stream_filter_chain_has_zlib(resource->read_filters)) {
         PtnStringBuffer raw;
         ptn_string_buffer_init(&raw);
@@ -55915,12 +55979,12 @@ static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_
         }
         size_t filtered_len = 0;
         char *filtered = ptn_stream_apply_filter_chain_alloc(
-            NULL,
-            "fread",
+            runtime,
+            function_name == NULL ? "fread" : function_name,
             resource->read_filters,
             raw.data,
             raw.len,
-            0,
+            line,
             &filtered_len
         );
         free(raw.data);
@@ -55937,12 +56001,12 @@ static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_
     }
     size_t filtered_len = 0;
     char *filtered = ptn_stream_apply_filter_chain_alloc(
-        NULL,
-        "fread",
+        runtime,
+        function_name == NULL ? "fread" : function_name,
         resource->read_filters,
         (const char *)chunk,
         read_len,
-        0,
+        line,
         &filtered_len
     );
     ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
@@ -55985,7 +56049,7 @@ static char *ptn_stream_read_filtered_bytes(
 
     while (ptn_stream_filtered_read_pending_available(resource) < length) {
         errno = 0;
-        size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        size_t read_len = ptn_stream_filtered_read_fill_pending(runtime, function_name, resource, 8192, line);
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
@@ -56116,10 +56180,15 @@ static void ptn_stream_filter_probe_prebuffered_zlib(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
-static int ptn_stream_getc_filtered(PtnResource *resource) {
+static int ptn_stream_getc_filtered(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t line
+) {
     if (resource->read_filters != NULL || ptn_stream_filtered_read_pending_available(resource) != 0) {
         while (ptn_stream_filtered_read_pending_available(resource) == 0) {
-            size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+            size_t read_len = ptn_stream_filtered_read_fill_pending(runtime, function_name, resource, 8192, line);
             if (read_len == 0) {
                 return EOF;
             }
@@ -56730,7 +56799,7 @@ static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_null();
     }
     errno = 0;
-    int byte = ptn_stream_getc_filtered(resource);
+    int byte = ptn_stream_getc_filtered(runtime, "fgetc", resource, line);
     if (byte == EOF) {
         if (ptn_stream_error(resource)) {
             ptn_emit_stream_read_notice(runtime, "fgetc", 8192, line);
@@ -57199,7 +57268,7 @@ static int ptn_stream_read_line(
     int detect_carriage_return = ptn_runtime_ini_bool(auto_detect_line_endings, 0);
     while (!has_max_len || buffer->len < max_len) {
         errno = 0;
-        int byte = ptn_stream_getc_filtered(resource);
+        int byte = ptn_stream_getc_filtered(runtime, function_name, resource, line);
         if (byte == EOF) {
             if (ptn_stream_error(resource)) {
                 ptn_emit_stream_read_notice(runtime, function_name, has_max_len ? max_len : 8192, line);
@@ -57911,7 +57980,7 @@ static PtnValue ptn_stream_read_remaining(
             free(pending);
         }
         errno = 0;
-        size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        size_t read_len = ptn_stream_filtered_read_fill_pending(runtime, function_name, resource, 8192, line);
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
@@ -58133,7 +58202,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     while (length == 0 || buffer.len < (size_t)length) {
-        int byte = ptn_stream_getc_filtered(resource);
+        int byte = ptn_stream_getc_filtered(runtime, "stream_get_line", resource, line);
         if (byte == EOF) {
             if (ptn_stream_error(resource)) {
                 ptn_stream_clear_error(resource);
@@ -206743,6 +206812,94 @@ static int ptn_dynamic_read_file(const char *path, char **contents_out, size_t *
     return 1;
 }
 
+static void ptn_dynamic_include_emit_failed_opening(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *display_path,
+    const char *kind,
+    int required,
+    size_t line,
+    PtnValue *result_out
+) {
+    const char *shown_path = display_path == NULL ? (path == NULL ? "" : path) : display_path;
+    const char *include_path = runtime != NULL && runtime->include_path != NULL
+        ? runtime->include_path
+        : ".";
+    int needed;
+    char *message;
+    int written;
+    if (required) {
+        needed = snprintf(
+            NULL,
+            0,
+            "Failed opening required '%s' (include_path='%s')",
+            shown_path,
+            include_path
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "Failed opening required '%s' (include_path='%s')",
+            shown_path,
+            include_path
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "Error",
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        if (result_out != NULL) {
+            *result_out = ptn_null();
+        }
+        return;
+    }
+    needed = snprintf(
+        NULL,
+        0,
+        "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+        kind == NULL ? "include" : kind,
+        shown_path,
+        include_path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+        kind == NULL ? "include" : kind,
+        shown_path,
+        include_path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+    free(message);
+    if (result_out != NULL) {
+        *result_out = ptn_bool(0);
+    }
+}
+
 static PTN_UNUSED int ptn_dynamic_include_php_file(
     PtnRuntime *runtime,
     const char *path,
@@ -206754,6 +206911,19 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
 ) {
     char *code = NULL;
     size_t code_len = 0;
+    PtnUserStreamWrapper *include_wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (include_wrapper != NULL && include_wrapper->is_url && !ptn_runtime_allow_url_include()) {
+        ptn_user_stream_emit_url_include_disabled_warning(runtime, kind == NULL ? "include" : kind, include_wrapper, line);
+        ptn_emit_file_warning(
+            runtime,
+            kind == NULL ? "include" : kind,
+            path,
+            "Failed to open stream: no suitable wrapper could be found",
+            line
+        );
+        ptn_dynamic_include_emit_failed_opening(runtime, path, display_path, kind, required, line, result_out);
+        return 1;
+    }
     unsigned char *user_stream_code = NULL;
     int user_stream_result = ptn_try_read_user_stream_wrapper_bytes(
         runtime,
@@ -206768,83 +206938,7 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
         code = (char *)user_stream_code;
     } else if (user_stream_result < 0) {
         free(user_stream_code);
-        const char *shown_path = display_path == NULL ? (path == NULL ? "" : path) : display_path;
-        const char *include_path = runtime != NULL && runtime->include_path != NULL
-            ? runtime->include_path
-            : ".";
-        int needed;
-        char *message;
-        int written;
-        if (required) {
-            needed = snprintf(
-                NULL,
-                0,
-                "Failed opening required '%s' (include_path='%s')",
-                shown_path,
-                include_path
-            );
-            if (needed < 0) {
-                ptn_abort_out_of_memory();
-            }
-            message = malloc((size_t)needed + 1);
-            if (message == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            written = snprintf(
-                message,
-                (size_t)needed + 1,
-                "Failed opening required '%s' (include_path='%s')",
-                shown_path,
-                include_path
-            );
-            if (written < 0 || written != needed) {
-                free(message);
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception_owned_message_at(
-                runtime,
-                "Error",
-                message,
-                runtime != NULL ? runtime->source_path : NULL,
-                line
-            );
-            if (result_out != NULL) {
-                *result_out = ptn_null();
-            }
-            return 1;
-        }
-        needed = snprintf(
-            NULL,
-            0,
-            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
-            kind == NULL ? "include" : kind,
-            shown_path,
-            include_path
-        );
-        if (needed < 0) {
-            ptn_abort_out_of_memory();
-        }
-        message = malloc((size_t)needed + 1);
-        if (message == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        written = snprintf(
-            message,
-            (size_t)needed + 1,
-            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
-            kind == NULL ? "include" : kind,
-            shown_path,
-            include_path
-        );
-        if (written < 0 || written != needed) {
-            free(message);
-            ptn_abort_out_of_memory();
-        }
-        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
-        free(message);
-        if (result_out != NULL) {
-            *result_out = ptn_bool(0);
-        }
+        ptn_dynamic_include_emit_failed_opening(runtime, path, display_path, kind, required, line, result_out);
         return 1;
     } else if (!ptn_dynamic_read_file(path, &code, &code_len)) {
         return 0;
