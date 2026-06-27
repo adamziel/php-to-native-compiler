@@ -28740,6 +28740,98 @@ string(0) \"\"\n"
 }
 
 #[test]
+fn compile_stream_context_params_and_zlib_unlink_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-params-zlib-unlink");
+    fs::create_dir_all(&root).unwrap();
+    let gzip_path = root.join("payload.txt.gz");
+    fs::write(
+        &gzip_path,
+        [
+            31u8, 139, 8, 0, 0, 0, 0, 0, 2, 3, 203, 72, 205, 201, 201, 231, 2, 0, 32, 48, 58, 54,
+            6, 0, 0, 0,
+        ],
+    )
+    .unwrap();
+    let input = root.join("stream-context-params-zlib-unlink.php");
+    let output = root.join("stream-context-params-zlib-unlink-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+function notify() {{}}\n\
+$ctx = stream_context_create();\n\
+var_dump(stream_context_get_params($ctx));\n\
+var_dump(stream_context_set_option($ctx, 'foo', 'bar', 'baz'));\n\
+var_dump(stream_context_get_params($ctx));\n\
+var_dump(stream_context_set_params($ctx, ['notification' => 'notify']));\n\
+var_dump(stream_context_get_params($ctx));\n\
+$path = '{}';\n\
+var_dump(file_exists($path));\n\
+var_dump(unlink('compress.zlib://' . $path));\n\
+var_dump(file_exists($path));\n",
+            gzip_path.to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: unlink(): ZLIB does not allow unlinking"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        concat!(
+            "array(1) {\n",
+            "  [\"options\"]=>\n",
+            "  array(0) {\n",
+            "  }\n",
+            "}\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [\"options\"]=>\n",
+            "  array(1) {\n",
+            "    [\"foo\"]=>\n",
+            "    array(1) {\n",
+            "      [\"bar\"]=>\n",
+            "      string(3) \"baz\"\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [\"notification\"]=>\n",
+            "  string(6) \"notify\"\n",
+            "  [\"options\"]=>\n",
+            "  array(1) {\n",
+            "    [\"foo\"]=>\n",
+            "    array(1) {\n",
+            "      [\"bar\"]=>\n",
+            "      string(3) \"baz\"\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_get_params"));
+    assert!(c_source.contains("ptn_internal_stream_context_set_option"));
+    assert!(c_source.contains("ptn_zlib_uri_path"));
+}
+
+#[test]
 fn compile_stream_context_mutators_paths_and_error_modes_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-mutators-errors");
     fs::create_dir_all(&root).unwrap();

@@ -56974,6 +56974,73 @@ static int ptn_stream_context_assign_options(PtnRuntime *runtime, PtnResource *c
     return 1;
 }
 
+static int ptn_stream_context_merge_options(PtnRuntime *runtime, PtnResource *context, PtnValue options, size_t line) {
+    if (!ptn_stream_context_validate_options_shape(runtime, options, line)) {
+        return 0;
+    }
+    PtnValue merged = ptn_value_deref(context->context_options).type == PTN_ARRAY
+        ? ptn_stream_context_options_snapshot_value(context->context_options, 0)
+        : ptn_array_from_literal_entries(0, NULL);
+    PtnValue source = ptn_value_deref(options);
+    for (size_t i = 0; i < source.as.array->len; i++) {
+        PtnArrayEntry *wrapper_entry = &source.as.array->entries[i];
+        PtnValue wrapper_options = ptn_value_deref(wrapper_entry->value);
+        PtnArrayKey wrapper_key = ptn_array_key_clone(wrapper_entry->key);
+        PtnArrayEntry *target_entry = ptn_array_entry_for_key(merged.as.array, wrapper_key);
+        if (target_entry == NULL || ptn_value_deref(target_entry->value).type != PTN_ARRAY) {
+            PtnValue wrapper_snapshot = ptn_stream_context_options_snapshot_value(wrapper_options, 0);
+            ptn_array_set_entry(merged.as.array, wrapper_key, wrapper_snapshot);
+            continue;
+        }
+        ptn_array_key_free(wrapper_key);
+        PtnValue target_wrapper = ptn_value_deref(target_entry->value);
+        for (size_t j = 0; j < wrapper_options.as.array->len; j++) {
+            PtnArrayEntry *option_entry = &wrapper_options.as.array->entries[j];
+            ptn_array_set_entry(
+                target_wrapper.as.array,
+                ptn_array_key_clone(option_entry->key),
+                ptn_stream_context_options_snapshot_value(option_entry->value, 0)
+            );
+        }
+    }
+    ptn_value_destroy(&context->context_options);
+    context->context_options = merged;
+    return 1;
+}
+
+static int ptn_stream_context_assign_single_option(
+    PtnResource *context,
+    PtnStringOperand wrapper_name,
+    PtnStringOperand option_name,
+    PtnValue option_value
+) {
+    PtnValue options = ptn_value_deref(context->context_options).type == PTN_ARRAY
+        ? ptn_stream_context_options_snapshot_value(context->context_options, 0)
+        : ptn_array_from_literal_entries(0, NULL);
+    PtnArrayKey wrapper_key = ptn_array_string_key_len(wrapper_name.data, wrapper_name.len);
+    PtnArrayEntry *wrapper_entry = ptn_array_entry_for_key(options.as.array, wrapper_key);
+    if (wrapper_entry == NULL || ptn_value_deref(wrapper_entry->value).type != PTN_ARRAY) {
+        PtnValue wrapper_options = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            wrapper_options.as.array,
+            ptn_array_string_key_len(option_name.data, option_name.len),
+            ptn_stream_context_options_snapshot_value(option_value, 0)
+        );
+        ptn_array_set_entry(options.as.array, wrapper_key, wrapper_options);
+    } else {
+        ptn_array_key_free(wrapper_key);
+        PtnValue wrapper_options = ptn_value_deref(wrapper_entry->value);
+        ptn_array_set_entry(
+            wrapper_options.as.array,
+            ptn_array_string_key_len(option_name.data, option_name.len),
+            ptn_stream_context_options_snapshot_value(option_value, 0)
+        );
+    }
+    ptn_value_destroy(&context->context_options);
+    context->context_options = options;
+    return 1;
+}
+
 static PtnArrayEntry *ptn_stream_context_array_entry_for_string_key(PtnArray *array, const char *key_name) {
     PtnArrayKey key = ptn_array_string_key(key_name);
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
@@ -57133,6 +57200,101 @@ static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, siz
         return ptn_array_from_literal_entries(0, NULL);
     }
     return ptn_stream_context_options_snapshot_value(value.as.resource->context_options, 0);
+}
+
+static PtnValue ptn_internal_stream_context_get_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *context = NULL;
+    if (!ptn_internal_expect_stream_context_arg(runtime, "stream_context_get_params", args[0], line, &context)) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_value_deref(context->context_params).type == PTN_ARRAY
+        ? ptn_stream_context_options_snapshot_value(context->context_params, 0)
+        : ptn_array_from_literal_entries(0, NULL);
+    PtnValue options = ptn_value_deref(context->context_options).type == PTN_NULL
+        ? ptn_array_from_literal_entries(0, NULL)
+        : ptn_stream_context_options_snapshot_value(context->context_options, 0);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("options"), options);
+    return result;
+}
+
+static PtnValue ptn_internal_stream_context_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *context = NULL;
+    if (!ptn_internal_expect_stream_context_arg(runtime, "stream_context_set_option", args[0], line, &context)) {
+        return ptn_null();
+    }
+
+    PtnValue wrapper_or_options = ptn_value_deref(args[1]);
+    if (wrapper_or_options.type == PTN_ARRAY) {
+        if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "stream_context_set_option(): Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array"
+            );
+            return ptn_null();
+        }
+        if (argc >= 4) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "stream_context_set_option(): Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array"
+            );
+            return ptn_null();
+        }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead",
+            line
+        );
+        return ptn_bool(ptn_stream_context_merge_options(runtime, context, wrapper_or_options, line));
+    }
+
+    if (argc < 3 || ptn_value_deref(args[2]).type == PTN_NULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_context_set_option(): Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string"
+        );
+        return ptn_null();
+    }
+    if (argc < 4) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_context_set_option(): Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string"
+        );
+        return ptn_null();
+    }
+    PtnStringOperand wrapper = ptn_internal_expect_string_arg(
+        runtime,
+        "stream_context_set_option",
+        2,
+        "wrapper_or_options",
+        wrapper_or_options,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(wrapper);
+        return ptn_null();
+    }
+    PtnStringOperand option = ptn_internal_expect_string_arg(
+        runtime,
+        "stream_context_set_option",
+        3,
+        "option_name",
+        args[2],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(wrapper);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    int ok = ptn_stream_context_assign_single_option(context, wrapper, option, args[3]);
+    ptn_string_operand_free(wrapper);
+    ptn_string_operand_free(option);
+    return ptn_bool(ok);
 }
 
 static void ptn_stream_context_set_params_throw_callback_error(
@@ -59458,6 +59620,13 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "unlink(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        (void)zlib_path;
+        ptn_emit_warning(&runtime->diagnostics, "unlink(): ZLIB does not allow unlinking", line);
+        free(path);
         return ptn_bool(0);
     }
     if (strncmp(path, "phar://", 7) == 0) {
@@ -157225,7 +157394,9 @@ static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_get_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -158175,7 +158346,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_context_create", 0, 2, ptn_internal_stream_context_create },
         { "stream_context_get_default", 0, 1, ptn_internal_stream_context_get_default },
         { "stream_context_get_options", 1, 1, ptn_internal_stream_context_get_options },
+        { "stream_context_get_params", 1, 1, ptn_internal_stream_context_get_params },
         { "stream_context_set_default", 1, 1, ptn_internal_stream_context_set_default },
+        { "stream_context_set_option", 2, 4, ptn_internal_stream_context_set_option },
         { "stream_context_set_params", 2, 2, ptn_internal_stream_context_set_params },
         { "stream_context_set_options", 2, 2, ptn_internal_stream_context_set_options },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
