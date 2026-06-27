@@ -4130,6 +4130,14 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         free(class_name);
         return 1;
     }
+    const char *random_interval_boundary_case = ptn_ascii_case_equal(resolved_class_name, "Random\\IntervalBoundary")
+        ? ptn_random_interval_boundary_case_name(constant_name)
+        : NULL;
+    if (random_interval_boundary_case != NULL) {
+        *out = ptn_builtin_enum_case_singleton(runtime, "Random\\IntervalBoundary", random_interval_boundary_case);
+        free(class_name);
+        return 1;
+    }
     const char *dom_adjacent_position_case = ptn_ascii_case_equal(resolved_class_name, "Dom\\AdjacentPosition")
         ? ptn_dom_adjacent_position_case_name(constant_name)
         : NULL;
