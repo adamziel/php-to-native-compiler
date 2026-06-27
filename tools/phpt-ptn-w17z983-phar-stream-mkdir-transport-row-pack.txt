@@ -1,0 +1,15 @@
+# ptn-w17z.983 focused PHAR/stream/filter/zlib row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260627T004947Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/mkdir.phpt
+ext/standard/tests/streams/bug54946.phpt
+ext/standard/tests/streams/non_finite_values.phpt
+ext/zlib/tests/zlib_get_coding_type_basic.phpt
+ext/standard/tests/streams/bug79000.phpt
+ext/phar/tests/phar_buildfromdirectory1.phpt
+ext/standard/tests/filters/bug81294.phpt
+ext/standard/tests/streams/stream_get_transports.phpt
+ext/standard/tests/streams/bug71323.phpt
+ext/phar/tests/zip/odt.phpt
+ext/phar/tests/phar_convert_metadata_leak.phpt
+ext/phar/tests/tar/rename.phpt
