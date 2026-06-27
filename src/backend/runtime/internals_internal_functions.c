@@ -52095,6 +52095,8 @@ static int ptn_zlib_transform_bytes(
         "            out=d.decompress(data)\n"
         "        if flush_mode != 0 or allow_truncated:\n"
         "            out += d.flush()\n"
+        "        if not allow_truncated and not d.eof:\n"
+        "            sys.exit(1)\n"
         "    else:\n"
         "        if has_dict:\n"
         "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,zdict=zdict)\n"
@@ -52191,6 +52193,7 @@ static int ptn_zlib_transform_bytes_no_dictionary(
     int64_t window_bits,
     int64_t level,
     int allow_truncated_decompress,
+    int64_t flush_mode,
     unsigned char **data_out,
     size_t *len_out
 ) {
@@ -52200,7 +52203,7 @@ static int ptn_zlib_transform_bytes_no_dictionary(
         decompress,
         window_bits,
         level,
-        PTN_ZLIB_FINISH,
+        flush_mode,
         NULL,
         0,
         allow_truncated_decompress,
@@ -52262,7 +52265,11 @@ static int ptn_zlib_inflate_accumulated_bytes(
         "    out=d.decompress(data)\n"
         "    sys.stdout.buffer.write(bytes([1 if d.eof else 0]))\n"
         "    sys.stdout.buffer.write(out)\n"
-        "except Exception:\n"
+        "except Exception as exc:\n"
+        "    message=str(exc).lower()\n"
+        "    if 'error 2' in message or ('need' in message and 'dict' in message):\n"
+        "        sys.stdout.buffer.write(bytes([2]))\n"
+        "        sys.exit(0)\n"
         "    sys.exit(1)\n";
     pid_t child = fork();
     if (child < 0) {
@@ -52329,7 +52336,9 @@ static int ptn_zlib_inflate_accumulated_bytes(
         errno = write_ok && ok ? saved_errno : EIO;
         return -1;
     }
-    *status_out = output[0] == 1 ? PTN_ZLIB_STREAM_END : PTN_ZLIB_OK;
+    *status_out = output[0] == 1
+        ? PTN_ZLIB_STREAM_END
+        : (output[0] == 2 ? PTN_ZLIB_NEED_DICT : PTN_ZLIB_OK);
     size_t payload_len = output_len - 1;
     unsigned char *payload = malloc(payload_len + 1);
     if (payload == NULL) {
@@ -52364,6 +52373,7 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
         PTN_ZLIB_ENCODING_GZIP,
         -1,
         0,
+        PTN_ZLIB_FINISH,
         data_out,
         len_out
     );
@@ -52381,6 +52391,7 @@ static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data
         PTN_ZLIB_ENCODING_GZIP,
         level,
         0,
+        PTN_ZLIB_FINISH,
         &compressed,
         &compressed_len
     );
@@ -54014,6 +54025,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_window = zlib_window;
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
+    filter->zlib_eof = 0;
     filter->write_seek_mode = write_seek_mode;
     filter->next = NULL;
     return filter;
@@ -54330,6 +54342,7 @@ static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
     filter->zlib_error = 0;
+    filter->zlib_eof = 0;
 }
 
 static int ptn_stream_filter_chain_has_strict_write_seek(PtnStreamFilter *filter) {
@@ -54736,6 +54749,12 @@ static char *ptn_stream_apply_filter_chain_alloc(
     size_t output_len = len;
     for (; filter != NULL; filter = filter->next) {
         if (ptn_stream_filter_kind_is_zlib(filter->kind)) {
+            if (filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE && filter->zlib_eof) {
+                free(output);
+                output = ptn_duplicate_string_len("", 0);
+                output_len = 0;
+                continue;
+            }
             unsigned char *transformed = NULL;
             size_t transformed_len = 0;
             int ok = ptn_zlib_transform_bytes_no_dictionary(
@@ -54745,6 +54764,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 filter->zlib_window,
                 filter->zlib_level,
                 filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
+                filter->kind == PTN_STREAM_FILTER_ZLIB_DEFLATE
+                    ? PTN_ZLIB_SYNC_FLUSH
+                    : PTN_ZLIB_FINISH,
                 &transformed,
                 &transformed_len
             );
@@ -54754,6 +54776,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 output_len = transformed_len;
             } else {
                 filter->zlib_error = 1;
+                if (filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE) {
+                    filter->zlib_eof = 1;
+                }
                 free(output);
                 output = ptn_duplicate_string_len("", 0);
                 output_len = 0;
@@ -55060,6 +55085,7 @@ static void ptn_stream_filter_probe_prebuffered_zlib(
         filter->zlib_window,
         filter->zlib_level,
         0,
+        PTN_ZLIB_FINISH,
         &transformed,
         &transformed_len
     );
@@ -96450,6 +96476,14 @@ static const char *ptn_runtime_output_handler(PtnRuntime *runtime) {
     return root->output_handler;
 }
 
+static const char *ptn_runtime_zlib_output_compression(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->zlib_output_compression == NULL) {
+        return "0";
+    }
+    return root->zlib_output_compression;
+}
+
 static const char *ptn_runtime_filter_default(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->filter_default == NULL) {
@@ -97673,6 +97707,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_handler(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zlib.output_compression")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_zlib_output_compression(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
         return 1;
@@ -97840,6 +97878,11 @@ static void ptn_runtime_set_highlight_string(PtnRuntime *runtime, const char *va
 static void ptn_runtime_set_output_handler(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->output_handler, value);
+}
+
+static void ptn_runtime_set_zlib_output_compression(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->zlib_output_compression, value);
 }
 
 static void ptn_runtime_set_filter_default(PtnRuntime *runtime, const char *value) {
@@ -98110,6 +98153,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
         ptn_runtime_set_output_handler(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zlib.output_compression")) {
+        ptn_runtime_set_zlib_output_compression(runtime, "0");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -98618,6 +98666,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_output_handler(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zlib.output_compression")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_zlib_output_compression(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_zlib_output_compression(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -140058,6 +140116,7 @@ static PtnValue ptn_zlib_transform_string_value_limited(
         encoding,
         level,
         decompress && max_length > 0 && data.len > 0,
+        PTN_ZLIB_FINISH,
         &transformed,
         &transformed_len
     );
@@ -140563,6 +140622,16 @@ static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const
         ptn_emit_warning(&runtime->diagnostics, "inflate_add(): data error failed", line);
         return ptn_bool(0);
     }
+    if (status == PTN_ZLIB_NEED_DICT) {
+        free(output);
+        context->status = status;
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "inflate_add(): Inflating this data requires a preset dictionary, please specify it in the options array of inflate_init()",
+            line
+        );
+        return ptn_bool(0);
+    }
     size_t previous_output_len = context->output_len;
     if (output_len < previous_output_len) {
         previous_output_len = 0;
@@ -140903,11 +140972,109 @@ static PtnValue ptn_internal_gzgets(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_internal_fgets(runtime, argc, args, line);
 }
 
+static int ptn_ascii_case_equal_len(const char *left, size_t left_len, const char *right) {
+    size_t right_len = strlen(right);
+    if (left_len != right_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left_len; i++) {
+        if (tolower((unsigned char)left[i]) != tolower((unsigned char)right[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_zlib_accept_encoding_q_allows(const char *start, const char *end) {
+    const char *cursor = start;
+    while (cursor < end) {
+        while (cursor < end && (*cursor == ';' || isspace((unsigned char)*cursor))) {
+            cursor++;
+        }
+        const char *name_start = cursor;
+        while (cursor < end && *cursor != '=' && *cursor != ';') {
+            cursor++;
+        }
+        const char *name_end = cursor;
+        while (name_end > name_start && isspace((unsigned char)name_end[-1])) {
+            name_end--;
+        }
+        if (cursor >= end || *cursor != '=') {
+            continue;
+        }
+        cursor++;
+        while (cursor < end && isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        const char *value_start = cursor;
+        while (cursor < end && *cursor != ';') {
+            cursor++;
+        }
+        const char *value_end = cursor;
+        while (value_end > value_start && isspace((unsigned char)value_end[-1])) {
+            value_end--;
+        }
+        if (ptn_ascii_case_equal_len(name_start, (size_t)(name_end - name_start), "q") &&
+            value_start < value_end &&
+            *value_start == '0') {
+            int non_zero_fraction = 0;
+            for (const char *value = value_start + 1; value < value_end; value++) {
+                if (*value >= '1' && *value <= '9') {
+                    non_zero_fraction = 1;
+                    break;
+                }
+            }
+            if (!non_zero_fraction) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int ptn_zlib_accepts_encoding(const char *accept_encoding, const char *coding) {
+    if (accept_encoding == NULL || coding == NULL || coding[0] == '\0') {
+        return 0;
+    }
+    const char *segment = accept_encoding;
+    while (*segment != '\0') {
+        const char *segment_end = strchr(segment, ',');
+        if (segment_end == NULL) {
+            segment_end = segment + strlen(segment);
+        }
+        const char *token_start = segment;
+        while (token_start < segment_end && isspace((unsigned char)*token_start)) {
+            token_start++;
+        }
+        const char *token_end = token_start;
+        while (token_end < segment_end && *token_end != ';' && !isspace((unsigned char)*token_end)) {
+            token_end++;
+        }
+        int token_matches =
+            ptn_ascii_case_equal_len(token_start, (size_t)(token_end - token_start), coding) ||
+            ptn_ascii_case_equal_len(token_start, (size_t)(token_end - token_start), "*");
+        if (token_matches && ptn_zlib_accept_encoding_q_allows(token_end, segment_end)) {
+            return 1;
+        }
+        segment = *segment_end == ',' ? segment_end + 1 : segment_end;
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
+    if (!ptn_runtime_ini_bool(ptn_runtime_zlib_output_compression(runtime), 0)) {
+        return ptn_bool(0);
+    }
+    const char *accept_encoding = getenv("HTTP_ACCEPT_ENCODING");
+    if (ptn_zlib_accepts_encoding(accept_encoding, "gzip")) {
+        return ptn_string("gzip");
+    }
+    if (ptn_zlib_accepts_encoding(accept_encoding, "deflate")) {
+        return ptn_string("deflate");
+    }
     return ptn_bool(0);
 }
 

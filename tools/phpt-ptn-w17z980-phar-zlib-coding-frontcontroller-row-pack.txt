@@ -1,0 +1,15 @@
+# ptn-w17z.980 focused PHAR/zlib coding/frontcontroller row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260627T002941Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/gh19752.phpt
+ext/zlib/tests/inflate_add_no_dict.phpt
+ext/standard/tests/filters/bug54350.phpt
+ext/phar/tests/026.phpt
+ext/phar/tests/gh21333.phpt
+ext/phar/tests/tar/frontcontroller20.phar.phpt
+ext/zlib/tests/bug_52944.phpt
+ext/zlib/tests/zlib_get_coding_type_gzip.phpt
+ext/phar/tests/016.phpt
+ext/zlib/tests/bug48725.phpt
+ext/phar/tests/006.phpt
+ext/phar/tests/bug79912.phpt

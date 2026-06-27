@@ -323,6 +323,7 @@ typedef struct {
 #define PTN_FORCE_DEFLATE 15
 #define PTN_ZLIB_OK 0
 #define PTN_ZLIB_STREAM_END 1
+#define PTN_ZLIB_NEED_DICT 2
 #define PTN_ZLIB_NO_FLUSH 0
 #define PTN_ZLIB_PARTIAL_FLUSH 1
 #define PTN_ZLIB_SYNC_FLUSH 2
@@ -1326,6 +1327,7 @@ struct PtnStreamFilter {
     int64_t zlib_window;
     int64_t zlib_level;
     int zlib_error;
+    int zlib_eof;
     int write_seek_mode;
     PtnStreamFilter *next;
 };
@@ -1721,6 +1723,7 @@ struct PtnRuntime {
     char *highlight_keyword;
     char *highlight_string;
     char *output_handler;
+    char *zlib_output_compression;
     char *filter_default;
     char *pcre_backtrack_limit;
     char *pcre_recursion_limit;

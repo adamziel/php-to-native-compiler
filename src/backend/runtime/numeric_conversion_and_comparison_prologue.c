@@ -258,6 +258,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;
     runtime->output_handler = NULL;
+    runtime->zlib_output_compression = NULL;
     runtime->filter_default = NULL;
     runtime->internal_encoding = NULL;
     runtime->input_encoding = NULL;
@@ -965,6 +966,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->arg_separator_output = NULL;
         free(runtime->output_handler);
         runtime->output_handler = NULL;
+        free(runtime->zlib_output_compression);
+        runtime->zlib_output_compression = NULL;
         free(runtime->filter_default);
         runtime->filter_default = NULL;
         free(runtime->pcre_backtrack_limit);

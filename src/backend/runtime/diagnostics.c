@@ -2686,6 +2686,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_highlight_keyword = getenv("PTN_HIGHLIGHT_KEYWORD");
     const char *configured_highlight_string = getenv("PTN_HIGHLIGHT_STRING");
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
+    const char *configured_zlib_output_compression =
+        getenv("PTN_ZLIB_OUTPUT_COMPRESSION");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_recursion_limit = getenv("PTN_PCRE_RECURSION_LIMIT");
@@ -2762,6 +2764,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->output_handler = ptn_duplicate_string(
         configured_output_handler == NULL ? "" : configured_output_handler
+    );
+    runtime->zlib_output_compression = ptn_duplicate_string(
+        configured_zlib_output_compression == NULL ? "0" : configured_zlib_output_compression
     );
     runtime->filter_default = ptn_duplicate_string(
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default

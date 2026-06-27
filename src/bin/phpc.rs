@@ -292,6 +292,7 @@ struct RuntimeIni {
     html_errors: Option<String>,
     error_reporting: Option<i64>,
     output_handler: Option<String>,
+    zlib_output_compression: Option<String>,
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
     pcre_recursion_limit: Option<String>,
@@ -533,6 +534,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         }
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zlib.output_compression") {
+        ini.zlib_output_compression = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
         ini.internal_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("input_encoding") {
@@ -1081,6 +1084,7 @@ fn compile_and_run(
         html_errors: ini.html_errors.clone(),
         error_reporting: ini.error_reporting,
         output_handler: ini.output_handler.clone(),
+        zlib_output_compression: ini.zlib_output_compression.clone(),
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
@@ -1251,6 +1255,9 @@ fn compile_and_run(
     }
     if let Some(output_handler) = &ini.output_handler {
         command.env("PTN_OUTPUT_HANDLER", output_handler);
+    }
+    if let Some(zlib_output_compression) = &ini.zlib_output_compression {
+        command.env("PTN_ZLIB_OUTPUT_COMPRESSION", zlib_output_compression);
     }
     if let Some(filter_default) = &ini.filter_default {
         command.env("PTN_FILTER_DEFAULT", filter_default);

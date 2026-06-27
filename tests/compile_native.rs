@@ -28506,7 +28506,7 @@ from inc2\n\
 from inc1\n\
 bool(true)\n\
 string(8) \"0000ffff\"\n\
-string(11) \"filter text\"\n\
+bool(false)\n\
 deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
 Object of class stdClass could not be converted to string\n\
