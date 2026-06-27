@@ -1,0 +1,15 @@
+# Exact SOAP server/security bug current-red row pack for ptn-w17z.1055.
+# Artifact source:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T190544Z.tsv
+ext/soap/tests/GHSA-85c2-q967-79q5.phpt
+ext/soap/tests/GHSA-hmxp-6pc4-f3vv.phpt
+ext/soap/tests/GHSA-m33r-qmcv-p97q.phpt
+ext/soap/tests/SoapServer/__getLastResponse.phpt
+ext/soap/tests/any.phpt
+ext/soap/tests/bugs/bug28985.phpt
+ext/soap/tests/bugs/bug29236.phpt
+ext/soap/tests/bugs/bug29839.phpt
+ext/soap/tests/bugs/bug29844.phpt
+ext/soap/tests/bugs/bug30045.phpt
+ext/soap/tests/bugs/bug30106.phpt
+ext/soap/tests/bugs/bug30175.phpt
