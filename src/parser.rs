@@ -101,7 +101,7 @@ fn parse_with_options(
     validate_method_signatures: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
-    let compiler_halt_offset = find_compiler_halt_offset(&tokens);
+    let compiler_halt_offset = find_compiler_halt_offset(source, &tokens);
     let mut parser = Parser {
         source,
         tokens,
@@ -305,7 +305,26 @@ fn cannot_use_import_message(kind: UseDeclarationKind, target: &str, alias: &str
     }
 }
 
-fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
+fn php_source_offset_for_decoded_byte_offset(source: &str, decoded_byte_offset: usize) -> i64 {
+    let mut decoded_offset = 0usize;
+    let mut source_offset = 0usize;
+    for ch in source.chars() {
+        let len = ch.len_utf8();
+        if decoded_offset + len > decoded_byte_offset {
+            break;
+        }
+        decoded_offset += len;
+        let codepoint = ch as u32;
+        if (0xE000..=0xE0FF).contains(&codepoint) {
+            source_offset += 1;
+        } else {
+            source_offset += len;
+        }
+    }
+    source_offset as i64
+}
+
+fn find_compiler_halt_offset(source: &str, tokens: &[Token]) -> Option<i64> {
     tokens.windows(4).find_map(|window| {
         let [name, left, right, semicolon] = window else {
             return None;
@@ -315,7 +334,10 @@ fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
             && matches!(right.kind, TokenKind::RightParen)
             && matches!(semicolon.kind, TokenKind::Semicolon)
         {
-            Some(semicolon.span.byte_end as i64)
+            Some(php_source_offset_for_decoded_byte_offset(
+                source,
+                semicolon.span.byte_end,
+            ))
         } else {
             None
         }
