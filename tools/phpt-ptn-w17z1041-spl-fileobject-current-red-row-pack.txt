@@ -1,0 +1,13 @@
+# Focused PHPT SPL iterator/FileObject current-red row pack for ptn-w17z.1041.
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/SplFileObject/bug52573.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/iterator_048.phpt
+ext/spl/tests/SplTempFileObject_constructor_memory_lt1_variation.phpt
+ext/spl/tests/iterator_028.phpt
+ext/spl/tests/spl_007.phpt
+ext/spl/tests/bug47534.phpt
+ext/spl/tests/gh9883-extra.phpt
+ext/spl/tests/bug70852.phpt
+ext/spl/tests/GlobIterator_constructor_count.phpt

@@ -39276,6 +39276,7 @@ static PtnValue ptn_scanf_execute(
     size_t next_target = 0;
     size_t assigned = 0;
     size_t in = 0;
+    int attempted_conversion = 0;
     for (size_t fi = 0; fi < format.len; fi++) {
         unsigned char fbyte = (unsigned char)format.data[fi];
         if (isspace(fbyte)) {
@@ -39313,6 +39314,7 @@ static PtnValue ptn_scanf_execute(
 
         PtnValue parsed = ptn_null();
         size_t before = in;
+        attempted_conversion = 1;
         int matched = ptn_scanf_match_value(spec, input_data, input_len, &in, &parsed);
         if (!matched) {
             in = before;
@@ -39341,6 +39343,8 @@ static PtnValue ptn_scanf_execute(
             && (
                 ptn_scanf_input_at_nul(input_data, input_len, in)
                 || (
+                    attempted_conversion
+                    &&
                     input_is_blank
                     && (
                         ptn_scanf_conversion_skips_whitespace(info.first_conversion)
@@ -188245,17 +188249,20 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
     return 1;
 }
 
-static int ptn_spl_offset_key_from_value(
+static int ptn_spl_offset_key_from_value_impl(
     PtnRuntime *runtime,
     const char *class_name,
     PtnValue offset,
     size_t line,
     int for_isset,
     int for_unset,
+    int emit_key_diagnostics,
     PtnArrayKey *key_out
 ) {
     offset = ptn_value_deref(offset);
-    ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, 1);
+    if (emit_key_diagnostics) {
+        ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, 1);
+    }
     if (ptn_array_offset_key_is_invalid(offset)) {
         const char *type_name = ptn_offset_key_type_name(offset);
         char message[256];
@@ -188291,6 +188298,48 @@ static int ptn_spl_offset_key_from_value(
         return 0;
     }
     return ptn_array_offset_key_from_value(runtime, offset, line, 0, key_out);
+}
+
+static int ptn_spl_offset_key_from_value(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue offset,
+    size_t line,
+    int for_isset,
+    int for_unset,
+    PtnArrayKey *key_out
+) {
+    return ptn_spl_offset_key_from_value_impl(
+        runtime,
+        class_name,
+        offset,
+        line,
+        for_isset,
+        for_unset,
+        1,
+        key_out
+    );
+}
+
+static int ptn_spl_offset_key_from_value_without_key_diagnostics(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue offset,
+    size_t line,
+    int for_isset,
+    int for_unset,
+    PtnArrayKey *key_out
+) {
+    return ptn_spl_offset_key_from_value_impl(
+        runtime,
+        class_name,
+        offset,
+        line,
+        for_isset,
+        for_unset,
+        0,
+        key_out
+    );
 }
 
 static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent) {
@@ -191493,12 +191542,13 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
     return 1;
 }
 
-static PTN_UNUSED int ptn_internal_array_object_offset_reference(
+static int ptn_internal_array_object_offset_reference_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
     const PtnValue *offset_value,
     size_t line,
     int create_if_missing,
+    int emit_key_diagnostics,
     PtnValue *reference_out
 ) {
     if (reference_out == NULL) {
@@ -191550,15 +191600,27 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     PtnArrayKey key;
     if (offset_value == NULL) {
         key = ptn_array_int_key(array->next_auto_key);
-    } else if (!ptn_spl_offset_key_from_value(
-                   runtime,
-                   "ArrayObject",
-                   ptn_value_deref(*offset_value),
-                   line,
-                   0,
-                   0,
-                   &key
-               )) {
+    } else if (
+        emit_key_diagnostics
+            ? !ptn_spl_offset_key_from_value(
+                  runtime,
+                  "ArrayObject",
+                  ptn_value_deref(*offset_value),
+                  line,
+                  0,
+                  0,
+                  &key
+              )
+            : !ptn_spl_offset_key_from_value_without_key_diagnostics(
+                  runtime,
+                  "ArrayObject",
+                  ptn_value_deref(*offset_value),
+                  line,
+                  0,
+                  0,
+                  &key
+              )
+    ) {
         *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         return 1;
     }
@@ -191598,6 +191660,44 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     ptn_array_key_free(key);
     ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
     return 1;
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out
+) {
+    return ptn_internal_array_object_offset_reference_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        create_if_missing,
+        1,
+        reference_out
+    );
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out
+) {
+    return ptn_internal_array_object_offset_reference_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        create_if_missing,
+        0,
+        reference_out
+    );
 }
 
 static PTN_UNUSED int ptn_internal_array_object_bind_offset_reference(
@@ -192101,7 +192201,15 @@ static void ptn_spl_file_info_sync_properties(
     size_t line
 ) {
     PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path == NULL ? "" : path));
-    char *filename = ptn_spl_path_filename_alloc(path == NULL ? "" : path);
+    PtnValue resolved_object = ptn_value_deref(object);
+    int use_path_as_filename = resolved_object.type == PTN_OBJECT &&
+        (
+            ptn_ascii_case_equal(resolved_object.as.object->class_name, "SplTempFileObject") ||
+            ptn_declared_class_is_same_or_descendant(resolved_object.as.object->class_name, "SplTempFileObject")
+        );
+    char *filename = use_path_as_filename
+        ? ptn_duplicate_string(path == NULL ? "" : path)
+        : ptn_spl_path_filename_alloc(path == NULL ? "" : path);
     PtnValue filename_value = ptn_owned_string(filename);
     ptn_spl_declare_private_value_property(runtime, object, "pathName", declaring_class, path_value, line);
     ptn_spl_declare_private_value_property(runtime, object, "fileName", declaring_class, filename_value, line);
@@ -198140,10 +198248,47 @@ static PtnValue ptn_spl_file_object_new_for_class(
     PtnValue stream = ptn_null();
     char *open_mode = NULL;
     if (is_temp_file_object) {
-        (void)args;
-        path = ptn_duplicate_string("php://temp");
-        open_mode = ptn_duplicate_string("w+");
-        stream = ptn_internal_tmpfile(runtime, 0, NULL, line);
+        int64_t max_memory = 2 * 1024 * 1024;
+        if (argc >= 1) {
+            max_memory = ptn_internal_expect_integer_arg(
+                runtime,
+                "SplTempFileObject::__construct",
+                1,
+                "maxMemory",
+                args[0],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (max_memory < 0) {
+            path = ptn_duplicate_string("php://memory");
+        } else if (argc >= 1) {
+            int needed = snprintf(NULL, 0, "php://temp/maxmemory:%lld", (long long)max_memory);
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            path = malloc((size_t)needed + 1);
+            if (path == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(path, (size_t)needed + 1, "php://temp/maxmemory:%lld", (long long)max_memory);
+            if (written < 0 || written != needed) {
+                free(path);
+                ptn_abort_out_of_memory();
+            }
+        } else {
+            path = ptn_duplicate_string("php://temp");
+        }
+        open_mode = ptn_duplicate_string("wb");
+        PtnValue fopen_args[2] = {
+            ptn_owned_string(ptn_duplicate_string(path)),
+            ptn_owned_string(ptn_duplicate_string(open_mode))
+        };
+        stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
+        ptn_value_destroy(&fopen_args[0]);
+        ptn_value_destroy(&fopen_args[1]);
         if (runtime->exceptions->active_exception != NULL) {
             free(open_mode);
             free(path);
@@ -198379,6 +198524,28 @@ static PtnValue ptn_spl_file_object_call_method(
             return ptn_owned_string_len((char *)entry_data, entry_len);
         }
         free(entry_data);
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue current;
+        if (data->has_current && ptn_value_deref(data->current).type == PTN_STRING) {
+            current = ptn_value_clone_deref(data->current);
+        } else {
+            current = ptn_spl_file_object_read_line(runtime, data, line);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            return ptn_null();
+        }
+        PtnValue resolved = ptn_value_deref(current);
+        if (resolved.type == PTN_STRING) {
+            return current;
+        }
+        ptn_value_destroy(&current);
+        return ptn_owned_string(ptn_duplicate_string(""));
     }
     if (ptn_internal_class_method_exists("SplFileInfo", name) &&
         !ptn_ascii_case_equal(name, "openFile")) {
