@@ -1129,6 +1129,14 @@ ptn_phpt_unsupported_ini_blocker() {
 ptn_phpt_has_external_service_harness() {
     local path=$1
 
+    if grep -Eiq 'stream_socket_server[[:space:]]*\(.*tcp://127\.0\.0\.1:' "$path" &&
+        grep -Eiq '(fsockopen|stream_socket_client)[[:space:]]*\(.*tcp://127\.0\.0\.1:' "$path" &&
+        ! grep -Eiq \
+            'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|::1' \
+            "$path"; then
+        return 1
+    fi
+
     grep -Eiq \
         'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
         "$path"
@@ -1430,7 +1438,7 @@ ptn_phpt_first_unsupported_language_surface() {
             return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|splfixedarray|spltempfileobject)([^[:alnum:]_]|$)/
         }
         function ptn_has_unmodeled_spl_function(line) {
-            return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|spl_classes)[[:space:]]*\(/ ||
+            return line ~ /(^|[^[:alnum:]_$\\])(iterator_count|spl_classes)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
@@ -1453,12 +1461,25 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009a[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/bug73209[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_028[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/
         }
         function ptn_supported_recursive_iterator_iterator_surface_line(line) {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
                 line ~ /(^|[^[:alnum:]_$\\])(recursivearrayiterator|recursiveiteratoriterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_spl_temp_file_object_surface_line(line) {
+            return (ptn_path ~ /ext\/spl\/tests\/SplTempFileObject_constructor_memory_lt1_variation[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/gh9883-extra[.]phpt$/) &&
+                line ~ /(^|[^[:alnum:]_$\\])spltempfileobject([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_recursive_directory_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])(filesystemiterator|recursivedirectoryiterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_spl_autoload_register_validation_row() {
+            return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_throw_with_spl_autoloader_call_as_autoloader[.]phpt$/
         }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
@@ -1603,7 +1624,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/) {
+            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/ &&
+                !ptn_supported_spl_autoload_register_validation_row()) {
                 print "unsupported-autoload-metadata\trequires default spl_autoload callback resolution, outside PTN modeled autoload registry"
                 found = 1
                 exit
@@ -1628,7 +1650,9 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if ((ptn_has_unmodeled_spl_symbol(line) &&
                     !ptn_supported_spl_fixed_array_surface_line(line) &&
-                    !ptn_supported_recursive_iterator_iterator_surface_line(line)) ||
+                    !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
+                    !ptn_supported_spl_temp_file_object_surface_line(line) &&
+                    !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
                 ptn_has_unmodeled_spl_function(line)) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1
@@ -2347,8 +2371,8 @@ ptn_phpt_first_unsupported_internal_surface() {
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])(stream_wrapper_(register|unregister|restore)|stream_register_wrapper|stream_filter_register)[[:space:]]*\(/) {
-                print "unsupported-internal\trequires user stream wrapper registration and stream callback dispatch, outside PTN modeled stream/resource runtime"
+            if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(unregister|restore)[[:space:]]*\(/) {
+                print "unsupported-internal\trequires user stream wrapper lifecycle restore/unregister semantics beyond PTN modeled stream/resource runtime"
                 found = 1
                 exit
             }
@@ -2522,9 +2546,8 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
         }
         {
             line = ptn_php_code_line($0)
-            if (line ~ /(^|[^[:alnum:]_$>])new[[:space:]]+\\?ziparchive[[:space:]]*([;(]|$)/ ||
-                line ~ /->[[:space:]]*(open|close|addfromstring|addfile|addemptydir|registercancelcallback|registerprogresscallback|setpassword|setarchivecomment|setcomment(name|index)|delete(name|index)|rename(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
-                print "unsupported-zip-archive-runtime\trequires ZipArchive archive mutation/callback runtime, outside PTN modeled ZipArchive metadata surface"
+            if (line ~ /->[[:space:]]*(addemptydir|registerprogresscallback|setpassword|setarchivecomment|setcomment(name|index)|delete(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
+                print "unsupported-zip-archive-runtime\trequires unmodeled ZipArchive archive operation surface"
                 found = 1
                 exit
             }

@@ -6006,6 +6006,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
         return Some("rest_index");
     }
+    if name.eq_ignore_ascii_case("getimagesize") && argument_index == 1 {
+        return Some("image_info");
+    }
     if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
         return Some("next");
     }
@@ -37278,6 +37281,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("forward_static_call")
         || name.eq_ignore_ascii_case("header_register_callback")
+        || name.eq_ignore_ascii_case("iterator_apply")
         || name.eq_ignore_ascii_case("ob_start")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")

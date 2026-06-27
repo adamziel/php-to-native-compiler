@@ -1,0 +1,12 @@
+ext/standard/tests/image/getimagesize_tif_mm.phpt
+ext/standard/tests/misc/get_browser_variation3.phpt
+ext/standard/tests/url/get_headers_error_003.phpt
+ext/standard/tests/bug81048.phpt
+ext/standard/tests/image/getimagesize_256_ico.phpt
+ext/standard/tests/bug64370_var1.phpt
+ext/standard/tests/math/number_format_basiclong_64bit.phpt
+ext/standard/tests/versioning/version_compare_op_abbrev.phpt
+ext/standard/tests/ini_info/php_ini_loaded_file.phpt
+ext/standard/tests/image/iptcembed_002.phpt
+ext/standard/tests/image/bug75708.phpt
+ext/standard/tests/misc/get_browser_no_default.phpt

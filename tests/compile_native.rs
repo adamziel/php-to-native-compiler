@@ -2457,6 +2457,91 @@ var_dump(iterator_to_array(new RecursiveIteratorIterator($filter), false));
 }
 
 #[test]
+fn compile_spl_current_red_iterator_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-current-red-iterator-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-current-red-iterator-helpers.php");
+    let output = root.join("spl-current-red-iterator-helpers-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+class Foo {{
+    public function __call($name, $params) {{
+        echo "called:$name\n";
+        return true;
+    }}
+}}
+
+$it = new ArrayIterator([1, 2, 3]);
+var_dump(iterator_apply($it, [new Foo, "foobar"]));
+
+try {{
+    spl_autoload_register('spl_autoload_call');
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+$pathMode = new RecursiveDirectoryIterator('{}', FileSystemIterator::CURRENT_AS_PATHNAME);
+$pathMode->rewind();
+echo gettype($pathMode->current()), "\n";
+
+$objectMode = new RecursiveDirectoryIterator('{}');
+$objectMode->rewind();
+echo gettype($objectMode->current()), "\n";
+
+$nested = [1, [2, [3]], 4];
+$recursive = new RecursiveIteratorIterator(new RecursiveArrayIterator($nested));
+var_dump($recursive->getMaxDepth());
+$recursive->setMaxDepth(1);
+var_dump($recursive->getMaxDepth());
+foreach ($recursive as $value) {{
+    echo $recursive->getDepth(), ":", $value, "\n";
+}}
+$recursive->setMaxDepth();
+var_dump($recursive->getMaxDepth());
+"#,
+            root.display(),
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "called:foobar\n",
+            "called:foobar\n",
+            "called:foobar\n",
+            "int(3)\n",
+            "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function\n",
+            "string\n",
+            "object\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "0:1\n",
+            "1:2\n",
+            "0:4\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_call_method"));
+    assert!(c_source.contains("getMaxDepth"));
+}
+
+#[test]
 fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
     fs::create_dir_all(&root).unwrap();
@@ -2768,6 +2853,50 @@ foreach ([$fresh, $finished] as $candidate) {
             "bool(true)\n",
             "FiberError: Cannot resume a fiber that is not suspended\n",
             "FiberError: Cannot resume a fiber that is not suspended\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_stack_size_ini_set_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-stack-size-ini-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-stack-size-ini-warning.php");
+    let output = root.join("fiber-stack-size-ini-warning-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(ini_set("fiber.stack_size", "-1"));
+var_dump(ini_set("fiber.stack_size", "131072"));
+var_dump(ini_get("fiber.stack_size"));
+$fiber = new Fiber(function() {});
+$fiber->start();
+echo "DONE\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Warning: fiber.stack_size must be a positive number in {} on line 2\n",
+                "bool(false)\n",
+                "string(1) \"0\"\n",
+                "string(6) \"131072\"\n",
+                "DONE\n",
+            ),
+            input.to_string_lossy()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -24449,7 +24578,11 @@ var_dump(clamp(0, 1, 3), clamp(\"d\", \"c\", \"g\"), is_nan(clamp(NAN, 4, 6)));\
 try { var_dump(clamp(4, NAN, 6)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 echo number_format(1515.1, -3), \"\\n\";\n\
 echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
-echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
+echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n\
+echo number_format(9223372036854775807, 5), \"\\n\";\n\
+echo number_format(9223372036854775807, -1), \"\\n\";\n\
+echo number_format(9223372036854775807, -5), \"\\n\";\n\
+echo number_format(9.223372036854775E+18, -5), \"\\n\";\n",
     )
     .unwrap();
 
@@ -24467,7 +24600,11 @@ int(1)\nstring(1) \"d\"\nbool(true)\n\
 clamp(): Argument #2 ($min) must not be NAN\n\
 2,000\n\
 2T020.14\n\
-2,020F14\n"
+2,020F14\n\
+9,223,372,036,854,775,807.00000\n\
+9,223,372,036,854,775,810\n\
+9,223,372,036,854,800,000\n\
+9,223,372,036,854,800,000\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -32513,6 +32650,140 @@ var_dump(mb_strimwidth('some string', 1, -2, '...', 'ASCII'));\n",
         "{stdout}"
     );
     assert!(stdout.contains("string(8) \"ome s...\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_mbstring_encoding_mail_trim_row_pack_edges() {
+    let root = temp_dir("ptn-phpc-mbstring-encoding-mail-trim-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let startup_input = root.join("mbstring-startup.php");
+    fs::write(&startup_input, "<?php echo \"startup-ok\\n\";\n").unwrap();
+
+    let startup = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("mbstring.detect_order=DETECT_ORDER")
+        .arg("-d")
+        .arg("mbstring.http_input=HTTP_INPUT")
+        .arg("-d")
+        .arg("mbstring.http_output=HTTP_OUTPUT")
+        .arg("-d")
+        .arg("mbstring.internal_encoding=UNKNOWN_ENCODING")
+        .arg("-d")
+        .arg("mbstring.language=UNKNOWN_LANGUAGE")
+        .arg("-f")
+        .arg(&startup_input)
+        .output()
+        .unwrap();
+    assert!(startup.status.success());
+    assert_eq!(
+        String::from_utf8(startup.stdout).unwrap(),
+        concat!(
+            "Warning: PHP Startup: INI setting contains invalid encoding \"DETECT_ORDER\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: INI setting contains invalid encoding \"HTTP_INPUT\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_output is deprecated in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: Unknown encoding \"UNKNOWN_ENCODING\" in ini setting in Unknown on line 0\n",
+            "startup-ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(startup.stderr).unwrap(), "");
+
+    let input = root.join("mbstring-row-pack.php");
+    let mail = root.join("mail.eml");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_exception(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo bin2hex(mb_strtoupper(hex2bin('f09090b8e2b0b0d4a5'), 'UTF-8')), \"\\n\";\n\
+echo mb_convert_case(\"'haddocks'\", MB_CASE_TITLE, 'UTF-8'), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e38080e38182e38184e38186e38188e3818ae38182e3818ae38080'), hex2bin('e38080e38182'), 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e3808061c2a0'))), \"\\n\";\n\
+$hz = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hz)), ']', \"\\n\";\n\
+mb_substitute_character('entity');\n\
+$hzEntity = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hzEntity)), ']', \"\\n\";\n\
+$text = 'abc';\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $text));\n\
+echo $text, \"\\n\";\n\
+$recursive = [1];\n\
+$recursive[] = &$recursive;\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $recursive));\n\
+dump_exception(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+$folded = mb_encode_mimeheader('Subject: Dies ist ein langer Test mit unterschiedlichen Worten und weiteren Worten', 'UTF-8', 'Q');\n\
+echo str_replace(\"\\r\\n\", '<CRLF>', $folded), \"\\n\";\n\
+dump_exception(fn() => mb_send_mail(\"a\\0b\", 'subject', 'test'));\n\
+var_dump(mb_send_mail('bug@example.com', 'subject', 'test', \"MIME-Version: 2.0\"));\n\
+readfile(getenv('MAIL_CAPTURE_PATH'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg(format!("sendmail_path=tee {} >/dev/null", mail.display()))
+        .arg("-f")
+        .arg(&input)
+        .env("MAIL_CAPTURE_PATH", &mail)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("f0909090e2b080d4a4\n"), "{stdout}");
+    assert!(stdout.contains("'Haddocks'\n"), "{stdout}");
+    assert!(
+        stdout.contains("e38184e38186e38188e3818ae38182e3818a\n61\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d3f]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d26, 2378, 3341, 433b]\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"UTF-8\"\nabc\n"), "{stdout}");
+    assert!(
+        stdout.contains("mb_convert_variables(): Cannot convert recursively referenced values"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"), "{stdout}");
+    assert!(stdout.contains("<CRLF>"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("To: bug@example.com\nSubject: subject\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("MIME-Version: 2.0\n"), "{stdout}");
+    assert!(
+        stdout.contains("Content-Type: text/plain; charset=UTF-8\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Content-Transfer-Encoding: BASE64\n\n"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("dGVzdA==\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -48449,6 +48720,185 @@ $_SERVER['test'] => test\n"
 }
 
 #[test]
+fn compile_phpinfo_nested_array_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-phpinfo-nested-array-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phpinfo-nested-array-variables.php");
+    let output = root.join("phpinfo-nested-array-variables-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$_ENV = [];\n\
+$_SERVER = ['foo' => ['bar' => ['baz' => 'qux']]];\n\
+phpinfo(INFO_VARIABLES);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "phpinfo()\n",
+            "\n",
+            "PHP Variables\n",
+            "\n",
+            "Variable => Value\n",
+            "$_SERVER['foo'] => Array\n",
+            "(\n",
+            "    [bar] => Array\n",
+            "        (\n",
+            "            [baz] => qux\n",
+            "        )\n",
+            "\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getimagesize_ico_and_tiff_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-getimagesize-ico-tiff");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getimagesize.php");
+    let output = root.join("getimagesize-bin");
+    fs::write(
+        root.join("sample.ico"),
+        [
+            0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.tiff"),
+        [
+            0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x02, 0x01, 0x00, 0x00, 0x03,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x01, 0x01, 0x00, 0x03, 0x00, 0x00,
+            0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(getimagesize(__DIR__ . '/sample.ico'));\n\
+var_dump(getimagesize(__DIR__ . '/sample.tiff', $info));\n\
+var_dump($info);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(8) {\n",
+            "  [0]=>\n",
+            "  int(32)\n",
+            "  [1]=>\n",
+            "  int(256)\n",
+            "  [2]=>\n",
+            "  int(17)\n",
+            "  [3]=>\n",
+            "  string(23) \"width=\"32\" height=\"256\"\"\n",
+            "  [\"bits\"]=>\n",
+            "  int(8)\n",
+            "  [\"mime\"]=>\n",
+            "  string(24) \"image/vnd.microsoft.icon\"\n",
+            "  [\"width_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "  [\"height_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "}\n",
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(8)\n",
+            "  [3]=>\n",
+            "  string(20) \"width=\"2\" height=\"2\"\"\n",
+            "  [\"mime\"]=>\n",
+            "  string(10) \"image/tiff\"\n",
+            "  [\"width_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "  [\"height_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_iptcembed_and_iptcparse_jpeg_app13_to_native_binary() {
+    let root = temp_dir("ptn-native-iptcembed-iptcparse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iptc.php");
+    let output = root.join("iptc-bin");
+    fs::write(
+        root.join("sample.jpg"),
+        [
+            0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00,
+            0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$iptc = \"\\x1C\\x02\\x69\\x00\\x06Tauren\";\n\
+$content = iptcembed($iptc, __DIR__ . '/sample.jpg', 0);\n\
+var_dump($content === false);\n\
+file_put_contents(__DIR__ . '/with-iptc.jpg', $content);\n\
+$size = getimagesize(__DIR__ . '/with-iptc.jpg', $info);\n\
+var_dump($size[0], $size[1], isset($info['APP0']), isset($info['APP13']));\n\
+var_dump(iptcparse($info['APP13']), iptcparse($iptc));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [\"2#105\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(6) \"Tauren\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"2#105\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(6) \"Tauren\"\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     let root = temp_dir("ptn-native-versioning-registry");
     fs::create_dir_all(&root).unwrap();
@@ -55823,6 +56273,112 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_type_is_or_extends"));
+}
+
+#[test]
+fn compile_soap_wsdl_builtin_scalar_request_uses_xsd_type_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-builtin-scalar-request");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-builtin-scalar-request.php");
+    let output = root.join("soap-wsdl-builtin-scalar-request-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/builtin-scalar.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://soapinterop.org/">
+  <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDateTimeRequest"><part name="inputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoDateTimeResponse"><part name="outputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoStringRequest"><part name="inputString" type="xsd:string"/></message>
+  <message name="echoStringResponse"><part name="outputString" type="xsd:string"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echoDateTime"><input message="tns:echoDateTimeRequest"/><output message="tns:echoDateTimeResponse"/></operation>
+    <operation name="echoString"><input message="tns:echoStringRequest"/><output message="tns:echoStringResponse"/></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoDecimal">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoDateTime">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoString">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding"><soap:address location="http://localhost/interop"/></port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoDecimal('12345.67890');
+echo $client->__getLastRequest();
+$client->echoDateTime('2001-02-03T04:05:06Z');
+echo $client->__getLastRequest();
+$client->echoString(null);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<inputDecimal xsi:type=\"xsd:decimal\">12345.67890</inputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDecimal xsi:type=\"ns1:decimal\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "<inputDateTime xsi:type=\"xsd:dateTime\">2001-02-03T04:05:06Z</inputDateTime>"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDateTime xsi:type=\"ns1:dateTime\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputString xsi:nil=\"true\"/>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputString xsi:type=\"xsd:string\"></inputString>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_encoded_part_xsi_type_prefix"));
 }
 
 #[test]
@@ -75241,6 +75797,35 @@ echo $_SERVER['PHP_SELF'] === __FILE__ ? \"self\\n\" : \"wrong-self\\n\";\n",
 }
 
 #[test]
+fn phpc_cli_request_context_populates_request_time() {
+    let root = temp_dir("ptn-phpc-cli-request-time");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-request-time.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo isset($_SERVER['REQUEST_TIME'], $_SERVER['REQUEST_TIME_FLOAT']) ? \"set\\n\" : \"missing\\n\";\n\
+echo is_int($_SERVER['REQUEST_TIME']) ? \"int\\n\" : \"not-int\\n\";\n\
+echo is_float($_SERVER['REQUEST_TIME_FLOAT']) ? \"float\\n\" : \"not-float\\n\";\n\
+echo $_SERVER['REQUEST_TIME_FLOAT'] >= $_SERVER['REQUEST_TIME'] ? \"ordered\\n\" : \"not-ordered\\n\";\n\
+echo microtime(true) >= $_SERVER['REQUEST_TIME_FLOAT'] ? \"elapsed\\n\" : \"future\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("run")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "set\nint\nfloat\nordered\nelapsed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cli_getopt_reads_forwarded_script_arguments() {
     let root = temp_dir("ptn-phpc-cli-getopt");
     fs::create_dir_all(&root).unwrap();
@@ -76025,6 +76610,92 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(0) \"\"\nstring(1) \"1\"\nstring(1) \"0\"\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_error_get_last_tracks_last_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-phpc-error-get-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-get-last.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(error_get_last());\n\
+try { var_dump(error_get_last(true)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(error_get_last());\n\
+$a = $missing;\n\
+$last = error_get_last();\n\
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("NULL\nerror_get_last() expects exactly 0 arguments, 1 given\nNULL\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Undefined variable $missing"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(2)\nstring(27) \"Undefined variable $missing\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(18) \"error-get-last.php\"\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_ini_set_accepts_scalar_value_types_to_native_binary() {
+    let root = temp_dir("ptn-phpc-ini-set-scalar-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-set-scalar-types.php");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+ini_set('docref_root', null);\n\
+var_dump(ini_get('docref_root'));\n\
+ini_set('html_errors', true);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('html_errors', false);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('precision', 6);\n\
+var_dump(ini_get('precision'));\n\
+ini_set('user_agent', 3.14);\n\
+var_dump(ini_get('user_agent'));\n\
+try { ini_set('foo', []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(1) \"1\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"6\"\n",
+            "string(4) \"3.14\"\n",
+            "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -98431,6 +99102,8 @@ scandir(): Argument #1 ($directory) must not be empty\n\
 fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     let root = temp_dir("ptn-native-include-path-zlib-streams");
     fs::create_dir_all(&root).unwrap();
+    let plain_path = root.join("payload.txt");
+    fs::write(&plain_path, "plain\ntext").unwrap();
     let gzip_path = root.join("payload.txt.gz");
     fs::write(
         &gzip_path,
@@ -98442,6 +99115,7 @@ fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     .unwrap();
     let input = root.join("include-path-zlib-streams.php");
     let output = root.join("include-path-zlib-streams-bin");
+    let plain_path = plain_path.to_string_lossy();
     let gzip_path = gzip_path.to_string_lossy();
     fs::write(
         &input,
@@ -98456,8 +99130,12 @@ $read = readfile($src);\n\
 echo \"\\n\", $read, \"\\n\";\n\
 $gz = gzopen(\"{}\", 'r');\n\
 var_dump(fstat($gz));\n\
-fclose($gz);\n",
-            gzip_path, gzip_path
+fclose($gz);\n\
+$plain = gzopen(\"{}\", 'r');\n\
+$count = gzpassthru($plain);\n\
+echo \"\\n\", $count, \"\\n\";\n\
+fclose($plain);\n",
+            gzip_path, gzip_path, plain_path
         ),
     )
     .unwrap();
@@ -98472,7 +99150,10 @@ fclose($gz);\n",
 hello\n\
 \n\
 6\n\
-bool(false)\n"
+bool(false)\n\
+plain\n\
+text\n\
+10\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

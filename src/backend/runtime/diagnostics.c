@@ -1170,6 +1170,12 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->error_reporting = PTN_E_ALL;
     diagnostics->display_errors = 1;
     diagnostics->html_errors = 0;
+    diagnostics->html_errors_ini_value = NULL;
+    diagnostics->last_error_set = 0;
+    diagnostics->last_error_type = 0;
+    diagnostics->last_error_message = NULL;
+    diagnostics->last_error_file = NULL;
+    diagnostics->last_error_line = 0;
     diagnostics->has_error_handler = 0;
     diagnostics->error_handler = ptn_null();
     diagnostics->error_handler_levels = PTN_E_ALL;
@@ -1189,6 +1195,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     if (ptn_parse_bool_env("PTN_PHP_HTML_ERRORS", &configured_html_errors)) {
         diagnostics->html_errors = configured_html_errors;
     }
+    diagnostics->html_errors_ini_value = ptn_duplicate_string(diagnostics->html_errors ? "1" : "0");
 }
 
 static void ptn_diagnostics_clear_current_error_handler(PtnDiagnosticSink *diagnostics) {
@@ -1274,6 +1281,15 @@ static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *di
     diagnostics->error_handler_stack = NULL;
     diagnostics->error_handler_stack_len = 0;
     diagnostics->error_handler_stack_capacity = 0;
+    free(diagnostics->html_errors_ini_value);
+    diagnostics->html_errors_ini_value = NULL;
+    free(diagnostics->last_error_message);
+    diagnostics->last_error_message = NULL;
+    free(diagnostics->last_error_file);
+    diagnostics->last_error_file = NULL;
+    diagnostics->last_error_set = 0;
+    diagnostics->last_error_type = 0;
+    diagnostics->last_error_line = 0;
 }
 
 static PTN_UNUSED void ptn_exception_handlers_init(PtnExceptionState *state) {
@@ -1802,6 +1818,29 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     );
 }
 
+static void ptn_diagnostics_record_last_error(
+    PtnDiagnosticSink *diagnostics,
+    int64_t severity,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    free(diagnostics->last_error_message);
+    diagnostics->last_error_message = ptn_duplicate_string(message == NULL ? "" : message);
+    free(diagnostics->last_error_file);
+    diagnostics->last_error_file = ptn_duplicate_string(
+        (path == NULL && line == 0)
+            ? "Unknown"
+            : ptn_diagnostic_path(diagnostics, path)
+    );
+    diagnostics->last_error_set = 1;
+    diagnostics->last_error_type = severity;
+    diagnostics->last_error_line = line;
+}
+
 static void ptn_emit_undefined_variable_warning(
     PtnDiagnosticSink *diagnostics,
     const char *name,
@@ -1821,6 +1860,7 @@ static void ptn_emit_undefined_variable_warning(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Undefined variable $%s", name);
+    ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);
         return;
@@ -2132,6 +2172,13 @@ static PTN_UNUSED void ptn_emit_warning_with_handler_frame_and_newline(
         return;
     }
     diagnostics->emitted_warning = 1;
+    ptn_diagnostics_record_last_error(
+        diagnostics,
+        PTN_E_WARNING,
+        message,
+        NULL,
+        line
+    );
     if (ptn_diagnostics_try_error_handler_with_frame(
         diagnostics,
         PTN_E_WARNING,
@@ -2274,6 +2321,13 @@ static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char 
         return;
     }
     diagnostics->emitted_warning = 1;
+    ptn_diagnostics_record_last_error(
+        diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
     if (ptn_diagnostics_try_error_handler(
         diagnostics,
         PTN_E_WARNING,
@@ -2749,6 +2803,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
+    );
+    const char *configured_fiber_stack_size = getenv("PTN_FIBER_STACK_SIZE");
+    runtime->fiber_stack_size = ptn_duplicate_string(
+        configured_fiber_stack_size == NULL ? "0" : configured_fiber_stack_size
     );
     const char *configured_auto_detect_line_endings = getenv("PTN_AUTO_DETECT_LINE_ENDINGS");
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");

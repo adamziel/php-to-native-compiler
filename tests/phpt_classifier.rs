@@ -737,18 +737,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "unsupported-internal-call-binding\t",
             "requires named-argument binding for modeled array internal calls",
         ),
-        (
-            "user stream wrapper alias",
-            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
-        (
-            "user stream filter",
-            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
     ];
 
     for (name, phpt, category, reason) in cases {
@@ -762,6 +750,25 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_selects_user_stream_wrapper_and_filter_registration() {
+    let wrapper = classify(
+        "--TEST--\nstream wrapper\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+    );
+    assert_eq!(
+        wrapper.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let filter = classify(
+        "--TEST--\nstream filter\n--FILE--\n<?php\nclass SampleFilter extends php_user_filter { public function filter($in, $out, &$consumed, bool $closing): int { return PSFS_PASS_ON; } }\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+    );
+    assert_eq!(
+        filter.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]
@@ -2327,6 +2334,44 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
+    let cases = [
+        (
+            "ext/spl/tests/spl_007.phpt",
+            "--TEST--\niterator apply\n--FILE--\n<?php\niterator_apply(new ArrayIterator([1]), [new Foo, 'bar']);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplTempFileObject_constructor_memory_lt1_variation.phpt",
+            "--TEST--\ntemp file object\n--FILE--\n<?php\nvar_dump(new SplTempFileObject(-1));\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/gh9883-extra.phpt",
+            "--TEST--\ntemp file string\n--FILE--\n<?php\necho new SplTempFileObject();\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug47534.phpt",
+            "--TEST--\nrecursive directory current mode\n--FILE--\n<?php\nnew RecursiveDirectoryIterator(__DIR__, FileSystemIterator::CURRENT_AS_PATHNAME);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_028.phpt",
+            "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt",
+            "--TEST--\nautoload validation\n--FILE--\n<?php\nspl_autoload_register('spl_autoload_call');\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
     let cases = [
         (
@@ -2519,13 +2564,22 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{pdo_mysql_service:?}"
     );
 
+    let loopback_socket = classify_at_relative_path(
+        "--TEST--\nself contained loopback socket\n--FILE--\n<?php\n$port = 12345;\n$server = stream_socket_server(\"tcp://127.0.0.1:$port\");\n$client = fsockopen(\"tcp://127.0.0.1:$port\");\n--EXPECT--\n",
+        "ext/standard/tests/streams/loopback_socket.phpt",
+    );
+    assert_eq!(
+        loopback_socket.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let zip_archive_runtime = classify_at_relative_path(
         "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
         "ext/zip/tests/ZipArchive_bailout.phpt",
     );
-    assert!(
-        zip_archive_runtime.starts_with("unsupported-zip-archive-runtime\t"),
-        "{zip_archive_runtime:?}"
+    assert_eq!(
+        zip_archive_runtime.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let xmlwriter_extension = classify(

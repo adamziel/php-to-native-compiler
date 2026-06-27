@@ -304,6 +304,8 @@ struct RuntimeIni {
     phar_require_hash: Option<String>,
     phar_cache_list: Option<String>,
     bcmath_scale: Option<String>,
+    sendmail_path: Option<String>,
+    mail_add_x_header: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
@@ -534,6 +536,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
                 ini.bcmath_scale = Some(parsed.to_string());
             }
         }
+    } else if name.eq_ignore_ascii_case("sendmail_path") {
+        ini.sendmail_path = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("mail.add_x_header") {
+        ini.mail_add_x_header = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
@@ -1056,6 +1062,134 @@ fn assert_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
     warnings
 }
 
+fn mbstring_ini_encoding_items(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+}
+
+fn mbstring_ini_encoding_is_valid(encoding: &str) -> bool {
+    let encoding = encoding.trim();
+    if encoding.is_empty() {
+        return false;
+    }
+    let lower = encoding.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "pass"
+            | "auto"
+            | "wchar"
+            | "byte2be"
+            | "byte2le"
+            | "byte4be"
+            | "byte4le"
+            | "base64"
+            | "uuencode"
+            | "html-entities"
+            | "quoted-printable"
+            | "7bit"
+            | "8bit"
+            | "binary"
+            | "ascii"
+            | "us-ascii"
+            | "utf-8"
+            | "utf8"
+            | "utf-7"
+            | "utf7-imap"
+            | "utf-16"
+            | "utf-16be"
+            | "utf-16le"
+            | "utf-32"
+            | "utf-32be"
+            | "utf-32le"
+            | "ucs-2"
+            | "ucs-2be"
+            | "ucs-2le"
+            | "ucs-4"
+            | "ucs-4be"
+            | "ucs-4le"
+            | "sjis"
+            | "shift_jis"
+            | "euc-jp"
+            | "jis"
+            | "iso-2022-jp"
+            | "iso-8859-1"
+            | "iso-8859-15"
+            | "windows-1251"
+            | "windows-1252"
+            | "windows-1254"
+            | "cp1251"
+            | "cp1252"
+            | "cp1254"
+            | "koi8-r"
+            | "koi8-u"
+            | "big-5"
+            | "big5"
+            | "euc-kr"
+            | "gb18030"
+            | "gb2312"
+            | "hz"
+            | "hz-gb-2312"
+            | "cp936"
+            | "cp866"
+            | "cp850"
+            | "armscii-8"
+            | "euc-tw"
+            | "iso-8859-5"
+            | "iso-8859-7"
+            | "iso-8859-9"
+            | "iso-8859-10"
+            | "iso-8859-13"
+            | "iso-8859-14"
+            | "iso-8859-16"
+    )
+}
+
+fn mbstring_ini_first_invalid_encoding(value: &str) -> Option<&str> {
+    mbstring_ini_encoding_items(value).find(|item| !mbstring_ini_encoding_is_valid(item))
+}
+
+fn mbstring_startup_messages(ini: &RuntimeIni) -> Vec<String> {
+    let mut messages = Vec::new();
+    if let Some(detect_order) = ini.mbstring_detect_order.as_deref() {
+        if let Some(invalid) = mbstring_ini_first_invalid_encoding(detect_order) {
+            messages.push(format!(
+                "Warning: PHP Startup: INI setting contains invalid encoding \"{invalid}\" in Unknown on line 0"
+            ));
+        }
+    }
+    if let Some(http_input) = ini.mbstring_http_input.as_deref() {
+        messages.push(
+            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0"
+                .to_string(),
+        );
+        if let Some(invalid) = mbstring_ini_first_invalid_encoding(http_input) {
+            messages.push(format!(
+                "Warning: PHP Startup: INI setting contains invalid encoding \"{invalid}\" in Unknown on line 0"
+            ));
+        }
+    }
+    if ini.mbstring_http_output.is_some() {
+        messages.push(
+            "Deprecated: PHP Startup: Use of mbstring.http_output is deprecated in Unknown on line 0"
+                .to_string(),
+        );
+    }
+    if let Some(internal_encoding) = ini.mbstring_internal_encoding.as_deref() {
+        messages.push(
+            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0"
+                .to_string(),
+        );
+        if !internal_encoding.is_empty() && !mbstring_ini_encoding_is_valid(internal_encoding) {
+            messages.push(format!(
+                "Warning: PHP Startup: Unknown encoding \"{internal_encoding}\" in ini setting in Unknown on line 0"
+            ));
+        }
+    }
+    messages
+}
+
 fn compile_and_run(
     script: &Path,
     args: &[String],
@@ -1096,6 +1230,8 @@ fn compile_and_run(
         phar_require_hash: ini.phar_require_hash.clone(),
         phar_cache_list: ini.phar_cache_list.clone(),
         bcmath_scale: ini.bcmath_scale.clone(),
+        sendmail_path: ini.sendmail_path.clone(),
+        mail_add_x_header: ini.mail_add_x_header.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
@@ -1142,6 +1278,7 @@ fn compile_and_run(
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
+    let mbstring_startup_messages = mbstring_startup_messages(&ini);
     let mut source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
         script_encoding: ini
@@ -1304,6 +1441,12 @@ fn compile_and_run(
     if let Some(bcmath_scale) = &ini.bcmath_scale {
         command.env("PTN_BCMATH_SCALE", bcmath_scale);
     }
+    if let Some(sendmail_path) = &ini.sendmail_path {
+        command.env("PTN_SENDMAIL_PATH", sendmail_path);
+    }
+    if let Some(mail_add_x_header) = &ini.mail_add_x_header {
+        command.env("PTN_MAIL_ADD_X_HEADER", mail_add_x_header);
+    }
     if let Some(internal_encoding) = &ini.internal_encoding {
         command.env("PTN_INTERNAL_ENCODING", internal_encoding);
     }
@@ -1410,8 +1553,7 @@ fn compile_and_run(
         || session_save_handler_warning.is_some()
         || !session_startup_deprecations.is_empty()
         || !assert_startup_deprecations.is_empty()
-        || ini.mbstring_internal_encoding.is_some()
-        || ini.mbstring_http_input.is_some()
+        || !mbstring_startup_messages.is_empty()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
@@ -1437,15 +1579,11 @@ fn compile_and_run(
     if ini.allow_url_include_deprecated {
         println!("Deprecated: Directive 'allow_url_include' is deprecated in Unknown on line 0");
     }
-    if ini.mbstring_internal_encoding.is_some() {
-        println!(
-            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0"
-        );
-    }
-    if ini.mbstring_http_input.is_some() {
-        println!(
-            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0"
-        );
+    for (index, warning) in mbstring_startup_messages.iter().enumerate() {
+        println!("{warning}");
+        if index + 1 < mbstring_startup_messages.len() {
+            println!();
+        }
     }
     let status = command
         .status()
