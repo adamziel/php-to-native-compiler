@@ -50369,7 +50369,7 @@ foreach ([
 $comment = new DOMComment();
 var_dump(strlen($comment->data));
 $dom = Dom\XMLDocument::createEmpty("1.1");
-var_dump($dom->xmlVersion, $dom->xmlEncoding);
+var_dump($dom->xmlVersion, $dom->xmlEncoding, $dom->URL, $dom->documentURI, $dom->title);
 "#,
     )
     .unwrap();
@@ -50388,6 +50388,9 @@ var_dump($dom->xmlVersion, $dom->xmlEncoding);
             "int(0)\n",
             "string(3) \"1.1\"\n",
             "string(5) \"UTF-8\"\n",
+            "string(11) \"about:blank\"\n",
+            "string(11) \"about:blank\"\n",
+            "string(0) \"\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

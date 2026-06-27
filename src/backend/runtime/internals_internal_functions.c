@@ -2078,6 +2078,42 @@ static const char *const PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES[] = {
     "parentElement",
 };
 
+static const char *const PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES[] = {
+    "xmlEncoding",
+    "xmlStandalone",
+    "xmlVersion",
+    "formatOutput",
+    "implementation",
+    "URL",
+    "documentURI",
+    "characterSet",
+    "charset",
+    "inputEncoding",
+    "doctype",
+    "documentElement",
+    "children",
+    "firstElementChild",
+    "lastElementChild",
+    "childElementCount",
+    "body",
+    "head",
+    "title",
+    "nodeType",
+    "nodeName",
+    "baseURI",
+    "isConnected",
+    "ownerDocument",
+    "parentNode",
+    "parentElement",
+    "childNodes",
+    "firstChild",
+    "lastChild",
+    "previousSibling",
+    "nextSibling",
+    "nodeValue",
+    "textContent",
+};
+
 static const char *const PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[] = {
     "children",
     "firstElementChild",
@@ -2299,6 +2335,12 @@ static int ptn_dom_class_name_is_modern(const char *class_name) {
 
 static int ptn_dom_class_name_is_html_document(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument");
+}
+
+static int ptn_dom_class_name_is_modern_document(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Dom\\Document") ||
+        ptn_ascii_case_equal(class_name, "Dom\\XMLDocument") ||
+        ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument");
 }
 
 static int ptn_dom_class_name_is_reclassifiable_internal(const char *class_name) {
@@ -2582,6 +2624,9 @@ static size_t ptn_dom_var_dump_virtual_property_count(PtnObject *object) {
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\Element")) {
         return sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES[0]);
     }
+    if (object != NULL && ptn_dom_class_name_is_modern_document(object->class_name)) {
+        return sizeof(PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES[0]);
+    }
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\DocumentFragment")) {
         return sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[0]);
     }
@@ -2640,6 +2685,10 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\Element")) {
         *count_out = sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES[0]);
         return PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES;
+    }
+    if (object != NULL && ptn_dom_class_name_is_modern_document(object->class_name)) {
+        *count_out = sizeof(PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES[0]);
+        return PTN_DOM_MODERN_DOCUMENT_VAR_DUMP_PROPERTIES;
     }
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\DocumentFragment")) {
         *count_out = sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[0]);
@@ -119961,6 +120010,67 @@ static PtnValue ptn_xml_text_content_value(PtnXmlNode *node) {
     return ptn_owned_string_len(data, len);
 }
 
+static PtnXmlNode *ptn_dom_document_find_title_element(PtnXmlNode *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+    const char *name = node->name == NULL ? "" : node->name;
+    const char *colon = strchr(name, ':');
+    const char *local_name = colon == NULL ? name : colon + 1;
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(local_name, "title")) {
+        return node;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *title = ptn_dom_document_find_title_element(node->children[i]);
+        if (title != NULL) {
+            return title;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_dom_document_title_append_collapsed(PtnStringBuffer *buffer, const char *data, size_t len, int *pending_space) {
+    if (buffer == NULL || data == NULL || pending_space == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)data[i];
+        if (isspace(ch)) {
+            if (buffer->len > 0) {
+                *pending_space = 1;
+            }
+            continue;
+        }
+        if (*pending_space && buffer->len > 0) {
+            ptn_string_buffer_append_char(buffer, ' ');
+        }
+        *pending_space = 0;
+        ptn_string_buffer_append_char(buffer, (char)ch);
+    }
+}
+
+static PtnValue ptn_dom_document_title_value(PtnXmlNode *document) {
+    PtnXmlNode *title = ptn_dom_document_find_title_element(ptn_xml_first_element_child(document));
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    int pending_space = 0;
+    for (size_t i = 0; title != NULL && i < title->child_count; i++) {
+        PtnXmlNode *child = title->children[i];
+        if (child == NULL ||
+            (child->type != PTN_XML_NODE_TEXT && child->type != PTN_XML_NODE_CDATA)) {
+            continue;
+        }
+        ptn_dom_document_title_append_collapsed(
+            &buffer,
+            child->value == NULL ? "" : child->value,
+            child->value_len,
+            &pending_space
+        );
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static PtnXmlNode *ptn_xml_document_element(PtnXmlNode *document) {
     return ptn_xml_first_element_child(document);
 }
@@ -134752,6 +134862,8 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "documentElement") ||
         ptn_ascii_case_equal(property, "head") ||
         ptn_ascii_case_equal(property, "body") ||
+        ptn_ascii_case_equal(property, "title") ||
+        ptn_ascii_case_equal(property, "URL") ||
         ptn_ascii_case_equal(property, "documentURI") ||
         ptn_ascii_case_equal(property, "doctype") ||
         ptn_ascii_case_equal(property, "implementation") ||
@@ -134761,9 +134873,12 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "internalSubset") ||
         ptn_ascii_case_equal(property, "publicId") ||
         ptn_ascii_case_equal(property, "systemId") ||
+        ptn_ascii_case_equal(property, "xmlEncoding") ||
+        ptn_ascii_case_equal(property, "xmlStandalone") ||
+        ptn_ascii_case_equal(property, "xmlVersion") ||
+        ptn_ascii_case_equal(property, "inputEncoding") ||
         ptn_ascii_case_equal(property, "encoding") ||
         ptn_ascii_case_equal(property, "version") ||
-        ptn_ascii_case_equal(property, "xmlVersion") ||
         ptn_ascii_case_equal(property, "standalone") ||
         ptn_ascii_case_equal(property, "formatOutput") ||
         ptn_ascii_case_equal(property, "preserveWhiteSpace") ||
@@ -135112,11 +135227,13 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     }
     if (ptn_ascii_case_equal(dom_class_name, "DOMDocument")) {
         int default_bool = 0;
-        if (ptn_ascii_case_equal(property, "version") || ptn_ascii_case_equal(property, "xmlVersion")) {
+        if (ptn_ascii_case_equal(property, "version") ||
+            ptn_ascii_case_equal(property, "xmlVersion")) {
             *value_out = ptn_owned_string(ptn_duplicate_string(node->version == NULL ? "1.0" : node->version));
             return 1;
         }
-        if (ptn_ascii_case_equal(property, "standalone")) {
+        if (ptn_ascii_case_equal(property, "standalone") ||
+            ptn_ascii_case_equal(property, "xmlStandalone")) {
             *value_out = ptn_bool(node->has_standalone && node->standalone);
             return 1;
         }
@@ -135125,13 +135242,18 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             *value_out = ptn_null();
             return 1;
         }
-        if (ptn_ascii_case_equal(property, "documentURI")) {
+        if (ptn_ascii_case_equal(property, "documentURI") ||
+            ptn_ascii_case_equal(property, "URL")) {
             PtnValue stored = ptn_null();
-            if (ptn_xml_object_stored_property_read(receiver.as.object, property, &stored)) {
+            const char *stored_property = ptn_ascii_case_equal(property, "URL") ? "documentURI" : property;
+            if (ptn_xml_object_stored_property_read(receiver.as.object, stored_property, &stored)) {
                 *value_out = stored;
                 return 1;
             }
-            *value_out = ptn_owned_string(ptn_duplicate_string(runtime != NULL && runtime->source_path != NULL ? runtime->source_path : ""));
+            const char *default_uri = node->modern_dom
+                ? "about:blank"
+                : (runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "");
+            *value_out = ptn_owned_string(ptn_duplicate_string(default_uri));
             return 1;
         }
         if (ptn_ascii_case_equal(property, "doctype")) {
@@ -135148,7 +135270,10 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             *value_out = ptn_object_new_shell(runtime, "DOMImplementation");
             return 1;
         }
-        if (ptn_ascii_case_equal(property, "charset") ||
+        if (ptn_ascii_case_equal(property, "encoding") ||
+            ptn_ascii_case_equal(property, "xmlEncoding") ||
+            ptn_ascii_case_equal(property, "inputEncoding") ||
+            ptn_ascii_case_equal(property, "charset") ||
             ptn_ascii_case_equal(property, "characterSet")) {
             const char *encoding = node->encoding == NULL || node->encoding[0] == '\0'
                 ? "UTF-8"
@@ -135162,6 +135287,10 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         }
         if (ptn_ascii_case_equal(property, "body")) {
             *value_out = ptn_xml_node_value_for_runtime(runtime, ptn_dom_find_first_html_document_element(node, "body", "frameset"));
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "title")) {
+            *value_out = ptn_dom_document_title_value(node);
             return 1;
         }
         if (ptn_dom_document_boolean_property_default(property, &default_bool)) {
