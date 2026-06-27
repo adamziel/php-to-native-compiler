@@ -98359,6 +98359,19 @@ static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
 }
 
+static const char *ptn_runtime_fiber_stack_size(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->fiber_stack_size == NULL) {
+        return "0";
+    }
+    return root->fiber_stack_size;
+}
+
+static void ptn_runtime_set_fiber_stack_size(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->fiber_stack_size, value);
+}
+
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
     int64_t max_value = ptn_parse_ini_quantity_operand(
         runtime,
@@ -98772,6 +98785,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "mbstring.internal_encoding")) {
@@ -99335,6 +99352,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     if (ptn_string_operand_ascii_case_equal(option, "unserialize_max_depth")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->unserialize_max_depth = PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        ptn_runtime_set_fiber_stack_size(runtime, "0");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -100015,6 +100037,24 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         char *requested = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_apply_memory_limit(runtime, requested, line);
         free(requested);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        int64_t requested = ptn_parse_ini_quantity_operand(runtime, value, line);
+        if (requested <= 0) {
+            ptn_emit_sourced_ini_warning(runtime, "fiber.stack_size must be a positive number", line);
+            ptn_string_operand_free(value);
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_fiber_stack_size(runtime, next);
+        free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
@@ -185166,6 +185206,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "include_path");
         ptn_extension_ini_set_entry(runtime, result, "memory_limit");
         ptn_extension_ini_set_entry(runtime, result, "max_memory_limit");
+        ptn_extension_ini_set_entry(runtime, result, "fiber.stack_size");
         ptn_extension_ini_set_entry(runtime, result, "precision");
         ptn_extension_ini_set_entry(runtime, result, "serialize_precision");
         ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
