@@ -143,7 +143,7 @@ pub fn emit_c(module: &Module) -> String {
         || has_declared_methods
         || needs_direct_callable_dispatch;
     let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
-    if needs_direct_callable_dispatch {
+    if needs_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
     if needs_callable_dispatch {
