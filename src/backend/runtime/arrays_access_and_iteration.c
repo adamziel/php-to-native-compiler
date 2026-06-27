@@ -1837,6 +1837,11 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlDateFormatter");
         return ptn_null();
     }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "NumberFormatter") &&
+        source->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
+        return ptn_null();
+    }
     if (ptn_internal_class_name_is_intl_number_range_formatter(source->class_name)) {
         char message[192];
         int written = snprintf(

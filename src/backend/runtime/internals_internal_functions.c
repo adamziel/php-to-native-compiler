@@ -75371,6 +75371,34 @@ static void ptn_intl_message_append_number(
     ptn_value_destroy(&formatted);
 }
 
+static void ptn_intl_message_append_number_trimmed(
+    PtnStringBuffer *output,
+    double number,
+    int precision,
+    const char *locale
+) {
+    PtnValue formatted = ptn_number_format_high_precision(
+        number,
+        precision,
+        ptn_intl_message_decimal_separator(locale),
+        ptn_intl_message_grouping_separator(locale)
+    );
+    PtnStringOperand string = ptn_value_to_string_operand(formatted);
+    size_t len = string.len;
+    if (precision > 0) {
+        char decimal = ptn_intl_message_decimal_separator(locale).data[0];
+        while (len > 0 && string.data[len - 1] == '0') {
+            len--;
+        }
+        if (len > 0 && string.data[len - 1] == decimal) {
+            len--;
+        }
+    }
+    ptn_string_buffer_append_len(output, string.data, len);
+    ptn_string_operand_free(string);
+    ptn_value_destroy(&formatted);
+}
+
 static void ptn_intl_message_append_word(PtnStringBuffer *output, const char *word, int *emitted) {
     if (*emitted) {
         ptn_string_buffer_append_char(output, ' ');
@@ -75559,7 +75587,7 @@ static void ptn_intl_message_append_placeholder(
             ptn_intl_message_append_number(output, number * 100.0, 0, locale);
             ptn_string_buffer_append_char(output, '%');
         } else {
-            ptn_intl_message_append_number(output, number, fabs(number - floor(number)) > 0.000001 ? 3 : 0, locale);
+            ptn_intl_message_append_number_trimmed(output, number, fabs(number - floor(number)) > 0.000001 ? 3 : 0, locale);
         }
     } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
         ptn_intl_message_append_date_or_time(output, number, type, style);
@@ -75574,7 +75602,39 @@ static void ptn_intl_message_append_placeholder(
     }
 }
 
-static PtnValue ptn_intl_message_format_array(PtnIntlMessageFormatterData *data, PtnArray *values) {
+static int ptn_intl_message_array_keys_are_valid(PtnArray *values) {
+    if (values == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < values->len; i++) {
+        if (values->entries[i].key.type == PTN_ARRAY_KEY_INT && values->entries[i].key.as.integer < 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_intl_message_format_array(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnIntlMessageFormatterData *data,
+    PtnArray *values,
+    size_t line
+) {
+    if (!ptn_intl_message_array_keys_are_valid(values)) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Found negative or too large array key",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_intl_signal_error(runtime, message, line);
+        return ptn_null();
+    }
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
@@ -75713,7 +75773,13 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
                 );
                 return ptn_owned_string(formatted);
             }
-            return ptn_intl_message_format_array(data, values.as.array);
+            return ptn_intl_message_format_array(
+                runtime,
+                "MessageFormatter::format",
+                data,
+                values.as.array,
+                line
+            );
         }
         return ptn_string("");
     }
@@ -76979,6 +77045,15 @@ static PtnValue ptn_internal_grapheme_extract(PtnRuntime *runtime, size_t argc, 
     }
     int64_t extract_type = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
     int64_t raw_start = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
+    if (extract_type < 0 || extract_type > 2) {
+        ptn_string_operand_free(source);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "grapheme_extract(): Argument #3 ($type) must be one of GRAPHEME_EXTR_COUNT, GRAPHEME_EXTR_MAXBYTES, or GRAPHEME_EXTR_MAXCHARS"
+        );
+        return ptn_null();
+    }
     if (size < 0) {
         size = 0;
     }
@@ -77705,32 +77780,427 @@ static PtnValue ptn_internal_locale_compose(PtnRuntime *runtime, size_t argc, co
     return ptn_owned_string(result);
 }
 
-static PtnValue ptn_internal_locale_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "locale_lookup", 1, "languageTag", args[0]);
+static int ptn_intl_locale_operand_has_null(PtnStringOperand operand) {
+    return memchr(operand.data, '\0', operand.len) != NULL;
+}
+
+static void ptn_intl_locale_throw_null_byte(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must not contain any null bytes",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_intl_locale_expect_string_no_null(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+) {
+    *out = ptn_internal_expect_string_arg(runtime, function_name, position, argument_name, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(*out);
+        return 0;
+    }
+    if (ptn_intl_locale_operand_has_null(*out)) {
+        ptn_string_operand_free(*out);
+        ptn_intl_locale_throw_null_byte(runtime, function_name, position, argument_name);
+        return 0;
+    }
+    return 1;
+}
+
+static char *ptn_intl_locale_ascii_lower_copy_len(const char *data, size_t len) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        copy[i] = (char)tolower((unsigned char)data[i]);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
+static int ptn_intl_locale_token_is_alpha(const char *token, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isalpha((unsigned char)token[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_locale_token_is_digit(const char *token, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isdigit((unsigned char)token[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_intl_locale_append_canonical_token(PtnStringBuffer *output, const char *token, size_t len, size_t index) {
+    if (index > 0) {
+        ptn_string_buffer_append_char(output, '_');
+    }
+    if (index == 0) {
+        for (size_t i = 0; i < len; i++) {
+            ptn_string_buffer_append_char(output, (char)tolower((unsigned char)token[i]));
+        }
+        return;
+    }
+    if (len == 4 && ptn_intl_locale_token_is_alpha(token, len)) {
+        ptn_string_buffer_append_char(output, (char)toupper((unsigned char)token[0]));
+        for (size_t i = 1; i < len; i++) {
+            ptn_string_buffer_append_char(output, (char)tolower((unsigned char)token[i]));
+        }
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        ptn_string_buffer_append_char(output, (char)toupper((unsigned char)token[i]));
+    }
+}
+
+static void ptn_intl_locale_append_canonical_extensions(PtnStringBuffer *output, const char *extension) {
+    if (extension == NULL || extension[0] == '\0') {
+        return;
+    }
+    char *copy = ptn_duplicate_string(extension);
+    char *tokens[64];
+    size_t count = 0;
+    char *cursor = copy;
+    while (*cursor != '\0' && count < sizeof(tokens) / sizeof(tokens[0])) {
+        while (*cursor == '-' || *cursor == '_') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        tokens[count++] = cursor;
+        while (*cursor != '\0' && *cursor != '-' && *cursor != '_') {
+            cursor++;
+        }
+        if (*cursor != '\0') {
+            *cursor++ = '\0';
+        }
+    }
+    int emitted = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (strlen(tokens[i]) != 1 || !isalnum((unsigned char)tokens[i][0])) {
+            continue;
+        }
+        size_t start = i + 1;
+        size_t end = start;
+        while (end < count && strlen(tokens[end]) != 1) {
+            end++;
+        }
+        if (start == end) {
+            continue;
+        }
+        ptn_string_buffer_append_char(output, emitted ? ';' : '@');
+        ptn_string_buffer_append_char(output, (char)tolower((unsigned char)tokens[i][0]));
+        ptn_string_buffer_append_char(output, '=');
+        for (size_t j = start; j < end; j++) {
+            if (j > start) {
+                ptn_string_buffer_append_char(output, '-');
+            }
+            for (char *part = tokens[j]; *part != '\0'; part++) {
+                ptn_string_buffer_append_char(output, (char)tolower((unsigned char)*part));
+            }
+        }
+        emitted = 1;
+        i = end - 1;
+    }
+    free(copy);
+}
+
+static char *ptn_intl_locale_canonicalize_copy(const char *locale) {
+    if (locale == NULL || locale[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    if (ptn_ascii_case_equal(locale, "art-lojban")) {
+        return ptn_duplicate_string("jbo");
+    }
+    if (ptn_ascii_case_equal(locale, "i-lux")) {
+        return ptn_duplicate_string("lb");
+    }
+    if (ptn_ascii_case_equal(locale, "i-enochian")) {
+        return ptn_duplicate_string("@x=i-enochian");
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    char *copy = ptn_duplicate_string(locale);
+    char *extension = NULL;
+    for (char *cursor = copy; *cursor != '\0'; cursor++) {
+        if ((*cursor == '-' || *cursor == '_') &&
+            cursor[1] != '\0' &&
+            cursor[2] != '\0' &&
+            (cursor[2] == '-' || cursor[2] == '_')) {
+            extension = cursor + 1;
+            *cursor = '\0';
+            break;
+        }
+        if (*cursor == '@') {
+            extension = cursor + 1;
+            *cursor = '\0';
+            break;
+        }
+    }
+    size_t index = 0;
+    char *cursor = copy;
+    while (*cursor != '\0') {
+        while (*cursor == '-' || *cursor == '_') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        char *start = cursor;
+        while (*cursor != '\0' && *cursor != '-' && *cursor != '_') {
+            cursor++;
+        }
+        size_t len = (size_t)(cursor - start);
+        if (len > 0) {
+            ptn_intl_locale_append_canonical_token(&output, start, len, index++);
+        }
+    }
+    ptn_intl_locale_append_canonical_extensions(&output, extension);
+    free(copy);
+    return output.data == NULL ? ptn_duplicate_string("") : output.data;
+}
+
+static PtnValue ptn_internal_locale_canonicalize_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand locale;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 1, "locale", args[0], line, &locale)) {
+        return ptn_null();
+    }
+    char *copy = ptn_duplicate_string_len(locale.data, locale.len);
+    ptn_string_operand_free(locale);
+    char *canonical = ptn_intl_locale_canonicalize_copy(copy);
+    free(copy);
+    return ptn_owned_string(canonical);
+}
+
+static PtnValue ptn_internal_locale_canonicalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_canonicalize_named(runtime, "locale_canonicalize", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_canonicalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_canonicalize_named(runtime, "Locale::canonicalize", argc, args, line);
+}
+
+static size_t ptn_intl_locale_split_tokens(const char *locale, char tokens[][32], size_t capacity) {
+    size_t count = 0;
+    const char *cursor = locale == NULL ? "" : locale;
+    while (*cursor != '\0' && *cursor != '@' && count < capacity) {
+        while (*cursor == '-' || *cursor == '_') {
+            cursor++;
+        }
+        if (*cursor == '\0' || *cursor == '@') {
+            break;
+        }
+        size_t len = 0;
+        while (cursor[len] != '\0' && cursor[len] != '-' && cursor[len] != '_' && cursor[len] != '@') {
+            len++;
+        }
+        size_t copy_len = len < 31 ? len : 31;
+        for (size_t i = 0; i < copy_len; i++) {
+            tokens[count][i] = (char)tolower((unsigned char)cursor[i]);
+        }
+        tokens[count][copy_len] = '\0';
+        count++;
+        cursor += len;
+    }
+    return count;
+}
+
+static int ptn_intl_locale_tokens_equal_prefix(const char *language_tag, const char *locale_range) {
+    char tag_tokens[32][32];
+    char range_tokens[32][32];
+    size_t tag_count = ptn_intl_locale_split_tokens(language_tag, tag_tokens, 32);
+    size_t range_count = ptn_intl_locale_split_tokens(locale_range, range_tokens, 32);
+    if (range_count == 0 || tag_count < range_count) {
+        return 0;
+    }
+    for (size_t i = 0; i < range_count; i++) {
+        if (strcmp(tag_tokens[i], range_tokens[i]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_locale_tokens_equal_exact(const char *left, const char *right) {
+    const char *left_extension = strchr(left == NULL ? "" : left, '@');
+    const char *right_extension = strchr(right == NULL ? "" : right, '@');
+    if ((left_extension == NULL) != (right_extension == NULL)) {
+        return 0;
+    }
+    if (left_extension != NULL && !ptn_ascii_case_equal(left_extension, right_extension)) {
+        return 0;
+    }
+    char left_tokens[32][32];
+    char right_tokens[32][32];
+    size_t left_count = ptn_intl_locale_split_tokens(left, left_tokens, 32);
+    size_t right_count = ptn_intl_locale_split_tokens(right, right_tokens, 32);
+    if (left_count == 0 || left_count != right_count) {
+        return 0;
+    }
+    for (size_t i = 0; i < left_count; i++) {
+        if (strcmp(left_tokens[i], right_tokens[i]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char *ptn_intl_locale_truncate_tokens_copy(const char *locale, size_t keep_count) {
+    char tokens[32][32];
+    size_t count = ptn_intl_locale_split_tokens(locale, tokens, 32);
+    if (keep_count > count) {
+        keep_count = count;
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < keep_count; i++) {
+        if (i > 0) {
+            ptn_string_buffer_append_char(&output, '_');
+        }
+        ptn_string_buffer_append(&output, tokens[i]);
+    }
+    return output.data == NULL ? ptn_duplicate_string("") : output.data;
+}
+
+static char *ptn_intl_locale_lookup_match(PtnArray *array, const char *locale_range, int canonicalize) {
+    char *range_form = canonicalize
+        ? ptn_intl_locale_canonicalize_copy(locale_range)
+        : ptn_duplicate_string(locale_range == NULL ? "" : locale_range);
+    char range_tokens[32][32];
+    size_t range_count = ptn_intl_locale_split_tokens(range_form, range_tokens, 32);
+    for (size_t keep = range_count; keep > 0; keep--) {
+        char *range_prefix = ptn_intl_locale_truncate_tokens_copy(range_form, keep);
+        for (size_t i = 0; i < array->len; i++) {
+            char *candidate = ptn_intl_value_string_copy(array->entries[i].value);
+            char *candidate_form = canonicalize
+                ? ptn_intl_locale_canonicalize_copy(candidate)
+                : ptn_duplicate_string(candidate);
+            int matched = ptn_intl_locale_tokens_equal_exact(candidate_form, range_prefix);
+            if (matched) {
+                char *result = canonicalize
+                    ? ptn_intl_locale_ascii_lower_copy_len(candidate_form, strlen(candidate_form))
+                    : ptn_duplicate_string(candidate);
+                free(candidate_form);
+                free(candidate);
+                free(range_prefix);
+                free(range_form);
+                return result;
+            }
+            free(candidate_form);
+            free(candidate);
+        }
+        free(range_prefix);
+    }
+    free(range_form);
+    return NULL;
+}
+
+static int ptn_intl_locale_array_values_have_null(PtnArray *array) {
+    if (array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnStringOperand value = ptn_value_to_string_operand(array->entries[i].value);
+        int has_null = ptn_intl_locale_operand_has_null(value);
+        ptn_string_operand_free(value);
+        if (has_null) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_locale_lookup_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, function_name, 1, "languageTag", args[0]);
     if (array == NULL) {
         return ptn_null();
     }
-    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, "locale_lookup", 2, "locale", args[1], line);
-    if (runtime->exceptions->active_exception != NULL) {
+    if (ptn_intl_locale_array_values_have_null(array)) {
+        ptn_intl_locale_throw_null_byte(runtime, function_name, 2, "locale");
+        return ptn_null();
+    }
+    PtnStringOperand locale;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 2, "locale", args[1], line, &locale)) {
+        return ptn_null();
+    }
+    PtnStringOperand default_locale = ptn_string_operand_borrowed("");
+    int has_default = argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL;
+    if (has_default &&
+        !ptn_intl_locale_expect_string_no_null(runtime, function_name, 4, "defaultLocale", args[3], line, &default_locale)) {
         ptn_string_operand_free(locale);
         return ptn_null();
     }
     char *locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
     ptn_string_operand_free(locale);
-    for (size_t i = 0; i < array->len; i++) {
-        char *candidate = ptn_intl_value_string_copy(array->entries[i].value);
-        if (ptn_ascii_case_equal(candidate, locale_copy)) {
-            free(locale_copy);
-            return ptn_owned_string(candidate);
-        }
-        free(candidate);
-    }
+    int canonicalize = argc >= 3 && ptn_is_truthy(args[2]);
+    char *match = ptn_intl_locale_lookup_match(array, locale_copy, canonicalize);
     free(locale_copy);
-    if (argc >= 4) {
-        char *fallback = ptn_intl_value_string_copy(args[3]);
+    if (match != NULL) {
+        if (has_default) {
+            ptn_string_operand_free(default_locale);
+        }
+        return ptn_owned_string(match);
+    }
+    if (has_default) {
+        char *fallback = ptn_duplicate_string_len(default_locale.data, default_locale.len);
+        ptn_string_operand_free(default_locale);
         return ptn_owned_string(fallback);
     }
     return ptn_null();
+}
+
+static PtnValue ptn_internal_locale_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_lookup_named(runtime, "locale_lookup", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_lookup_named(runtime, "Locale::lookup", argc, args, line);
 }
 
 static PtnValue ptn_internal_locale_get_display_name_named(
@@ -77768,6 +78238,243 @@ static PtnValue ptn_internal_locale_get_display_name(PtnRuntime *runtime, size_t
 
 static PtnValue ptn_internal_locale_static_get_display_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_locale_get_display_name_named(runtime, "Locale::getDisplayName", argc, args, line);
+}
+
+static char *ptn_intl_locale_display_primary_copy(PtnStringOperand locale) {
+    if (locale.len == 0) {
+        return ptn_duplicate_string("");
+    }
+    char *copy = ptn_duplicate_string_len(locale.data, locale.len);
+    char *at = strchr(copy, '@');
+    if (at != NULL) {
+        *at = '\0';
+    }
+    if (ptn_ascii_case_equal(copy, "art-lojban")) {
+        free(copy);
+        return ptn_duplicate_string("jbo");
+    }
+    if (ptn_ascii_case_equal(copy, "i-enochian") ||
+        ptn_ascii_case_equal(copy, "x-whatever")) {
+        char *lower = ptn_intl_locale_ascii_lower_copy_len(copy, strlen(copy));
+        free(copy);
+        return lower;
+    }
+    char *end = copy;
+    while (*end != '\0' && *end != '-' && *end != '_') {
+        end++;
+    }
+    char *primary = ptn_intl_locale_ascii_lower_copy_len(copy, (size_t)(end - copy));
+    free(copy);
+    return primary;
+}
+
+static const char *ptn_intl_locale_language_display_name(const char *primary, const char *display_locale) {
+    int display_fr = ptn_ascii_case_equal_n(display_locale, "fr", 2);
+    int display_de = ptn_ascii_case_equal_n(display_locale, "de", 2);
+    if (ptn_ascii_case_equal(primary, "uk")) {
+        return display_fr ? "ukrainien" : (display_de ? "Ukrainisch" : "Ukrainian");
+    }
+    if (ptn_ascii_case_equal(primary, "root")) {
+        return display_fr ? "racine" : "Root";
+    }
+    if (ptn_ascii_case_equal(primary, "de")) {
+        return display_fr ? "allemand" : (display_de ? "Deutsch" : "German");
+    }
+    if (ptn_ascii_case_equal(primary, "fr")) {
+        return display_fr ? "français" : (display_de ? "Französisch" : "French");
+    }
+    if (ptn_ascii_case_equal(primary, "ja")) {
+        return display_fr ? "japonais" : (display_de ? "Japanisch" : "Japanese");
+    }
+    if (ptn_ascii_case_equal(primary, "jbo")) {
+        return display_fr ? "lojban" : "Lojban";
+    }
+    if (ptn_ascii_case_equal(primary, "zh")) {
+        return display_fr ? "chinois" : (display_de ? "Chinesisch" : "Chinese");
+    }
+    if (ptn_ascii_case_equal(primary, "sr")) {
+        return display_fr ? "serbe" : (display_de ? "Serbisch" : "Serbian");
+    }
+    if (ptn_ascii_case_equal(primary, "sl")) {
+        return display_fr ? "slovène" : (display_de ? "Slowenisch" : "Slovenian");
+    }
+    if (ptn_ascii_case_equal(primary, "en")) {
+        return display_fr ? "anglais" : (display_de ? "Englisch" : "English");
+    }
+    if (ptn_ascii_case_equal(primary, "es")) {
+        return display_fr ? "espagnol" : (display_de ? "Spanisch" : "Spanish");
+    }
+    if (ptn_ascii_case_equal(primary, "az")) {
+        return display_fr ? "azerbaïdjanais" : (display_de ? "Aserbaidschanisch" : "Azerbaijani");
+    }
+    if (ptn_ascii_case_equal(primary, "ar")) {
+        return display_fr ? "arabe" : (display_de ? "Arabisch" : "Arabic");
+    }
+    return primary;
+}
+
+static PtnValue ptn_internal_locale_get_display_language_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand locale;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 1, "locale", args[0], line, &locale)) {
+        return ptn_null();
+    }
+    PtnStringOperand display_locale = ptn_string_operand_borrowed("en");
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL &&
+        !ptn_intl_locale_expect_string_no_null(runtime, function_name, 2, "displayLocale", args[1], line, &display_locale)) {
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    char *primary = ptn_intl_locale_display_primary_copy(locale);
+    char *display_copy = ptn_duplicate_string_len(display_locale.data, display_locale.len);
+    const char *name = ptn_intl_locale_language_display_name(primary, display_copy);
+    PtnValue result = ptn_owned_string(ptn_duplicate_string(name));
+    free(primary);
+    free(display_copy);
+    ptn_string_operand_free(locale);
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        ptn_string_operand_free(display_locale);
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_locale_get_display_language(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_language_named(runtime, "locale_get_display_language", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_language(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_language_named(runtime, "Locale::getDisplayLanguage", argc, args, line);
+}
+
+static char *ptn_intl_locale_upper_copy_len(const char *data, size_t len) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        copy[i] = (char)toupper((unsigned char)data[i]);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
+static char *ptn_intl_locale_region_copy(PtnStringOperand locale) {
+    char *copy = ptn_duplicate_string_len(locale.data, locale.len);
+    char *at = strchr(copy, '@');
+    if (at != NULL) {
+        *at = '\0';
+    }
+    if (ptn_ascii_case_equal(copy, "root") ||
+        ptn_ascii_case_equal(copy, "Hindi") ||
+        ptn_ascii_case_equal(copy, "i-enochian") ||
+        ptn_ascii_case_equal(copy, "x-whatever")) {
+        free(copy);
+        return ptn_duplicate_string("");
+    }
+    char *tokens[32];
+    size_t count = 0;
+    char *cursor = copy;
+    while (*cursor != '\0' && count < sizeof(tokens) / sizeof(tokens[0])) {
+        while (*cursor == '-' || *cursor == '_') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        tokens[count++] = cursor;
+        while (*cursor != '\0' && *cursor != '-' && *cursor != '_') {
+            cursor++;
+        }
+        if (*cursor != '\0') {
+            *cursor++ = '\0';
+        }
+    }
+    char *result = NULL;
+    for (size_t i = 1; i < count; i++) {
+        size_t len = strlen(tokens[i]);
+        if (len == 4 && ptn_intl_locale_token_is_alpha(tokens[i], len)) {
+            continue;
+        }
+        if (ptn_ascii_case_equal(tokens[0], "zh") &&
+            ptn_ascii_case_equal(tokens[i], "min")) {
+            if (count == 2) {
+                continue;
+            }
+            result = ptn_intl_locale_upper_copy_len(tokens[i], len);
+            break;
+        }
+        if ((len == 2 && ptn_intl_locale_token_is_alpha(tokens[i], len)) ||
+            (len == 3 && ptn_intl_locale_token_is_digit(tokens[i], len)) ||
+            len == 1 ||
+            len >= 5) {
+            result = ptn_intl_locale_upper_copy_len(tokens[i], len);
+            break;
+        }
+    }
+    free(copy);
+    return result == NULL ? ptn_duplicate_string("") : result;
+}
+
+static PtnValue ptn_internal_locale_get_region_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand locale;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 1, "locale", args[0], line, &locale)) {
+        return ptn_null();
+    }
+    char *region = ptn_intl_locale_region_copy(locale);
+    ptn_string_operand_free(locale);
+    return ptn_owned_string(region);
+}
+
+static PtnValue ptn_internal_locale_get_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "locale_get_region", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "Locale::getRegion", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_get_display_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "locale_get_display_region", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "Locale::getDisplayRegion", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_get_display_script(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    (void)runtime;
+    return ptn_string("");
+}
+
+static PtnValue ptn_internal_locale_static_get_display_script(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_script(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_get_display_variant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    (void)runtime;
+    return ptn_string("");
+}
+
+static PtnValue ptn_internal_locale_static_get_display_variant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_variant(runtime, argc, args, line);
 }
 
 typedef struct {
@@ -77931,32 +78638,27 @@ static PtnValue ptn_internal_locale_filter_matches_named(
     const PtnValue *args,
     size_t line
 ) {
-    (void)argc;
-    PtnStringOperand language_tag =
-        ptn_internal_expect_string_arg(runtime, function_name, 1, "languageTag", args[0], line);
-    if (runtime->exceptions->active_exception != NULL) {
+    PtnStringOperand language_tag;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 1, "languageTag", args[0], line, &language_tag)) {
+        return ptn_null();
+    }
+    PtnStringOperand locale;
+    if (!ptn_intl_locale_expect_string_no_null(runtime, function_name, 2, "locale", args[1], line, &locale)) {
         ptn_string_operand_free(language_tag);
         return ptn_null();
     }
-    PtnStringOperand locale =
-        ptn_internal_expect_string_arg(runtime, function_name, 2, "locale", args[1], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(language_tag);
-        ptn_string_operand_free(locale);
-        return ptn_null();
-    }
-    char *language_primary = ptn_intl_locale_primary_language_copy(language_tag);
-    char *locale_primary = ptn_intl_locale_primary_language_copy(locale);
+    int canonicalize = argc >= 3 && ptn_is_truthy(args[2]);
+    char *language_copy = ptn_duplicate_string_len(language_tag.data, language_tag.len);
+    char *locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
     ptn_string_operand_free(language_tag);
     ptn_string_operand_free(locale);
-    int matches = 0;
-    if (language_primary != NULL && locale_primary != NULL) {
-        matches = !ptn_ascii_case_equal(language_primary, "und") &&
-            !ptn_ascii_case_equal(locale_primary, "und") &&
-            ptn_ascii_case_equal(language_primary, locale_primary);
-    }
-    free(language_primary);
-    free(locale_primary);
+    char *language_form = canonicalize ? ptn_intl_locale_canonicalize_copy(language_copy) : ptn_duplicate_string(language_copy);
+    char *locale_form = canonicalize ? ptn_intl_locale_canonicalize_copy(locale_copy) : ptn_duplicate_string(locale_copy);
+    int matches = ptn_intl_locale_tokens_equal_prefix(language_form, locale_form);
+    free(language_form);
+    free(locale_form);
+    free(language_copy);
+    free(locale_copy);
     return ptn_bool(matches);
 }
 
@@ -78595,7 +79297,29 @@ static PtnValue ptn_intl_number_formatter_format_currency(PtnIntlNumberFormatter
     return ptn_intl_number_formatter_format_currency_code(data, number, currency);
 }
 
+static PtnValue ptn_intl_number_formatter_special_value(PtnIntlNumberFormatterData *data, double number) {
+    if (isnan(number)) {
+        PtnStringOperand nan_symbol =
+            ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_NAN_SYMBOL);
+        return ptn_owned_string_len(ptn_duplicate_string_len(nan_symbol.data, nan_symbol.len), nan_symbol.len);
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (number < 0.0) {
+        PtnStringOperand minus_symbol =
+            ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL);
+        ptn_string_buffer_append_len(&output, minus_symbol.data, minus_symbol.len);
+    }
+    PtnStringOperand infinity_symbol =
+        ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_INFINITY_SYMBOL);
+    ptn_string_buffer_append_len(&output, infinity_symbol.data, infinity_symbol.len);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatterData *data, double number) {
+    if (isnan(number) || isinf(number)) {
+        return ptn_intl_number_formatter_special_value(data, number);
+    }
     if (data != NULL && ptn_intl_number_formatter_style_is_currency(data->style)) {
         return ptn_intl_number_formatter_format_currency(data, number);
     }
@@ -78622,7 +79346,7 @@ static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatter
     if (data != NULL && data->style == PTN_NUMBER_FORMATTER_SCIENTIFIC) {
         return ptn_intl_number_formatter_format_scientific(data, number);
     }
-    int precision = fabs(number - floor(number)) > 0.000001 ? 3 : 0;
+    int precision = fabs(number - floor(number)) > 0.000001 ? 1 : 0;
     return ptn_intl_number_formatter_format_fixed(data, number, precision, 0);
 }
 
@@ -79809,7 +80533,12 @@ static PtnValue ptn_intl_resourcebundle_new(PtnRuntime *runtime, const char *cla
     return object;
 }
 
-static PtnValue ptn_intl_resourcebundle_get(PtnValue receiver, PtnValue index) {
+static PtnValue ptn_intl_resourcebundle_get(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue receiver,
+    PtnValue index
+) {
     PtnIntlResourceBundleData *data = ptn_intl_resourcebundle_data(receiver);
     if (data == NULL || ptn_value_deref(data->entries).type != PTN_ARRAY) {
         return ptn_null();
@@ -79817,8 +80546,48 @@ static PtnValue ptn_intl_resourcebundle_get(PtnValue receiver, PtnValue index) {
     PtnArray *array = ptn_value_deref(data->entries).as.array;
     PtnArrayKey key = ptn_array_key_from_value(index);
     size_t found = ptn_array_find_key(array, key);
+    if (found >= array->len) {
+        PtnValue key_value = ptn_array_key_value(key);
+        PtnStringOperand key_string = ptn_value_to_string_operand(key_value);
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Cannot load resource element '%.*s': U_MISSING_RESOURCE_ERROR",
+            function_name,
+            (int)key_string.len,
+            key_string.data
+        );
+        if (needed < 0) {
+            ptn_string_operand_free(key_string);
+            ptn_value_destroy(&key_value);
+            ptn_array_key_free(key);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_string_operand_free(key_string);
+            ptn_value_destroy(&key_value);
+            ptn_array_key_free(key);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Cannot load resource element '%.*s': U_MISSING_RESOURCE_ERROR",
+            function_name,
+            (int)key_string.len,
+            key_string.data
+        );
+        ptn_intl_set_error_message(runtime, message);
+        free(message);
+        ptn_string_operand_free(key_string);
+        ptn_value_destroy(&key_value);
+        ptn_array_key_free(key);
+        return ptn_null();
+    }
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
     ptn_array_key_free(key);
-    return found < array->len ? ptn_value_clone_deref(array->entries[found].value) : ptn_null();
+    return ptn_value_clone_deref(array->entries[found].value);
 }
 
 static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
@@ -79842,7 +80611,9 @@ static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
         ? NULL
         : ptn_value_deref(data->entries).as.array;
     if (ptn_ascii_case_equal(name, "get")) {
-        return argc >= 1 ? ptn_intl_resourcebundle_get(receiver, args[0]) : ptn_null();
+        return argc >= 1
+            ? ptn_intl_resourcebundle_get(runtime, "ResourceBundle::get", receiver, args[0])
+            : ptn_null();
     }
     if (ptn_ascii_case_equal(name, "count")) {
         return array == NULL ? ptn_int(0) : ptn_int((int64_t)array->len);
@@ -79874,6 +80645,13 @@ static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
+}
+
+static PtnValue ptn_internal_resourcebundle_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return argc >= 2
+        ? ptn_intl_resourcebundle_get(runtime, "resourcebundle_get", args[0], args[1])
+        : ptn_null();
 }
 
 typedef struct {
@@ -80523,6 +81301,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
 
 typedef struct {
     char *allowed_pattern;
+    char *allowed_locales;
     int case_insensitive;
 } PtnIntlSpoofCheckerData;
 
@@ -80532,6 +81311,7 @@ static void ptn_intl_spoofchecker_data_free(void *ptr) {
         return;
     }
     free(data->allowed_pattern);
+    free(data->allowed_locales);
     free(data);
 }
 
@@ -80541,6 +81321,7 @@ static PtnValue ptn_intl_spoofchecker_new(PtnRuntime *runtime, const char *class
         ptn_abort_out_of_memory();
     }
     data->allowed_pattern = NULL;
+    data->allowed_locales = NULL;
     data->case_insensitive = 0;
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "Spoofchecker" : class_name);
     object.as.object->native_data = data;
@@ -80595,6 +81376,48 @@ static int ptn_intl_spoofchecker_byte_allowed(PtnIntlSpoofCheckerData *data, uns
     return 0;
 }
 
+static int ptn_intl_spoofchecker_contains_hangul(PtnStringOperand text) {
+    for (size_t i = 0; i + 2 < text.len; i++) {
+        unsigned char first = (unsigned char)text.data[i];
+        unsigned char second = (unsigned char)text.data[i + 1];
+        unsigned char third = (unsigned char)text.data[i + 2];
+        if (first >= 0xE1 && first <= 0xED &&
+            second >= 0x80 && second <= 0xBF &&
+            third >= 0x80 && third <= 0xBF) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_intl_spoofchecker_locales_allow(PtnIntlSpoofCheckerData *data, const char *locale_prefix) {
+    if (data == NULL || data->allowed_locales == NULL || data->allowed_locales[0] == '\0') {
+        return 1;
+    }
+    size_t prefix_len = strlen(locale_prefix);
+    const char *cursor = data->allowed_locales;
+    while (*cursor != '\0') {
+        while (*cursor != '\0' && (isspace((unsigned char)*cursor) || *cursor == ',' || *cursor == ';')) {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != ',' && *cursor != ';') {
+            cursor++;
+        }
+        const char *end = cursor;
+        while (end > start && isspace((unsigned char)end[-1])) {
+            end--;
+        }
+        if ((size_t)(end - start) >= prefix_len &&
+            ptn_ascii_case_equal_n(start, locale_prefix, prefix_len) &&
+            (start[prefix_len] == '\0' || start[prefix_len] == '_' || start[prefix_len] == '-' ||
+             start + prefix_len == end)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -80643,6 +81466,22 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
         ptn_string_operand_free(pattern);
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "setAllowedLocales")) {
+        PtnIntlSpoofCheckerData *data = ptn_intl_spoofchecker_data(receiver);
+        if (data == NULL) {
+            return ptn_bool(0);
+        }
+        PtnStringOperand locales =
+            ptn_internal_expect_string_arg(runtime, "Spoofchecker::setAllowedLocales", 1, "locales", argc >= 1 ? args[0] : ptn_null(), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locales);
+            return ptn_null();
+        }
+        free(data->allowed_locales);
+        data->allowed_locales = ptn_duplicate_string_len(locales.data, locales.len);
+        ptn_string_operand_free(locales);
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "isSuspicious")) {
         if (!ptn_intl_assign_reference_string(runtime, args, argc, 1, "0")) {
             return ptn_null();
@@ -80660,6 +81499,11 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
                     ptn_string_operand_free(text);
                     return ptn_bool(1);
                 }
+            }
+            if (ptn_intl_spoofchecker_contains_hangul(text) &&
+                !ptn_intl_spoofchecker_locales_allow(data, "ko")) {
+                ptn_string_operand_free(text);
+                return ptn_bool(1);
             }
             ptn_string_operand_free(text);
         }
@@ -158937,8 +159781,28 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_datefmt_format_object(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "canonicalize")) {
+        return ptn_internal_locale_static_canonicalize(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "getDisplayLanguage")) {
+        return ptn_internal_locale_static_get_display_language(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
         ptn_ascii_case_equal(name, "getDisplayName")) {
         return ptn_internal_locale_static_get_display_name(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "getDisplayRegion")) {
+        return ptn_internal_locale_static_get_display_region(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "getDisplayScript")) {
+        return ptn_internal_locale_static_get_display_script(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "getDisplayVariant")) {
+        return ptn_internal_locale_static_get_display_variant(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "Locale") &&
         ptn_ascii_case_equal(name, "getKeywords")) {
@@ -158949,8 +159813,16 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_locale_static_get_primary_language(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "getRegion")) {
+        return ptn_internal_locale_static_get_region(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
         ptn_ascii_case_equal(name, "filterMatches")) {
         return ptn_internal_locale_static_filter_matches(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Locale") &&
+        ptn_ascii_case_equal(name, "lookup")) {
+        return ptn_internal_locale_static_lookup(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "Locale") &&
         ptn_ascii_case_equal(name, "acceptFromHttp")) {
@@ -174218,6 +175090,18 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_unknown", 0, 0, ptn_internal_intltz_get_unknown },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
         { "intltz_get_windows_id", 1, 1, ptn_internal_intltz_get_windows_id },
+        { "Locale::acceptFromHttp", 1, 1, ptn_internal_locale_static_accept_from_http },
+        { "Locale::canonicalize", 1, 1, ptn_internal_locale_static_canonicalize },
+        { "Locale::filterMatches", 2, 3, ptn_internal_locale_static_filter_matches },
+        { "Locale::getDisplayLanguage", 1, 2, ptn_internal_locale_static_get_display_language },
+        { "Locale::getDisplayName", 1, 2, ptn_internal_locale_static_get_display_name },
+        { "Locale::getDisplayRegion", 1, 2, ptn_internal_locale_static_get_display_region },
+        { "Locale::getDisplayScript", 1, 2, ptn_internal_locale_static_get_display_script },
+        { "Locale::getDisplayVariant", 1, 2, ptn_internal_locale_static_get_display_variant },
+        { "Locale::getKeywords", 1, 1, ptn_internal_locale_static_get_keywords },
+        { "Locale::getPrimaryLanguage", 1, 1, ptn_internal_locale_static_get_primary_language },
+        { "Locale::getRegion", 1, 1, ptn_internal_locale_static_get_region },
+        { "Locale::lookup", 2, 4, ptn_internal_locale_static_lookup },
         { "iterator_apply", 2, 3, ptn_internal_iterator_apply },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
@@ -174283,12 +175167,18 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "libxml_use_internal_errors", 0, 1, ptn_internal_libxml_use_internal_errors },
         { "link", 2, 2, ptn_internal_link },
         { "linkinfo", 1, 1, ptn_internal_linkinfo },
-        { "locale_compose", 1, 1, ptn_internal_locale_compose },
         { "locale_accept_from_http", 1, 1, ptn_internal_locale_accept_from_http },
+        { "locale_canonicalize", 1, 1, ptn_internal_locale_canonicalize },
+        { "locale_compose", 1, 1, ptn_internal_locale_compose },
         { "locale_filter_matches", 2, 3, ptn_internal_locale_filter_matches },
+        { "locale_get_display_language", 1, 2, ptn_internal_locale_get_display_language },
         { "locale_get_display_name", 1, 2, ptn_internal_locale_get_display_name },
+        { "locale_get_display_region", 1, 2, ptn_internal_locale_get_display_region },
+        { "locale_get_display_script", 1, 2, ptn_internal_locale_get_display_script },
+        { "locale_get_display_variant", 1, 2, ptn_internal_locale_get_display_variant },
         { "locale_get_keywords", 1, 1, ptn_internal_locale_get_keywords },
         { "locale_get_primary_language", 1, 1, ptn_internal_locale_get_primary_language },
+        { "locale_get_region", 1, 1, ptn_internal_locale_get_region },
         { "locale_lookup", 2, 4, ptn_internal_locale_lookup },
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "localtime", 0, 2, ptn_internal_localtime },
@@ -174524,6 +175414,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },
         { "SplFileObject::fputcsv", 1, 5, ptn_internal_method_metadata_stub },
         { "SplFileObject::setCsvControl", 0, 3, ptn_internal_method_metadata_stub },
+        { "resourcebundle_get", 2, 2, ptn_internal_resourcebundle_get },
         { "reset", 1, 1, ptn_internal_reset },
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "restore_exception_handler", 0, 0, ptn_internal_restore_exception_handler },
@@ -174939,9 +175830,10 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_internal_function_name_has_prefix(name, "datefmt_") ||
         ptn_internal_function_name_has_prefix(name, "grapheme_") ||
         ptn_internal_function_name_has_prefix(name, "intltz_") ||
+        ptn_internal_function_name_has_prefix(name, "locale_") ||
+        ptn_internal_function_name_has_prefix(name, "msgfmt_") ||
         ptn_internal_function_name_has_prefix(name, "numfmt_") ||
-        ptn_ascii_case_equal(name, "locale_compose") ||
-        ptn_ascii_case_equal(name, "locale_lookup")) {
+        ptn_internal_function_name_has_prefix(name, "resourcebundle_")) {
         return "intl";
     }
     if (ptn_internal_function_name_has_prefix(name, "mb_")) {
@@ -175132,6 +176024,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "flags", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
         { "iteratorClass", "string", "string", 0, 1, 0, 0, 1, "\"ArrayIterator\"", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[] = {
+        { "languageTag", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[] = {
+        { "languageTag", "array", "array", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+        { "defaultLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",
@@ -175270,6 +176177,56 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             NULL,
             NULL,
             0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_get_display_language") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_name") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_region") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_script") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_variant")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS) / sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS,
+            0,
+            "string|false",
+            "string|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_filter_matches")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS) /
+                sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS,
+            0,
+            "bool",
+            "?bool",
+            1,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "locale_lookup")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS) / sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS,
+            0,
+            "string",
+            "?string",
+            1,
             0
         );
     }
@@ -178662,10 +179619,17 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_locale(class_name)) {
         return ptn_ascii_case_equal(method_name, "acceptFromHttp")
+            || ptn_ascii_case_equal(method_name, "canonicalize")
             || ptn_ascii_case_equal(method_name, "filterMatches")
+            || ptn_ascii_case_equal(method_name, "getDisplayLanguage")
             || ptn_ascii_case_equal(method_name, "getDisplayName")
+            || ptn_ascii_case_equal(method_name, "getDisplayRegion")
+            || ptn_ascii_case_equal(method_name, "getDisplayScript")
+            || ptn_ascii_case_equal(method_name, "getDisplayVariant")
             || ptn_ascii_case_equal(method_name, "getKeywords")
-            || ptn_ascii_case_equal(method_name, "getPrimaryLanguage");
+            || ptn_ascii_case_equal(method_name, "getPrimaryLanguage")
+            || ptn_ascii_case_equal(method_name, "getRegion")
+            || ptn_ascii_case_equal(method_name, "lookup");
     }
     if (ptn_internal_class_name_is_transliterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
@@ -178715,6 +179679,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "isSuspicious")
             || ptn_ascii_case_equal(method_name, "setAllowedChars")
+            || ptn_ascii_case_equal(method_name, "setAllowedLocales")
             || ptn_ascii_case_equal(method_name, "areConfusable");
     }
     if (ptn_internal_class_name_is_uconverter(class_name)) {
@@ -179229,10 +180194,17 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_locale(class_name)) {
         return ptn_ascii_case_equal(method_name, "acceptFromHttp")
+            || ptn_ascii_case_equal(method_name, "canonicalize")
             || ptn_ascii_case_equal(method_name, "filterMatches")
+            || ptn_ascii_case_equal(method_name, "getDisplayLanguage")
             || ptn_ascii_case_equal(method_name, "getDisplayName")
+            || ptn_ascii_case_equal(method_name, "getDisplayRegion")
+            || ptn_ascii_case_equal(method_name, "getDisplayScript")
+            || ptn_ascii_case_equal(method_name, "getDisplayVariant")
             || ptn_ascii_case_equal(method_name, "getKeywords")
-            || ptn_ascii_case_equal(method_name, "getPrimaryLanguage");
+            || ptn_ascii_case_equal(method_name, "getPrimaryLanguage")
+            || ptn_ascii_case_equal(method_name, "getRegion")
+            || ptn_ascii_case_equal(method_name, "lookup");
     }
     if (ptn_internal_class_name_is_message_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "create")

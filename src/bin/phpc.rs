@@ -319,6 +319,8 @@ struct RuntimeIni {
     mbstring_detect_order: Option<String>,
     mbstring_substitute_character: Option<String>,
     mbstring_encoding_translation: Option<String>,
+    intl_error_level: Option<String>,
+    intl_use_exceptions: Option<String>,
     zend_multibyte: Option<String>,
     zend_script_encoding: Option<String>,
     zend_assertions: Option<String>,
@@ -570,6 +572,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.mbstring_substitute_character = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.encoding_translation") {
         ini.mbstring_encoding_translation = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("intl.error_level") {
+        ini.intl_error_level = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("intl.use_exceptions") {
+        ini.intl_use_exceptions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.multibyte") {
         ini.zend_multibyte = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.script_encoding") {
@@ -1245,6 +1251,8 @@ fn compile_and_run(
         mbstring_detect_order: ini.mbstring_detect_order.clone(),
         mbstring_substitute_character: ini.mbstring_substitute_character.clone(),
         mbstring_encoding_translation: ini.mbstring_encoding_translation.clone(),
+        intl_error_level: ini.intl_error_level.clone(),
+        intl_use_exceptions: ini.intl_use_exceptions.clone(),
         zend_multibyte: ini.zend_multibyte.clone(),
         zend_script_encoding: ini.zend_script_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
@@ -1485,6 +1493,12 @@ fn compile_and_run(
             "PTN_MBSTRING_SUBSTITUTE_CHARACTER",
             mbstring_substitute_character,
         );
+    }
+    if let Some(intl_error_level) = &ini.intl_error_level {
+        command.env("PTN_INTL_ERROR_LEVEL", intl_error_level);
+    }
+    if let Some(intl_use_exceptions) = &ini.intl_use_exceptions {
+        command.env("PTN_INTL_USE_EXCEPTIONS", intl_use_exceptions);
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);

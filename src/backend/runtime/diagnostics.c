@@ -3162,7 +3162,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->pcre_utf8_cache_len = 0;
     runtime->pcre_utf8_cache_known = 0;
     runtime->pcre_utf8_cache_valid = 0;
-    runtime->intl_error_level = 0;
-    runtime->intl_use_exceptions = 0;
+    int64_t configured_intl_error_level = 0;
+    runtime->intl_error_level = ptn_parse_int64_env("PTN_INTL_ERROR_LEVEL", &configured_intl_error_level)
+        ? (int)configured_intl_error_level
+        : 0;
+    int configured_intl_use_exceptions = 0;
+    runtime->intl_use_exceptions =
+        ptn_parse_bool_env("PTN_INTL_USE_EXCEPTIONS", &configured_intl_use_exceptions)
+            ? configured_intl_use_exceptions
+            : 0;
     runtime->intl_last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
 }

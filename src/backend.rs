@@ -1807,6 +1807,21 @@ static PTN_UNUSED void ptn_compact_intl_set_error(PtnRuntime *runtime, const cha
     root->intl_last_error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
 }
 
+static PTN_UNUSED void ptn_compact_intl_signal_error(PtnRuntime *runtime, const char *message, size_t line) {
+    ptn_compact_intl_set_error(runtime, message);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (root->intl_use_exceptions) {
+        ptn_throw_exception_at(runtime, "IntlException", message, runtime->source_path, line);
+        return;
+    }
+    if ((root->intl_error_level & PTN_E_WARNING) != 0) {
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_compact_intl_get_error_code(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     const char *message = root == NULL || root->intl_last_error_message == NULL
@@ -2597,6 +2612,18 @@ static PTN_UNUSED PtnValue ptn_compact_intl_message_format_array(
     PtnArray *values,
     size_t line
 ) {
+    if (values != NULL) {
+        for (size_t i = 0; i < values->len; i++) {
+            if (values->entries[i].key.type == PTN_ARRAY_KEY_INT && values->entries[i].key.as.integer < 0) {
+                ptn_compact_intl_signal_error(
+                    runtime,
+                    "MessageFormatter::format(): Found negative or too large array key",
+                    line
+                );
+                return ptn_null();
+            }
+        }
+    }
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
@@ -35110,6 +35137,7 @@ fn is_compact_intl_method_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("__construct")
         || name.eq_ignore_ascii_case("asort")
         || name.eq_ignore_ascii_case("compare")
+        || name.eq_ignore_ascii_case("canonicalize")
         || name.eq_ignore_ascii_case("formatCurrency")
         || name.eq_ignore_ascii_case("format")
         || name.eq_ignore_ascii_case("get")
@@ -35117,11 +35145,16 @@ fn is_compact_intl_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("getAvailableLocales")
         || name.eq_ignore_ascii_case("getCalendar")
         || name.eq_ignore_ascii_case("getDateType")
+        || name.eq_ignore_ascii_case("getDisplayLanguage")
         || name.eq_ignore_ascii_case("getDisplayName")
+        || name.eq_ignore_ascii_case("getDisplayRegion")
+        || name.eq_ignore_ascii_case("getDisplayScript")
+        || name.eq_ignore_ascii_case("getDisplayVariant")
         || name.eq_ignore_ascii_case("getErrorCode")
         || name.eq_ignore_ascii_case("getErrorMessage")
         || name.eq_ignore_ascii_case("getLocale")
         || name.eq_ignore_ascii_case("getPattern")
+        || name.eq_ignore_ascii_case("getRegion")
         || name.eq_ignore_ascii_case("getSortKey")
         || name.eq_ignore_ascii_case("getStrength")
         || name.eq_ignore_ascii_case("getSymbol")
@@ -35135,8 +35168,10 @@ fn is_compact_intl_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("parse")
         || name.eq_ignore_ascii_case("parseCurrency")
         || name.eq_ignore_ascii_case("parseMessage")
+        || name.eq_ignore_ascii_case("lookup")
         || name.eq_ignore_ascii_case("restoreVariableTop")
         || name.eq_ignore_ascii_case("setAttribute")
+        || name.eq_ignore_ascii_case("setAllowedLocales")
         || name.eq_ignore_ascii_case("setCalendar")
         || name.eq_ignore_ascii_case("setDefault")
         || name.eq_ignore_ascii_case("setLenient")
