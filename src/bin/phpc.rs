@@ -293,6 +293,7 @@ struct RuntimeIni {
     error_reporting: Option<i64>,
     output_handler: Option<String>,
     filter_default: Option<String>,
+    browscap: Option<String>,
     pcre_backtrack_limit: Option<String>,
     pcre_recursion_limit: Option<String>,
     pcre_jit: Option<String>,
@@ -504,6 +505,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("filter.default") {
         ini.filter_default = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("browscap") {
+        ini.browscap = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.backtrack_limit") {
         ini.pcre_backtrack_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.recursion_limit") {
@@ -1085,6 +1088,7 @@ fn compile_and_run(
         error_reporting: ini.error_reporting,
         output_handler: ini.output_handler.clone(),
         filter_default: ini.filter_default.clone(),
+        browscap: ini.browscap.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
@@ -1266,6 +1270,9 @@ fn compile_and_run(
     }
     if let Some(filter_default) = &ini.filter_default {
         command.env("PTN_FILTER_DEFAULT", filter_default);
+    }
+    if let Some(browscap) = &ini.browscap {
+        command.env("PTN_BROWSCAP", browscap);
     }
     if let Some(pcre_backtrack_limit) = &ini.pcre_backtrack_limit {
         command.env("PTN_PCRE_BACKTRACK_LIMIT", pcre_backtrack_limit);

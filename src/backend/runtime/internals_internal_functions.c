@@ -94984,6 +94984,348 @@ static PtnValue ptn_internal_parse_ini_file(PtnRuntime *runtime, size_t argc, co
     return result;
 }
 
+static int ptn_browscap_pattern_match(
+    const char *pattern,
+    size_t pattern_len,
+    const char *agent,
+    size_t agent_len
+) {
+    size_t pattern_index = 0;
+    size_t agent_index = 0;
+    size_t star_index = SIZE_MAX;
+    size_t star_agent_index = 0;
+    while (agent_index < agent_len) {
+        if (pattern_index < pattern_len && pattern[pattern_index] == '*') {
+            star_index = pattern_index++;
+            star_agent_index = agent_index;
+            continue;
+        }
+        if (
+            pattern_index < pattern_len &&
+            (
+                pattern[pattern_index] == '?' ||
+                tolower((unsigned char)pattern[pattern_index]) == tolower((unsigned char)agent[agent_index])
+            )
+        ) {
+            pattern_index++;
+            agent_index++;
+            continue;
+        }
+        if (star_index != SIZE_MAX) {
+            pattern_index = star_index + 1;
+            agent_index = ++star_agent_index;
+            continue;
+        }
+        return 0;
+    }
+    while (pattern_index < pattern_len && pattern[pattern_index] == '*') {
+        pattern_index++;
+    }
+    return pattern_index == pattern_len;
+}
+
+static PtnArrayEntry *ptn_browscap_find_section(
+    PtnArray *sections,
+    const char *name,
+    size_t name_len
+) {
+    if (sections == NULL || name == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key_len(name, name_len);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(sections, key);
+    ptn_array_key_free(key);
+    if (entry == NULL || ptn_value_deref(entry->value).type != PTN_ARRAY) {
+        return NULL;
+    }
+    return entry;
+}
+
+static PtnArrayEntry *ptn_browscap_find_section_ci_key(PtnArray *section, const char *name) {
+    if (section == NULL || name == NULL) {
+        return NULL;
+    }
+    size_t name_len = strlen(name);
+    for (size_t i = 0; i < section->len; i++) {
+        PtnArrayEntry *entry = &section->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING || entry->key.string_len != name_len) {
+            continue;
+        }
+        if (ptn_ascii_case_equal(entry->key.as.string, name)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static PtnArrayEntry *ptn_browscap_find_matching_section(
+    PtnArray *sections,
+    const char *agent,
+    size_t agent_len
+) {
+    if (sections == NULL || agent == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < sections->len; i++) {
+        PtnArrayEntry *entry = &sections->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING || ptn_value_deref(entry->value).type != PTN_ARRAY) {
+            continue;
+        }
+        if (ptn_browscap_pattern_match(entry->key.as.string, entry->key.string_len, agent, agent_len)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_browscap_regex_value(const char *pattern, size_t pattern_len) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append(&buffer, "~^");
+    for (size_t i = 0; i < pattern_len; i++) {
+        char byte = (char)tolower((unsigned char)pattern[i]);
+        if (byte == '*') {
+            ptn_string_buffer_append(&buffer, ".*");
+            continue;
+        }
+        if (byte == '?') {
+            ptn_string_buffer_append_char(&buffer, '.');
+            continue;
+        }
+        if (strchr(".\\+[]^$(){}=!<>|~", byte) != NULL) {
+            ptn_string_buffer_append_char(&buffer, '\\');
+        }
+        ptn_string_buffer_append_char(&buffer, byte);
+    }
+    ptn_string_buffer_append(&buffer, "$~");
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static int ptn_browscap_result_has_key(PtnArray *result, const char *key, size_t key_len) {
+    PtnArrayKey lookup = ptn_array_string_key_len(key, key_len);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(result, lookup);
+    ptn_array_key_free(lookup);
+    return entry != NULL;
+}
+
+static char *ptn_browscap_lower_key(const char *key, size_t key_len) {
+    char *lower = malloc(key_len + 1);
+    if (lower == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < key_len; i++) {
+        lower[i] = (char)tolower((unsigned char)key[i]);
+    }
+    lower[key_len] = '\0';
+    return lower;
+}
+
+static void ptn_browscap_add_result_entry(
+    PtnArray *result,
+    const char *key,
+    size_t key_len,
+    PtnValue value
+) {
+    char *lower_key = ptn_browscap_lower_key(key, key_len);
+    if (!ptn_browscap_result_has_key(result, lower_key, key_len)) {
+        ptn_array_set_entry(
+            result,
+            ptn_array_string_key_len(lower_key, key_len),
+            ptn_value_clone(ptn_value_deref(value))
+        );
+    }
+    free(lower_key);
+}
+
+static void ptn_browscap_append_section_properties(
+    PtnArray *sections,
+    PtnArray *section,
+    PtnArray *result,
+    size_t depth
+) {
+    if (section == NULL || result == NULL || depth > 64) {
+        return;
+    }
+    PtnArrayEntry *parent_entry = ptn_browscap_find_section_ci_key(section, "Parent");
+    for (size_t i = 0; i < section->len; i++) {
+        PtnArrayEntry *entry = &section->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        ptn_browscap_add_result_entry(
+            result,
+            entry->key.as.string,
+            entry->key.string_len,
+            entry->value
+        );
+    }
+    if (parent_entry == NULL) {
+        return;
+    }
+    PtnValue parent_value = ptn_value_deref(parent_entry->value);
+    if (parent_value.type != PTN_STRING) {
+        return;
+    }
+    PtnArrayEntry *parent_section_entry = ptn_browscap_find_section(
+        sections,
+        (const char *)parent_value.as.string.data,
+        parent_value.as.string.len
+    );
+    if (parent_section_entry == NULL) {
+        return;
+    }
+    ptn_browscap_append_section_properties(
+        sections,
+        ptn_value_deref(parent_section_entry->value).as.array,
+        result,
+        depth + 1
+    );
+}
+
+static PtnValue ptn_browscap_array_to_object(PtnRuntime *runtime, PtnValue array_value) {
+    PtnValue object = ptn_object_new_shell(runtime, "stdClass");
+    PtnArray *array = array_value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
+            ptn_value_clone(entry->value)
+        );
+    }
+    ptn_value_destroy(&array_value);
+    return object;
+}
+
+static PtnValue ptn_browscap_result_for_section(
+    PtnArray *sections,
+    PtnArrayEntry *section_entry
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("browser_name_regex"),
+        ptn_browscap_regex_value(section_entry->key.as.string, section_entry->key.string_len)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("browser_name_pattern"),
+        ptn_owned_string_len(
+            ptn_duplicate_string_len(section_entry->key.as.string, section_entry->key.string_len),
+            section_entry->key.string_len
+        )
+    );
+    ptn_browscap_append_section_properties(
+        sections,
+        ptn_value_deref(section_entry->value).as.array,
+        result.as.array,
+        0
+    );
+    return result;
+}
+
+static PtnValue ptn_internal_get_browser(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    const char *agent_data = NULL;
+    size_t agent_len = 0;
+    PtnStringOperand agent_operand = ptn_string_operand_borrowed("");
+    int free_agent_operand = 0;
+    if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        agent_operand = ptn_internal_expect_string_arg(runtime, "get_browser", 1, "user_agent", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(agent_operand);
+            return ptn_null();
+        }
+        agent_data = agent_operand.data;
+        agent_len = agent_operand.len;
+        free_agent_operand = 1;
+    } else {
+        const char *environment_agent = getenv("HTTP_USER_AGENT");
+        if (environment_agent == NULL) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "get_browser(): HTTP_USER_AGENT variable is not set, cannot determine user agent name",
+                line
+            );
+            return ptn_bool(0);
+        }
+        agent_data = environment_agent;
+        agent_len = strlen(environment_agent);
+    }
+
+    int return_array = argc >= 2 && ptn_is_truthy(args[1]);
+    const char *browscap_path = getenv("PTN_BROWSCAP");
+    if (browscap_path == NULL || browscap_path[0] == '\0') {
+        if (free_agent_operand) {
+            ptn_string_operand_free(agent_operand);
+        }
+        return ptn_bool(0);
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    char *opened_path = NULL;
+    int read_result = ptn_read_file_bytes_with_search(
+        runtime,
+        "get_browser",
+        browscap_path,
+        1,
+        &data,
+        &data_len,
+        &opened_path,
+        line
+    );
+    if (read_result <= 0) {
+        if (free_agent_operand) {
+            ptn_string_operand_free(agent_operand);
+        }
+        free(opened_path);
+        free(data);
+        return ptn_bool(0);
+    }
+
+    int ok = 1;
+    PtnValue sections = ptn_ini_parse_contents(
+        runtime,
+        (const char *)data,
+        data_len,
+        1,
+        PTN_INI_SCANNER_NORMAL,
+        opened_path == NULL ? browscap_path : opened_path,
+        line,
+        &ok
+    );
+    free(opened_path);
+    free(data);
+    if (!ok || runtime->exceptions->active_exception != NULL || sections.type != PTN_ARRAY) {
+        if (free_agent_operand) {
+            ptn_string_operand_free(agent_operand);
+        }
+        ptn_value_destroy(&sections);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+
+    PtnArrayEntry *match = ptn_browscap_find_matching_section(sections.as.array, agent_data, agent_len);
+    if (match == NULL) {
+        if (free_agent_operand) {
+            ptn_string_operand_free(agent_operand);
+        }
+        ptn_value_destroy(&sections);
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_browscap_result_for_section(sections.as.array, match);
+    if (free_agent_operand) {
+        ptn_string_operand_free(agent_operand);
+    }
+    ptn_value_destroy(&sections);
+    if (return_array) {
+        return result;
+    }
+    return ptn_browscap_array_to_object(runtime, result);
+}
+
 static double ptn_value_to_double(PtnValue value) {
     double fast_number = 0.0;
     if (ptn_fast_scalar_double(value, &fast_number)) {
@@ -166138,6 +166480,7 @@ static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t arg
 static PtnValue ptn_internal_forward_static_call_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_browser(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -166241,7 +166584,9 @@ static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_openlog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -166280,12 +166625,53 @@ static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t 
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_syslog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
+static PtnValue ptn_internal_openlog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, "openlog", 1, "prefix", args[0], line);
+    ptn_string_operand_free(prefix);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    (void)ptn_internal_expect_integer_arg(runtime, "openlog", 2, "flags", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    (void)ptn_internal_expect_integer_arg(runtime, "openlog", 3, "facility", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_syslog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_integer_arg(runtime, "syslog", 1, "priority", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand message = ptn_internal_expect_string_arg(runtime, "syslog", 2, "message", args[1], line);
+    ptn_string_operand_free(message);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(1);
+}
 
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -166465,6 +166851,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "clone", 1, 2, ptn_internal_clone },
         { "closelog", 0, 0, ptn_internal_closelog },
         { "closedir", 0, 1, ptn_internal_closedir },
+        { "closelog", 0, 0, ptn_internal_closelog },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
@@ -166649,6 +167036,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_class", 0, 1, ptn_internal_get_class },
         { "get_class_methods", 1, 1, ptn_internal_get_class_methods },
         { "get_class_vars", 1, 1, ptn_internal_get_class_vars },
+        { "get_browser", 0, 2, ptn_internal_get_browser },
         { "get_current_user", 0, 0, ptn_internal_get_current_user },
         { "get_debug_type", 1, 1, ptn_internal_get_debug_type },
         { "get_declared_classes", 0, 0, ptn_internal_get_declared_classes },
@@ -167042,6 +167430,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openlog", 3, 3, ptn_internal_openlog },
         { "openssl_cipher_key_length", 1, 1, ptn_internal_openssl_cipher_key_length },
         { "openssl_cms_decrypt", 2, 5, ptn_internal_openssl_cms_decrypt },
         { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },
@@ -167293,6 +167682,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
         { "symlink", 2, 2, ptn_internal_symlink },
         { "sys_get_temp_dir", 0, 0, ptn_internal_sys_get_temp_dir },
+        { "syslog", 2, 2, ptn_internal_syslog },
         { "system", 1, 2, ptn_internal_system },
         { "tan", 1, 1, ptn_internal_tan },
         { "tanh", 1, 1, ptn_internal_tanh },

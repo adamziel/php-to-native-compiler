@@ -1,0 +1,15 @@
+# ptn-w17z.1047 current-red standard strings/misc row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T163458Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+ext/standard/tests/strings/bug26973.phpt
+ext/standard/tests/misc/get_browser_no_default.phpt
+ext/standard/tests/strings/printf_basic5.phpt
+ext/standard/tests/strings/bug22227.phpt
+ext/standard/tests/strings/chunk_split_variation12.phpt
+ext/standard/tests/misc/syslog_basic.phpt
+ext/standard/tests/strings/bug37262.phpt
+ext/standard/tests/misc/get_browser_variation2.phpt
+ext/standard/tests/array/var_export2.phpt
+ext/standard/tests/misc/get_browser_error.phpt
+ext/standard/tests/misc/bug77338.phpt
+ext/standard/tests/misc/bug69983.phpt
