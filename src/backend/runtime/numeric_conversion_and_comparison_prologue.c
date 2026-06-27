@@ -8162,23 +8162,48 @@ static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const
         return 1;
     }
     PtnException *caught_exception = runtime->exceptions->active_exception;
+    fprintf(stderr, "DEBUG bind start fn=%s exref=%zu\n",
+        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+        caught_exception == NULL ? 0 : caught_exception->refcount);
     ptn_exception_retain(caught_exception);
     runtime->exceptions->active_exception = NULL;
+    fprintf(stderr, "DEBUG bind before free active fn=%s exref=%zu\n",
+        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+        caught_exception == NULL ? 0 : caught_exception->refcount);
     ptn_exception_free(caught_exception);
+    fprintf(stderr, "DEBUG bind after free active fn=%s exref=%zu\n",
+        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+        caught_exception == NULL ? 0 : caught_exception->refcount);
 
     PtnTryFrame frame;
     int ok = 1;
     ptn_try_frame_push(runtime, &frame);
     if (setjmp(frame.jump) == 0) {
         PtnValue caught_value = ptn_exception_borrow(caught_exception);
+        fprintf(stderr, "DEBUG bind before write fn=%s exref=%zu\n",
+            runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+            caught_exception == NULL ? 0 : caught_exception->refcount);
         PtnValue result = ptn_runtime_write_variable_result_at(runtime, name, caught_value, line);
+        fprintf(stderr, "DEBUG bind after write fn=%s exref=%zu\n",
+            runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+            caught_exception == NULL ? 0 : caught_exception->refcount);
         ptn_value_destroy(&result);
+        fprintf(stderr, "DEBUG bind after result destroy fn=%s exref=%zu\n",
+            runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+            caught_exception == NULL ? 0 : caught_exception->refcount);
         ptn_try_frame_pop(runtime, &frame);
     } else {
         ok = 0;
         ptn_try_frame_pop(runtime, &frame);
     }
+    fprintf(stderr, "DEBUG bind before final free fn=%s exref=%zu\n",
+        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+        caught_exception == NULL ? 0 : caught_exception->refcount);
     ptn_exception_free(caught_exception);
+    fprintf(stderr, "DEBUG bind after final free fn=%s ok=%d active=%p\n",
+        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
+        ok,
+        (void *)runtime->exceptions->active_exception);
     return ok && runtime->exceptions->active_exception == NULL;
 }
 
