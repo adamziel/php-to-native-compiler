@@ -52371,6 +52371,11 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
         data_out,
         len_out
     );
+    if (ok <= 0 && (compressed_len < 2 || compressed[0] != 0x1f || compressed[1] != 0x8b)) {
+        *data_out = compressed;
+        *len_out = compressed_len;
+        return 1;
+    }
     free(compressed);
     return ok;
 }
@@ -57705,6 +57710,32 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         return ptn_data_url_stream_metadata(resource);
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (resource->memory_stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+        int has_wrapper = resource->stream_uri != NULL &&
+            ptn_ascii_case_has_prefix(resource->stream_uri, ptn_zlib_wrapper_prefix());
+        ptn_stream_meta_set(result.as.array, "timed_out", ptn_bool(0));
+        ptn_stream_meta_set(result.as.array, "blocked", ptn_bool(1));
+        ptn_stream_meta_set(result.as.array, "eof", ptn_bool(ptn_stream_eof(resource)));
+        if (has_wrapper) {
+            ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("ZLIB"));
+        }
+        ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("ZLIB"));
+        ptn_stream_meta_set(
+            result.as.array,
+            "mode",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+        );
+        ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+        ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
+        if (has_wrapper) {
+            ptn_stream_meta_set(
+                result.as.array,
+                "uri",
+                ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+            );
+        }
+        return result;
+    }
     if (resource->memory_stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_TEMP) {
         ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("PHP"));
         ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("TEMP"));
@@ -61078,6 +61109,78 @@ static int ptn_scandir_name_compare(const void *left, const void *right) {
     return strcmp(left_name, right_name);
 }
 
+static const char *ptn_path_basename_component(const char *path) {
+    const char *base = path;
+    for (const char *cursor = path; cursor != NULL && *cursor != '\0'; cursor++) {
+        if (*cursor == '/'
+#if defined(_WIN32)
+            || *cursor == '\\'
+#endif
+        ) {
+            base = cursor + 1;
+        }
+    }
+    return base == NULL ? "" : base;
+}
+
+static PtnValue ptn_scandir_glob_wrapper(PtnRuntime *runtime, const char *path, int64_t sorting_order, size_t line) {
+    (void)runtime;
+    (void)line;
+    const char *prefix = "glob://";
+    const char *pattern = path + strlen(prefix);
+#if defined(_WIN32)
+    (void)pattern;
+    return ptn_array_from_literal_entries(0, NULL);
+#else
+    glob_t matches;
+    memset(&matches, 0, sizeof(matches));
+    int status = glob(pattern, 0, NULL, &matches);
+    if (status != 0 && status != GLOB_NOMATCH) {
+        globfree(&matches);
+        ptn_emit_directory_open_warning(runtime, "scandir", path, "glob failed", line);
+        ptn_emit_function_warning(runtime, "scandir", "(errno 0): glob failed", line);
+        return ptn_bool(0);
+    }
+
+    char **names = NULL;
+    size_t len = 0;
+    size_t capacity = 0;
+    for (size_t i = 0; i < matches.gl_pathc; i++) {
+        if (len == capacity) {
+            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+            if (new_capacity < capacity || new_capacity > SIZE_MAX / sizeof(char *)) {
+                globfree(&matches);
+                ptn_abort_out_of_memory();
+            }
+            char **new_names = realloc(names, new_capacity * sizeof(char *));
+            if (new_names == NULL) {
+                globfree(&matches);
+                ptn_abort_out_of_memory();
+            }
+            names = new_names;
+            capacity = new_capacity;
+        }
+        names[len++] = ptn_duplicate_string(ptn_path_basename_component(matches.gl_pathv[i]));
+    }
+    globfree(&matches);
+
+    if (sorting_order != PTN_SCANDIR_SORT_NONE) {
+        qsort(names, len, sizeof(char *), ptn_scandir_name_compare);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < len; i++) {
+        size_t source_index = sorting_order == PTN_SCANDIR_SORT_DESCENDING ? len - i - 1 : i;
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_owned_string(names[source_index]));
+    }
+    free(names);
+    return result;
+#endif
+}
+
 static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "scandir", 1, "directory", args[0], line);
     if (path == NULL) {
@@ -61111,6 +61214,11 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
             "scandir(): Argument #1 ($directory) must not be empty"
         );
         return ptn_null();
+    }
+    if (ptn_ascii_case_has_prefix(path, "glob://")) {
+        PtnValue result = ptn_scandir_glob_wrapper(runtime, path, sorting_order, line);
+        free(path);
+        return result;
     }
 #if defined(_WIN32)
     ptn_emit_file_warning(runtime, "scandir", path, "directory scanning is unsupported on this platform", line);

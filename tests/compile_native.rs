@@ -28679,6 +28679,79 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_zlib_stream_metadata_plain_gzfile_and_glob_wrapper_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-stream-metadata-plain-gzfile-glob");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-stream-metadata-plain-gzfile-glob.php");
+    let output = root.join("zlib-stream-metadata-plain-gzfile-glob-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$gz = __DIR__ . "/payload.gz";
+$h = gzopen($gz, "w");
+gzwrite($h, "hello\n");
+gzclose($h);
+
+$h = gzopen($gz, "r");
+$meta = stream_get_meta_data($h);
+echo implode(",", array_keys($meta)), "\n";
+var_dump($meta["stream_type"], $meta["mode"], array_key_exists("wrapper_type", $meta), array_key_exists("uri", $meta));
+gzclose($h);
+
+$h = fopen("compress.zlib://" . $gz, "r");
+$meta = stream_get_meta_data($h);
+var_dump($meta["wrapper_type"], $meta["stream_type"], str_contains($meta["uri"], "compress.zlib://"));
+fclose($h);
+
+$plain = __DIR__ . "/plain.txt";
+file_put_contents($plain, "alpha\nbeta");
+var_dump(gzfile($plain));
+
+$dir = __DIR__ . "/scan";
+mkdir($dir);
+touch($dir . "/foo");
+chdir($dir);
+var_dump(scandir("glob://*"));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "timed_out,blocked,eof,stream_type,mode,unread_bytes,seekable\n",
+            "string(4) \"ZLIB\"\n",
+            "string(1) \"r\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(4) \"ZLIB\"\n",
+            "string(4) \"ZLIB\"\n",
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(6) \"alpha\n",
+            "\"\n",
+            "  [1]=>\n",
+            "  string(4) \"beta\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_scandir_glob_wrapper"));
+    assert!(c_source.contains("PTN_STREAM_BACKEND_ZLIB"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();

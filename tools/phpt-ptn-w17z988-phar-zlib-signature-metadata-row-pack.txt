@@ -1,0 +1,12 @@
+ext/phar/tests/phar_setsignaturealgo2.phpt
+ext/phar/tests/tar/require_hash.phpt
+ext/zlib/tests/zlib_wrapper_meta_data_basic.phpt
+ext/phar/tests/tar/phar_convert_phar2.phpt
+ext/zlib/tests/gzfile_basic2.phpt
+ext/zlib/tests/zlib_scheme_file_get_contents_basic.phpt
+ext/phar/tests/zip/corrupt_008.phpt
+ext/phar/tests/phar_oo_012.phpt
+ext/standard/tests/streams/gh17067.phpt
+ext/standard/tests/filters/object_init_failure.phpt
+ext/phar/tests/phar_stub.phpt
+ext/phar/tests/phar_oo_002.phpt
