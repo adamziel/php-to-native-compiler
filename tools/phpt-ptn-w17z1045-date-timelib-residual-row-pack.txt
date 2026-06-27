@@ -1,0 +1,13 @@
+# ptn-w17z.1045 exact date/timelib residual current-red row pack
+ext/date/tests/gh10747-4.phpt
+ext/date/tests/bug75851.phpt
+ext/date/tests/bug55397.phpt
+ext/date/tests/gettimeofday_basic.phpt
+ext/date/tests/date_sun_info_003.phpt
+ext/date/tests/date_timestamp_set_nullparam2.phpt
+ext/date/tests/bug40743.phpt
+ext/date/tests/bug67251.phpt
+ext/date/tests/date-lenient-create.phpt
+ext/date/tests/bug33414-1.phpt
+ext/date/tests/date_parse_001.phpt
+ext/date/tests/gh10747-1.phpt
