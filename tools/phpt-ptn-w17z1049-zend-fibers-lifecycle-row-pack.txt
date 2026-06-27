@@ -1,0 +1,15 @@
+# Focused Zend fibers/backtrace/destructor lifecycle current-red row pack for ptn-w17z.1049.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T170506Z.tsv
+# bucket: zend-fibers-lifecycle rows=12
+Zend/tests/fibers/backtrace-deep-nesting.phpt
+Zend/tests/fibers/backtrace-nested.phpt
+Zend/tests/fibers/backtrace-object.phpt
+Zend/tests/fibers/call-to-ctor-of-terminated-fiber.phpt
+Zend/tests/fibers/catch-then-suspend.phpt
+Zend/tests/fibers/catch.phpt
+Zend/tests/fibers/debug-backtrace.phpt
+Zend/tests/fibers/destructors_001.phpt
+Zend/tests/fibers/destructors_003.phpt
+Zend/tests/fibers/destructors_004.phpt
+Zend/tests/fibers/destructors_006.phpt
+Zend/tests/fibers/destructors_008.phpt
