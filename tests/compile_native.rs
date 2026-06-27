@@ -28057,6 +28057,21 @@ $fp = fopen($line, 'rb');\n\
 var_dump(stream_get_line($fp, 0, '<br>'));\n\
 var_dump(stream_get_line($fp, 0, '<br>'));\n\
 fclose($fp);\n\
+$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);\n\
+stream_set_blocking($pair[1], false);\n\
+fwrite($pair[0], 'line start');\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+fwrite($pair[0], ', line end, <EOL>');\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+fwrite($pair[0], 'incomplete line');\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+var_dump(fread($pair[1], strlen('incomplete line')));\n\
+fwrite($pair[0], 'end of file');\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+fclose($pair[0]);\n\
+var_dump(stream_get_line($pair[1], 8192, '<EOL>'));\n\
+fclose($pair[1]);\n\
 $dir = opendir(__DIR__);\n\
 var_dump(is_string(readdir($dir)));\n\
 rewinddir($dir);\n\
@@ -28103,6 +28118,13 @@ bool(true)\n\
 string(3) \"abc\"\n\
 string(3) \"foo\"\n\
 string(3) \"bar\"\n\
+bool(false)\n\
+string(22) \"line start, line end, \"\n\
+bool(false)\n\
+bool(false)\n\
+string(15) \"incomplete line\"\n\
+bool(false)\n\
+string(11) \"end of file\"\n\
 bool(true)\n\
 bool(true)\n\
 bool(false)\n\
@@ -28228,6 +28250,8 @@ var_dump(gzwrite($h, "ignored", 0));
 var_dump(gzwrite($h, "ignored", -1));
 var_dump(gzwrite($h, $data));
 gzclose($h);
+var_dump(gzopen($path, "r+"));
+var_dump(gzopen($path, "w+"));
 
 $write_only = gzopen(__DIR__ . "/zlib-write-only.gz", "w");
 var_dump(gzread($write_only, 1));
@@ -28314,9 +28338,14 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("Warning: ftruncate(): Can't truncate this stream!"));
+    assert!(stdout.contains("Warning: gzopen(): Cannot open a zlib stream for reading and writing at the same time!"));
     let stdout_without_warnings = stdout
         .lines()
-        .filter(|line| !line.is_empty() && !line.contains("Warning: ftruncate()"))
+        .filter(|line| {
+            !line.is_empty()
+                && !line.contains("Warning: ftruncate()")
+                && !line.contains("Warning: gzopen()")
+        })
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
@@ -28332,6 +28361,8 @@ int(16)\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
+bool(false)\n\
+bool(false)\n\
 bool(false)\n\
 string(5) \"alpha\"\n\
 int(0)\n\
@@ -28641,7 +28672,12 @@ $context2 = stream_context_create([
 ]);
 try {
     fopen('php://nonexistent2', 'r', false, $context2);
-} catch (StreamException $e) {}
+} catch (StreamException $e) {
+    echo "EXCEPTION code: " . $e->getCode() . "\n";
+    $caughtErrors = $e->getErrors();
+    echo "EXCEPTION wrapper: " . $caughtErrors[0]->wrapperName . "\n";
+    echo "EXCEPTION error: " . $caughtErrors[0]->code->name . "\n";
+}
 $errors2 = stream_last_errors();
 echo "EXCEPTION mode AUTO: " . (!empty($errors2) ? "has error" : "no error") . "\n";
 
@@ -28678,6 +28714,9 @@ nested/file\n\
 bool(true)\n\
 array(1) {\n  [\"http\"]=>\n  array(2) {\n    [\"protocol_version\"]=>\n    float(1.1)\n    [\"user_agent\"]=>\n    string(10) \"PHPT Agent\"\n  }\n}\n\
 ERROR mode AUTO: no error\n\
+EXCEPTION code: 20\n\
+EXCEPTION wrapper: PHP\n\
+EXCEPTION error: OpenFailed\n\
 EXCEPTION mode AUTO: no error\n\
 SILENT mode AUTO: has error\n"
     );

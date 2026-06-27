@@ -52416,6 +52416,10 @@ static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
 }
 
 static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, PtnValue *out) {
+    if (ptn_phar_stream_mode_has_plus(mode)) {
+        errno = EINVAL;
+        return 0;
+    }
     int can_read = ptn_phar_stream_mode_can_read(mode);
     int can_write = ptn_phar_stream_mode_can_write(mode);
     int truncate = ptn_phar_stream_mode_truncates(mode);
@@ -53022,6 +53026,67 @@ static void ptn_stream_store_single_error(
     ptn_stream_last_errors[0].terminating = terminating;
 }
 
+static PtnValue ptn_stream_error_value(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    PtnValue error = ptn_object_new_shell(runtime, "StreamError");
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("code"),
+        ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", code_name == NULL ? "Generic" : code_name)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("message"),
+        ptn_owned_string(ptn_duplicate_string(message == NULL ? "" : message))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("wrapperName"),
+        ptn_owned_string(ptn_duplicate_string(wrapper_name == NULL ? "stream" : wrapper_name))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("severity"),
+        ptn_int((int64_t)severity)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("terminating"),
+        ptn_bool(terminating)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("param"),
+        param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(param))
+    );
+    return error;
+}
+
+static PtnValue ptn_stream_single_error_array(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key(0),
+        ptn_stream_error_value(runtime, message, wrapper_name, code_name, param, severity, terminating)
+    );
+    return result;
+}
+
 static const char *ptn_stream_context_enum_case_name(PtnValue value, const char *class_name) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT ||
@@ -53156,13 +53221,36 @@ static PtnValue ptn_stream_open_failure_result(
         ptn_stream_clear_last_errors();
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
-        ptn_throw_exception_at(
+        PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+        PtnException *exception = ptn_exception_new_owned(
             runtime,
             "StreamException",
-            detail,
+            ptn_duplicate_string(detail == NULL ? "" : detail),
+            strlen(detail == NULL ? "" : detail),
+            ptn_stream_error_code_value(code_name),
+            previous,
+            PTN_E_ERROR,
             runtime == NULL ? NULL : runtime->source_path,
             line
         );
+        ptn_value_destroy(&exception->errors);
+        exception->errors = ptn_stream_single_error_array(
+            runtime,
+            detail,
+            wrapper_name,
+            code_name,
+            path,
+            PTN_E_WARNING,
+            terminating
+        );
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = exception;
+        if (runtime->exceptions->try_frame != NULL) {
+            longjmp(runtime->exceptions->try_frame->jump, 1);
+        }
+        ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+        ptn_runtime_shutdown_before_exit(runtime);
+        exit(255);
         return ptn_null();
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_ERROR) {
@@ -56768,6 +56856,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    int delimiter_found = 0;
     while (length == 0 || buffer.len < (size_t)length) {
         int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
@@ -56787,11 +56876,22 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
             if (buffer.data != NULL) {
                 buffer.data[buffer.len] = '\0';
             }
+            delimiter_found = 1;
             break;
         }
     }
+    int length_reached = length > 0 && buffer.len >= (size_t)length;
     if (argc >= 3) {
         ptn_string_operand_free(delimiter);
+    }
+    if (!delimiter_found && buffer.len == 0) {
+        free(buffer.data);
+        return ptn_bool(0);
+    }
+    if (!delimiter_found && !length_reached && !ptn_stream_eof(resource)) {
+        ptn_stream_filtered_read_pending_append(resource, buffer.data, buffer.len);
+        free(buffer.data);
+        return ptn_bool(0);
     }
     if (buffer.len == 0 && ptn_stream_eof(resource)) {
         free(buffer.data);
@@ -57252,41 +57352,18 @@ static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
         PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
-        PtnValue error = ptn_object_new_shell(runtime, "StreamError");
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("code"),
-            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", stored->code_name == NULL ? "Generic" : stored->code_name)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("message"),
-            ptn_owned_string(ptn_duplicate_string(stored->message == NULL ? "" : stored->message))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("wrapperName"),
-            ptn_owned_string(ptn_duplicate_string(stored->wrapper_name == NULL ? "stream" : stored->wrapper_name))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("severity"),
-            ptn_int((int64_t)stored->severity)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("terminating"),
-            ptn_bool(stored->terminating)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("param"),
-            stored->param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(stored->param))
-        );
         ptn_array_set_entry(
             result.as.array,
             ptn_array_int_key((int64_t)i),
-            error
+            ptn_stream_error_value(
+                runtime,
+                stored->message,
+                stored->wrapper_name,
+                stored->code_name,
+                stored->param,
+                stored->severity,
+                stored->terminating
+            )
         );
     }
     return result;
@@ -140537,6 +140614,16 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
     }
     if (mode == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "gzopen(): Argument #2 ($mode) must not contain any null bytes", line);
+        free(path);
+        return ptn_bool(0);
+    }
+    if (ptn_phar_stream_mode_has_plus(mode)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "gzopen(): Cannot open a zlib stream for reading and writing at the same time!",
+            line
+        );
+        free(mode);
         free(path);
         return ptn_bool(0);
     }

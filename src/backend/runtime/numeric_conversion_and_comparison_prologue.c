@@ -2644,7 +2644,8 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
     exception->dynamic_properties = ptn_array_from_literal_entries(0, NULL);
-    exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
+    exception->errors = ptn_ascii_case_equal(class_name, "StreamException") ||
+        ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
         ? ptn_array_from_literal_entries(0, NULL)
         : ptn_null();
     exception->soap_fault_headerfault = ptn_null();
@@ -2737,6 +2738,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     }
     if (ptn_exception_name_equal(class_name, "RequestParseBodyException")) {
         return "RequestParseBodyException";
+    }
+    if (ptn_exception_name_equal(class_name, "StreamException")) {
+        return "StreamException";
     }
     if (ptn_exception_name_equal(class_name, "LogicException")) {
         return "LogicException";
@@ -4878,6 +4882,94 @@ static PTN_UNUSED const char *ptn_stream_error_code_case_name(const char *case_n
         }
     }
     return NULL;
+}
+
+static PTN_UNUSED int64_t ptn_stream_error_code_value(const char *case_name) {
+    static const char *const names[] = {
+        "None",
+        "Generic",
+        "ReadFailed",
+        "WriteFailed",
+        "SeekFailed",
+        "SeekNotSupported",
+        "FlushFailed",
+        "TruncateFailed",
+        "ConnectFailed",
+        "BindFailed",
+        "ListenFailed",
+        "NotWritable",
+        "NotReadable",
+        "Disabled",
+        "NotFound",
+        "PermissionDenied",
+        "AlreadyExists",
+        "InvalidPath",
+        "PathTooLong",
+        "OpenFailed",
+        "CreateFailed",
+        "DupFailed",
+        "UnlinkFailed",
+        "RenameFailed",
+        "MkdirFailed",
+        "RmdirFailed",
+        "StatFailed",
+        "MetaFailed",
+        "ChmodFailed",
+        "ChownFailed",
+        "CopyFailed",
+        "TouchFailed",
+        "InvalidMode",
+        "InvalidMeta",
+        "ModeNotSupported",
+        "Readonly",
+        "RecursionDetected",
+        "NotImplemented",
+        "NoOpener",
+        "PersistentNotSupported",
+        "WrapperNotFound",
+        "WrapperDisabled",
+        "ProtocolUnsupported",
+        "WrapperRegistrationFailed",
+        "WrapperUnregistrationFailed",
+        "WrapperRestorationFailed",
+        "FilterNotFound",
+        "FilterFailed",
+        "CastFailed",
+        "CastNotSupported",
+        "MakeSeekableFailed",
+        "BufferedDataLost",
+        "NetworkSendFailed",
+        "NetworkRecvFailed",
+        "SslNotSupported",
+        "ResumptionFailed",
+        "SocketPathTooLong",
+        "OobNotSupported",
+        "ProtocolError",
+        "InvalidUrl",
+        "InvalidResponse",
+        "InvalidHeader",
+        "InvalidParam",
+        "RedirectLimit",
+        "AuthFailed",
+        "ArchivingFailed",
+        "EncodingFailed",
+        "DecodingFailed",
+        "InvalidFormat",
+        "AllocationFailed",
+        "TemporaryFileFailed",
+        "LockFailed",
+        "LockNotSupported",
+        "UserspaceNotImplemented",
+        "UserspaceInvalidReturn",
+        "UserspaceCallFailed",
+    };
+    const char *resolved = case_name == NULL ? "Generic" : case_name;
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(resolved, names[i]) == 0) {
+            return (int64_t)i + 1;
+        }
+    }
+    return 2;
 }
 
 static PTN_UNUSED const char *ptn_stream_error_mode_case_name(const char *case_name) {
@@ -8355,6 +8447,11 @@ static PTN_UNUSED PtnValue ptn_call_method(
         ptn_exception_name_equal(name, "getTrace") ||
         ptn_exception_name_equal(name, "getTraceAsString") ||
         ptn_exception_name_equal(name, "getSeverity") ||
+        (
+            receiver.type == PTN_EXCEPTION &&
+            ptn_exception_type_matches_name(receiver.as.exception->class_name, "StreamException") &&
+            ptn_exception_name_equal(name, "getErrors")
+        ) ||
         ptn_exception_name_equal(name, "__toString")
     )) {
         if (argc != 0) {
@@ -8397,6 +8494,9 @@ static PTN_UNUSED PtnValue ptn_call_method(
         }
         if (ptn_exception_name_equal(name, "getSeverity")) {
             return ptn_int(ptn_throwable_int_property(runtime, receiver, "severity", PTN_E_ERROR, line));
+        }
+        if (ptn_exception_name_equal(name, "getErrors")) {
+            return ptn_value_clone_deref(receiver.as.exception->errors);
         }
         if (ptn_exception_name_equal(name, "__toString")) {
             return ptn_throwable_to_string(runtime, receiver, line);
