@@ -28738,6 +28738,15 @@ try {
     echo $e->getMessage(), "\n";
 }
 
+$stream = fopen('php://temp', 'r+');
+var_dump(stream_context_set_params($stream, []));
+try {
+    preg_replace('', function() {}, $stream);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+fclose($stream);
+
 var_dump(STREAM_IPPROTO_IP);
 var_dump(STREAM_PEEK);
 $path = __DIR__ . DIRECTORY_SEPARATOR . "recvfrom.tmp";
@@ -28766,6 +28775,8 @@ Array\n\
 )\n\
 TypeError: stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"fn_not_exist\" not found or invalid function name\n\
 Invalid stream/context parameter\n\
+bool(true)\n\
+preg_replace(): Argument #2 ($replacement) must be of type array|string, Closure given\n\
 int(0)\n\
 int(2)\n\
 bool(false)\n\
@@ -29585,6 +29596,32 @@ bool(false)\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_stream_get_filters"));
+}
+
+#[test]
+fn compile_quoted_printable_decode_cr_soft_breaks_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-cr-soft-breaks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-cr-soft-breaks.php");
+    let output = root.join("quoted-printable-cr-soft-breaks-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo bin2hex(file_get_contents('php://filter/read=convert.quoted-printable-decode/resource=data:,X%3D%0DZ')), \"\\n\";\n\
+echo bin2hex(quoted_printable_decode(\"Y=\\rQ\")), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "585a\n5951\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_quoted_printable_decode_string"));
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE"));
 }
 
 #[test]

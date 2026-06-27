@@ -54605,6 +54605,13 @@ static char *ptn_stream_apply_quoted_printable_decode_filter_alloc(
             i += filter->filter_line_break_len;
             continue;
         }
+        if (!filter->filter_line_break_configured && i + 1 < len && data[i + 1] == '\r') {
+            i += 1;
+            if (i + 1 < len && data[i + 1] == '\n') {
+                i += 1;
+            }
+            continue;
+        }
         if (!filter->filter_line_break_configured && i + 1 < len && data[i + 1] == '\n') {
             i += 1;
             continue;
@@ -57146,6 +57153,11 @@ static int ptn_internal_expect_stream_context_arg(
         return 0;
     }
     if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        if (strcmp(value.as.resource->type_name, "stream") == 0 &&
+            ptn_stream_resource_is_open(value.as.resource)) {
+            *context_out = value.as.resource;
+            return 1;
+        }
         char message[160];
         int written = snprintf(
             message,
@@ -77386,6 +77398,13 @@ static char *ptn_quoted_printable_decode_string(const char *input, size_t len, s
     size_t out = 0;
     for (size_t i = 0; i < len; i++) {
         if (input[i] == '=') {
+            if (i + 1 < len && input[i + 1] == '\r') {
+                i += 1;
+                if (i + 1 < len && input[i + 1] == '\n') {
+                    i += 1;
+                }
+                continue;
+            }
             if (i + 1 < len && input[i + 1] == '\n') {
                 i += 1;
                 continue;

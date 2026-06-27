@@ -1,0 +1,14 @@
+# ptn-w17z.990 exact PHAR archive/filter/opendir current-red row pack.
+# Source: partial-statuses-20260627T011956Z.tsv.
+ext/phar/tests/008.phpt
+ext/phar/tests/GHSA-jqcx-ccgc-xwhv.phpt
+ext/phar/tests/018.phpt
+ext/standard/tests/streams/opendir-002.phpt
+ext/standard/tests/streams/bug61115.phpt
+ext/standard/tests/filters/ghsa-r977-prxv-hc43.phpt
+ext/phar/tests/tar_flush_too_long_filename.phpt
+ext/phar/tests/mounteddir.phpt
+ext/standard/tests/streams/gh14780.phpt
+ext/phar/tests/gh21798-offsetget-temp-entry.phpt
+ext/phar/tests/bug47085.phpt
+ext/standard/tests/filters/user_filter_seek_01.phpt
