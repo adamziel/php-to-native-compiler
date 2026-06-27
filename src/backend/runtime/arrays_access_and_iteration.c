@@ -977,6 +977,7 @@ static PTN_UNUSED PtnValue ptn_random_engine_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_random_engine_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_curl_file(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
@@ -1877,6 +1878,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_internal_class_name_is_hash_context(source->class_name)) {
         return ptn_hash_context_clone(runtime, resolved, line);
+    }
+    if (ptn_internal_class_name_is_random_engine(source->class_name)) {
+        return ptn_random_engine_clone(runtime, resolved, line);
     }
     if (ptn_internal_class_name_is_directory(source->class_name)) {
         char message[192];
