@@ -12788,22 +12788,8 @@ static PTN_UNUSED int ptn_arrayaccess_append_reference_temporary(
         value.type == PTN_OBJECT &&
         value.as.object != NULL &&
         (ptn_ascii_case_equal(value.as.object->class_name, "DOMNamedNodeMap") ||
-            ptn_ascii_case_equal(value.as.object->class_name, "Dom\\NamedNodeMap"))
-    ) {
-        PtnValue result = ptn_arrayaccess_call(runtime, value, "offsetGet", 0, NULL, line);
-        if (reference_out != NULL) {
-            *reference_out = result.type == PTN_REFERENCE
-                ? result
-                : ptn_reference_value(ptn_reference_new_owned(result));
-        } else {
-            ptn_value_destroy(&result);
-        }
-        return 1;
-    }
-    if (
-        value.type == PTN_OBJECT &&
-        value.as.object != NULL &&
-        (ptn_ascii_case_equal(value.as.object->class_name, "DOMTokenList") ||
+            ptn_ascii_case_equal(value.as.object->class_name, "Dom\\NamedNodeMap") ||
+            ptn_ascii_case_equal(value.as.object->class_name, "DOMTokenList") ||
             ptn_ascii_case_equal(value.as.object->class_name, "Dom\\TokenList"))
     ) {
         char message[160];
