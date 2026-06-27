@@ -1,0 +1,16 @@
+# ptn-w17z.989 exact current-red PHAR/zlib/filter/stream row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T011956Z.tsv
+# All rows were FAIL in that artifact.
+ext/phar/tests/bug71488.phpt
+ext/zlib/tests/deflate_init_reuse.phpt
+ext/phar/tests/bug71498.phpt
+ext/zlib/tests/001.phpt
+ext/standard/tests/streams/bug61115-2.phpt
+ext/phar/tests/bug74196.phpt
+ext/zlib/tests/zlib_get_coding_type_deflate.phpt
+ext/standard/tests/filters/gh20370_dynamic_stream_property.phpt
+ext/phar/tests/028.phpt
+ext/phar/tests/phar_unlinkarchive.phpt
+ext/phar/tests/stat2_5.3.phpt
+ext/standard/tests/streams/gh16889.phpt
