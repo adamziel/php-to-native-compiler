@@ -153976,7 +153976,6 @@ static void ptn_soap_type_free(PtnSoapType *type) {
         free(type->fields[i].type);
         free(type->fields[i].namespace_uri);
     }
-    free(type->namespace_uri);
     free(type->fields);
 }
 
@@ -154770,7 +154769,7 @@ static void ptn_soap_schema_context_for_tag(
         if (tag_end == NULL) {
             break;
         }
-        if (ptn_soap_tag_is_closing_name(tag, tag_end, "schema")) {
+        if (tag + 1 < tag_end && tag[1] == '/') {
             cursor = tag_end;
             continue;
         }
@@ -157610,6 +157609,52 @@ static size_t ptn_soap_encoded_array_second_dimension(PtnXmlNode *node) {
     return 0;
 }
 
+static char *ptn_soap_base64_decode_alloc(const char *input, size_t input_len, size_t *output_len) {
+    if (input_len > SIZE_MAX / sizeof(int)) {
+        ptn_abort_out_of_memory();
+    }
+    int *values = input_len == 0 ? NULL : malloc(input_len * sizeof(int));
+    if (input_len != 0 && values == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t value_len = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (ptn_base64_is_space(byte) || byte == '=') {
+            continue;
+        }
+        int value = ptn_base64_decode_value(byte);
+        if (value >= 0) {
+            values[value_len++] = value;
+        }
+    }
+
+    char *output = malloc(input_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    size_t i = 0;
+    while (i + 4 <= value_len) {
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+        output[out++] = (char)(((values[i + 2] & 0x03) << 6) | values[i + 3]);
+        i += 4;
+    }
+    size_t remainder = value_len - i;
+    if (remainder >= 2) {
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+    }
+    if (remainder >= 3) {
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+    }
+    output[out] = '\0';
+    free(values);
+    *output_len = out;
+    return output;
+}
+
 static PtnValue ptn_soap_decode_text_as_type(
     PtnSoapType *types,
     size_t type_count,
@@ -157634,6 +157679,10 @@ static PtnValue ptn_soap_decode_text_as_type(
         int truthy = data != NULL &&
             (strcmp(data, "1") == 0 || ptn_ascii_case_equal(data, "true"));
         result = ptn_bool(truthy);
+    } else if (ptn_soap_type_name_is(scalar_type, "base64Binary")) {
+        size_t decoded_len = 0;
+        char *decoded = ptn_soap_base64_decode_alloc(data == NULL ? "" : data, len, &decoded_len);
+        result = ptn_owned_string_len(decoded, decoded_len);
     } else {
         result = ptn_owned_string_len(data, len);
         data = NULL;
@@ -161578,17 +161627,6 @@ static PtnValue ptn_soap_set_soap_headers(
     }
     return ptn_bool(1);
 }
-
-static PtnValue ptn_soap_wsdl_operation_call(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    const char *method_name,
-    size_t argc,
-    const PtnValue *args,
-    PtnValue input_headers,
-    size_t line,
-    int *handled_out
-);
 
 static PtnValue ptn_soap_soap_call(
     PtnRuntime *runtime,
