@@ -1296,18 +1296,9 @@ static PTN_UNUSED void ptn_runtime_clear_temporary_roots(PtnRuntime *runtime) {
         return;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    fprintf(stderr, "DEBUG clear begin fn=%s flag=%d rootflag=%d temp=%zu\n",
-        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
-        runtime->defer_unreferenced_destructors_for_catch,
-        root->defer_unreferenced_destructors_for_catch,
-        root->temporary_roots_len);
     while (root->temporary_roots_len > 0) {
         ptn_runtime_pop_temporary_root(root);
     }
-    fprintf(stderr, "DEBUG clear after pop fn=%s flag=%d rootflag=%d\n",
-        runtime->current_function_name == NULL ? "(null)" : runtime->current_function_name,
-        runtime->defer_unreferenced_destructors_for_catch,
-        root->defer_unreferenced_destructors_for_catch);
     if (
         runtime->defer_unreferenced_destructors_for_catch ||
         root->defer_unreferenced_destructors_for_catch
@@ -3726,20 +3717,10 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object == NULL) {
         return;
     }
-    if (object->class_name != NULL && strcmp(object->class_name, "FooBar") == 0) {
-        fprintf(stderr, "DEBUG release FooBar before=%zu caller=%p caller2=%p caller3=%p\n",
-            object->refcount,
-            __builtin_return_address(0),
-            __builtin_return_address(1),
-            __builtin_return_address(2));
-    }
     if (object->refcount == 0) {
         return;
     }
     object->refcount--;
-    if (object->class_name != NULL && strcmp(object->class_name, "FooBar") == 0) {
-        fprintf(stderr, "DEBUG release FooBar after_dec=%zu\n", object->refcount);
-    }
     if (object->refcount != 0) {
         if (object->refcount > 1) {
             ptn_gc_drain_pending_destructor_array_cycles(object->lifecycle_runtime);

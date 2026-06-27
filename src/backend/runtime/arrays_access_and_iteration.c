@@ -11888,6 +11888,7 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGe
     ptn_value_destroy(&generator->return_value);
     generator->return_value = ptn_value_clone_deref(value);
     generator->completed = 1;
+    ptn_generator_flush_pending_output(runtime, generator);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {
@@ -14024,19 +14025,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
             if (root != NULL) {
                 root->defer_unreferenced_destructors_for_catch = 1;
             }
-            PtnValue deferred_debug = ptn_value_deref(runtime->deferred_yield_from_iterator_object);
-            fprintf(stderr, "DEBUG yield defer before destroy type=%d ref=%zu flag=%d rootflag=%d\n",
-                deferred_debug.type,
-                deferred_debug.type == PTN_OBJECT && deferred_debug.as.object != NULL ? deferred_debug.as.object->refcount : 0,
-                runtime->defer_unreferenced_destructors_for_catch,
-                root == NULL ? -1 : root->defer_unreferenced_destructors_for_catch);
             ptn_array_iterator_destroy(&iterator);
-            deferred_debug = ptn_value_deref(runtime->deferred_yield_from_iterator_object);
-            fprintf(stderr, "DEBUG yield defer after destroy type=%d ref=%zu flag=%d rootflag=%d\n",
-                deferred_debug.type,
-                deferred_debug.type == PTN_OBJECT && deferred_debug.as.object != NULL ? deferred_debug.as.object->refcount : 0,
-                runtime->defer_unreferenced_destructors_for_catch,
-                root == NULL ? -1 : root->defer_unreferenced_destructors_for_catch);
             ptn_rethrow_exception(runtime);
             return ptn_null();
         }
