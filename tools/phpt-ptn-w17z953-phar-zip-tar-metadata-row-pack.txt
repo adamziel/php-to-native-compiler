@@ -1,0 +1,12 @@
+ext/phar/tests/zip/phar_stub_error.phpt
+ext/phar/tests/tar/delete_in_phar_b.phpt
+ext/phar/tests/zip/require_hash.phpt
+ext/phar/tests/bug81726.phpt
+ext/phar/tests/phar_oo_012_confirm.phpt
+ext/phar/tests/phar_metadata_write3.phpt
+ext/phar/tests/tar/delete_in_phar_confirm.phpt
+ext/phar/tests/zip/corrupt_005.phpt
+ext/phar/tests/cache_list/frontcontroller18.phpt
+ext/phar/tests/zip/phar_buildfromiterator7.phpt
+ext/phar/tests/bug69279.phpt
+ext/phar/tests/tar/bignames_overflow.phpt

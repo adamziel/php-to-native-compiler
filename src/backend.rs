@@ -46613,6 +46613,27 @@ impl ValueEmitter {
         out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    } else if (strncmp(");
         out.push_str(&resolved_temp);
+        out.push_str(", \"phar://\", 7) == 0 && ptn_include_phar_php_entry(&runtime, ");
+        out.push_str(&resolved_temp);
+        out.push_str(", \"");
+        out.push_str(include_kind_text(kind));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(
+            if matches!(kind, IncludeKind::Require | IncludeKind::RequireOnce) {
+                "1"
+            } else {
+                "0"
+            },
+        );
+        out.push_str(", &");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("#endif\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("    } else if (strncmp(");
+        out.push_str(&resolved_temp);
         out.push_str(", \"phar://\", 7) == 0 && ptn_include_phar_plain_entry(&runtime, ");
         out.push_str(&resolved_temp);
         out.push_str(", &");
