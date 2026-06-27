@@ -51768,6 +51768,7 @@ static PtnValue ptn_data_url_stream_metadata(PtnResource *resource);
 typedef struct {
     char *scheme;
     char *class_name;
+    int is_url;
 } PtnUserStreamWrapper;
 
 typedef struct {
@@ -51779,6 +51780,7 @@ typedef struct {
     PtnRuntime *runtime;
     PtnValue wrapper_object;
     size_t line;
+    size_t chunk_size;
 } PtnUserStreamResourceData;
 
 typedef struct {
@@ -53114,6 +53116,13 @@ static PtnUserStreamWrapper *ptn_user_stream_wrapper_find_path(const char *path)
     return wrapper;
 }
 
+static const char *ptn_user_stream_wrapper_scheme_for_path(const char *path, PtnUserStreamWrapper *wrapper) {
+    if (wrapper != NULL && wrapper->scheme != NULL) {
+        return wrapper->scheme;
+    }
+    return "stream";
+}
+
 static void ptn_user_stream_resource_data_free(void *raw) {
     PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
     if (data == NULL) {
@@ -53154,6 +53163,21 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
         data->line
     );
     ptn_value_destroy(&result);
+}
+
+static PtnUserStreamResourceData *ptn_user_stream_resource_data(PtnResource *resource) {
+    if (resource == NULL || resource->close_hook != ptn_user_stream_close_hook) {
+        return NULL;
+    }
+    return (PtnUserStreamResourceData *)resource->close_hook_data;
+}
+
+static const char *ptn_user_stream_object_class_name(PtnValue object) {
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT || object.as.object == NULL || object.as.object->class_name == NULL) {
+        return "";
+    }
+    return object.as.object->class_name;
 }
 
 static void ptn_user_stream_materialize_reads(
@@ -53212,6 +53236,8 @@ static void ptn_user_stream_materialize_reads(
 
 static PtnArrayEntry *ptn_array_entry_for_literal_string_key(PtnArray *array, const char *key);
 
+static PtnResource *ptn_default_stream_context_ensure(void);
+
 static PtnResource *ptn_fopen_context_arg(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_RESOURCE || strcmp(value.as.resource->type_name, "stream-context") != 0) {
@@ -53228,6 +53254,78 @@ static PtnResource *ptn_effective_stream_context(size_t argc, const PtnValue *ar
         }
     }
     return ptn_default_stream_context;
+}
+
+static PtnResource *ptn_effective_or_default_stream_context(PtnResource *context) {
+    return context == NULL ? ptn_default_stream_context_ensure() : context;
+}
+
+static int ptn_user_stream_assign_context(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnResource *context,
+    size_t line
+) {
+    if (context == NULL) {
+        return 1;
+    }
+    PtnValue resolved = ptn_value_deref(object);
+    const char *class_name = ptn_user_stream_object_class_name(resolved);
+    ptn_resource_retain(context);
+    PtnValue context_value = ptn_resource(context);
+    PtnValue written = ptn_object_write_property(
+        runtime,
+        object,
+        "context",
+        class_name,
+        context_value,
+        line
+    );
+    ptn_value_destroy(&written);
+    ptn_value_destroy(&context_value);
+    return runtime == NULL || runtime->exceptions->active_exception == NULL;
+}
+
+static int ptn_runtime_allow_url_fopen(void) {
+    const char *value = getenv("PTN_ALLOW_URL_FOPEN");
+    return ptn_runtime_ini_bool(value == NULL ? "1" : value, 1);
+}
+
+static void ptn_user_stream_emit_url_disabled_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnUserStreamWrapper *wrapper,
+    size_t line
+) {
+    const char *scheme = ptn_user_stream_wrapper_scheme_for_path(path, wrapper);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): %s:// wrapper is disabled in the server configuration by allow_url_fopen=0",
+        function_name,
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): %s:// wrapper is disabled in the server configuration by allow_url_fopen=0",
+        function_name,
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 typedef enum {
@@ -53456,6 +53554,7 @@ static PtnValue ptn_stream_open_failure_result(
 
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
+    const char *function_name,
     const char *path,
     const char *mode,
     PtnResource *context,
@@ -53465,6 +53564,12 @@ static int ptn_try_open_user_stream_wrapper(
     PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
     if (wrapper == NULL) {
         return 0;
+    }
+    if (wrapper->is_url && !ptn_runtime_allow_url_fopen()) {
+        ptn_user_stream_emit_url_disabled_warning(runtime, function_name, path, wrapper, line);
+        ptn_emit_file_warning(runtime, function_name, path, "Failed to open stream: no suitable wrapper could be found", line);
+        *out = ptn_bool(0);
+        return 1;
     }
 
     PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
@@ -53478,14 +53583,11 @@ static int ptn_try_open_user_stream_wrapper(
         *out = ptn_bool(0);
         return 1;
     }
-    PtnObject *object_ptr = ptn_value_deref(object).as.object;
-    if (context != NULL) {
-        ptn_resource_retain(context);
-        ptn_array_set_entry(
-            object_ptr->properties,
-            ptn_array_string_key("context"),
-            ptn_resource(context)
-        );
+    context = ptn_effective_or_default_stream_context(context);
+    if (!ptn_user_stream_assign_context(runtime, object, context, line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
     }
 
     PtnValue opened_path = ptn_reference_value(ptn_reference_new_owned(ptn_string("")));
@@ -53540,6 +53642,7 @@ static int ptn_try_open_user_stream_wrapper(
     resource_data->runtime = runtime;
     resource_data->wrapper_object = ptn_value_clone(object);
     resource_data->line = line;
+    resource_data->chunk_size = 8192;
     resource->close_hook = ptn_user_stream_close_hook;
     resource->close_hook_data = resource_data;
     resource->close_hook_data_free = ptn_user_stream_resource_data_free;
@@ -53713,7 +53816,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
-    if (ptn_try_open_user_stream_wrapper(runtime, path, mode, context, line, &php_stream)) {
+    if (ptn_try_open_user_stream_wrapper(runtime, "fopen", path, mode, context, line, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -57608,6 +57711,54 @@ static PtnValue ptn_stream_read_remaining(
     return ptn_owned_string_buffer_value(&buffer);
 }
 
+static int ptn_try_read_user_stream_wrapper_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    size_t line,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    PtnValue stream_value = ptn_null();
+    if (!ptn_try_open_user_stream_wrapper(runtime, function_name, path, "rb", context, line, &stream_value)) {
+        return 0;
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&stream_value);
+        return -1;
+    }
+    PtnValue resolved = ptn_value_deref(stream_value);
+    if (resolved.type != PTN_RESOURCE || !ptn_stream_resource_is_open(resolved.as.resource)) {
+        ptn_value_destroy(&stream_value);
+        return -1;
+    }
+    PtnValue contents = ptn_stream_read_remaining(runtime, function_name, resolved.as.resource, -1, line);
+    ptn_value_destroy(&stream_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&contents);
+        return -1;
+    }
+    PtnValue contents_value = ptn_value_deref(contents);
+    if (contents_value.type != PTN_STRING) {
+        ptn_value_destroy(&contents);
+        return -1;
+    }
+    unsigned char *copy = malloc(contents_value.as.string.len + 1);
+    if (copy == NULL) {
+        ptn_value_destroy(&contents);
+        ptn_abort_out_of_memory();
+    }
+    if (contents_value.as.string.len != 0) {
+        memcpy(copy, contents_value.as.string.data, contents_value.as.string.len);
+    }
+    copy[contents_value.as.string.len] = '\0';
+    *data_out = copy;
+    *len_out = contents_value.as.string.len;
+    ptn_value_destroy(&contents);
+    return 1;
+}
+
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_get_contents", args[0], line);
     if (resource == NULL) {
@@ -59847,6 +59998,52 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     size_t data_len = 0;
     char *opened_path = NULL;
     char *data_url_detail = NULL;
+    PtnResource *context = has_context ? ptn_fopen_context_arg(args[context_index]) : ptn_default_stream_context;
+    int user_stream_result = ptn_try_read_user_stream_wrapper_bytes(
+        runtime,
+        "file_get_contents",
+        path,
+        context,
+        line,
+        &data,
+        &data_len
+    );
+    if (user_stream_result != 0) {
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            free(data);
+            return ptn_null();
+        }
+        if (user_stream_result < 0) {
+            free(path);
+            free(data);
+            return ptn_bool(0);
+        }
+        free(path);
+        int64_t start_offset = offset;
+        if (start_offset < 0) {
+            uint64_t distance = start_offset == INT64_MIN
+                ? (uint64_t)INT64_MAX + 1
+                : (uint64_t)(-start_offset);
+            if (distance > data_len) {
+                start_offset = 0;
+            } else {
+                start_offset = (int64_t)data_len + start_offset;
+            }
+        }
+        size_t start = start_offset <= 0 ? 0 : (size_t)start_offset;
+        if (start > data_len) {
+            start = data_len;
+        }
+        size_t available = data_len - start;
+        size_t result_len = available;
+        if (has_length && (uint64_t)length < result_len) {
+            result_len = (size_t)length;
+        }
+        char *copy = ptn_duplicate_string_len((const char *)data + start, result_len);
+        free(data);
+        return ptn_owned_string_len(copy, result_len);
+    }
     char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
     char *fallback_path = NULL;
     if (unknown_scheme != NULL) {
@@ -188788,7 +188985,7 @@ static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t arg
     PtnResource *context = ptn_libxml_streams_context != NULL
         ? ptn_libxml_streams_context
         : ptn_default_stream_context;
-    if (ptn_try_open_user_stream_wrapper(runtime, path, "rb", context, line, &stream_value)) {
+    if (ptn_try_open_user_stream_wrapper(runtime, "simplexml_load_file", path, "rb", context, line, &stream_value)) {
         if (runtime->exceptions->active_exception != NULL) {
             free(path);
             ptn_value_destroy(&stream_value);
@@ -205914,10 +206111,24 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     PtnValue *result_out
 ) {
     (void)display_path;
-    (void)line;
     char *code = NULL;
     size_t code_len = 0;
-    if (!ptn_dynamic_read_file(path, &code, &code_len)) {
+    unsigned char *user_stream_code = NULL;
+    int user_stream_result = ptn_try_read_user_stream_wrapper_bytes(
+        runtime,
+        "include",
+        path,
+        NULL,
+        line,
+        &user_stream_code,
+        &code_len
+    );
+    if (user_stream_result > 0) {
+        code = (char *)user_stream_code;
+    } else if (user_stream_result < 0) {
+        free(user_stream_code);
+        return 0;
+    } else if (!ptn_dynamic_read_file(path, &code, &code_len)) {
         return 0;
     }
 

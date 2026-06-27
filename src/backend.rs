@@ -1281,6 +1281,15 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
     out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
+    out.push_str("    for (size_t i = 0; i + 2 < path.len; i++) {\n");
+    out.push_str("        unsigned char byte = (unsigned char)path.data[i];\n");
+    out.push_str("        if (path.data[i] == ':' && path.data[i + 1] == '/' && path.data[i + 2] == '/') {\n");
+    out.push_str("            return i > 0 && isalpha((unsigned char)path.data[0]);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (!(isalnum(byte) || byte == '+' || byte == '-' || byte == '.')) {\n");
+    out.push_str("            break;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     out.push_str("    if ((path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) || (path.len >= 6 && strncmp(path.data, \"php://\", 6) == 0)) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
