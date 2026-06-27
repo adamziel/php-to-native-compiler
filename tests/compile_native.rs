@@ -28424,6 +28424,16 @@ $compressed = deflate_add($deflate, "abcabc", ZLIB_FINISH);
 $inflate = inflate_init(ZLIB_ENCODING_RAW, ["dictionary" => $dictionary]);
 var_dump(inflate_add($inflate, $compressed) === "abcabc");
 
+foreach ([ZLIB_ENCODING_RAW, ZLIB_ENCODING_GZIP, ZLIB_ENCODING_DEFLATE] as $mode) {
+    $deflate = deflate_init($mode);
+    $compressed = "";
+    foreach (str_split("abcdefghijklmnopqrstuvwxyz", 4) as $chunk) {
+        $compressed .= deflate_add($deflate, $chunk, ZLIB_SYNC_FLUSH);
+    }
+    $compressed .= deflate_add($deflate, "", ZLIB_FINISH);
+    var_dump(zlib_decode($compressed) === "abcdefghijklmnopqrstuvwxyz");
+}
+
 $stream = fopen("php://temp", "w+");
 stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE);
 stream_filter_append($stream, "convert.base64-encode", STREAM_FILTER_WRITE);
@@ -28471,6 +28481,9 @@ string(6) \"first\n\
 from inc2\n\
 from inc1\n\
 bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 string(11) \"filter text\"\n\
 deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
@@ -28485,6 +28498,7 @@ bool(true)\n"
     assert!(c_source.contains("ptn_internal_gzcompress"));
     assert!(c_source.contains("ptn_internal_gzgets"));
     assert!(c_source.contains("ptn_internal_deflate_add"));
+    assert!(c_source.contains("ptn_internal_zlib_decode"));
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE"));
 }
 

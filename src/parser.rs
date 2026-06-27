@@ -23574,6 +23574,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "gztell"
             | "gzuncompress"
             | "gzwrite"
+            | "zlib_decode"
             | "hash"
             | "hash_algos"
             | "hash_copy"
