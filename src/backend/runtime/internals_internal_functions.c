@@ -65021,6 +65021,23 @@ static PtnValue ptn_internal_is_object(PtnRuntime *runtime, size_t argc, const P
     return ptn_is_object(args[0]);
 }
 
+static PtnValue ptn_internal_is_soap_fault(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL) {
+        return ptn_bool(ptn_exception_is_soap_fault_class(value.as.exception->class_name));
+    }
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        return ptn_bool(
+            ptn_exception_name_equal(value.as.object->class_name, "SoapFault") ||
+            ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SoapFault")
+        );
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_is_countable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -153382,6 +153399,7 @@ typedef struct {
     int loaded;
     char *target_namespace;
     char *location;
+    char *location_override;
     PtnValue options;
     PtnValue headers;
     char *last_request;
@@ -153448,6 +153466,7 @@ static void ptn_soap_client_data_free(void *data_ptr) {
     free(data->wsdl);
     free(data->target_namespace);
     free(data->location);
+    free(data->location_override);
     ptn_value_destroy(&data->options);
     ptn_value_destroy(&data->headers);
     free(data->last_request);
@@ -156241,6 +156260,29 @@ static char *ptn_soap_options_string_dup(
         return NULL;
     }
     return ptn_soap_value_string_dup(runtime, value, line);
+}
+
+static char *ptn_soap_client_effective_location_dup(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    PtnValue call_options,
+    size_t line
+) {
+    char *call_location = ptn_soap_options_string_dup(runtime, call_options, "location", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(call_location);
+        return NULL;
+    }
+    if (call_location != NULL) {
+        return call_location;
+    }
+    if (data != NULL && data->location_override != NULL) {
+        return ptn_duplicate_string(data->location_override);
+    }
+    if (data != NULL && data->location != NULL) {
+        return ptn_duplicate_string(data->location);
+    }
+    return ptn_duplicate_string("");
 }
 
 static char *ptn_soap_options_encoding_dup(PtnRuntime *runtime, PtnValue options, size_t line) {
@@ -159151,6 +159193,12 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
                 ptn_value_destroy(&object);
                 return ptn_null();
             }
+            data->location_override = ptn_soap_options_string_dup(runtime, options, "location", line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_soap_client_data_free(data);
+                ptn_value_destroy(&object);
+                return ptn_null();
+            }
         }
         object.as.object->native_data = data;
         object.as.object->native_data_free = ptn_soap_client_data_free;
@@ -160181,6 +160229,17 @@ static void ptn_soap_validate_headers_or_fatal(
     ptn_emit_fatal_error_at(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
 }
 
+static PtnValue ptn_soap_wsdl_operation_call(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue call_options,
+    int *handled_out
+);
+
 static PtnValue ptn_soap_set_soap_headers(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -160263,6 +160322,48 @@ static PtnValue ptn_soap_soap_call(
     }
     PtnValue method_args = argc >= 2 ? args[1] : ptn_array_from_literal_entries(0, NULL);
     PtnValue input_headers = argc >= 4 ? args[3] : ptn_null();
+    PtnSoapClientData *data = ptn_soap_client_data(receiver);
+    if (data != NULL && data->wsdl_path != NULL) {
+        PtnValue resolved_args = ptn_value_deref(method_args);
+        size_t method_argc = resolved_args.type == PTN_ARRAY && resolved_args.as.array != NULL
+            ? resolved_args.as.array->len
+            : 0;
+        PtnValue *call_args = NULL;
+        if (method_argc != 0) {
+            call_args = calloc(method_argc, sizeof(PtnValue));
+            if (call_args == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < method_argc; i++) {
+                call_args[i] = ptn_value_share(resolved_args.as.array->entries[i].value);
+            }
+        }
+        int handled = 0;
+        PtnValue call_options = argc >= 3 ? args[2] : ptn_null();
+        PtnValue result = ptn_soap_wsdl_operation_call(
+            runtime,
+            receiver,
+            method_name,
+            method_argc,
+            call_args,
+            line,
+            call_options,
+            &handled
+        );
+        for (size_t i = 0; i < method_argc; i++) {
+            ptn_value_destroy(&call_args[i]);
+        }
+        free(call_args);
+        if (argc < 2) {
+            ptn_value_destroy(&method_args);
+        }
+        free(method_name);
+        if (runtime->exceptions->active_exception != NULL || handled) {
+            return result;
+        }
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
     (void)ptn_soap_client_record_non_wsdl_request(
         runtime,
         receiver,
@@ -160305,6 +160406,53 @@ static PtnValue ptn_soap_get_last_request(
         ptn_duplicate_string_len(data->last_request, data->last_request_len),
         data->last_request_len
     );
+}
+
+static PtnValue ptn_soap_set_location(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapClient::__setLocation() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    char *replacement = NULL;
+    if (argc == 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand location = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(location);
+            return ptn_null();
+        }
+        replacement = ptn_duplicate_string_len(location.data, location.len);
+        ptn_string_operand_free(location);
+    }
+
+    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
+    if (data == NULL) {
+        free(replacement);
+        return ptn_null();
+    }
+
+    PtnValue previous = data->location_override == NULL
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(data->location_override));
+    free(data->location_override);
+    data->location_override = replacement;
+    return previous;
 }
 
 static PtnValue ptn_soap_do_request(PtnRuntime *runtime, size_t argc) {
@@ -160434,6 +160582,7 @@ static PtnValue ptn_soap_wsdl_operation_call(
     size_t argc,
     const PtnValue *args,
     size_t line,
+    PtnValue call_options,
     int *handled_out
 ) {
     *handled_out = 0;
@@ -160465,7 +160614,14 @@ static PtnValue ptn_soap_wsdl_operation_call(
     }
 
     PtnValue request_value = ptn_owned_string_len(request, request_len);
-    PtnValue location_value = ptn_string(data->location == NULL ? "" : data->location);
+    char *location = ptn_soap_client_effective_location_dup(runtime, data, call_options, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&request_value);
+        free(action);
+        free(location);
+        return ptn_null();
+    }
+    PtnValue location_value = ptn_owned_string(location);
     PtnValue action_value = ptn_owned_string(action);
     PtnValue version_value = ptn_int(1);
     PtnValue one_way_value = ptn_bool(0);
@@ -160631,6 +160787,9 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     if (is_client && ptn_ascii_case_equal(name, "__getLastRequest")) {
         return ptn_soap_get_last_request(runtime, receiver, argc);
     }
+    if (is_client && ptn_ascii_case_equal(name, "__setLocation")) {
+        return ptn_soap_set_location(runtime, receiver, argc, args, line);
+    }
     if (is_client && ptn_ascii_case_equal(name, "__doRequest")) {
         return ptn_soap_do_request(runtime, argc);
     }
@@ -160653,7 +160812,7 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     }
     if (is_client) {
         int handled = 0;
-        PtnValue wsdl_result = ptn_soap_wsdl_operation_call(runtime, receiver, name, argc, args, line, &handled);
+        PtnValue wsdl_result = ptn_soap_wsdl_operation_call(runtime, receiver, name, argc, args, line, ptn_null(), &handled);
         if (runtime->exceptions->active_exception != NULL || handled) {
             return wsdl_result;
         }
@@ -160928,6 +161087,7 @@ static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc,
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_a(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_is_soap_fault(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -161624,6 +161784,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_readable", 1, 1, ptn_internal_is_readable },
         { "is_resource", 1, 1, ptn_internal_is_resource },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
+        { "is_soap_fault", 1, 1, ptn_internal_is_soap_fault },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "is_subclass_of", 2, 3, ptn_internal_is_subclass_of },
         { "is_writable", 1, 1, ptn_internal_is_writable },
@@ -166306,6 +166467,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "__doRequest")
             || ptn_ascii_case_equal(method_name, "__getLastRequest")
             || ptn_ascii_case_equal(method_name, "__getTypes")
+            || ptn_ascii_case_equal(method_name, "__setLocation")
             || ptn_ascii_case_equal(method_name, "__setSoapHeaders")
             || ptn_ascii_case_equal(method_name, "__soapCall");
     }
@@ -168005,6 +168167,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "__doRequest");
         ptn_append_method_name(result, &index, "__getLastRequest");
         ptn_append_method_name(result, &index, "__getTypes");
+        ptn_append_method_name(result, &index, "__setLocation");
         ptn_append_method_name(result, &index, "__setSoapHeaders");
         ptn_append_method_name(result, &index, "__soapCall");
         return result;

@@ -36745,6 +36745,11 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             name: "headers",
             default: Some(InternalParameterDefault::Null),
         }];
+    static SOAP_CLIENT_SET_LOCATION_PARAMETERS: [InternalParameterSpec; 1] =
+        [InternalParameterSpec {
+            name: "location",
+            default: Some(InternalParameterDefault::Null),
+        }];
     static SOAP_CLIENT_SOAP_CALL_PARAMETERS: [InternalParameterSpec; 5] = [
         InternalParameterSpec {
             name: "name",
@@ -36848,6 +36853,10 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         || name.eq_ignore_ascii_case("SoapClient::__setSoapHeaders")
     {
         Some(&SOAP_CLIENT_SET_SOAP_HEADERS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("__setLocation")
+        || name.eq_ignore_ascii_case("SoapClient::__setLocation")
+    {
+        Some(&SOAP_CLIENT_SET_LOCATION_PARAMETERS)
     } else if name.eq_ignore_ascii_case("__soapCall")
         || name.eq_ignore_ascii_case("SoapClient::__soapCall")
     {

@@ -1,0 +1,15 @@
+# Exact SOAP server/typemap residual current-red row pack for ptn-w17z.1016.
+# Artifact source:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T044047Z.tsv
+ext/soap/tests/custom_content_type.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_010w.phpt
+ext/soap/tests/bugs/bug77141.phpt
+ext/soap/tests/server031.phpt
+ext/soap/tests/bugs/bug69085.phpt
+ext/soap/tests/typemap009.phpt
+ext/soap/tests/bugs/bug34643.phpt
+ext/soap/tests/bugs/bug31695.phpt
+ext/soap/tests/bugs/cookie_parse_options_offset.phpt
+ext/soap/tests/fault001.phpt
+ext/soap/tests/bugs/bug55639.phpt
+ext/soap/tests/bugs/bug62900.phpt

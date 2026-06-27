@@ -55220,6 +55220,130 @@ echo "ok\n";
 }
 
 #[test]
+fn compile_soap_client_location_and_fault_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-location-fault-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-client-location-fault-helpers.php");
+    let output = root.join("soap-client-location-fault-helpers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/location.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0" ?>
+<definitions
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="urn:test"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="urn:test">
+  <message name="TestRequest"><part name="x" type="xsd:string" /></message>
+  <message name="TestResponse"><part name="result" type="xsd:string" /></message>
+  <portType name="TestServicePortType">
+    <operation name="Test"><input message="tns:TestRequest" /><output message="tns:TestResponse" /></operation>
+  </portType>
+  <binding name="TestServiceBinding" type="tns:TestServicePortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http" />
+    <operation name="Test">
+      <soap:operation soapAction="Test" style="rpc" />
+      <input><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" /></input>
+      <output><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" /></output>
+    </operation>
+  </binding>
+  <service name="TestService">
+    <port name="TestServicePort" binding="tns:TestServiceBinding"><soap:address location="test://0" /></port>
+  </service>
+</definitions>
+WSDL);
+
+function Test($x) {
+    return $x;
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options = []) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('Test');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $location, "\n";
+        ob_start();
+        $this->server->handle($request);
+        return ob_get_clean();
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['location' => 'test://1']);
+$client->Test('a');
+$client->__soapCall('Test', ['b'], ['location' => 'test://2']);
+$old = $client->__setLocation('test://3');
+var_dump($old);
+$client->Test('c');
+$client->__setLocation();
+$client->Test('d');
+var_dump($client->__setLocation());
+
+var_dump(function_exists('is_soap_fault'));
+var_dump(is_soap_fault(null));
+var_dump(is_soap_fault(new SoapFault('code', 'message')));
+var_dump(method_exists('SoapClient', '__setLocation'));
+
+class EmptySoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        return '';
+    }
+}
+
+$empty = new EmptySoapClient(null, [
+    'location' => 'http://localhost/soap.php',
+    'uri' => 'http://localhost/',
+    'style' => SOAP_RPC,
+    'trace' => true,
+    'exceptions' => false,
+]);
+ini_set('precision', -1);
+$empty->call(1.1);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .starts_with("test://1\ntest://2\nstring(8) \"test://1\"\ntest://3\ntest://0\nNULL\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\nbool(false)\nbool(true)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<ns1:call><param0 xsi:type=\"xsd:float\">1.1</param0></ns1:call>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_set_location"));
+    assert!(c_source.contains("ptn_internal_is_soap_fault"));
+    assert!(c_source.contains("ptn_soap_client_effective_location_dup"));
+}
+
+#[test]
 fn compile_soap_document_literal_optional_null_to_native_binary() {
     let root = temp_dir("ptn-native-soap-document-literal-optional-null");
     fs::create_dir_all(&root).unwrap();
