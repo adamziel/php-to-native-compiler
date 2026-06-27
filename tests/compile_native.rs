@@ -31501,6 +31501,78 @@ var_dump(mb_ereg_search_getregs());\n",
 }
 
 #[test]
+fn compile_mbstring_case_encoding_and_invalid_utf8_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-mbstring-case-encoding-invalid-utf8-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-case-encoding-invalid-utf8-edges.php");
+    let output = root.join("mbstring-case-encoding-invalid-utf8-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+function hx($s) { echo bin2hex($s), \"\\n\"; }\n\
+hx(mb_convert_case(hex2bin('cea3cea3'), MB_CASE_LOWER, 'UTF-8'));\n\
+hx(mb_convert_case(hex2bin('c39f20efac80'), MB_CASE_UPPER, 'UTF-8'));\n\
+hx(mb_convert_case(hex2bin('c39f20efac80'), MB_CASE_UPPER_SIMPLE, 'UTF-8'));\n\
+hx(mb_convert_case(hex2bin('c39f20efac80'), MB_CASE_TITLE, 'UTF-8'));\n\
+hx(mb_convert_case(hex2bin('c39f20efac80'), MB_CASE_FOLD, 'UTF-8'));\n\
+hx(mb_convert_case(hex2bin('c4b0'), MB_CASE_FOLD_SIMPLE, 'UTF-8'));\n\
+try {\n\
+    mb_convert_case('x', 100, 'UTF-8');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+class EncName { public function __toString() { return 'UTF-8'; } }\n\
+$encodings = [new EncName()];\n\
+var_dump(mb_convert_encoding('ok', 'UTF-8', $encodings));\n\
+var_dump(get_class($encodings[0]));\n\
+try {\n\
+    mb_ereg_replace('', '', '', 'e');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+mb_regex_encoding('UTF-8');\n\
+var_dump(mb_split('\\\\w', hex2bin('fc')));\n\
+foreach (mb_str_split(hex2bin('313233f092'), 1, 'UTF-8') as $piece) {\n\
+    echo strlen($piece), ':', bin2hex($piece), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "cf83cf82\n",
+            "5353204646\n",
+            "c39f20efac80\n",
+            "5373204666\n",
+            "7373206666\n",
+            "c4b0\n",
+            "mb_convert_case(): Argument #2 ($mode) must be one of the MB_CASE_* constants\n",
+            "string(2) \"ok\"\n",
+            "string(7) \"EncName\"\n",
+            "Option \"e\" is not supported\n",
+            "bool(false)\n",
+            "1:31\n",
+            "1:32\n",
+            "1:33\n",
+            "2:f092\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_embedded_nul_encoding_lists_to_native_binary() {
     let root = temp_dir("ptn-native-mb-embedded-nul-encodings");
     fs::create_dir_all(&root).unwrap();
