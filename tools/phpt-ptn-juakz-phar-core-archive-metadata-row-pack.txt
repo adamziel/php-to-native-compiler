@@ -1,0 +1,14 @@
+# ptn-juakz exact PHAR core archive metadata/open/read current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T225723Z.tsv.
+ext/phar/tests/002.phpt
+ext/phar/tests/004.phpt
+ext/phar/tests/005.phpt
+ext/phar/tests/006.phpt
+ext/phar/tests/007.phpt
+ext/phar/tests/008.phpt
+ext/phar/tests/009.phpt
+ext/phar/tests/010.phpt
+ext/phar/tests/011.phpt
+ext/phar/tests/012.phpt
+ext/phar/tests/014.phpt
+ext/phar/tests/016.phpt

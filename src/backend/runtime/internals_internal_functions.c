@@ -5697,6 +5697,7 @@ static void ptn_phar_set_last_stream_open_error(const char *detail);
 static char *ptn_phar_take_last_stream_error(void);
 static void ptn_phar_set_last_missing_entry_stream_error(const char *entry_name, const char *archive_path);
 static PtnPharArchiveState *ptn_phar_archive_find_path_len(const char *path, size_t path_len);
+static int ptn_phar_bytes_contain_php_open_tag(const unsigned char *data, size_t len);
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
 static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out);
 static int ptn_phar_uri_stat(const char *uri, struct stat *info);
@@ -7945,6 +7946,7 @@ typedef struct {
     size_t content_len;
     unsigned char *metadata;
     size_t metadata_len;
+    char *read_error;
     uint32_t flags;
     int64_t timestamp;
     size_t open_count;
@@ -147951,6 +147953,73 @@ static void ptn_phar_archive_set_load_error_owned(
     archive->load_error = message;
 }
 
+static void ptn_phar_archive_set_internal_corruption(
+    PtnPharArchiveState *archive,
+    const char *detail
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "internal corruption of phar \"%s\" (%s)",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        detail == NULL ? "" : detail
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "internal corruption of phar \"%s\" (%s)",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        detail == NULL ? "" : detail
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
+static char *ptn_phar_archive_entry_stream_error(
+    PtnPharArchiveState *archive,
+    const char *entry_name,
+    const char *detail
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: internal corruption of phar \"%s\" (%s on file \"%s\")",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        detail == NULL ? "" : detail,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: internal corruption of phar \"%s\" (%s on file \"%s\")",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        detail == NULL ? "" : detail,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
 static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     if (entry == NULL) {
         return;
@@ -147958,11 +148027,13 @@ static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     free(entry->name);
     free(entry->content);
     free(entry->metadata);
+    free(entry->read_error);
     entry->name = NULL;
     entry->content = NULL;
     entry->content_len = 0;
     entry->metadata = NULL;
     entry->metadata_len = 0;
+    entry->read_error = NULL;
     entry->flags = 0;
     entry->timestamp = 0;
     entry->open_count = 0;
@@ -147990,6 +148061,7 @@ static void ptn_phar_archive_reserve_entries(PtnPharArchiveState *archive, size_
         entries[i].content_len = 0;
         entries[i].metadata = NULL;
         entries[i].metadata_len = 0;
+        entries[i].read_error = NULL;
         entries[i].flags = 0;
         entries[i].timestamp = 0;
         entries[i].open_count = 0;
@@ -148153,8 +148225,10 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     size_t index = 0;
     if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
         free(archive->entries[index].content);
+        free(archive->entries[index].read_error);
         archive->entries[index].content = content_copy;
         archive->entries[index].content_len = content_len;
+        archive->entries[index].read_error = NULL;
         archive->entries[index].flags = flags;
         archive->entries[index].timestamp = timestamp;
         if (mark_modified) {
@@ -148169,6 +148243,7 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     entry->content_len = content_len;
     entry->metadata = NULL;
     entry->metadata_len = 0;
+    entry->read_error = NULL;
     entry->flags = flags;
     entry->timestamp = timestamp;
     entry->open_count = 0;
@@ -148327,6 +148402,17 @@ static void ptn_phar_archive_set_manifest_entry(
     uint32_t flags,
     int64_t timestamp
 );
+static void ptn_phar_archive_set_manifest_entry_with_error(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    const unsigned char *metadata,
+    size_t metadata_len,
+    uint32_t flags,
+    int64_t timestamp,
+    const char *read_error
+);
 
 static char *ptn_phar_archive_rename_directory_prefix(const char *name) {
     if (name == NULL) {
@@ -148482,6 +148568,32 @@ static int ptn_phar_archive_rename_directory_entries(
     return 1;
 }
 
+static void ptn_phar_archive_set_manifest_entry_with_error(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    const unsigned char *metadata,
+    size_t metadata_len,
+    uint32_t flags,
+    int64_t timestamp,
+    const char *read_error
+) {
+    if (archive == NULL || name == NULL) {
+        return;
+    }
+    ptn_phar_archive_set_entry_with_flags(archive, name, content, content_len, flags, timestamp);
+    size_t index = 0;
+    if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
+        PtnPharArchiveEntry *entry = &archive->entries[index];
+        ptn_phar_archive_set_entry_metadata(entry, metadata, metadata_len);
+        free(entry->read_error);
+        entry->read_error = read_error == NULL ? NULL : ptn_duplicate_string(read_error);
+        entry->flags = flags;
+        entry->timestamp = timestamp;
+    }
+}
+
 static void ptn_phar_archive_set_manifest_entry(
     PtnPharArchiveState *archive,
     const char *name,
@@ -148492,17 +148604,17 @@ static void ptn_phar_archive_set_manifest_entry(
     uint32_t flags,
     int64_t timestamp
 ) {
-    if (archive == NULL || name == NULL) {
-        return;
-    }
-    ptn_phar_archive_set_entry_with_flags(archive, name, content, content_len, flags, timestamp);
-    size_t index = 0;
-    if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
-        PtnPharArchiveEntry *entry = &archive->entries[index];
-        ptn_phar_archive_set_entry_metadata(entry, metadata, metadata_len);
-        entry->flags = flags;
-        entry->timestamp = timestamp;
-    }
+    ptn_phar_archive_set_manifest_entry_with_error(
+        archive,
+        name,
+        content,
+        content_len,
+        metadata,
+        metadata_len,
+        flags,
+        timestamp,
+        NULL
+    );
 }
 
 static int ptn_phar_archive_rename_entry(
@@ -148668,9 +148780,12 @@ static int ptn_phar_manifest_skip(size_t *cursor, size_t end, size_t amount) {
 
 typedef struct {
     char *name;
-    size_t content_len;
+    size_t compressed_len;
+    size_t uncompressed_len;
+    uint32_t crc32;
     unsigned char *metadata;
     size_t metadata_len;
+    char *read_error;
     uint32_t flags;
     int64_t timestamp;
 } PtnPharManifestEntryInfo;
@@ -148682,12 +148797,41 @@ static void ptn_phar_parse_manifest(
     size_t payload_offset
 ) {
     if (payload_offset > len || len - payload_offset < 4) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     uint32_t manifest_len_u32 = ptn_phar_read_u32_le(data + payload_offset);
     size_t manifest_len = (size_t)manifest_len_u32;
     size_t manifest_start = payload_offset + 4;
+    if (manifest_len > 100u * 1024u * 1024u) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "manifest cannot be larger than 100 MB in phar \"%s\"",
+            archive == NULL || archive->path == NULL ? "" : archive->path
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "manifest cannot be larger than 100 MB in phar \"%s\"",
+            archive == NULL || archive->path == NULL ? "" : archive->path
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_phar_archive_set_load_error_owned(archive, message);
+        return;
+    }
     if (manifest_start > len || manifest_len > len - manifest_start) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
         return;
     }
     size_t manifest_end = manifest_start + manifest_len;
@@ -148700,12 +148844,14 @@ static void ptn_phar_parse_manifest(
         !ptn_phar_manifest_read_u16(&cursor, manifest_end, data, &api_version) ||
         !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
         !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &alias_len_u32)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
         return;
     }
     (void)api_version;
     size_t alias_len = (size_t)alias_len_u32;
     if (alias_len != 0) {
         if (cursor > manifest_end || alias_len > manifest_end - cursor) {
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
             return;
         }
         char *alias = ptn_duplicate_string_len((const char *)data + cursor, alias_len);
@@ -148713,15 +148859,18 @@ static void ptn_phar_parse_manifest(
         archive->alias = alias;
     }
     if (!ptn_phar_manifest_skip(&cursor, manifest_end, alias_len)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
         return;
     }
     uint32_t metadata_len_u32 = 0;
     if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &metadata_len_u32)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
         return;
     }
     size_t metadata_len = (size_t)metadata_len_u32;
     if (metadata_len != 0) {
         if (cursor > manifest_end || metadata_len > manifest_end - cursor) {
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
             return;
         }
         free(archive->metadata);
@@ -148729,6 +148878,7 @@ static void ptn_phar_parse_manifest(
         archive->metadata_len = metadata_len;
     }
     if (!ptn_phar_manifest_skip(&cursor, manifest_end, metadata_len)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest header");
         return;
     }
     if (file_count_u32 != 0 && cursor + 6 <= manifest_end) {
@@ -148742,6 +148892,11 @@ static void ptn_phar_parse_manifest(
     }
 
     size_t file_count = (size_t)file_count_u32;
+    if (file_count != 0 &&
+        file_count > (manifest_end - cursor) / 28u) {
+        ptn_phar_archive_set_internal_corruption(archive, "too many manifest entries for size of manifest");
+        return;
+    }
     if (file_count > SIZE_MAX / sizeof(PtnPharManifestEntryInfo)) {
         ptn_abort_out_of_memory();
     }
@@ -148777,14 +148932,24 @@ static void ptn_phar_parse_manifest(
             free(name);
             break;
         }
-        (void)crc32;
+        uint32_t compression_flags = flags & (uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        if (compression_flags == 0 && compressed_size != uncompressed_size) {
+            free(name);
+            ptn_phar_archive_set_internal_corruption(
+                archive,
+                "compressed and uncompressed size does not match for uncompressed entry"
+            );
+            break;
+        }
         size_t file_metadata_len_size = (size_t)file_metadata_len;
         if (cursor > manifest_end || file_metadata_len_size > manifest_end - cursor) {
             free(name);
             break;
         }
         infos[parsed_count].name = name;
-        infos[parsed_count].content_len = compressed_size != 0 ? (size_t)compressed_size : (size_t)uncompressed_size;
+        infos[parsed_count].compressed_len = (size_t)compressed_size;
+        infos[parsed_count].uncompressed_len = (size_t)uncompressed_size;
+        infos[parsed_count].crc32 = crc32;
         if (file_metadata_len_size != 0) {
             infos[parsed_count].metadata = ptn_phar_copy_bytes(data + cursor, file_metadata_len_size);
             infos[parsed_count].metadata_len = file_metadata_len_size;
@@ -148800,20 +148965,89 @@ static void ptn_phar_parse_manifest(
         if (infos[i].name == NULL) {
             continue;
         }
-        if (content_cursor <= len && infos[i].content_len <= len - content_cursor) {
-            ptn_phar_archive_set_manifest_entry(
+        if (archive != NULL && archive->load_error != NULL) {
+            free(infos[i].metadata);
+            free(infos[i].read_error);
+            free(infos[i].name);
+            continue;
+        }
+        uint32_t compression_flags =
+            infos[i].flags & (uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        if (content_cursor <= len && infos[i].compressed_len <= len - content_cursor) {
+            const unsigned char *entry_data = data + content_cursor;
+            size_t entry_len = infos[i].compressed_len;
+            unsigned char *inflated = NULL;
+            size_t inflated_len = 0;
+            if (compression_flags == (uint32_t)PTN_PHAR_COMPRESSION_GZ) {
+                if (ptn_zlib_transform_bytes_no_dictionary(
+                        entry_data,
+                        entry_len,
+                        1,
+                        -15,
+                        -1,
+                        0,
+                        &inflated,
+                        &inflated_len
+                    ) > 0) {
+                    entry_data = inflated;
+                    entry_len = inflated_len;
+                } else {
+                    infos[i].read_error = ptn_phar_archive_entry_stream_error(
+                        archive,
+                        infos[i].name,
+                        "actual filesize mismatch"
+                    );
+                }
+            }
+            if (infos[i].read_error == NULL && entry_len != infos[i].uncompressed_len) {
+                infos[i].read_error = ptn_phar_archive_entry_stream_error(
+                    archive,
+                    infos[i].name,
+                    "actual filesize mismatch"
+                );
+            }
+            if (infos[i].read_error == NULL &&
+                infos[i].crc32 != 0 &&
+                ptn_crc32_bytes(entry_data, entry_len) != infos[i].crc32) {
+                infos[i].read_error = ptn_phar_archive_entry_stream_error(
+                    archive,
+                    infos[i].name,
+                    "crc32 mismatch"
+                );
+            }
+            ptn_phar_archive_set_manifest_entry_with_error(
                 archive,
                 infos[i].name,
-                data + content_cursor,
-                infos[i].content_len,
+                entry_data,
+                entry_len,
                 infos[i].metadata,
                 infos[i].metadata_len,
                 infos[i].flags,
-                infos[i].timestamp
+                infos[i].timestamp,
+                infos[i].read_error
             );
-            content_cursor += infos[i].content_len;
+            free(inflated);
+            content_cursor += infos[i].compressed_len;
+        } else {
+            infos[i].read_error = ptn_phar_archive_entry_stream_error(
+                archive,
+                infos[i].name,
+                "actual filesize mismatch"
+            );
+            ptn_phar_archive_set_manifest_entry_with_error(
+                archive,
+                infos[i].name,
+                (const unsigned char *)"",
+                0,
+                infos[i].metadata,
+                infos[i].metadata_len,
+                infos[i].flags,
+                infos[i].timestamp,
+                infos[i].read_error
+            );
         }
         free(infos[i].metadata);
+        free(infos[i].read_error);
         free(infos[i].name);
     }
     if (len >= 8 && memcmp(data + len - 4, "GBMB", 4) == 0) {
@@ -149335,6 +149569,13 @@ static void ptn_phar_archive_load_file(PtnPharArchiveState *archive) {
     } else {
         archive->stub = ptn_duplicate_string("");
         archive->stub_len = 0;
+        if (archive->format == PTN_PHAR_FORMAT_PHAR &&
+            ptn_phar_bytes_contain_php_open_tag(data, len)) {
+            ptn_phar_archive_set_load_error_owned(
+                archive,
+                ptn_duplicate_string("__HALT_COMPILER(); must be declared in a phar")
+            );
+        }
     }
     free(data);
 }
@@ -149429,7 +149670,7 @@ static void ptn_phar_archive_copy_contents(
         if (entry->name == NULL) {
             continue;
         }
-        ptn_phar_archive_set_manifest_entry(
+        ptn_phar_archive_set_manifest_entry_with_error(
             dest,
             entry->name,
             entry->content,
@@ -149437,7 +149678,8 @@ static void ptn_phar_archive_copy_contents(
             entry->metadata,
             entry->metadata_len,
             entry->flags,
-            entry->timestamp
+            entry->timestamp,
+            entry->read_error
         );
     }
 }
@@ -152885,6 +153127,20 @@ static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, si
     if (!ptn_phar_uri_archive_and_entry(uri, &archive, &entry_name)) {
         return 0;
     }
+    if (archive != NULL && archive->load_error != NULL) {
+        size_t detail_len = strlen("phar error: ") + strlen(archive->load_error);
+        char *detail = malloc(detail_len + 1);
+        if (detail == NULL) {
+            free(entry_name);
+            ptn_abort_out_of_memory();
+        }
+        strcpy(detail, "phar error: ");
+        strcat(detail, archive->load_error);
+        ptn_phar_set_last_stream_open_error(detail);
+        free(detail);
+        free(entry_name);
+        return 0;
+    }
     size_t index = 0;
     if (!ptn_phar_archive_find_entry_index(archive, entry_name, &index) ||
         ptn_phar_archive_entry_is_dir(&archive->entries[index])) {
@@ -152893,6 +153149,11 @@ static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, si
         return 0;
     }
     PtnPharArchiveEntry *entry = &archive->entries[index];
+    if (entry->read_error != NULL) {
+        ptn_phar_set_last_stream_open_error(entry->read_error);
+        free(entry_name);
+        return 0;
+    }
     if (data_out != NULL) {
         *data_out = ptn_phar_copy_bytes(entry->content, entry->content_len);
     }
@@ -213366,6 +213627,20 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
                 archive->stub_len != 0 &&
                 ptn_phar_bytes_contain_php_open_tag((const unsigned char *)archive->stub, archive->stub_len)) {
                 if (ptn_phar_stub_is_map_only(archive->stub, archive->stub_len)) {
+                    if (archive->load_error != NULL) {
+                        ptn_throw_exception_owned_message_at(
+                            runtime,
+                            "UnexpectedValueException",
+                            ptn_duplicate_string(archive->load_error),
+                            runtime != NULL ? runtime->source_path : NULL,
+                            line
+                        );
+                        if (runtime != NULL) {
+                            runtime->source_path = saved_source_path;
+                        }
+                        *result_out = ptn_null();
+                        return 1;
+                    }
                     if (runtime != NULL) {
                         runtime->source_path = saved_source_path;
                     }
