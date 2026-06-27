@@ -12076,9 +12076,22 @@ static void ptn_serialize_append_object_payload_with_extra_properties(
         ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
     }
     if (object->properties != NULL) {
+        for (size_t i = 0; i < object->property_metadata_len; i++) {
+            const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+            PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+            if (entry == NULL ||
+                entry->key.type != PTN_ARRAY_KEY_STRING ||
+                is_internal_key(entry->key)) {
+                continue;
+            }
+            ptn_serialize_append_object_property_key(buffer, object, entry->key);
+            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+        }
         for (size_t i = 0; i < object->properties->len; i++) {
             PtnArrayEntry *entry = &object->properties->entries[i];
-            if (entry->key.type != PTN_ARRAY_KEY_STRING || is_internal_key(entry->key)) {
+            if (entry->key.type != PTN_ARRAY_KEY_STRING ||
+                is_internal_key(entry->key) ||
+                ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
                 continue;
             }
             ptn_serialize_append_object_property_key(buffer, object, entry->key);
@@ -115918,7 +115931,7 @@ static PtnValue ptn_date_interval_object_from_data(PtnRuntime *runtime, PtnDateI
 
 static PtnValue ptn_date_period_public_interval_value(PtnRuntime *runtime, PtnValue interval, size_t line) {
     PtnDateIntervalData *data = ptn_date_interval_data_from_value(interval);
-    if (data != NULL && data->has_relative_special) {
+    if (data != NULL && data->from_string) {
         PtnDateIntervalData exposed = *data;
         exposed.from_string = 0;
         exposed.has_relative_special = 0;

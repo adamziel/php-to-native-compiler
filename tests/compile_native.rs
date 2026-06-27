@@ -27063,6 +27063,95 @@ int(4)\n\
 }
 
 #[test]
+fn compile_date_period_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-date-period-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-subclass-serialize-order.php");
+    let output = root.join("date-period-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DatePeriod
+{
+    private int $var1;
+    private $var2 = 2;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct($start, $interval, $end)
+    {
+        parent::__construct($start, $interval, $end);
+        $this->var1 = 1;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+    }
+}
+
+$i = new I(new DateTimeImmutable('2023-03-03 16:24'), DateInterval::createFromDateString('+1 hour'), new DateTimeImmutable('2023-03-09 16:24'));
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+var_dump($i->__serialize()['interval']->__serialize());
+$u = unserialize($s);
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:1:\"I\":11:{s:5:\"start\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:7:\"current\";N;s:3:\"end\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-09 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:8:\"interval\";O:12:\"DateInterval\":10:{s:1:\"y\";i:0;s:1:\"m\";i:0;s:1:\"d\";i:0;s:1:\"h\";i:1;s:1:\"i\";i:0;s:1:\"s\";i:0;s:1:\"f\";d:0;s:6:\"invert\";i:0;s:4:\"days\";b:0;s:11:\"from_string\";b:0;}s:11:\"recurrences\";i:1;s:18:\"include_start_date\";b:1;s:16:\"include_end_date\";b:0;s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n",
+            "array(10) {\n",
+            "  [\"y\"]=>\n",
+            "  int(0)\n",
+            "  [\"m\"]=>\n",
+            "  int(0)\n",
+            "  [\"d\"]=>\n",
+            "  int(0)\n",
+            "  [\"h\"]=>\n",
+            "  int(1)\n",
+            "  [\"i\"]=>\n",
+            "  int(0)\n",
+            "  [\"s\"]=>\n",
+            "  int(0)\n",
+            "  [\"f\"]=>\n",
+            "  float(0)\n",
+            "  [\"invert\"]=>\n",
+            "  int(0)\n",
+            "  [\"days\"]=>\n",
+            "  bool(false)\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_period_public_interval_value"));
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
+}
+
+#[test]
 fn compile_datetime_timestamp_microseconds_and_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timestamp-microseconds-offsets");
     fs::create_dir_all(&root).unwrap();
