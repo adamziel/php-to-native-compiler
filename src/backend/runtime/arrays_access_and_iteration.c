@@ -330,6 +330,11 @@ static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_clone(
     PtnValue source,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_intl_number_formatter_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1837,6 +1842,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_internal_class_name_is_intl_date_pattern_generator(source->class_name)) {
         return ptn_intl_date_pattern_generator_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "NumberFormatter")) {
+        return ptn_intl_number_formatter_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplDoublyLinkedList")) {
         return ptn_spl_doubly_linked_list_clone(runtime, resolved, line);

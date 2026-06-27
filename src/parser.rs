@@ -23983,6 +23983,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "locale_lookup"
             | "numfmt_create"
             | "numfmt_parse_currency"
+            | "resourcebundle_get"
             | "localeconv"
             | "nl_langinfo"
             | "lstat"

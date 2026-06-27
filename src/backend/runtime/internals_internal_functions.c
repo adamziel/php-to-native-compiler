@@ -73657,6 +73657,15 @@ static PtnValue ptn_internal_grapheme_extract(PtnRuntime *runtime, size_t argc, 
     }
     int64_t extract_type = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
     int64_t raw_start = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
+    if (extract_type < 0 || extract_type > 2) {
+        ptn_string_operand_free(source);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "grapheme_extract(): Argument #3 ($type) must be one of GRAPHEME_EXTR_COUNT, GRAPHEME_EXTR_MAXBYTES, or GRAPHEME_EXTR_MAXCHARS"
+        );
+        return ptn_null();
+    }
     if (size < 0) {
         size = 0;
     }
@@ -75319,6 +75328,25 @@ static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data(PtnValue recei
     return (PtnIntlNumberFormatterData *)resolved.as.object->native_data;
 }
 
+static PTN_UNUSED PtnValue ptn_intl_number_formatter_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source);
+    PtnIntlNumberFormatterData *data = ptn_intl_number_formatter_data(resolved);
+    if (resolved.type != PTN_OBJECT || data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_new_shell(runtime, resolved.as.object->class_name);
+    PtnIntlNumberFormatterData *clone_data = ptn_intl_number_formatter_data_new(data->locale, data->style);
+    for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
+        free(clone_data->symbols[i]);
+        clone_data->symbols[i] = ptn_duplicate_string(data->symbols[i] == NULL ? "" : data->symbols[i]);
+    }
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_intl_number_formatter_data_free;
+    return clone;
+}
+
 static char ptn_intl_number_formatter_decimal_separator(const char *locale) {
     return ptn_intl_locale_has_prefix(locale, "ru") ||
         ptn_intl_locale_has_prefix(locale, "ro") ||
@@ -75534,6 +75562,22 @@ static PtnValue ptn_intl_number_formatter_format_currency(PtnIntlNumberFormatter
 }
 
 static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatterData *data, double number) {
+    if (isnan(number)) {
+        return ptn_owned_string(ptn_duplicate_string("NaN"));
+    }
+    if (isinf(number)) {
+        PtnStringBuffer output;
+        ptn_string_buffer_init(&output);
+        if (number < 0.0) {
+            PtnStringOperand minus_symbol =
+                ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL);
+            ptn_string_buffer_append_len(&output, minus_symbol.data, minus_symbol.len);
+        }
+        PtnStringOperand infinity_symbol =
+            ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_INFINITY_SYMBOL);
+        ptn_string_buffer_append_len(&output, infinity_symbol.data, infinity_symbol.len);
+        return ptn_owned_string_len(output.data, output.len);
+    }
     if (data != NULL && (data->style == PTN_NUMBER_FORMATTER_CURRENCY ||
         data->style == PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING)) {
         return ptn_intl_number_formatter_format_currency(data, number);
@@ -76718,7 +76762,12 @@ static PtnValue ptn_intl_resourcebundle_new(PtnRuntime *runtime, const char *cla
     return object;
 }
 
-static PtnValue ptn_intl_resourcebundle_get(PtnValue receiver, PtnValue index) {
+static PtnValue ptn_intl_resourcebundle_get(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue receiver,
+    PtnValue index
+) {
     PtnIntlResourceBundleData *data = ptn_intl_resourcebundle_data(receiver);
     if (data == NULL || ptn_value_deref(data->entries).type != PTN_ARRAY) {
         return ptn_null();
@@ -76726,8 +76775,42 @@ static PtnValue ptn_intl_resourcebundle_get(PtnValue receiver, PtnValue index) {
     PtnArray *array = ptn_value_deref(data->entries).as.array;
     PtnArrayKey key = ptn_array_key_from_value(index);
     size_t found = ptn_array_find_key(array, key);
+    if (found >= array->len) {
+        PtnStringOperand key_string = ptn_value_to_string_operand(index);
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Cannot load resource element '%.*s': U_MISSING_RESOURCE_ERROR",
+            function_name,
+            (int)key_string.len,
+            key_string.data
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Cannot load resource element '%.*s': U_MISSING_RESOURCE_ERROR",
+            function_name,
+            (int)key_string.len,
+            key_string.data
+        );
+        ptn_string_operand_free(key_string);
+        ptn_intl_set_error_message(runtime, message);
+        free(message);
+    }
     ptn_array_key_free(key);
     return found < array->len ? ptn_value_clone_deref(array->entries[found].value) : ptn_null();
+}
+
+static PtnValue ptn_internal_resourcebundle_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return argc >= 2 ? ptn_intl_resourcebundle_get(runtime, "resourcebundle_get", args[0], args[1]) : ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
@@ -76751,7 +76834,9 @@ static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
         ? NULL
         : ptn_value_deref(data->entries).as.array;
     if (ptn_ascii_case_equal(name, "get")) {
-        return argc >= 1 ? ptn_intl_resourcebundle_get(receiver, args[0]) : ptn_null();
+        return argc >= 1
+            ? ptn_intl_resourcebundle_get(runtime, "ResourceBundle::get", receiver, args[0])
+            : ptn_null();
     }
     if (ptn_ascii_case_equal(name, "count")) {
         return array == NULL ? ptn_int(0) : ptn_int((int64_t)array->len);
@@ -160328,6 +160413,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "readgzfile", 1, 2, ptn_internal_readgzfile },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },
+        { "resourcebundle_get", 2, 2, ptn_internal_resourcebundle_get },
         { "realpath_cache_get", 0, 0, ptn_internal_realpath_cache_get },
         { "realpath_cache_size", 0, 0, ptn_internal_realpath_cache_size },
         { "realpath", 1, 1, ptn_internal_realpath },
