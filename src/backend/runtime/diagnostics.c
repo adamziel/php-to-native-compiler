@@ -2748,6 +2748,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_recursion_limit = getenv("PTN_PCRE_RECURSION_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
+    const char *configured_intl_default_locale = getenv("PTN_INTL_DEFAULT_LOCALE");
+    const char *configured_intl_use_exceptions = getenv("PTN_INTL_USE_EXCEPTIONS");
     const char *configured_opcache_blacklist_filename =
         getenv("PTN_OPCACHE_BLACKLIST_FILENAME");
     const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
@@ -3088,7 +3090,16 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->pcre_utf8_cache_len = 0;
     runtime->pcre_utf8_cache_known = 0;
     runtime->pcre_utf8_cache_valid = 0;
+    runtime->intl_default_locale = ptn_duplicate_string(
+        configured_intl_default_locale == NULL ? "en_US" : configured_intl_default_locale
+    );
     runtime->intl_error_level = 0;
-    runtime->intl_use_exceptions = 0;
+    runtime->intl_use_exceptions =
+        configured_intl_use_exceptions != NULL &&
+        configured_intl_use_exceptions[0] != '\0' &&
+        !ptn_ascii_case_equal(configured_intl_use_exceptions, "0") &&
+        !ptn_ascii_case_equal(configured_intl_use_exceptions, "off") &&
+        !ptn_ascii_case_equal(configured_intl_use_exceptions, "false") &&
+        !ptn_ascii_case_equal(configured_intl_use_exceptions, "no");
     runtime->intl_last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
 }

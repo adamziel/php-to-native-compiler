@@ -5396,6 +5396,11 @@ fn lower_interpolated_string(
             }),
             line,
         }),
+        AstStringPart::ComplexExpression(expr) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(lower_expr(expr)),
+            line,
+        }),
         AstStringPart::PropertyFetch { variable, property } => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(ValueExpr::PropertyFetch {

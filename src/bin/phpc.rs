@@ -296,6 +296,8 @@ struct RuntimeIni {
     pcre_backtrack_limit: Option<String>,
     pcre_recursion_limit: Option<String>,
     pcre_jit: Option<String>,
+    intl_default_locale: Option<String>,
+    intl_use_exceptions: Option<String>,
     open_basedir: Option<String>,
     session: Vec<(String, String)>,
     opcache: Vec<(String, String)>,
@@ -510,6 +512,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_recursion_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("intl.default_locale") {
+        ini.intl_default_locale = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("intl.use_exceptions") {
+        ini.intl_use_exceptions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("open_basedir") {
         ini.open_basedir = Some(normalize_ini_scalar(raw_value));
     } else if let Some(canonical_name) = canonical_session_ini_name(name) {
@@ -1088,6 +1094,8 @@ fn compile_and_run(
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
+        intl_default_locale: ini.intl_default_locale.clone(),
+        intl_use_exceptions: ini.intl_use_exceptions.clone(),
         open_basedir: ini.open_basedir.clone(),
         session: ini.session.clone(),
         opcache: ini.opcache.clone(),
@@ -1267,6 +1275,12 @@ fn compile_and_run(
     }
     if let Some(pcre_jit) = &ini.pcre_jit {
         command.env("PTN_PCRE_JIT", pcre_jit);
+    }
+    if let Some(intl_default_locale) = &ini.intl_default_locale {
+        command.env("PTN_INTL_DEFAULT_LOCALE", intl_default_locale);
+    }
+    if let Some(intl_use_exceptions) = &ini.intl_use_exceptions {
+        command.env("PTN_INTL_USE_EXCEPTIONS", intl_use_exceptions);
     }
     if let Some(open_basedir) = &ini.open_basedir {
         command.env("PTN_OPEN_BASEDIR", open_basedir);
