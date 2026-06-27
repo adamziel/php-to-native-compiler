@@ -319,6 +319,8 @@ struct RuntimeIni {
     mbstring_encoding_translation: Option<String>,
     zend_multibyte: Option<String>,
     zend_script_encoding: Option<String>,
+    sendmail_path: Option<String>,
+    mail_add_x_header: Option<String>,
     zend_assertions: Option<String>,
     zend_enable_gc: Option<String>,
     memory_limit: Option<String>,
@@ -568,6 +570,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.zend_multibyte = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.script_encoding") {
         ini.zend_script_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("sendmail_path") {
+        ini.sendmail_path = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("mail.add_x_header") {
+        ini.mail_add_x_header = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.enable_gc") {
@@ -1111,6 +1117,8 @@ fn compile_and_run(
         mbstring_encoding_translation: ini.mbstring_encoding_translation.clone(),
         zend_multibyte: ini.zend_multibyte.clone(),
         zend_script_encoding: ini.zend_script_encoding.clone(),
+        sendmail_path: ini.sendmail_path.clone(),
+        mail_add_x_header: ini.mail_add_x_header.clone(),
         zend_assertions: ini.zend_assertions.clone(),
         zend_enable_gc: ini.zend_enable_gc.clone(),
         memory_limit: ini.memory_limit.clone(),
@@ -1142,28 +1150,31 @@ fn compile_and_run(
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
+    let zend_multibyte_enabled = ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy);
+    let source_internal_encoding = ini
+        .internal_encoding
+        .as_ref()
+        .filter(|encoding| !encoding.is_empty())
+        .cloned()
+        .or_else(|| {
+            ini.mbstring_internal_encoding
+                .as_ref()
+                .filter(|encoding| !encoding.is_empty())
+                .cloned()
+        });
     let source_options = CompileSourceOptions {
-        zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
+        zend_multibyte: zend_multibyte_enabled,
         script_encoding: ini
             .zend_script_encoding
             .as_ref()
             .filter(|encoding| !encoding.eq_ignore_ascii_case("pass"))
             .cloned(),
-        internal_encoding: ini
-            .internal_encoding
-            .as_ref()
-            .filter(|encoding| !encoding.is_empty())
-            .cloned()
-            .or_else(|| {
-                ini.mbstring_internal_encoding
-                    .as_ref()
-                    .filter(|encoding| !encoding.is_empty())
-                    .cloned()
-            }),
-        encoding_translation: ini
-            .mbstring_encoding_translation
-            .as_deref()
-            .is_some_and(ini_scalar_truthy),
+        internal_encoding: source_internal_encoding.clone(),
+        encoding_translation: zend_multibyte_enabled && source_internal_encoding.is_some()
+            || ini
+                .mbstring_encoding_translation
+                .as_deref()
+                .is_some_and(ini_scalar_truthy),
         force_internal_function_dispatch: ini
             .output_handler
             .as_deref()
@@ -1334,6 +1345,12 @@ fn compile_and_run(
             "PTN_MBSTRING_SUBSTITUTE_CHARACTER",
             mbstring_substitute_character,
         );
+    }
+    if let Some(sendmail_path) = &ini.sendmail_path {
+        command.env("PTN_SENDMAIL_PATH", sendmail_path);
+    }
+    if let Some(mail_add_x_header) = &ini.mail_add_x_header {
+        command.env("PTN_MAIL_ADD_X_HEADER", mail_add_x_header);
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
