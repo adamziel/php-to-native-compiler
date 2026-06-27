@@ -48717,6 +48717,42 @@ string(66) \"locale_get_display_name(): name too long: U_ILLEGAL_ARGUMENT_ERROR\
 }
 
 #[test]
+fn compile_intl_message_formatter_negative_array_key_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-formatter-negative-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-formatter-negative-key.php");
+    let output = root.join("intl-message-formatter-negative-key-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('intl.use_exceptions', '1');\n\
+$mf = new MessageFormatter('en_US', '{foo,number,percent}');\n\
+try {\n\
+    var_dump($mf->format(['foo' => 7, -1 => 'bar']));\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+echo intl_get_error_message(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "IntlException: MessageFormatter::format(): Found negative or too large array key\n\
+MessageFormatter::format(): Found negative or too large array key\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_compact_intl_signal_error"));
+    assert!(c_source.contains("MessageFormatter::format(): Found negative or too large array key"));
+}
+
+#[test]
 fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
     let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
     fs::create_dir_all(&root).unwrap();
