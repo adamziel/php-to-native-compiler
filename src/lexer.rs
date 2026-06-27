@@ -219,6 +219,7 @@ pub enum TokenKind {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    Expression(String),
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(String),
     DynamicVariableExpression(String),
@@ -1136,7 +1137,7 @@ impl<'a> Lexer<'a> {
                         self.skip_interpolation_whitespace();
                         if !matches!(self.peek_char(), Some(')')) {
                             let tail = self.read_balanced_interpolation_expression(start)?;
-                            return Ok(StringPart::DynamicVariableExpression(format!(
+                            return Ok(StringPart::Expression(format!(
                                 "${array}->{first_member}({tail}"
                             )));
                         }

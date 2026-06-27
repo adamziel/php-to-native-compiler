@@ -114069,6 +114069,28 @@ static PtnValue ptn_object_named_public_properties_with_extra_storage_array(
     if (object == NULL || object->properties == NULL) {
         return result;
     }
+
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        size_t storage_len = strlen(metadata->storage_name);
+        if (ptn_string_len_in_list(metadata->storage_name, storage_len, names, count)) {
+            continue;
+        }
+
+        PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, storage_key);
+        if (entry == NULL) {
+            ptn_array_key_free(storage_key);
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_serialize_spl_property_table_key_from_metadata(metadata, storage_key),
+            ptn_value_clone_deref(entry->value)
+        );
+        ptn_array_key_free(storage_key);
+    }
+
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         if (entry->key.type != PTN_ARRAY_KEY_STRING ||
@@ -114077,9 +114099,12 @@ static PtnValue ptn_object_named_public_properties_with_extra_storage_array(
         }
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(object, entry->key.as.string);
+        if (metadata != NULL) {
+            continue;
+        }
         ptn_array_set_entry(
             result.as.array,
-            ptn_serialize_spl_property_table_key_from_metadata(metadata, entry->key),
+            ptn_array_key_clone(entry->key),
             ptn_value_clone_deref(entry->value)
         );
     }
@@ -118749,21 +118774,48 @@ static void ptn_date_period_reorder_extra_properties_before_internal(PtnObject *
 
     PtnArray *properties = object->properties;
     PtnArrayEntry *ordered_entries = malloc(sizeof(PtnArrayEntry) * properties->len);
-    if (ordered_entries == NULL) {
+    unsigned char *used_entries = calloc(properties->len, sizeof(unsigned char));
+    if (ordered_entries == NULL || used_entries == NULL) {
+        free(ordered_entries);
+        free(used_entries);
         ptn_abort_out_of_memory();
     }
 
     size_t out = 0;
-    for (size_t pass = 0; pass < 2; pass++) {
-        for (size_t i = 0; i < properties->len; i++) {
-            int is_internal = ptn_date_period_key_is_internal(properties->entries[i].key);
-            if ((pass == 0 && !is_internal) || (pass == 1 && is_internal)) {
-                ordered_entries[out++] = properties->entries[i];
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        int is_internal = ptn_date_period_key_is_internal(storage_key);
+        ptn_array_key_free(storage_key);
+        if (is_internal) {
+            continue;
+        }
+
+        for (size_t j = 0; j < properties->len; j++) {
+            PtnArrayEntry *entry = &properties->entries[j];
+            if (!used_entries[j] &&
+                entry->key.type == PTN_ARRAY_KEY_STRING &&
+                strcmp(metadata->storage_name, entry->key.as.string) == 0) {
+                ordered_entries[out++] = *entry;
+                used_entries[j] = 1;
+                break;
             }
+        }
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        if (!used_entries[i] && !ptn_date_period_key_is_internal(properties->entries[i].key)) {
+            ordered_entries[out++] = properties->entries[i];
+            used_entries[i] = 1;
+        }
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        if (!used_entries[i]) {
+            ordered_entries[out++] = properties->entries[i];
         }
     }
     memcpy(properties->entries, ordered_entries, sizeof(PtnArrayEntry) * properties->len);
     free(ordered_entries);
+    free(used_entries);
     properties->current_index = 0;
     ptn_array_rebuild_index(properties);
 
