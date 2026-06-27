@@ -158161,13 +158161,28 @@ static PtnValue *ptn_soap_decode_args(
         ? NULL
         : ptn_soap_type_list_find(types, type_count, expected_type_name);
     if (expected_type != NULL && ptn_soap_type_has_element_fields(expected_type)) {
+        PtnXmlNode *decode_node = operation;
+        PtnXmlNode *single_child = NULL;
+        int element_child_count = 0;
+        for (size_t i = 0; operation != NULL && i < operation->child_count; i++) {
+            PtnXmlNode *child = operation->children[i];
+            if (child == NULL || child->type != PTN_XML_NODE_ELEMENT) {
+                continue;
+            }
+            single_child = child;
+            element_child_count++;
+        }
+        if (element_child_count == 1 &&
+            ptn_soap_type_element_field(expected_type, ptn_xml_local_name(single_child->name)) == NULL) {
+            decode_node = single_child;
+        }
         PtnValue *args = calloc(1, sizeof(PtnValue));
         if (args == NULL) {
             ptn_abort_out_of_memory();
         }
         args[0] = ptn_soap_decode_default_arg(
             runtime,
-            operation,
+            decode_node,
             types,
             type_count,
             expected_type_name,
@@ -158959,6 +158974,52 @@ static void ptn_soap_append_response_schema_object_fields(
             continue;
         }
         ptn_soap_append_response_value_xml(runtime, buffer, field->name, field_value, line, depth + 1);
+        if (field_owned) {
+            ptn_value_destroy(&field_value);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return;
+        }
+    }
+}
+
+static void ptn_soap_append_response_schema_object_attributes(
+    PtnRuntime *runtime,
+    PtnStringBuffer *buffer,
+    PtnSoapType *types,
+    size_t type_count,
+    const PtnSoapType *type,
+    PtnValue value,
+    size_t line
+) {
+    for (size_t i = 0; type != NULL && i < type->field_count; i++) {
+        const PtnSoapField *field = &type->fields[i];
+        if (!field->is_attribute || field->is_qualified) {
+            continue;
+        }
+        PtnValue field_value = ptn_null();
+        int field_owned = 0;
+        if (!ptn_soap_object_schema_property(runtime, value, field->name, line, &field_value, &field_owned)) {
+            continue;
+        }
+        PtnValue resolved = ptn_value_deref(field_value);
+        if (field->is_optional && resolved.type == PTN_NULL) {
+            if (field_owned) {
+                ptn_value_destroy(&field_value);
+            }
+            continue;
+        }
+        if (resolved.type == PTN_OBJECT && !ptn_soap_value_is_enum_case(resolved)) {
+            if (field_owned) {
+                ptn_value_destroy(&field_value);
+            }
+            continue;
+        }
+        ptn_string_buffer_append_char(buffer, ' ');
+        ptn_string_buffer_append(buffer, field->name);
+        ptn_string_buffer_append(buffer, "=\"");
+        ptn_soap_append_schema_scalar_value(runtime, buffer, types, type_count, field->type, field_value, line);
+        ptn_string_buffer_append_char(buffer, '"');
         if (field_owned) {
             ptn_value_destroy(&field_value);
         }
@@ -159796,6 +159857,15 @@ static void ptn_soap_emit_response(
         if (schema_type != NULL) {
             ptn_string_buffer_append_char(&buffer, '<');
             ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
+            ptn_soap_append_response_schema_object_attributes(
+                runtime,
+                &buffer,
+                types,
+                type_count,
+                schema_type,
+                result,
+                line
+            );
             ptn_string_buffer_append_format(&buffer, " xsi:type=\"ns2:%s\">", schema_type->name);
             ptn_soap_append_response_schema_object_fields(runtime, &buffer, schema_type, result, line, 0);
             ptn_string_buffer_append(&buffer, "</");

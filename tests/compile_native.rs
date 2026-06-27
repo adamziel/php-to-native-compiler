@@ -56157,6 +56157,25 @@ $seen = null;
 function test($input) {
     global $seen;
     $seen = $input;
+    return $input;
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('test');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        return $response;
+    }
 }
 
 $wsdl = <<<'WSDL'
@@ -56208,16 +56227,12 @@ WSDL;
 
 $path = __DIR__ . '/schema-property-defaults.wsdl';
 file_put_contents($path, $wsdl);
-$client = new SoapClient($path, ['trace' => 1, 'exceptions' => 0]);
-$server = new SoapServer($path);
-$server->addFunction('test');
-$client->test(new Foo());
+$client = new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+$roundTrip = $client->test(new Foo());
 $request = $client->__getLastRequest();
 echo $request;
-ob_start();
-$server->handle($request);
-ob_end_clean();
 var_dump($seen);
+var_dump($roundTrip);
 "##,
     )
     .unwrap();
@@ -56242,6 +56257,10 @@ var_dump($seen);
         "{stdout}"
     );
     assert!(stdout.contains("[\"d\"]=>\n  int(5)"), "{stdout}");
+    assert!(
+        stdout.matches("[\"c\"]=>\n  string(1) \"c\"").count() >= 2,
+        "{stdout}"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
