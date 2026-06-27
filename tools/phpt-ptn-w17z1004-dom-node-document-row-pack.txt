@@ -1,0 +1,15 @@
+# ptn-w17z.1004 exact DOM/libxml node/document current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T031028Z.tsv
+
+ext/dom/tests/bug80602_3.phpt
+ext/dom/tests/delayed_freeing/document_fragment.phpt
+ext/dom/tests/modern/spec/Document_getElementsByTagNameNS.phpt
+ext/dom/tests/modern/spec/Document_importNode_not_supported.phpt
+ext/dom/tests/gh16595.phpt
+ext/dom/tests/bug70359.phpt
+ext/dom/tests/modern/spec/XMLDocument_version.phpt
+ext/dom/tests/dom001.phpt
+ext/dom/tests/modern/extensions/node_renaming.phpt
+ext/dom/tests/bug43364.phpt
+ext/dom/tests/gh11830/type_variation.phpt
+ext/dom/tests/bug81642.phpt

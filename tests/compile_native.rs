@@ -52672,6 +52672,212 @@ try {
 }
 
 #[test]
+fn compile_dom_node_document_current_red_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-node-document-current-red-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-node-document-current-red-pack.php");
+    let output = root.join("dom-node-document-current-red-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo "--xml-version--\n";
+$xml = Dom\XMLDocument::createFromString('<root><child/></root>');
+var_dump($xml->xmlVersion);
+foreach (['0.1', '1.0', '1.1', '', 'foo'] as $version) {
+    try {
+        $xml->xmlVersion = $version;
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+    var_dump($xml->xmlVersion);
+}
+
+echo "--type-checks--\n";
+$doc = new DOMDocument;
+$doc->loadXML('<?xml version="1.0"?><container><test/><child><testelement/></child></container>');
+$testElement = $doc->documentElement->firstElementChild->nextElementSibling->firstElementChild;
+try {
+    $doc->documentElement->firstElementChild->prepend($testElement, 0);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $doc->documentElement->firstElementChild->append($testElement, true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $doc->documentElement->firstElementChild->before($testElement, null);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $doc->documentElement->firstElementChild->after($testElement, new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $doc->documentElement->firstElementChild->replaceWith($testElement, []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $doc->saveXML();
+
+echo "--before-prefix--\n";
+$doc = new DOMDocument();
+$doc->loadXML('<a>foo<last/></a>');
+$target = $doc->documentElement->lastChild;
+$target->before('bar', $doc->documentElement->firstChild, 'baz');
+echo $doc->saveXML($doc->documentElement), "\n";
+var_dump($target->prefix);
+
+echo "--replace-with--\n";
+$doc = new DOMDocument();
+$doc->appendChild($target = $doc->createElement('test'));
+$target->replaceWith($target, $doc->createElement('foo'));
+var_dump($doc->saveXML());
+$doc = new DOMDocument();
+$doc->appendChild($target = $doc->createElement('test'));
+$target->replaceWith('bar', $target, 'foo');
+var_dump($doc->saveXML());
+
+echo "--import-document--\n";
+$legacy = new DOMDocument();
+var_dump($legacy->importNode($legacy));
+$modern = Dom\HTMLDocument::createEmpty();
+try {
+    $modern->importNode($modern);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+echo "--element-constructor--\n";
+$v0 = new DOMElement("jg");
+$v1 = new DOMDocument("Zb");
+$v2 = new DOMElement("IU");
+$v7 = new DOMElement("L", null, "df");
+$v0->replaceChildren($v7);
+$v7->before($v2);
+$v1->insertBefore($v0);
+echo $v1->saveXML();
+
+echo "--rename--\n";
+$dom = Dom\XMLDocument::createFromString('<root xmlns:a="urn:a"><a:child attrib="value"/></root>');
+$dom->documentElement->rename("urn:x", "x:foo");
+echo $dom->saveXML(), "\n";
+var_dump($dom->documentElement->namespaceURI, $dom->documentElement->prefix);
+$dom->documentElement->rename("urn:x", "a:foo");
+echo $dom->saveXML(), "\n";
+var_dump($dom->documentElement->namespaceURI, $dom->documentElement->prefix);
+$dom->documentElement->rename("", "bar");
+$attr = $dom->documentElement->firstElementChild->attributes[0];
+$attr->rename("urn:x", "x:foo");
+echo $dom->saveXML(), "\n";
+$attr->rename("urn:x", "a:foo");
+echo $dom->saveXML(), "\n";
+var_dump($attr->namespaceURI, $attr->prefix);
+$attr->rename(null, "bar");
+echo $dom->saveXML(), "\n";
+var_dump($attr->namespaceURI, $attr->prefix);
+
+echo "--namespace-print--\n";
+$dom = new DOMDocument();
+$dom->loadXML('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="foo"/>');
+print_r($dom->documentElement->getAttributeNode('xmlns'));
+
+echo "--xinclude--\n";
+function ptn_count_dom_elements($nodes) {
+    $count = 0;
+    foreach ($nodes as $node) {
+        if ($node instanceof DOMElement) {
+            $count++;
+            if ($node->childNodes->length > 0) {
+                $count += ptn_count_dom_elements($node->childNodes);
+            }
+        }
+    }
+    return $count;
+}
+$doc = new DOMDocument();
+$doc->loadXML('<?xml version="1.0" encoding="UTF-8"?><root xmlns:xi="http://www.w3.org/2001/XInclude"><a><a_child1>ac1</a_child1><a_child2>ac2</a_child2></a><b><xi:include xpointer="xpointer(/root/a)" /></b><c><xi:include xpointer="xpointer(/root/b)" /></c></root>');
+$doc->xinclude();
+var_dump(ptn_count_dom_elements([$doc->documentElement]));
+
+echo "--detached-attributes--\n";
+$dom = new DOMDocument();
+$dom->loadXML('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url xmlns:xsi="foo" myattrib="bar"/></urlset>');
+$attr = $dom->documentElement->firstElementChild->getAttributeNode('myattrib');
+$dom->documentElement->firstElementChild->remove();
+var_dump($attr->parentNode);
+$dom = new DOMDocument();
+$dom->loadXML('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url xmlns:xsi="foo" myattrib="bar"/></urlset>');
+$ns = $dom->documentElement->firstElementChild->getAttributeNode('xmlns:xsi');
+$dom->documentElement->firstElementChild->remove();
+var_dump($ns->parentNode->nodeName);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "--xml-version--\nstring(3) \"1.0\"\nInvalid XML version\nstring(3) \"1.0\"\nstring(3) \"1.0\"\nstring(3) \"1.1\"\nInvalid XML version\nstring(3) \"1.1\"\nInvalid XML version\nstring(3) \"1.1\"\n"
+    ));
+    assert!(stdout.contains(
+        "DOMElement::prepend(): Argument #2 must be of type DOMNode|string, int given\n"
+    ));
+    assert!(stdout.contains(
+        "DOMElement::append(): Argument #2 must be of type DOMNode|string, bool given\n"
+    ));
+    assert!(stdout.contains(
+        "DOMElement::before(): Argument #2 must be of type DOMNode|string, null given\n"
+    ));
+    assert!(stdout.contains(
+        "DOMElement::after(): Argument #2 must be of type DOMNode|string, stdClass given\n"
+    ));
+    assert!(stdout.contains(
+        "DOMElement::replaceWith(): Argument #2 must be of type DOMNode|string, array given\n"
+    ));
+    assert!(stdout.contains("<container><test/><child><testelement/></child></container>"));
+    assert!(stdout.contains("--before-prefix--\n<a>barfoobaz<last/></a>\nstring(0) \"\"\n"));
+    assert!(stdout.contains("<test/>\n<foo/>\n"));
+    assert!(stdout.contains("bar\n<test/>\nfoo\n"));
+    assert!(stdout
+        .contains("Warning: DOMDocument::importNode(): Cannot import: Node Type Not Supported"));
+    assert!(stdout.contains("bool(false)\nNot Supported Error\n"));
+    assert!(stdout.contains(
+        "<?xml version=\"Zb\"?>\n<jg xmlns:default=\"df\"><IU/><default:L xmlns=\"df\"/></jg>\n"
+    ));
+    assert!(stdout.contains("<x:foo xmlns:x=\"urn:x\" xmlns:a=\"urn:a\">"));
+    assert!(stdout.contains("<ns1:foo xmlns:ns1=\"urn:x\" xmlns:a=\"urn:a\">"));
+    assert!(stdout.contains("string(5) \"urn:x\"\nstring(1) \"a\"\n"));
+    assert!(stdout.contains("<a:child xmlns:x=\"urn:x\" x:foo=\"value\"/>"));
+    assert!(stdout.contains("<a:child xmlns:a=\"urn:x\" a:foo=\"value\"/>"));
+    assert!(stdout.contains("NULL\nNULL\n"));
+    assert!(stdout.contains(
+        "--namespace-print--\nDOMNameSpaceNode Object\n(\n    [nodeName] => xmlns\n    [nodeValue] => http://www.sitemaps.org/schemas/sitemap/0.9\n    [nodeType] => 18\n"
+    ));
+    assert!(stdout.contains("    [ownerDocument] => (object value omitted)\n"));
+    assert!(stdout.contains("--xinclude--\nint(13)\n"));
+    assert!(stdout.contains("--detached-attributes--\nNULL\nstring(3) \"url\"\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_xml_version_is_valid"));
+    assert!(c_source.contains("ptn_xml_check_document_text_insertion"));
+    assert!(c_source.contains("ptn_dom_attr_rename_method"));
+    assert!(c_source.contains("ptn_xml_mark_detached_transient_parents"));
+}
+
+#[test]
 fn compile_dom_get_element_by_id_marker_mutations_to_native_binary() {
     let root = temp_dir("ptn-native-dom-get-element-by-id-marker-mutations");
     fs::create_dir_all(&root).unwrap();
