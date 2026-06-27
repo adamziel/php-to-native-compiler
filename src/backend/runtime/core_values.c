@@ -4211,6 +4211,7 @@ static PTN_UNUSED void ptn_stream_filter_flush_shutdown_diagnostic(PtnRuntime *r
     if (ptn_stream_filter_pending_shutdown_message == NULL) {
         return;
     }
+    fflush(stdout);
     if (runtime != NULL && runtime->diagnostics.display_errors) {
         FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
         fputc('\n', stream);
