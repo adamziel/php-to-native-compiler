@@ -55546,7 +55546,9 @@ echo $client->__getLastRequest();
         "{stdout}"
     );
     assert!(
-        stdout.contains("<inputDateTime xsi:type=\"xsd:dateTime\">2001-02-03T04:05:06Z</inputDateTime>"),
+        stdout.contains(
+            "<inputDateTime xsi:type=\"xsd:dateTime\">2001-02-03T04:05:06Z</inputDateTime>"
+        ),
         "{stdout}"
     );
     assert!(
