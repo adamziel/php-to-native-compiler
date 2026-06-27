@@ -8803,6 +8803,24 @@ static const PtnParameterMetadata PTN_INTERNAL_COLLATOR_GET_SORT_KEY_PARAMETERS[
     { "string", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
+    { "locale", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[] = {
+    { "languageTag", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "locale", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[] = {
+    { "languageTag", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "locale", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "canonicalize", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+    { "defaultLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[] = {
     { "hour", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
     { "minute", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
@@ -74365,32 +74383,476 @@ static PtnValue ptn_internal_locale_compose(PtnRuntime *runtime, size_t argc, co
     return ptn_owned_string(result);
 }
 
-static PtnValue ptn_internal_locale_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "locale_lookup", 1, "languageTag", args[0]);
-    if (array == NULL) {
-        return ptn_null();
+static int ptn_internal_locale_reject_null_byte(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand string
+) {
+    if (memchr(string.data, '\0', string.len) == NULL) {
+        return 0;
     }
-    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, "locale_lookup", 2, "locale", args[1], line);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must not contain any null bytes",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 1;
+}
+
+static PtnStringOperand ptn_internal_locale_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, function_name, position, argument_name, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return string;
+    }
+    if (ptn_internal_locale_reject_null_byte(runtime, function_name, position, argument_name, string)) {
+        ptn_string_operand_free(string);
+        return ptn_string_operand_borrowed("");
+    }
+    return string;
+}
+
+static int ptn_intl_locale_token_is_alpha(const char *token, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isalpha((unsigned char)token[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_locale_token_is_digit(const char *token, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isdigit((unsigned char)token[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_locale_token_equal_ci(const char *token, size_t len, const char *expected) {
+    return strlen(expected) == len && ptn_ascii_case_equal_n(token, expected, len);
+}
+
+static char *ptn_intl_locale_canonicalize_bytes(const char *data, size_t len) {
+    if (len == 0) {
+        return ptn_duplicate_string("");
+    }
+    if (ptn_intl_locale_token_equal_ci(data, len, "art-lojban")) {
+        return ptn_duplicate_string("jbo");
+    }
+    if (ptn_intl_locale_token_equal_ci(data, len, "i-lux")) {
+        return ptn_duplicate_string("lb");
+    }
+    if (ptn_intl_locale_token_equal_ci(data, len, "i-enochian")) {
+        return ptn_duplicate_string("@x=i-enochian");
+    }
+
+    const char *keyword = memchr(data, '@', len);
+    size_t core_len = keyword == NULL ? len : (size_t)(keyword - data);
+    PtnStringBuffer core;
+    ptn_string_buffer_init(&core);
+    int wrote_core = 0;
+    size_t token_index = 0;
+    size_t i = 0;
+    while (i < core_len) {
+        while (i < core_len && (data[i] == '-' || data[i] == '_')) {
+            i++;
+        }
+        size_t start = i;
+        while (i < core_len && data[i] != '-' && data[i] != '_') {
+            i++;
+        }
+        size_t token_len = i - start;
+        if (token_len == 0) {
+            continue;
+        }
+        if (token_len == 1 && token_index > 0 && ptn_intl_locale_token_is_alpha(data + start, token_len)) {
+            if (core.len == 0) {
+                ptn_string_buffer_append_char(&core, (char)tolower((unsigned char)data[start]));
+            } else {
+                ptn_string_buffer_append_char(&core, '@');
+                while (start < core_len) {
+                    while (start < core_len && (data[start] == '-' || data[start] == '_')) {
+                        start++;
+                    }
+                    if (start >= core_len) {
+                        break;
+                    }
+                    size_t key_start = start;
+                    while (start < core_len && data[start] != '-' && data[start] != '_') {
+                        start++;
+                    }
+                    size_t key_len = start - key_start;
+                    while (start < core_len && (data[start] == '-' || data[start] == '_')) {
+                        start++;
+                    }
+                    size_t value_start = start;
+                    while (start < core_len && data[start] != '-' && data[start] != '_') {
+                        start++;
+                    }
+                    size_t value_len = start - value_start;
+                    if (key_len == 0) {
+                        break;
+                    }
+                    if (core.data[core.len - 1] != '@') {
+                        ptn_string_buffer_append_char(&core, ';');
+                    }
+                    for (size_t j = 0; j < key_len; j++) {
+                        ptn_string_buffer_append_char(&core, (char)tolower((unsigned char)data[key_start + j]));
+                    }
+                    if (value_len > 0) {
+                        ptn_string_buffer_append_char(&core, '=');
+                        for (size_t j = 0; j < value_len; j++) {
+                            ptn_string_buffer_append_char(&core, (char)tolower((unsigned char)data[value_start + j]));
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        if (wrote_core) {
+            ptn_string_buffer_append_char(&core, '_');
+        }
+        if (token_index == 0) {
+            for (size_t j = 0; j < token_len; j++) {
+                ptn_string_buffer_append_char(&core, (char)tolower((unsigned char)data[start + j]));
+            }
+        } else if (token_len == 4 && ptn_intl_locale_token_is_alpha(data + start, token_len)) {
+            ptn_string_buffer_append_char(&core, (char)toupper((unsigned char)data[start]));
+            for (size_t j = 1; j < token_len; j++) {
+                ptn_string_buffer_append_char(&core, (char)tolower((unsigned char)data[start + j]));
+            }
+        } else {
+            for (size_t j = 0; j < token_len; j++) {
+                ptn_string_buffer_append_char(&core, (char)toupper((unsigned char)data[start + j]));
+            }
+        }
+        wrote_core = 1;
+        token_index++;
+    }
+    if (keyword != NULL) {
+        ptn_string_buffer_append_len(&core, keyword, len - core_len);
+    }
+    return core.data;
+}
+
+static PtnValue ptn_internal_locale_canonicalize_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(locale);
         return ptn_null();
     }
-    char *locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
+    char *canonical = ptn_intl_locale_canonicalize_bytes(locale.data, locale.len);
     ptn_string_operand_free(locale);
-    for (size_t i = 0; i < array->len; i++) {
-        char *candidate = ptn_intl_value_string_copy(array->entries[i].value);
-        if (ptn_ascii_case_equal(candidate, locale_copy)) {
-            free(locale_copy);
-            return ptn_owned_string(candidate);
-        }
-        free(candidate);
+    return ptn_owned_string(canonical);
+}
+
+static PtnValue ptn_internal_locale_canonicalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_canonicalize_named(runtime, "locale_canonicalize", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_canonicalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_canonicalize_named(runtime, "Locale::canonicalize", argc, args, line);
+}
+
+typedef struct {
+    char *tokens[16];
+    size_t len;
+} PtnIntlLocaleParts;
+
+static void ptn_intl_locale_parts_free(PtnIntlLocaleParts *parts) {
+    for (size_t i = 0; i < parts->len; i++) {
+        free(parts->tokens[i]);
+        parts->tokens[i] = NULL;
     }
-    free(locale_copy);
-    if (argc >= 4) {
-        char *fallback = ptn_intl_value_string_copy(args[3]);
+    parts->len = 0;
+}
+
+static PtnIntlLocaleParts ptn_intl_locale_parts_from_string(const char *value) {
+    PtnIntlLocaleParts parts;
+    parts.len = 0;
+    for (size_t i = 0; i < sizeof(parts.tokens) / sizeof(parts.tokens[0]); i++) {
+        parts.tokens[i] = NULL;
+    }
+    size_t len = strlen(value);
+    size_t i = 0;
+    while (i < len && value[i] != '@' && parts.len < sizeof(parts.tokens) / sizeof(parts.tokens[0])) {
+        while (i < len && (value[i] == '-' || value[i] == '_' || value[i] == '.')) {
+            i++;
+        }
+        size_t start = i;
+        while (i < len && value[i] != '-' && value[i] != '_' && value[i] != '.' && value[i] != '@') {
+            i++;
+        }
+        size_t token_len = i - start;
+        if (token_len == 0) {
+            continue;
+        }
+        char *token = malloc(token_len + 1);
+        if (token == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t j = 0; j < token_len; j++) {
+            token[j] = (char)tolower((unsigned char)value[start + j]);
+        }
+        token[token_len] = '\0';
+        parts.tokens[parts.len++] = token;
+    }
+    return parts;
+}
+
+static PtnIntlLocaleParts ptn_intl_locale_parts_from_operand(PtnStringOperand operand, int canonicalize) {
+    char *copy = canonicalize
+        ? ptn_intl_locale_canonicalize_bytes(operand.data, operand.len)
+        : ptn_duplicate_string_len(operand.data, operand.len);
+    PtnIntlLocaleParts parts = ptn_intl_locale_parts_from_string(copy);
+    free(copy);
+    return parts;
+}
+
+static int ptn_intl_locale_parts_prefix_match(PtnIntlLocaleParts *range, PtnIntlLocaleParts *tag) {
+    if (range->len == 0 || range->len > tag->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < range->len; i++) {
+        if (!ptn_ascii_case_equal(range->tokens[i], tag->tokens[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_locale_parts_equal_prefix(PtnIntlLocaleParts *candidate, PtnIntlLocaleParts *range, size_t range_len) {
+    if (candidate->len != range_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < range_len; i++) {
+        if (!ptn_ascii_case_equal(candidate->tokens[i], range->tokens[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char *ptn_intl_locale_join_prefix(PtnIntlLocaleParts *parts, size_t len) {
+    PtnStringBuffer out;
+    ptn_string_buffer_init(&out);
+    for (size_t i = 0; i < len && i < parts->len; i++) {
+        if (i > 0) {
+            ptn_string_buffer_append_char(&out, '_');
+        }
+        ptn_string_buffer_append(&out, parts->tokens[i]);
+    }
+    return out.data;
+}
+
+static PtnValue ptn_internal_locale_lookup_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, function_name, 1, "languageTag", args[0]);
+    if (array == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 2, "locale", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    int canonicalize = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnStringOperand default_locale = { NULL, 0, 0 };
+    int has_default = 0;
+    if (argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL) {
+        default_locale =
+            ptn_internal_locale_expect_string_arg(runtime, function_name, 4, "defaultLocale", args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locale);
+            ptn_string_operand_free(default_locale);
+            return ptn_null();
+        }
+        has_default = 1;
+    }
+
+    PtnIntlLocaleParts range = ptn_intl_locale_parts_from_operand(locale, canonicalize);
+    ptn_string_operand_free(locale);
+    for (size_t want = range.len; want > 0; want--) {
+        for (size_t i = 0; i < array->len; i++) {
+            char *candidate = ptn_intl_value_string_copy(array->entries[i].value);
+            char *candidate_source = canonicalize
+                ? ptn_intl_locale_canonicalize_bytes(candidate, strlen(candidate))
+                : ptn_duplicate_string(candidate);
+            PtnIntlLocaleParts candidate_parts = ptn_intl_locale_parts_from_string(candidate_source);
+            free(candidate_source);
+            if (ptn_intl_locale_parts_equal_prefix(&candidate_parts, &range, want)) {
+                char *canonical_result = canonicalize
+                    ? ptn_intl_locale_join_prefix(&range, want)
+                    : NULL;
+                ptn_intl_locale_parts_free(&candidate_parts);
+                ptn_intl_locale_parts_free(&range);
+                if (has_default) {
+                    ptn_string_operand_free(default_locale);
+                }
+                if (canonicalize) {
+                    free(candidate);
+                    return ptn_owned_string(canonical_result);
+                }
+                return ptn_owned_string(candidate);
+            }
+            ptn_intl_locale_parts_free(&candidate_parts);
+            free(candidate);
+        }
+    }
+    ptn_intl_locale_parts_free(&range);
+    if (has_default) {
+        char *fallback = ptn_duplicate_string_len(default_locale.data, default_locale.len);
+        ptn_string_operand_free(default_locale);
         return ptn_owned_string(fallback);
     }
     return ptn_null();
+}
+
+static PtnValue ptn_internal_locale_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_lookup_named(runtime, "locale_lookup", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_lookup_named(runtime, "Locale::lookup", argc, args, line);
+}
+
+static const char *ptn_intl_locale_display_language_name(const char *language, const char *display_locale) {
+    int fr = display_locale != NULL && ptn_ascii_case_equal_n(display_locale, "fr", 2);
+    int de = display_locale != NULL && ptn_ascii_case_equal_n(display_locale, "de", 2);
+    if (ptn_ascii_case_equal(language, "root")) return fr ? "racine" : (de ? "Root" : "Root");
+    if (ptn_ascii_case_equal(language, "uk")) return fr ? "ukrainien" : (de ? "Ukrainisch" : "Ukrainian");
+    if (ptn_ascii_case_equal(language, "de")) return fr ? "allemand" : (de ? "Deutsch" : "German");
+    if (ptn_ascii_case_equal(language, "fr")) return fr ? "français" : (de ? "Französisch" : "French");
+    if (ptn_ascii_case_equal(language, "ja")) return fr ? "japonais" : (de ? "Japanisch" : "Japanese");
+    if (ptn_ascii_case_equal(language, "jbo")) return fr ? "lojban" : "Lojban";
+    if (ptn_ascii_case_equal(language, "zh")) return fr ? "chinois" : (de ? "Chinesisch" : "Chinese");
+    if (ptn_ascii_case_equal(language, "sr")) return fr ? "serbe" : (de ? "Serbisch" : "Serbian");
+    if (ptn_ascii_case_equal(language, "sl")) return fr ? "slovène" : (de ? "Slowenisch" : "Slovenian");
+    if (ptn_ascii_case_equal(language, "en")) return fr ? "anglais" : (de ? "Englisch" : "English");
+    if (ptn_ascii_case_equal(language, "es")) return fr ? "espagnol" : (de ? "Spanisch" : "Spanish");
+    if (ptn_ascii_case_equal(language, "az")) return fr ? "azerbaïdjanais" : (de ? "Aserbaidschanisch" : "Azerbaijani");
+    if (ptn_ascii_case_equal(language, "ar")) return fr ? "arabe" : (de ? "Arabisch" : "Arabic");
+    return NULL;
+}
+
+static char *ptn_intl_locale_primary_language_display_copy(PtnStringOperand locale) {
+    if (locale.len == 0) {
+        return ptn_duplicate_string("");
+    }
+    if (ptn_string_operand_ascii_case_equal(locale, "root")) {
+        return ptn_duplicate_string("root");
+    }
+    if (locale.len >= 2 &&
+        (locale.data[0] == 'x' || locale.data[0] == 'X' || locale.data[0] == 'i' || locale.data[0] == 'I') &&
+        (locale.data[1] == '-' || locale.data[1] == '_')) {
+        return ptn_duplicate_string_len(locale.data, locale.len);
+    }
+    if (ptn_string_operand_ascii_case_equal(locale, "art-lojban")) {
+        return ptn_duplicate_string("jbo");
+    }
+    size_t end = 0;
+    while (end < locale.len && locale.data[end] != '-' && locale.data[end] != '_' && locale.data[end] != '@' && locale.data[end] != '.') {
+        end++;
+    }
+    if (end == 0) {
+        return ptn_duplicate_string("");
+    }
+    char *primary = malloc(end + 1);
+    if (primary == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < end; i++) {
+        primary[i] = (char)tolower((unsigned char)locale.data[i]);
+    }
+    primary[end] = '\0';
+    return primary;
+}
+
+static PtnValue ptn_internal_locale_get_display_language_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    PtnStringOperand display_locale = { NULL, 0, 0 };
+    int has_display_locale = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        display_locale =
+            ptn_internal_locale_expect_string_arg(runtime, function_name, 2, "displayLocale", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locale);
+            ptn_string_operand_free(display_locale);
+            return ptn_null();
+        }
+        has_display_locale = 1;
+    }
+    char *language = ptn_intl_locale_primary_language_display_copy(locale);
+    const char *display = ptn_intl_locale_display_language_name(
+        language,
+        has_display_locale ? display_locale.data : NULL
+    );
+    char *result = display == NULL ? ptn_duplicate_string(language) : ptn_duplicate_string(display);
+    free(language);
+    ptn_string_operand_free(locale);
+    if (has_display_locale) {
+        ptn_string_operand_free(display_locale);
+    }
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_owned_string(result);
+}
+
+static PtnValue ptn_internal_locale_get_display_language(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_language_named(runtime, "locale_get_display_language", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_language(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_display_language_named(runtime, "Locale::getDisplayLanguage", argc, args, line);
 }
 
 static PtnValue ptn_internal_locale_get_display_name_named(
@@ -74401,7 +74863,8 @@ static PtnValue ptn_internal_locale_get_display_name_named(
     size_t line
 ) {
     (void)argc;
-    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(locale);
         return ptn_null();
@@ -74428,6 +74891,136 @@ static PtnValue ptn_internal_locale_get_display_name(PtnRuntime *runtime, size_t
 
 static PtnValue ptn_internal_locale_static_get_display_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_locale_get_display_name_named(runtime, "Locale::getDisplayName", argc, args, line);
+}
+
+static char *ptn_intl_locale_region_copy(PtnStringOperand locale) {
+    size_t len = locale.len;
+    if (len == 0) {
+        return ptn_duplicate_string("");
+    }
+    size_t i = 0;
+    while (i < len && locale.data[i] != '-' && locale.data[i] != '_' && locale.data[i] != '@' && locale.data[i] != '.') {
+        i++;
+    }
+    size_t language_len = i;
+    if (language_len == 0 ||
+        (language_len == 1 && (locale.data[0] == 'i' || locale.data[0] == 'I' || locale.data[0] == 'x' || locale.data[0] == 'X')) ||
+        (language_len == 4 && ptn_ascii_case_equal_n(locale.data, "root", 4))) {
+        return ptn_duplicate_string("");
+    }
+    while (i < len && (locale.data[i] == '-' || locale.data[i] == '_')) {
+        i++;
+    }
+    if (i >= len || locale.data[i] == '@' || locale.data[i] == '.') {
+        return ptn_duplicate_string("");
+    }
+    size_t start = i;
+    while (i < len && locale.data[i] != '-' && locale.data[i] != '_' && locale.data[i] != '@' && locale.data[i] != '.') {
+        i++;
+    }
+    size_t token_len = i - start;
+    if (token_len == 4 && ptn_intl_locale_token_is_alpha(locale.data + start, token_len)) {
+        while (i < len && (locale.data[i] == '-' || locale.data[i] == '_')) {
+            i++;
+        }
+        if (i >= len || locale.data[i] == '@' || locale.data[i] == '.') {
+            return ptn_duplicate_string("");
+        }
+        start = i;
+        while (i < len && locale.data[i] != '-' && locale.data[i] != '_' && locale.data[i] != '@' && locale.data[i] != '.') {
+            i++;
+        }
+        token_len = i - start;
+    }
+    if (token_len == 0) {
+        return ptn_duplicate_string("");
+    }
+    char *region = malloc(token_len + 1);
+    if (region == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t j = 0; j < token_len; j++) {
+        region[j] = (char)toupper((unsigned char)locale.data[start + j]);
+    }
+    region[token_len] = '\0';
+    return region;
+}
+
+static PtnValue ptn_internal_locale_get_region_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    char *region = ptn_intl_locale_region_copy(locale);
+    ptn_string_operand_free(locale);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_owned_string(region);
+}
+
+static PtnValue ptn_internal_locale_get_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "locale_get_region", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "Locale::getRegion", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_get_display_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "locale_get_display_region", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_region(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_get_region_named(runtime, "Locale::getDisplayRegion", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_empty_display_component_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand locale =
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    ptn_string_operand_free(locale);
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        PtnStringOperand display_locale =
+            ptn_internal_locale_expect_string_arg(runtime, function_name, 2, "displayLocale", args[1], line);
+        ptn_string_operand_free(display_locale);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    return ptn_string("");
+}
+
+static PtnValue ptn_internal_locale_get_display_script(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_empty_display_component_named(runtime, "locale_get_display_script", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_script(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_empty_display_component_named(runtime, "Locale::getDisplayScript", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_get_display_variant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_empty_display_component_named(runtime, "locale_get_display_variant", argc, args, line);
+}
+
+static PtnValue ptn_internal_locale_static_get_display_variant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_locale_empty_display_component_named(runtime, "Locale::getDisplayVariant", argc, args, line);
 }
 
 typedef struct {
@@ -74591,32 +75184,27 @@ static PtnValue ptn_internal_locale_filter_matches_named(
     const PtnValue *args,
     size_t line
 ) {
-    (void)argc;
     PtnStringOperand language_tag =
-        ptn_internal_expect_string_arg(runtime, function_name, 1, "languageTag", args[0], line);
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 1, "languageTag", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(language_tag);
         return ptn_null();
     }
     PtnStringOperand locale =
-        ptn_internal_expect_string_arg(runtime, function_name, 2, "locale", args[1], line);
+        ptn_internal_locale_expect_string_arg(runtime, function_name, 2, "locale", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(language_tag);
         ptn_string_operand_free(locale);
         return ptn_null();
     }
-    char *language_primary = ptn_intl_locale_primary_language_copy(language_tag);
-    char *locale_primary = ptn_intl_locale_primary_language_copy(locale);
+    int canonicalize = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnIntlLocaleParts tag_parts = ptn_intl_locale_parts_from_operand(language_tag, canonicalize);
+    PtnIntlLocaleParts range_parts = ptn_intl_locale_parts_from_operand(locale, canonicalize);
     ptn_string_operand_free(language_tag);
     ptn_string_operand_free(locale);
-    int matches = 0;
-    if (language_primary != NULL && locale_primary != NULL) {
-        matches = !ptn_ascii_case_equal(language_primary, "und") &&
-            !ptn_ascii_case_equal(locale_primary, "und") &&
-            ptn_ascii_case_equal(language_primary, locale_primary);
-    }
-    free(language_primary);
-    free(locale_primary);
+    int matches = ptn_intl_locale_parts_prefix_match(&range_parts, &tag_parts);
+    ptn_intl_locale_parts_free(&tag_parts);
+    ptn_intl_locale_parts_free(&range_parts);
     return ptn_bool(matches);
 }
 
@@ -159477,11 +160065,28 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "libxml_use_internal_errors", 0, 1, ptn_internal_libxml_use_internal_errors },
         { "link", 2, 2, ptn_internal_link },
         { "linkinfo", 1, 1, ptn_internal_linkinfo },
+        { "Locale::canonicalize", 1, 1, ptn_internal_locale_static_canonicalize },
+        { "Locale::filterMatches", 2, 3, ptn_internal_locale_static_filter_matches },
+        { "Locale::getDisplayLanguage", 1, 2, ptn_internal_locale_static_get_display_language },
+        { "Locale::getDisplayName", 1, 2, ptn_internal_locale_static_get_display_name },
+        { "Locale::getDisplayRegion", 1, 2, ptn_internal_locale_static_get_display_region },
+        { "Locale::getDisplayScript", 1, 2, ptn_internal_locale_static_get_display_script },
+        { "Locale::getDisplayVariant", 1, 2, ptn_internal_locale_static_get_display_variant },
+        { "Locale::getKeywords", 1, 1, ptn_internal_locale_static_get_keywords },
+        { "Locale::getPrimaryLanguage", 1, 1, ptn_internal_locale_static_get_primary_language },
+        { "Locale::getRegion", 1, 1, ptn_internal_locale_static_get_region },
+        { "Locale::lookup", 2, 4, ptn_internal_locale_static_lookup },
+        { "locale_canonicalize", 1, 1, ptn_internal_locale_canonicalize },
         { "locale_compose", 1, 1, ptn_internal_locale_compose },
         { "locale_filter_matches", 2, 3, ptn_internal_locale_filter_matches },
+        { "locale_get_display_language", 1, 2, ptn_internal_locale_get_display_language },
         { "locale_get_display_name", 1, 2, ptn_internal_locale_get_display_name },
+        { "locale_get_display_region", 1, 2, ptn_internal_locale_get_display_region },
+        { "locale_get_display_script", 1, 2, ptn_internal_locale_get_display_script },
+        { "locale_get_display_variant", 1, 2, ptn_internal_locale_get_display_variant },
         { "locale_get_keywords", 1, 1, ptn_internal_locale_get_keywords },
         { "locale_get_primary_language", 1, 1, ptn_internal_locale_get_primary_language },
+        { "locale_get_region", 1, 1, ptn_internal_locale_get_region },
         { "locale_lookup", 2, 4, ptn_internal_locale_lookup },
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "localtime", 0, 2, ptn_internal_localtime },
@@ -160039,6 +160644,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
             return "intl";
         }
         if (ptn_internal_function_name_has_prefix(name, "Collator::") ||
+            ptn_internal_function_name_has_prefix(name, "Locale::") ||
             ptn_internal_function_name_has_prefix(name, "NumberFormatter::") ||
             ptn_internal_function_name_has_prefix(name, "Spoofchecker::") ||
             ptn_internal_function_name_has_prefix(name, "UConverter::")) {
@@ -160116,8 +160722,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_internal_function_name_has_prefix(name, "grapheme_") ||
         ptn_internal_function_name_has_prefix(name, "intltz_") ||
         ptn_internal_function_name_has_prefix(name, "numfmt_") ||
-        ptn_ascii_case_equal(name, "locale_compose") ||
-        ptn_ascii_case_equal(name, "locale_lookup")) {
+        ptn_internal_function_name_has_prefix(name, "locale_")) {
         return "intl";
     }
     if (ptn_internal_function_name_has_prefix(name, "mb_")) {
