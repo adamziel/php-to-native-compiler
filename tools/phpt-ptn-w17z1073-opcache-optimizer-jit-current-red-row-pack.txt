@@ -1,0 +1,18 @@
+# Focused PHPT row pack for ptn-w17z.1073.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1073-opcache-optimizer-jit-current-red-row-pack.txt
+#
+# bucket: opcache-optimizer-jit-current-red rows=12
+ext/opcache/tests/opt/dce_003.phpt
+ext/opcache/tests/match/002.phpt
+ext/opcache/tests/jit/shift_right_004.phpt
+ext/opcache/tests/opt/nullsafe_002.phpt
+ext/opcache/tests/opt/sccp_031.phpt
+ext/opcache/tests/opt/sccp_021.phpt
+ext/opcache/tests/opt/sccp_011.phpt
+ext/opcache/tests/preload_trait_multiple_fixup.phpt
+ext/opcache/tests/opt/inference_frameless.phpt
+ext/opcache/tests/opt/sccp_001.phpt
+ext/opcache/tests/preload_002.phpt
+ext/opcache/tests/parent_type_not_interned.phpt
