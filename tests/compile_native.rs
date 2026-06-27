@@ -14182,6 +14182,36 @@ fn phpc_renders_builtin_attribute_constructor_type_errors() {
 }
 
 #[test]
+fn compile_builtin_error_constructor_type_error_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-error-constructor-type-error-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-constructor-type-error-trace.php");
+    let output = root.join("error-constructor-type-error-trace-bin");
+    fs::write(&input, "<?php\nthrow new Error(new stdClass);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Error::__construct(): Argument #1 ($message) must be of type string, stdClass given"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("Error->__construct(Object(stdClass))"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("Error::__construct(Object(stdClass))"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn phpc_renders_undefined_goto_label_as_php_fatal() {
     let root = temp_dir("ptn-phpc-undefined-goto-label");
     fs::create_dir_all(&root).unwrap();
@@ -22883,6 +22913,61 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+}
+
+#[test]
+fn compile_generator_get_return_finally_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-get-return-finally-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-get-return-finally-precedence.php");
+    let output = root.join("generator-get-return-finally-precedence-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen1() {
+    try {
+        throw new Exception("gen1() throw");
+    } finally {
+        return 42;
+    }
+    yield;
+}
+
+var_dump(gen1()->getReturn());
+
+function gen2() {
+    try {
+        return 42;
+    } finally {
+        throw new Exception("gen2() throw");
+    }
+    yield;
+}
+
+$gen = gen2();
+try {
+    var_dump($gen->getReturn());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump($gen->getReturn());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\ngen2() throw\nCannot get return value of a generator that hasn't returned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -37442,6 +37527,59 @@ echo \"Unreachable fallthrough\\n\";
     );
     assert!(!stderr.contains("Unreachable catch"), "{stderr}");
     assert!(!stderr.contains("Unreachable fallthrough"), "{stderr}");
+}
+
+#[test]
+fn compile_catch_variable_replacement_destructor_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-catch-variable-destructor-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("catch-variable-destructor-trace.php");
+    let output = root.join("catch-variable-destructor-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    function __destruct() {
+        throw new Exception("ops 1");
+    }
+}
+
+function test() {
+    $e = new Foo();
+    try {
+        throw new Exception("ops 2");
+    } catch (Exception $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+test();
+echo "bug\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let path = input.display().to_string();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: ops 1"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("#0 {path}(12): Foo->__destruct()")),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("#1 {path}(17): test()")),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("ops 2\n"), "{stderr}");
+    assert!(!stderr.contains("bug\n"), "{stderr}");
 }
 
 #[test]

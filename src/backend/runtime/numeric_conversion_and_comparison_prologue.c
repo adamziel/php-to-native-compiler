@@ -1257,7 +1257,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_variable_result_at(PtnRuntime *runt
         return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set_with_runtime_scope(symbols, name, result, runtime);
+    ptn_symbols_set_with_runtime_scope_at(symbols, name, result, runtime, line);
     return result;
 }
 

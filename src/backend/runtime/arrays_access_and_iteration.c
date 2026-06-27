@@ -10467,14 +10467,13 @@ static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtim
         runtime->exceptions == NULL ||
         runtime->exceptions->active_exception == NULL ||
         generator == NULL ||
-        generator->values == NULL ||
-        generator->values->len == 0
+        generator->values == NULL
     ) {
         return 0;
     }
     ptn_value_destroy(&generator->pending_exception);
     generator->pending_exception = ptn_value_clone(ptn_exception_borrow(runtime->exceptions->active_exception));
-    generator->pending_exception_position = generator->values->len - 1;
+    generator->pending_exception_position = generator->values->len == 0 ? 0 : generator->values->len - 1;
     generator->has_pending_exception = 1;
     generator->pending_exception_on_rewind =
         runtime->generator_aborted_after_yield && runtime->generator_aborted_rethrow_on_rewind ? 1 : 0;
@@ -11223,6 +11222,17 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (generator != NULL && generator->has_pending_exception) {
+        ptn_generator_throw_pending_exception_at_position(
+            runtime,
+            generator,
+            generator->pending_exception_position,
+            line,
+            "rewind",
+            1
+        );
+        return ptn_null();
+    }
     if (generator == NULL || !generator->completed) {
         ptn_throw_exception(
             runtime,
@@ -13449,6 +13459,16 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
         generator->keys != NULL &&
         iterator.index < iterator.array->len &&
         generator->keys->len >= iterator.array->len;
+    if (!iterator.valid && generator->has_pending_exception) {
+        ptn_generator_throw_pending_exception_at_position(
+            runtime,
+            generator,
+            generator->pending_exception_position,
+            line,
+            "rewind",
+            1
+        );
+    }
     iterator.live = 1;
     ptn_object_retain(object);
     ptn_array_iterator_retain(iterator.array);

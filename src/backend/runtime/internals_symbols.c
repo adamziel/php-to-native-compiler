@@ -880,7 +880,11 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runti
     }
     const char *previous_scope = root->destructor_access_scope;
     size_t previous_call_site_line = root->call_site_line;
+    PtnTraceFrame *previous_trace_frame = root->trace_frame;
     root->destructor_access_scope = runtime->current_class_name;
+    if (runtime != root && runtime->trace_frame != NULL) {
+        root->trace_frame = runtime->trace_frame;
+    }
     if (line != 0) {
         root->call_site_line = line;
     } else if (runtime != root && runtime->call_site_line != 0) {
@@ -892,9 +896,27 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runti
     ) {
         root->call_site_line = runtime->trace_frame->line;
     }
-    ptn_value_destroy(value);
+    PtnTryFrame frame;
+    int caught_exception = 0;
+    int frame_active = root->exceptions != NULL;
+    if (frame_active) {
+        ptn_try_frame_push(root, &frame);
+        if (setjmp(frame.jump) != 0) {
+            caught_exception = 1;
+        }
+    }
+    if (!caught_exception) {
+        ptn_value_destroy(value);
+    }
+    if (frame_active) {
+        ptn_try_frame_pop(root, &frame);
+    }
+    root->trace_frame = previous_trace_frame;
     root->call_site_line = previous_call_site_line;
     root->destructor_access_scope = previous_scope;
+    if (caught_exception) {
+        ptn_rethrow_exception(root);
+    }
 }
 
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value) {

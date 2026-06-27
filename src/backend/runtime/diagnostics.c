@@ -94,11 +94,12 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     ptn_symbols_set_len(symbols, name, strlen(name), value);
 }
 
-static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
+static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at(
     PtnSymbolTable *symbols,
     const char *name,
     PtnValue value,
-    PtnRuntime *runtime
+    PtnRuntime *runtime,
+    size_t line
 ) {
     PtnValue stored_value = ptn_value_clone(value);
     ptn_gc_attach_value_runtime(runtime, stored_value, 0);
@@ -109,7 +110,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
         ptn_array_note_value_replacement(old_value, stored_value);
         symbols->items[index].value = stored_value;
         symbols->mutation_epoch++;
-        ptn_value_destroy_with_runtime_scope(runtime, &old_value);
+        ptn_value_destroy_with_runtime_scope_at(runtime, &old_value, line);
         return;
     }
     if (symbols->len == symbols->capacity) {
@@ -128,6 +129,15 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
     symbols->len++;
     symbols->mutation_epoch++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
+}
+
+static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
+    PtnSymbolTable *symbols,
+    const char *name,
+    PtnValue value,
+    PtnRuntime *runtime
+) {
+    ptn_symbols_set_with_runtime_scope_at(symbols, name, value, runtime, 0);
 }
 
 static int ptn_symbols_get_len(PtnSymbolTable *symbols, const char *name, size_t name_len, PtnValue *out) {

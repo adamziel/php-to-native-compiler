@@ -29321,6 +29321,7 @@ fn emit_instruction(
                         out.push_str("));\n");
                         emit_value_cleanup(out, "    ", &return_temp);
                     }
+                    emit_exceptional_finally_return_override(out, values);
                     let context_indices = return_cleanup_context_indices(finally_stack);
                     emit_jump_through_finally_contexts_with_line(
                         out,
@@ -29380,6 +29381,7 @@ fn emit_instruction(
                     out.push_str("));\n");
                     emit_value_cleanup(out, "    ", &result_value);
                 }
+                emit_exceptional_finally_return_override(out, values);
                 let context_indices = return_cleanup_context_indices(finally_stack);
                 emit_jump_through_finally_contexts_with_line(
                     out,
@@ -30937,6 +30939,29 @@ fn emit_exceptional_finally_and_rethrow(
     out.push_str("}\n");
     out.push_str(indent);
     out.push_str("ptn_rethrow_exception(&runtime);\n");
+}
+
+fn emit_exceptional_finally_return_override(out: &mut String, values: &ValueEmitter) {
+    if let Some(saved_exception_temp) = &values.exceptional_finally_saved_exception {
+        out.push_str("    if (");
+        out.push_str(saved_exception_temp);
+        out.push_str(" != NULL) {\n");
+        out.push_str("        if (runtime.exceptions->active_exception == ");
+        out.push_str(saved_exception_temp);
+        out.push_str(") {\n");
+        out.push_str("            runtime.exceptions->active_exception = NULL;\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_exception_free(");
+        out.push_str(saved_exception_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(saved_exception_temp);
+        out.push_str(" = NULL;\n");
+        out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("            runtime.generator_chained_exception_during_unwind = 0;\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+    }
 }
 
 fn emit_finally_instructions(
