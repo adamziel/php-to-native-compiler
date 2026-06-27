@@ -5378,6 +5378,11 @@ fn lower_interpolated_string(
             }),
             line,
         }),
+        AstStringPart::Expression(expr) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(lower_expr(expr)),
+            line,
+        }),
         AstStringPart::LegacyDollarBraceVariable(name) => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(ValueExpr::LegacyDollarBraceStringVariable {

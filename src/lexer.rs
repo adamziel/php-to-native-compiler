@@ -219,6 +219,7 @@ pub enum TokenKind {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    Expression(String),
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(String),
     DynamicVariableExpression(String),
@@ -1135,10 +1136,10 @@ impl<'a> Lexer<'a> {
                         self.bump_char();
                         self.skip_interpolation_whitespace();
                         if !matches!(self.peek_char(), Some(')')) {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_char_span()),
-                            ));
+                            let tail = self.read_balanced_interpolation_expression(start)?;
+                            return Ok(StringPart::Expression(format!(
+                                "${array}->{first_member}({tail}"
+                            )));
                         }
                         self.bump_char();
                         self.skip_interpolation_whitespace();
