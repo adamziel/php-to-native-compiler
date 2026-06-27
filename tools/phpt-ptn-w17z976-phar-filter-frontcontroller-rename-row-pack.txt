@@ -1,0 +1,15 @@
+# ptn-w17z.976 PHAR/zlib/filter/stream frontcontroller/rename/base64 current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T000944Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/frontcontroller19.phpt
+ext/phar/tests/tar/rename_dir.phpt
+ext/phar/tests/phar_create_in_cwd.phpt
+ext/phar/tests/tar/open_for_write_existing_b.phpt
+ext/standard/tests/filters/user_streams_consumed_bug.phpt
+ext/standard/tests/streams/bug40459.phpt
+ext/standard/tests/filters/filter_errors_convert_base64_decode.phpt
+ext/standard/tests/streams/gh8409.phpt
+ext/zlib/tests/gzeof_variation1.phpt
+ext/phar/tests/phar_buildfromiterator6.phpt
+ext/phar/tests/zip/bug48791.phpt
+ext/standard/tests/streams/bug72075.phpt

@@ -314,6 +314,9 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#define PTN_STREAM_CLIENT_PERSISTENT 1
+#define PTN_STREAM_CLIENT_ASYNC_CONNECT 2
+#define PTN_STREAM_CLIENT_CONNECT 4
 #define PTN_ZLIB_ENCODING_RAW -15
 #define PTN_ZLIB_ENCODING_GZIP 31
 #define PTN_ZLIB_ENCODING_DEFLATE 15
@@ -1318,6 +1321,7 @@ struct PtnStreamFilter {
     char *filter_line_break;
     size_t filter_line_break_len;
     int filter_line_break_configured;
+    int base64_invalid_sequence;
     int quoted_printable_invalid_sequence;
     size_t dechunk_remaining;
     size_t dechunk_size;

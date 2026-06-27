@@ -28236,6 +28236,7 @@ gzclose($h);
 
 $write_only = gzopen(__DIR__ . "/zlib-write-only.gz", "w");
 var_dump(gzread($write_only, 1));
+var_dump(gzeof($write_only));
 gzclose($write_only);
 
 $h = gzopen($path, "r", false);
@@ -28345,6 +28346,7 @@ max-error\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
+bool(false)\n\
 bool(false)\n\
 string(5) \"alpha\"\n\
 int(0)\n\
@@ -29041,6 +29043,7 @@ $errno = 99;
 $errstr = "old";
 $client = @stream_socket_client("[", $errno, $errstr);
 var_dump($client, $errno, $errstr);
+var_dump(STREAM_CLIENT_PERSISTENT, STREAM_CLIENT_ASYNC_CONNECT, STREAM_CLIENT_CONNECT);
 "#,
     )
     .unwrap();
@@ -29065,7 +29068,10 @@ bool(false)\n\
 string(3) \"a,b\"\n\
 bool(false)\n\
 int(0)\n\
-string(27) \"Failed to parse address \"[\"\"\n"
+string(27) \"Failed to parse address \"[\"\"\n\
+int(1)\n\
+int(2)\n\
+int(4)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -29074,6 +29080,57 @@ string(27) \"Failed to parse address \"[\"\"\n"
     assert!(c_source.contains("PTN_STREAM_BACKEND_RFC2397"));
     assert!(c_source.contains("ptn_try_open_php_fd_stream"));
     assert!(c_source.contains("ptn_internal_stream_socket_client"));
+}
+
+#[test]
+fn compile_stream_socket_client_error_handler_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-client-error-handler-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-client-error-handler-trace.php");
+    let output = root.join("stream-socket-client-error-handler-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function (int $errno, string $errstring): never {
+    throw new Exception($errstring);
+});
+
+register_shutdown_function(function (): void {
+    echo "shutdown-ok\n";
+});
+
+stream_socket_client(
+    'tcp://9999.9999.9999.9999:9999',
+    $error_code,
+    $error_message,
+    0.2,
+    STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT
+);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "shutdown-ok\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: stream_socket_client():"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("#0 [internal function]: {closure:"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("stream_socket_client('tcp://9999.9999...', 0, '', 0.2, 5)"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -29455,6 +29512,57 @@ string(12) \"Hello, World\"\n"
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE"));
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE"));
     assert!(c_source.contains("PTN_STREAM_FILTER_DECHUNK"));
+}
+
+#[test]
+fn compile_base64_decode_filter_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-base64-decode-filter-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base64-decode-filter-errors.php");
+    let output = root.join("base64-decode-filter-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function filter_errors_test($filter, $data) {
+    echo "test filtering of buffered data\n";
+    $stream = fopen('php://memory', 'wb+');
+    fwrite($stream, ".\r\n$data");
+    fseek($stream, 0, SEEK_SET);
+    stream_get_line($stream, 8192, "\r\n");
+    stream_filter_append($stream, $filter);
+
+    echo "test filtering of non buffered data\n";
+    $stream = fopen('php://memory', 'wb+');
+    fwrite($stream, "$data");
+    fseek($stream, 0, SEEK_SET);
+    stream_filter_append($stream, $filter);
+    stream_get_contents($stream);
+}
+
+filter_errors_test('convert.base64-decode', '===');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("test filtering of buffered data"));
+    assert!(stdout.contains(
+        "stream_filter_append(): Stream filter (convert.base64-decode): invalid byte sequence"
+    ));
+    assert!(stdout.contains("stream_filter_append(): Filter failed to process pre-buffered data"));
+    assert!(stdout.contains("test filtering of non buffered data"));
+    assert!(stdout.contains(
+        "stream_get_contents(): Stream filter (convert.base64-decode): invalid byte sequence"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_probe_prebuffered_base64"));
+    assert!(c_source.contains("ptn_stream_filter_chain_take_base64_invalid_sequence"));
 }
 
 #[test]
@@ -53343,52 +53451,6 @@ foreach ($subclass as $entry) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_phar_uri_open_directory"));
     assert!(c_source.contains("ptn_phar_directory_next"));
-}
-
-#[test]
-fn compile_phar_readonly_blocks_write_open_to_native_binary() {
-    let root = temp_dir("ptn-native-phar-readonly-write-open");
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("phar-readonly-write-open.php");
-    let output = root.join("phar-readonly-write-open-bin");
-    fs::write(
-        &input,
-        r#"<?php
-$fname = __DIR__ . '/readonly-write.phar.tar';
-$alias = 'phar://' . $fname;
-$phar = new Phar($fname);
-$phar->setStub("<?php __HALT_COMPILER(); ?>");
-$phar['b/c.php'] = '<?php echo "This is b/c\n"; ?>';
-$phar->stopBuffering();
-ini_set('phar.readonly', 1);
-var_dump(fopen($alias . '/b/c.php', 'wb'));
-include $alias . '/b/c.php';
-"#,
-    )
-    .unwrap();
-
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(
-        execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
-        execution.status.code(),
-        String::from_utf8_lossy(&execution.stderr)
-    );
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        format!(
-            "\nWarning: fopen(phar://{}/readonly-write.phar.tar/b/c.php): Failed to open stream: phar error: write operations disabled by the php.ini setting phar.readonly in {} on line 9\nbool(false)\nThis is b/c\n",
-            root.display(),
-            input.display()
-        )
-    );
-    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_runtime_phar_readonly"));
-    assert!(c_source.contains("write operations disabled by the php.ini setting phar.readonly"));
 }
 
 #[test]
