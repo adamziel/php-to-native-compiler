@@ -26997,6 +26997,72 @@ var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
 }
 
 #[test]
+fn compile_datetime_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-datetime-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-subclass-serialize-order.php");
+    let output = root.join("datetime-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DateTimeImmutable
+{
+    private int $var1 = 1;
+    private $var2 = 0;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct()
+    {
+        parent::__construct('2023-03-03 16:24');
+        $this->var2 = 2;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+        echo $this->format('Y-m-d H:i:s.u T e'), "\n";
+    }
+}
+
+$i = new I;
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+$u = unserialize($s);
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "O:1:\"I\":7:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n\
+int(1)\n\
+int(2)\n\
+int(3)\n\
+int(4)\n\
+2023-03-03 16:24:00.000000 UTC UTC\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
+    assert!(c_source.contains("ptn_datetime_call_method"));
+}
+
+#[test]
 fn compile_datetime_timestamp_microseconds_and_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timestamp-microseconds-offsets");
     fs::create_dir_all(&root).unwrap();

@@ -11758,6 +11758,16 @@ static void ptn_serialize_append_object_payload(
     PtnValue payload,
     PtnSerializeState *state
 );
+static void ptn_serialize_append_object_payload_with_extra_properties(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnValue payload,
+    PtnSerializeState *state,
+    int (*is_internal_key)(PtnArrayKey)
+);
+static int ptn_datetime_serialized_key_is_internal(PtnArrayKey key);
+static int ptn_date_interval_serialized_key_is_internal(PtnArrayKey key);
+static int ptn_date_period_serialized_key_is_internal(PtnArrayKey key);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_object_error(
     PtnRuntime *runtime,
@@ -11765,6 +11775,14 @@ static void ptn_date_throw_uninitialized_object_error(
     const char *ancestor
 );
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED PtnValue ptn_datetime_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_date_period_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -11922,10 +11940,24 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
         object->native_data != NULL &&
         state != NULL &&
         state->runtime != NULL &&
-        (ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval") ||
+        (ptn_declared_class_is_same_or_descendant(object->class_name, "DateTime") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval") ||
          ptn_declared_class_is_same_or_descendant(object->class_name, "DatePeriod"))) {
-        int is_interval = ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval");
-        PtnValue payload = is_interval
+        int is_datetime = ptn_declared_class_is_same_or_descendant(object->class_name, "DateTime") ||
+            ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable");
+        int is_interval = !is_datetime &&
+            ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval");
+        PtnValue payload = is_datetime
+            ? ptn_datetime_call_method(
+                state->runtime,
+                ptn_object(object),
+                "__serialize",
+                0,
+                NULL,
+                state->line
+            )
+            : is_interval
             ? ptn_date_interval_call_method(
                 state->runtime,
                 ptn_object(object),
@@ -11953,19 +11985,18 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
             ptn_string_buffer_append(buffer, "N;");
             return 0;
         }
-        ptn_string_buffer_append_format(
+        int (*is_internal_key)(PtnArrayKey) = is_datetime
+            ? ptn_datetime_serialized_key_is_internal
+            : is_interval
+            ? ptn_date_interval_serialized_key_is_internal
+            : ptn_date_period_serialized_key_is_internal;
+        ptn_serialize_append_object_payload_with_extra_properties(
             buffer,
-            "O:%zu:\"%s\":%zu:{",
-            strlen(object->class_name),
-            object->class_name,
-            payload_value.as.array->len
+            object,
+            payload,
+            state,
+            is_internal_key
         );
-        for (size_t i = 0; i < payload_value.as.array->len; i++) {
-            PtnArrayEntry *entry = &payload_value.as.array->entries[i];
-            ptn_serialize_append_key(buffer, entry->key);
-            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
-        }
-        ptn_string_buffer_append_char(buffer, '}');
         ptn_value_destroy(&payload);
         return 1;
     }
@@ -12007,6 +12038,52 @@ static void ptn_serialize_append_object_payload(
         PtnArrayEntry *entry = &payload_value.as.array->entries[i];
         ptn_serialize_append_key(buffer, entry->key);
         ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
+static void ptn_serialize_append_object_payload_with_extra_properties(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnValue payload,
+    PtnSerializeState *state,
+    int (*is_internal_key)(PtnArrayKey)
+) {
+    PtnValue payload_value = ptn_value_deref(payload);
+    if (object == NULL || payload_value.type != PTN_ARRAY) {
+        ptn_string_buffer_append(buffer, "N;");
+        return;
+    }
+    size_t extra_count = 0;
+    if (object->properties != NULL) {
+        for (size_t i = 0; i < object->properties->len; i++) {
+            PtnArrayEntry *entry = &object->properties->entries[i];
+            if (entry->key.type == PTN_ARRAY_KEY_STRING && !is_internal_key(entry->key)) {
+                extra_count++;
+            }
+        }
+    }
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        payload_value.as.array->len + extra_count
+    );
+    for (size_t i = 0; i < payload_value.as.array->len; i++) {
+        PtnArrayEntry *entry = &payload_value.as.array->entries[i];
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    if (object->properties != NULL) {
+        for (size_t i = 0; i < object->properties->len; i++) {
+            PtnArrayEntry *entry = &object->properties->entries[i];
+            if (entry->key.type != PTN_ARRAY_KEY_STRING || is_internal_key(entry->key)) {
+                continue;
+            }
+            ptn_serialize_append_object_property_key(buffer, object, entry->key);
+            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+        }
     }
     ptn_string_buffer_append_char(buffer, '}');
 }
@@ -111353,6 +111430,16 @@ static int ptn_date_interval_serialized_key_is_internal(PtnArrayKey key) {
         ptn_array_key_is_string_literal(key, "f") ||
         ptn_array_key_is_string_literal(key, "invert") ||
         ptn_array_key_is_string_literal(key, "days");
+}
+
+static int ptn_date_period_serialized_key_is_internal(PtnArrayKey key) {
+    return ptn_array_key_is_string_literal(key, "start") ||
+        ptn_array_key_is_string_literal(key, "current") ||
+        ptn_array_key_is_string_literal(key, "end") ||
+        ptn_array_key_is_string_literal(key, "interval") ||
+        ptn_array_key_is_string_literal(key, "recurrences") ||
+        ptn_array_key_is_string_literal(key, "include_start_date") ||
+        ptn_array_key_is_string_literal(key, "include_end_date");
 }
 
 static int ptn_date_interval_internal_property_known(const char *property) {
