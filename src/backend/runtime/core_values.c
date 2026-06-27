@@ -321,6 +321,9 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#define PTN_PSFS_ERR_FATAL 0
+#define PTN_PSFS_FEED_ME 1
+#define PTN_PSFS_PASS_ON 2
 #define PTN_STREAM_OOB 1
 #define PTN_STREAM_PEEK 2
 #define PTN_ZLIB_ENCODING_RAW -15
@@ -754,7 +757,8 @@ typedef enum {
     PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE,
     PTN_STREAM_FILTER_DECHUNK,
     PTN_STREAM_FILTER_ZLIB_DEFLATE,
-    PTN_STREAM_FILTER_ZLIB_INFLATE
+    PTN_STREAM_FILTER_ZLIB_INFLATE,
+    PTN_STREAM_FILTER_USER
 } PtnStreamFilterKind;
 
 typedef struct {
@@ -1236,6 +1240,7 @@ typedef enum {
     PTN_STREAM_BACKEND_INPUT,
     PTN_STREAM_BACKEND_TEMP,
     PTN_STREAM_BACKEND_OUTPUT,
+    PTN_STREAM_BACKEND_PIPE,
     PTN_STREAM_BACKEND_RFC2397,
     PTN_STREAM_BACKEND_ZLIB
 } PtnStreamBackend;
@@ -1348,6 +1353,10 @@ struct PtnStreamFilter {
     int64_t zlib_level;
     int zlib_error;
     int write_seek_mode;
+    int has_user_filter_object;
+    PtnValue user_filter_object;
+    PtnRuntime *user_filter_runtime;
+    size_t user_filter_line;
     PtnStreamFilter *next;
 };
 
@@ -4777,9 +4786,55 @@ static PTN_UNUSED int ptn_stream_truncate(PtnResource *resource, int64_t size) {
     return 1;
 }
 
+static PTN_UNUSED int ptn_stream_user_filter_has_method(PtnStreamFilter *filter, const char *method_name) {
+    if (filter == NULL ||
+        !filter->has_user_filter_object ||
+        filter->user_filter_runtime == NULL ||
+        filter->user_filter_runtime->declared_method_metadata == NULL) {
+        return 0;
+    }
+    PtnValue object = filter->user_filter_object;
+    if (object.type != PTN_OBJECT || object.as.object == NULL || object.as.object->class_name == NULL) {
+        return 0;
+    }
+    return filter->user_filter_runtime->declared_method_metadata(
+        object.as.object->class_name,
+        method_name
+    ).found;
+}
+
+static PTN_UNUSED void ptn_stream_user_filter_call_on_close(PtnStreamFilter *filter) {
+    if (filter == NULL ||
+        !ptn_stream_user_filter_has_method(filter, "onClose") ||
+        filter->user_filter_runtime->method_dispatch == NULL) {
+        return;
+    }
+    PtnValue result = filter->user_filter_runtime->method_dispatch(
+        filter->user_filter_runtime,
+        filter->user_filter_object,
+        "onClose",
+        0,
+        NULL,
+        filter->user_filter_line
+    );
+    ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED void ptn_stream_filter_cleanup_user_object(PtnStreamFilter *filter) {
+    if (filter == NULL || !filter->has_user_filter_object) {
+        return;
+    }
+    ptn_stream_user_filter_call_on_close(filter);
+    ptn_value_destroy(&filter->user_filter_object);
+    filter->user_filter_object = ptn_null();
+    filter->user_filter_runtime = NULL;
+    filter->has_user_filter_object = 0;
+}
+
 static PTN_UNUSED void ptn_stream_filter_chain_free(PtnStreamFilter *filter) {
     while (filter != NULL) {
         PtnStreamFilter *next = filter->next;
+        ptn_stream_filter_cleanup_user_object(filter);
         free(filter->name);
         free(filter->filter_line_break);
         free(filter);
@@ -4831,6 +4886,10 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
             close_hook_data_free(close_hook_data);
         }
     }
+    ptn_stream_filter_chain_free(resource->read_filters);
+    ptn_stream_filter_chain_free(resource->write_filters);
+    resource->read_filters = NULL;
+    resource->write_filters = NULL;
     if (resource->stream != NULL) {
         if (resource->stream_backend != PTN_STREAM_BACKEND_OUTPUT) {
             fclose(resource->stream);

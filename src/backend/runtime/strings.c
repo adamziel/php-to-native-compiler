@@ -3219,6 +3219,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_FILTER_ALL);
         return 1;
     }
+    if (strcmp(name, "PSFS_ERR_FATAL") == 0) {
+        *out = ptn_int(PTN_PSFS_ERR_FATAL);
+        return 1;
+    }
+    if (strcmp(name, "PSFS_FEED_ME") == 0) {
+        *out = ptn_int(PTN_PSFS_FEED_ME);
+        return 1;
+    }
+    if (strcmp(name, "PSFS_PASS_ON") == 0) {
+        *out = ptn_int(PTN_PSFS_PASS_ON);
+        return 1;
+    }
     if (strcmp(name, "STREAM_OOB") == 0) {
         *out = ptn_int(PTN_STREAM_OOB);
         return 1;

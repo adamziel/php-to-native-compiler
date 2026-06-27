@@ -1,0 +1,13 @@
+# bucket: stream-filter-context-current-red rows=12
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_filtername_prop_type.phpt
+ext/standard/tests/filters/bug79468.phpt
+ext/standard/tests/filters/bug35916.phpt
+ext/standard/tests/filters/user_filter_seek_03.phpt
+ext/standard/tests/streams/stream_errors_mix_modes_storage.phpt
+ext/standard/tests/streams/bug54623.phpt
+ext/standard/tests/streams/stream_get_line_NUL_delimiter.phpt
+ext/standard/tests/filters/gh17345.phpt
+ext/standard/tests/streams/bug72853.phpt

@@ -29871,6 +29871,194 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_stream_filter_register_user_bucket_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-register");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-register.php");
+    let output = root.join("stream-user-filter-register-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class UpperFilter extends php_user_filter {\n\
+    public function filter($in, $out, &$consumed, $closing): int {\n\
+        while ($bucket = stream_bucket_make_writeable($in)) {\n\
+            $bucket->data = strtoupper($bucket->data);\n\
+            $consumed += $bucket->datalen;\n\
+            stream_bucket_append($out, $bucket);\n\
+            stream_bucket_append($out, $bucket);\n\
+        }\n\
+        return PSFS_PASS_ON;\n\
+    }\n\
+    public function onCreate(): bool { echo \"create\\n\"; return true; }\n\
+    public function onClose(): void { echo \"close\\n\"; }\n\
+}\n\
+var_dump(stream_filter_register('test.upper', 'UpperFilter'));\n\
+var_dump(stream_filter_register('test.upper', 'UpperFilter'));\n\
+var_dump(in_array('test.upper', stream_get_filters(), true));\n\
+var_dump(PSFS_PASS_ON);\n\
+$path = __DIR__ . '/user-filter.txt';\n\
+$fp = fopen($path, 'w');\n\
+$filter = stream_filter_append($fp, 'test.upper');\n\
+var_dump(is_resource($filter));\n\
+var_dump(fwrite($fp, 'Abc'));\n\
+fclose($fp);\n\
+echo file_get_contents($path), \"\\n\";\n\
+unlink($path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+int(2)\n\
+create\n\
+bool(true)\n\
+int(3)\n\
+close\n\
+ABC\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_filter_register"));
+    assert!(c_source.contains("ptn_internal_stream_bucket_make_writeable"));
+    assert!(c_source.contains("PTN_PSFS_PASS_ON"));
+}
+
+#[test]
+fn compile_user_stream_wrapper_read_nul_delimiter_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-nul-line");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-nul-line.php");
+    let output = root.join("user-stream-wrapper-nul-line-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class TestStream {\n\
+    public $context;\n\
+    private $s = 0;\n\
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }\n\
+    public function stream_read($count) {\n\
+        if ($this->s++ == 0) return \"a\\0\";\n\
+        return \"\";\n\
+    }\n\
+    public function stream_eof() { return $this->s >= 2; }\n\
+}\n\
+var_dump(stream_wrapper_register('test', 'TestStream'));\n\
+$f = fopen('test://', 'r');\n\
+var_dump(stream_get_line($f, 100, \"\\0\"));\n\
+fclose($f);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(1) \"a\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_materialize_reads"));
+}
+
+#[test]
+fn compile_proc_pipe_blocking_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-proc-pipe-blocking-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("proc-pipe-blocking-metadata.php");
+    let output = root.join("proc-pipe-blocking-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$descs = [1 => ['pipe', 'w']];\n\
+$p = proc_open('printf x', $descs, $pipes, __DIR__);\n\
+stream_set_blocking($pipes[1], false);\n\
+$meta = stream_get_meta_data($pipes[1]);\n\
+var_dump($meta['blocked'], $meta['seekable'], array_key_exists('wrapper_type', $meta), array_key_exists('uri', $meta));\n\
+stream_set_blocking($pipes[1], true);\n\
+stream_get_contents($pipes[1]);\n\
+$meta = stream_get_meta_data($pipes[1]);\n\
+var_dump($meta['blocked'], $meta['eof'], $meta['stream_type'], $meta['mode']);\n\
+proc_close($p);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+string(5) \"STDIO\"\n\
+string(1) \"r\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_BACKEND_PIPE"));
+    assert!(c_source.contains("ptn_stream_resource_is_blocked"));
+}
+
+#[test]
+fn compile_pfsockopen_persistent_udp_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-pfsockopen-persistent-udp");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pfsockopen-persistent-udp.php");
+    let output = root.join("pfsockopen-persistent-udp-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$sock = pfsockopen('udp://127.0.0.1', '63844');\n\
+$sock2 = pfsockopen('udp://127.0.0.1', '63844');\n\
+var_dump(is_resource($sock), (int)$sock === (int)$sock2);\n\
+fclose($sock2);\n\
+try {\n\
+    fwrite($sock, '3');\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+stream_clear_errors();\n\
+var_dump(stream_last_errors());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+fwrite(): Argument #1 ($stream) must be an open stream resource\n\
+array(0) {\n\
+}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_pfsockopen"));
+    assert!(c_source.contains("ptn_internal_stream_clear_errors"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();
