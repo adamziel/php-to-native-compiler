@@ -28381,6 +28381,75 @@ option-error\n"
 }
 
 #[test]
+fn compile_zlib_gzopen_readwrite_modes_and_write_rewind_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-gzopen-rewind-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-gzopen-rewind-modes.php");
+    let output = root.join("zlib-gzopen-rewind-modes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/zlib-write-rewind.gz";
+$h = gzopen($path, "w");
+gzwrite($h, "The first string.");
+var_dump(gzrewind($h));
+gzwrite($h, "The second string.");
+gzclose($h);
+
+$h = gzopen($path, "r");
+gzpassthru($h);
+gzclose($h);
+echo "\n";
+
+foreach (["r+", "w+", "a+", "x+", "c+"] as $mode) {
+    $h = gzopen($path, $mode);
+    var_dump($h);
+    if ($h) {
+        gzclose($h);
+    }
+}
+@unlink($path);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.contains("Warning: gzopen(): Cannot open a zlib stream"))
+            .count(),
+        5,
+        "{stdout}"
+    );
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: gzopen()"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "bool(false)\n\
+The first string.The second string.\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot open a zlib stream for reading and writing"));
+    assert!(c_source.contains("ptn_internal_gzrewind"));
+}
+
+#[test]
 fn compile_zlib_row_pack_frontier_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-row-pack-frontier");
     fs::create_dir_all(&root).unwrap();

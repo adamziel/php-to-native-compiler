@@ -140605,6 +140605,16 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         free(path);
         return ptn_bool(0);
     }
+    if (ptn_phar_stream_mode_has_plus(mode)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "gzopen(): Cannot open a zlib stream for reading and writing at the same time!",
+            line
+        );
+        free(mode);
+        free(path);
+        return ptn_bool(0);
+    }
     if (argc >= 3 && ptn_is_truthy(args[2])) {
         char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
         if (resolved_path != NULL) {
@@ -140716,7 +140726,23 @@ static PtnValue ptn_internal_gztell(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_gzrewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_internal_rewind(runtime, argc, args, line);
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "gzrewind", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB &&
+        !ptn_phar_stream_mode_can_read(resource->stream_mode)) {
+        return ptn_bool(0);
+    }
+    ptn_stream_clear_error(resource);
+    if (ptn_stream_seek(resource, 0, SEEK_SET) != 0) {
+        return ptn_bool(0);
+    }
+    ptn_stream_filtered_read_pending_clear(resource);
+    ptn_stream_filter_chain_reset(resource->read_filters);
+    ptn_stream_filter_chain_reset(resource->write_filters);
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_gzpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

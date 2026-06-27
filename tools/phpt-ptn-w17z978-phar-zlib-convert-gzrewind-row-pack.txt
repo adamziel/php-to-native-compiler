@@ -1,0 +1,15 @@
+# ptn-w17z.978 focused PHAR/zlib convert/gzrewind row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T001945Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/bug77432.phpt
+ext/standard/tests/filters/stream_filter_register_class_throwing_oncreate.phpt
+ext/phar/tests/zip/phar_convert_phar.phpt
+ext/zlib/tests/gzrewind_variation1.phpt
+ext/standard/tests/filters/bug77080.phpt
+ext/zlib/tests/gzopen_variation4.phpt
+ext/phar/tests/phar_buildfromdirectory6.phpt
+ext/standard/tests/streams/stream_errors_silent_with_storage.phpt
+ext/zlib/tests/gztell_basic.phpt
+ext/phar/tests/tar/tar_gzip.phpt
+ext/standard/tests/filters/bug39551.phpt
+ext/phar/tests/fopen_edgecases2.phpt
