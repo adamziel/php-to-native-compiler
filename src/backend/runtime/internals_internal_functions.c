@@ -114091,6 +114091,44 @@ static int ptn_datetime_parse_date_string(
     char timezone_suffix[128];
     timezone_suffix[0] = '\0';
     int consumed = 0;
+    char time_keyword[16];
+    consumed = 0;
+    if (sscanf(input, " %lld-%d-%d %15s %n", &year, &month, &day, time_keyword, &consumed) == 4 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        if (ptn_ascii_case_equal(time_keyword, "noon")) {
+            return ptn_datetime_components_to_timestamp(
+                year,
+                month,
+                day,
+                12,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+        if (ptn_ascii_case_equal(time_keyword, "midnight")) {
+            return ptn_datetime_components_to_timestamp(
+                year,
+                month,
+                day,
+                0,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
     int parsed = sscanf(
         input,
         "%lld-%d-%d %d:%d:%d%n",
@@ -115990,6 +116028,24 @@ static time_t ptn_datetime_timestamp_from_wall_parts(PtnDateTimeData *datetime, 
     return adjusted_wall - adjusted_offset;
 }
 
+static void ptn_datetime_add_weekdays_to_wall_parts(struct tm *parts, long long amount) {
+    int step = amount < 0 ? -1 : 1;
+    long long remaining = amount < 0 ? -amount : amount;
+    while (remaining > 0) {
+        parts->tm_mday += step;
+        parts->tm_isdst = -1;
+        time_t normalized = ptn_mktime_in_utc(parts);
+        struct tm *normalized_parts = gmtime(&normalized);
+        if (normalized_parts == NULL) {
+            return;
+        }
+        *parts = *normalized_parts;
+        if (parts->tm_wday >= 1 && parts->tm_wday <= 5) {
+            remaining--;
+        }
+    }
+}
+
 static int ptn_datetime_apply_relative_special_to_timestamp(
     PtnDateTimeData *datetime,
     const char *spec,
@@ -116002,13 +116058,41 @@ static int ptn_datetime_apply_relative_special_to_timestamp(
     if (!ptn_datetime_wall_parts_for_data(datetime, &parts)) {
         return 0;
     }
+    if (ptn_ascii_case_equal(spec, "noon") ||
+        ptn_ascii_case_equal(spec, "midnight") ||
+        ptn_ascii_case_equal(spec, "today") ||
+        ptn_ascii_case_equal(spec, "tomorrow") ||
+        ptn_ascii_case_equal(spec, "yesterday")) {
+        if (ptn_ascii_case_equal(spec, "tomorrow")) {
+            parts.tm_mday += 1;
+        } else if (ptn_ascii_case_equal(spec, "yesterday")) {
+            parts.tm_mday -= 1;
+        }
+        parts.tm_hour = ptn_ascii_case_equal(spec, "noon") ? 12 : 0;
+        parts.tm_min = 0;
+        parts.tm_sec = 0;
+        *timestamp_out = ptn_datetime_timestamp_from_wall_parts(datetime, &parts);
+        return 1;
+    }
+
+    long long weekday_amount = 0;
+    char weekday_word[32];
+    int consumed = 0;
+    if (sscanf(spec, " %lld %31s %n", &weekday_amount, weekday_word, &consumed) == 2 &&
+        ptn_date_interval_tail_is_space(spec, consumed) &&
+        (ptn_ascii_case_equal(weekday_word, "weekday") ||
+         ptn_ascii_case_equal(weekday_word, "weekdays"))) {
+        ptn_datetime_add_weekdays_to_wall_parts(&parts, weekday_amount);
+        *timestamp_out = ptn_datetime_timestamp_from_wall_parts(datetime, &parts);
+        return 1;
+    }
 
     char ordinal_token[16];
     char subject[32];
     char of_word[8];
     char direction[16];
     char month_word[16];
-    int consumed = 0;
+    consumed = 0;
     if (sscanf(
             spec,
             " %15s %31s %7s %15s %15s %n",
@@ -116107,6 +116191,15 @@ static int ptn_datetime_apply_relative_special_to_timestamp(
     return 0;
 }
 
+static int ptn_datetime_relative_special_resets_time(const char *spec) {
+    return spec != NULL &&
+        (ptn_ascii_case_equal(spec, "noon") ||
+         ptn_ascii_case_equal(spec, "midnight") ||
+         ptn_ascii_case_equal(spec, "today") ||
+         ptn_ascii_case_equal(spec, "tomorrow") ||
+         ptn_ascii_case_equal(spec, "yesterday"));
+}
+
 static time_t ptn_datetime_apply_interval_to_timestamp(
     PtnDateTimeData *datetime,
     PtnDateIntervalData *interval,
@@ -116190,6 +116283,24 @@ static PtnValue ptn_datetime_apply_interval(
         return ptn_null();
     }
     datetime->timestamp = ptn_datetime_apply_interval_to_timestamp(datetime, interval, subtract);
+    int fraction_sign = subtract ? -1 : 1;
+    if (interval->invert) {
+        fraction_sign = -fraction_sign;
+    }
+    int64_t fraction_delta = (int64_t)llround(interval->fraction * 1000000.0);
+    if (fraction_delta != 0) {
+        int64_t microsecond = (int64_t)datetime->microsecond +
+            (int64_t)fraction_sign * fraction_delta;
+        while (microsecond >= 1000000) {
+            datetime->timestamp += 1;
+            microsecond -= 1000000;
+        }
+        while (microsecond < 0) {
+            datetime->timestamp -= 1;
+            microsecond += 1000000;
+        }
+        datetime->microsecond = (int)microsecond;
+    }
     ptn_datetime_sync_properties(runtime, target, target.as.object->class_name, line);
     return immutable ? target : ptn_value_clone(target);
 }
@@ -116492,6 +116603,9 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         time_t special_timestamp = target_data->timestamp;
         if (ptn_datetime_apply_relative_special_to_timestamp(target_data, modifier_string, &special_timestamp)) {
             target_data->timestamp = special_timestamp;
+            if (ptn_datetime_relative_special_resets_time(modifier_string)) {
+                target_data->microsecond = 0;
+            }
             ptn_datetime_sync_properties(runtime, target, target.as.object->class_name, line);
             free(modifier_string);
             ptn_string_operand_free(modifier);
