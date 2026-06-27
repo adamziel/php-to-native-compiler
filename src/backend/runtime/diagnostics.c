@@ -2715,6 +2715,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->defer_unreferenced_destructors_for_catch = 0;
+    runtime->deferred_yield_from_iterator_object = ptn_null();
     runtime->suppress_generator_rewind_trace_frame = 0;
     runtime->current_fiber = NULL;
     runtime->has_current_receiver = 0;

@@ -11352,6 +11352,8 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         } else {
             ptn_generator_flush_pending_output(runtime, generator);
         }
+    } else if (generator != NULL) {
+        ptn_generator_flush_pending_output(runtime, generator);
     }
     return ptn_null();
 }
@@ -14006,7 +14008,25 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         yield_from_frame_active = 1;
         if (setjmp(yield_from_frame.jump) != 0) {
             ptn_try_frame_pop(runtime, &yield_from_frame);
+            PtnValue ptn_debug_iterator_object = ptn_value_deref(iterator.iterator_object);
+            fprintf(stderr, "DEBUG yield_from exception has_iterator=%d iterator_object_type=%d iterator_ref=%zu object=%p object_ref=%zu\n",
+                iterator.has_iterator_object,
+                iterator.iterator_object.type,
+                ptn_debug_iterator_object.type == PTN_OBJECT && ptn_debug_iterator_object.as.object != NULL ? ptn_debug_iterator_object.as.object->refcount : 0,
+                (void *)iterator.object,
+                iterator.object == NULL ? 0 : iterator.object->refcount);
+            ptn_value_destroy(&runtime->deferred_yield_from_iterator_object);
+            if (iterator.has_iterator_object) {
+                runtime->deferred_yield_from_iterator_object =
+                    ptn_value_clone_deref(iterator.iterator_object);
+            } else if (iterator.object != NULL) {
+                runtime->deferred_yield_from_iterator_object =
+                    ptn_value_clone_deref(ptn_object(iterator.object));
+            } else {
+                runtime->deferred_yield_from_iterator_object = ptn_null();
+            }
             ptn_array_iterator_destroy(&iterator);
+            runtime->defer_unreferenced_destructors_for_catch = 1;
             ptn_rethrow_exception(runtime);
             return ptn_null();
         }
