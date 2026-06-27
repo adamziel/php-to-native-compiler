@@ -25395,12 +25395,6 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
-static int ptn_array_rand_index_compare(const void *left, const void *right) {
-    size_t left_index = *(const size_t *)left;
-    size_t right_index = *(const size_t *)right;
-    return (left_index > right_index) - (left_index < right_index);
-}
-
 static PtnValue ptn_array_pick_keys_with_state(
     PtnRuntime *runtime,
     const char *function_name,
@@ -25459,35 +25453,40 @@ static PtnValue ptn_array_pick_keys_with_state(
         return result;
     }
 
-    size_t *indices = malloc(array->len * sizeof(size_t));
-    if (indices == NULL) {
+    size_t num_avail = array->len;
+    int negative_bitset = requested > (int64_t)(num_avail >> 1);
+    size_t sample_count = negative_bitset ? num_avail - (size_t)requested : (size_t)requested;
+    unsigned char *selected = calloc(num_avail == 0 ? 1 : num_avail, sizeof(unsigned char));
+    if (selected == NULL) {
         ptn_abort_out_of_memory();
     }
-    for (size_t i = 0; i < array->len; i++) {
-        indices[i] = i;
+
+    size_t remaining = sample_count;
+    while (remaining > 0) {
+        size_t index = ptn_mt19937_bounded_index(state, num_avail - 1);
+        if (selected[index]) {
+            continue;
+        }
+        selected[index] = 1;
+        remaining--;
     }
-    size_t count = (size_t)requested;
-    for (size_t i = 0; i < count; i++) {
-        size_t j = i + ptn_mt19937_bounded_index(state, array->len - i - 1);
-        size_t tmp = indices[i];
-        indices[i] = indices[j];
-        indices[j] = tmp;
-    }
-    qsort(indices, count, sizeof(size_t), ptn_array_rand_index_compare);
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < count; i++) {
-        if (i > (size_t)INT64_MAX) {
-            free(indices);
-            ptn_abort_out_of_memory();
+    size_t out = 0;
+    for (size_t i = 0; i < num_avail; i++) {
+        if ((selected[i] != 0) ^ negative_bitset) {
+            if (out > (size_t)INT64_MAX) {
+                free(selected);
+                ptn_abort_out_of_memory();
+            }
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)out++),
+                ptn_array_key_value(array->entries[i].key)
+            );
         }
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_int_key((int64_t)i),
-            ptn_array_key_value(array->entries[indices[i]].key)
-        );
     }
-    free(indices);
+    free(selected);
     return result;
 }
 

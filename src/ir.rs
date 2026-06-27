@@ -1659,6 +1659,13 @@ impl<'a> LoweringContext<'a> {
                 instructions.push(Instruction::DeclareFunction { function_index });
             }
         }
+        for trait_decl in &include.program.traits {
+            if let Some(trait_index) =
+                self.trait_index_by_declaration(&trait_decl.name, trait_decl.span.line)
+            {
+                instructions.push(Instruction::DeclareTrait { trait_index });
+            }
+        }
         for class in include
             .program
             .classes
@@ -1671,13 +1678,6 @@ impl<'a> LoweringContext<'a> {
                     class_index,
                     line: class.span.line,
                 });
-            }
-        }
-        for trait_decl in &include.program.traits {
-            if let Some(trait_index) =
-                self.trait_index_by_declaration(&trait_decl.name, trait_decl.span.line)
-            {
-                instructions.push(Instruction::DeclareTrait { trait_index });
             }
         }
         instructions.extend(self.lower_statements(&include.program.statements));
