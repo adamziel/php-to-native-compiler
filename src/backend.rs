@@ -24583,7 +24583,6 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "sessionhandler" => Some("SessionHandler"),
                 "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
-                "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
                 "random\\randomexception" => Some("Random\\RandomException"),
                 "random\\randomerror" => Some("Random\\RandomError"),
                 "random\\brokenrandomengineerror" => Some("Random\\BrokenRandomEngineError"),
