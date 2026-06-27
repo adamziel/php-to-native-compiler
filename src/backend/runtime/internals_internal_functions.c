@@ -64001,14 +64001,11 @@ static PtnValue ptn_internal_settype_cast_null(PtnRuntime *runtime, PtnValue val
 
 static PtnValue ptn_internal_settype_cast_string(
     PtnRuntime *runtime,
+    PtnReference *reference,
     PtnValue value,
-    size_t line,
-    int *assign_after_exception
+    size_t line
 ) {
     value = ptn_value_deref(value);
-    if (assign_after_exception != NULL) {
-        *assign_after_exception = 0;
-    }
     if (value.type != PTN_OBJECT && value.type != PTN_CLOSURE) {
         return ptn_cast_string_with_runtime(runtime, value, line);
     }
@@ -64035,33 +64032,19 @@ static PtnValue ptn_internal_settype_cast_string(
         ptn_abort_out_of_memory();
     }
     if (runtime != NULL) {
-        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
-        if (assign_after_exception != NULL) {
-            *assign_after_exception = 1;
+        if (reference != NULL) {
+            PtnValue empty = ptn_string("");
+            if (!ptn_reference_assign(runtime, reference, empty)) {
+                ptn_value_destroy(&empty);
+                return ptn_null();
+            }
+            ptn_value_destroy(&empty);
         }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
         return ptn_string("");
     }
     fprintf(stderr, "Fatal error: %s\n", message);
     exit(255);
-}
-
-static int ptn_internal_settype_reference_assign_preserving_exception(
-    PtnRuntime *runtime,
-    PtnReference *reference,
-    PtnValue value
-) {
-    if (runtime == NULL || runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL) {
-        return ptn_reference_assign(runtime, reference, value);
-    }
-    PtnException *saved_exception = runtime->exceptions->active_exception;
-    runtime->exceptions->active_exception = NULL;
-    int assigned = ptn_reference_assign(runtime, reference, value);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_exception_free(runtime->exceptions->active_exception);
-        runtime->exceptions->active_exception = NULL;
-    }
-    runtime->exceptions->active_exception = saved_exception;
-    return assigned;
 }
 
 static PtnValue ptn_internal_settype_scalar_array(PtnValue value) {
@@ -64117,7 +64100,6 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
     PtnValue current = ptn_value_deref(args[0].as.reference->value);
     PtnValue converted;
     int valid = 1;
-    int assign_after_exception = 0;
 
     if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "null")) {
         converted = ptn_internal_settype_cast_null(runtime, current, line);
@@ -64128,7 +64110,7 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
         converted = ptn_cast_float_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
-        converted = ptn_internal_settype_cast_string(runtime, current, line, &assign_after_exception);
+        converted = ptn_internal_settype_cast_string(runtime, args[0].as.reference, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "boolean") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "bool")) {
         converted = ptn_internal_settype_cast_bool(runtime, current, line);
@@ -64150,13 +64132,12 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_throw_exception(runtime, "ValueError", "settype(): Argument #2 ($type) must be a valid type");
         return ptn_null();
     }
-
-    if (assign_after_exception &&
-        !ptn_internal_settype_reference_assign_preserving_exception(runtime, args[0].as.reference, converted)) {
+    if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&converted);
         return ptn_null();
     }
-    if (!assign_after_exception && !ptn_reference_assign(runtime, args[0].as.reference, converted)) {
+
+    if (!ptn_reference_assign(runtime, args[0].as.reference, converted)) {
         ptn_value_destroy(&converted);
         return ptn_null();
     }
