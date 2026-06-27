@@ -3680,6 +3680,9 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         object->refcount--;
         return;
     }
+    if (ptn_object_is_generator(object)) {
+        ptn_generator_force_close(object->lifecycle_runtime, (PtnGenerator *)object->native_data);
+    }
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);
     ptn_runtime_prune_weak_maps_for_released_object(object->lifecycle_runtime);

@@ -28556,7 +28556,7 @@ fn emit_instruction(
         }
         Instruction::Expression(value) => {
             let generator_yield_abort_target = if values.current_function_is_generator
-                && matches!(value, ValueExpr::Yield { .. })
+                && matches!(value, ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. })
             {
                 values.generator_yield_abort_target.clone()
             } else {
@@ -31027,7 +31027,7 @@ fn instructions_contain_generator_statement_yield(instructions: &[Instruction]) 
 
 fn instruction_contains_generator_statement_yield(instruction: &Instruction) -> bool {
     match instruction {
-        Instruction::Expression(ValueExpr::Yield { .. }) => true,
+        Instruction::Expression(ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. }) => true,
         Instruction::Try {
             body,
             catches,

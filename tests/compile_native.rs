@@ -10905,6 +10905,39 @@ throw new Exception('boom');
 }
 
 #[test]
+fn compile_exception_handler_replacement_handles_exception_thrown_by_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-handler-replacement-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-handler-replacement-throw.php");
+    let output = root.join("exception-handler-replacement-throw-bin");
+    fs::write(
+        &input,
+        "<?php
+set_exception_handler(function (Throwable $exception) {
+    echo 'Caught: ' . $exception->getMessage() . \"\\n\";
+    set_exception_handler(function (Throwable $exception) {
+        echo 'Caught: ' . $exception->getMessage() . \"\\n\";
+    });
+    throw new Exception('exception handler');
+});
+
+throw new Exception('main');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Caught: main\nCaught: exception handler\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_function_callbacks_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-function-callbacks");
     fs::create_dir_all(&root).unwrap();
@@ -22703,6 +22736,56 @@ do {
         "bool(true)\nint(1)\nbool(false)\nbool(true)\nint(1)\nreached!\nbool(true)\nint(2)\nbool(false)\nNULL\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(5)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_force_close_rejects_yield_from_in_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-yield-from-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-yield-from-finally.php");
+    let output = root.join("generator-force-close-yield-from-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen1() {
+    echo "gen1\n";
+    yield 1;
+}
+
+function gen2() {
+    try {
+        echo "try\n";
+        yield from gen1();
+    } finally {
+        echo "finally\n";
+        yield from gen1();
+    }
+}
+
+try {
+    $gen = gen2();
+    $gen->rewind();
+    unset($gen);
+} catch (Error $e) {
+    echo $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "try\ngen1\nfinally\nError: Cannot use \"yield from\" in a force-closed generator in "
+    ));
+    assert!(stdout.contains(": gen2()\n#1 {main}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_force_close"));
 }
 
 #[test]
@@ -72302,6 +72385,42 @@ try {\n\
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_errorexception_subclass_constructor_type_error_uncaught_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-errorexception-subclass-constructor-uncaught-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception_020.php");
+    let output = root.join("errorexception-subclass-constructor-uncaught-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class MyErrorException extends ErrorException {}
+throw new MyErrorException(new stdClass);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught TypeError: ErrorException::__construct(): Argument #1 ($message) must be of type string, stdClass given in "),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(": ErrorException->__construct(Object(stdClass))"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains(": ErrorException::__construct(Object(stdClass))"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("  thrown in "), "{stderr}");
 }
 
 #[test]

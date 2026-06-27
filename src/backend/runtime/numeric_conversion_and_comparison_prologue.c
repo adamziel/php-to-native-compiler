@@ -3460,7 +3460,7 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
 
     PtnTraceFrame trace_frame;
     char trace_name[64];
-    int written = snprintf(trace_name, sizeof(trace_name), "%s::__construct", declaring_class);
+    int written = snprintf(trace_name, sizeof(trace_name), "%s->__construct", declaring_class);
     if (written < 0 || (size_t)written >= sizeof(trace_name)) {
         ptn_abort_out_of_memory();
     }

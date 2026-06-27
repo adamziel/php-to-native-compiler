@@ -1359,35 +1359,77 @@ static PTN_UNUSED void ptn_exception_handlers_clear(PtnExceptionState *state) {
     state->in_exception_handler = 0;
 }
 
-static PTN_UNUSED int ptn_exception_handlers_try_uncaught(
+static int ptn_exception_handlers_same_callable(
     PtnRuntime *runtime,
-    PtnException *exception
+    PtnValue left,
+    PtnValue right
+) {
+    return ptn_compare_identical(runtime, left, right, 0);
+}
+
+static int ptn_exception_handlers_try_uncaught_inner(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    size_t depth
 ) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (runtime == NULL || runtime->exceptions == NULL || exception == NULL) {
         return 0;
     }
     PtnExceptionState *state = runtime->exceptions;
-    if (!state->has_exception_handler || state->in_exception_handler) {
+    if (!state->has_exception_handler || depth > 16 || (depth == 0 && state->in_exception_handler)) {
         return 0;
     }
     PtnValue handler = ptn_value_clone(state->exception_handler);
-    PtnException *saved_active = state->active_exception;
-    if (saved_active == exception) {
+    int detached_active = 0;
+    if (state->active_exception == exception) {
         state->active_exception = NULL;
+        detached_active = 1;
     }
+    int saved_in_exception_handler = state->in_exception_handler;
     state->in_exception_handler = 1;
     PtnValue arg = ptn_exception_borrow(exception);
-    PtnValue result = ptn_call_callable(runtime, handler, 1, &arg, 0, 0);
-    ptn_value_destroy(&result);
-    state->in_exception_handler = 0;
+    PtnValue result = ptn_null();
+    PtnTryFrame handler_frame;
+    ptn_try_frame_push(runtime, &handler_frame);
+    if (setjmp(handler_frame.jump) == 0) {
+        result = ptn_call_callable(runtime, handler, 1, &arg, 0, 0);
+        ptn_value_destroy(&result);
+    }
+    ptn_try_frame_pop(runtime, &handler_frame);
+    state->in_exception_handler = saved_in_exception_handler;
+
+    int handled = state->active_exception == NULL;
+    if (!handled && state->has_exception_handler && depth < 16) {
+        PtnValue current = ptn_value_clone(state->exception_handler);
+        int same_handler = ptn_exception_handlers_same_callable(runtime, handler, current);
+        ptn_value_destroy(&current);
+        if (!same_handler) {
+            handled = ptn_exception_handlers_try_uncaught_inner(
+                runtime,
+                state->active_exception,
+                depth + 1
+            );
+        }
+    }
+    if (detached_active && state->active_exception != exception) {
+        ptn_exception_free(exception);
+    }
     ptn_value_destroy(&handler);
-    return state->active_exception == NULL;
+    return handled;
 #else
     (void)runtime;
     (void)exception;
+    (void)depth;
     return 0;
 #endif
+}
+
+static PTN_UNUSED int ptn_exception_handlers_try_uncaught(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    return ptn_exception_handlers_try_uncaught_inner(runtime, exception, 0);
 }
 
 static PTN_UNUSED void ptn_diagnostic_output_write(

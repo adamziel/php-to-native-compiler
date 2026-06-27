@@ -1099,6 +1099,7 @@ struct PtnGenerator {
     PtnArray *reference_notice_lines;
     PtnArray *yield_lines;
     PtnArray *delegate_sources;
+    PtnArray *force_close_yield_from_entries;
     PtnArray *output_chunks;
     PtnArray *send_call_positions;
     PtnArray *send_call_kinds;
@@ -1125,6 +1126,7 @@ struct PtnGenerator {
     int completed;
     int started;
     int executing;
+    int force_closing;
     int yields_by_ref;
 };
 
@@ -1889,6 +1891,7 @@ static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
