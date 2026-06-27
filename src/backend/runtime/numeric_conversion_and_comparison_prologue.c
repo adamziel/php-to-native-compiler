@@ -4868,17 +4868,10 @@ static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name)
 
 static PTN_UNUSED const char *ptn_random_interval_boundary_case_name(const char *case_name) {
     static const char *const names[] = {
-<<<<<<< HEAD
         "ClosedOpen",
         "ClosedClosed",
         "OpenClosed",
         "OpenOpen",
-=======
-        "OpenOpen",
-        "ClosedOpen",
-        "OpenClosed",
-        "ClosedClosed",
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         if (strcmp(case_name, names[i]) == 0) {

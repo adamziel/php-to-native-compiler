@@ -99929,11 +99929,8 @@ static PtnValue ptn_random_randomizer_get_int(
         return ptn_null();
     }
 
+    uint64_t span = (uint64_t)max - (uint64_t)min + 1ULL;
     uint64_t offset = 0;
-<<<<<<< HEAD
-    uint64_t upper = (uint64_t)max - (uint64_t)min;
-    if (!ptn_random_randomizer_range(
-=======
     uint64_t upper = span == 0 ? UINT64_MAX : span - 1ULL;
     PtnMt19937State *mt_state = ptn_random_randomizer_mt19937_state_or_null(data);
     if (mt_state != NULL) {
@@ -99981,7 +99978,6 @@ static PtnValue ptn_random_randomizer_next_int(
     if (mt_state != NULL) {
         offset = ptn_mt19937_range64(mt_state, 2147483647ULL);
     } else if (!ptn_random_randomizer_range64(
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
         runtime,
         data,
         "Random\\Randomizer::nextInt",
@@ -99992,80 +99988,6 @@ static PtnValue ptn_random_randomizer_next_int(
         return ptn_null();
     }
     return ptn_int((int64_t)offset);
-}
-
-static PtnValue ptn_random_randomizer_next_int(
-    PtnRuntime *runtime,
-    PtnRandomRandomizerData *data,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    (void)args;
-    if (argc != 0) {
-        char message[144];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Random\\Randomizer::nextInt() expects exactly 0 arguments, %zu given",
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
-    }
-    PtnValue engine = ptn_value_deref(data->engine);
-    if (engine.type == PTN_NULL || ptn_random_engine_value_is_secure(engine)) {
-        uint64_t value = 0;
-        if (!ptn_random_randomizer_next_u64(runtime, data, "Random\\Randomizer::nextInt", line, &value)) {
-            return ptn_null();
-        }
-        return ptn_int((int64_t)(value >> 1));
-    }
-    if (runtime == NULL || runtime->method_dispatch == NULL) {
-        ptn_throw_exception(runtime, "Error", "Random\\Randomizer cannot dispatch engine method");
-        return ptn_null();
-    }
-
-    PtnValue engine_receiver = ptn_value_clone_deref(data->engine);
-    PtnValue generated = runtime->method_dispatch(
-        runtime,
-        engine_receiver,
-        "generate",
-        0,
-        NULL,
-        line
-    );
-    ptn_value_destroy(&engine_receiver);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&generated);
-        return ptn_null();
-    }
-
-    PtnValue generated_value = ptn_value_deref(generated);
-    if (generated_value.type != PTN_STRING) {
-        ptn_value_destroy(&generated);
-        ptn_throw_exception(runtime, "TypeError", "Random\\Engine::generate() must return a string");
-        return ptn_null();
-    }
-    if (generated_value.as.string.len == 0) {
-        ptn_value_destroy(&generated);
-        ptn_throw_exception(runtime, "Random\\BrokenRandomEngineError", "Random\\Engine::generate() must return a non-empty string");
-        return ptn_null();
-    }
-    if (generated_value.as.string.len > sizeof(int64_t)) {
-        ptn_value_destroy(&generated);
-        ptn_throw_exception(runtime, "Random\\RandomException", "Generated value exceeds size of int");
-        return ptn_null();
-    }
-    uint64_t value = 0;
-    for (size_t i = 0; i < generated_value.as.string.len; i++) {
-        value |= ((uint64_t)generated_value.as.string.data[i]) << (8 * i);
-    }
-    ptn_value_destroy(&generated);
-    return ptn_int((int64_t)(value >> 1));
 }
 
 static double ptn_random_gamma_low(double value) {
@@ -100376,105 +100298,6 @@ static PtnValue ptn_random_randomizer_next_float(
     return ptn_float((double)(value >> 11) * (1.0 / 9007199254740992.0));
 }
 
-<<<<<<< HEAD
-=======
-static PtnValue ptn_random_randomizer_get_float(
-    PtnRuntime *runtime,
-    PtnRandomRandomizerData *data,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    if (argc < 2 || argc > 3) {
-        char message[144];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Random\\Randomizer::getFloat() expects between 2 and 3 arguments, %zu given",
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
-    }
-
-    double min = ptn_internal_expect_float_arg(
-        runtime,
-        "Random\\Randomizer::getFloat",
-        1,
-        "min",
-        args[0],
-        line
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    double max = ptn_internal_expect_float_arg(
-        runtime,
-        "Random\\Randomizer::getFloat",
-        2,
-        "max",
-        args[1],
-        line
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    if (min > max) {
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "Random\\Randomizer::getFloat(): Argument #1 ($min) must be less than or equal to argument #2 ($max)"
-        );
-        return ptn_null();
-    }
-    if (argc >= 3) {
-        PtnValue boundary = ptn_value_deref(args[2]);
-        if (boundary.type != PTN_OBJECT ||
-            boundary.as.object == NULL ||
-            !ptn_internal_class_name_is_random_interval_boundary(boundary.as.object->class_name) ||
-            boundary.as.object->enum_case_name == NULL) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "Random\\Randomizer::getFloat(): Argument #3 ($boundary) must be of type Random\\IntervalBoundary, %s given",
-                ptn_offset_container_type_name(boundary)
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "TypeError", message);
-            return ptn_null();
-        }
-    }
-    if (min == max) {
-        return ptn_float(min);
-    }
-
-    uint64_t value = 0;
-    if (!ptn_random_randomizer_next_u64(
-        runtime,
-        data,
-        "Random\\Randomizer::getFloat",
-        line,
-        &value
-    )) {
-        return ptn_null();
-    }
-    double unit = (double)(value >> 11) * (1.0 / 9007199254740992.0);
-    double result = min + (max - min) * unit;
-    if (result < min) {
-        result = min;
-    } else if (result > max) {
-        result = max;
-    }
-    return ptn_float(result);
-}
-
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
 static PtnValue ptn_random_randomizer_pick_array_keys(
     PtnRuntime *runtime,
     PtnRandomRandomizerData *data,
@@ -100518,7 +100341,19 @@ static PtnValue ptn_random_randomizer_pick_array_keys(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-<<<<<<< HEAD
+
+    PtnMt19937State *mt_state = ptn_random_randomizer_mt19937_state_or_null(data);
+    if (mt_state != NULL) {
+        return ptn_array_pick_keys_with_state(
+            runtime,
+            "Random\\Randomizer::pickArrayKeys",
+            array,
+            requested,
+            mt_state,
+            1
+        );
+    }
+
     if (array->len == 0) {
         ptn_throw_exception(runtime, "ValueError", "Random\\Randomizer::pickArrayKeys(): Argument #1 ($array) must not be empty");
         return ptn_null();
@@ -100593,77 +100428,6 @@ static PtnValue ptn_random_randomizer_pick_array_keys(
         }
     }
     free(selected);
-=======
-    PtnMt19937State *mt_state = ptn_random_randomizer_mt19937_state_or_null(data);
-    if (mt_state != NULL) {
-        return ptn_array_pick_keys_with_state(
-            runtime,
-            "Random\\Randomizer::pickArrayKeys",
-            array,
-            requested,
-            mt_state,
-            1
-        );
-    }
-
-    if (array->len == 0) {
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "Random\\Randomizer::pickArrayKeys(): Argument #1 ($array) must not be empty"
-        );
-        return ptn_null();
-    }
-    if (requested < 1 || (uint64_t)requested > (uint64_t)array->len) {
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "Random\\Randomizer::pickArrayKeys(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)"
-        );
-        return ptn_null();
-    }
-    size_t count = (size_t)requested;
-    size_t *indices = malloc(array->len * sizeof(size_t));
-    if (indices == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    for (size_t i = 0; i < array->len; i++) {
-        indices[i] = i;
-    }
-    for (size_t i = 0; i < count; i++) {
-        uint64_t offset = 0;
-        if (!ptn_random_randomizer_range64(
-            runtime,
-            data,
-            "Random\\Randomizer::pickArrayKeys",
-            (uint64_t)(array->len - i - 1),
-            line,
-            &offset
-        )) {
-            free(indices);
-            return ptn_null();
-        }
-        size_t j = i + (size_t)offset;
-        size_t tmp = indices[i];
-        indices[i] = indices[j];
-        indices[j] = tmp;
-    }
-    qsort(indices, count, sizeof(size_t), ptn_array_rand_index_compare);
-
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < count; i++) {
-        if (i > (size_t)INT64_MAX) {
-            free(indices);
-            ptn_abort_out_of_memory();
-        }
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_int_key((int64_t)i),
-            ptn_array_key_value(array->entries[indices[i]].key)
-        );
-    }
-    free(indices);
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
     return result;
 }
 
@@ -100711,12 +100475,6 @@ static PtnValue ptn_random_randomizer_shuffle_array(
             ptn_value_clone(ptn_array_reindexing_internal_value(array->entries[i].value))
         );
     }
-<<<<<<< HEAD
-    if (result.as.array->len > 1) {
-        for (size_t i = result.as.array->len - 1; i > 0; i--) {
-            uint64_t j = 0;
-            if (!ptn_random_randomizer_range(runtime, data, "Random\\Randomizer::shuffleArray", (uint64_t)i, line, &j)) {
-=======
     PtnMt19937State *mt_state = ptn_random_randomizer_mt19937_state_or_null(data);
     if (mt_state != NULL) {
         ptn_array_shuffle_values_with_state(result.as.array, mt_state);
@@ -100733,7 +100491,6 @@ static PtnValue ptn_random_randomizer_shuffle_array(
                 line,
                 &j
             )) {
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
                 ptn_value_destroy(&result);
                 return ptn_null();
             }
@@ -100741,7 +100498,6 @@ static PtnValue ptn_random_randomizer_shuffle_array(
             result.as.array->entries[i] = result.as.array->entries[(size_t)j];
             result.as.array->entries[(size_t)j] = tmp;
         }
-<<<<<<< HEAD
     }
     for (size_t i = 0; i < result.as.array->len; i++) {
         if (i > (size_t)INT64_MAX) {
@@ -100752,10 +100508,6 @@ static PtnValue ptn_random_randomizer_shuffle_array(
     }
     ptn_array_recompute_next_auto_key(result.as.array);
     ptn_array_rebuild_index(result.as.array);
-=======
-        ptn_array_rebuild_index(result.as.array);
-    }
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
     return result;
 }
 
@@ -100793,27 +100545,6 @@ static PtnValue ptn_random_randomizer_shuffle_bytes(
         ptn_string_operand_free(input);
         return ptn_null();
     }
-<<<<<<< HEAD
-    char *output = ptn_duplicate_string_len(input.data, input.len);
-    size_t len = input.len;
-    ptn_string_operand_free(input);
-    if (len > 1) {
-        for (size_t i = len - 1; i > 0; i--) {
-            uint64_t j = 0;
-            if (!ptn_random_randomizer_range(runtime, data, "Random\\Randomizer::shuffleBytes", (uint64_t)i, line, &j)) {
-                free(output);
-                return ptn_null();
-            }
-            if (j != (uint64_t)i) {
-                char tmp = output[i];
-                output[i] = output[(size_t)j];
-                output[(size_t)j] = tmp;
-            }
-        }
-    }
-    return ptn_owned_string_len(output, len);
-=======
-
     char *output = ptn_duplicate_string_len(input.data, input.len);
     size_t output_len = input.len;
     ptn_string_operand_free(input);
@@ -100837,7 +100568,6 @@ static PtnValue ptn_random_randomizer_shuffle_bytes(
         }
     }
     return ptn_owned_string_len(output, output_len);
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
 }
 
 static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
@@ -100881,12 +100611,6 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     if (ptn_ascii_case_equal(name, "nextInt")) {
         return ptn_random_randomizer_next_int(runtime, data, argc, args, line);
     }
-<<<<<<< HEAD
-    if (ptn_ascii_case_equal(name, "getFloat")) {
-        return ptn_random_randomizer_get_float(runtime, data, argc, args, line);
-    }
-=======
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
     if (ptn_ascii_case_equal(name, "nextFloat")) {
         return ptn_random_randomizer_next_float(runtime, data, argc, args, line);
     }
@@ -155515,11 +155239,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_internal_class_name_is_random_interval_boundary(class_name)) {
         if (ptn_ascii_case_equal(name, "cases")) {
             if (argc != 0) {
-<<<<<<< HEAD
-                char message[144];
-=======
                 char message[160];
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
                 int written = snprintf(message, sizeof(message), "Random\\IntervalBoundary::cases() expects exactly 0 arguments, %zu given", argc);
                 if (written < 0 || (size_t)written >= sizeof(message)) {
                     ptn_abort_out_of_memory();
@@ -155528,17 +155248,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 return ptn_null();
             }
             static const char *const names[] = {
-<<<<<<< HEAD
                 "ClosedOpen",
                 "ClosedClosed",
                 "OpenClosed",
                 "OpenOpen",
-=======
-                "OpenOpen",
-                "ClosedOpen",
-                "OpenClosed",
-                "ClosedClosed",
->>>>>>> origin/polecat/guard-1005/ptn-w17z.1048-supervisor
             };
             PtnValue result = ptn_array_from_literal_entries(0, NULL);
             for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
