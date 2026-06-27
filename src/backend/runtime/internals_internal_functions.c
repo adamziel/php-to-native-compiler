@@ -53169,6 +53169,11 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
         free(compressed);
         return read_result;
     }
+    if (compressed_len < 2 || compressed[0] != 0x1f || compressed[1] != 0x8b) {
+        *data_out = compressed;
+        *len_out = compressed_len;
+        return 1;
+    }
     int ok = ptn_zlib_transform_bytes_no_dictionary(
         compressed,
         compressed_len,

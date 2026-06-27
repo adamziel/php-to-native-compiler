@@ -98435,6 +98435,8 @@ scandir(): Argument #1 ($directory) must not be empty\n\
 fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     let root = temp_dir("ptn-native-include-path-zlib-streams");
     fs::create_dir_all(&root).unwrap();
+    let plain_path = root.join("payload.txt");
+    fs::write(&plain_path, "plain\ntext").unwrap();
     let gzip_path = root.join("payload.txt.gz");
     fs::write(
         &gzip_path,
@@ -98446,6 +98448,7 @@ fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     .unwrap();
     let input = root.join("include-path-zlib-streams.php");
     let output = root.join("include-path-zlib-streams-bin");
+    let plain_path = plain_path.to_string_lossy();
     let gzip_path = gzip_path.to_string_lossy();
     fs::write(
         &input,
@@ -98460,8 +98463,12 @@ $read = readfile($src);\n\
 echo \"\\n\", $read, \"\\n\";\n\
 $gz = gzopen(\"{}\", 'r');\n\
 var_dump(fstat($gz));\n\
-fclose($gz);\n",
-            gzip_path, gzip_path
+fclose($gz);\n\
+$plain = gzopen(\"{}\", 'r');\n\
+$count = gzpassthru($plain);\n\
+echo \"\\n\", $count, \"\\n\";\n\
+fclose($plain);\n",
+            gzip_path, gzip_path, plain_path
         ),
     )
     .unwrap();
@@ -98476,7 +98483,10 @@ fclose($gz);\n",
 hello\n\
 \n\
 6\n\
-bool(false)\n"
+bool(false)\n\
+plain\n\
+text\n\
+10\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

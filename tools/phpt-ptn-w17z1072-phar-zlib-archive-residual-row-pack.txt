@@ -1,0 +1,15 @@
+# ptn-w17z.1072 exact PHAR/zlib archive residual current-red row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260627T212640Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/tar/phar_convert_phar4.phpt
+ext/zlib/tests/gzopen_variation8.phpt
+ext/phar/tests/bug79503.phpt
+ext/phar/tests/phar_buildfromiterator10.phpt
+ext/phar/tests/019c.phpt
+ext/phar/tests/zip/rename.phpt
+ext/phar/tests/buildFromIterator_user_overrides/getMTime_errors.phpt
+ext/phar/tests/tar/rmdir.phpt
+ext/phar/tests/phar_oo_004.phpt
+ext/phar/tests/cached_manifest_1.phpt
+ext/phar/tests/tar/phar_setdefaultstub.phpt
+ext/phar/tests/stat.phpt
