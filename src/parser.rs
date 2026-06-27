@@ -119,7 +119,7 @@ fn parse_with_options(
     validate_function_names: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
-    let compiler_halt_offset = find_compiler_halt_offset(&tokens);
+    let compiler_halt_offset = find_compiler_halt_offset(source, &tokens);
     let mut parser = Parser {
         source,
         tokens,
@@ -325,7 +325,26 @@ fn cannot_use_import_message(kind: UseDeclarationKind, target: &str, alias: &str
     }
 }
 
-fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
+fn php_source_offset_for_decoded_byte_offset(source: &str, decoded_byte_offset: usize) -> i64 {
+    let mut decoded_offset = 0usize;
+    let mut source_offset = 0usize;
+    for ch in source.chars() {
+        let len = ch.len_utf8();
+        if decoded_offset + len > decoded_byte_offset {
+            break;
+        }
+        decoded_offset += len;
+        let codepoint = ch as u32;
+        if (0xE000..=0xE0FF).contains(&codepoint) {
+            source_offset += 1;
+        } else {
+            source_offset += len;
+        }
+    }
+    source_offset as i64
+}
+
+fn find_compiler_halt_offset(source: &str, tokens: &[Token]) -> Option<i64> {
     tokens.windows(4).find_map(|window| {
         let [name, left, right, semicolon] = window else {
             return None;
@@ -335,7 +354,10 @@ fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
             && matches!(right.kind, TokenKind::RightParen)
             && matches!(semicolon.kind, TokenKind::Semicolon)
         {
-            Some(semicolon.span.byte_end as i64)
+            Some(php_source_offset_for_decoded_byte_offset(
+                source,
+                semicolon.span.byte_end,
+            ))
         } else {
             None
         }
@@ -9000,6 +9022,9 @@ impl Parser<'_> {
                     self.parse_interpolation_expr_fragment(&expr, span)?,
                 )))
             }
+            TokenStringPart::ComplexExpression(expr) => Ok(StringPart::ComplexExpression(
+                Box::new(self.parse_interpolation_expr_fragment(&expr, span)?),
+            )),
             TokenStringPart::PropertyFetch { variable, property } => {
                 Ok(StringPart::PropertyFetch { variable, property })
             }
@@ -12794,7 +12819,8 @@ fn collect_arrow_captures_from_string_part(
             );
         }
         StringPart::LegacyDollarBraceExpression(expr)
-        | StringPart::DynamicVariableExpression(expr) => {
+        | StringPart::DynamicVariableExpression(expr)
+        | StringPart::ComplexExpression(expr) => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
         StringPart::PropertyFetch { variable, .. } | StringPart::PropertyChain { variable, .. } => {
@@ -23694,8 +23720,11 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "quotemeta"
             | "quoted_printable_encode"
             | "chunk_split"
+            | "closelog"
             | "convert_uudecode"
             | "convert_uuencode"
+            | "openlog"
+            | "syslog"
             | "base64_decode"
             | "base64_encode"
             | "bcadd"
@@ -23736,7 +23765,6 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "curl_multi_select"
             | "curl_multi_strerror"
             | "curl_setopt"
-            | "closelog"
             | "disk_free_space"
             | "disk_total_space"
             | "diskfreespace"
@@ -24105,6 +24133,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "func_get_arg"
             | "func_get_args"
             | "func_num_args"
+            | "get_browser"
             | "get_resources"
             | "get_resource_type"
             | "gettype"
@@ -24166,10 +24195,13 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "intltz_get_equivalent_id"
             | "intltz_get_offset"
             | "intltz_get_unknown"
+            | "intltz_get_region"
+            | "intltz_get_tz_data_version"
             | "intltz_to_date_time_zone"
             | "locale_accept_from_http"
             | "locale_compose"
             | "locale_lookup"
+            | "locale_parse"
             | "msgfmt_create"
             | "msgfmt_format"
             | "msgfmt_format_message"
@@ -24585,6 +24617,39 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "CONNECTION_NORMAL"
             | "CONNECTION_ABORTED"
             | "CONNECTION_TIMEOUT"
+            | "LOG_EMERG"
+            | "LOG_ALERT"
+            | "LOG_CRIT"
+            | "LOG_ERR"
+            | "LOG_WARNING"
+            | "LOG_NOTICE"
+            | "LOG_INFO"
+            | "LOG_DEBUG"
+            | "LOG_KERN"
+            | "LOG_USER"
+            | "LOG_MAIL"
+            | "LOG_DAEMON"
+            | "LOG_AUTH"
+            | "LOG_SYSLOG"
+            | "LOG_LPR"
+            | "LOG_NEWS"
+            | "LOG_UUCP"
+            | "LOG_CRON"
+            | "LOG_AUTHPRIV"
+            | "LOG_LOCAL0"
+            | "LOG_LOCAL1"
+            | "LOG_LOCAL2"
+            | "LOG_LOCAL3"
+            | "LOG_LOCAL4"
+            | "LOG_LOCAL5"
+            | "LOG_LOCAL6"
+            | "LOG_LOCAL7"
+            | "LOG_PID"
+            | "LOG_CONS"
+            | "LOG_ODELAY"
+            | "LOG_NDELAY"
+            | "LOG_NOWAIT"
+            | "LOG_PERROR"
             | "CASE_LOWER"
             | "CASE_UPPER"
             | "IMAGETYPE_UNKNOWN"
@@ -24742,21 +24807,6 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "STREAM_CLIENT_CONNECT"
             | "STREAM_SERVER_BIND"
             | "STREAM_SERVER_LISTEN"
-            | "DNS_A"
-            | "DNS_NS"
-            | "DNS_CNAME"
-            | "DNS_SOA"
-            | "DNS_PTR"
-            | "DNS_HINFO"
-            | "DNS_CAA"
-            | "DNS_MX"
-            | "DNS_TXT"
-            | "DNS_A6"
-            | "DNS_SRV"
-            | "DNS_NAPTR"
-            | "DNS_AAAA"
-            | "DNS_ANY"
-            | "DNS_ALL"
             | "LOCK_SH"
             | "LOCK_EX"
             | "LOCK_UN"
@@ -28579,9 +28629,8 @@ fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> 
                     .is_some_and(|property| property == property_name)
         }
         StringPart::LegacyDollarBraceExpression(expr)
-        | StringPart::DynamicVariableExpression(expr) => {
-            expr_uses_this_property(expr, property_name)
-        }
+        | StringPart::DynamicVariableExpression(expr)
+        | StringPart::ComplexExpression(expr) => expr_uses_this_property(expr, property_name),
         _ => false,
     })
 }

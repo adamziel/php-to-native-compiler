@@ -1,0 +1,20 @@
+# ptn-w17z.1042 focused intl calendar/locale/message current-red row pack.
+#
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T150433Z.tsv
+# Scope: exact rows listed on bead ptn-w17z.1042.
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=120 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1042-intl-calendar-locale-row-pack.txt
+
+ext/intl/tests/msgfmt_format_simple_types_numeric_strings_icu72-1.phpt
+ext/intl/tests/calendar_getWeekendTransition_basic.phpt
+ext/intl/tests/timezone_getRegion_error.phpt
+ext/intl/tests/calendar_set_basic.phpt
+ext/intl/tests/timezone_getTZData_basic.phpt
+ext/intl/tests/locale_parse_locale2.phpt
+ext/intl/tests/calendar_clear_basic.phpt
+ext/intl/tests/cpbi_parts_iterator.phpt
+ext/intl/tests/calendar_createInstance_basic.phpt
+ext/intl/tests/gh12727.phpt
+ext/intl/tests/uconverter_transcode_subst_length.phpt
+ext/intl/tests/badargs.phpt

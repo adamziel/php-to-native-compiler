@@ -1835,7 +1835,7 @@ static PTN_UNUSED PtnValue ptn_compact_intl_get_error_message(PtnRuntime *runtim
     return ptn_owned_string(ptn_duplicate_string(message));
 }
 
-static PTN_UNUSED void ptn_compact_append_exported_string(
+static PTN_UNUSED void ptn_compact_append_exported_string_segment(
     PtnStringBuffer *output,
     const unsigned char *data,
     size_t len
@@ -1851,11 +1851,41 @@ static PTN_UNUSED void ptn_compact_append_exported_string(
     ptn_string_buffer_append_char(output, '\'');
 }
 
-static PTN_UNUSED void ptn_compact_append_var_export(
+static PTN_UNUSED void ptn_compact_append_exported_string(
+    PtnStringBuffer *output,
+    const unsigned char *data,
+    size_t len
+) {
+    size_t segment_start = 0;
+    int saw_nul = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] != '\0') {
+            continue;
+        }
+        ptn_compact_append_exported_string_segment(output, data + segment_start, i - segment_start);
+        ptn_string_buffer_append(output, " . \"\\0\" . ");
+        segment_start = i + 1;
+        saw_nul = 1;
+    }
+    if (saw_nul) {
+        ptn_compact_append_exported_string_segment(output, data + segment_start, len - segment_start);
+        return;
+    }
+    ptn_compact_append_exported_string_segment(output, data, len);
+}
+
+static PTN_UNUSED void ptn_compact_append_indent(PtnStringBuffer *output, size_t depth) {
+    for (size_t i = 0; i < depth * 2; i++) {
+        ptn_string_buffer_append_char(output, ' ');
+    }
+}
+
+static PTN_UNUSED void ptn_compact_append_var_export_depth(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
     PtnValue value,
-    size_t line
+    size_t line,
+    size_t depth
 ) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -1877,9 +1907,29 @@ static PTN_UNUSED void ptn_compact_append_var_export(
         case PTN_STRING:
             ptn_compact_append_exported_string(output, value.as.string.data, value.as.string.len);
             return;
-        case PTN_ARRAY:
-            ptn_string_buffer_append(output, "array (\n)");
+        case PTN_ARRAY: {
+            PtnArray *array = value.as.array;
+            ptn_string_buffer_append(output, "array (\n");
+            for (size_t i = 0; i < array->len; i++) {
+                PtnArrayEntry *entry = &array->entries[i];
+                ptn_compact_append_indent(output, depth + 1);
+                if (entry->key.type == PTN_ARRAY_KEY_INT) {
+                    ptn_string_buffer_append_format(output, "%lld", (long long)entry->key.as.integer);
+                } else {
+                    ptn_compact_append_exported_string(
+                        output,
+                        (const unsigned char *)entry->key.as.string,
+                        entry->key.string_len
+                    );
+                }
+                ptn_string_buffer_append(output, " => ");
+                ptn_compact_append_var_export_depth(runtime, output, entry->value, line, depth + 1);
+                ptn_string_buffer_append(output, ",\n");
+            }
+            ptn_compact_append_indent(output, depth);
+            ptn_string_buffer_append_char(output, ')');
             return;
+        }
         case PTN_OBJECT:
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
@@ -1894,6 +1944,15 @@ static PTN_UNUSED void ptn_compact_append_var_export(
     }
     ptn_compact_append_exported_string(output, (const unsigned char *)string.data, string.len);
     ptn_string_operand_free(string);
+}
+
+static PTN_UNUSED void ptn_compact_append_var_export(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    PtnValue value,
+    size_t line
+) {
+    ptn_compact_append_var_export_depth(runtime, output, value, line, 0);
 }
 
 static PTN_UNUSED PtnValue ptn_compact_var_export(
@@ -2529,6 +2588,197 @@ static PTN_UNUSED void ptn_compact_intl_append_number(
     }
 }
 
+static PTN_UNUSED int ptn_compact_intl_default_fraction_precision(double number) {
+    if (!isfinite(number)) {
+        return 0;
+    }
+    double magnitude = fabs(number);
+    double fraction = magnitude - floor(magnitude);
+    if (fraction <= 0.000000001) {
+        return 0;
+    }
+    double scale = 10.0;
+    for (int precision = 1; precision <= 3; precision++) {
+        double scaled = fraction * scale;
+        if (fabs(scaled - floor(scaled + 0.5)) <= 0.0000001) {
+            return precision;
+        }
+        scale *= 10.0;
+    }
+    return 3;
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_grouped_int(PtnStringBuffer *output, int64_t value) {
+    uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1u : (uint64_t)value;
+    char digits[32];
+    int written = snprintf(digits, sizeof(digits), "%llu", (unsigned long long)magnitude);
+    if (written < 0 || (size_t)written >= sizeof(digits)) {
+        ptn_abort_out_of_memory();
+    }
+    if (value < 0) {
+        ptn_string_buffer_append_char(output, '-');
+    }
+    ptn_compact_intl_append_grouped_digits(output, digits, ",");
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_word(PtnStringBuffer *output, const char *word, int *emitted) {
+    if (*emitted) {
+        ptn_string_buffer_append_char(output, ' ');
+    }
+    ptn_string_buffer_append(output, word);
+    *emitted = 1;
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_under_1000_words(PtnStringBuffer *output, int number, int *emitted) {
+    static const char *const small[] = {
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen"
+    };
+    static const char *const tens[] = {
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+    };
+    if (number >= 100) {
+        ptn_compact_intl_append_word(output, small[number / 100], emitted);
+        ptn_compact_intl_append_word(output, "hundred", emitted);
+        number %= 100;
+    }
+    if (number >= 20) {
+        int ten = number / 10;
+        int one = number % 10;
+        if (one == 0) {
+            ptn_compact_intl_append_word(output, tens[ten], emitted);
+        } else {
+            char compound[32];
+            int written = snprintf(compound, sizeof(compound), "%s-%s", tens[ten], small[one]);
+            if (written < 0 || (size_t)written >= sizeof(compound)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_compact_intl_append_word(output, compound, emitted);
+        }
+    } else if (number > 0 || !*emitted) {
+        ptn_compact_intl_append_word(output, small[number], emitted);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_spellout(PtnStringBuffer *output, double number) {
+    static const int64_t scales[] = { 1000000000LL, 1000000LL, 1000LL };
+    static const char *const scale_names[] = { "billion", "million", "thousand" };
+    if (number < 0) {
+        ptn_string_buffer_append(output, "minus ");
+        number = -number;
+    }
+    int64_t whole = (int64_t)floor(number);
+    int emitted = 0;
+    for (size_t i = 0; i < sizeof(scales) / sizeof(scales[0]); i++) {
+        if (whole >= scales[i]) {
+            int chunk = (int)(whole / scales[i]);
+            ptn_compact_intl_append_under_1000_words(output, chunk, &emitted);
+            ptn_compact_intl_append_word(output, scale_names[i], &emitted);
+            whole %= scales[i];
+        }
+    }
+    if (whole > 0 || !emitted) {
+        ptn_compact_intl_append_under_1000_words(output, (int)whole, &emitted);
+    }
+    double fraction = fabs(number) - floor(fabs(number));
+    int first_digit = (int)floor(fraction * 10.0 + 0.5);
+    if (first_digit > 0 && first_digit < 10) {
+        int fraction_emitted = 0;
+        ptn_string_buffer_append(output, " point ");
+        ptn_compact_intl_append_under_1000_words(output, first_digit, &fraction_emitted);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_ordinal(PtnStringBuffer *output, double number) {
+    int64_t rounded = (int64_t)floor(number + 0.5);
+    ptn_compact_intl_append_grouped_int(output, rounded);
+    int64_t mod100 = llabs(rounded) % 100;
+    int64_t mod10 = llabs(rounded) % 10;
+    const char *suffix = "th";
+    if (mod100 < 11 || mod100 > 13) {
+        if (mod10 == 1) suffix = "st";
+        else if (mod10 == 2) suffix = "nd";
+        else if (mod10 == 3) suffix = "rd";
+    }
+    ptn_string_buffer_append(output, suffix);
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_duration(PtnStringBuffer *output, double number) {
+    int64_t total = (int64_t)floor(number + 0.5);
+    int64_t hours = total / 3600;
+    int64_t minutes = (total / 60) % 60;
+    int64_t seconds = total % 60;
+    ptn_compact_intl_append_grouped_int(output, hours);
+    ptn_string_buffer_append_format(output, ":%02lld:%02lld", (long long)minutes, (long long)seconds);
+}
+
+static PTN_UNUSED const char *ptn_compact_intl_month_name(int month) {
+    static const char *const names[] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    if (month < 1 || month > 12) {
+        month = 1;
+    }
+    return names[month - 1];
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_date_or_time(
+    PtnStringBuffer *output,
+    double number,
+    const char *type,
+    const char *style
+) {
+    int64_t millis = (int64_t)floor(number * 1000.0 + 0.5);
+    time_t seconds_value = (time_t)(millis / 1000);
+    int millisecond = (int)(millis % 1000);
+    if (millisecond < 0) {
+        millisecond += 1000;
+        seconds_value -= 1;
+    }
+    struct tm *parts = gmtime(&seconds_value);
+    if (parts == NULL) {
+        return;
+    }
+    int year = parts->tm_year + 1900;
+    int month = parts->tm_mon + 1;
+    int day = parts->tm_mday;
+    int hour = parts->tm_hour;
+    int minute = parts->tm_min;
+    int second = parts->tm_sec;
+    if (style != NULL && strstr(style, "yyyy-MM-dd") != NULL) {
+        ptn_string_buffer_append_format(
+            output,
+            "%04d-%02d-%02d AD at %02d:%02d:%02d.%03d GMT",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond
+        );
+        return;
+    }
+    if (ptn_ascii_case_equal(type, "date")) {
+        ptn_string_buffer_append_format(output, "%s %d, %d", ptn_compact_intl_month_name(month), day, year);
+        return;
+    }
+    int display_hour = hour % 12;
+    if (display_hour == 0) {
+        display_hour = 12;
+    }
+    ptn_string_buffer_append_format(
+        output,
+        "%d:%02d:%02d\xE2\x80\xAF%s",
+        display_hour,
+        minute,
+        second,
+        hour >= 12 ? "PM" : "AM"
+    );
+}
+
 static PTN_UNUSED void ptn_compact_intl_append_placeholder(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
@@ -2573,10 +2823,28 @@ static PTN_UNUSED void ptn_compact_intl_append_placeholder(
     if (ptn_ascii_case_equal(type, "number")) {
         if (style != NULL && ptn_ascii_case_equal(style, "integer")) {
             ptn_compact_intl_append_number(output, floor(number), 0, locale);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "currency")) {
+            ptn_string_buffer_append_char(output, '$');
+            ptn_compact_intl_append_number(output, number, 2, locale);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "percent")) {
+            ptn_compact_intl_append_number(output, number * 100.0, 0, locale);
+            ptn_string_buffer_append_char(output, '%');
         } else {
-            int precision = fabs(number - floor(number)) > 0.0000001 ? 3 : 0;
-            ptn_compact_intl_append_number(output, number, precision, locale);
+            ptn_compact_intl_append_number(
+                output,
+                number,
+                ptn_compact_intl_default_fraction_precision(number),
+                locale
+            );
         }
+    } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
+        ptn_compact_intl_append_date_or_time(output, number, type, style);
+    } else if (ptn_ascii_case_equal(type, "spellout")) {
+        ptn_compact_intl_append_spellout(output, number);
+    } else if (ptn_ascii_case_equal(type, "ordinal")) {
+        ptn_compact_intl_append_ordinal(output, number);
+    } else if (ptn_ascii_case_equal(type, "duration")) {
+        ptn_compact_intl_append_duration(output, number);
     } else {
         ptn_compact_intl_append_string_value(runtime, output, value, line);
     }
@@ -2642,6 +2910,186 @@ static PTN_UNUSED PtnValue ptn_compact_intl_message_formatter_format(
     return ptn_compact_intl_message_format_array(runtime, data, values.as.array, line);
 }
 
+typedef struct {
+    int left_justify;
+    int force_sign;
+    int space_sign;
+    int zero_pad;
+    int alternate;
+    int width_set;
+    int width;
+    int precision_set;
+    int precision;
+    char specifier;
+} PtnCompactPrintfSpec;
+
+static PTN_UNUSED void ptn_compact_printf_append_padding(
+    PtnStringBuffer *output,
+    char pad,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_buffer_append_char(output, pad);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_printf_append_bytes(
+    PtnStringBuffer *output,
+    const char *data,
+    size_t len,
+    PtnCompactPrintfSpec spec,
+    int allow_zero_pad
+) {
+    size_t width = spec.width_set && spec.width > 0 ? (size_t)spec.width : 0;
+    size_t padding = width > len ? width - len : 0;
+    char pad = spec.zero_pad && !spec.left_justify && allow_zero_pad ? '0' : ' ';
+    if (!spec.left_justify) {
+        ptn_compact_printf_append_padding(output, pad, padding);
+    }
+    ptn_string_buffer_append_len(output, data, len);
+    if (spec.left_justify) {
+        ptn_compact_printf_append_padding(output, ' ', padding);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_printf_append_snprintf(
+    PtnStringBuffer *output,
+    const char *format,
+    ...
+) {
+    va_list args;
+    va_start(args, format);
+    va_list copy;
+    va_copy(copy, args);
+    int needed = vsnprintf(NULL, 0, format, copy);
+    va_end(copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    vsnprintf(buffer, (size_t)needed + 1, format, args);
+    va_end(args);
+    ptn_string_buffer_append_len(output, buffer, (size_t)needed);
+    free(buffer);
+}
+
+static PTN_UNUSED void ptn_compact_printf_build_numeric_format(
+    char *buffer,
+    size_t buffer_len,
+    PtnCompactPrintfSpec spec,
+    const char *length_modifier
+) {
+    size_t offset = 0;
+#define PTN_COMPACT_PRINTF_APPEND_CHAR(ch) \
+    do { \
+        if (offset + 1 >= buffer_len) { \
+            ptn_abort_out_of_memory(); \
+        } \
+        buffer[offset++] = (ch); \
+    } while (0)
+    PTN_COMPACT_PRINTF_APPEND_CHAR('%');
+    if (spec.left_justify) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR('-');
+    }
+    if (spec.force_sign) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR('+');
+    }
+    if (spec.space_sign) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR(' ');
+    }
+    if (spec.alternate) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR('#');
+    }
+    if (spec.zero_pad) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR('0');
+    }
+    if (spec.width_set) {
+        int written = snprintf(buffer + offset, buffer_len - offset, "%d", spec.width);
+        if (written < 0 || (size_t)written >= buffer_len - offset) {
+            ptn_abort_out_of_memory();
+        }
+        offset += (size_t)written;
+    }
+    if (spec.precision_set) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR('.');
+        int written = snprintf(buffer + offset, buffer_len - offset, "%d", spec.precision);
+        if (written < 0 || (size_t)written >= buffer_len - offset) {
+            ptn_abort_out_of_memory();
+        }
+        offset += (size_t)written;
+    }
+    for (size_t i = 0; length_modifier[i] != '\0'; i++) {
+        PTN_COMPACT_PRINTF_APPEND_CHAR(length_modifier[i]);
+    }
+    PTN_COMPACT_PRINTF_APPEND_CHAR(spec.specifier);
+    if (offset >= buffer_len) {
+        ptn_abort_out_of_memory();
+    }
+    buffer[offset] = '\0';
+#undef PTN_COMPACT_PRINTF_APPEND_CHAR
+}
+
+static PTN_UNUSED void ptn_compact_printf_append_binary(
+    PtnStringBuffer *output,
+    uint64_t value,
+    PtnCompactPrintfSpec spec
+) {
+    char digits[65];
+    size_t len = 0;
+    if (value == 0) {
+        if (!spec.precision_set || spec.precision != 0) {
+            digits[len++] = '0';
+        }
+    } else {
+        while (value != 0) {
+            digits[len++] = (value & 1u) ? '1' : '0';
+            value >>= 1;
+        }
+        for (size_t left = 0, right = len - 1; left < right; left++, right--) {
+            char tmp = digits[left];
+            digits[left] = digits[right];
+            digits[right] = tmp;
+        }
+    }
+    size_t precision = spec.precision_set && spec.precision > 0 ? (size_t)spec.precision : 0;
+    size_t zeroes = precision > len ? precision - len : 0;
+    size_t content_len = len + zeroes;
+    size_t width = spec.width_set && spec.width > 0 ? (size_t)spec.width : 0;
+    size_t padding = width > content_len ? width - content_len : 0;
+    char pad = spec.zero_pad && !spec.left_justify && !spec.precision_set ? '0' : ' ';
+    if (!spec.left_justify) {
+        ptn_compact_printf_append_padding(output, pad, padding);
+    }
+    ptn_compact_printf_append_padding(output, '0', zeroes);
+    ptn_string_buffer_append_len(output, digits, len);
+    if (spec.left_justify) {
+        ptn_compact_printf_append_padding(output, ' ', padding);
+    }
+}
+
+static PTN_UNUSED int ptn_compact_printf_is_specifier(char specifier) {
+    return specifier == 'b' ||
+        specifier == 'c' ||
+        specifier == 'd' ||
+        specifier == 'e' ||
+        specifier == 'E' ||
+        specifier == 'f' ||
+        specifier == 'F' ||
+        specifier == 'g' ||
+        specifier == 'G' ||
+        specifier == 'i' ||
+        specifier == 'o' ||
+        specifier == 's' ||
+        specifier == 'u' ||
+        specifier == 'x' ||
+        specifier == 'X';
+}
+
 static PTN_UNUSED PtnValue ptn_compact_printf(
     PtnRuntime *runtime,
     size_t argc,
@@ -2666,13 +3114,77 @@ static PTN_UNUSED PtnValue ptn_compact_printf(
             ptn_string_buffer_append_char(&output, byte);
             continue;
         }
-        char specifier = format.data[++i];
-        if (specifier == '%') {
+        size_t percent_index = i;
+        i++;
+        if (format.data[i] == '%') {
             ptn_string_buffer_append_char(&output, '%');
             continue;
         }
+        PtnCompactPrintfSpec spec = { 0 };
+        int parsing_flags = 1;
+        while (parsing_flags && i < format.len) {
+            switch (format.data[i]) {
+                case '-':
+                    spec.left_justify = 1;
+                    i++;
+                    break;
+                case '+':
+                    spec.force_sign = 1;
+                    i++;
+                    break;
+                case ' ':
+                    spec.space_sign = 1;
+                    i++;
+                    break;
+                case '0':
+                    spec.zero_pad = 1;
+                    i++;
+                    break;
+                case '#':
+                    spec.alternate = 1;
+                    i++;
+                    break;
+                default:
+                    parsing_flags = 0;
+                    break;
+            }
+        }
+        if (i < format.len && isdigit((unsigned char)format.data[i])) {
+            spec.width_set = 1;
+            while (i < format.len && isdigit((unsigned char)format.data[i])) {
+                if (spec.width <= (INT_MAX - 9) / 10) {
+                    spec.width = spec.width * 10 + (format.data[i] - '0');
+                }
+                i++;
+            }
+        }
+        if (i < format.len && format.data[i] == '.') {
+            i++;
+            spec.precision_set = 1;
+            while (i < format.len && isdigit((unsigned char)format.data[i])) {
+                if (spec.precision <= (INT_MAX - 9) / 10) {
+                    spec.precision = spec.precision * 10 + (format.data[i] - '0');
+                }
+                i++;
+            }
+        }
+        if (i < format.len && strchr("hlLjzt", format.data[i]) != NULL) {
+            char modifier = format.data[i++];
+            if (i < format.len && format.data[i] == modifier && (modifier == 'h' || modifier == 'l')) {
+                i++;
+            }
+        }
+        if (i >= format.len) {
+            ptn_string_buffer_append_len(&output, format.data + percent_index, format.len - percent_index);
+            break;
+        }
+        spec.specifier = format.data[i];
+        if (!ptn_compact_printf_is_specifier(spec.specifier)) {
+            ptn_string_buffer_append_len(&output, format.data + percent_index, i - percent_index + 1);
+            continue;
+        }
         PtnValue value = argument_index < argc ? args[argument_index++] : ptn_null();
-        if (specifier == 's') {
+        if (spec.specifier == 's') {
             PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(string);
@@ -2680,15 +3192,47 @@ static PTN_UNUSED PtnValue ptn_compact_printf(
                 free(output.data);
                 return ptn_null();
             }
-            ptn_string_buffer_append_len(&output, string.data, string.len);
+            size_t len = string.len;
+            if (spec.precision_set && spec.precision >= 0 && (size_t)spec.precision < len) {
+                len = (size_t)spec.precision;
+            }
+            ptn_compact_printf_append_bytes(&output, string.data, len, spec, 0);
             ptn_string_operand_free(string);
-        } else if (specifier == 'd' || specifier == 'i') {
-            ptn_string_buffer_append_format(&output, "%lld", (long long)ptn_value_to_integer(value));
-        } else if (specifier == 'f' || specifier == 'F') {
-            ptn_string_buffer_append_format(&output, "%f", ptn_compact_intl_numeric_value(value));
+        } else if (spec.specifier == 'c') {
+            char character = (char)(unsigned char)ptn_value_to_integer(value);
+            ptn_compact_printf_append_bytes(&output, &character, 1, spec, 1);
+        } else if (spec.specifier == 'b') {
+            ptn_compact_printf_append_binary(&output, (uint64_t)ptn_value_to_integer(value), spec);
+        } else if (spec.specifier == 'd' || spec.specifier == 'i') {
+            char numeric_format[64];
+            spec.specifier = 'd';
+            ptn_compact_printf_build_numeric_format(numeric_format, sizeof(numeric_format), spec, "ll");
+            ptn_compact_printf_append_snprintf(
+                &output,
+                numeric_format,
+                (long long)ptn_value_to_integer(value)
+            );
+        } else if (
+            spec.specifier == 'u' ||
+            spec.specifier == 'o' ||
+            spec.specifier == 'x' ||
+            spec.specifier == 'X'
+        ) {
+            char numeric_format[64];
+            ptn_compact_printf_build_numeric_format(numeric_format, sizeof(numeric_format), spec, "ll");
+            ptn_compact_printf_append_snprintf(
+                &output,
+                numeric_format,
+                (unsigned long long)ptn_value_to_integer(value)
+            );
         } else {
-            ptn_string_buffer_append_char(&output, '%');
-            ptn_string_buffer_append_char(&output, specifier);
+            char numeric_format[64];
+            ptn_compact_printf_build_numeric_format(numeric_format, sizeof(numeric_format), spec, "");
+            ptn_compact_printf_append_snprintf(
+                &output,
+                numeric_format,
+                ptn_compact_intl_numeric_value(value)
+            );
         }
     }
     ptn_string_operand_free(format);
@@ -24075,6 +24619,9 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "sessionhandler" => Some("SessionHandler"),
                 "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
+                "random\\randomexception" => Some("Random\\RandomException"),
+                "random\\randomerror" => Some("Random\\RandomError"),
+                "random\\brokenrandomengineerror" => Some("Random\\BrokenRandomEngineError"),
                 "random\\engine\\mt19937" => Some("Random\\Engine\\Mt19937"),
                 "random\\engine\\pcgoneseq128xslrr64" => {
                     Some("Random\\Engine\\PcgOneseq128XslRr64")
@@ -55537,6 +56084,26 @@ impl ValueEmitter {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
             }
+            let trace_args_temp = self.next_temp();
+            let trace_frame_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&trace_args_temp);
+            out.push_str("[] = { ptn_value_share(");
+            out.push_str(&callable_temp);
+            out.push_str(") };\n");
+            emit_push_owned_call_argument_roots(out, "    ", &trace_args_temp, 1);
+            out.push_str("    PtnTraceFrame ");
+            out.push_str(&trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
+            out.push_str(&line.to_string());
+            out.push_str("), ");
+            out.push_str(&line.to_string());
+            out.push_str(", 1, ");
+            out.push_str(&trace_args_temp);
+            out.push_str(");\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -55544,12 +56111,17 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(", 1);\n");
+            out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(");\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
             out.push_str(";\n");
             out.push_str("    runtime.call_site_line = ");
             out.push_str(&previous_call_site_line_temp);
             out.push_str(";\n");
+            emit_pop_owned_call_argument_roots(out, "    ", 1);
+            emit_value_cleanup(out, "    ", &format!("{trace_args_temp}[0]"));
             emit_value_cleanup(out, "    ", &callable_temp);
             return result_temp;
         }
@@ -55587,6 +56159,34 @@ impl ValueEmitter {
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
         }
+        let trace_args_temp = self.next_temp();
+        let trace_frame_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&trace_args_temp);
+        out.push_str("[] = { ptn_value_share(");
+        out.push_str(&callable_temp);
+        out.push(')');
+        for temp in &temps {
+            out.push_str(", ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &trace_args_temp, arguments.len());
+        out.push_str("    PtnTraceFrame ");
+        out.push_str(&trace_frame_temp);
+        out.push_str(";\n");
+        out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
+        out.push_str(&line.to_string());
+        out.push_str("), ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&trace_args_temp);
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
@@ -55598,6 +56198,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", 1);\n");
+        out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(");\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(";\n");
@@ -55606,6 +56209,10 @@ impl ValueEmitter {
         out.push_str(";\n");
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
+        }
+        emit_pop_owned_call_argument_roots(out, "    ", arguments.len());
+        for index in 0..arguments.len() {
+            emit_value_cleanup(out, "    ", &format!("{trace_args_temp}[{index}]"));
         }
         emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {

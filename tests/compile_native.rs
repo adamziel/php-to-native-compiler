@@ -26183,6 +26183,76 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_gettimeofday_basic_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-gettimeofday-basic-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gettimeofday-basic-shape.php");
+    let output = root.join("gettimeofday-basic-shape-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"Asia/Calcutta\");\n\
+$float = gettimeofday(true);\n\
+$parts = gettimeofday();\n\
+$partsFalse = gettimeofday(false);\n\
+var_dump(is_float($float));\n\
+var_dump(array_keys($parts));\n\
+var_dump(is_int($parts[\"sec\"]), is_int($parts[\"usec\"]));\n\
+var_dump($parts[\"minuteswest\"], $parts[\"dsttime\"]);\n\
+var_dump(array_keys($partsFalse));\n\
+var_dump(function_exists(\"gettimeofday\"));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(-330)\n",
+            "int(0)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_gettimeofday("));
+    assert!(c_source.contains("{ \"gettimeofday\", 0, 1, ptn_internal_gettimeofday }"));
+}
+
+#[test]
 fn compile_strftime_locale_formatting_to_native_binary() {
     let root = temp_dir("ptn-native-strftime-locale-formatting");
     fs::create_dir_all(&root).unwrap();
@@ -27009,6 +27079,163 @@ var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
     assert!(c_source.contains("ptn_internal_date_create_immutable"));
     assert!(c_source.contains("ptn_internal_date_interval_format"));
     assert!(c_source.contains("createFromMutable"));
+}
+
+#[test]
+fn compile_datetime_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-datetime-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-subclass-serialize-order.php");
+    let output = root.join("datetime-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DateTimeImmutable
+{
+    private int $var1 = 1;
+    private $var2 = 0;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct()
+    {
+        parent::__construct('2023-03-03 16:24');
+        $this->var2 = 2;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+        echo $this->format('Y-m-d H:i:s.u T e'), "\n";
+    }
+}
+
+$i = new I;
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+$u = unserialize($s);
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "O:1:\"I\":7:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n\
+int(1)\n\
+int(2)\n\
+int(3)\n\
+int(4)\n\
+2023-03-03 16:24:00.000000 UTC UTC\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
+    assert!(c_source.contains("ptn_datetime_call_method"));
+}
+
+#[test]
+fn compile_date_period_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-date-period-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-subclass-serialize-order.php");
+    let output = root.join("date-period-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DatePeriod
+{
+    private int $var1;
+    private $var2 = 2;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct($start, $interval, $end)
+    {
+        parent::__construct($start, $interval, $end);
+        $this->var1 = 1;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+    }
+}
+
+$i = new I(new DateTimeImmutable('2023-03-03 16:24'), DateInterval::createFromDateString('+1 hour'), new DateTimeImmutable('2023-03-09 16:24'));
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+var_dump($i->__serialize()['interval']->__serialize());
+$u = unserialize($s);
+echo implode('|', array_map(fn($key) => str_replace(chr(0), '!', $key), array_keys((array) $u))), "\n";
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:1:\"I\":11:{s:5:\"start\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:7:\"current\";N;s:3:\"end\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-09 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:8:\"interval\";O:12:\"DateInterval\":10:{s:1:\"y\";i:0;s:1:\"m\";i:0;s:1:\"d\";i:0;s:1:\"h\";i:1;s:1:\"i\";i:0;s:1:\"s\";i:0;s:1:\"f\";d:0;s:6:\"invert\";i:0;s:4:\"days\";b:0;s:11:\"from_string\";b:0;}s:11:\"recurrences\";i:1;s:18:\"include_start_date\";b:1;s:16:\"include_end_date\";b:0;s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n",
+            "array(10) {\n",
+            "  [\"y\"]=>\n",
+            "  int(0)\n",
+            "  [\"m\"]=>\n",
+            "  int(0)\n",
+            "  [\"d\"]=>\n",
+            "  int(0)\n",
+            "  [\"h\"]=>\n",
+            "  int(1)\n",
+            "  [\"i\"]=>\n",
+            "  int(0)\n",
+            "  [\"s\"]=>\n",
+            "  int(0)\n",
+            "  [\"f\"]=>\n",
+            "  float(0)\n",
+            "  [\"invert\"]=>\n",
+            "  int(0)\n",
+            "  [\"days\"]=>\n",
+            "  bool(false)\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+            "!I!var1|!I!var2|!*!var3|!*!var4|start|current|end|interval|recurrences|include_start_date|include_end_date\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_period_public_interval_value"));
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
 }
 
 #[test]
@@ -33347,6 +33574,128 @@ var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mbstring_residual_row_pack_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-mbstring-residual-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-residual-row-pack.php");
+    let output = root.join("mbstring-residual-row-pack-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+try {\n\
+    var_dump(mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$map = [0, 0xFFFFFFFF, 0, 0xFFFFFFFF];\n\
+$ucs4 = mb_convert_encoding('&#1000000000&#65;', 'UCS-4BE', 'ASCII');\n\
+echo bin2hex(mb_decode_numericentity($ucs4, $map, 'UCS-4BE')), \"\\n\";\n\
+echo mb_decode_numericentity('&#7001492542&#65;', $map, 'ASCII'), \"\\n\";\n\
+echo mb_decode_numericentity('&#7,', [0x22FFFF11, 0xBF111189, 0x67726511, 0x1161E719], 'ASCII'), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xF0\\x90\\x90\\xB8\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xE2\\xB0\\xB0\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xD4\\xA5\", 'UTF-8')), \"\\n\";\n\
+mb_strstr('abc', 'b', null);\n\
+mb_strrchr('abcabc', 'b', null);\n\
+mb_stristr('ABC', 'b', null);\n\
+mb_strrichr('ABCABC', 'b', null);\n\
+echo mb_strimwidth('abcdef', 0, 3, null, 'UTF-8'), \"\\n\";\n\
+$raw = \"***,*-S,\\xac,,\\xb7,l,,,,\\xb6UTF7,\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5K\\xb5\\xb5!\\xa4\\xa4\\xa4\\xa4\\xa4\\xbd\\xb5,\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5\\xb5&\";\n\
+$expected = \"***,*-S,=AC,,=B7,l,,,,=B6UTF7,=B5=B5=B5=B5=B5=B5K=B5=B5!=A4=A4=A4=A4=A4=BD=\\r\\n=B5,=B5=B5=B5=B5=B5=B5=B5=B5=B5&\";\n\
+echo mb_convert_encoding($raw, 'QPrint', '8bit') === $expected ? \"qp-ok\\n\" : \"qp-bad\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("3b9aca0000000041\n"), "{stdout}");
+    assert!(stdout.contains("&#7001492542A\n"), "{stdout}");
+    assert!(stdout.contains("?,\n"), "{stdout}");
+    assert!(stdout.contains("f0909090\n"), "{stdout}");
+    assert!(stdout.contains("e2b080\n"), "{stdout}");
+    assert!(stdout.contains("d4a4\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "mb_strstr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strrchr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_stristr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strrichr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_strimwidth(): Passing null to parameter #4 ($trim_marker) of type string is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("abc\n"), "{stdout}");
+    assert!(stdout.contains("qp-ok\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_mb_send_mail_uses_sendmail_path_to_native_binary() {
+    let root = temp_dir("ptn-phpc-mb-send-mail-sendmail-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-send-mail.php");
+    let mail_file = root.join("mb_send_mail06.eml");
+    fs::write(
+        &input,
+        "<?php\n\
+$to = 'example@example.com';\n\
+mb_language('traditional chinese');\n\
+mb_internal_encoding('BIG5');\n\
+mb_send_mail($to, \"\\xb4\\xfa\\xc5\\xe7 \".mb_language(), \"\\xb4\\xfa\\xc5\\xe7\");\n",
+    )
+    .unwrap();
+
+    let sendmail_path = format!("sendmail_path=tee {} >/dev/null", mail_file.display());
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg(sendmail_path)
+        .arg("-d")
+        .arg("mail.add_x_header=off")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let mail = fs::read(&mail_file).unwrap();
+    let rendered = String::from_utf8_lossy(&mail);
+    assert!(
+        rendered.contains(
+            "To: example@example.com\nSubject: =?BIG5?B?tPrF5yBUcmFkaXRpb25hbCBDaGluZXNl?=\n"
+        ),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("MIME-Version: 1.0\nContent-Type: text/plain; charset=BIG5\nContent-Transfer-Encoding: 8bit\n\n"),
+        "{rendered}"
+    );
+    assert!(mail.ends_with(b"\xb4\xfa\xc5\xe7\n"), "{mail:?}");
 }
 
 #[test]
@@ -53359,6 +53708,13 @@ $attr->nodeValue = '2';
 var_dump($doc->documentElement->setAttributeNodeNS($attr)?->nodeValue);
 echo $doc->saveXML();
 
+$doc = new DOMDocument();
+$doc->appendChild($doc->createElement('container'));
+foreach ([1, 2, 3, 4] as $i) {
+    var_dump($doc->documentElement->setAttributeNodeNS($doc->createAttributeNS('http://php.net/ns' . $i, 'foo:hello'))?->namespaceURI);
+}
+echo $doc->saveXML();
+
 $dom = new DOMDocument();
 $dom->loadXML('<?xml version=\"1.0\"?><container xmlns:foo=\"http://php.net\" foo:bar=\"yes\"/>');
 $dom->documentElement->setAttributeNS('http://php.net/2', 'foo:bar', 'no1');
@@ -53394,6 +53750,12 @@ echo $dest->saveXML();
             "string(1) \"1\"\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"http://php.net/ns1\" foo:hello=\"2\"/>\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"http://php.net/ns1\" xmlns:default=\"http://php.net/ns2\" xmlns:default1=\"http://php.net/ns3\" xmlns:default2=\"http://php.net/ns4\" foo:hello=\"\" default:hello=\"\" default1:hello=\"\" default2:hello=\"\"/>\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"http://php.net\" xmlns:default=\"http://php.net/2\" foo:bar=\"yes\" default:bar=\"no2\"/>\n",
             "string(7) \"default\"\n",
@@ -54017,6 +54379,62 @@ echo $html->saveXml();
     assert!(c_source.contains("serialized_name"));
     assert!(c_source.contains("ptn_dom_attribute_set_serialized_prefix"));
     assert!(c_source.contains("ptn_dom_remove_attribute_method"));
+}
+
+#[test]
+fn compile_dom_xml_empty_tag_serialization_uses_document_mode_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xml-empty-tag-document-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xml-empty-tag-document-mode.php");
+    let output = root.join("dom-xml-empty-tag-document-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = new DOMDocument;
+$dom->loadXML('<hello:container xmlns:conflict="urn:foo" xmlns:hello="http://www.w3.org/1999/xhtml"/>');
+$container = $dom->documentElement;
+
+$container->prefix = "";
+echo $dom->saveXML();
+
+$container->prefix = "\0foobar";
+echo $dom->saveXML();
+
+$container->prefix = "hello";
+echo $dom->saveXML();
+
+try {
+    $container->prefix = "conflict";
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $dom->saveXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<hello:container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "Namespace Error\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<hello:container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("document->html_document"));
 }
 
 #[test]
@@ -54671,7 +55089,7 @@ include __DIR__ . '/files/bug67761.tar/bug67761.phar';
     push_u32(&mut manifest, entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 2034427644);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
 
@@ -54957,7 +55375,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, text_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, text_entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 3983506042);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 10);
@@ -54965,7 +55383,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, script_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, script_entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 2902161792);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
 
@@ -58800,6 +59218,26 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!("before\nint({expected_offset})\nint({expected_offset})\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_halt_compiler_offset_uses_source_bytes_before_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-halt-compiler-byte-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-compiler-byte-offset.php");
+    let output = root.join("halt-compiler-byte-offset-bin");
+    let source = "<?php var_dump(substr(file_get_contents(__FILE__), __COMPILER_HALT_OFFSET__)); var_dump(bin2hex(\"äëü\")); __halt_compiler();payload\n";
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"payload\n\"\nstring(12) \"c3a4c3abc3bc\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

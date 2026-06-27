@@ -352,6 +352,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->pcre_utf8_cache_len = 0;
     runtime->pcre_utf8_cache_known = 0;
     runtime->pcre_utf8_cache_valid = 0;
+    runtime->intl_default_locale = NULL;
     runtime->intl_error_level = caller_runtime->intl_error_level;
     runtime->intl_use_exceptions = caller_runtime->intl_use_exceptions;
     runtime->intl_last_error_message = NULL;
@@ -1175,6 +1176,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->strtok_len = 0;
         runtime->strtok_offset = 0;
         runtime->strtok_has_state = 0;
+        free(runtime->intl_default_locale);
+        runtime->intl_default_locale = NULL;
         free(runtime->intl_last_error_message);
         runtime->intl_last_error_message = NULL;
     }
@@ -2751,6 +2754,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "RequestParseBodyException")) {
         return "RequestParseBodyException";
     }
+    if (ptn_exception_name_equal(class_name, "Random\\RandomException")) {
+        return "Random\\RandomException";
+    }
     if (ptn_exception_name_equal(class_name, "LogicException")) {
         return "LogicException";
     }
@@ -2792,6 +2798,12 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     }
     if (ptn_exception_name_equal(class_name, "FiberError")) {
         return "FiberError";
+    }
+    if (ptn_exception_name_equal(class_name, "Random\\RandomError")) {
+        return "Random\\RandomError";
+    }
+    if (ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError")) {
+        return "Random\\BrokenRandomEngineError";
     }
     if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
         return "Uri\\InvalidUriException";
@@ -2858,6 +2870,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
             ptn_exception_name_equal(class_name, "FiberError") ||
+            ptn_exception_name_equal(class_name, "Random\\RandomError") ||
+            ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError") ||
             ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
             ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
             ptn_exception_name_equal(class_name, "DateRangeError") ||
@@ -2880,12 +2894,16 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(type_name, "ArithmeticError")) {
         return ptn_exception_name_equal(class_name, "DivisionByZeroError");
     }
+    if (ptn_exception_name_equal(type_name, "Random\\RandomError")) {
+        return ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError");
+    }
     if (ptn_exception_name_equal(type_name, "Exception")) {
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "SoapFault") ||
             ptn_exception_name_equal(class_name, "PharException") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
+            ptn_exception_name_equal(class_name, "Random\\RandomException") ||
             ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
             ptn_exception_name_equal(class_name, "DateMalformedStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException") ||

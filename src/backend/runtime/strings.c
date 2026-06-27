@@ -2339,6 +2339,138 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(2);
         return 1;
     }
+    if (strcmp(name, "LOG_EMERG") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ALERT") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CRIT") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ERR") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "LOG_WARNING") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NOTICE") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
+    if (strcmp(name, "LOG_INFO") == 0) {
+        *out = ptn_int(6);
+        return 1;
+    }
+    if (strcmp(name, "LOG_DEBUG") == 0) {
+        *out = ptn_int(7);
+        return 1;
+    }
+    if (strcmp(name, "LOG_KERN") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "LOG_USER") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "LOG_MAIL") == 0) {
+        *out = ptn_int(16);
+        return 1;
+    }
+    if (strcmp(name, "LOG_DAEMON") == 0) {
+        *out = ptn_int(24);
+        return 1;
+    }
+    if (strcmp(name, "LOG_AUTH") == 0) {
+        *out = ptn_int(32);
+        return 1;
+    }
+    if (strcmp(name, "LOG_SYSLOG") == 0) {
+        *out = ptn_int(40);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LPR") == 0) {
+        *out = ptn_int(48);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NEWS") == 0) {
+        *out = ptn_int(56);
+        return 1;
+    }
+    if (strcmp(name, "LOG_UUCP") == 0) {
+        *out = ptn_int(64);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CRON") == 0) {
+        *out = ptn_int(72);
+        return 1;
+    }
+    if (strcmp(name, "LOG_AUTHPRIV") == 0) {
+        *out = ptn_int(80);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL0") == 0) {
+        *out = ptn_int(128);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL1") == 0) {
+        *out = ptn_int(136);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL2") == 0) {
+        *out = ptn_int(144);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL3") == 0) {
+        *out = ptn_int(152);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL4") == 0) {
+        *out = ptn_int(160);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL5") == 0) {
+        *out = ptn_int(168);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL6") == 0) {
+        *out = ptn_int(176);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL7") == 0) {
+        *out = ptn_int(184);
+        return 1;
+    }
+    if (strcmp(name, "LOG_PID") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CONS") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ODELAY") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NDELAY") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NOWAIT") == 0) {
+        *out = ptn_int(16);
+        return 1;
+    }
+    if (strcmp(name, "LOG_PERROR") == 0) {
+        *out = ptn_int(32);
+        return 1;
+    }
     if (strcmp(name, "CASE_LOWER") == 0) {
         *out = ptn_int(0);
         return 1;
@@ -4055,6 +4187,14 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         : NULL;
     if (property_hook_type_case != NULL) {
         *out = ptn_builtin_enum_case_singleton(runtime, "PropertyHookType", property_hook_type_case);
+        free(class_name);
+        return 1;
+    }
+    const char *random_interval_boundary_case = ptn_ascii_case_equal(resolved_class_name, "Random\\IntervalBoundary")
+        ? ptn_random_interval_boundary_case_name(constant_name)
+        : NULL;
+    if (random_interval_boundary_case != NULL) {
+        *out = ptn_builtin_enum_case_singleton(runtime, "Random\\IntervalBoundary", random_interval_boundary_case);
         free(class_name);
         return 1;
     }
