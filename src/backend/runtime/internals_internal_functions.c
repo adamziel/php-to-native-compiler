@@ -55261,6 +55261,20 @@ static int ptn_stream_filter_initialize_user_object(
     const char *object_class = object_ptr->class_name;
     int native_php_user_filter = ptn_declared_class_is_same_or_descendant(object_class, "php_user_filter");
     int declared_filtername = ptn_stream_filter_object_declares_property(object_ptr, "filtername");
+    if (!native_php_user_filter && !ptn_object_has_declared_method(runtime, object, "filter")) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Invalid callback %s::filter, class %s does not have a method \"filter\"",
+            object_class,
+            object_class
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_filter_queue_shutdown_diagnostic(1, message);
+    }
 
     PtnValue filter_name_value = ptn_owned_string_len(
         ptn_duplicate_string_len(filter_name.data, filter_name.len),
@@ -55906,6 +55920,7 @@ static char *ptn_stream_apply_user_filter_alloc(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
+        ptn_stream_filter_queue_shutdown_diagnostic(1, message);
         ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
         *ok = 0;
         return NULL;
@@ -55940,6 +55955,23 @@ static char *ptn_stream_apply_user_filter_alloc(
         return NULL;
     }
 
+    PtnValue result_for_cast = ptn_value_deref(result);
+    if (result_for_cast.type == PTN_OBJECT && result_for_cast.as.object != NULL) {
+        const char *class_name = result_for_cast.as.object->class_name == NULL
+            ? "stdClass"
+            : result_for_cast.as.object->class_name;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Object of class %s could not be converted to int",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_filter_queue_shutdown_diagnostic(0, message);
+    }
     PtnValue status_value = ptn_cast_int_with_runtime(runtime, result, line);
     int64_t status = ptn_value_to_integer(status_value);
     ptn_value_destroy(&status_value);

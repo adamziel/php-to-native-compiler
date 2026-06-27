@@ -1915,6 +1915,7 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime,
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runtime, PtnValue *value, size_t line);
 static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime);
 static void ptn_runtime_free(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_stream_filter_flush_shutdown_diagnostic(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_exception_free(PtnException *exception);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
@@ -2180,6 +2181,7 @@ static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
 static PTN_UNUSED void ptn_runtime_shutdown_before_exit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root != NULL) {
+        ptn_stream_filter_flush_shutdown_diagnostic(root);
         ptn_runtime_free(root);
     }
 }
@@ -4180,6 +4182,8 @@ static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
 
 static int64_t ptn_next_resource_id = 5;
 static int ptn_stream_filter_resource_id_four_used = 0;
+static char *ptn_stream_filter_pending_shutdown_message = NULL;
+static int ptn_stream_filter_pending_shutdown_fatal = 0;
 static PtnResource *ptn_resource_registry_head = NULL;
 static PtnResource *ptn_resource_registry_tail = NULL;
 
@@ -4195,6 +4199,28 @@ static PTN_UNUSED int64_t ptn_resource_allocate_named_id(const char *type_name) 
         ptn_abort_out_of_memory();
     }
     return ptn_next_resource_id++;
+}
+
+static PTN_UNUSED void ptn_stream_filter_queue_shutdown_diagnostic(int fatal, const char *message) {
+    free(ptn_stream_filter_pending_shutdown_message);
+    ptn_stream_filter_pending_shutdown_message = ptn_duplicate_string(message == NULL ? "" : message);
+    ptn_stream_filter_pending_shutdown_fatal = fatal ? 1 : 0;
+}
+
+static PTN_UNUSED void ptn_stream_filter_flush_shutdown_diagnostic(PtnRuntime *runtime) {
+    if (ptn_stream_filter_pending_shutdown_message == NULL) {
+        return;
+    }
+    if (runtime != NULL && runtime->diagnostics.display_errors) {
+        FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+        fputc('\n', stream);
+        fputs(ptn_stream_filter_pending_shutdown_fatal ? "Fatal error: " : "Warning: ", stream);
+        fputs(ptn_stream_filter_pending_shutdown_message, stream);
+        fputs(" in Unknown on line 0\n", stream);
+    }
+    free(ptn_stream_filter_pending_shutdown_message);
+    ptn_stream_filter_pending_shutdown_message = NULL;
+    ptn_stream_filter_pending_shutdown_fatal = 0;
 }
 
 static PTN_UNUSED void ptn_resource_register(PtnResource *resource) {

@@ -872,6 +872,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
             return;
         }
         runtime->shutdown_in_progress = 1;
+        ptn_stream_filter_flush_shutdown_diagnostic(runtime);
     }
     free(runtime->dynamic_property_deprecation_suppress_property);
     runtime->dynamic_property_deprecation_suppress_property = NULL;
