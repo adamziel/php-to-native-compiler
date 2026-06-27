@@ -19439,12 +19439,26 @@ static int ptn_filter_read_thousand_option(
 static int ptn_filter_options_from_value(
     PtnRuntime *runtime,
     PtnValue value,
+    int64_t filter_id,
     PtnFilterOptions *filter_options,
     size_t line
 ) {
     ptn_filter_options_init(filter_options);
     value = ptn_value_deref(value);
     if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (filter_id == PTN_FILTER_CALLBACK) {
+        if (value.type == PTN_ARRAY) {
+            PtnArrayEntry *options_entry = ptn_filter_array_entry(value.as.array, "options");
+            if (options_entry != NULL) {
+                filter_options->has_callback = 1;
+                filter_options->callback = options_entry->value;
+            }
+        } else {
+            filter_options->has_callback = 1;
+            filter_options->callback = value;
+        }
         return 1;
     }
     if (value.type != PTN_ARRAY) {
@@ -20680,7 +20694,7 @@ static int ptn_filter_validate_id(PtnRuntime *runtime, const char *function_name
 static PtnValue ptn_internal_filter_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t filter_id = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_FILTER_DEFAULT;
     PtnFilterOptions options;
-    if (!ptn_filter_options_from_value(runtime, argc >= 3 ? args[2] : ptn_null(), &options, line)) {
+    if (!ptn_filter_options_from_value(runtime, argc >= 3 ? args[2] : ptn_null(), filter_id, &options, line)) {
         return ptn_null();
     }
 
@@ -20721,7 +20735,7 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
     }
     int64_t filter_id = argc >= 3 ? ptn_value_to_integer(args[2]) : PTN_FILTER_DEFAULT;
     PtnFilterOptions options;
-    if (!ptn_filter_options_from_value(runtime, argc >= 4 ? args[3] : ptn_null(), &options, line)) {
+    if (!ptn_filter_options_from_value(runtime, argc >= 4 ? args[3] : ptn_null(), filter_id, &options, line)) {
         ptn_string_operand_free(variable_name);
         return ptn_null();
     }
@@ -20808,7 +20822,7 @@ static int ptn_filter_spec_from_value(
     if (spec.type == PTN_ARRAY) {
         PtnArrayEntry *filter_entry = ptn_filter_array_entry(spec.as.array, "filter");
         *filter_id_out = filter_entry == NULL ? PTN_FILTER_DEFAULT : ptn_value_to_integer(filter_entry->value);
-        return ptn_filter_options_from_value(runtime, spec, options_out, line);
+        return ptn_filter_options_from_value(runtime, spec, *filter_id_out, options_out, line);
     }
     *filter_id_out = ptn_value_to_integer(spec);
     ptn_filter_options_init(options_out);

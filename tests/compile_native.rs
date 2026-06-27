@@ -72651,6 +72651,8 @@ try {\n\
 }\n\
 function ptn_filter_upper($value) { return strtoupper($value); }\n\
 var_dump(filter_var('data', FILTER_CALLBACK, ['options' => 'ptn_filter_upper']));\n\
+class PtnFilterCase { static function lower($value) { return strtolower($value); } }\n\
+var_dump(filter_var('DATA', FILTER_CALLBACK, ['options' => ['PtnFilterCase', 'lower']]));\n\
 try {\n\
     filter_var('data', FILTER_CALLBACK, ['options' => 'ptn_filter_missing_callback']);\n\
 } catch (TypeError $e) {\n\
@@ -72699,6 +72701,7 @@ string(23) \"0b15:23::3:67.98.234.17\"\n\
 string(4) \"data\"\n\
 filter_var(): \"regexp\" option is missing\n\
 string(4) \"DATA\"\n\
+string(4) \"data\"\n\
 filter_var(): Option must be a valid callback\n\
 filter_var_array(): Argument #2 ($options) must be of type array|int, string given\n\
 filter_var_array(): Argument #2 ($options) cannot contain empty keys\n\
