@@ -1278,7 +1278,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_linking_class_static_subtype(PtnRuntime *runtime, const char *candidate_name, const char *target_name);\n");
     out.push_str("static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index);\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
+    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, const char *kind, int required, size_t line, PtnValue *result_out);\n");
     out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
     out.push_str("    for (size_t i = 0; i + 2 < path.len; i++) {\n");
@@ -36545,7 +36545,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         || name.eq_ignore_ascii_case("strripos")
     {
         Some(&OFFSET_SEARCH_PARAMETERS)
-    } else if name.eq_ignore_ascii_case("strstr") || name.eq_ignore_ascii_case("stristr") {
+    } else if name.eq_ignore_ascii_case("strchr")
+        || name.eq_ignore_ascii_case("strstr")
+        || name.eq_ignore_ascii_case("stristr")
+    {
         Some(&STRSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("strrchr") {
         Some(&OFFSET_SEARCH_PARAMETERS[..2])
@@ -46935,6 +46938,15 @@ impl ValueEmitter {
         out.push_str(&resolved_temp);
         out.push_str(", ");
         out.push_str(&display_path_temp);
+        out.push_str(", ");
+        out.push_str("\"");
+        out.push_str(include_kind_text(kind));
+        out.push_str("\", ");
+        out.push_str(if include_kind_is_required(kind) {
+            "1"
+        } else {
+            "0"
+        });
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", &");

@@ -44976,6 +44976,10 @@ static PtnValue ptn_internal_strstr(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_internal_strstr_named(runtime, "strstr", argc, args, line, 0);
 }
 
+static PtnValue ptn_internal_strchr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strstr_named(runtime, "strchr", argc, args, line, 0);
+}
+
 static PtnValue ptn_internal_stristr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_strstr_named(runtime, "stristr", argc, args, line, 1);
 }
@@ -53328,6 +53332,58 @@ static void ptn_user_stream_emit_url_disabled_warning(
     free(message);
 }
 
+static int ptn_user_stream_object_has_method(PtnRuntime *runtime, PtnValue object, const char *method_name) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (runtime == NULL ||
+        runtime->declared_method_metadata == NULL ||
+        resolved.type != PTN_OBJECT ||
+        resolved.as.object == NULL ||
+        resolved.as.object->class_name == NULL) {
+        return 0;
+    }
+    return runtime->declared_method_metadata(resolved.as.object->class_name, method_name).found;
+}
+
+static void ptn_user_stream_emit_open_failed_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnValue object,
+    PtnUserStreamWrapper *wrapper,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    const char *class_name = wrapper == NULL ? NULL : wrapper->class_name;
+    if (resolved.type == PTN_OBJECT &&
+        resolved.as.object != NULL &&
+        resolved.as.object->class_name != NULL) {
+        class_name = resolved.as.object->class_name;
+    }
+    if (class_name == NULL) {
+        class_name = "";
+    }
+    int needed = snprintf(NULL, 0, "Failed to open stream: \"%s::stream_open\" call failed", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *detail = malloc((size_t)needed + 1);
+    if (detail == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        detail,
+        (size_t)needed + 1,
+        "Failed to open stream: \"%s::stream_open\" call failed",
+        class_name
+    );
+    if (written < 0 || written != needed) {
+        free(detail);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_file_warning(runtime, function_name, path, detail, line);
+    free(detail);
+}
+
 typedef enum {
     PTN_STREAM_ERROR_MODE_ERROR,
     PTN_STREAM_ERROR_MODE_EXCEPTION,
@@ -53589,6 +53645,12 @@ static int ptn_try_open_user_stream_wrapper(
         *out = ptn_null();
         return 1;
     }
+    if (!ptn_user_stream_object_has_method(runtime, object, "stream_open")) {
+        ptn_user_stream_emit_open_failed_warning(runtime, function_name, path, object, wrapper, line);
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
 
     PtnValue opened_path = ptn_reference_value(ptn_reference_new_owned(ptn_string("")));
     PtnValue open_args[4] = {
@@ -53611,6 +53673,7 @@ static int ptn_try_open_user_stream_wrapper(
     int opened = ptn_is_truthy(open_result);
     ptn_value_destroy(&open_result);
     if (!opened) {
+        ptn_user_stream_emit_open_failed_warning(runtime, function_name, path, object, wrapper, line);
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
         return 1;
@@ -164325,6 +164388,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripos", 2, 3, ptn_internal_stripos },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
+        { "strchr", 2, 3, ptn_internal_strchr },
         { "stristr", 2, 3, ptn_internal_stristr },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strnatcasecmp", 2, 2, ptn_internal_strnatcasecmp },
@@ -206683,10 +206747,11 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     PtnRuntime *runtime,
     const char *path,
     const char *display_path,
+    const char *kind,
+    int required,
     size_t line,
     PtnValue *result_out
 ) {
-    (void)display_path;
     char *code = NULL;
     size_t code_len = 0;
     unsigned char *user_stream_code = NULL;
@@ -206703,7 +206768,84 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
         code = (char *)user_stream_code;
     } else if (user_stream_result < 0) {
         free(user_stream_code);
-        return 0;
+        const char *shown_path = display_path == NULL ? (path == NULL ? "" : path) : display_path;
+        const char *include_path = runtime != NULL && runtime->include_path != NULL
+            ? runtime->include_path
+            : ".";
+        int needed;
+        char *message;
+        int written;
+        if (required) {
+            needed = snprintf(
+                NULL,
+                0,
+                "Failed opening required '%s' (include_path='%s')",
+                shown_path,
+                include_path
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "Failed opening required '%s' (include_path='%s')",
+                shown_path,
+                include_path
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_owned_message_at(
+                runtime,
+                "Error",
+                message,
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
+            if (result_out != NULL) {
+                *result_out = ptn_null();
+            }
+            return 1;
+        }
+        needed = snprintf(
+            NULL,
+            0,
+            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+            kind == NULL ? "include" : kind,
+            shown_path,
+            include_path
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Failed opening '%s' for inclusion (include_path='%s')",
+            kind == NULL ? "include" : kind,
+            shown_path,
+            include_path
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+        free(message);
+        if (result_out != NULL) {
+            *result_out = ptn_bool(0);
+        }
+        return 1;
     } else if (!ptn_dynamic_read_file(path, &code, &code_len)) {
         return 0;
     }
@@ -207058,7 +207200,7 @@ static int ptn_spl_autoload_try_candidate(PtnRuntime *runtime, const char *candi
         return 1;
     }
     PtnValue include_result = ptn_null();
-    int ok = ptn_dynamic_include_php_file(runtime, resolved_path, candidate, line, &include_result);
+    int ok = ptn_dynamic_include_php_file(runtime, resolved_path, candidate, "include", 0, line, &include_result);
     ptn_value_destroy(&include_result);
     free(resolved_path);
     return ok;
