@@ -7945,6 +7945,7 @@ typedef struct {
     size_t content_len;
     unsigned char *metadata;
     size_t metadata_len;
+    char *corruption;
     uint32_t flags;
     int64_t timestamp;
     size_t open_count;
@@ -146124,11 +146125,13 @@ static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     free(entry->name);
     free(entry->content);
     free(entry->metadata);
+    free(entry->corruption);
     entry->name = NULL;
     entry->content = NULL;
     entry->content_len = 0;
     entry->metadata = NULL;
     entry->metadata_len = 0;
+    entry->corruption = NULL;
     entry->flags = 0;
     entry->timestamp = 0;
     entry->open_count = 0;
@@ -146156,6 +146159,7 @@ static void ptn_phar_archive_reserve_entries(PtnPharArchiveState *archive, size_
         entries[i].content_len = 0;
         entries[i].metadata = NULL;
         entries[i].metadata_len = 0;
+        entries[i].corruption = NULL;
         entries[i].flags = 0;
         entries[i].timestamp = 0;
         entries[i].open_count = 0;
@@ -146319,8 +146323,10 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     size_t index = 0;
     if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
         free(archive->entries[index].content);
+        free(archive->entries[index].corruption);
         archive->entries[index].content = content_copy;
         archive->entries[index].content_len = content_len;
+        archive->entries[index].corruption = NULL;
         archive->entries[index].flags = flags;
         archive->entries[index].timestamp = timestamp;
         if (mark_modified) {
@@ -146335,6 +146341,7 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     entry->content_len = content_len;
     entry->metadata = NULL;
     entry->metadata_len = 0;
+    entry->corruption = NULL;
     entry->flags = flags;
     entry->timestamp = timestamp;
     entry->open_count = 0;
@@ -146445,6 +146452,38 @@ static void ptn_phar_archive_set_metadata(
     archive->metadata_len = metadata_copy == NULL ? 0 : metadata_len;
 }
 
+static void ptn_phar_archive_set_corrupt_entry(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const char *reason,
+    uint32_t flags,
+    int64_t timestamp
+) {
+    if (archive == NULL || name == NULL) {
+        return;
+    }
+    size_t index = 0;
+    if (!ptn_phar_archive_find_entry_index(archive, name, &index)) {
+        ptn_phar_archive_set_entry_with_flags_mode(
+            archive,
+            name,
+            (const unsigned char *)"",
+            0,
+            flags,
+            timestamp,
+            0
+        );
+        if (!ptn_phar_archive_find_entry_index(archive, name, &index)) {
+            return;
+        }
+    }
+    PtnPharArchiveEntry *entry = &archive->entries[index];
+    free(entry->corruption);
+    entry->corruption = ptn_duplicate_string(reason == NULL ? "internal corruption" : reason);
+    entry->flags = flags;
+    entry->timestamp = timestamp;
+}
+
 static int ptn_phar_serialize_metadata_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -146549,6 +146588,15 @@ static int ptn_phar_archive_rename_entry(
         source->flags,
         source->timestamp
     );
+    if (source->corruption != NULL) {
+        ptn_phar_archive_set_corrupt_entry(
+            dest_archive,
+            dest_name,
+            source->corruption,
+            source->flags,
+            source->timestamp
+        );
+    }
     ptn_phar_archive_delete_entry(source_archive, source_name);
     ptn_phar_archive_mark_modified(dest_archive);
     return 1;
@@ -146572,6 +146620,7 @@ static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const cha
     archive->entries[archive->entry_count].content_len = 0;
     archive->entries[archive->entry_count].metadata = NULL;
     archive->entries[archive->entry_count].metadata_len = 0;
+    archive->entries[archive->entry_count].corruption = NULL;
     archive->entries[archive->entry_count].flags = 0;
     archive->entries[archive->entry_count].open_count = 0;
     ptn_phar_archive_mark_modified(archive);
@@ -146778,6 +146827,15 @@ static void ptn_phar_parse_manifest(
                 infos[i].timestamp
             );
             content_cursor += infos[i].content_len;
+        } else {
+            ptn_phar_archive_set_corrupt_entry(
+                archive,
+                infos[i].name,
+                "internal corruption",
+                infos[i].flags,
+                infos[i].timestamp
+            );
+            content_cursor = len;
         }
         free(infos[i].metadata);
         free(infos[i].name);
@@ -147405,6 +147463,15 @@ static void ptn_phar_archive_copy_contents(
             entry->flags,
             entry->timestamp
         );
+        if (entry->corruption != NULL) {
+            ptn_phar_archive_set_corrupt_entry(
+                dest,
+                entry->name,
+                entry->corruption,
+                entry->flags,
+                entry->timestamp
+            );
+        }
     }
 }
 
@@ -147660,6 +147727,43 @@ static void ptn_phar_set_last_missing_entry_stream_error(const char *entry_name,
         "phar error: \"%s\" is not a file in phar \"%s\"",
         entry_name == NULL ? "" : entry_name,
         archive_path == NULL ? "" : archive_path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_clear_last_stream_error();
+    ptn_phar_last_stream_error = ptn_duplicate_open_stream_detail(message);
+    free(message);
+}
+
+static void ptn_phar_set_last_corrupt_entry_stream_error(
+    const char *reason,
+    const char *entry_name,
+    const char *archive_path
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: %s of phar \"%s\" (truncated file \"%s\")",
+        reason == NULL ? "internal corruption" : reason,
+        archive_path == NULL ? "" : archive_path,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: %s of phar \"%s\" (truncated file \"%s\")",
+        reason == NULL ? "internal corruption" : reason,
+        archive_path == NULL ? "" : archive_path,
+        entry_name == NULL ? "" : entry_name
     );
     if (written < 0 || written != needed) {
         free(message);
@@ -149685,6 +149789,15 @@ static PtnValue ptn_phar_call_method(
                 source->flags,
                 source->timestamp
             );
+            if (source->corruption != NULL) {
+                ptn_phar_archive_set_corrupt_entry(
+                    data->archive,
+                    dest_name,
+                    source->corruption,
+                    source->flags,
+                    source->timestamp
+                );
+            }
         }
         free(dest_name);
         free(source_name);
@@ -150859,6 +150972,11 @@ static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, si
         return 0;
     }
     PtnPharArchiveEntry *entry = &archive->entries[index];
+    if (entry->corruption != NULL) {
+        ptn_phar_set_last_corrupt_entry_stream_error(entry->corruption, entry_name, archive->path);
+        free(entry_name);
+        return 0;
+    }
     if (data_out != NULL) {
         *data_out = ptn_phar_copy_bytes(entry->content, entry->content_len);
     }
