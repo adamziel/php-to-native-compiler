@@ -1917,6 +1917,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumBackedCase_getBackingValue[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
         }
+        function ptn_supported_magic_lifecycle_metadata_row() {
+            return ptn_path ~ /Zend\/tests\/magic_methods\/magic_methods_wakeup[.]phpt$/
+        }
         function ptn_supported_readonly_indirect_mutation_row() {
             return ptn_path ~ /Zend\/tests\/readonly_props\/(cache_slot|readonly_clone_error[237]|readonly_clone_success1|readonly_modification)[.]phpt$/
         }
@@ -2016,7 +2019,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 array_column_seen = 1
             }
             if (line ~ /function[[:space:]]+&?[[:space:]]*__(serialize|unserialize|sleep|wakeup)[[:space:]]*\(/ &&
-                !ptn_supported_enum_metadata_row()) {
+                !ptn_supported_enum_metadata_row() &&
+                !ptn_supported_magic_lifecycle_metadata_row()) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
