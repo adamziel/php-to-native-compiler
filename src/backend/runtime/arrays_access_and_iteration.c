@@ -9756,6 +9756,9 @@ static PTN_UNUSED void ptn_emit_foreach_non_array_warning(
     const char *path,
     size_t line
 ) {
+    if (runtime != NULL && !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
     char message[128];
     snprintf(
         message,
@@ -9763,6 +9766,18 @@ static PTN_UNUSED void ptn_emit_foreach_non_array_warning(
         "foreach() argument must be of type array|object, %s given",
         ptn_foreach_operand_type_name(value)
     );
+    if (runtime != NULL) {
+        runtime->diagnostics.emitted_warning = 1;
+        if (ptn_diagnostics_try_error_handler(
+            &runtime->diagnostics,
+            PTN_E_WARNING,
+            message,
+            path,
+            line
+        )) {
+            return;
+        }
+    }
     ptn_emit_array_runtime_diagnostic_at_path(runtime, "Warning", message, path, line);
 }
 

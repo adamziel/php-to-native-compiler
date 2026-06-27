@@ -41473,14 +41473,24 @@ impl ValueEmitter {
                     return self
                         .emit_offset_coalesce_assignment(out, array, dimensions, *line, value);
                 }
-                AssignmentTarget::PropertyArrayDim { .. } => {
-                    unreachable!(
-                        "parser rejects null coalescing assignment for property array offsets"
+                AssignmentTarget::PropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    line,
+                } => {
+                    return self.emit_property_array_dim_coalesce_assignment(
+                        out, receiver, name, dimensions, *line, value,
                     );
                 }
-                AssignmentTarget::DynamicPropertyArrayDim { .. } => {
-                    unreachable!(
-                        "parser rejects null coalescing assignment for dynamic property array offsets"
+                AssignmentTarget::DynamicPropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    line,
+                } => {
+                    return self.emit_dynamic_property_array_dim_coalesce_assignment(
+                        out, receiver, name, dimensions, *line, value,
                     );
                 }
                 AssignmentTarget::StaticPropertyArrayDim { .. } => {
@@ -52227,6 +52237,287 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_property_coalesce_lookup_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+    ) -> String {
+        if let ValueExpr::Load { name, .. } = receiver {
+            let lookup_temp = self.next_temp();
+            out.push_str("    PtnLookupResult ");
+            out.push_str(&lookup_temp);
+            out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+            let receiver_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&receiver_temp);
+            out.push_str(" = ");
+            out.push_str(&lookup_temp);
+            out.push_str(".exists ? ptn_value_clone_deref(");
+            out.push_str(&lookup_temp);
+            out.push_str(".value) : ptn_null();\n");
+            emit_value_cleanup(out, "    ", &format!("{lookup_temp}.value"));
+            return receiver_temp;
+        }
+
+        self.emit_materialized_value(out, receiver)
+    }
+
+    fn emit_property_coalesce_write_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        lookup_receiver_temp: &str,
+    ) -> String {
+        if let ValueExpr::Load { name, .. } = receiver {
+            let lookup_temp = self.next_temp();
+            out.push_str("        PtnLookupResult ");
+            out.push_str(&lookup_temp);
+            out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+            let receiver_temp = self.next_temp();
+            out.push_str("        PtnValue ");
+            out.push_str(&receiver_temp);
+            out.push_str(" = ");
+            out.push_str(&lookup_temp);
+            out.push_str(".exists ? ptn_value_clone_deref(");
+            out.push_str(&lookup_temp);
+            out.push_str(".value) : ptn_null();\n");
+            emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+            return receiver_temp;
+        }
+
+        let receiver_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&receiver_temp);
+        out.push_str(" = ptn_value_clone(");
+        out.push_str(lookup_receiver_temp);
+        out.push_str(");\n");
+        receiver_temp
+    }
+
+    fn emit_property_array_dim_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let lookup_receiver_temp = self.emit_property_coalesce_lookup_receiver(out, receiver);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let property_lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&property_lookup_temp);
+        out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+        out.push_str(&lookup_receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_lookup_missing();\n");
+        out.push_str("    if (");
+        out.push_str(&property_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("        ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_value_array_path_lookup_quiet(&runtime, ");
+        out.push_str(&property_lookup_temp);
+        out.push_str(".value, ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value);\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        emit_value_cleanup(out, "        ", &format!("{property_lookup_temp}.value"));
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        emit_value_cleanup(out, "        ", &format!("{property_lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        let snapshot_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        let write_receiver_temp =
+            self.emit_property_coalesce_write_receiver(out, receiver, &lookup_receiver_temp);
+        let property_reference_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&property_reference_temp);
+        out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+        out.push_str(&write_receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+        out.push_str(&property_reference_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &property_reference_temp);
+        emit_value_cleanup(out, "        ", &write_receiver_temp);
+        emit_value_cleanup(out, "        ", &snapshot_temp);
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &lookup_receiver_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_dynamic_property_array_dim_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &ValueExpr,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let lookup_receiver_temp = self.emit_property_coalesce_lookup_receiver(out, receiver);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let property_lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&property_lookup_temp);
+        out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+        out.push_str(&lookup_receiver_temp);
+        out.push_str(", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_lookup_missing();\n");
+        out.push_str("    if (");
+        out.push_str(&property_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("        ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_value_array_path_lookup_quiet(&runtime, ");
+        out.push_str(&property_lookup_temp);
+        out.push_str(".value, ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value);\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        emit_value_cleanup(out, "        ", &format!("{property_lookup_temp}.value"));
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        emit_value_cleanup(out, "        ", &format!("{property_lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        let snapshot_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        let write_receiver_temp =
+            self.emit_property_coalesce_write_receiver(out, receiver, &lookup_receiver_temp);
+        let property_reference_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&property_reference_temp);
+        out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+        out.push_str(&write_receiver_temp);
+        out.push_str(", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+        out.push_str(&property_reference_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &property_reference_temp);
+        emit_value_cleanup(out, "        ", &write_receiver_temp);
+        emit_value_cleanup(out, "        ", &snapshot_temp);
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &lookup_receiver_temp);
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
     fn emit_property_coalesce_assignment(
         &mut self,
         out: &mut String,
@@ -56210,6 +56501,10 @@ impl ValueEmitter {
         } else {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
             out.push_str(" = ");
             out.push_str("ptn_call_function(&runtime, \"");
             out.push_str(&c_string(&resolved_name));
@@ -56220,6 +56515,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            out.push_str("    }\n");
             self.emit_date_period_static_factory_property_initializers(
                 out,
                 &result_temp,

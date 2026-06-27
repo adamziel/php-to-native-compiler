@@ -3218,7 +3218,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                 return 0;
             }
             ptn_object_release(object);
-            ptn_throw_exception(runtime, "TypeError", message);
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
             return 0;
         }
         if (real.as.object == object) {
@@ -3236,7 +3236,13 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                 return 0;
             }
             ptn_object_release(object);
-            ptn_throw_exception(runtime, "Error", "Lazy proxy factory must return a non-lazy object");
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Lazy proxy factory must return a non-lazy object",
+                runtime->source_path,
+                line
+            );
             return 0;
         }
         if (!ptn_lazy_object_real_instance_compatible(runtime, object, real)) {
@@ -3261,7 +3267,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                 return 0;
             }
             ptn_object_release(object);
-            ptn_throw_exception(runtime, "TypeError", message);
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
             return 0;
         }
         if (object_released) {
@@ -3297,10 +3303,12 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                 return 0;
             }
             ptn_object_release(object);
-            ptn_throw_exception(
+            ptn_throw_exception_at(
                 runtime,
                 "TypeError",
-                "Lazy object initializer must return NULL or no value"
+                "Lazy object initializer must return NULL or no value",
+                runtime->source_path,
+                line
             );
             return 0;
         }
@@ -3325,7 +3333,13 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
 #else
     ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
     object->lazy_initializing = 0;
-    ptn_throw_exception(runtime, "Error", "Lazy object initializer dispatch is unavailable");
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Lazy object initializer dispatch is unavailable",
+        runtime->source_path,
+        line
+    );
     return 0;
 #endif
 }

@@ -1,0 +1,16 @@
+# Focused opcache optimizer/JIT residual PHPT row pack for ptn-w17z.1012.
+# Source: current-red full-PHPT artifact partial-statuses-20260627T040040Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: opcache-opt-jit-residual rows=12
+ext/opcache/tests/jit/gh21746.phpt
+ext/opcache/tests/jit/fetch_dim_w_004.phpt
+ext/opcache/tests/jit/gh18262-001.phpt
+ext/opcache/tests/jit/nan_002.phpt
+ext/opcache/tests/opt/block_pass_007.phpt
+ext/opcache/tests/jit/init_fcall_001.phpt
+ext/opcache/tests/opt/dce_007.phpt
+ext/opcache/tests/jit/gh16393.phpt
+ext/opcache/tests/jit/gh14082.phpt
+ext/opcache/tests/opt/sccp_005.phpt
+ext/opcache/tests/jit/gh8461-006.phpt
+ext/opcache/tests/jit/fetch_obj_010.phpt

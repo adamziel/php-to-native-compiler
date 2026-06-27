@@ -65256,6 +65256,42 @@ echo \"lift final: \", error_reporting(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_error_suppression_masks_user_function_foreach_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-error-suppressed-user-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-suppressed-user-foreach.php");
+    let output = root.join("error-suppressed-user-foreach-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function warn_foreach() {\n\
+    echo \"inner:\", error_reporting(), \"\\n\";\n\
+    foreach ($missing as $value) {}\n\
+}\n\
+echo \"before:\", error_reporting(), \"\\n\";\n\
+@warn_foreach();\n\
+echo \"after:\", error_reporting(), \"\\n\";\n\
+warn_foreach();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "before:30719\ninner:0\nafter:30719\ninner:30719\n{}\
+\nWarning: foreach() argument must be of type array|object, null given in {} on line 4\n",
+            undefined_variable_warning(&input, "missing", 4),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_fill_to_native_binary() {
     let root = temp_dir("ptn-native-array-fill");
     fs::create_dir_all(&root).unwrap();
@@ -83955,6 +83991,41 @@ Attempt to assign property \"bad\" on int\n"
 }
 
 #[test]
+fn compile_property_offset_null_coalescing_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-property-offset-coalesce-assign");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-offset-coalesce-assign.php");
+    let output = root.join("property-offset-coalesce-assign-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$obj->ary[\"bas\"] ??= $obj = new stdClass;\n\
+var_dump($obj->ary[\"bas\"] === $obj);\n\
+$name = \"ary\";\n\
+$dyn->{$name}[\"bas\"] ??= $dyn = new stdClass;\n\
+var_dump($dyn->ary[\"bas\"] === $dyn);\n\
+$existing = new stdClass;\n\
+$existing->ary = [\"bas\" => \"keep\"];\n\
+var_dump($existing->ary[\"bas\"] ??= \"new\");\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nstring(4) \"keep\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_lookup_quiet(&runtime"));
+    assert!(c_source.contains("ptn_object_reference_for_property(&runtime"));
+}
+
+#[test]
 fn compile_property_isset_empty_and_coalesce_to_native_binary() {
     let root = temp_dir("ptn-native-property-isset-empty-coalesce");
     fs::create_dir_all(&root).unwrap();
@@ -99549,6 +99620,74 @@ var_dump(new C() instanceof C);
         "Exception\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_internal_argument_exception_skips_outer_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-internal-argument-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-internal-argument-exception.php");
+    let output = root.join("nested-internal-argument-exception-bin");
+    fs::write(&input, "<?php\nini_set(ini_set(ini_set()));\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught ArgumentCountError: ini_set() expects exactly 2 arguments, 0 given"
+        ),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Next ArgumentCountError"), "{stderr}");
+}
+
+#[test]
+fn compile_lazy_proxy_incompatible_real_instance_uncaught_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-incompatible-real-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-incompatible-real-instance.php");
+    let output = root.join("lazy-proxy-incompatible-real-instance-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class B {
+    public int $fusion;
+}
+class C extends B {}
+class D extends C {
+    public function __destruct() {}
+}
+
+foreach ([[C::class, new C()], [C::class, new B()], [D::class, new B()]] as [$class, $instance]) {
+    $obj = (new ReflectionClass($class))->newLazyProxy(function ($obj) use ($instance) {
+        $instance->b = 1;
+        return $instance;
+    });
+    var_dump($obj->b);
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(1)\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught TypeError: The real instance class B is not compatible with the proxy class D."),
+        "{stderr}"
+    );
+    assert!(stderr.contains("Stack trace:\n#0 {main}"), "{stderr}");
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

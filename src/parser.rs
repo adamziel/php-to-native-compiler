@@ -26153,11 +26153,16 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
-        AssignmentTarget::PropertyArrayDim { .. }
-        | AssignmentTarget::DynamicPropertyArrayDim { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::PropertyArrayDim { dimensions, .. }
+        | AssignmentTarget::DynamicPropertyArrayDim { dimensions, .. } => {
+            if dimensions.iter().any(Option::is_none) {
+                return Err(Diagnostic::new(
+                    "Cannot use [] for reading",
+                    Some(span),
+                ));
+            }
+            Ok(())
+        }
         AssignmentTarget::StaticPropertyArrayDim { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
