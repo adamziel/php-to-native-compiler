@@ -4807,6 +4807,21 @@ static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name)
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_random_interval_boundary_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "ClosedOpen",
+        "ClosedClosed",
+        "OpenClosed",
+        "OpenOpen",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED const char *ptn_stream_error_code_case_name(const char *case_name) {
     static const char *const names[] = {
         "None",
@@ -6732,6 +6747,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (rounding_case != NULL) {
         return ptn_enum_case(runtime, "RoundingMode", rounding_case);
+    }
+    const char *random_interval_boundary_case = ptn_ascii_case_equal(resolved_class_name, "Random\\IntervalBoundary")
+        ? ptn_random_interval_boundary_case_name(constant)
+        : NULL;
+    if (random_interval_boundary_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "Random\\IntervalBoundary", random_interval_boundary_case);
     }
     const char *stream_error_code_case = ptn_ascii_case_equal(resolved_class_name, "StreamErrorCode")
         ? ptn_stream_error_code_case_name(constant)

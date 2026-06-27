@@ -1409,6 +1409,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("FILE_TEXT", 0)
     PTN_BUILTIN_INT_CONSTANT("MT_RAND_MT19937", 0)
     PTN_BUILTIN_INT_CONSTANT("MT_RAND_PHP", 1)
+    if (strcmp(name, "PHP_FLOAT_EPSILON") == 0) {
+        *out = ptn_float(DBL_EPSILON);
+        return 1;
+    }
     PTN_BUILTIN_INT_CONSTANT("HASH_HMAC", PTN_HASH_HMAC)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_ASSOC", 1)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_NUM", 2)

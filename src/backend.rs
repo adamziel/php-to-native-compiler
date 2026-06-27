@@ -100,6 +100,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Random\\IntervalBoundary",
     "StreamErrorCode",
     "StreamErrorMode",
     "StreamErrorStore",
@@ -23981,6 +23982,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "streamerrormode" => Some("StreamErrorMode"),
                 "hashcontext" => Some("HashContext"),
                 "sessionhandler" => Some("SessionHandler"),
+                "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
                 "random\\engine\\mt19937" => Some("Random\\Engine\\Mt19937"),
                 "random\\engine\\pcgoneseq128xslrr64" => {
@@ -59730,9 +59732,17 @@ fn c_optional_string(value: Option<&str>) -> String {
     }
 }
 
+fn c_php_string_value(value: &str) -> String {
+    format!(
+        "ptn_string_literal(\"{}\", {})",
+        c_string(value),
+        php_string_byte_len(value)
+    )
+}
+
 fn c_property_default_value(value: Option<&ValueExpr>) -> String {
     match value {
-        Some(ValueExpr::String(value)) => format!("ptn_string(\"{}\")", c_string(value)),
+        Some(ValueExpr::String(value)) => c_php_string_value(value),
         Some(ValueExpr::Int(value)) => format!("ptn_int({})", c_i64_literal(*value)),
         Some(ValueExpr::Float(value)) => format!("ptn_float({})", c_f64_literal(*value)),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
@@ -59885,7 +59895,7 @@ fn c_static_variable_preview_array_value_for_class(
     let mut entries = Vec::with_capacity(elements.len());
     for element in elements {
         let (has_key, key) = match &element.key {
-            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::String(value)) => ("1", c_php_string_value(value)),
             Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
             Some(ValueExpr::Constant { .. }) | Some(ValueExpr::ClassConstantFetch { .. }) => (
                 "1",
@@ -60072,7 +60082,7 @@ fn c_property_default_array_value_for_class(
     let mut entries = Vec::with_capacity(elements.len());
     for element in elements {
         let (has_key, key) = match &element.key {
-            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::String(value)) => ("1", c_php_string_value(value)),
             Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
             Some(ValueExpr::ClassConstantFetch { .. }) if declaring_class.is_some() => (
                 "1",

@@ -25060,6 +25060,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PHP_INT_MIN"
             | "PHP_INT_MAX"
             | "PHP_INT_SIZE"
+            | "PHP_FLOAT_EPSILON"
             | "PHP_MAXPATHLEN"
             | "PHP_BINARY"
             | "PHP_VERSION"
