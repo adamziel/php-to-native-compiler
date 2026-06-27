@@ -152433,9 +152433,18 @@ static int ptn_soap_type_name_is(const char *type, const char *expected) {
 
 static int ptn_soap_type_is_integer(const char *type) {
     return ptn_soap_type_name_is(type, "integer") ||
+        ptn_soap_type_name_is(type, "nonPositiveInteger") ||
+        ptn_soap_type_name_is(type, "negativeInteger") ||
+        ptn_soap_type_name_is(type, "nonNegativeInteger") ||
+        ptn_soap_type_name_is(type, "positiveInteger") ||
         ptn_soap_type_name_is(type, "int") ||
         ptn_soap_type_name_is(type, "short") ||
-        ptn_soap_type_name_is(type, "long");
+        ptn_soap_type_name_is(type, "byte") ||
+        ptn_soap_type_name_is(type, "long") ||
+        ptn_soap_type_name_is(type, "unsignedLong") ||
+        ptn_soap_type_name_is(type, "unsignedInt") ||
+        ptn_soap_type_name_is(type, "unsignedShort") ||
+        ptn_soap_type_name_is(type, "unsignedByte");
 }
 
 static int ptn_soap_value_is_enum_case(PtnValue value) {
@@ -152635,17 +152644,120 @@ static void ptn_soap_append_any_value(
 }
 
 static const char *ptn_soap_xsd_type_name(const char *type) {
+    if (ptn_soap_type_name_is(type, "string") || ptn_soap_type_name_is(type, "str")) {
+        return "string";
+    }
     if (ptn_soap_type_name_is(type, "int")) {
         return "int";
     }
+    if (ptn_soap_type_name_is(type, "byte")) {
+        return "byte";
+    }
+    if (ptn_soap_type_name_is(type, "unsignedLong")) {
+        return "unsignedLong";
+    }
+    if (ptn_soap_type_name_is(type, "unsignedInt")) {
+        return "unsignedInt";
+    }
+    if (ptn_soap_type_name_is(type, "unsignedShort")) {
+        return "unsignedShort";
+    }
+    if (ptn_soap_type_name_is(type, "unsignedByte")) {
+        return "unsignedByte";
+    }
+    if (ptn_soap_type_name_is(type, "nonPositiveInteger")) {
+        return "nonPositiveInteger";
+    }
+    if (ptn_soap_type_name_is(type, "negativeInteger")) {
+        return "negativeInteger";
+    }
+    if (ptn_soap_type_name_is(type, "nonNegativeInteger")) {
+        return "nonNegativeInteger";
+    }
+    if (ptn_soap_type_name_is(type, "positiveInteger")) {
+        return "positiveInteger";
+    }
     if (ptn_soap_type_name_is(type, "decimal")) {
         return "decimal";
+    }
+    if (ptn_soap_type_name_is(type, "duration")) {
+        return "duration";
+    }
+    if (ptn_soap_type_name_is(type, "dateTime") ||
+        ptn_soap_type_name_is(type, "timeInstant")) {
+        return "dateTime";
+    }
+    if (ptn_soap_type_name_is(type, "time")) {
+        return "time";
+    }
+    if (ptn_soap_type_name_is(type, "date")) {
+        return "date";
+    }
+    if (ptn_soap_type_name_is(type, "gYearMonth")) {
+        return "gYearMonth";
+    }
+    if (ptn_soap_type_name_is(type, "gYear")) {
+        return "gYear";
+    }
+    if (ptn_soap_type_name_is(type, "gMonthDay")) {
+        return "gMonthDay";
+    }
+    if (ptn_soap_type_name_is(type, "gDay")) {
+        return "gDay";
+    }
+    if (ptn_soap_type_name_is(type, "gMonth")) {
+        return "gMonth";
     }
     if (ptn_soap_type_name_is(type, "base64Binary")) {
         return "base64Binary";
     }
     if (ptn_soap_type_name_is(type, "hexBinary")) {
         return "hexBinary";
+    }
+    if (ptn_soap_type_name_is(type, "anyURI")) {
+        return "anyURI";
+    }
+    if (ptn_soap_type_name_is(type, "QName")) {
+        return "QName";
+    }
+    if (ptn_soap_type_name_is(type, "NOTATION")) {
+        return "NOTATION";
+    }
+    if (ptn_soap_type_name_is(type, "normalizedString")) {
+        return "normalizedString";
+    }
+    if (ptn_soap_type_name_is(type, "token")) {
+        return "token";
+    }
+    if (ptn_soap_type_name_is(type, "language")) {
+        return "language";
+    }
+    if (ptn_soap_type_name_is(type, "NMTOKEN")) {
+        return "NMTOKEN";
+    }
+    if (ptn_soap_type_name_is(type, "NMTOKENS")) {
+        return "NMTOKENS";
+    }
+    if (ptn_soap_type_name_is(type, "Name")) {
+        return "Name";
+    }
+    if (ptn_soap_type_name_is(type, "NCName")) {
+        return "NCName";
+    }
+    if (ptn_soap_type_name_is(type, "ID")) {
+        return "ID";
+    }
+    if (ptn_soap_type_name_is(type, "IDREF")) {
+        return "IDREF";
+    }
+    if (ptn_soap_type_name_is(type, "IDREFS")) {
+        return "IDREFS";
+    }
+    if (ptn_soap_type_name_is(type, "ENTITY")) {
+        return "ENTITY";
+    }
+    if (ptn_soap_type_name_is(type, "ENTITIES")) {
+        return "ENTITIES";
     }
     if (ptn_soap_type_name_is(type, "any")) {
         return "any";
@@ -152678,9 +152790,33 @@ static int ptn_soap_type_is_builtin_scalar(const char *type) {
         ptn_soap_type_name_is(type, "float") ||
         ptn_soap_type_name_is(type, "double") ||
         ptn_soap_type_name_is(type, "decimal") ||
+        ptn_soap_type_name_is(type, "duration") ||
+        ptn_soap_type_name_is(type, "dateTime") ||
+        ptn_soap_type_name_is(type, "timeInstant") ||
+        ptn_soap_type_name_is(type, "time") ||
+        ptn_soap_type_name_is(type, "date") ||
+        ptn_soap_type_name_is(type, "gYearMonth") ||
+        ptn_soap_type_name_is(type, "gYear") ||
+        ptn_soap_type_name_is(type, "gMonthDay") ||
+        ptn_soap_type_name_is(type, "gDay") ||
+        ptn_soap_type_name_is(type, "gMonth") ||
         ptn_soap_type_name_is(type, "boolean") ||
         ptn_soap_type_name_is(type, "base64Binary") ||
         ptn_soap_type_name_is(type, "hexBinary") ||
+        ptn_soap_type_name_is(type, "anyURI") ||
+        ptn_soap_type_name_is(type, "QName") ||
+        ptn_soap_type_name_is(type, "NOTATION") ||
+        ptn_soap_type_name_is(type, "normalizedString") ||
+        ptn_soap_type_name_is(type, "token") ||
+        ptn_soap_type_name_is(type, "language") ||
+        ptn_soap_type_name_is(type, "NMTOKEN") ||
+        ptn_soap_type_name_is(type, "Name") ||
+        ptn_soap_type_name_is(type, "NCName") ||
+        ptn_soap_type_name_is(type, "ID") ||
+        ptn_soap_type_name_is(type, "IDREF") ||
+        ptn_soap_type_name_is(type, "IDREFS") ||
+        ptn_soap_type_name_is(type, "ENTITY") ||
+        ptn_soap_type_name_is(type, "ENTITIES") ||
         ptn_soap_type_name_is(type, "any") ||
         ptn_soap_type_name_is(type, "NMTOKENS");
 }
@@ -155250,16 +155386,73 @@ static const char *ptn_soap_xsd_type_for_encoded_type(PtnValue value) {
             return "float";
         case 105:
             return "double";
+        case 106:
+            return "duration";
+        case 107:
+        case 401:
+            return "dateTime";
+        case 108:
+            return "time";
+        case 109:
+            return "date";
+        case 110:
+            return "gYearMonth";
+        case 111:
+            return "gYear";
+        case 112:
+            return "gMonthDay";
+        case 113:
+            return "gDay";
+        case 114:
+            return "gMonth";
         case 115:
             return "hexBinary";
         case 116:
             return "base64Binary";
+        case 117:
+            return "anyURI";
+        case 118:
+            return "QName";
+        case 119:
+            return "NOTATION";
+        case 120:
+            return "normalizedString";
+        case 121:
+            return "token";
+        case 122:
+            return "language";
+        case 123:
+            return "NMTOKEN";
+        case 124:
+            return "Name";
+        case 125:
+            return "NCName";
+        case 126:
+            return "ID";
+        case 127:
+            return "IDREF";
+        case 128:
+            return "IDREFS";
+        case 129:
+            return "ENTITY";
+        case 130:
+            return "ENTITIES";
+        case 131:
+            return "integer";
+        case 132:
+            return "nonPositiveInteger";
+        case 133:
+            return "negativeInteger";
+        case 134:
+            return "long";
         case 135:
             return "int";
         case 136:
             return "short";
         case 137:
             return "byte";
+        case 138:
+            return "nonNegativeInteger";
         case 139:
             return "unsignedLong";
         case 140:
@@ -155268,6 +155461,10 @@ static const char *ptn_soap_xsd_type_for_encoded_type(PtnValue value) {
             return "unsignedShort";
         case 142:
             return "unsignedByte";
+        case 143:
+            return "positiveInteger";
+        case 144:
+            return "NMTOKENS";
         case 101:
         default:
             return "string";

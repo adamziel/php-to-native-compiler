@@ -53947,6 +53947,8 @@ file_put_contents($wsdl, <<<'WSDL'
   <message name="echoHexBinaryResponse"><part name="outputHexBinary" type="xsd:hexBinary"/></message>
   <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
   <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDateRequest"><part name="inputDate" type="xsd:dateTime"/></message>
+  <message name="echoDateResponse"><part name="outputDate" type="xsd:dateTime"/></message>
   <message name="echo2DStringArrayRequest"><part name="input2DStringArray" type="s:ArrayOfString2D"/></message>
   <message name="echo2DStringArrayResponse"><part name="return" type="s:ArrayOfString2D"/></message>
   <message name="echoNestedArrayRequest"><part name="inputStruct" type="s:SOAPArrayStruct"/></message>
@@ -53955,6 +53957,7 @@ file_put_contents($wsdl, <<<'WSDL'
     <operation name="echoBase64"><input message="tns:echoBase64Request"/><output message="tns:echoBase64Response"/></operation>
     <operation name="echoHexBinary"><input message="tns:echoHexBinaryRequest"/><output message="tns:echoHexBinaryResponse"/></operation>
     <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echoDate"><input message="tns:echoDateRequest"/><output message="tns:echoDateResponse"/></operation>
     <operation name="echo2DStringArray"><input message="tns:echo2DStringArrayRequest"/><output message="tns:echo2DStringArrayResponse"/></operation>
     <operation name="echoNestedArray"><input message="tns:echoNestedArrayRequest"/><output message="tns:echoNestedArrayResponse"/></operation>
   </portType>
@@ -53963,6 +53966,7 @@ file_put_contents($wsdl, <<<'WSDL'
     <operation name="echoBase64"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoHexBinary"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoDecimal"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoDate"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echo2DStringArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoNestedArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
   </binding>
@@ -53973,6 +53977,7 @@ class Round2Service {
     function echoBase64($value) { return $value; }
     function echoHexBinary($value) { return $value; }
     function echoDecimal($value) { return $value; }
+    function echoDate($value) { return $value; }
     function echo2DStringArray($value) { return $value; }
     function echoNestedArray($value) { return $value; }
 }
@@ -53994,6 +53999,10 @@ foreach ([
     $client->__soapCall($method, [$value], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
     echo round2_server_response($wsdl, $client->__getLastRequest());
 }
+
+$client->__soapCall('echoDate', [new SoapParam(new SoapVar('2001-05-24T17:31:41Z', XSD_DATETIME), 'inputDate')], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+echo $client->__getLastRequest();
+echo round2_server_response($wsdl, $client->__getLastRequest());
 
 $param2d = new SoapParam(new SoapVar([
     new SoapVar([new SoapVar('row0col0', XSD_STRING), new SoapVar('row0col1', XSD_STRING)], SOAP_ENC_ARRAY),
@@ -54037,6 +54046,14 @@ echo round2_server_response($wsdl, $client->__getLastRequest());
     );
     assert!(
         stdout.contains("<outputDecimal xsi:type=\"xsd:decimal\">12345.67890</outputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputDate xsi:type=\"xsd:dateTime\">2001-05-24T17:31:41Z</inputDate>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<outputDate xsi:type=\"xsd:dateTime\">2001-05-24T17:31:41Z</outputDate>"),
         "{stdout}"
     );
     assert!(
