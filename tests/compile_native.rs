@@ -2754,6 +2754,50 @@ foreach ([$fresh, $finished] as $candidate) {
 }
 
 #[test]
+fn compile_fiber_stack_size_ini_set_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-stack-size-ini-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-stack-size-ini-warning.php");
+    let output = root.join("fiber-stack-size-ini-warning-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(ini_set("fiber.stack_size", "-1"));
+var_dump(ini_set("fiber.stack_size", "131072"));
+var_dump(ini_get("fiber.stack_size"));
+$fiber = new Fiber(function() {});
+$fiber->start();
+echo "DONE\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Warning: fiber.stack_size must be a positive number in {} on line 2\n",
+                "bool(false)\n",
+                "string(1) \"0\"\n",
+                "string(6) \"131072\"\n",
+                "DONE\n",
+            ),
+            input.to_string_lossy()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_get_return_lifecycle_errors_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-get-return-lifecycle-errors");
     fs::create_dir_all(&root).unwrap();

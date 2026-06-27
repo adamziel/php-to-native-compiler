@@ -1768,6 +1768,7 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
+    char *fiber_stack_size;
     char *auto_detect_line_endings;
     char *default_charset;
     char *arg_separator_input;
