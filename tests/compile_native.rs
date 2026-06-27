@@ -54872,6 +54872,52 @@ foreach ($subclass as $entry) {
 }
 
 #[test]
+fn compile_phar_directory_rename_moves_descendants_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-directory-rename");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-directory-rename.php");
+    let output = root.join("phar-directory-rename-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/rename-dir.phar.php';
+@unlink($fname);
+$phar = new Phar($fname);
+$phar['a/x'] = 'a';
+$phar['a/y/z'] = 'z';
+$uri = 'phar://' . $fname;
+
+echo file_get_contents($uri . '/a/x'), "\n";
+var_dump(rename($uri . '/a', $uri . '/b'));
+echo file_get_contents($uri . '/b/x'), "\n";
+echo file_get_contents($uri . '/b/y/z'), "\n";
+var_dump(file_exists($uri . '/a/x'));
+@unlink($fname);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a\nbool(true)\na\nz\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_rename_directory_entries"));
+    assert!(c_source.contains("ptn_phar_uri_rename_entry"));
+}
+
+#[test]
 fn compile_phar_readonly_blocks_write_open_to_native_binary() {
     let root = temp_dir("ptn-native-phar-readonly-write-open");
     fs::create_dir_all(&root).unwrap();
