@@ -23897,6 +23897,10 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "hashcontext" => Some("HashContext"),
                 "sessionhandler" => Some("SessionHandler"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
+                "random\\intervalboundary" => Some("Random\\IntervalBoundary"),
+                "random\\randomexception" => Some("Random\\RandomException"),
+                "random\\randomerror" => Some("Random\\RandomError"),
+                "random\\brokenrandomengineerror" => Some("Random\\BrokenRandomEngineError"),
                 "random\\engine\\mt19937" => Some("Random\\Engine\\Mt19937"),
                 "random\\engine\\pcgoneseq128xslrr64" => {
                     Some("Random\\Engine\\PcgOneseq128XslRr64")

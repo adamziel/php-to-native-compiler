@@ -2751,6 +2751,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "RequestParseBodyException")) {
         return "RequestParseBodyException";
     }
+    if (ptn_exception_name_equal(class_name, "Random\\RandomException")) {
+        return "Random\\RandomException";
+    }
     if (ptn_exception_name_equal(class_name, "LogicException")) {
         return "LogicException";
     }
@@ -2792,6 +2795,12 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     }
     if (ptn_exception_name_equal(class_name, "FiberError")) {
         return "FiberError";
+    }
+    if (ptn_exception_name_equal(class_name, "Random\\RandomError")) {
+        return "Random\\RandomError";
+    }
+    if (ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError")) {
+        return "Random\\BrokenRandomEngineError";
     }
     if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
         return "Uri\\InvalidUriException";
@@ -2858,6 +2867,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
             ptn_exception_name_equal(class_name, "FiberError") ||
+            ptn_exception_name_equal(class_name, "Random\\RandomError") ||
+            ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError") ||
             ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
             ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
             ptn_exception_name_equal(class_name, "DateRangeError") ||
@@ -2880,12 +2891,16 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(type_name, "ArithmeticError")) {
         return ptn_exception_name_equal(class_name, "DivisionByZeroError");
     }
+    if (ptn_exception_name_equal(type_name, "Random\\RandomError")) {
+        return ptn_exception_name_equal(class_name, "Random\\BrokenRandomEngineError");
+    }
     if (ptn_exception_name_equal(type_name, "Exception")) {
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "SoapFault") ||
             ptn_exception_name_equal(class_name, "PharException") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
+            ptn_exception_name_equal(class_name, "Random\\RandomException") ||
             ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
             ptn_exception_name_equal(class_name, "DateMalformedStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException") ||
@@ -4798,6 +4813,21 @@ static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name)
         "AwayFromZero",
         "NegativeInfinity",
         "PositiveInfinity",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED const char *ptn_random_interval_boundary_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "OpenOpen",
+        "ClosedOpen",
+        "OpenClosed",
+        "ClosedClosed",
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         if (strcmp(case_name, names[i]) == 0) {
@@ -6732,6 +6762,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (rounding_case != NULL) {
         return ptn_enum_case(runtime, "RoundingMode", rounding_case);
+    }
+    const char *random_interval_boundary_case = ptn_ascii_case_equal(resolved_class_name, "Random\\IntervalBoundary")
+        ? ptn_random_interval_boundary_case_name(constant)
+        : NULL;
+    if (random_interval_boundary_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "Random\\IntervalBoundary", random_interval_boundary_case);
     }
     const char *stream_error_code_case = ptn_ascii_case_equal(resolved_class_name, "StreamErrorCode")
         ? ptn_stream_error_code_case_name(constant)
