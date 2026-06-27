@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <regex.h>
+#include <resolv.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -321,6 +322,21 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#define PTN_DNS_A 1
+#define PTN_DNS_NS 2
+#define PTN_DNS_CNAME 16
+#define PTN_DNS_SOA 32
+#define PTN_DNS_PTR 2048
+#define PTN_DNS_HINFO 4096
+#define PTN_DNS_CAA 8192
+#define PTN_DNS_MX 16384
+#define PTN_DNS_TXT 32768
+#define PTN_DNS_A6 16777216
+#define PTN_DNS_SRV 33554432
+#define PTN_DNS_NAPTR 67108864
+#define PTN_DNS_AAAA 134217728
+#define PTN_DNS_ALL 251721779
+#define PTN_DNS_ANY 268435456
 #define PTN_PSFS_ERR_FATAL 0
 #define PTN_PSFS_FEED_ME 1
 #define PTN_PSFS_PASS_ON 2
