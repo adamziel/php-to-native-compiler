@@ -77498,6 +77498,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
 
 typedef struct {
     char *allowed_pattern;
+    char *allowed_locales;
     int case_insensitive;
 } PtnIntlSpoofCheckerData;
 
@@ -77507,6 +77508,7 @@ static void ptn_intl_spoofchecker_data_free(void *ptr) {
         return;
     }
     free(data->allowed_pattern);
+    free(data->allowed_locales);
     free(data);
 }
 
@@ -77516,6 +77518,7 @@ static PtnValue ptn_intl_spoofchecker_new(PtnRuntime *runtime, const char *class
         ptn_abort_out_of_memory();
     }
     data->allowed_pattern = NULL;
+    data->allowed_locales = NULL;
     data->case_insensitive = 0;
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "Spoofchecker" : class_name);
     object.as.object->native_data = data;
@@ -77570,6 +77573,19 @@ static int ptn_intl_spoofchecker_byte_allowed(PtnIntlSpoofCheckerData *data, uns
     return 0;
 }
 
+static int ptn_intl_spoofchecker_locales_allow_korean(const char *locales) {
+    if (locales == NULL) {
+        return 1;
+    }
+    for (const char *cursor = locales; cursor[0] != '\0' && cursor[1] != '\0'; cursor++) {
+        if (tolower((unsigned char)cursor[0]) == 'k' &&
+            tolower((unsigned char)cursor[1]) == 'o') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -77618,6 +77634,22 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
         ptn_string_operand_free(pattern);
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "setAllowedLocales")) {
+        PtnIntlSpoofCheckerData *data = ptn_intl_spoofchecker_data(receiver);
+        if (data == NULL) {
+            return ptn_bool(0);
+        }
+        PtnStringOperand locales =
+            ptn_internal_expect_string_arg(runtime, "Spoofchecker::setAllowedLocales", 1, "locales", argc >= 1 ? args[0] : ptn_null(), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locales);
+            return ptn_null();
+        }
+        free(data->allowed_locales);
+        data->allowed_locales = ptn_duplicate_string_len(locales.data, locales.len);
+        ptn_string_operand_free(locales);
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "isSuspicious")) {
         if (!ptn_intl_assign_reference_string(runtime, args, argc, 1, "0")) {
             return ptn_null();
@@ -77630,11 +77662,22 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
                 ptn_string_operand_free(text);
                 return ptn_null();
             }
+            int has_non_ascii = 0;
             for (size_t i = 0; i < text.len; i++) {
+                if ((unsigned char)text.data[i] >= 0x80) {
+                    has_non_ascii = 1;
+                }
                 if (!ptn_intl_spoofchecker_byte_allowed(data, (unsigned char)text.data[i])) {
                     ptn_string_operand_free(text);
                     return ptn_bool(1);
                 }
+            }
+            if (has_non_ascii &&
+                data != NULL &&
+                data->allowed_locales != NULL &&
+                !ptn_intl_spoofchecker_locales_allow_korean(data->allowed_locales)) {
+                ptn_string_operand_free(text);
+                return ptn_bool(1);
             }
             ptn_string_operand_free(text);
         }

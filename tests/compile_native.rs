@@ -47841,6 +47841,61 @@ echo new ReflectionFunction('locale_get_display_language');\n",
 }
 
 #[test]
+fn compile_intl_misc_row_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-misc-row-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-misc-row-semantics.php");
+    let output = root.join("intl-misc-row-semantics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$pos = 0;\n\
+try {\n\
+    grapheme_extract(-1, -1, -1, -1, $pos);\n\
+} catch (ValueError $exception) {\n\
+    echo $exception->getMessage(), \"\\n\";\n\
+}\n\
+class UninitializedNumberFormatter extends NumberFormatter {\n\
+    function __construct() {}\n\
+}\n\
+try {\n\
+    clone new UninitializedNumberFormatter();\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$fmt = new NumberFormatter('en', NumberFormatter::DECIMAL);\n\
+var_dump($fmt->format(INF));\n\
+var_dump($fmt->format(-INF));\n\
+var_dump($fmt->format(NAN));\n\
+$korean = \"\\xED\\x95\\x9C\" . \"\\xEA\\xB5\\xAD\" . \"\\xEB\\xA7\\x90\";\n\
+$checker = new Spoofchecker();\n\
+$checker->setAllowedLocales('en_US');\n\
+var_dump($checker->isSuspicious($korean));\n\
+$checker->setAllowedLocales('en_US, ko_KR');\n\
+var_dump($checker->isSuspicious($korean));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "grapheme_extract(): Argument #3 ($type) must be one of GRAPHEME_EXTR_COUNT, GRAPHEME_EXTR_MAXBYTES, or GRAPHEME_EXTR_MAXCHARS\n",
+            "Error: Cannot clone uninitialized NumberFormatter\n",
+            "string(3) \"∞\"\n",
+            "string(4) \"-∞\"\n",
+            "string(3) \"NaN\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
     let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
     fs::create_dir_all(&root).unwrap();
