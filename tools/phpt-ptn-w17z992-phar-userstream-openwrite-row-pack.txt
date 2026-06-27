@@ -1,0 +1,13 @@
+# ptn-w17z.992 exact PHAR/user-stream/open-write/filter row pack.
+ext/phar/tests/open_for_write_newfile_b.phpt
+ext/phar/tests/tar/open_for_write_newfile_b.phpt
+ext/phar/tests/tar/tar_002.phpt
+ext/standard/tests/file/include_userstream_002.phpt
+ext/standard/tests/file/userwrapper.phpt
+ext/phar/tests/zip/unixzip.phpt
+ext/phar/tests/bug77247.phpt
+ext/phar/tests/zip/delete_in_phar.phpt
+ext/phar/tests/tar/create_new_phar_b.phpt
+ext/phar/tests/test_unset.phpt
+ext/zlib/tests/zlib_wrapper_flock_basic.phpt
+ext/standard/tests/filters/php_user_filter_onCreate_failure.phpt

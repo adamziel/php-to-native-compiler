@@ -52461,6 +52461,24 @@ static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
     );
 }
 
+static FILE *ptn_zlib_open_backing_stream(const char *path, const char *mode) {
+    if (path == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    if (ptn_phar_stream_mode_truncates(mode)) {
+        return fopen(path, "wb+");
+    }
+    if (ptn_phar_stream_mode_can_write(mode)) {
+        FILE *stream = fopen(path, "rb+");
+        if (stream != NULL) {
+            return stream;
+        }
+        return fopen(path, "wb+");
+    }
+    return fopen(path, "rb");
+}
+
 static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, int64_t level, PtnValue *out) {
     int can_read = ptn_phar_stream_mode_can_read(mode);
     int can_write = ptn_phar_stream_mode_can_write(mode);
@@ -52503,6 +52521,13 @@ static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, cons
             free(data);
         }
     }
+    FILE *backing_stream = ptn_zlib_open_backing_stream(path, mode);
+    if (backing_stream == NULL) {
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        return 0;
+    }
+    resource->stream = backing_stream;
     if (append) {
         (void)ptn_stream_seek(resource, 0, SEEK_END);
     } else {
@@ -57846,7 +57871,9 @@ static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t ar
     if (resource == NULL) {
         return ptn_null();
     }
-    return ptn_bool(resource->stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_FILE);
+    return ptn_bool(resource->stream != NULL &&
+        (resource->stream_backend == PTN_STREAM_BACKEND_FILE ||
+            resource->stream_backend == PTN_STREAM_BACKEND_ZLIB));
 }
 
 static PtnStringOperand ptn_file_put_contents_value_operand(
