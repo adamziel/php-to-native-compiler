@@ -7914,6 +7914,7 @@ typedef struct {
     uint32_t flags;
     int64_t timestamp;
     size_t open_count;
+    char *load_error;
 } PtnPharArchiveEntry;
 
 struct PtnPharArchiveState {
@@ -143803,6 +143804,103 @@ static void ptn_phar_archive_set_load_error_owned(
     archive->load_error = message;
 }
 
+static char *ptn_phar_archive_internal_corruption_message(
+    const PtnPharArchiveState *archive,
+    const char *detail
+) {
+    const char *path = archive == NULL || archive->path == NULL ? "" : archive->path;
+    int needed = snprintf(NULL, 0, "internal corruption of phar \"%s\" (%s)", path, detail);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "internal corruption of phar \"%s\" (%s)", path, detail);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static void ptn_phar_archive_set_internal_corruption(
+    PtnPharArchiveState *archive,
+    const char *detail
+) {
+    ptn_phar_archive_set_load_error_owned(
+        archive,
+        ptn_phar_archive_internal_corruption_message(archive, detail)
+    );
+}
+
+static void ptn_phar_archive_set_manifest_too_large_error(PtnPharArchiveState *archive) {
+    const char *path = archive == NULL || archive->path == NULL ? "" : archive->path;
+    int needed = snprintf(NULL, 0, "manifest cannot be larger than 100 MB in phar \"%s\"", path);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "manifest cannot be larger than 100 MB in phar \"%s\"", path);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
+static char *ptn_phar_archive_entry_corruption_message(
+    const PtnPharArchiveState *archive,
+    const char *entry_name,
+    const char *reason
+) {
+    const char *path = archive == NULL || archive->path == NULL ? "" : archive->path;
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: internal corruption of phar \"%s\" (%s on file \"%s\")",
+        path,
+        reason,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: internal corruption of phar \"%s\" (%s on file \"%s\")",
+        path,
+        reason,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static void ptn_phar_archive_entry_set_load_error_owned(
+    PtnPharArchiveEntry *entry,
+    char *message
+) {
+    if (entry == NULL) {
+        free(message);
+        return;
+    }
+    free(entry->load_error);
+    entry->load_error = message;
+}
+
 static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     if (entry == NULL) {
         return;
@@ -143810,6 +143908,7 @@ static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     free(entry->name);
     free(entry->content);
     free(entry->metadata);
+    free(entry->load_error);
     entry->name = NULL;
     entry->content = NULL;
     entry->content_len = 0;
@@ -143818,6 +143917,7 @@ static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     entry->flags = 0;
     entry->timestamp = 0;
     entry->open_count = 0;
+    entry->load_error = NULL;
 }
 
 static void ptn_phar_archive_reserve_entries(PtnPharArchiveState *archive, size_t required) {
@@ -143845,6 +143945,7 @@ static void ptn_phar_archive_reserve_entries(PtnPharArchiveState *archive, size_
         entries[i].flags = 0;
         entries[i].timestamp = 0;
         entries[i].open_count = 0;
+        entries[i].load_error = NULL;
     }
     archive->entries = entries;
     archive->entry_capacity = new_capacity;
@@ -144005,10 +144106,12 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     size_t index = 0;
     if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
         free(archive->entries[index].content);
+        free(archive->entries[index].load_error);
         archive->entries[index].content = content_copy;
         archive->entries[index].content_len = content_len;
         archive->entries[index].flags = flags;
         archive->entries[index].timestamp = timestamp;
+        archive->entries[index].load_error = NULL;
         if (mark_modified) {
             ptn_phar_archive_mark_modified(archive);
         }
@@ -144024,6 +144127,7 @@ static void ptn_phar_archive_set_entry_with_flags_mode(
     entry->flags = flags;
     entry->timestamp = timestamp;
     entry->open_count = 0;
+    entry->load_error = NULL;
     if (mark_modified) {
         ptn_phar_archive_mark_modified(archive);
     }
@@ -144195,6 +144299,14 @@ static int ptn_phar_archive_rename_entry(
         source->flags,
         source->timestamp
     );
+    size_t dest_index = 0;
+    if (source->load_error != NULL &&
+        ptn_phar_archive_find_entry_index(dest_archive, dest_name, &dest_index)) {
+        ptn_phar_archive_entry_set_load_error_owned(
+            &dest_archive->entries[dest_index],
+            ptn_duplicate_string(source->load_error)
+        );
+    }
     ptn_phar_archive_delete_entry(source_archive, source_name);
     ptn_phar_archive_mark_modified(dest_archive);
     return 1;
@@ -144219,7 +144331,9 @@ static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const cha
     archive->entries[archive->entry_count].metadata = NULL;
     archive->entries[archive->entry_count].metadata_len = 0;
     archive->entries[archive->entry_count].flags = 0;
+    archive->entries[archive->entry_count].timestamp = 0;
     archive->entries[archive->entry_count].open_count = 0;
+    archive->entries[archive->entry_count].load_error = NULL;
     ptn_phar_archive_mark_modified(archive);
     return 1;
 }
@@ -144280,12 +144394,27 @@ static int ptn_phar_manifest_skip(size_t *cursor, size_t end, size_t amount) {
 
 typedef struct {
     char *name;
-    size_t content_len;
+    size_t compressed_len;
+    size_t uncompressed_len;
+    uint32_t crc32;
     unsigned char *metadata;
     size_t metadata_len;
     uint32_t flags;
     int64_t timestamp;
+    char *load_error;
 } PtnPharManifestEntryInfo;
+
+static void ptn_phar_manifest_entry_info_clear(PtnPharManifestEntryInfo *info) {
+    if (info == NULL) {
+        return;
+    }
+    free(info->name);
+    free(info->metadata);
+    free(info->load_error);
+    info->name = NULL;
+    info->metadata = NULL;
+    info->load_error = NULL;
+}
 
 static void ptn_phar_parse_manifest(
     PtnPharArchiveState *archive,
@@ -144293,13 +144422,20 @@ static void ptn_phar_parse_manifest(
     size_t len,
     size_t payload_offset
 ) {
+    const size_t max_manifest_len = 100u * 1024u * 1024u;
     if (payload_offset > len || len - payload_offset < 4) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     uint32_t manifest_len_u32 = ptn_phar_read_u32_le(data + payload_offset);
     size_t manifest_len = (size_t)manifest_len_u32;
     size_t manifest_start = payload_offset + 4;
+    if (manifest_len > max_manifest_len) {
+        ptn_phar_archive_set_manifest_too_large_error(archive);
+        return;
+    }
     if (manifest_start > len || manifest_len > len - manifest_start) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     size_t manifest_end = manifest_start + manifest_len;
@@ -144312,12 +144448,14 @@ static void ptn_phar_parse_manifest(
         !ptn_phar_manifest_read_u16(&cursor, manifest_end, data, &api_version) ||
         !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
         !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &alias_len_u32)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     (void)api_version;
     size_t alias_len = (size_t)alias_len_u32;
     if (alias_len != 0) {
         if (cursor > manifest_end || alias_len > manifest_end - cursor) {
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
             return;
         }
         char *alias = ptn_duplicate_string_len((const char *)data + cursor, alias_len);
@@ -144325,15 +144463,18 @@ static void ptn_phar_parse_manifest(
         archive->alias = alias;
     }
     if (!ptn_phar_manifest_skip(&cursor, manifest_end, alias_len)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     uint32_t metadata_len_u32 = 0;
     if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &metadata_len_u32)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     size_t metadata_len = (size_t)metadata_len_u32;
     if (metadata_len != 0) {
         if (cursor > manifest_end || metadata_len > manifest_end - cursor) {
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
             return;
         }
         free(archive->metadata);
@@ -144341,6 +144482,7 @@ static void ptn_phar_parse_manifest(
         archive->metadata_len = metadata_len;
     }
     if (!ptn_phar_manifest_skip(&cursor, manifest_end, metadata_len)) {
+        ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
         return;
     }
     if (file_count_u32 != 0 && cursor + 6 <= manifest_end) {
@@ -144354,6 +144496,12 @@ static void ptn_phar_parse_manifest(
     }
 
     size_t file_count = (size_t)file_count_u32;
+    size_t remaining_manifest = cursor <= manifest_end ? manifest_end - cursor : 0;
+    size_t min_manifest_entry_len = 4u + 6u * 4u;
+    if (file_count != 0 && file_count > remaining_manifest / min_manifest_entry_len) {
+        ptn_phar_archive_set_internal_corruption(archive, "too many manifest entries for size of manifest");
+        return;
+    }
     if (file_count > SIZE_MAX / sizeof(PtnPharManifestEntryInfo)) {
         ptn_abort_out_of_memory();
     }
@@ -144372,11 +144520,13 @@ static void ptn_phar_parse_manifest(
         uint32_t timestamp = 0;
         uint32_t crc32 = 0;
         if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &name_len_u32)) {
-            break;
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
+            goto cleanup;
         }
         size_t name_len = (size_t)name_len_u32;
         if (cursor > manifest_end || name_len > manifest_end - cursor) {
-            break;
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
+            goto cleanup;
         }
         char *name = ptn_duplicate_string_len((const char *)data + cursor, name_len);
         cursor += name_len;
@@ -144387,16 +144537,28 @@ static void ptn_phar_parse_manifest(
             !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &flags) ||
             !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &file_metadata_len)) {
             free(name);
-            break;
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
+            goto cleanup;
         }
-        (void)crc32;
+        uint32_t compression = flags & (uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        if (compression == 0 && compressed_size != uncompressed_size) {
+            free(name);
+            ptn_phar_archive_set_internal_corruption(
+                archive,
+                "compressed and uncompressed size does not match for uncompressed entry"
+            );
+            goto cleanup;
+        }
         size_t file_metadata_len_size = (size_t)file_metadata_len;
         if (cursor > manifest_end || file_metadata_len_size > manifest_end - cursor) {
             free(name);
-            break;
+            ptn_phar_archive_set_internal_corruption(archive, "truncated manifest at manifest length");
+            goto cleanup;
         }
         infos[parsed_count].name = name;
-        infos[parsed_count].content_len = compressed_size != 0 ? (size_t)compressed_size : (size_t)uncompressed_size;
+        infos[parsed_count].compressed_len = (size_t)compressed_size;
+        infos[parsed_count].uncompressed_len = (size_t)uncompressed_size;
+        infos[parsed_count].crc32 = crc32;
         if (file_metadata_len_size != 0) {
             infos[parsed_count].metadata = ptn_phar_copy_bytes(data + cursor, file_metadata_len_size);
             infos[parsed_count].metadata_len = file_metadata_len_size;
@@ -144412,21 +144574,84 @@ static void ptn_phar_parse_manifest(
         if (infos[i].name == NULL) {
             continue;
         }
-        if (content_cursor <= len && infos[i].content_len <= len - content_cursor) {
-            ptn_phar_archive_set_manifest_entry(
+        uint32_t compression = infos[i].flags & (uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        size_t stored_len = compression == 0 ? infos[i].uncompressed_len : infos[i].compressed_len;
+        const unsigned char *entry_content = content_cursor <= len ? data + content_cursor : (const unsigned char *)"";
+        size_t entry_len = 0;
+        unsigned char *inflated = NULL;
+        if (content_cursor > len || stored_len > len - content_cursor) {
+            infos[i].load_error = ptn_phar_archive_entry_corruption_message(
                 archive,
                 infos[i].name,
-                data + content_cursor,
-                infos[i].content_len,
-                infos[i].metadata,
-                infos[i].metadata_len,
-                infos[i].flags,
-                infos[i].timestamp
+                "actual filesize mismatch"
             );
-            content_cursor += infos[i].content_len;
+        } else if (compression == PTN_PHAR_COMPRESSION_GZ) {
+            size_t inflated_len = 0;
+            int inflate_ok = ptn_zlib_transform_bytes_no_dictionary(
+                data + content_cursor,
+                stored_len,
+                1,
+                PTN_ZLIB_ENCODING_RAW,
+                -1,
+                0,
+                &inflated,
+                &inflated_len
+            );
+            entry_content = inflated == NULL ? (const unsigned char *)"" : inflated;
+            entry_len = inflated_len;
+            if (inflate_ok <= 0 || inflated_len != infos[i].uncompressed_len) {
+                infos[i].load_error = ptn_phar_archive_entry_corruption_message(
+                    archive,
+                    infos[i].name,
+                    "actual filesize mismatch"
+                );
+            } else if (ptn_crc32_bytes(inflated, inflated_len) != infos[i].crc32) {
+                infos[i].load_error = ptn_phar_archive_entry_corruption_message(
+                    archive,
+                    infos[i].name,
+                    "crc32 mismatch"
+                );
+            }
+        } else if (compression == 0) {
+            entry_len = stored_len;
+            if (ptn_crc32_bytes(entry_content, entry_len) != infos[i].crc32) {
+                infos[i].load_error = ptn_phar_archive_entry_corruption_message(
+                    archive,
+                    infos[i].name,
+                    "crc32 mismatch"
+                );
+            }
+        } else {
+            entry_len = stored_len;
+            infos[i].load_error = ptn_phar_archive_entry_corruption_message(
+                archive,
+                infos[i].name,
+                "actual filesize mismatch"
+            );
         }
-        free(infos[i].metadata);
-        free(infos[i].name);
+        ptn_phar_archive_set_manifest_entry(
+            archive,
+            infos[i].name,
+            entry_content,
+            entry_len,
+            infos[i].metadata,
+            infos[i].metadata_len,
+            infos[i].flags,
+            infos[i].timestamp
+        );
+        size_t index = 0;
+        if (infos[i].load_error != NULL &&
+            ptn_phar_archive_find_entry_index(archive, infos[i].name, &index)) {
+            ptn_phar_archive_entry_set_load_error_owned(&archive->entries[index], infos[i].load_error);
+            infos[i].load_error = NULL;
+        }
+        free(inflated);
+        if (content_cursor <= len && stored_len <= len - content_cursor) {
+            content_cursor += stored_len;
+        } else {
+            content_cursor = len;
+        }
+        ptn_phar_manifest_entry_info_clear(&infos[i]);
     }
     if (len >= 8 && memcmp(data + len - 4, "GBMB", 4) == 0) {
         uint32_t signature_flags = ptn_phar_read_u32_le(data + len - 8);
@@ -144444,6 +144669,10 @@ static void ptn_phar_parse_manifest(
             ptn_phar_archive_set_signature(archive, hash, type);
             free(hash);
         }
+    }
+cleanup:
+    for (size_t i = 0; i < parsed_count; i++) {
+        ptn_phar_manifest_entry_info_clear(&infos[i]);
     }
     free(infos);
 }
@@ -144726,6 +144955,12 @@ static void ptn_phar_archive_load_file(PtnPharArchiveState *archive) {
     } else {
         archive->stub = ptn_duplicate_string("");
         archive->stub_len = 0;
+        if (archive->format == PTN_PHAR_FORMAT_PHAR && len != 0) {
+            ptn_phar_archive_set_load_error_owned(
+                archive,
+                ptn_duplicate_string("__HALT_COMPILER(); must be declared in a phar")
+            );
+        }
     }
     free(data);
 }
@@ -144830,6 +145065,14 @@ static void ptn_phar_archive_copy_contents(
             entry->flags,
             entry->timestamp
         );
+        size_t dest_index = 0;
+        if (entry->load_error != NULL &&
+            ptn_phar_archive_find_entry_index(dest, entry->name, &dest_index)) {
+            ptn_phar_archive_entry_set_load_error_owned(
+                &dest->entries[dest_index],
+                ptn_duplicate_string(entry->load_error)
+            );
+        }
     }
 }
 
@@ -148199,6 +148442,11 @@ static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, si
     if (!ptn_phar_uri_archive_and_entry(uri, &archive, &entry_name)) {
         return 0;
     }
+    if (archive != NULL && archive->load_error != NULL) {
+        ptn_phar_set_last_stream_open_error(archive->load_error);
+        free(entry_name);
+        return 0;
+    }
     size_t index = 0;
     if (!ptn_phar_archive_find_entry_index(archive, entry_name, &index) ||
         ptn_phar_archive_entry_is_dir(&archive->entries[index])) {
@@ -148207,6 +148455,11 @@ static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, si
         return 0;
     }
     PtnPharArchiveEntry *entry = &archive->entries[index];
+    if (entry->load_error != NULL) {
+        ptn_phar_set_last_stream_open_error(entry->load_error);
+        free(entry_name);
+        return 0;
+    }
     if (data_out != NULL) {
         *data_out = ptn_phar_copy_bytes(entry->content, entry->content_len);
     }
@@ -204249,6 +204502,112 @@ static int ptn_eval_parse_static_set_state_call(
     return 1;
 }
 
+static int ptn_eval_parse_static_method_call(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor < len && code[cursor] == '\\') {
+        cursor++;
+    }
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    size_t class_start = cursor;
+    while (cursor < len &&
+        (ptn_eval_identifier_part((unsigned char)code[cursor]) || code[cursor] == '\\')) {
+        cursor++;
+    }
+    char *class_name = ptn_duplicate_string_len(code + class_start, cursor - class_start);
+    if (!ptn_eval_consume_double_colon(code, len, &cursor)) {
+        free(class_name);
+        return 0;
+    }
+    char *method_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &method_name)) {
+        free(class_name);
+        return 0;
+    }
+    size_t call_start = ptn_eval_skip_ws(code, len, cursor);
+    if (call_start >= len || code[call_start] != '(') {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    cursor = call_start + 1;
+
+    PtnValue *args = NULL;
+    size_t argc = 0;
+    size_t capacity = 0;
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len || code[cursor] != ')') {
+        while (cursor < len) {
+            if (argc == capacity) {
+                size_t new_capacity = capacity == 0 ? 2 : capacity * 2;
+                if (new_capacity < capacity) {
+                    ptn_abort_out_of_memory();
+                }
+                PtnValue *new_args = realloc(args, new_capacity * sizeof(PtnValue));
+                if (new_args == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                args = new_args;
+                capacity = new_capacity;
+            }
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
+                for (size_t i = 0; i < argc; i++) {
+                    ptn_value_destroy(&args[i]);
+                }
+                free(args);
+                free(method_name);
+                free(class_name);
+                return 0;
+            }
+            argc++;
+            cursor = ptn_eval_skip_ws(code, len, cursor);
+            if (cursor < len && code[cursor] == ',') {
+                cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+                continue;
+            }
+            break;
+        }
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
+        for (size_t i = 0; i < argc; i++) {
+            ptn_value_destroy(&args[i]);
+        }
+        free(args);
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+
+    const char *resolved = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    *out = ptn_internal_class_static_call_method(
+        runtime,
+        ptn_declared_class_canonical_name(resolved),
+        method_name,
+        argc,
+        args,
+        line
+    );
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(method_name);
+    free(class_name);
+    *pos = cursor;
+    return 1;
+}
+
 static int ptn_eval_parse_string_case_call(
     PtnRuntime *runtime,
     const char *code,
@@ -204723,10 +205082,13 @@ static int ptn_eval_parse_primary_expression(
     if (cursor >= len) {
         return 0;
     }
-    if (ptn_eval_parse_dynamic_class_constant_fetch(runtime, code, len, pos, line, out)) {
+    if (ptn_eval_parse_static_method_call(runtime, code, len, pos, line, out)) {
         return 1;
     }
     if (ptn_eval_parse_static_set_state_call(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
+    if (ptn_eval_parse_dynamic_class_constant_fetch(runtime, code, len, pos, line, out)) {
         return 1;
     }
     if (ptn_eval_parse_string_case_call(runtime, code, len, pos, line, out)) {
@@ -205449,6 +205811,27 @@ static int ptn_dynamic_execute_unset_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_expression_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = *pos;
+    PtnValue result = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &result)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ';')) {
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    ptn_value_destroy(&result);
+    *pos = cursor;
+    return 1;
+}
+
 static int ptn_dynamic_execute_const_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -205709,6 +206092,26 @@ static int ptn_dynamic_execute_return_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_halt_compiler_statement(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "__halt_compiler")) {
+        return 0;
+    }
+    cursor += strlen("__halt_compiler");
+    if (!ptn_eval_consume_char(code, len, &cursor, '(') ||
+        !ptn_eval_consume_char(code, len, &cursor, ')') ||
+        !ptn_eval_consume_char(code, len, &cursor, ';')) {
+        return 0;
+    }
+    *pos = end;
+    return 1;
+}
+
 static int ptn_dynamic_skip_class_declaration(const char *code, size_t len, size_t *pos) {
     size_t cursor = ptn_eval_skip_ws(code, len, *pos);
     while (1) {
@@ -205776,6 +206179,9 @@ static int ptn_dynamic_execute_statements_range(
             *pos = end;
             return 1;
         }
+        if (ptn_dynamic_execute_halt_compiler_statement(code, len, pos, end)) {
+            return 1;
+        }
         size_t statement_pos = *pos;
         size_t line = ptn_eval_line_for_pos(code, statement_pos, base_line);
         if (ptn_dynamic_execute_return_statement(runtime, code, end, pos, line, return_out, returned)) {
@@ -205806,7 +206212,8 @@ static int ptn_dynamic_execute_statements_range(
             ptn_dynamic_execute_var_dump_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
-            ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line)) {
+            ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_expression_statement(runtime, code, end, pos, line)) {
             if (ptn_runtime_has_active_exception(runtime)) {
                 return 1;
             }

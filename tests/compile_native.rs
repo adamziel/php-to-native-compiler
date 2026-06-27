@@ -54064,7 +54064,7 @@ include __DIR__ . '/files/bug67761.tar/bug67761.phar';
     push_u32(&mut manifest, entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 2034427644);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
 
@@ -54308,7 +54308,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, text_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, text_entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 3983506042);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 10);
@@ -54316,7 +54316,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, script_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, script_entry.len() as u32);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 2902161792);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
 
