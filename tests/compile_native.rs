@@ -43757,6 +43757,57 @@ try {
 }
 
 #[test]
+fn compile_enum_case_var_export_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-case-var-export");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-case-var-export.php");
+    let output = root.join("enum-case-var-export-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace {
+    enum Foo { case BAR; }
+}
+
+namespace A {
+    enum Foo { case BAR; }
+}
+
+namespace A\\B {
+    enum Foo { case BAR; }
+}
+
+namespace Test {
+    echo var_export(\\Foo::BAR, true), \"\\n\";
+    echo var_export(\\A\\Foo::BAR, true), \"\\n\";
+    echo var_export(\\A\\B\\Foo::BAR, true), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\\Foo::BAR\n\\A\\Foo::BAR\n\\A\\B\\Foo::BAR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let helper = generated_c_static_function_body(&c_source, "ptn_compact_append_var_export");
+    assert!(helper.contains("enum_case_name"));
+}
+
+#[test]
 fn compile_enum_cases_discard_releases_case_references_to_native_binary() {
     let root = temp_dir("ptn-native-enum-cases-discard-refcount");
     fs::create_dir_all(&root).unwrap();
@@ -52824,6 +52875,63 @@ echo $xml->saveXML();
     assert!(c_source.contains("ptn_xml_check_document_element_insertion_sequence"));
     assert!(c_source.contains("ptn_dom_doctype_append_normalized_internal_entity_subset"));
     assert!(c_source.contains("DOMNamedNodeMap"));
+}
+
+#[test]
+fn compile_dom_nodelist_internal_iterator_rewind_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-nodelist-internal-iterator-rewind-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-nodelist-internal-iterator-rewind-error.php");
+    let output = root.join("dom-nodelist-internal-iterator-rewind-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<XML
+<root>
+  <item>1</item>
+  <item>2</item>
+  <item>3</item>
+</root>
+XML;
+
+$dom = new DOMDocument();
+$dom->loadXML($xml);
+$items = $dom->getElementsByTagName('item');
+
+echo "Count: " . count($items) . "\n";
+echo "Count: " . iterator_count($items->getIterator()) . "\n";
+$it = new IteratorIterator($items);
+echo "Count: " . iterator_count($it) . "\n";
+echo "Count: " . iterator_count($it) . "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Count: 3\nCount: 3\nCount: 3\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Error: Iterator does not support rewinding"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[internal function]: InternalIterator->rewind()"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[internal function]: IteratorIterator->rewind()"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_iterator_call_method"));
+    assert!(c_source.contains("Iterator does not support rewinding"));
 }
 
 #[test]

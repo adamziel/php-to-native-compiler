@@ -1,0 +1,14 @@
+# ptn-w17z.1075 exact DOM modern parser/encoding current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T215653Z.tsv
+ext/dom/tests/bug80602_3.phpt
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Windows1251.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Shift_JIS.phpt
+ext/dom/tests/bug79852.phpt
+ext/dom/tests/delayed_freeing/document_fragment.phpt
+ext/dom/tests/modern/spec/NamedNodeMap_dimensions_errors.phpt
+ext/dom/tests/modern/spec/Document_importNode_not_supported.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_encoding_edge_case_05.phpt
+ext/dom/tests/gh16595.phpt
+ext/dom/tests/bug70359.phpt
+ext/dom/tests/modern/spec/XMLDocument_version.phpt
