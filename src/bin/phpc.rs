@@ -296,6 +296,7 @@ struct RuntimeIni {
     pcre_backtrack_limit: Option<String>,
     pcre_recursion_limit: Option<String>,
     pcre_jit: Option<String>,
+    open_basedir: Option<String>,
     session: Vec<(String, String)>,
     opcache: Vec<(String, String)>,
     opcache_save_comments: Option<String>,
@@ -509,6 +510,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_recursion_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("open_basedir") {
+        ini.open_basedir = Some(normalize_ini_scalar(raw_value));
     } else if let Some(canonical_name) = canonical_session_ini_name(name) {
         ini.session
             .push((canonical_name.to_string(), normalize_ini_scalar(raw_value)));
@@ -1085,6 +1088,7 @@ fn compile_and_run(
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
+        open_basedir: ini.open_basedir.clone(),
         session: ini.session.clone(),
         opcache: ini.opcache.clone(),
         opcache_save_comments: ini.opcache_save_comments.clone(),
@@ -1263,6 +1267,9 @@ fn compile_and_run(
     }
     if let Some(pcre_jit) = &ini.pcre_jit {
         command.env("PTN_PCRE_JIT", pcre_jit);
+    }
+    if let Some(open_basedir) = &ini.open_basedir {
+        command.env("PTN_OPEN_BASEDIR", open_basedir);
     }
     for (name, value) in &ini.session {
         if let Some(env_name) = session_ini_env_name(name) {

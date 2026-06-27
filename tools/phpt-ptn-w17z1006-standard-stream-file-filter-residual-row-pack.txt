@@ -1,0 +1,16 @@
+# Focused current-red PHPT row pack for ptn-w17z.1006.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T032031Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: standard-stream-file-filter-residual rows=12
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/file/fscanf_variation32.phpt
+ext/standard/tests/file/fscanf_variation22.phpt
+ext/standard/tests/file/fscanf_variation12.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_is_private.phpt
+ext/standard/tests/streams/bug79467.phpt
+ext/standard/tests/streams/stream_context_set_options_error.phpt
+ext/standard/tests/streams/stream_errors_set_default_context_error.phpt
+ext/standard/tests/streams/stream_set_chunk_size.phpt
+ext/standard/tests/file/bug52624.phpt
+ext/standard/tests/streams/bug78662.phpt
+ext/standard/tests/filters/gh17650.phpt

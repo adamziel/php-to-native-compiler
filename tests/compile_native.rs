@@ -27998,6 +27998,41 @@ var_dump(mkdir(__DIR__ . '/missing-parent/child'));\n",
 }
 
 #[test]
+fn compile_tempnam_open_basedir_fallback_to_native_binary() {
+    let root = temp_dir("ptn-native-tempnam-open-basedir-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tempnam-open-basedir-fallback.php");
+    let output = root.join("tempnam-open-basedir-fallback-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('open_basedir', '.');\n\
+echo tempnam('directory_that_not_exists', 'prefix_');\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).current_dir(&root).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Notice: tempnam(): file created in the system's temporary directory"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: tempnam(): open_basedir restriction in effect. File("),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("is not within the allowed path(s): (.)"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with(" on line 3\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_read_and_csv_internals_to_native_binary() {
     let root = temp_dir("ptn-native-stream-read-csv-internals");
     fs::create_dir_all(&root).unwrap();
@@ -73474,6 +73509,44 @@ fn phpc_error_reporting_ini_sets_initial_level() {
         "int(30717)\n"
     );
     assert_eq!(String::from_utf8(expression_execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_open_basedir_ini_constrains_tempnam_fallback() {
+    let root = temp_dir("ptn-phpc-open-basedir-tempnam");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("open-basedir-tempnam.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo tempnam('directory_that_not_exists', 'prefix_');\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&root)
+        .arg("-d")
+        .arg("open_basedir=.")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Notice: tempnam(): file created in the system's temporary directory"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: tempnam(): open_basedir restriction in effect. File("),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("is not within the allowed path(s): (.)"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with(" on line 2\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

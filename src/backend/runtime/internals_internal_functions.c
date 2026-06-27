@@ -60204,6 +60204,13 @@ static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const Ptn
             1
         );
     }
+    if (!ptn_open_basedir_allows_path(runtime, templ)) {
+        ptn_emit_open_basedir_warning(runtime, "tempnam", templ, line);
+        free(prefix);
+        free(directory);
+        free(templ);
+        return ptn_bool(0);
+    }
     free(prefix);
     free(directory);
 #if defined(_WIN32)

@@ -2438,6 +2438,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let open_basedir_ini = classify(
+        "--TEST--\nopen basedir ini\n--INI--\nopen_basedir=.\n--FILE--\n<?php\necho ini_get('open_basedir'), \"\\n\";\n--EXPECT--\n.\n",
+    );
+    assert_eq!(
+        open_basedir_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let session_metadata_ini = classify_at_relative_path(
         "--TEST--\nsession metadata ini\n--EXTENSIONS--\nsession\n--INI--\nsession.name=PTNID\nsession.cache_limiter=\nsession.save_handler=files\nsession.save_path=\nsession.use_strict_mode=0\n--FILE--\n<?php\nvar_dump(session_name());\n--EXPECT--\nstring(5) \"PTNID\"\n",
         "ext/session/tests/session_metadata_ini.phpt",
