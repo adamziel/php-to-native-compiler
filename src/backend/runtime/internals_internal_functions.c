@@ -216462,6 +216462,169 @@ static int ptn_eval_execute_supported_statements(
     }
 }
 
+static int ptn_eval_parse_error_non_expression_keyword(const char *name, size_t len) {
+    static const char *const keywords[] = {
+        "abstract",
+        "as",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "default",
+        "echo",
+        "else",
+        "elseif",
+        "extends",
+        "final",
+        "finally",
+        "fn",
+        "for",
+        "foreach",
+        "function",
+        "global",
+        "if",
+        "implements",
+        "interface",
+        "namespace",
+        "new",
+        "print",
+        "private",
+        "protected",
+        "public",
+        "readonly",
+        "return",
+        "static",
+        "switch",
+        "throw",
+        "trait",
+        "try",
+        "unset",
+        "use",
+        "var",
+        "while",
+        "yield",
+    };
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        const char *keyword = keywords[i];
+        size_t keyword_len = strlen(keyword);
+        if (keyword_len != len) {
+            continue;
+        }
+        int equal = 1;
+        for (size_t j = 0; j < len; j++) {
+            if (ptn_ascii_lower_char(name[j]) != keyword[j]) {
+                equal = 0;
+                break;
+            }
+        }
+        if (equal) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_eval_unexpected_identifier_message(const char *name, size_t len) {
+    char *identifier = ptn_duplicate_string_len(name, len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "syntax error, unexpected identifier \"%s\"",
+        identifier
+    );
+    if (needed < 0) {
+        free(identifier);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(identifier);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "syntax error, unexpected identifier \"%s\"",
+        identifier
+    );
+    free(identifier);
+    return message;
+}
+
+static char *ptn_eval_dynamic_parse_error_message(const char *code) {
+    size_t len = strlen(code);
+    size_t pos = 0;
+    int previous_can_end_expression = 0;
+    while (pos < len) {
+        pos = ptn_eval_skip_ws(code, len, pos);
+        if (pos >= len) {
+            break;
+        }
+        unsigned char ch = (unsigned char)code[pos];
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            previous_can_end_expression = 1;
+            continue;
+        }
+        if (code[pos] == '$') {
+            pos++;
+            if (pos < len && ptn_eval_variable_identifier_start((unsigned char)code[pos])) {
+                pos++;
+                while (pos < len && ptn_eval_variable_identifier_part((unsigned char)code[pos])) {
+                    pos++;
+                }
+            }
+            previous_can_end_expression = 1;
+            continue;
+        }
+        if (ptn_eval_identifier_start(ch)) {
+            size_t name_start = pos;
+            pos++;
+            while (pos < len && ptn_eval_identifier_part((unsigned char)code[pos])) {
+                pos++;
+            }
+            if (previous_can_end_expression) {
+                return ptn_eval_unexpected_identifier_message(
+                    code + name_start,
+                    pos - name_start
+                );
+            }
+            previous_can_end_expression =
+                !ptn_eval_parse_error_non_expression_keyword(code + name_start, pos - name_start);
+            continue;
+        }
+        if (ch >= '0' && ch <= '9') {
+            pos++;
+            while (pos < len &&
+                (isalnum((unsigned char)code[pos]) ||
+                    code[pos] == '_' ||
+                    code[pos] == '.')) {
+                pos++;
+            }
+            previous_can_end_expression = 1;
+            continue;
+        }
+        switch (code[pos]) {
+            case ';':
+            case '{':
+            case '}':
+                previous_can_end_expression = 0;
+                pos++;
+                break;
+            case ')':
+            case ']':
+                previous_can_end_expression = 1;
+                pos++;
+                break;
+            default:
+                previous_can_end_expression = 0;
+                pos++;
+                break;
+        }
+    }
+    return NULL;
+}
+
 static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *code = ptn_value_to_string(args[0]);
@@ -216470,6 +216633,12 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     if (ptn_eval_execute_supported_statements(runtime, code, line, &result)) {
         free(code);
         return result;
+    }
+    char *parse_error_message = ptn_eval_dynamic_parse_error_message(code);
+    if (parse_error_message != NULL) {
+        free(code);
+        ptn_throw_exception_owned_message(runtime, "ParseError", parse_error_message);
+        return ptn_null();
     }
     free(code);
     return ptn_null();

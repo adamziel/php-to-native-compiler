@@ -5694,6 +5694,25 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const PtnObjectPropertyMetadata *own_private =
         ptn_object_own_private_property(object, property);
     if (own_private == NULL) {
+        if (access_mode == PTN_PROPERTY_ACCESS_READ &&
+            ptn_object_static_property_visibility(
+                runtime,
+                object,
+                property,
+                access_scope,
+                access_mode,
+                NULL,
+                NULL
+            )) {
+            PtnArrayKey dynamic_key = ptn_array_string_key(property);
+            PtnArrayEntry *dynamic_entry =
+                ptn_array_entry_for_key(object->properties, dynamic_key);
+            ptn_array_key_free(dynamic_key);
+            if (dynamic_entry != NULL || !quiet) {
+                return ptn_duplicate_string(property);
+            }
+            return NULL;
+        }
         PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
         const char *static_declaring_class = NULL;
         if (ptn_object_static_property_inaccessible(
@@ -6552,12 +6571,13 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
     const char *static_declaring_class = NULL;
-    int static_property_as_instance = metadata == NULL && ptn_object_static_property_accessible(
+    int static_property_as_instance = metadata == NULL && ptn_object_static_property_visibility(
         runtime,
         receiver.as.object,
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
+        NULL,
         &static_declaring_class
     );
     ptn_array_key_free(key);
