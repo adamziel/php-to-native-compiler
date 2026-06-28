@@ -1,0 +1,8 @@
+# ptn-h6fmi opcache preload current-red pivots.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T080006Z.tsv
+# Used after the exact assigned row pack was stale at baseline:
+# selected=12 runnable=4 excluded=8 passed=4 failed=0 (20260628T192411Z-2024841).
+ext/opcache/tests/bug78175.phpt
+ext/opcache/tests/preload_error_handler.phpt
+ext/opcache/tests/bug78937_1.phpt
+ext/opcache/tests/bug78937_5.phpt

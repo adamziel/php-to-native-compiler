@@ -79110,6 +79110,126 @@ var_dump(ini_get('opcache.preload'));\n",
 }
 
 #[test]
+fn phpc_opcache_preload_shutdown_functions_run_before_root_script() {
+    let root = temp_dir("ptn-phpc-opcache-preload-shutdown-before-root");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+register_shutdown_function(function() {\n\
+    echo \"Shutdown\\n\";\n\
+});\n",
+    )
+    .unwrap();
+    fs::write(&input, "<?php\necho \"OK\\n\";\n").unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Shutdown\nOK\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_preload_compile_file_emits_unlinked_class_warning() {
+    let root = temp_dir("ptn-phpc-opcache-preload-compile-file-unlinked");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let indirect = root.join("preload-indirect.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+set_error_handler(function($_, $message) {\n\
+    static $seen;\n\
+    echo \"handler:$message\\n\";\n\
+});\n\
+opcache_compile_file(__DIR__ . '/preload-indirect.inc.php');\n",
+    )
+    .unwrap();
+    fs::write(&indirect, "<?php\n\nclass B extends A {}\n").unwrap();
+    fs::write(&input, "<?php\necho \"===DONE===\\n\";\n").unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Can't preload unlinked class B: Unknown parent A in "));
+    assert!(stdout.ends_with("===DONE===\n"));
+    assert!(!stdout.contains("handler:"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_preload_warns_unlinked_anonymous_class_in_function() {
+    let root = temp_dir("ptn-phpc-opcache-preload-unlinked-anonymous");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+function foo() {\n\
+    return new class extends Bar {};\n\
+}\n\
+function bar() {\n\
+    class Foo extends Bar {}\n\
+}\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+include(__DIR__ . '/preload.inc.php');\n\
+class Bar {}\n\
+bar();\n\
+var_dump(new Foo);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout
+        .contains("Warning: Can't preload unlinked class Bar@anonymous: Unknown parent Bar in "));
+    assert!(stdout.contains("object(Foo)#1 (0) {\n}\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_phar_ini_and_metadata_are_runtime_visible() {
     let root = temp_dir("ptn-phpc-phar-ini-metadata");
     fs::create_dir_all(&root).unwrap();

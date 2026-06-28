@@ -1902,6 +1902,7 @@ impl Parser<'_> {
             attributes,
             doc_comment,
             is_conditionally_declared: false,
+            is_syntactically_conditionally_declared: false,
             is_anonymous: false,
             is_abstract: is_abstract || is_interface,
             is_final,
@@ -2116,6 +2117,7 @@ impl Parser<'_> {
             attributes,
             doc_comment,
             is_conditionally_declared: false,
+            is_syntactically_conditionally_declared: false,
             is_anonymous: false,
             is_abstract: false,
             is_final: true,
@@ -4353,7 +4355,10 @@ impl Parser<'_> {
             ));
         }
         let mut class = self.parse_class_decl(attributes)?;
-        class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
+        let is_syntactically_conditionally_declared =
+            self.block_depth != 0 || self.function_depth != 0;
+        class.is_conditionally_declared = is_syntactically_conditionally_declared;
+        class.is_syntactically_conditionally_declared = is_syntactically_conditionally_declared;
         let name = class.name.clone();
         let span = class.span;
         let source_span = attribute_start_span
@@ -4416,7 +4421,10 @@ impl Parser<'_> {
             ));
         }
         let mut class = self.parse_enum_decl(attributes)?;
-        class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
+        let is_syntactically_conditionally_declared =
+            self.block_depth != 0 || self.function_depth != 0;
+        class.is_conditionally_declared = is_syntactically_conditionally_declared;
+        class.is_syntactically_conditionally_declared = is_syntactically_conditionally_declared;
         let name = class.name.clone();
         let span = class.span;
         let source_span = attribute_start_span
@@ -6742,6 +6750,7 @@ impl Parser<'_> {
                 })
                 .unwrap_or_else(|| eval_source.to_string());
             class.is_conditionally_declared = true;
+            class.is_syntactically_conditionally_declared = true;
             class.source_file = Some("__PTN_EVAL_CODE__".to_string());
             let name = class.name.clone();
             self.eval_visible_classes.push(class.clone());
@@ -9854,6 +9863,7 @@ impl Parser<'_> {
             attributes,
             doc_comment: self.doc_comment_before(start_span.byte_start),
             is_conditionally_declared: false,
+            is_syntactically_conditionally_declared: false,
             is_anonymous: true,
             is_abstract: false,
             is_final: false,
@@ -14643,6 +14653,7 @@ fn import_trait_method_into_method_list(
         attributes: AttributeMetadata::default(),
         doc_comment: None,
         is_conditionally_declared: false,
+        is_syntactically_conditionally_declared: false,
         is_anonymous: false,
         is_abstract: false,
         is_final: false,

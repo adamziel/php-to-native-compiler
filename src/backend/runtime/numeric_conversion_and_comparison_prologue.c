@@ -770,6 +770,91 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
 #endif
 }
 
+static PTN_UNUSED void ptn_runtime_run_shutdown_functions_from(PtnRuntime *runtime, size_t start) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->shutdown_functions_running) {
+        return;
+    }
+    if (start > root->shutdown_functions_len) {
+        start = root->shutdown_functions_len;
+    }
+
+    size_t saved_index = root->shutdown_function_index;
+    int saved_completed = root->shutdown_functions_completed;
+    root->shutdown_function_index = start;
+    root->shutdown_functions_completed = 0;
+    root->shutdown_functions_running = 1;
+    while (root->shutdown_function_index < root->shutdown_functions_len) {
+        PtnShutdownFunction *function =
+            &root->shutdown_functions[root->shutdown_function_index++];
+        PtnValue result = ptn_null();
+        PtnTryFrame callback_frame;
+        PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+        int saved_suppress_user_call_frame_location =
+            runtime->suppress_user_call_frame_location;
+        int saved_warn_by_ref_argument_mismatch =
+            runtime->warn_by_ref_argument_mismatch;
+        int saved_throw_argument_count_errors =
+            runtime->throw_argument_count_errors;
+        ptn_try_frame_push(runtime, &callback_frame);
+        if (setjmp(callback_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &callback_frame);
+            runtime->trace_frame = saved_trace_frame;
+            runtime->suppress_user_call_frame_location =
+                saved_suppress_user_call_frame_location;
+            runtime->warn_by_ref_argument_mismatch =
+                saved_warn_by_ref_argument_mismatch;
+            runtime->throw_argument_count_errors =
+                saved_throw_argument_count_errors;
+            root->shutdown_functions_running = 0;
+            root->shutdown_function_index = saved_index;
+            root->shutdown_functions_completed = saved_completed;
+            ptn_rethrow_exception(runtime);
+        }
+        runtime->suppress_user_call_frame_location = 1;
+        runtime->warn_by_ref_argument_mismatch = 1;
+        runtime->throw_argument_count_errors = 1;
+        result = ptn_call_callable(
+            runtime,
+            function->callback,
+            function->argc,
+            function->args,
+            0,
+            0
+        );
+        ptn_try_frame_pop(runtime, &callback_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            saved_throw_argument_count_errors;
+        ptn_value_destroy(&result);
+        if (runtime->exceptions->active_exception != NULL) {
+            root->shutdown_functions_running = 0;
+            root->shutdown_function_index = saved_index;
+            root->shutdown_functions_completed = saved_completed;
+            ptn_rethrow_exception(runtime);
+        }
+    }
+    root->shutdown_functions_running = 0;
+    for (size_t i = start; i < root->shutdown_functions_len; i++) {
+        ptn_shutdown_function_destroy(&root->shutdown_functions[i]);
+    }
+    root->shutdown_functions_len = start;
+    root->shutdown_function_index = saved_index > start ? start : saved_index;
+    root->shutdown_functions_completed = saved_completed;
+#else
+    (void)runtime;
+    (void)start;
+#endif
+}
+
 static PTN_UNUSED void ptn_runtime_register_header_callback(PtnRuntime *runtime, PtnValue callback) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {

@@ -36,6 +36,7 @@ pub struct ClassDecl {
     pub attributes: AttributeMetadata,
     pub doc_comment: Option<String>,
     pub is_conditionally_declared: bool,
+    pub is_syntactically_conditionally_declared: bool,
     pub is_anonymous: bool,
     pub is_abstract: bool,
     pub is_final: bool,

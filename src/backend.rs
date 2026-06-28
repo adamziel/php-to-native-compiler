@@ -536,6 +536,13 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str(" != NULL ? ptn_preload_root_");
         out.push_str(&preload_index.to_string());
         out.push_str("->autoload_callbacks_len : 0;\n");
+        out.push_str("    size_t ptn_preload_shutdown_len_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" = ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" != NULL ? ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->shutdown_functions_len : 0;\n");
         out.push_str("    int ptn_previous_in_preload_");
         out.push_str(&preload_index.to_string());
         out.push_str(" = runtime.in_preload;\n");
@@ -551,6 +558,15 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("    ptn_value_destroy(&ptn_preload_result_");
         out.push_str(&preload_index.to_string());
         out.push_str(");\n");
+        out.push_str("    if (ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" != NULL) {\n");
+        out.push_str(
+            "        ptn_runtime_run_shutdown_functions_from(&runtime, ptn_preload_shutdown_len_",
+        );
+        out.push_str(&preload_index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         out.push_str("    runtime.in_preload = ptn_previous_in_preload_");
         out.push_str(&preload_index.to_string());
         out.push_str(";\n");
@@ -7115,7 +7131,7 @@ fn emit_include_helpers(
             &include.source_file,
             include_has_duplicate_function_declaration(include, functions),
         );
-        emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
+        emit_preload_unlinked_class_warnings(out, include, classes);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
         emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
@@ -7183,6 +7199,7 @@ fn emit_include_helpers(
         );
         let mut control_targets = Vec::new();
         let mut finally_stack = Vec::new();
+        emit_preload_unlinked_class_warnings(out, include, classes);
         for instruction in &include.instructions {
             if !matches!(
                 instruction,
@@ -7212,13 +7229,16 @@ fn emit_include_helpers(
     }
 }
 
-fn emit_preload_unlinked_anonymous_class_warnings(
+fn emit_preload_unlinked_class_warnings(
     out: &mut String,
     include: &IncludeFile,
     classes: &[ClassDecl],
 ) {
     for (class_index, class) in classes.iter().enumerate() {
-        if !class.is_anonymous || class.source_file != include.source_file {
+        if class.source_file != include.source_file {
+            continue;
+        }
+        if !class.is_anonymous && class.is_syntactically_conditionally_declared {
             continue;
         }
         let Some(parent_name) = class.parent_name.as_deref() else {
@@ -7227,6 +7247,7 @@ fn emit_preload_unlinked_anonymous_class_warnings(
         if modeled_internal_class_name(parent_name).is_some()
             || classes.iter().any(|candidate| {
                 !candidate.is_anonymous
+                    && !candidate.is_conditionally_declared
                     && candidate.source_file == include.source_file
                     && candidate.name.eq_ignore_ascii_case(parent_name)
             })
@@ -7241,8 +7262,28 @@ fn emit_preload_unlinked_anonymous_class_warnings(
         out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
         out.push_str(&c_string(parent_name));
         out.push_str("\");\n");
-        out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
+        out.push_str("        int ptn_preload_parent_is_root_predeclared_");
+        out.push_str(&class_index.to_string());
+        out.push_str(" = 0");
+        for candidate in classes {
+            if candidate.source_file == include.source_file
+                || !candidate.initially_declared
+                || candidate.is_conditionally_declared
+                || candidate.is_anonymous
+            {
+                continue;
+            }
+            out.push_str(" || ptn_ascii_case_equal(");
+            out.push_str(&parent_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&candidate.name));
+            out.push_str("\")");
+        }
+        out.push_str(";\n");
+        out.push_str("        if ((!ptn_declared_runtime_class_exists(&runtime, ");
         out.push_str(&parent_temp);
+        out.push_str(") || ptn_preload_parent_is_root_predeclared_");
+        out.push_str(&class_index.to_string());
         out.push_str(")\n");
         out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("            && !ptn_internal_class_exists_name(");
@@ -7251,7 +7292,7 @@ fn emit_preload_unlinked_anonymous_class_warnings(
         out.push_str("#endif\n");
         out.push_str("        ) {\n");
         out.push_str(
-            "            ptn_emit_compile_warning(&runtime, \"Can't preload unlinked class ",
+            "            ptn_emit_compile_warning_direct(&runtime, \"Can't preload unlinked class ",
         );
         out.push_str(&c_string(&class.name));
         out.push_str(": Unknown parent ");
