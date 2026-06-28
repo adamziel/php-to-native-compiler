@@ -1,0 +1,12 @@
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Windows1251.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Shift_JIS.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_encoding_edge_case_05.phpt
+ext/dom/tests/modern/spec/NamedNodeMap_dimensions_errors.phpt
+ext/dom/tests/modern/spec/Document_importNode_not_supported.phpt
+ext/dom/tests/modern/spec/XMLDocument_version.phpt
+ext/dom/tests/modern/extensions/node_renaming.phpt
+ext/dom/tests/modern/spec/clone_conflicting_namespace_prefix.phpt
+ext/dom/tests/modern/spec/bug81468.phpt
+ext/dom/tests/gh16595.phpt
+ext/dom/tests/gh16535.phpt
