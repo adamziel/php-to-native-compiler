@@ -222,6 +222,7 @@ pub enum StringPart {
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(String),
     DynamicVariableExpression(String),
+    Expression(String),
     PropertyFetch {
         variable: String,
         property: String,
@@ -1132,27 +1133,10 @@ impl<'a> Lexer<'a> {
                     let first_member = self.read_interpolation_variable_name(start)?;
                     self.skip_interpolation_whitespace();
                     if matches!(self.peek_char(), Some('(')) {
-                        self.bump_char();
-                        self.skip_interpolation_whitespace();
-                        if !matches!(self.peek_char(), Some(')')) {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_char_span()),
-                            ));
-                        }
-                        self.bump_char();
-                        self.skip_interpolation_whitespace();
-                        if !matches!(self.peek_char(), Some('}')) {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_char_span()),
-                            ));
-                        }
-                        self.bump_char();
-                        return Ok(StringPart::MethodCall {
-                            variable: array,
-                            method: first_member,
-                        });
+                        let suffix = self.read_balanced_interpolation_expression(start)?;
+                        return Ok(StringPart::Expression(format!(
+                            "${array}->{first_member}{suffix}"
+                        )));
                     }
                     let mut properties = vec![first_member];
                     loop {

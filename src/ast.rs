@@ -1233,6 +1233,7 @@ pub enum StringPart {
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(Box<Expr>),
     DynamicVariableExpression(Box<Expr>),
+    Expression(Box<Expr>),
     PropertyFetch {
         variable: String,
         property: String,
