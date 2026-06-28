@@ -84517,6 +84517,40 @@ foreach ([[\"foo\", \"bar\"], [\"\", \"bar\"], [null, \"bar\"]] as $callback) {
 }
 
 #[test]
+fn compile_call_user_func_inline_array_invalid_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-inline-array-invalid-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-inline-array-invalid-receiver.php");
+    let output = root.join("call-user-func-inline-array-invalid-receiver-bin");
+    fs::write(
+        &input,
+        "<?php
+$comparator = null;
+try {
+    var_dump(call_user_func([$comparator, 'compare'], 1, 2));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_invalid_callback_message"));
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at(runtime, \"TypeError\""));
+}
+
+#[test]
 fn compile_string_static_callable_error_precedence_to_native_binary() {
     let root = temp_dir("ptn-native-string-static-callable-errors");
     fs::create_dir_all(&root).unwrap();

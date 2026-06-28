@@ -1,0 +1,12 @@
+Zend/tests/generators/bug74840.phpt
+Zend/tests/magic_methods/bug38146.phpt
+Zend/tests/fibers/gh9916-008.phpt
+Zend/tests/fibers/gh15108-006.phpt
+Zend/tests/magic_methods/magic_methods_wakeup.phpt
+Zend/tests/traits/abstract_method_8.phpt
+Zend/tests/fibers/gh9735-008.phpt
+Zend/tests/generators/bug66041.phpt
+Zend/tests/enum/__unset.phpt
+Zend/tests/type_declarations/mixed/inheritance/mixed_parameter_inheritance_success5.phpt
+Zend/tests/enum/__function__.phpt
+Zend/tests/fibers/fatal-error-in-nested-fiber.phpt

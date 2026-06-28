@@ -1,0 +1,2 @@
+Zend/tests/methods-on-non-objects-call-user-func.phpt
+Zend/tests/methods-on-non-objects.phpt

@@ -28082,6 +28082,11 @@ fn emit_callable_dispatch(
         out.push_str("        }\n");
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_ARRAY) {\n");
+        out.push_str("        if (from_call_user_func) {\n");
+        out.push_str("            char *message = ptn_invalid_callback_message(runtime, \"call_user_func\", 1, \"callback\", resolved, 0);\n");
+        out.push_str("            ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
         out.push_str("        if (resolved.as.array->len != 2) {\n");
         out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Array callback must have exactly two elements\", runtime->source_path, line);\n");
         out.push_str("        } else {\n");
