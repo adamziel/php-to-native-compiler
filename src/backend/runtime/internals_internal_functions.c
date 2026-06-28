@@ -188102,15 +188102,30 @@ static void ptn_reflection_property_throw_raw_virtual_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static int ptn_reflection_property_write_raw_storage_value(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *property_name,
+    const char *property_owner,
+    PtnValue value,
+    size_t line
+);
+
 static PtnValue ptn_reflection_property_get_raw_object_value(
     PtnRuntime *runtime,
     PtnValue target,
     const char *property_name,
     const char *property_owner,
+    int is_dynamic,
     size_t line
 ) {
-    const PtnObjectPropertyMetadata *metadata =
-        ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT || target.as.object == NULL) {
+        return ptn_null();
+    }
+    const PtnObjectPropertyMetadata *metadata = is_dynamic
+        ? NULL
+        : ptn_reflection_property_object_metadata(target, property_name, property_owner);
     if (metadata != NULL && metadata->is_virtual) {
         ptn_reflection_property_throw_raw_virtual_error(
             runtime,
@@ -188121,26 +188136,24 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
         );
         return ptn_null();
     }
-    const char *previous_active_property_hook_class =
-        runtime == NULL ? NULL : runtime->active_property_hook_class;
-    const char *previous_active_property_hook_property =
-        runtime == NULL ? NULL : runtime->active_property_hook_property;
-    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
-        runtime->active_property_hook_class = ptn_property_hook_get_declaring_class(metadata);
-        runtime->active_property_hook_property = metadata->display_name;
+    const char *storage_name = metadata == NULL ? property_name : metadata->storage_name;
+    PtnArrayKey key = ptn_array_string_key(storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(target.as.object->properties, key);
+    ptn_array_key_free(key);
+    if (entry != NULL) {
+        return ptn_value_clone_deref(entry->value);
     }
-    PtnValue result = ptn_object_read_property(
-        runtime,
-        target,
-        property_name,
-        property_owner,
-        line
-    );
-    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
-        runtime->active_property_hook_class = previous_active_property_hook_class;
-        runtime->active_property_hook_property = previous_active_property_hook_property;
+    if (metadata != NULL &&
+        ptn_property_type_is_declared(metadata->type_kind) &&
+        !metadata->is_unset) {
+        ptn_throw_uninitialized_typed_property_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
     }
-    return result;
+    return ptn_null();
 }
 
 static PtnValue ptn_reflection_property_set_raw_object_value(
@@ -188163,13 +188176,16 @@ static PtnValue ptn_reflection_property_set_raw_object_value(
         );
         return ptn_null();
     }
-    const char *previous_active_property_hook_class =
-        runtime == NULL ? NULL : runtime->active_property_hook_class;
-    const char *previous_active_property_hook_property =
-        runtime == NULL ? NULL : runtime->active_property_hook_property;
-    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
-        runtime->active_property_hook_class = ptn_property_hook_set_declaring_class(metadata);
-        runtime->active_property_hook_property = metadata->display_name;
+    if (metadata != NULL) {
+        (void)ptn_reflection_property_write_raw_storage_value(
+            runtime,
+            target,
+            property_name,
+            property_owner,
+            value,
+            line
+        );
+        return ptn_value_clone_deref(value);
     }
     PtnValue result = ptn_object_write_property(
         runtime,
@@ -188179,10 +188195,6 @@ static PtnValue ptn_reflection_property_set_raw_object_value(
         value,
         line
     );
-    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
-        runtime->active_property_hook_class = previous_active_property_hook_class;
-        runtime->active_property_hook_property = previous_active_property_hook_property;
-    }
     return result;
 }
 
@@ -188198,12 +188210,20 @@ static int ptn_reflection_property_is_readable_result(
     PtnValue target,
     size_t line
 ) {
+    if (data->is_dynamic) {
+        if (target.type != PTN_OBJECT) {
+            return 0;
+        }
+        if (ptn_reflection_property_object_storage_initialized(target, data->name, NULL)) {
+            return 1;
+        }
+        if (ptn_reflection_property_target_has_method(target, "__isset")) {
+            return ptn_object_property_is_set(runtime, target, data->name, scope_class, line);
+        }
+        return ptn_reflection_property_target_has_method(target, "__get");
+    }
     if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
         return 0;
-    }
-    if (data->is_dynamic) {
-        return target.type == PTN_OBJECT &&
-            ptn_reflection_property_object_storage_initialized(target, data->name, NULL);
     }
 
     int read_allowed =
@@ -189475,6 +189495,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 target,
                 data->name,
                 storage_declaring_class,
+                data->is_dynamic,
                 line
             );
         }
@@ -189793,16 +189814,19 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ptn_value_destroy(&written);
             return ptn_null();
         }
-        PtnValue written = ptn_ascii_case_equal(name, "setRawValue")
-            ? ptn_reflection_property_set_raw_object_value(
+        PtnValue written;
+        if (ptn_ascii_case_equal(name, "setRawValue")) {
+            ptn_reflection_property_write_raw_storage_value(
                 runtime,
                 target,
                 data->name,
-                declaring_class == NULL ? data->class_name : declaring_class,
+                data->is_dynamic ? NULL : (declaring_class == NULL ? data->class_name : declaring_class),
                 args[1],
                 line
-            )
-            : ptn_object_write_property(
+            );
+            written = ptn_value_clone_deref(args[1]);
+        } else {
+            written = ptn_object_write_property(
                 runtime,
                 target,
                 data->name,
@@ -189810,6 +189834,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 args[1],
                 line
             );
+        }
         ptn_value_destroy(&written);
         return ptn_null();
     }
@@ -191092,8 +191117,13 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     if (entry->key.string_len == 0 || entry->key.as.string[0] == '\0') {
         return 0;
     }
-    if (ptn_object_property_metadata(object, entry->key.as.string) != NULL ||
-        ptn_object_metadata_for_display_name(object, entry->key.as.string) != NULL) {
+    if (ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
+        return 0;
+    }
+    const PtnObjectPropertyMetadata *display_metadata =
+        ptn_object_metadata_for_display_name(object, entry->key.as.string);
+    if (display_metadata != NULL &&
+        display_metadata->read_visibility != PTN_PROPERTY_PRIVATE) {
         return 0;
     }
     return 1;
