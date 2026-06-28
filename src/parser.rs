@@ -17350,8 +17350,48 @@ fn unresolved_compatibility_class(
     target: &TypeHint,
     classes: &[ClassDecl],
 ) -> Option<String> {
+    if !type_hint_is_class_or_null_only(candidate) || !type_hint_is_class_or_null_only(target) {
+        return None;
+    }
     first_unavailable_class_name(candidate, classes)
         .or_else(|| first_unavailable_class_name(target, classes))
+}
+
+fn type_hint_is_class_or_null_only(type_hint: &TypeHint) -> bool {
+    let (has_class, allowed) = type_hint_class_or_null_shape(type_hint);
+    has_class && allowed
+}
+
+fn type_hint_class_or_null_shape(type_hint: &TypeHint) -> (bool, bool) {
+    match type_hint {
+        TypeHint::Class(_) | TypeHint::Static => (true, true),
+        TypeHint::Null => (false, true),
+        TypeHint::Nullable(inner) => type_hint_class_or_null_shape(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            let mut has_class = false;
+            for member in types {
+                let (member_has_class, member_allowed) = type_hint_class_or_null_shape(member);
+                if !member_allowed {
+                    return (has_class || member_has_class, false);
+                }
+                has_class |= member_has_class;
+            }
+            (has_class, true)
+        }
+        TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never => (false, false),
+    }
 }
 
 fn first_unavailable_class_name(type_hint: &TypeHint, classes: &[ClassDecl]) -> Option<String> {
