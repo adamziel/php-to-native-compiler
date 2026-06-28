@@ -53127,6 +53127,46 @@ try {
 }
 
 #[test]
+fn compile_dom_node_list_append_dimension_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-node-list-append-dimension-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-node-list-append-dimension-error.php");
+    let output = root.join("dom-node-list-append-dimension-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createFromString('<root><a/><b/><c/></root>');
+$children = $dom->documentElement->childNodes;
+
+try {
+    $children[][0] = 1;
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot append to Dom\\NodeList\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_arrayaccess_append_reference_temporary"));
+}
+
+#[test]
 fn compile_dom_legacy_namespace_node_clone_to_native_binary() {
     let root = temp_dir("ptn-native-dom-legacy-namespace-node-clone");
     fs::create_dir_all(&root).unwrap();

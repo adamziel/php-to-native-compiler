@@ -1,0 +1,7 @@
+# ptn-nlq10 focused current-red DOM live collection row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T233746Z.tsv
+# Shared blocker: read-only DOM live collection ArrayAccess dimension/write semantics.
+ext/dom/tests/modern/spec/NodeList_dimensions_errors.phpt
+ext/dom/tests/modern/spec/NamedNodeMap_dimensions_errors.phpt
+ext/dom/tests/modern/html/interactions/HTMLCollection_dimension_errors.phpt
+ext/dom/tests/modern/spec/NamedNodeMap_dimensions.phpt
