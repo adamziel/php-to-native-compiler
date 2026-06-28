@@ -73596,6 +73596,7 @@ typedef struct {
 
 typedef struct {
     char *locale;
+    char *pattern;
     int style;
     char *symbols[PTN_NUMBER_FORMATTER_SYMBOL_COUNT];
 } PtnIntlNumberFormatterData;
@@ -73695,6 +73696,7 @@ static void ptn_intl_number_formatter_data_free(void *ptr) {
         return;
     }
     free(data->locale);
+    free(data->pattern);
     for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
         free(data->symbols[i]);
     }
@@ -79102,12 +79104,13 @@ static void ptn_intl_number_formatter_set_default_symbol(
     data->symbols[symbol] = ptn_duplicate_string(value == NULL ? "" : value);
 }
 
-static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data_new(const char *locale, int style) {
+static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data_new(const char *locale, int style, const char *pattern) {
     PtnIntlNumberFormatterData *data = malloc(sizeof(PtnIntlNumberFormatterData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->locale = ptn_duplicate_string(locale == NULL ? "" : locale);
+    data->pattern = ptn_duplicate_string(pattern == NULL ? "" : pattern);
     data->style = style;
     for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
         data->symbols[i] = ptn_duplicate_string(ptn_intl_number_formatter_default_symbol((int)i));
@@ -79162,10 +79165,12 @@ static PtnValue ptn_intl_number_formatter_new(PtnRuntime *runtime, const char *c
     (void)line;
     char *locale = argc >= 1 ? ptn_intl_value_string_copy(args[0]) : ptn_duplicate_string("");
     int style = argc >= 2 ? (int)ptn_value_to_integer(args[1]) : PTN_NUMBER_FORMATTER_DECIMAL;
+    char *pattern = argc >= 3 ? ptn_intl_value_string_copy(args[2]) : ptn_duplicate_string("");
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "NumberFormatter" : class_name);
-    object.as.object->native_data = ptn_intl_number_formatter_data_new(locale, style);
+    object.as.object->native_data = ptn_intl_number_formatter_data_new(locale, style, pattern);
     object.as.object->native_data_free = ptn_intl_number_formatter_data_free;
     free(locale);
+    free(pattern);
     ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
     return object;
 }
@@ -79390,7 +79395,7 @@ static PtnValue ptn_intl_number_formatter_format_fixed(
 
 static PtnValue ptn_intl_number_formatter_format_scientific(PtnIntlNumberFormatterData *data, double number) {
     char formatted[128];
-    int written = snprintf(formatted, sizeof(formatted), "%.10E", fabs(number));
+    int written = snprintf(formatted, sizeof(formatted), "%.15E", fabs(number));
     if (written < 0 || (size_t)written >= sizeof(formatted)) {
         ptn_abort_out_of_memory();
     }
@@ -79399,6 +79404,15 @@ static PtnValue ptn_intl_number_formatter_format_scientific(PtnIntlNumberFormatt
         return ptn_owned_string(ptn_duplicate_string(formatted));
     }
     *exponent = '\0';
+    char *fraction_end = exponent - 1;
+    while (fraction_end > formatted && *fraction_end == '0') {
+        *fraction_end = '\0';
+        fraction_end--;
+    }
+    if (fraction_end > formatted && *fraction_end == '.') {
+        fraction_end[1] = '0';
+        fraction_end[2] = '\0';
+    }
     exponent++;
     char exponent_sign = *exponent;
     if (exponent_sign == '+' || exponent_sign == '-') {
@@ -79435,6 +79449,21 @@ static int ptn_intl_number_formatter_style_is_currency(int style) {
         style == PTN_NUMBER_FORMATTER_CURRENCY_PLURAL ||
         style == PTN_NUMBER_FORMATTER_CASH_CURRENCY ||
         style == PTN_NUMBER_FORMATTER_CURRENCY_STANDARD;
+}
+
+static int ptn_intl_number_formatter_locale_uses_suffix_currency(const char *locale) {
+    return ptn_intl_locale_has_prefix(locale, "ka") ||
+        ptn_intl_locale_has_prefix(locale, "ru") ||
+        ptn_intl_locale_has_prefix(locale, "uk") ||
+        ptn_intl_locale_has_prefix(locale, "de") ||
+        ptn_intl_locale_has_prefix(locale, "fr");
+}
+
+static int ptn_intl_number_formatter_locale_uses_spaced_prefix_currency(const char *locale) {
+    return ptn_intl_locale_has_prefix(locale, "en_UK") ||
+        ptn_intl_locale_has_prefix(locale, "en-UK") ||
+        ptn_intl_locale_has_prefix(locale, "en_GB") ||
+        ptn_intl_locale_has_prefix(locale, "en-GB");
 }
 
 static const char *ptn_intl_number_formatter_plural_currency_name(
@@ -79506,7 +79535,7 @@ static PtnValue ptn_intl_number_formatter_format_currency_code(
     }
 
     if (style == PTN_NUMBER_FORMATTER_CURRENCY_ISO) {
-        if (ptn_intl_locale_has_prefix(locale, "ka")) {
+        if (ptn_intl_number_formatter_locale_uses_suffix_currency(locale)) {
             ptn_string_buffer_append(&output, amount);
             ptn_string_buffer_append(&output, nbsp);
             ptn_string_buffer_append(&output, code);
@@ -79519,10 +79548,14 @@ static PtnValue ptn_intl_number_formatter_format_currency_code(
         ptn_string_buffer_append(&output, amount);
         ptn_string_buffer_append_char(&output, ' ');
         ptn_string_buffer_append(&output, ptn_intl_number_formatter_plural_currency_name(data, number));
-    } else if (ptn_intl_locale_has_prefix(locale, "ka")) {
+    } else if (ptn_intl_number_formatter_locale_uses_suffix_currency(locale)) {
         ptn_string_buffer_append(&output, amount);
         ptn_string_buffer_append(&output, nbsp);
         ptn_string_buffer_append(&output, symbol);
+    } else if (ptn_intl_number_formatter_locale_uses_spaced_prefix_currency(locale)) {
+        ptn_string_buffer_append(&output, symbol);
+        ptn_string_buffer_append(&output, nbsp);
+        ptn_string_buffer_append(&output, amount);
     } else {
         ptn_string_buffer_append(&output, symbol);
         ptn_string_buffer_append(&output, amount);
@@ -79559,12 +79592,628 @@ static PtnValue ptn_intl_number_formatter_special_value(PtnIntlNumberFormatterDa
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static double ptn_intl_number_formatter_truncate_number(double number) {
+    return number < 0.0 ? ceil(number) : floor(number);
+}
+
+static void ptn_intl_number_formatter_append_decimal_digit_word(PtnStringBuffer *output, int digit, const char *locale) {
+    static const char *english[] = {"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"};
+    static const char *german[] = {
+        "null",
+        "eins",
+        "zwei",
+        "drei",
+        "vier",
+        "f\xC3\xBCnf",
+        "sechs",
+        "sieben",
+        "acht",
+        "neun"
+    };
+    static const char *french[] = {"z\xC3\xA9ro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf"};
+    const char **words = english;
+    if (ptn_intl_locale_has_prefix(locale, "de")) {
+        words = german;
+    } else if (ptn_intl_locale_has_prefix(locale, "fr")) {
+        words = french;
+    }
+    if (output->len > 0) {
+        ptn_string_buffer_append_char(output, ' ');
+    }
+    ptn_string_buffer_append(output, words[digit < 0 || digit > 9 ? 0 : digit]);
+}
+
+static void ptn_intl_number_formatter_append_english_under_100(PtnStringBuffer *output, int value) {
+    static const char *ones[] = {
+        "",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen"
+    };
+    static const char *tens[] = {"", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"};
+    if (value < 20) {
+        ptn_string_buffer_append(output, ones[value]);
+        return;
+    }
+    ptn_string_buffer_append(output, tens[value / 10]);
+    if (value % 10 != 0) {
+        ptn_string_buffer_append_char(output, '-');
+        ptn_string_buffer_append(output, ones[value % 10]);
+    }
+}
+
+static void ptn_intl_number_formatter_append_english_under_1000(PtnStringBuffer *output, int value) {
+    if (value >= 100) {
+        ptn_intl_number_formatter_append_english_under_100(output, value / 100);
+        ptn_string_buffer_append(output, " hundred");
+        if (value % 100 != 0) {
+            ptn_string_buffer_append(output, " and ");
+            ptn_intl_number_formatter_append_english_under_100(output, value % 100);
+        }
+        return;
+    }
+    ptn_intl_number_formatter_append_english_under_100(output, value);
+}
+
+static void ptn_intl_number_formatter_append_english_integer(PtnStringBuffer *output, int64_t value) {
+    if (value == 0) {
+        ptn_string_buffer_append(output, "zero");
+        return;
+    }
+    int64_t millions = value / 1000000;
+    int thousands = (int)((value / 1000) % 1000);
+    int remainder = (int)(value % 1000);
+    if (millions > 0) {
+        ptn_intl_number_formatter_append_english_under_1000(output, (int)millions);
+        ptn_string_buffer_append(output, " million");
+    }
+    if (thousands > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_english_under_1000(output, thousands);
+        ptn_string_buffer_append(output, " thousand");
+    }
+    if (remainder > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_english_under_1000(output, remainder);
+    }
+}
+
+static void ptn_intl_number_formatter_append_french_under_100(PtnStringBuffer *output, int value) {
+    static const char *ones[] = {
+        "",
+        "un",
+        "deux",
+        "trois",
+        "quatre",
+        "cinq",
+        "six",
+        "sept",
+        "huit",
+        "neuf",
+        "dix",
+        "onze",
+        "douze",
+        "treize",
+        "quatorze",
+        "quinze",
+        "seize",
+        "dix-sept",
+        "dix-huit",
+        "dix-neuf"
+    };
+    static const char *tens[] = {
+        "",
+        "",
+        "vingt",
+        "trente",
+        "quarante",
+        "cinquante",
+        "soixante",
+        "soixante",
+        "quatre-vingt",
+        "quatre-vingt"
+    };
+    if (value < 20) {
+        ptn_string_buffer_append(output, ones[value]);
+        return;
+    }
+    if (value >= 70 && value < 80) {
+        ptn_string_buffer_append(output, "soixante-");
+        ptn_intl_number_formatter_append_french_under_100(output, value - 60);
+        return;
+    }
+    if (value >= 90) {
+        ptn_string_buffer_append(output, "quatre-vingt-");
+        ptn_intl_number_formatter_append_french_under_100(output, value - 80);
+        return;
+    }
+    ptn_string_buffer_append(output, tens[value / 10]);
+    if (value % 10 != 0) {
+        ptn_string_buffer_append_char(output, '-');
+        ptn_string_buffer_append(output, ones[value % 10]);
+    }
+}
+
+static void ptn_intl_number_formatter_append_french_under_1000(PtnStringBuffer *output, int value) {
+    if (value >= 100) {
+        if (value / 100 > 1) {
+            ptn_intl_number_formatter_append_french_under_100(output, value / 100);
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, "cent");
+        if (value % 100 != 0) {
+            ptn_string_buffer_append_char(output, ' ');
+            ptn_intl_number_formatter_append_french_under_100(output, value % 100);
+        }
+        return;
+    }
+    ptn_intl_number_formatter_append_french_under_100(output, value);
+}
+
+static void ptn_intl_number_formatter_append_french_integer(PtnStringBuffer *output, int64_t value) {
+    if (value == 0) {
+        ptn_string_buffer_append(output, "z\xC3\xA9ro");
+        return;
+    }
+    int64_t millions = value / 1000000;
+    int thousands = (int)((value / 1000) % 1000);
+    int remainder = (int)(value % 1000);
+    if (millions > 0) {
+        if (millions == 1) {
+            ptn_string_buffer_append(output, "un");
+        } else {
+            ptn_intl_number_formatter_append_french_under_1000(output, (int)millions);
+        }
+        ptn_string_buffer_append(output, " million");
+    }
+    if (thousands > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        if (thousands != 1) {
+            ptn_intl_number_formatter_append_french_under_1000(output, thousands);
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, "mille");
+    }
+    if (remainder > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_french_under_1000(output, remainder);
+    }
+}
+
+static void ptn_intl_number_formatter_append_german_under_100(PtnStringBuffer *output, int value) {
+    static const char *ones[] = {
+        "",
+        "eins",
+        "zwei",
+        "drei",
+        "vier",
+        "f\xC3\xBCnf",
+        "sechs",
+        "sieben",
+        "acht",
+        "neun",
+        "zehn",
+        "elf",
+        "zw\xC3\xB6lf",
+        "dreizehn",
+        "vierzehn",
+        "f\xC3\xBCnfzehn",
+        "sechzehn",
+        "siebzehn",
+        "achtzehn",
+        "neunzehn"
+    };
+    static const char *tens[] = {
+        "",
+        "",
+        "zwanzig",
+        "drei\xC3\x9Fig",
+        "vierzig",
+        "f\xC3\xBCnfzig",
+        "sechzig",
+        "siebzig",
+        "achtzig",
+        "neunzig"
+    };
+    const char *soft_hyphen = "\xC2\xAD";
+    if (value < 20) {
+        ptn_string_buffer_append(output, ones[value]);
+        return;
+    }
+    if (value % 10 != 0) {
+        const char *unit = value % 10 == 1 ? "ein" : ones[value % 10];
+        ptn_string_buffer_append(output, unit);
+        ptn_string_buffer_append(output, soft_hyphen);
+        ptn_string_buffer_append(output, "und");
+        ptn_string_buffer_append(output, soft_hyphen);
+    }
+    ptn_string_buffer_append(output, tens[value / 10]);
+}
+
+static void ptn_intl_number_formatter_append_german_under_1000(PtnStringBuffer *output, int value) {
+    const char *soft_hyphen = "\xC2\xAD";
+    if (value >= 100) {
+        PtnStringBuffer hundred;
+        ptn_string_buffer_init(&hundred);
+        ptn_intl_number_formatter_append_german_under_100(&hundred, value / 100);
+        if (ptn_ascii_case_equal(hundred.data, "eins")) {
+            free(hundred.data);
+            ptn_string_buffer_init(&hundred);
+            ptn_string_buffer_append(&hundred, "ein");
+        }
+        ptn_string_buffer_append_len(output, hundred.data, hundred.len);
+        ptn_string_buffer_append(output, soft_hyphen);
+        ptn_string_buffer_append(output, "hundert");
+        free(hundred.data);
+        if (value % 100 != 0) {
+            ptn_string_buffer_append(output, soft_hyphen);
+            ptn_intl_number_formatter_append_german_under_100(output, value % 100);
+        }
+        return;
+    }
+    ptn_intl_number_formatter_append_german_under_100(output, value);
+}
+
+static void ptn_intl_number_formatter_append_german_integer(PtnStringBuffer *output, int64_t value) {
+    const char *soft_hyphen = "\xC2\xAD";
+    if (value == 0) {
+        ptn_string_buffer_append(output, "null");
+        return;
+    }
+    int64_t millions = value / 1000000;
+    int thousands = (int)((value / 1000) % 1000);
+    int remainder = (int)(value % 1000);
+    if (millions > 0) {
+        if (millions == 1) {
+            ptn_string_buffer_append(output, "eine Million");
+        } else {
+            ptn_intl_number_formatter_append_german_under_1000(output, (int)millions);
+            ptn_string_buffer_append(output, " Millionen");
+        }
+    }
+    if (thousands > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_german_under_1000(output, thousands);
+        ptn_string_buffer_append(output, soft_hyphen);
+        ptn_string_buffer_append(output, "tausend");
+    }
+    if (remainder > 0) {
+        if (thousands > 0) {
+            ptn_string_buffer_append(output, soft_hyphen);
+        } else if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_german_under_1000(output, remainder);
+    }
+}
+
+static void ptn_intl_number_formatter_append_russian_under_1000(PtnStringBuffer *output, int value, int feminine) {
+    size_t start_len = output->len;
+    static const char *hundreds[] = {
+        "",
+        "\xD1\x81\xD1\x82\xD0\xBE",
+        "\xD0\xB4\xD0\xB2\xD0\xB5\xD1\x81\xD1\x82\xD0\xB8",
+        "\xD1\x82\xD1\x80\xD0\xB8\xD1\x81\xD1\x82\xD0\xB0",
+        "\xD1\x87\xD0\xB5\xD1\x82\xD1\x8B\xD1\x80\xD0\xB5\xD1\x81\xD1\x82\xD0\xB0",
+        "\xD0\xBF\xD1\x8F\xD1\x82\xD1\x8C\xD1\x81\xD0\xBE\xD1\x82",
+        "\xD1\x88\xD0\xB5\xD1\x81\xD1\x82\xD1\x8C\xD1\x81\xD0\xBE\xD1\x82",
+        "\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C\xD1\x81\xD0\xBE\xD1\x82",
+        "\xD0\xB2\xD0\xBE\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C\xD1\x81\xD0\xBE\xD1\x82",
+        "\xD0\xB4\xD0\xB5\xD0\xB2\xD1\x8F\xD1\x82\xD1\x8C\xD1\x81\xD0\xBE\xD1\x82"
+    };
+    static const char *teens[] = {
+        "\xD0\xB4\xD0\xB5\xD1\x81\xD1\x8F\xD1\x82\xD1\x8C",
+        "\xD0\xBE\xD0\xB4\xD0\xB8\xD0\xBD\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD0\xB4\xD0\xB2\xD0\xB5\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x82\xD1\x80\xD0\xB8\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x87\xD0\xB5\xD1\x82\xD1\x8B\xD1\x80\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD0\xBF\xD1\x8F\xD1\x82\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x88\xD0\xB5\xD1\x81\xD1\x82\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x81\xD0\xB5\xD0\xBC\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD0\xB2\xD0\xBE\xD1\x81\xD0\xB5\xD0\xBC\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD0\xB4\xD0\xB5\xD0\xB2\xD1\x8F\xD1\x82\xD0\xBD\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C"
+    };
+    static const char *tens[] = {
+        "",
+        "",
+        "\xD0\xB4\xD0\xB2\xD0\xB0\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x82\xD1\x80\xD0\xB8\xD0\xB4\xD1\x86\xD0\xB0\xD1\x82\xD1\x8C",
+        "\xD1\x81\xD0\xBE\xD1\x80\xD0\xBE\xD0\xBA",
+        "\xD0\xBF\xD1\x8F\xD1\x82\xD1\x8C\xD0\xB4\xD0\xB5\xD1\x81\xD1\x8F\xD1\x82",
+        "\xD1\x88\xD0\xB5\xD1\x81\xD1\x82\xD1\x8C\xD0\xB4\xD0\xB5\xD1\x81\xD1\x8F\xD1\x82",
+        "\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C\xD0\xB4\xD0\xB5\xD1\x81\xD1\x8F\xD1\x82",
+        "\xD0\xB2\xD0\xBE\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C\xD0\xB4\xD0\xB5\xD1\x81\xD1\x8F\xD1\x82",
+        "\xD0\xB4\xD0\xB5\xD0\xB2\xD1\x8F\xD0\xBD\xD0\xBE\xD1\x81\xD1\x82\xD0\xBE"
+    };
+    static const char *ones_masc[] = {
+        "",
+        "\xD0\xBE\xD0\xB4\xD0\xB8\xD0\xBD",
+        "\xD0\xB4\xD0\xB2\xD0\xB0",
+        "\xD1\x82\xD1\x80\xD0\xB8",
+        "\xD1\x87\xD0\xB5\xD1\x82\xD1\x8B\xD1\x80\xD0\xB5",
+        "\xD0\xBF\xD1\x8F\xD1\x82\xD1\x8C",
+        "\xD1\x88\xD0\xB5\xD1\x81\xD1\x82\xD1\x8C",
+        "\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C",
+        "\xD0\xB2\xD0\xBE\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C",
+        "\xD0\xB4\xD0\xB5\xD0\xB2\xD1\x8F\xD1\x82\xD1\x8C"
+    };
+    static const char *ones_fem[] = {
+        "",
+        "\xD0\xBE\xD0\xB4\xD0\xBD\xD0\xB0",
+        "\xD0\xB4\xD0\xB2\xD0\xB5",
+        "\xD1\x82\xD1\x80\xD0\xB8",
+        "\xD1\x87\xD0\xB5\xD1\x82\xD1\x8B\xD1\x80\xD0\xB5",
+        "\xD0\xBF\xD1\x8F\xD1\x82\xD1\x8C",
+        "\xD1\x88\xD0\xB5\xD1\x81\xD1\x82\xD1\x8C",
+        "\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C",
+        "\xD0\xB2\xD0\xBE\xD1\x81\xD0\xB5\xD0\xBC\xD1\x8C",
+        "\xD0\xB4\xD0\xB5\xD0\xB2\xD1\x8F\xD1\x82\xD1\x8C"
+    };
+    int hundred = value / 100;
+    int remainder = value % 100;
+    if (hundred > 0) {
+        if (output->len > start_len) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, hundreds[hundred]);
+    }
+    if (remainder >= 10 && remainder < 20) {
+        if (output->len > start_len) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, teens[remainder - 10]);
+        return;
+    }
+    if (remainder >= 20) {
+        if (output->len > start_len) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, tens[remainder / 10]);
+    }
+    if (remainder % 10 != 0) {
+        if (output->len > start_len) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_string_buffer_append(output, feminine ? ones_fem[remainder % 10] : ones_masc[remainder % 10]);
+    }
+}
+
+static const char *ptn_intl_number_formatter_russian_plural(int64_t value, const char *one, const char *few, const char *many) {
+    int last_two = (int)(llabs(value) % 100);
+    int last = (int)(llabs(value) % 10);
+    if (last_two >= 11 && last_two <= 14) {
+        return many;
+    }
+    if (last == 1) {
+        return one;
+    }
+    if (last >= 2 && last <= 4) {
+        return few;
+    }
+    return many;
+}
+
+static void ptn_intl_number_formatter_append_russian_integer(PtnStringBuffer *output, int64_t value) {
+    if (value == 0) {
+        ptn_string_buffer_append(output, "\xD0\xBD\xD0\xBE\xD0\xBB\xD1\x8C");
+        return;
+    }
+    int64_t millions = value / 1000000;
+    int thousands = (int)((value / 1000) % 1000);
+    int remainder = (int)(value % 1000);
+    if (millions > 0) {
+        ptn_intl_number_formatter_append_russian_under_1000(output, (int)millions, 0);
+        ptn_string_buffer_append_char(output, ' ');
+        ptn_string_buffer_append(
+            output,
+            ptn_intl_number_formatter_russian_plural(
+                millions,
+                "\xD0\xBC\xD0\xB8\xD0\xBB\xD0\xBB\xD0\xB8\xD0\xBE\xD0\xBD",
+                "\xD0\xBC\xD0\xB8\xD0\xBB\xD0\xBB\xD0\xB8\xD0\xBE\xD0\xBD\xD0\xB0",
+                "\xD0\xBC\xD0\xB8\xD0\xBB\xD0\xBB\xD0\xB8\xD0\xBE\xD0\xBD\xD0\xBE\xD0\xB2"
+            )
+        );
+    }
+    if (thousands > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_russian_under_1000(output, thousands, 1);
+        ptn_string_buffer_append_char(output, ' ');
+        ptn_string_buffer_append(
+            output,
+            ptn_intl_number_formatter_russian_plural(
+                thousands,
+                "\xD1\x82\xD1\x8B\xD1\x81\xD1\x8F\xD1\x87\xD0\xB0",
+                "\xD1\x82\xD1\x8B\xD1\x81\xD1\x8F\xD1\x87\xD0\xB8",
+                "\xD1\x82\xD1\x8B\xD1\x81\xD1\x8F\xD1\x87"
+            )
+        );
+    }
+    if (remainder > 0) {
+        if (output->len > 0) {
+            ptn_string_buffer_append_char(output, ' ');
+        }
+        ptn_intl_number_formatter_append_russian_under_1000(output, remainder, 0);
+    }
+}
+
+static char *ptn_intl_number_formatter_fraction_digits(double number, int precision) {
+    char formatted[96];
+    int written = snprintf(formatted, sizeof(formatted), "%.*f", precision, fabs(number));
+    if (written < 0 || (size_t)written >= sizeof(formatted)) {
+        ptn_abort_out_of_memory();
+    }
+    char *dot = strchr(formatted, '.');
+    if (dot == NULL) {
+        return ptn_duplicate_string("");
+    }
+    char *digits = ptn_duplicate_string(dot + 1);
+    size_t len = strlen(digits);
+    while (len > 0 && digits[len - 1] == '0') {
+        digits[len - 1] = '\0';
+        len--;
+    }
+    return digits;
+}
+
+static PtnValue ptn_intl_number_formatter_format_spellout(PtnIntlNumberFormatterData *data, double number) {
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (number < 0.0) {
+        ptn_string_buffer_append(&output, "minus ");
+    }
+    int64_t integer = (int64_t)floor(fabs(number));
+    if (ptn_intl_locale_has_prefix(locale, "ru") || ptn_intl_locale_has_prefix(locale, "uk")) {
+        ptn_intl_number_formatter_append_russian_integer(&output, integer);
+        int64_t fraction = (int64_t)floor((fabs(number) - floor(fabs(number))) * 100000000.0 + 0.5);
+        if (fraction > 0) {
+            ptn_string_buffer_append(&output, " \xD1\x86\xD0\xB5\xD0\xBB\xD1\x8B\xD1\x85 ");
+            ptn_intl_number_formatter_append_russian_integer(&output, fraction);
+            ptn_string_buffer_append(&output, " \xD1\x81\xD1\x82\xD0\xBE\xD0\xBC\xD0\xB8\xD0\xBB\xD0\xBB\xD0\xB8\xD0\xBE\xD0\xBD\xD0\xBD\xD1\x8B\xD1\x85");
+        }
+        return ptn_owned_string_len(output.data, output.len);
+    }
+    if (ptn_intl_locale_has_prefix(locale, "de")) {
+        ptn_intl_number_formatter_append_german_integer(&output, integer);
+        char *digits = ptn_intl_number_formatter_fraction_digits(number, 10);
+        if (digits[0] != '\0') {
+            ptn_string_buffer_append(&output, " Komma");
+            for (char *cursor = digits; *cursor != '\0'; cursor++) {
+                ptn_intl_number_formatter_append_decimal_digit_word(&output, *cursor - '0', locale);
+            }
+        }
+        free(digits);
+        return ptn_owned_string_len(output.data, output.len);
+    }
+    if (ptn_intl_locale_has_prefix(locale, "fr")) {
+        ptn_intl_number_formatter_append_french_integer(&output, integer);
+        char *digits = ptn_intl_number_formatter_fraction_digits(number, 10);
+        if (digits[0] != '\0') {
+            ptn_string_buffer_append(&output, " virgule");
+            for (char *cursor = digits; *cursor != '\0'; cursor++) {
+                ptn_intl_number_formatter_append_decimal_digit_word(&output, *cursor - '0', locale);
+            }
+        }
+        free(digits);
+        return ptn_owned_string_len(output.data, output.len);
+    }
+    ptn_intl_number_formatter_append_english_integer(&output, integer);
+    char *digits = ptn_intl_number_formatter_fraction_digits(number, 10);
+    if (digits[0] != '\0') {
+        ptn_string_buffer_append(&output, " point");
+        for (char *cursor = digits; *cursor != '\0'; cursor++) {
+            ptn_intl_number_formatter_append_decimal_digit_word(&output, *cursor - '0', locale);
+        }
+    }
+    free(digits);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_intl_number_formatter_format_pattern_decimal(PtnIntlNumberFormatterData *data, double number) {
+    (void)data;
+    char formatted[128];
+    int written = snprintf(formatted, sizeof(formatted), "%.15f", fabs(number));
+    if (written < 0 || (size_t)written >= sizeof(formatted)) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = strlen(formatted);
+    while (len > 0 && formatted[len - 1] == '0') {
+        formatted[len - 1] = '\0';
+        len--;
+    }
+    if (len > 0 && formatted[len - 1] == '.') {
+        formatted[len - 1] = '\0';
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (number < 0.0) {
+        ptn_string_buffer_append_char(&output, '-');
+    }
+    ptn_string_buffer_append(&output, formatted);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_intl_number_formatter_format_ordinal(PtnIntlNumberFormatterData *data, double number) {
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    double integer = ptn_intl_number_formatter_truncate_number(number);
+    PtnValue base = ptn_intl_number_formatter_format_fixed(data, integer, 0, 0);
+    PtnStringOperand base_string = ptn_value_to_string_operand(base);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    ptn_string_buffer_append_len(&output, base_string.data, base_string.len);
+    if (ptn_intl_locale_has_prefix(locale, "en")) {
+        ptn_string_buffer_append(&output, "th");
+    } else if (ptn_intl_locale_has_prefix(locale, "fr")) {
+        ptn_string_buffer_append_char(&output, 'e');
+    } else if (ptn_intl_locale_has_prefix(locale, "de") ||
+        ptn_intl_locale_has_prefix(locale, "ru") ||
+        ptn_intl_locale_has_prefix(locale, "uk")) {
+        ptn_string_buffer_append_char(&output, '.');
+    }
+    ptn_string_operand_free(base_string);
+    ptn_value_destroy(&base);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_intl_number_formatter_format_duration(PtnIntlNumberFormatterData *data, double number) {
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    int64_t seconds = (int64_t)fabs(ptn_intl_number_formatter_truncate_number(number));
+    if (ptn_intl_locale_has_prefix(locale, "en")) {
+        int64_t hours = seconds / 3600;
+        int64_t minutes = (seconds / 60) % 60;
+        int64_t remaining = seconds % 60;
+        int needed = snprintf(NULL, 0, "%s%lld:%02lld:%02lld", number < 0.0 ? "-" : "", (long long)hours, (long long)minutes, (long long)remaining);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *result = malloc((size_t)needed + 1);
+        if (result == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(result, (size_t)needed + 1, "%s%lld:%02lld:%02lld", number < 0.0 ? "-" : "", (long long)hours, (long long)minutes, (long long)remaining);
+        return ptn_owned_string(result);
+    }
+    double integer = ptn_intl_number_formatter_truncate_number(number);
+    return ptn_intl_number_formatter_format_fixed(data, integer, 0, 0);
+}
+
 static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatterData *data, double number) {
     if (isnan(number) || isinf(number)) {
         return ptn_intl_number_formatter_special_value(data, number);
     }
     if (data != NULL && ptn_intl_number_formatter_style_is_currency(data->style)) {
         return ptn_intl_number_formatter_format_currency(data, number);
+    }
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_PATTERN_DECIMAL) {
+        return ptn_intl_number_formatter_format_pattern_decimal(data, number);
     }
     if (data != NULL && data->style == PTN_NUMBER_FORMATTER_PERCENT) {
         PtnStringBuffer output;
@@ -79583,13 +80232,32 @@ static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatter
         );
         PtnStringOperand percent_symbol =
             ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_PERCENT_SYMBOL);
+        const char *locale = data->locale == NULL ? "" : data->locale;
+        if (ptn_intl_locale_has_prefix(locale, "ru") ||
+            ptn_intl_locale_has_prefix(locale, "uk") ||
+            ptn_intl_locale_has_prefix(locale, "de") ||
+            ptn_intl_locale_has_prefix(locale, "fr")) {
+            ptn_string_buffer_append(&output, "\xC2\xA0");
+        }
         ptn_string_buffer_append_len(&output, percent_symbol.data, percent_symbol.len);
         return ptn_owned_string_len(output.data, output.len);
     }
     if (data != NULL && data->style == PTN_NUMBER_FORMATTER_SCIENTIFIC) {
         return ptn_intl_number_formatter_format_scientific(data, number);
     }
-    int precision = fabs(number - floor(number)) > 0.000001 ? 1 : 0;
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_SPELLOUT) {
+        return ptn_intl_number_formatter_format_spellout(data, number);
+    }
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_ORDINAL) {
+        return ptn_intl_number_formatter_format_ordinal(data, number);
+    }
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_DURATION) {
+        return ptn_intl_number_formatter_format_duration(data, number);
+    }
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_PATTERN_RULEBASED && data->pattern != NULL && data->pattern[0] != '\0') {
+        return ptn_owned_string(ptn_duplicate_string(data->pattern));
+    }
+    int precision = fabs(number - floor(number)) > 0.000001 ? 3 : 0;
     return ptn_intl_number_formatter_format_fixed(data, number, precision, 0);
 }
 
@@ -115189,6 +115857,33 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Australia/South", 8, 0 },
     { "Australia/Sydney", 8, 0 },
     { "Australia/Yancowinna", 8, 0 },
+    { "CST6CDT", 4095, 1 },
+    { "Cuba", 4095, 1 },
+    { "Egypt", 4095, 1 },
+    { "Eire", 4095, 1 },
+    { "EST5EDT", 4095, 1 },
+    { "Factory", 4095, 1 },
+    { "GB-Eire", 4095, 1 },
+    { "GMT0", 4095, 1 },
+    { "Greenwich", 4095, 1 },
+    { "Hongkong", 4095, 1 },
+    { "Iceland", 4095, 1 },
+    { "Iran", 4095, 1 },
+    { "Israel", 4095, 1 },
+    { "Jamaica", 4095, 1 },
+    { "Japan", 4095, 1 },
+    { "Kwajalein", 4095, 1 },
+    { "Libya", 4095, 1 },
+    { "MST7MDT", 4095, 1 },
+    { "Navajo", 4095, 1 },
+    { "NZ-CHAT", 4095, 1 },
+    { "Poland", 4095, 1 },
+    { "Portugal", 4095, 1 },
+    { "PST8PDT", 4095, 1 },
+    { "Singapore", 4095, 1 },
+    { "Turkey", 4095, 1 },
+    { "Universal", 4095, 1 },
+    { "W-SU", 4095, 1 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Budapest", 128, 0 },
@@ -115426,6 +116121,16 @@ static int ptn_timezone_parse_offset_literal(const char *name, int *offset_out) 
     return 1;
 }
 
+static int ptn_timezone_parse_gmt_offset_literal(const char *name, int *offset_out) {
+    if (name == NULL || strlen(name) <= 3 || !ptn_ascii_case_equal_n(name, "GMT", 3)) {
+        return 0;
+    }
+    if (name[3] != '+' && name[3] != '-') {
+        return 0;
+    }
+    return ptn_timezone_parse_offset_literal(name + 3, offset_out);
+}
+
 static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out) {
     if (name == NULL || strlen(name) < 8 || !ptn_ascii_case_equal_n(name, "Etc/GMT", 7)) {
         return 0;
@@ -115454,7 +116159,8 @@ static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out)
 
 static char *ptn_timezone_canonical_offset_name(const char *name) {
     int offset = 0;
-    if (!ptn_timezone_parse_offset_literal(name, &offset)) {
+    if (!ptn_timezone_parse_offset_literal(name, &offset) &&
+        !ptn_timezone_parse_gmt_offset_literal(name, &offset)) {
         return ptn_duplicate_string(name);
     }
     int sign = offset < 0 ? -1 : 1;
@@ -115471,12 +116177,25 @@ static char *ptn_timezone_canonical_offset_name(const char *name) {
     return ptn_duplicate_string(buffer);
 }
 
+static const PtnTimezoneIdentifier *ptn_timezone_identifier_for_name(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof(ptn_timezone_identifiers) / sizeof(ptn_timezone_identifiers[0]); i++) {
+        if (ptn_ascii_case_equal(name, ptn_timezone_identifiers[i].name)) {
+            return &ptn_timezone_identifiers[i];
+        }
+    }
+    return NULL;
+}
+
 static int ptn_timezone_identifier_is_known(const char *name) {
     if (name == NULL || name[0] == '\0') {
         return 0;
     }
     int ignored_offset = 0;
-    if (ptn_timezone_parse_offset_literal(name, &ignored_offset)) {
+    if (ptn_timezone_parse_offset_literal(name, &ignored_offset) ||
+        ptn_timezone_parse_gmt_offset_literal(name, &ignored_offset)) {
         return 1;
     }
     if (ptn_timezone_parse_etc_gmt_literal(name, &ignored_offset)) {
@@ -115499,23 +116218,20 @@ static int ptn_timezone_identifier_is_known(const char *name) {
         ptn_ascii_case_equal(name, "ADT")) {
         return 1;
     }
-    for (size_t i = 0; i < sizeof(ptn_timezone_identifiers) / sizeof(ptn_timezone_identifiers[0]); i++) {
-        if (ptn_ascii_case_equal(name, ptn_timezone_identifiers[i].name)) {
-            return 1;
-        }
-    }
-    return 0;
+    return ptn_timezone_identifier_for_name(name) != NULL;
 }
 
 static int ptn_timezone_name_type(const char *name) {
     int ignored_offset = 0;
     if (ptn_timezone_parse_offset_literal(name, &ignored_offset) ||
+        ptn_timezone_parse_gmt_offset_literal(name, &ignored_offset) ||
         ptn_timezone_parse_etc_gmt_literal(name, &ignored_offset)) {
         return 1;
     }
     if (ptn_ascii_case_equal(name, "UTC") ||
         ptn_ascii_case_equal(name, "Zulu") ||
-        strchr(name, '/') != NULL) {
+        strchr(name, '/') != NULL ||
+        ptn_timezone_identifier_for_name(name) != NULL) {
         return 3;
     }
     return 2;
@@ -116375,7 +117091,74 @@ static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnVa
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "DateObjectError", message);
+    const char *path = NULL;
+    size_t line = 0;
+    if (runtime != NULL) {
+        if (
+            runtime->trace_frame != NULL &&
+            runtime->trace_frame->file != NULL &&
+            runtime->trace_frame->line != 0
+        ) {
+            path = runtime->trace_frame->file;
+            line = runtime->trace_frame->line;
+        } else {
+            path = runtime->source_path;
+            line = runtime->call_site_line;
+        }
+    }
+    ptn_throw_exception_at(runtime, "DateObjectError", message, path, line);
+}
+
+static void ptn_date_throw_uninitialized_method_object_error(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *ancestor,
+    const char *method_class,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue object = ptn_value_deref(value);
+    const char *source_class = object.type == PTN_OBJECT && object.as.object != NULL
+        ? object.as.object->class_name
+        : ancestor;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+        source_class,
+        ancestor
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    char frame_name[96];
+    int frame_written = snprintf(
+        frame_name,
+        sizeof(frame_name),
+        "%s->%s",
+        method_class,
+        method_name
+    );
+    if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+        ptn_abort_out_of_memory();
+    }
+    const char *path = runtime == NULL ? NULL : runtime->source_path;
+    size_t throw_line = line != 0 ? line : (runtime == NULL ? 0 : runtime->call_site_line);
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "DateObjectError",
+        ptn_duplicate_string(message),
+        path,
+        throw_line,
+        frame_name,
+        path,
+        throw_line,
+        argc,
+        args
+    );
 }
 
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name) {
@@ -117773,7 +118556,8 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
     const char *class_name,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    int malformed_returns_false
 ) {
     if (argc > 2) {
         char message[128];
@@ -117852,6 +118636,10 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
             free(input_name);
             ptn_string_operand_free(input);
             free(owned_timezone);
+            if (malformed_returns_false) {
+                free(message);
+                return ptn_bool(0);
+            }
             ptn_throw_exception_owned_message(runtime, "DateMalformedStringException", message);
             return ptn_null();
         }
@@ -119681,12 +120469,12 @@ static int ptn_datetime_iso_week_to_date(int64_t year, int64_t week, int64_t day
     return 1;
 }
 
-static PtnValue ptn_datetime_unserialize_array(
+static void ptn_datetime_throw_invalid_serialization(
     PtnRuntime *runtime,
-    PtnValue receiver,
-    PtnArray *array,
     const char *serialization_class_name,
-    size_t line
+    PtnArray *array,
+    size_t line,
+    int include_unserialize_trace_frame
 ) {
     char invalid_message[96];
     int invalid_written = snprintf(
@@ -119698,6 +120486,49 @@ static PtnValue ptn_datetime_unserialize_array(
     if (invalid_written < 0 || (size_t)invalid_written >= sizeof(invalid_message)) {
         ptn_abort_out_of_memory();
     }
+    if (include_unserialize_trace_frame) {
+        char frame_name[64];
+        int frame_written = snprintf(
+            frame_name,
+            sizeof(frame_name),
+            "%s->__unserialize",
+            serialization_class_name
+        );
+        if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue frame_arg = ptn_value_borrow(ptn_array(array));
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(invalid_message),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            frame_name,
+            NULL,
+            0,
+            1,
+            &frame_arg
+        );
+        return;
+    }
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        ptn_duplicate_string(invalid_message),
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
+static PtnValue ptn_datetime_unserialize_array(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnArray *array,
+    const char *serialization_class_name,
+    size_t line,
+    int include_unserialize_trace_frame
+) {
     PtnValue date = ptn_null();
     PtnValue timezone_value = ptn_null();
     PtnValue timezone_type_value = ptn_int(3);
@@ -119720,11 +120551,23 @@ static PtnValue ptn_datetime_unserialize_array(
         timezone_type_value = ptn_value_deref(entry->value);
     }
     if (date.type != PTN_STRING || timezone_value.type != PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     if (timezone_type_value.type != PTN_INT) {
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     char *date_string = ptn_duplicate_string_len((const char *)date.as.string.data, date.as.string.len);
@@ -119733,7 +120576,13 @@ static PtnValue ptn_datetime_unserialize_array(
     if (!ptn_datetime_zone_state_is_valid(timezone_type, timezone)) {
         free(date_string);
         free(timezone);
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     char *canonical_timezone = ptn_timezone_canonical_offset_name(timezone);
@@ -119744,7 +120593,13 @@ static PtnValue ptn_datetime_unserialize_array(
         free(date_string);
         free(timezone);
         free(canonical_timezone);
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     free(parsed_timezone);
@@ -119788,7 +120643,7 @@ static PtnValue ptn_datetime_from_state(
         return ptn_null();
     }
     PtnValue object = ptn_object_new_shell(runtime, class_name);
-    ptn_datetime_unserialize_array(runtime, object, state.as.array, class_name, line);
+    ptn_datetime_unserialize_array(runtime, object, state.as.array, class_name, line, 0);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&object);
         return ptn_null();
@@ -119810,7 +120665,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "DateTimeImmutable");
     const char *class_name = immutable ? "DateTimeImmutable" : "DateTime";
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_datetime_new(runtime, class_name, argc, args, line);
+        PtnValue replacement = ptn_datetime_new(runtime, class_name, argc, args, line, 0);
         if (runtime->exceptions->active_exception != NULL || replacement.type != PTN_OBJECT) {
             ptn_value_destroy(&replacement);
             return ptn_null();
@@ -119842,7 +120697,16 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         }
         PtnDateTimeData *data = ptn_datetime_data_from_value(receiver);
         if (data == NULL) {
-            ptn_date_throw_uninitialized_object_error(runtime, receiver, ptn_date_datetime_ancestor_for_value(receiver));
+            ptn_date_throw_uninitialized_method_object_error(
+                runtime,
+                receiver,
+                ptn_date_datetime_ancestor_for_value(receiver),
+                class_name,
+                "format",
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         PtnStringOperand format = ptn_internal_expect_string_arg(runtime, immutable ? "DateTimeImmutable::format" : "DateTime::format", 1, "format", args[0], line);
@@ -120043,7 +120907,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
             ptn_date_throw_type_error(runtime, immutable ? "DateTimeImmutable::__unserialize" : "DateTime::__unserialize", 1, "data", "array", args[0]);
             return ptn_null();
         }
-        PtnValue result = ptn_datetime_unserialize_array(runtime, receiver, data.as.array, class_name, line);
+        PtnValue result = ptn_datetime_unserialize_array(runtime, receiver, data.as.array, class_name, line, 1);
         if (runtime->exceptions->active_exception == NULL &&
             receiver.type == PTN_OBJECT &&
             !ptn_datetime_unserialize_extra_properties(runtime, receiver.as.object, data.as.array, line)) {
@@ -122239,11 +123103,11 @@ static PtnValue ptn_timezone_abbreviations_value(void) {
 }
 
 static PtnValue ptn_internal_date_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_datetime_new(runtime, "DateTime", argc, args, line);
+    return ptn_datetime_new(runtime, "DateTime", argc, args, line, 1);
 }
 
 static PtnValue ptn_internal_date_create_immutable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line);
+    return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line, 1);
 }
 
 static PtnValue ptn_internal_date_interval_create_from_date_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -197541,7 +198405,8 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
             object,
             instance->properties,
             ptn_date_datetime_ancestor_for_value(object),
-            line
+            line,
+            1
         );
         return;
     }

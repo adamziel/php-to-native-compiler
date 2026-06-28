@@ -3266,7 +3266,8 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
     const char *class_name,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    int malformed_returns_false
 );
 static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     PtnRuntime *runtime,

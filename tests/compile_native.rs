@@ -27182,6 +27182,94 @@ foreach ([[$dt, $bad], [$bad, $dt], [$dti, $bad], [$bad, $dti]] as $pair) {\n\
 }
 
 #[test]
+fn compile_datetime_state_errors_include_internal_trace_frames_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-state-error-traces");
+    fs::create_dir_all(&root).unwrap();
+
+    let incomplete_input = root.join("incomplete-datetime-format.php");
+    let incomplete_output = root.join("incomplete-datetime-format-bin");
+    fs::write(
+        &incomplete_input,
+        "<?php\n\
+class MyDateTime extends DateTime {\n\
+    public function __construct($time, $tz) {\n\
+        if (!is_object($tz)) { $tz = new DateTimeZone($tz); }\n\
+        try { @parent::__construct($time, $tz); }\n\
+        catch (Exception $e) { $this->format('Y'); }\n\
+    }\n\
+}\n\
+new MyDateTime('not a date', 'UTC');\n",
+    )
+    .unwrap();
+
+    compile_file(
+        &incomplete_input,
+        &incomplete_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let incomplete_execution = Command::new(&incomplete_output).output().unwrap();
+    assert!(
+        !incomplete_execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&incomplete_execution.stdout),
+        String::from_utf8_lossy(&incomplete_execution.stderr)
+    );
+    let incomplete_stderr = String::from_utf8(incomplete_execution.stderr).unwrap();
+    assert!(
+        incomplete_stderr.contains("Uncaught DateObjectError: Object of type MyDateTime (inheriting DateTime) has not been correctly initialized"),
+        "{incomplete_stderr}"
+    );
+    assert!(
+        incomplete_stderr.contains("DateTime->format('Y')"),
+        "{incomplete_stderr}"
+    );
+    assert!(
+        incomplete_stderr.contains("MyDateTime->__construct('not a date', Object(DateTimeZone))"),
+        "{incomplete_stderr}"
+    );
+
+    let unserialize_input = root.join("invalid-datetime-unserialize.php");
+    let unserialize_output = root.join("invalid-datetime-unserialize-bin");
+    fs::write(
+        &unserialize_input,
+        "<?php\n\
+unserialize('a:2:{i:0;O:8:\"DateTime\":3:{s:4:\"date\";s:26:\"2000-01-01 00:00:00.000000\";s:13:\"timezone_type\";a:2:{i:0;i:1;i:1;i:2;}s:8:\"timezone\";s:1:\"A\";}i:1;R:5;}');\n",
+    )
+    .unwrap();
+
+    compile_file(
+        &unserialize_input,
+        &unserialize_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let unserialize_execution = Command::new(&unserialize_output).output().unwrap();
+    assert!(
+        !unserialize_execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&unserialize_execution.stdout),
+        String::from_utf8_lossy(&unserialize_execution.stderr)
+    );
+    let unserialize_stderr = String::from_utf8(unserialize_execution.stderr).unwrap();
+    assert!(
+        unserialize_stderr
+            .contains("Uncaught Error: Invalid serialization data for DateTime object"),
+        "{unserialize_stderr}"
+    );
+    assert!(
+        unserialize_stderr.contains("[internal function]: DateTime->__unserialize(Array)"),
+        "{unserialize_stderr}"
+    );
+    assert!(
+        unserialize_stderr.contains("unserialize('a:2:{i:0;O:8:\"D...')"),
+        "{unserialize_stderr}"
+    );
+}
+
+#[test]
 fn compile_dateinterval_comparison_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-dateinterval-comparison-warnings");
     fs::create_dir_all(&root).unwrap();
@@ -27435,6 +27523,14 @@ $tz = new DateTimeZone('Europe/Berlin');
 $tzRoundTrip = unserialize(serialize($tz));
 $tzPayload = $tzRoundTrip->__serialize();
 var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
+
+$legacy = new DateTimeZone('CST6CDT');
+$legacyPayload = $legacy->__serialize();
+var_dump($legacyPayload['timezone_type'], $legacyPayload['timezone']);
+$gmtOffset = new DateTimeZone('GMT+0100');
+$gmtPayload = $gmtOffset->__serialize();
+var_dump($gmtPayload['timezone_type'], $gmtPayload['timezone']);
+var_dump(date_create('Invalid'), date_create_immutable('Invalid'));
 "#,
     )
     .unwrap();
@@ -27462,6 +27558,12 @@ var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
             "2020-01-05 05:07:05 UTC UTC\n",
             "string(13) \"Europe/Berlin\"\n",
             "string(13) \"Europe/Berlin\"\n",
+            "int(3)\n",
+            "string(7) \"CST6CDT\"\n",
+            "int(1)\n",
+            "string(6) \"+01:00\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -49762,6 +49864,64 @@ var_dump(NumberFormatter::DECIMAL_COMPACT_SHORT, NumberFormatter::DECIMAL_COMPAC
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "1.2M\n1,2\u{00a0}\u{043c}\u{043b}\u{043d}\n123\u{4e07}\nint(14)\nint(15)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_number_formatter_icu_style_matrix_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-icu-style-matrix");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-icu-style-matrix.php");
+    let output = root.join("intl-number-formatter-icu-style-matrix-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$n = 1234567.891234567890000;\n\
+$pattern = numfmt_create('de', NumberFormatter::PATTERN_DECIMAL, '##.#####################');\n\
+echo substr(numfmt_format($pattern, $n), 0, 15), \"\\n\";\n\
+$decimal = numfmt_create('fr', NumberFormatter::DECIMAL);\n\
+echo numfmt_format($decimal, $n), \"\\n\";\n\
+$currency = numfmt_create('de', NumberFormatter::CURRENCY);\n\
+echo numfmt_format($currency, $n), \"\\n\";\n\
+$iso = numfmt_create('ru_UA', NumberFormatter::CURRENCY_ISO);\n\
+echo numfmt_format($iso, $n), \"\\n\";\n\
+$percent = numfmt_create('de', NumberFormatter::PERCENT);\n\
+echo numfmt_format($percent, $n), \"\\n\";\n\
+$scientific = numfmt_create('en_US', NumberFormatter::SCIENTIFIC);\n\
+echo substr(numfmt_format($scientific, $n), 0, 15), \"\\n\";\n\
+$spellout = numfmt_create('en_US', NumberFormatter::SPELLOUT, '@@@@@@@');\n\
+echo numfmt_format($spellout, $n), \"\\n\";\n\
+$ruSpellout = numfmt_create('ru_UA', NumberFormatter::SPELLOUT, '@@@@@@@');\n\
+echo numfmt_format($ruSpellout, $n), \"\\n\";\n\
+$ordinal = numfmt_create('fr', NumberFormatter::ORDINAL);\n\
+echo numfmt_format($ordinal, $n, NumberFormatter::TYPE_INT32), \"\\n\";\n\
+$duration = numfmt_create('en_UK', NumberFormatter::DURATION);\n\
+echo numfmt_format($duration, $n, NumberFormatter::TYPE_INT32), \"\\n\";\n\
+$rulebased = numfmt_create('fr', NumberFormatter::PATTERN_RULEBASED, '#####.###');\n\
+echo numfmt_format($rulebased, $n), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1234567.8912345\n",
+            "1\u{202f}234\u{202f}567,891\n",
+            "1.234.567,89\u{00a0}XXX\n",
+            "1\u{00a0}234\u{00a0}567,89\u{00a0}UAH\n",
+            "123.456.789\u{00a0}%\n",
+            "1.2345678912345\n",
+            "one million two hundred and thirty-four thousand five hundred and sixty-seven point eight nine one two three four five six seven nine\n",
+            "\u{043e}\u{0434}\u{0438}\u{043d} \u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d} \u{0434}\u{0432}\u{0435}\u{0441}\u{0442}\u{0438} \u{0442}\u{0440}\u{0438}\u{0434}\u{0446}\u{0430}\u{0442}\u{044c} \u{0447}\u{0435}\u{0442}\u{044b}\u{0440}\u{0435} \u{0442}\u{044b}\u{0441}\u{044f}\u{0447}\u{0438} \u{043f}\u{044f}\u{0442}\u{044c}\u{0441}\u{043e}\u{0442} \u{0448}\u{0435}\u{0441}\u{0442}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0441}\u{0435}\u{043c}\u{044c} \u{0446}\u{0435}\u{043b}\u{044b}\u{0445} \u{0432}\u{043e}\u{0441}\u{0435}\u{043c}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0434}\u{0435}\u{0432}\u{044f}\u{0442}\u{044c} \u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d}\u{043e}\u{0432} \u{0441}\u{0442}\u{043e} \u{0434}\u{0432}\u{0430}\u{0434}\u{0446}\u{0430}\u{0442}\u{044c} \u{0442}\u{0440}\u{0438} \u{0442}\u{044b}\u{0441}\u{044f}\u{0447}\u{0438} \u{0447}\u{0435}\u{0442}\u{044b}\u{0440}\u{0435}\u{0441}\u{0442}\u{0430} \u{043f}\u{044f}\u{0442}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0441}\u{0435}\u{043c}\u{044c} \u{0441}\u{0442}\u{043e}\u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d}\u{043d}\u{044b}\u{0445}\n",
+            "1\u{202f}234\u{202f}567e\n",
+            "342:56:07\n",
+            "#####.###\n"
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

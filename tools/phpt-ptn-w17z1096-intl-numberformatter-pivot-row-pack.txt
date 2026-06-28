@@ -1,0 +1,4 @@
+# ptn-w17z.1096 intl NumberFormatter ICU style pivot row.
+# Source bead notes: original 20260628T022835Z current-red row pack pivoted
+# to this nearby ext/intl row from the same artifact after current-master sampling.
+ext/intl/tests/formatter_format8.phpt
