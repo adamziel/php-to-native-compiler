@@ -1,0 +1,14 @@
+# ptn-w17z.1084 exact SPL iterator/directory residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T004812Z.tsv
+ext/spl/tests/GlobIterator_constructor_count.phpt
+ext/spl/tests/bug41828.phpt
+ext/spl/tests/bug70053.phpt
+ext/spl/tests/bug64228.phpt
+ext/spl/tests/dit_004.phpt
+ext/spl/tests/spl_iterator_apply_error.phpt
+ext/spl/tests/bug66834.phpt
+ext/spl/tests/bug81587.phpt
+ext/spl/tests/RecursiveDirectoryIterator_getSubPath_basic.phpt
+ext/spl/tests/bug67359.phpt
+ext/spl/tests/iterator_043.phpt
+ext/spl/tests/recursive_tree_iterator_004.phpt

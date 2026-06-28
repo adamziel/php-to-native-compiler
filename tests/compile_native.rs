@@ -20904,6 +20904,95 @@ var_dump($arrayObject);
 }
 
 #[test]
+fn compile_array_object_offset_get_only_isset_uses_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-offset-get-only-isset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-offset-get-only-isset.php");
+    let output = root.join("array-object-offset-get-only-isset-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class OffsetGetOnly extends ArrayObject
+{
+    public function offsetGet($offset): mixed
+    {
+        echo "get:", $offset, "\n";
+        return parent::offsetGet($offset);
+    }
+}
+
+class OffsetGetSet extends ArrayObject
+{
+    public function offsetGet($offset): mixed
+    {
+        echo "get-set:", $offset, "\n";
+        return parent::offsetGet(str_rot13($offset));
+    }
+
+    public function offsetSet($offset, $value): void
+    {
+        parent::offsetSet(str_rot13($offset), $value);
+    }
+}
+
+$object = new OffsetGetOnly(['foo' => '', 'bar' => null, 'baz' => 42]);
+var_dump($object->offsetExists('foo'), isset($object['foo']), empty($object['foo']));
+var_dump($object->offsetExists('bar'), isset($object['bar']), empty($object['bar']));
+var_dump($object->offsetExists('baz'), isset($object['baz']), empty($object['baz']));
+var_dump($object->offsetExists('qux'), isset($object['qux']), empty($object['qux']));
+
+$mapped = new OffsetGetSet();
+$mapped['foo'] = 42;
+var_dump(
+    $mapped->offsetExists('foo'),
+    $mapped->offsetExists('sbb'),
+    isset($mapped['foo']),
+    isset($mapped['sbb'])
+);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "get:foo\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "get:bar\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "get:baz\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_object_offset_isset_quiet"));
+}
+
+#[test]
 fn compile_array_object_offset_references_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-offset-references");
     fs::create_dir_all(&root).unwrap();

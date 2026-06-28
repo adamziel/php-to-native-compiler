@@ -199381,6 +199381,47 @@ static PTN_UNUSED int ptn_internal_array_object_uses_builtin_offsets(
         !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists");
 }
 
+static PTN_UNUSED int ptn_internal_array_object_offset_isset_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int *isset_out
+) {
+    if (isset_out == NULL) {
+        return 0;
+    }
+    *isset_out = 0;
+    if (offset_value == NULL) {
+        return 0;
+    }
+
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL ||
+        ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists")) {
+        return 0;
+    }
+
+    PtnArrayKey key;
+    if (!ptn_spl_offset_key_from_value(
+            runtime,
+            "ArrayObject",
+            ptn_value_deref(*offset_value),
+            line,
+            1,
+            0,
+            &key
+        )) {
+        return 1;
+    }
+
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    *isset_out = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
+    ptn_array_key_free(key);
+    return 1;
+}
+
 static PTN_UNUSED int ptn_internal_array_object_offset_lookup_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
