@@ -1,0 +1,19 @@
+# ptn-w17z.1085 focused PHAR archive metadata residual current-red row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T004812Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+# Run with:
+#   PTN_PHPT_TEST_TIMEOUT=300 PTN_PHPT_JOBS=1 tools/run-phpt-manifest.sh tools/phpt-ptn-w17z1085-phar-archive-metadata-row-pack.txt
+
+ext/phar/tests/019c.phpt
+ext/phar/tests/zip/rename.phpt
+ext/phar/tests/buildFromIterator_user_overrides/getMTime_errors.phpt
+ext/phar/tests/tar/rmdir.phpt
+ext/phar/tests/phar_oo_004.phpt
+ext/phar/tests/cached_manifest_1.phpt
+ext/phar/tests/tar/phar_setdefaultstub.phpt
+ext/phar/tests/stat.phpt
+ext/phar/tests/tar/links3.phpt
+ext/phar/tests/frontcontroller18.phpt
+ext/phar/tests/zip/phar_stub_error.phpt
+ext/phar/tests/tar/delete_in_phar_b.phpt
