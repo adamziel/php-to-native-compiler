@@ -56806,6 +56806,9 @@ static void ptn_stream_filter_chain_flush_closing_impl(PtnStreamFilter *filter) 
     if (runtime == NULL) {
         return;
     }
+    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return;
+    }
 
     size_t output_len = 0;
     char *output = ptn_stream_apply_filter_chain_alloc(
