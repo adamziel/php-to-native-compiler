@@ -48598,6 +48598,12 @@ var_dump(phpinfo(INFO_LICENSE));\n",
     assert!(stdout.contains("\n _______________________________________________________________________\n\n\nConfiguration\n"));
     assert!(stdout.contains("\nCore\n\nPHP Version => 8.4.0\n"));
     assert!(stdout.contains("\nAdditional Modules\n"));
+    let expected_pcre_jit = if discover_pcre2_library().is_some() {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    assert!(stdout.contains(&format!("PCRE JIT Support => {expected_pcre_jit}\n")));
     assert!(stdout.contains("\nEnvironment\n"));
     assert!(stdout.contains("\nLicense\n\nThis program is free software;"));
     assert!(stdout.contains("bool(true)\n--\nphpinfo()\nbool(true)\n--\nphpinfo()\n\nLicense\n"));
