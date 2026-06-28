@@ -32669,6 +32669,123 @@ var_dump(mb_strimwidth('some string', 1, -2, '...', 'ASCII'));\n",
 }
 
 #[test]
+fn compile_mb_convert_encoding_object_encoding_list_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-encoding-object-list");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-encoding-object-list.php");
+    let output = root.join("mb-convert-encoding-object-list-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Utf8Encoding {\n\
+    public function __toString() { return 'UTF-8'; }\n\
+}\n\
+$utf8encoding = new Utf8Encoding();\n\
+$encodings = [$utf8encoding];\n\
+var_dump($encodings[0] instanceof Utf8Encoding);\n\
+var_dump(mb_convert_encoding('foo', 'UTF-8', $encodings));\n\
+var_dump($encodings[0] instanceof Utf8Encoding);\n\
+var_dump((string) $encodings[0]);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(3) \"foo\"\n",
+            "bool(true)\n",
+            "string(5) \"UTF-8\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mb_str_split_truncated_utf8_chunk_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-str-split-truncated-utf8");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-str-split-truncated-utf8.php");
+    let output = root.join("mb-str-split-truncated-utf8-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$utf8_bad = pack('H*', '313233f092');\n\
+echo 'BAD UTF-8:';\n\
+foreach (mb_str_split($utf8_bad, 2) as $chunk) {\n\
+    printf(' l:%d v:%s', strlen($chunk), bin2hex($chunk));\n\
+}\n\
+echo PHP_EOL;\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "BAD UTF-8: l:2 v:3132 l:3 v:33f092\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mb_convert_case_unicode_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-case-unicode-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-case-unicode-modes.php");
+    let output = root.join("mb-convert-case-unicode-modes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$sharp_s = pack('H*', 'c39f');\n\
+$ligature_ff = pack('H*', 'efac80');\n\
+$capital_i_dot = pack('H*', 'c4b0');\n\
+echo mb_convert_case($sharp_s, MB_CASE_UPPER, 'UTF-8'), \"\\n\";\n\
+echo bin2hex(mb_convert_case($ligature_ff, MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case($capital_i_dot, MB_CASE_LOWER, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case($capital_i_dot, MB_CASE_LOWER_SIMPLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case($capital_i_dot, MB_CASE_FOLD_SIMPLE, 'UTF-8')), \"\\n\";\n\
+try {\n\
+    mb_convert_case('foo BAR Spaß', 100, 'UTF-8');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+echo bin2hex(mb_convert_case(\"\\xdd\", MB_CASE_LOWER, 'ISO-8859-9')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"\\xfd\", MB_CASE_UPPER, 'ISO-8859-9')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(pack('H*', '61cea32062'), MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"\\x01I\\x01,\", MB_CASE_TITLE, 'UCS-2BE')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SS\n",
+            "4666\n",
+            "69cc87\n",
+            "69\n",
+            "c4b0\n",
+            "mb_convert_case(): Argument #2 ($mode) must be one of the MB_CASE_* constants\n",
+            "69\n",
+            "49\n",
+            "41cf822042\n",
+            "02bc004e012d\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iconv_encoding_state_to_native_binary() {
     let root = temp_dir("ptn-native-iconv-encoding-state");
     fs::create_dir_all(&root).unwrap();
@@ -77206,6 +77323,72 @@ fn phpc_zend_multibyte_script_encoding_converts_to_internal_encoding() {
         .unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ドレミファソ");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_multibyte_script_encoding_converts_without_translation_ini() {
+    let root = temp_dir("ptn-phpc-zend-multibyte-script-encoding-no-translation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("script-encoding-cp932.php");
+    let cp932_test = [0x83, 0x65, 0x83, 0x58, 0x83, 0x67];
+    let mut source = b"<?php\nvar_dump(bin2hex(\"".to_vec();
+    source.extend_from_slice(&cp932_test);
+    source.extend_from_slice(b"\"));\n");
+    fs::write(&input, source).unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("zend.script_encoding=CP932")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(18) \"e38386e382b9e38388\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_multibyte_utf8_halt_offset_uses_source_byte_offsets() {
+    let root = temp_dir("ptn-phpc-zend-multibyte-utf8-halt-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("utf8-halt-offset.php");
+    let mut source = b"<?php\nvar_dump(substr(file_get_contents(__FILE__), __COMPILER_HALT_OFFSET__));\nvar_dump(bin2hex(\"".to_vec();
+    source.extend_from_slice(&[
+        0xc3, 0xa4, 0xc3, 0xab, 0xc3, 0xbc, 0xc3, 0xa1, 0xc3, 0xa9, 0xc3, 0xba,
+    ]);
+    source.extend_from_slice(b"\"));\n__halt_compiler();test\ntest\n");
+    fs::write(&input, source).unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=On")
+        .arg("-d")
+        .arg("zend.script_encoding=UTF-8")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(10) \"test\n",
+            "test\n",
+            "\"\n",
+            "string(24) \"c3a4c3abc3bcc3a1c3a9c3ba\"\n",
+        )
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

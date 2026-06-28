@@ -204,18 +204,16 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
 
     let mut decoded_bytes = Cow::Borrowed(bytes);
     let mut decode_encoding = source_encoding.as_deref();
-    if options.encoding_translation {
-        if let (Some(from), Some(to)) = (
-            source_encoding.as_deref(),
-            options
-                .internal_encoding
-                .as_deref()
-                .filter(|encoding| is_usable_source_encoding(encoding)),
-        ) {
-            if !encoding_names_equivalent(from, to) && !source_has_utf16_bom(bytes) {
-                decoded_bytes = Cow::Owned(iconv_convert_bytes(bytes, from, to)?);
-                decode_encoding = Some(to);
-            }
+    if let (Some(from), Some(to)) = (
+        source_encoding.as_deref(),
+        options
+            .internal_encoding
+            .as_deref()
+            .filter(|encoding| is_usable_source_encoding(encoding)),
+    ) {
+        if !encoding_names_equivalent(from, to) && !source_has_utf16_bom(bytes) {
+            decoded_bytes = Cow::Owned(iconv_convert_bytes(bytes, from, to)?);
+            decode_encoding = Some(to);
         }
     }
 
