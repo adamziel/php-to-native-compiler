@@ -165290,6 +165290,24 @@ static char *ptn_soap_first_custom_part_namespace_dup(
     return namespace_uri;
 }
 
+static int ptn_soap_rpc_encoded_request_has_custom_struct_part(
+    PtnSoapClientData *data,
+    PtnSoapMessagePart *parts,
+    size_t part_count,
+    const char *request_namespace
+) {
+    for (size_t i = 0; i < part_count; i++) {
+        PtnSoapType *type = ptn_soap_type_list_find(data->types, data->type_count, parts[i].type_local);
+        if (type != NULL && type->is_array) {
+            continue;
+        }
+        if (ptn_soap_message_part_has_custom_namespace(&parts[i], type, request_namespace)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_soap_append_rpc_encoded_part(
     PtnRuntime *runtime,
     PtnStringBuffer *body,
@@ -165472,7 +165490,10 @@ static int ptn_soap_build_rpc_encoded_request(
     int custom_namespace_first = custom_namespace != NULL &&
         custom_namespace[0] != '\0' &&
         custom_namespace_before_encoding;
-    if (custom_namespace_first) {
+    int custom_struct_part = custom_namespace != NULL &&
+        custom_namespace[0] != '\0' &&
+        ptn_soap_rpc_encoded_request_has_custom_struct_part(data, parts, part_count, request_namespace);
+    if (custom_namespace_first && !custom_struct_part) {
         ptn_string_buffer_append_format(
             &body,
             "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:ns2=\"",
@@ -165483,7 +165504,7 @@ static int ptn_soap_build_rpc_encoded_request(
         if (part_count != 0) {
             ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
-    } else {
+    } else if (custom_struct_part) {
         ptn_string_buffer_append_format(
             &body,
             part_count == 0
@@ -165491,11 +165512,27 @@ static int ptn_soap_build_rpc_encoded_request(
                 : "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"",
             request_namespace
         );
+        ptn_string_buffer_append(&body, " xmlns:ns2=\"");
+        ptn_xml_append_escaped_ex(&body, custom_namespace, 1, 0);
+        ptn_string_buffer_append(&body, "\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+    } else {
+        ptn_string_buffer_append_format(
+            &body,
+            part_count == 0
+                ? "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
+                : (custom_namespace != NULL && custom_namespace[0] != '\0'
+                    ? "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
+                    : "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""),
+            request_namespace
+        );
     }
-    if (!custom_namespace_first) {
+    if (!custom_namespace_first && !custom_struct_part) {
         ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
     }
-    if (custom_namespace != NULL && custom_namespace[0] != '\0' && !custom_namespace_first) {
+    if (custom_namespace != NULL && custom_namespace[0] != '\0' && !custom_namespace_first && !custom_struct_part) {
+        if (part_count != 0) {
+            ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
         ptn_string_buffer_append(&body, " xmlns:ns2=\"");
         ptn_xml_append_escaped_ex(&body, custom_namespace, 1, 0);
         ptn_string_buffer_append(&body, "\"");

@@ -1,0 +1,12 @@
+ext/soap/tests/interop/Round2/Base/r2_base_019w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_018w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_017w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_015w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_016w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_014w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_013w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_020s.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_012w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_011w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_010w.phpt
+ext/soap/tests/bugs/bug36226.phpt

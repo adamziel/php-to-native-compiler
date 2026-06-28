@@ -57024,6 +57024,99 @@ echo round2_server_response($wsdl, $client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_round2_wsdl_request_namespace_order_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-round2-wsdl-namespace-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-round2-wsdl-namespace-order.php");
+    let output = root.join("soap-round2-wsdl-namespace-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/round2-base-mini.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://soapinterop.org/"
+  xmlns:s="http://soapinterop.org/xsd"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/xsd">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+      <xsd:complexType name="ArrayOfint"><xsd:complexContent><xsd:restriction base="SOAP-ENC:Array"><xsd:attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="int[]"/></xsd:restriction></xsd:complexContent></xsd:complexType>
+      <xsd:complexType name="SOAPStruct"><xsd:all><xsd:element name="varString" type="string"/><xsd:element name="varInt" type="int"/><xsd:element name="varFloat" type="float"/></xsd:all></xsd:complexType>
+      <xsd:complexType name="ArrayOfSOAPStruct"><xsd:complexContent><xsd:restriction base="SOAP-ENC:Array"><xsd:attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="s:SOAPStruct[]"/></xsd:restriction></xsd:complexContent></xsd:complexType>
+    </schema>
+  </types>
+  <message name="echoIntegerArrayRequest"><part name="inputIntegerArray" type="s:ArrayOfint"/></message>
+  <message name="echoIntegerArrayResponse"><part name="outputIntegerArray" type="s:ArrayOfint"/></message>
+  <message name="echoStructRequest"><part name="inputStruct" type="s:SOAPStruct"/></message>
+  <message name="echoStructResponse"><part name="outputStruct" type="s:SOAPStruct"/></message>
+  <message name="echoStructArrayRequest"><part name="inputStructArray" type="s:ArrayOfSOAPStruct"/></message>
+  <message name="echoStructArrayResponse"><part name="outputStructArray" type="s:ArrayOfSOAPStruct"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoIntegerArray"><input message="tns:echoIntegerArrayRequest"/><output message="tns:echoIntegerArrayResponse"/></operation>
+    <operation name="echoStruct"><input message="tns:echoStructRequest"/><output message="tns:echoStructResponse"/></operation>
+    <operation name="echoStructArray"><input message="tns:echoStructArrayRequest"/><output message="tns:echoStructArrayResponse"/></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoIntegerArray"><soap:operation soapAction="http://"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoStruct"><soap:operation soapAction="http://"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoStructArray"><soap:operation soapAction="http://"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+  </binding>
+</definitions>
+WSDL);
+
+class SOAPStruct {
+    function __construct(public $varString, public $varInt, public $varFloat) {}
+}
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoIntegerArray([1, 234324324, 2]);
+echo $client->__getLastRequest(), "\n--\n";
+$client->echoStruct(new SOAPStruct('arg', 34, 325.325));
+echo $client->__getLastRequest(), "\n--\n";
+$client->echoStructArray([new SOAPStruct('arg', 34, 325.325), new SOAPStruct('arg', 34, 325.325)]);
+echo $client->__getLastRequest(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/xsd\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoIntegerArray>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/xsd\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoStruct>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://soapinterop.org/\" xmlns:ns2=\"http://soapinterop.org/xsd\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoStructArray>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_rpc_encoded_request_has_custom_struct_part"));
+}
+
+#[test]
 fn compile_soap_typemap_to_xml_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-typemap-to-xml-response");
     fs::create_dir_all(&root).unwrap();
