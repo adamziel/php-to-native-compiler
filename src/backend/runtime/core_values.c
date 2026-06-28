@@ -1183,6 +1183,7 @@ struct PtnArray {
 
 struct PtnObject {
     size_t refcount;
+    size_t debug_hidden_refcount;
     size_t object_id;
     size_t gc_mark_epoch;
     char *class_name;

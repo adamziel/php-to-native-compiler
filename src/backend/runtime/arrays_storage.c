@@ -1981,6 +1981,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
         : runtime->lifecycle_root;
     PtnValue properties = ptn_array_from_literal_entries(0, NULL);
     object->refcount = 1;
+    object->debug_hidden_refcount = 0;
     object->object_id = ptn_runtime_alloc_object_id(root);
     object->gc_mark_epoch = 0;
     object->class_name = ptn_duplicate_string(class_name);
@@ -3779,10 +3780,29 @@ static PTN_UNUSED void ptn_array_debug_unhide_ref(PtnArray *array) {
     array->debug_hidden_refcount--;
 }
 
+static PTN_UNUSED void ptn_object_debug_hide_ref(PtnObject *object) {
+    if (object == NULL) {
+        return;
+    }
+    if (object->debug_hidden_refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    object->debug_hidden_refcount++;
+}
+
+static PTN_UNUSED void ptn_object_debug_unhide_ref(PtnObject *object) {
+    if (object == NULL || object->debug_hidden_refcount == 0) {
+        return;
+    }
+    object->debug_hidden_refcount--;
+}
+
 static PTN_UNUSED void ptn_value_debug_hide_ref(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         ptn_array_debug_hide_ref(value.as.array);
+    } else if (value.type == PTN_OBJECT) {
+        ptn_object_debug_hide_ref(value.as.object);
     }
 }
 
@@ -3790,6 +3810,8 @@ static PTN_UNUSED void ptn_value_debug_unhide_ref(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         ptn_array_debug_unhide_ref(value.as.array);
+    } else if (value.type == PTN_OBJECT) {
+        ptn_object_debug_unhide_ref(value.as.object);
     }
 }
 
@@ -3801,6 +3823,16 @@ static PTN_UNUSED size_t ptn_array_debug_visible_refcount(PtnArray *array) {
         return 1;
     }
     return array->refcount - array->debug_hidden_refcount;
+}
+
+static PTN_UNUSED size_t ptn_object_debug_visible_refcount(PtnObject *object) {
+    if (object == NULL) {
+        return 0;
+    }
+    if (object->debug_hidden_refcount >= object->refcount) {
+        return 1;
+    }
+    return object->refcount - object->debug_hidden_refcount;
 }
 
 static PTN_UNUSED void ptn_array_debug_note_reference_wrapped(PtnArray *array) {

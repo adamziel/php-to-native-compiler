@@ -2903,6 +2903,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default
     );
     if (configured_filter_default != NULL &&
+        !ptn_ascii_case_equal(configured_filter_default, "unsafe_raw") &&
         ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
         runtime->diagnostics.emitted_deprecation = 1;
         ptn_diagnostic_output_cstr(

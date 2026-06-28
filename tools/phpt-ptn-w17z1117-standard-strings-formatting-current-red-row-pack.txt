@@ -1,0 +1,14 @@
+# ptn-w17z.1117 exact ext/standard strings/formatting current-red row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T045921Z.tsv
+ext/standard/tests/strings/bug26973.phpt
+ext/standard/tests/strings/printf_basic5.phpt
+ext/standard/tests/strings/bug72434.phpt
+ext/standard/tests/strings/wordwrap_memory_limit.phpt
+ext/standard/tests/strings/bug22227.phpt
+ext/standard/tests/strings/chunk_split_variation12.phpt
+ext/standard/tests/strings/chunk_split_variation3.phpt
+ext/standard/tests/strings/bug37262.phpt
+ext/standard/tests/strings/htmlentities14.phpt
+ext/standard/tests/strings/parse_str_basic3.phpt
+ext/standard/tests/strings/printf_basic9.phpt
+ext/standard/tests/strings/printf_basic4.phpt
