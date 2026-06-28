@@ -1,0 +1,15 @@
+# Exact SOAP typemap/classmap/RPC interop current-red row pack for ptn-w17z.1074.
+# Source:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T215653Z.tsv
+ext/soap/tests/bugs/bug36226.phpt
+ext/soap/tests/classmap007.phpt
+ext/soap/tests/typemap012.phpt
+ext/soap/tests/typemap002.phpt
+ext/soap/tests/bugs/bug65018.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_019w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_018w.phpt
+ext/soap/tests/gh15711.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_017w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_015w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_016w.phpt
+ext/soap/tests/interop/Round3/GroupD/r3_groupD_rpcenc_004w.phpt

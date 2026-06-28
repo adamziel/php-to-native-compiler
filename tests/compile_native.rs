@@ -56091,6 +56091,119 @@ echo round2_server_response($wsdl, $client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_typemap_to_xml_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-typemap-to-xml-response");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-typemap-to-xml-response.php");
+    let output = root.join("soap-typemap-to-xml-response-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$request = <<<'XML'
+<env:Envelope xmlns:env="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:enc="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:ns1="http://schemas.nothing.com">
+  <env:Body>
+    <ns1:dotest2>
+      <dotest2 xsi:type="xsd:string">ignored</dotest2>
+    </ns1:dotest2>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$wsdl = __DIR__ . '/typemap.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<wsdl:definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://schemas.nothing.com"
+  targetNamespace="http://schemas.nothing.com">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://schemas.nothing.com">
+      <xsd:complexType name="book">
+        <xsd:all>
+          <xsd:element name="a" type="xsd:string"/>
+          <xsd:element name="b" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+    </xsd:schema>
+  </wsdl:types>
+  <message name="dotest2Request"><part name="dotest2" type="xsd:string"/></message>
+  <message name="dotest2Response"><part name="res" type="tns:book"/></message>
+  <portType name="testPortType">
+    <operation name="dotest2"><input message="tns:dotest2Request"/><output message="tns:dotest2Response"/></operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="dotest2">
+      <soap:operation soapAction="dotest2" style="rpc"/>
+      <input><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" namespace="http://schemas.nothing.com"/></input>
+      <output><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" namespace="http://schemas.nothing.com"/></output>
+    </operation>
+  </binding>
+</wsdl:definitions>
+WSDL);
+
+function book_to_xml($book) {
+    return '<book xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><a xsi:type="xsd:string">'.$book->a.'!</a><b xsi:type="xsd:string">'.$book->b.'!</b></book>';
+}
+
+class Service {
+    function dotest2($str) {
+        $book = new book();
+        $book->a = 'foo';
+        $book->b = 'bar';
+        return $book;
+    }
+}
+
+class book {
+    public $a = 'a';
+    public $b = 'b';
+}
+
+$server = new SoapServer($wsdl, [
+    'typemap' => [[
+        'type_ns' => 'http://schemas.nothing.com',
+        'type_name' => 'book',
+        'to_xml' => 'book_to_xml',
+    ]],
+]);
+$server->setClass(Service::class);
+$server->handle($request);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<ns1:dotest2Response><book xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"ns1:book\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<a xsi:type=\"xsd:string\">foo!</a><b xsi:type=\"xsd:string\">bar!</b>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_typemap_xml"));
+}
+
+#[test]
 fn compile_soap_non_wsdl_iso_8859_1_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-non-wsdl-iso-8859-1-response");
     fs::create_dir_all(&root).unwrap();
