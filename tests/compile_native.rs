@@ -48844,6 +48844,77 @@ MessageFormatter::format(): Found negative or too large array key\n"
 }
 
 #[test]
+fn compile_intl_locale_resourcebundle_current_red_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-locale-resourcebundle-current-red");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-locale-resourcebundle-current-red.php");
+    let output = root.join("intl-locale-resourcebundle-current-red-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    grapheme_extract(-1, -1, -1, -1, $next);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$fmt = new NumberFormatter('en_US', NumberFormatter::DECIMAL);\n\
+var_dump($fmt->format(INF), $fmt->format(-INF), $fmt->format(NAN));\n\
+var_dump(Locale::lookup(['de-DEVA', 'de-DE-1996', 'de-DE'], 'de-de', false, 'en_US'));\n\
+var_dump(locale_lookup(['sl_IT', 'sl_IT_nedis-a-kirti-x-xyz'], 'sl_IT_Nedis', true, 'en_US'));\n\
+var_dump(Locale::lookup(['art-lojban', 'jbo'], 'jbo', true, 'en_US'));\n\
+var_dump(locale_filter_matches('de-DE-1996', 'de-de', false));\n\
+var_dump(Locale::filterMatches('sl_IT_NEDIS_ROJAZ_1901', 'sl_IT_Nedis', true));\n\
+echo locale_get_display_language('fr', 'de'), \"\\n\";\n\
+var_dump(Locale::getRegion('zh-min'));\n\
+echo Locale::getRegion('zh-min-nan-Hant-CN'), \"\\n\";\n\
+$bundle = new ResourceBundle('en_US', __DIR__ . '/missing-bundle');\n\
+var_dump(resourcebundle_get($bundle, 'nonexisting'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$korean = \"\\xED\\x95\\x9C\" . \"\\xEA\\xB5\\xAD\" . \"\\xEB\\xA7\\x90\";\n\
+$spoof = new Spoofchecker();\n\
+$spoof->setAllowedLocales('en_US');\n\
+var_dump($spoof->isSuspicious($korean));\n\
+$spoof->setAllowedLocales('en_US, ko_KR');\n\
+var_dump($spoof->isSuspicious($korean));\n\
+class A extends NumberFormatter { public function __construct() {} }\n\
+try {\n\
+    clone new A();\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError: grapheme_extract(): Argument #3 ($type) must be one of GRAPHEME_EXTR_COUNT, GRAPHEME_EXTR_MAXBYTES, or GRAPHEME_EXTR_MAXCHARS\n",
+            "string(3) \"\u{221e}\"\n",
+            "string(4) \"-\u{221e}\"\n",
+            "string(3) \"NaN\"\n",
+            "string(5) \"de-DE\"\n",
+            "string(5) \"sl_it\"\n",
+            "string(3) \"jbo\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Franz\u{00f6}sisch\n",
+            "string(0) \"\"\n",
+            "MIN\n",
+            "NULL\n",
+            "resourcebundle_get(): Cannot load resource element 'nonexisting': U_MISSING_RESOURCE_ERROR\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "Error: Cannot clone uninitialized NumberFormatter\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
     let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
     fs::create_dir_all(&root).unwrap();
