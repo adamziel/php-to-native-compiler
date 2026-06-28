@@ -58494,6 +58494,9 @@ static char *ptn_runtime_source_dir_alloc(PtnRuntime *runtime) {
 
 static int ptn_existing_file_or_current_source_snapshot(PtnRuntime *runtime, const char *path) {
     struct stat info;
+    if (path != NULL && strncmp(path, "phar://", 7) == 0) {
+        return ptn_phar_uri_entry_exists(path);
+    }
     return (path != NULL && stat(path, &info) == 0) ||
         ptn_current_source_snapshot_matches(runtime, path);
 }
@@ -62758,6 +62761,27 @@ static int ptn_mkdir_recursive(const char *path, int64_t mode) {
     return result;
 }
 
+static int ptn_phar_uri_predicate_result(const char *function_name, const char *uri) {
+    int is_dir = 0;
+    int exists = ptn_phar_uri_entry_status(uri, &is_dir);
+    if (ptn_ascii_case_equal(function_name, "is_dir")) {
+        return exists && is_dir;
+    }
+    if (ptn_ascii_case_equal(function_name, "is_file")) {
+        return exists && !is_dir;
+    }
+    if (ptn_ascii_case_equal(function_name, "is_readable") ||
+        ptn_ascii_case_equal(function_name, "is_writable")) {
+        return exists;
+    }
+    if (ptn_ascii_case_equal(function_name, "is_writeable") ||
+        ptn_ascii_case_equal(function_name, "is_executable") ||
+        ptn_ascii_case_equal(function_name, "is_link")) {
+        return 0;
+    }
+    return exists;
+}
+
 static PtnValue ptn_path_predicate(
     PtnRuntime *runtime,
     const char *function_name,
@@ -62773,16 +62797,20 @@ static PtnValue ptn_path_predicate(
     }
 
     if (strncmp(path, "phar://", 7) == 0) {
-        int is_dir = 0;
-        int exists = ptn_phar_uri_entry_status(path, &is_dir);
-        int result = exists;
-        if (ptn_ascii_case_equal(function_name, "is_dir")) {
-            result = exists && is_dir;
-        } else if (ptn_ascii_case_equal(function_name, "is_file")) {
-            result = exists && !is_dir;
-        }
+        int result = ptn_phar_uri_predicate_result(function_name, path);
         free(path);
         return ptn_bool(result);
+    }
+
+    if (!ptn_path_string_is_absolute(path) && !ptn_path_contains_scheme_separator(path, strlen(path))) {
+        char *resolved = ptn_resolve_existing_include_path(runtime, path);
+        if (resolved != NULL && strncmp(resolved, "phar://", 7) == 0) {
+            int result = ptn_phar_uri_predicate_result(function_name, resolved);
+            free(resolved);
+            free(path);
+            return ptn_bool(result);
+        }
+        free(resolved);
     }
 
     char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
@@ -63069,6 +63097,20 @@ static int ptn_stat_path_from_value(
         }
         free(path);
         return ok;
+    }
+
+    if (!ptn_path_string_is_absolute(path) && !ptn_path_contains_scheme_separator(path, strlen(path))) {
+        char *resolved = ptn_resolve_existing_include_path(runtime, path);
+        if (resolved != NULL && strncmp(resolved, "phar://", 7) == 0) {
+            int ok = ptn_phar_uri_stat(resolved, info);
+            if (!ok) {
+                ptn_emit_stat_warning(runtime, function_name, failure_kind, path, line);
+            }
+            free(resolved);
+            free(path);
+            return ok;
+        }
+        free(resolved);
     }
 
     int ok = use_lstat ? ptn_lstat_path(path, info) == 0 : ptn_stat_path(path, info) == 0;
@@ -214342,6 +214384,12 @@ static int ptn_eval_parse_expression(
     size_t line,
     PtnValue *out
 );
+static int ptn_eval_parse_call_name(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    char **name_out
+);
 static int ptn_dynamic_execute_statements_range(
     PtnRuntime *runtime,
     const char *code,
@@ -214351,6 +214399,13 @@ static int ptn_dynamic_execute_statements_range(
     size_t base_line,
     PtnValue *return_out,
     int *returned
+);
+static PTN_UNUSED int ptn_dynamic_include_php_file(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *display_path,
+    size_t line,
+    PtnValue *result_out
 );
 
 static char *ptn_eval_source_path(PtnRuntime *runtime, size_t line) {
@@ -215467,6 +215522,84 @@ static int ptn_eval_parse_method_call_tail(
     return consumed;
 }
 
+static int ptn_eval_parse_function_call_expression(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = *pos;
+    char *function_name = NULL;
+    if (!ptn_eval_parse_call_name(code, len, &cursor, &function_name)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '(')) {
+        free(function_name);
+        return 0;
+    }
+
+    PtnValue *args = NULL;
+    size_t argc = 0;
+    size_t capacity = 0;
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len) {
+        free(function_name);
+        return 0;
+    }
+    if (code[cursor] != ')') {
+        while (cursor < len) {
+            if (argc == capacity) {
+                size_t new_capacity = capacity == 0 ? 2 : capacity * 2;
+                if (new_capacity < capacity) {
+                    free(function_name);
+                    ptn_abort_out_of_memory();
+                }
+                PtnValue *new_args = realloc(args, new_capacity * sizeof(PtnValue));
+                if (new_args == NULL) {
+                    free(function_name);
+                    ptn_abort_out_of_memory();
+                }
+                args = new_args;
+                capacity = new_capacity;
+            }
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
+                for (size_t i = 0; i < argc; i++) {
+                    ptn_value_destroy(&args[i]);
+                }
+                free(args);
+                free(function_name);
+                return 0;
+            }
+            argc++;
+            cursor = ptn_eval_skip_ws(code, len, cursor);
+            if (cursor < len && code[cursor] == ',') {
+                cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+                continue;
+            }
+            break;
+        }
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
+        for (size_t i = 0; i < argc; i++) {
+            ptn_value_destroy(&args[i]);
+        }
+        free(args);
+        free(function_name);
+        return 0;
+    }
+
+    *out = ptn_call_function(runtime, function_name, argc, args, line);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(function_name);
+    *pos = cursor;
+    return 1;
+}
+
 static int ptn_eval_parse_primary_expression(
     PtnRuntime *runtime,
     const char *code,
@@ -215498,6 +215631,9 @@ static int ptn_eval_parse_primary_expression(
         return ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
     }
     if (ptn_eval_parse_array_literal(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
+    if (ptn_eval_parse_function_call_expression(runtime, code, len, pos, line, out)) {
         return 1;
     }
     if (code[cursor] == '$') {
@@ -215875,6 +216011,127 @@ fail:
     free(method_name);
     free(class_name);
     return 0;
+}
+
+static int ptn_dynamic_execute_include_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    int required = 0;
+    if (ptn_eval_keyword_at(code, len, cursor, "include_once")) {
+        cursor += strlen("include_once");
+    } else if (ptn_eval_keyword_at(code, len, cursor, "require_once")) {
+        cursor += strlen("require_once");
+        required = 1;
+    } else if (ptn_eval_keyword_at(code, len, cursor, "include")) {
+        cursor += strlen("include");
+    } else if (ptn_eval_keyword_at(code, len, cursor, "require")) {
+        cursor += strlen("require");
+        required = 1;
+    } else {
+        return 0;
+    }
+
+    PtnValue path_value = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &path_value)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ';')) {
+        ptn_value_destroy(&path_value);
+        return 0;
+    }
+
+    char *path = ptn_value_to_string(path_value);
+    ptn_value_destroy(&path_value);
+    char *resolved = NULL;
+    if (path != NULL && path[0] != '\0' &&
+        (ptn_path_string_is_absolute(path) || ptn_path_contains_scheme_separator(path, strlen(path)))) {
+        resolved = ptn_duplicate_string(path);
+    } else {
+        resolved = ptn_resolve_existing_include_path(runtime, path);
+    }
+    if (resolved == NULL &&
+        runtime != NULL &&
+        runtime->source_path != NULL &&
+        path != NULL &&
+        path[0] != '\0' &&
+        !ptn_path_string_is_absolute(path) &&
+        !ptn_path_contains_scheme_separator(path, strlen(path))) {
+        PtnPharArchiveState *source_archive =
+            ptn_phar_archive_find_path_len(runtime->source_path, strlen(runtime->source_path));
+        if (source_archive != NULL) {
+            char *candidate = ptn_phar_entry_uri(source_archive, path);
+            if (ptn_phar_uri_entry_exists(candidate)) {
+                resolved = candidate;
+            } else {
+                free(candidate);
+            }
+        }
+    }
+    if (resolved == NULL) {
+        free(path);
+        *pos = cursor;
+        return 1;
+    }
+
+    PtnValue include_result = ptn_bool(0);
+    int handled = 0;
+    if (strncmp(resolved, "phar://", 7) == 0) {
+        handled = ptn_include_phar_php_entry(
+            runtime,
+            resolved,
+            required ? "require" : "include",
+            line,
+            required,
+            &include_result
+        );
+        if (!handled) {
+            handled = ptn_include_phar_plain_entry(
+                runtime,
+                required ? "require" : "include",
+                resolved,
+                line,
+                required,
+                &include_result
+            );
+        }
+    } else {
+        handled = ptn_dynamic_include_php_file(runtime, resolved, path, line, &include_result);
+    }
+
+    free(path);
+    free(resolved);
+    if (!handled) {
+        return 0;
+    }
+    ptn_value_destroy(&include_result);
+    *pos = cursor;
+    return 1;
+}
+
+static int ptn_dynamic_execute_expression_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    PtnValue value = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &value)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ';')) {
+        ptn_value_destroy(&value);
+        return 0;
+    }
+    ptn_value_destroy(&value);
+    *pos = cursor;
+    return 1;
 }
 
 static int ptn_dynamic_execute_halt_compiler_statement(
@@ -216787,9 +217044,11 @@ static int ptn_dynamic_execute_statements_range(
             ptn_dynamic_execute_var_dump_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_phar_static_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_static_call_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_include_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
-            ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line)) {
+            ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_expression_statement(runtime, code, end, pos, line)) {
             if (ptn_runtime_has_active_exception(runtime)) {
                 return 1;
             }
