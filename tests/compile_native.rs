@@ -2453,6 +2453,125 @@ var_dump(iterator_to_array(new RecursiveIteratorIterator($filter), false));
 }
 
 #[test]
+fn compile_iterator_apply_object_magic_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-iterator-apply-object-magic-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterator-apply-object-magic-callback.php");
+    let output = root.join("iterator-apply-object-magic-callback-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ApplyMagic {
+    public $count = 0;
+    public function __call($name, $params) {
+        echo "Called $name.\n";
+        return ++$this->count < 3;
+    }
+}
+
+$callback = new ApplyMagic();
+var_dump(iterator_apply(new ArrayIterator([1, 2, 3]), [$callback, "foobar"]));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Called foobar.\n",
+            "Called foobar.\n",
+            "Called foobar.\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_iterator_apply"));
+}
+
+#[test]
+fn compile_recursive_iterator_iterator_max_depth_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-max-depth");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-max-depth.php");
+    let output = root.join("recursive-iterator-iterator-max-depth-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data = [1, [21, [221]], 3];
+$it = new RecursiveIteratorIterator(new RecursiveArrayIterator($data));
+var_dump($it->getMaxDepth());
+foreach ($it as $value) {
+    echo $it->getDepth(), ':';
+    var_dump($value);
+}
+$it->setMaxDepth(1);
+var_dump($it->getMaxDepth());
+foreach ($it as $value) {
+    echo $it->getDepth(), ':';
+    var_dump($value);
+}
+$it->setMaxDepth();
+var_dump($it->getMaxDepth());
+$it->setMaxDepth(-1);
+var_dump($it->getMaxDepth());
+$it->setMaxDepth(2);
+try {
+    $it->setMaxDepth(-2);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($it->getMaxDepth());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "0:int(1)\n",
+            "1:int(21)\n",
+            "2:int(221)\n",
+            "0:int(3)\n",
+            "int(1)\n",
+            "0:int(1)\n",
+            "1:int(21)\n",
+            "0:int(3)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "RecursiveIteratorIterator::setMaxDepth(): Argument #1 ($maxDepth) must be greater than or equal to -1\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_call_method"));
+}
+
+#[test]
 fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
     fs::create_dir_all(&root).unwrap();
@@ -30249,6 +30368,45 @@ ABC\n"
 }
 
 #[test]
+fn compile_user_stream_filter_shutdown_flush_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-shutdown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-shutdown.php");
+    let output = root.join("stream-user-filter-shutdown-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class BadStatusFilter {\n\
+    public $filtername;\n\
+    public $params;\n\
+    public function filter($in, $out, &$consumed, bool $closing) {\n\
+        return new stdClass();\n\
+    }\n\
+}\n\
+var_dump(stream_filter_register('bad.status', 'BadStatusFilter'));\n\
+var_dump(stream_filter_append(STDOUT, 'bad.status'));\n\
+var_dump(fwrite(STDOUT, 'Hello'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nresource(4) of type (stream filter)\n"));
+    assert!(
+        stdout.contains("Warning: fwrite(): Unprocessed filter buckets remaining on input brigade")
+    );
+    assert!(stdout.contains("int(0)\n\nWarning: Object of class stdClass could not be converted to int in Unknown on line 0\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_standard_streams_shutdown"));
+    assert!(c_source.contains("ptn_stream_filter_chain_flush_closing_impl"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_read_nul_delimiter_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-nul-line");
     fs::create_dir_all(&root).unwrap();
@@ -30288,6 +30446,97 @@ string(1) \"a\"\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_user_stream_read_bytes"));
     assert!(c_source.contains("chunk_size"));
+}
+
+#[test]
+fn compile_user_stream_directory_metadata_and_context_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-directory-metadata-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-directory-metadata-context.php");
+    let output = root.join("user-stream-directory-metadata-context-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class DirWrapper {\n\
+    public $context;\n\
+    private int $i = 0;\n\
+    private array $entries = ['zeta', 'alpha'];\n\
+    public function dir_opendir($path, $options) { echo get_resource_type($this->context), \"\\n\"; return true; }\n\
+    public function dir_readdir() { return $this->entries[$this->i++] ?? false; }\n\
+    public function dir_rewinddir() { $this->i = 0; return true; }\n\
+    public function dir_closedir() { echo \"closed\\n\"; return true; }\n\
+}\n\
+class MetaWrapper {\n\
+    public function stream_metadata($path, $option, $value) {\n\
+        echo $option, ':', gettype($value);\n\
+        if (is_array($value)) echo ':', implode(',', $value);\n\
+        elseif (is_string($value)) echo ':', $value;\n\
+        elseif (is_int($value)) echo ':', $value;\n\
+        elseif (is_null($value)) echo ':null';\n\
+        echo \"\\n\";\n\
+        return true;\n\
+    }\n\
+}\n\
+class StrictContextWrapper {\n\
+    public stdClass $context;\n\
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }\n\
+}\n\
+var_dump(stream_wrapper_register('vdir', DirWrapper::class));\n\
+$handle = opendir('vdir://root');\n\
+var_dump(readdir($handle));\n\
+rewinddir($handle);\n\
+var_dump(readdir($handle));\n\
+var_dump(scandir('vdir://root'));\n\
+closedir($handle);\n\
+var_dump(stream_wrapper_register('meta', MetaWrapper::class));\n\
+var_dump(touch('meta://file', 123, 456));\n\
+var_dump(chmod('meta://file', 0644));\n\
+var_dump(chown('meta://file', 'owner'));\n\
+var_dump(chgrp('meta://file', 7));\n\
+var_dump(stream_wrapper_register('strictctx', StrictContextWrapper::class));\n\
+try { fopen('strictctx://x', 'r'); } catch (TypeError $e) { echo \"strict context\\n\"; }\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "stream-context\n",
+            "string(4) \"zeta\"\n",
+            "string(4) \"zeta\"\n",
+            "stream-context\n",
+            "closed\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(5) \"alpha\"\n",
+            "  [1]=>\n",
+            "  string(4) \"zeta\"\n",
+            "}\n",
+            "closed\n",
+            "bool(true)\n",
+            "1:array:123,456\n",
+            "bool(true)\n",
+            "6:integer:420\n",
+            "bool(true)\n",
+            "2:string:owner\n",
+            "bool(true)\n",
+            "5:integer:7\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "strict context\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_open_user_directory_wrapper"));
+    assert!(c_source.contains("ptn_try_user_stream_metadata"));
+    assert!(c_source.contains("ptn_user_stream_assign_context"));
 }
 
 #[test]
@@ -39030,6 +39279,43 @@ foreach (['MyAutoLoader::dynaLoad', ['MyAutoLoader', 'dynaLoad']] as $callback) 
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_autoload_rejects_recursive_call_loader_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-reject-recursive-loader");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-autoload-reject-recursive-loader.php");
+    let output = root.join("spl-autoload-reject-recursive-loader-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    spl_autoload_register('spl_autoload_call');
+} catch (ValueError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_autoload_register"));
 }
 
 #[test]
