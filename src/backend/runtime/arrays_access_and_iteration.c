@@ -864,15 +864,17 @@ static PTN_UNUSED void ptn_runtime_pop_autoloading_class(PtnRuntime *runtime) {
     root->autoloading_class_names[root->autoloading_class_names_len] = NULL;
 }
 
-static PTN_UNUSED void ptn_runtime_autoload_class(
+static PTN_UNUSED void ptn_runtime_autoload_class_with_call_frame(
     PtnRuntime *runtime,
     const char *class_name,
-    size_t line
+    size_t line,
+    int suppress_user_call_frame_location
 ) {
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     (void)runtime;
     (void)class_name;
     (void)line;
+    (void)suppress_user_call_frame_location;
 #else
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL ||
@@ -902,7 +904,8 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
                 root->autoload_callback_called_class_names != NULL
                     ? root->autoload_callback_called_class_names[i]
                     : runtime->current_class_name;
-            runtime->suppress_user_call_frame_location = 1;
+            runtime->suppress_user_call_frame_location =
+                suppress_user_call_frame_location ? 1 : 0;
             PtnValue result =
                 ptn_call_callable(runtime, active_callback, 1, callback_args, line, 0);
             runtime->suppress_user_call_frame_location =
@@ -929,6 +932,14 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
         ptn_rethrow_exception(runtime);
     }
 #endif
+}
+
+static PTN_UNUSED void ptn_runtime_autoload_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    ptn_runtime_autoload_class_with_call_frame(runtime, class_name, line, 1);
 }
 
 static int ptn_class_name_autoload_char_is_valid(unsigned char ch) {
@@ -5253,6 +5264,13 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
     const PtnValue *offset_value,
     size_t line,
     PtnLookupResult *result_out
+);
+static PTN_UNUSED int ptn_internal_array_object_offset_isset_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int *isset_out
 );
 static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
     PtnRuntime *runtime,
@@ -15935,6 +15953,15 @@ static PTN_UNUSED int ptn_offset_is_set(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_arrayaccess_value_is_weak_map(container)) {
         result = ptn_weak_map_offset_isset(runtime, container, key_value, line);
+        goto done;
+    }
+    if (ptn_internal_array_object_offset_isset_quiet(
+            runtime,
+            container,
+            &key_value,
+            line,
+            &result
+        )) {
         goto done;
     }
 #endif
