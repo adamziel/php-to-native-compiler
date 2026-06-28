@@ -5646,6 +5646,7 @@ static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
@@ -6337,7 +6338,7 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     int accepts_null
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
-    if (ptn_callable_is_valid(runtime, checked, 0)) {
+    if (ptn_callable_is_valid_ex(runtime, checked, 0, 0)) {
         return checked;
     }
     char *message = ptn_invalid_callback_message(
@@ -54135,6 +54136,47 @@ static size_t ptn_user_stream_read_bytes(
     return copied;
 }
 
+static int ptn_user_stream_eof(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    size_t line,
+    int *handled
+) {
+    *handled = 0;
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL) {
+        return 0;
+    }
+    *handled = 1;
+    if (ptn_user_stream_read_buffer_available(data) != 0) {
+        return 0;
+    }
+    if (data->runtime == NULL ||
+        data->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_eof")) {
+        return ptn_stream_eof(resource);
+    }
+    PtnValue eof_result = data->runtime->method_dispatch(
+        data->runtime,
+        data->wrapper_object,
+        "stream_eof",
+        0,
+        NULL,
+        line
+    );
+    if (data->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&eof_result);
+        return 1;
+    }
+    int eof = ptn_is_truthy(eof_result);
+    ptn_value_destroy(&eof_result);
+    if (resource != NULL && resource->memory_stream != NULL) {
+        resource->memory_stream->eof = eof;
+    }
+    (void)runtime;
+    return eof;
+}
+
 static size_t ptn_user_stream_write_bytes(
     PtnRuntime *runtime,
     PtnResource *resource,
@@ -57795,6 +57837,14 @@ static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnVal
     }
     if (ptn_stream_filtered_read_pending_available(resource) != 0) {
         return ptn_bool(0);
+    }
+    int user_stream_handled = 0;
+    int user_stream_eof = ptn_user_stream_eof(runtime, resource, line, &user_stream_handled);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (user_stream_handled) {
+        return ptn_bool(user_stream_eof);
     }
     return ptn_bool(ptn_stream_eof(resource));
 }
@@ -171770,6 +171820,7 @@ static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnValue ptn_user_function_names(PtnRuntime *runtime);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
