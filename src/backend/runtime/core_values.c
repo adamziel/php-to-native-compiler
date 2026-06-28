@@ -1142,6 +1142,8 @@ struct PtnGenerator {
     size_t pending_exception_position;
     int has_pending_exception;
     int pending_exception_on_rewind;
+    size_t return_yield_position;
+    int has_return_yield_position;
     PtnStringBuffer pending_output;
     PtnValue closure_owner;
     int has_receiver;

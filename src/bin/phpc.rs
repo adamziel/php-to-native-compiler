@@ -12,13 +12,23 @@ use ptn::{
 };
 
 fn main() {
-    match run() {
+    match run_with_compiler_stack() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
             eprintln!("{error}");
             std::process::exit(255);
         }
     }
+}
+
+fn run_with_compiler_stack() -> Result<i32, PhpcError> {
+    std::thread::Builder::new()
+        .name("ptn-phpc".to_string())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(run)
+        .map_err(|error| format!("failed to start compiler thread: {error}"))?
+        .join()
+        .map_err(|_| "compiler thread panicked".to_string())?
 }
 
 fn run() -> Result<i32, PhpcError> {
