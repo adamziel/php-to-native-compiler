@@ -1,0 +1,15 @@
+# ptn-w17z.1098 exact stream filter/error residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T025840Z.tsv
+# bucket: stream-filter-error-residual rows=12
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_filtername_prop_type.phpt
+ext/standard/tests/filters/bug79468.phpt
+ext/standard/tests/filters/bug35916.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_is_private.phpt
+ext/standard/tests/streams/stream_errors_mix_modes_storage.phpt
+ext/standard/tests/streams/bug54623.phpt
+ext/standard/tests/streams/stream_get_line_NUL_delimiter.phpt
+ext/standard/tests/streams/bug72853.phpt
+ext/standard/tests/streams/stream_set_chunk_size.phpt

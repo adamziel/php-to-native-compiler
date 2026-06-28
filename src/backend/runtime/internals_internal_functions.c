@@ -55912,11 +55912,11 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
     filter->write_seek_mode = write_seek_mode;
+    filter->user_filter_invalid_callback_reported = 0;
     filter->has_user_filter_object = 0;
     filter->user_filter_object = ptn_null();
     filter->user_filter_runtime = NULL;
     filter->user_filter_line = 0;
-    filter->user_filter_invalid_callback_reported = 0;
     filter->next = NULL;
     return filter;
 }
@@ -55969,7 +55969,6 @@ static int ptn_stream_filter_initialize_user_object(
     PtnObject *object_ptr = ptn_value_deref(object).as.object;
     const char *object_class = object_ptr->class_name;
     int native_php_user_filter = ptn_declared_class_is_same_or_descendant(object_class, "php_user_filter");
-
     filter->has_user_filter_object = 1;
     filter->user_filter_object = object;
     filter->user_filter_runtime = runtime;
@@ -56691,7 +56690,8 @@ static char *ptn_stream_apply_user_filter_alloc(
         invalid_filter_reason = ptn_format_missing_method_callback_reason(filter_class_name, "filter");
     }
     if (invalid_filter_reason != NULL) {
-        int has_active_exception = runtime->exceptions != NULL &&
+        int has_active_exception = runtime != NULL &&
+            runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL;
         if (has_active_exception && filter->user_filter_invalid_callback_reported) {
             free(invalid_filter_reason);
