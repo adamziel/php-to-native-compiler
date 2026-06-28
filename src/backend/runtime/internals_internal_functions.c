@@ -19730,6 +19730,41 @@ static PtnValue ptn_filter_failure_owned_message(
     return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_null() : ptn_bool(0);
 }
 
+static PtnValue ptn_filter_missing_input_value(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    PtnStringOperand variable_name
+) {
+    if (options->has_default) {
+        return ptn_value_clone_deref(options->default_value);
+    }
+    if ((options->flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "input value '%.*s' not found",
+            (int)variable_name.len,
+            variable_name.data
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "input value '%.*s' not found",
+            (int)variable_name.len,
+            variable_name.data
+        );
+        return ptn_filter_failure_owned_message(runtime, options, message);
+    }
+    return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_bool(0) : ptn_null();
+}
+
 static PtnValue ptn_filter_failure_not_array(
     PtnRuntime *runtime,
     const PtnFilterOptions *options,
@@ -21056,7 +21091,7 @@ static PtnValue ptn_filter_apply_scalar(
             return ptn_null();
         }
         PtnValue callback_arg = ptn_value_clone_deref(value);
-        PtnValue result = ptn_call_callable(runtime, options->callback, 1, &callback_arg, line, 0);
+        PtnValue result = ptn_internal_call_callback(runtime, options->callback, 1, &callback_arg, line);
         ptn_value_destroy(&callback_arg);
         return result;
     }
@@ -21182,23 +21217,7 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
     PtnLookupResult global = ptn_runtime_read_global_variable_quiet(runtime, global_name);
     PtnValue container = ptn_value_deref(global.value);
     if (!global.exists || container.type != PTN_ARRAY) {
-        PtnValue result;
-        if (options.has_default) {
-            result = ptn_value_clone_deref(options.default_value);
-        } else if ((options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
-            int needed = snprintf(NULL, 0, "input value '%.*s' not found", (int)variable_name.len, variable_name.data);
-            if (needed < 0) {
-                ptn_abort_out_of_memory();
-            }
-            char *message = malloc((size_t)needed + 1);
-            if (message == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            snprintf(message, (size_t)needed + 1, "input value '%.*s' not found", (int)variable_name.len, variable_name.data);
-            result = ptn_filter_failure_owned_message(runtime, &options, message);
-        } else {
-            result = (options.flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_bool(0) : ptn_null();
-        }
+        PtnValue result = ptn_filter_missing_input_value(runtime, &options, variable_name);
         ptn_string_operand_free(variable_name);
         return result;
     }
@@ -21206,23 +21225,7 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     ptn_array_key_free(key);
     if (entry == NULL) {
-        PtnValue result;
-        if (options.has_default) {
-            result = ptn_value_clone_deref(options.default_value);
-        } else if ((options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
-            int needed = snprintf(NULL, 0, "input value '%.*s' not found", (int)variable_name.len, variable_name.data);
-            if (needed < 0) {
-                ptn_abort_out_of_memory();
-            }
-            char *message = malloc((size_t)needed + 1);
-            if (message == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            snprintf(message, (size_t)needed + 1, "input value '%.*s' not found", (int)variable_name.len, variable_name.data);
-            result = ptn_filter_failure_owned_message(runtime, &options, message);
-        } else {
-            result = (options.flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_bool(0) : ptn_null();
-        }
+        PtnValue result = ptn_filter_missing_input_value(runtime, &options, variable_name);
         ptn_string_operand_free(variable_name);
         return result;
     }
@@ -21280,15 +21283,34 @@ static const char *ptn_filter_options_arg_type_name(PtnValue value) {
     if (value.type == PTN_OBJECT) {
         return value.as.object->class_name;
     }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
     if (value.type == PTN_EXCEPTION) {
         return value.as.exception->class_name;
     }
     return ptn_offset_container_type_name(value);
 }
 
+static int ptn_filter_string_is_numeric(PtnString string) {
+    if (ptn_string_has_embedded_nul(string)) {
+        return 0;
+    }
+    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);
+    double number = 0.0;
+    int is_numeric = ptn_is_numeric_string(copy, &number);
+    free(copy);
+    return is_numeric;
+}
+
 static int ptn_filter_array_definition_type_is_valid(PtnValue definition) {
     definition = ptn_value_deref(definition);
-    return definition.type == PTN_ARRAY || definition.type == PTN_INT;
+    if (definition.type == PTN_ARRAY || definition.type == PTN_INT ||
+        definition.type == PTN_BOOL || definition.type == PTN_NULL ||
+        definition.type == PTN_FLOAT) {
+        return 1;
+    }
+    return definition.type == PTN_STRING && ptn_filter_string_is_numeric(definition.as.string);
 }
 
 static PtnValue ptn_filter_array_options_type_error(
