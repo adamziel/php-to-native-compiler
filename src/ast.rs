@@ -1230,6 +1230,7 @@ pub enum ArrayElementValue {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    Expression(Box<Expr>),
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(Box<Expr>),
     DynamicVariableExpression(Box<Expr>),
