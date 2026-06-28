@@ -1,0 +1,11 @@
+ext/zlib/tests/inflate_init_window_type_error.phpt
+ext/zlib/tests/bug71417.phpt
+ext/zlib/tests/gzuncompress_basic1.phpt
+ext/zlib/tests/005.phpt
+ext/zlib/tests/filter_broken_object_options.phpt
+ext/zlib/tests/bug67724.phpt
+ext/zlib/tests/deflate_add_error.phpt
+ext/zlib/tests/gzcompress_basic1.phpt
+ext/zlib/tests/bug_34821.phpt
+ext/zlib/tests/deflate_add_buffer_full.phpt
+ext/zlib/tests/zlib_wrapper_level.phpt
