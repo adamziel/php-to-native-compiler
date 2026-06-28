@@ -1382,6 +1382,7 @@ struct PtnStreamFilter {
     PtnValue user_filter_object;
     PtnRuntime *user_filter_runtime;
     size_t user_filter_line;
+    int user_filter_invalid_callback_reported;
     PtnStreamFilter *next;
 };
 

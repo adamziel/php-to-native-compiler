@@ -1,0 +1,15 @@
+# ptn-w17z.1092 exact stream wrapper/filter/context current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T020830Z.tsv
+# bucket: stream-wrapper-filter-context-current-red rows=12
+ext/standard/tests/file/userdirstream.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_filtername_prop_type.phpt
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/standard/tests/streams/opendir-004.phpt
+ext/standard/tests/file/userstreams_002.phpt
+ext/standard/tests/filters/user_filter_seek_03.phpt
+ext/standard/tests/streams/stream_errors_mix_modes_storage.phpt
+ext/standard/tests/streams/bug54623.phpt
