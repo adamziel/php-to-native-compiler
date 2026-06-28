@@ -104230,6 +104230,15 @@ static void ptn_phpinfo_write_configuration(PtnRuntime *runtime) {
 
 static void ptn_phpinfo_write_modules(PtnRuntime *runtime) {
     ptn_output_write_cstr(runtime, "\nAdditional Modules\n\n");
+    PtnPcre2Api *pcre2 = ptn_pcre2_api_get();
+    const char *pcre_jit_support =
+        pcre2 != NULL && pcre2->jit_compile != NULL && pcre2->jit_match != NULL
+            ? "enabled"
+            : "disabled";
+    ptn_output_write_cstr(runtime, "pcre\n\n");
+    ptn_output_write_cstr(runtime, "PCRE JIT Support => ");
+    ptn_output_write_cstr(runtime, pcre_jit_support);
+    ptn_output_write_cstr(runtime, "\n");
 }
 
 static void ptn_phpinfo_write_environment(PtnRuntime *runtime) {
