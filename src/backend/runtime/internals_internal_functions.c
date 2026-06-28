@@ -937,6 +937,19 @@ static PtnArrayEntry *ptn_object_property_entry_for_metadata(
 }
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static int ptn_internal_class_exists_name(const char *class_name);
+static int ptn_runtime_function_disabled(PtnRuntime *runtime, const char *name);
+static const PtnInternalFunction *ptn_find_internal_function(const char *name);
+static PTN_UNUSED PtnValue ptn_call_internal(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+#endif
+
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_BOOL) {

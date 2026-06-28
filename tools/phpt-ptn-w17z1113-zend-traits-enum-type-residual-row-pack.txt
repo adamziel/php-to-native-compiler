@@ -1,0 +1,12 @@
+Zend/tests/traits/abstract_method_8.phpt
+Zend/tests/return_types/035.phpt
+Zend/tests/type_declarations/mixed/inheritance/mixed_parameter_inheritance_success5.phpt
+Zend/tests/enum/__class__.phpt
+Zend/tests/enum/__method__.phpt
+Zend/tests/traits/bug61998.phpt
+Zend/tests/enum/traits.phpt
+Zend/tests/type_declarations/mixed/inheritance/mixed_parameter_inheritance_success7.phpt
+Zend/tests/typehints/bug43332_1.phpt
+Zend/tests/traits/bug74607.phpt
+Zend/tests/return_types/never_covariance.phpt
+Zend/tests/type_declarations/variance/static_variance_success.phpt
