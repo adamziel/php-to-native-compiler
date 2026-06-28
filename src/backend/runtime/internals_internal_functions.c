@@ -55902,15 +55902,6 @@ static PtnValue ptn_internal_stream_filter_register(PtnRuntime *runtime, size_t 
         free(class_copy);
         class_copy = ptn_duplicate_string(resolved);
     }
-    if (!ptn_declared_runtime_user_class_exists(runtime, class_copy) &&
-        !ptn_declared_runtime_class_exists(runtime, class_copy)) {
-        ptn_emit_warning(&runtime->diagnostics, "stream_filter_register(): class does not exist", line);
-        free(class_copy);
-        ptn_string_operand_free(filter_name);
-        ptn_string_operand_free(class_name);
-        return ptn_bool(0);
-    }
-
     if (ptn_user_stream_filter_count == ptn_user_stream_filter_capacity) {
         size_t new_capacity = ptn_user_stream_filter_capacity == 0 ? 8 : ptn_user_stream_filter_capacity * 2;
         if (new_capacity < ptn_user_stream_filter_capacity ||
@@ -55934,6 +55925,51 @@ static PtnValue ptn_internal_stream_filter_register(PtnRuntime *runtime, size_t 
     ptn_string_operand_free(filter_name);
     ptn_string_operand_free(class_name);
     return ptn_bool(1);
+}
+
+static int ptn_user_stream_filter_class_exists(PtnRuntime *runtime, const char *class_name) {
+    return ptn_declared_runtime_user_class_exists(runtime, class_name) ||
+        ptn_declared_runtime_class_exists(runtime, class_name);
+}
+
+static void ptn_user_stream_filter_emit_missing_class_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand filter_name,
+    const char *class_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): User-filter \"%.*s\" requires class \"%s\", but that class is not defined",
+        function_name,
+        (int)filter_name.len,
+        filter_name.data,
+        class_name == NULL ? "" : class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): User-filter \"%.*s\" requires class \"%s\", but that class is not defined",
+        function_name,
+        (int)filter_name.len,
+        filter_name.data,
+        class_name == NULL ? "" : class_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static PtnStreamFilter *ptn_stream_filter_new(
@@ -55972,6 +56008,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_error = 0;
     filter->write_seek_mode = write_seek_mode;
     filter->user_filter_invalid_callback_reported = 0;
+    filter->user_filter_closed = 0;
     filter->has_user_filter_object = 0;
     filter->user_filter_object = ptn_null();
     filter->user_filter_runtime = NULL;
@@ -56015,6 +56052,7 @@ static int ptn_stream_filter_initialize_user_object(
     PtnUserStreamFilterRegistration *registration,
     PtnStringOperand filter_name,
     PtnValue filter_params,
+    PtnValue stream_value,
     size_t line
 ) {
     if (filter == NULL || registration == NULL) {
@@ -56038,6 +56076,23 @@ static int ptn_stream_filter_initialize_user_object(
         filter_name.len
     );
     PtnValue params_value = ptn_value_clone_deref(filter_params);
+    if (native_php_user_filter && ptn_value_deref(stream_value).type == PTN_RESOURCE) {
+        ptn_stream_filter_write_user_object_property(
+            runtime,
+            object,
+            object_ptr,
+            object_class,
+            native_php_user_filter,
+            "stream",
+            stream_value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&params_value);
+            ptn_value_destroy(&filter_name_value);
+            return 0;
+        }
+    }
     int filtername_declared = native_php_user_filter ||
         ptn_object_metadata_for_display_name(object_ptr, "filtername") != NULL;
     if (filtername_declared) {
@@ -56209,6 +56264,22 @@ static PtnValue ptn_internal_stream_bucket_make_writeable(PtnRuntime *runtime, s
     }
     brigade->input_consumed = 1;
     return ptn_stream_bucket_object(runtime, brigade->input, brigade->input_len);
+}
+
+static PtnValue ptn_internal_stream_bucket_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *stream = ptn_internal_expect_open_stream_arg(runtime, "stream_bucket_new", args[0], line);
+    if (stream == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "stream_bucket_new", 2, "buffer", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
+    PtnValue bucket = ptn_stream_bucket_object(runtime, data.data, data.len);
+    ptn_string_operand_free(data);
+    return bucket;
 }
 
 static int ptn_stream_bucket_data_operand(
@@ -56478,6 +56549,7 @@ static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
         memset(filter->base64_values, 0, sizeof(filter->base64_values));
+        filter->user_filter_closed = 0;
     }
 }
 
@@ -56622,6 +56694,7 @@ static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
     filter->zlib_error = 0;
+    filter->user_filter_closed = 0;
 }
 
 static int ptn_stream_filter_chain_has_strict_write_seek(PtnStreamFilter *filter) {
@@ -56725,6 +56798,7 @@ static char *ptn_stream_apply_user_filter_alloc(
     *ok = 1;
     *out_len = 0;
     if (filter == NULL || !filter->has_user_filter_object || runtime == NULL || runtime->method_dispatch == NULL) {
+        *out_len = len;
         return ptn_duplicate_string_len(data, len);
     }
 
@@ -56834,12 +56908,17 @@ static char *ptn_stream_apply_user_filter_alloc(
 
     PtnStreamBucketBrigade *output_brigade = (PtnStreamBucketBrigade *)output_resource->close_hook_data;
     size_t output_len = output_brigade == NULL ? 0 : output_brigade->output.len;
+    if (status == PTN_PSFS_FEED_ME) {
+        output_len = 0;
+    }
     char *filtered = output_len == 0
         ? ptn_duplicate_string_len("", 0)
         : ptn_duplicate_string_len(output_brigade->output.data, output_len);
     *out_len = output_len;
 
-    if ((status != PTN_PSFS_PASS_ON || output_len == 0) && !(closing && len == 0)) {
+    if (status != PTN_PSFS_PASS_ON && status != PTN_PSFS_FEED_ME && !(closing && len == 0)) {
+        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && len != 0) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
@@ -57097,13 +57176,6 @@ static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
     ptn_string_buffer_init(&output);
     size_t line_len = filter->filter_line_position;
     for (size_t i = 0; i < len; i++) {
-        if (ptn_stream_qp_matches_line_break(filter, data, len, i)) {
-            ptn_string_buffer_append_len(&output, filter->filter_line_break, filter->filter_line_break_len);
-            i += filter->filter_line_break_len - 1;
-            line_len = 0;
-            continue;
-        }
-
         unsigned char byte = (unsigned char)data[i];
         int trailing_whitespace = ptn_stream_qp_whitespace_is_trailing(filter, data, len, i);
         if (ptn_stream_qp_should_escape(byte, trailing_whitespace)) {
@@ -57234,15 +57306,20 @@ static char *ptn_stream_apply_filter_chain_alloc(
     size_t output_len = len;
     for (; filter != NULL; filter = filter->next) {
         if (filter->kind == PTN_STREAM_FILTER_USER) {
+            if (filter->user_filter_closed) {
+                continue;
+            }
             int ok = 1;
+            PtnRuntime *filter_runtime = runtime == NULL ? filter->user_filter_runtime : runtime;
+            size_t filter_line = runtime == NULL && line == 0 ? filter->user_filter_line : line;
             char *transformed = ptn_stream_apply_user_filter_alloc(
-                runtime,
+                filter_runtime,
                 function_name == NULL ? "stream filter" : function_name,
                 filter,
                 output,
                 output_len,
                 closing,
-                line,
+                filter_line,
                 &output_len,
                 &ok
             );
@@ -57251,6 +57328,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
             if (!ok) {
                 output_len = 0;
                 break;
+            }
+            if (closing) {
+                filter->user_filter_closed = 1;
             }
             continue;
         }
@@ -57431,6 +57511,74 @@ static void ptn_stream_filtered_read_pending_append(PtnResource *resource, const
     resource->filtered_read_buffer_offset = 0;
 }
 
+static void ptn_stream_flush_write_filters(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    int closing,
+    size_t line
+) {
+    if (resource == NULL || resource->write_filters == NULL) {
+        return;
+    }
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        resource->write_filters,
+        "",
+        0,
+        closing,
+        line,
+        &output_len
+    );
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        free(output);
+        return;
+    }
+    if (output_len != 0) {
+        int user_write_failed = 0;
+        size_t written = ptn_user_stream_resource_data(resource) != NULL
+            ? ptn_user_stream_write_bytes(runtime, resource, output, output_len, line, &user_write_failed)
+            : ptn_stream_write_bytes(resource, output, output_len);
+        (void)written;
+        (void)user_write_failed;
+    }
+    free(output);
+}
+
+static void ptn_stream_flush_read_filters_closing(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t line
+) {
+    if (resource == NULL || resource->read_filters == NULL) {
+        return;
+    }
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        resource->read_filters,
+        "",
+        0,
+        1,
+        line,
+        &output_len
+    );
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        free(output);
+        return;
+    }
+    ptn_stream_filtered_read_pending_append(resource, output, output_len);
+    free(output);
+}
+
 static size_t ptn_stream_filtered_read_pending_take(PtnResource *resource, char *dest, size_t len) {
     size_t available = ptn_stream_filtered_read_pending_available(resource);
     size_t take = len < available ? len : available;
@@ -57482,6 +57630,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         }
         if (raw.len == 0) {
             free(raw.data);
+            ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
             return 0;
         }
         size_t filtered_len = 0;
@@ -57498,6 +57647,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         free(raw.data);
         ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
         free(filtered);
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
         return total;
     }
 
@@ -57512,6 +57662,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         return read_len;
     }
     if (read_len == 0) {
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
         return 0;
     }
     size_t filtered_len = 0;
@@ -57527,6 +57678,9 @@ static size_t ptn_stream_filtered_read_fill_pending(
     );
     ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
     free(filtered);
+    if (read_len < want) {
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
+    }
     return read_len;
 }
 
@@ -57869,6 +58023,18 @@ static PtnValue ptn_internal_stream_filter_attach(
             ptn_string_operand_free(name);
             return ptn_bool(0);
         }
+        if (!ptn_user_stream_filter_class_exists(runtime, user_registration->class_name)) {
+            ptn_user_stream_filter_emit_missing_class_warning(
+                runtime,
+                function_name,
+                name,
+                user_registration->class_name,
+                line
+            );
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
         kind = PTN_STREAM_FILTER_USER;
     }
 
@@ -57915,6 +58081,7 @@ static PtnValue ptn_internal_stream_filter_attach(
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filtered_read_pending_clear(stream);
     }
+    PtnValue stream_object = ptn_resource(stream);
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         read_filter = ptn_stream_filter_new(
             kind,
@@ -57930,7 +58097,7 @@ static PtnValue ptn_internal_stream_filter_attach(
             prepend
         );
         if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, line)) {
+            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, stream_object, line)) {
             if (ptn_stream_filter_keep_after_user_init_failure(runtime, read_filter)) {
                 ptn_string_operand_free(name);
                 return ptn_null();
@@ -57952,7 +58119,7 @@ static PtnValue ptn_internal_stream_filter_attach(
             prepend
         );
         if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, line)) {
+            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, stream_object, line)) {
             int keep_write_filter = ptn_stream_filter_keep_after_user_init_failure(runtime, write_filter);
             if (!keep_write_filter &&
                 ptn_stream_filter_chain_unlink(&stream->write_filters, write_filter)) {
@@ -58254,6 +58421,10 @@ static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     ptn_stream_clear_error(resource);
+    ptn_stream_flush_write_filters(runtime, "rewind", resource, 0, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     if (ptn_stream_seek(resource, 0, SEEK_SET) == 0) {
         ptn_stream_filtered_read_pending_clear(resource);
         ptn_stream_filter_chain_reset(resource->read_filters);
@@ -58513,6 +58684,10 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
         }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         return ptn_int(-1);
+    }
+    ptn_stream_flush_write_filters(runtime, "fseek", resource, 0, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
     }
     if (ptn_stream_seek(resource, offset, seek_whence) == 0) {
         ptn_stream_filter_chain_call_seek(runtime, resource->read_filters, offset, whence, PTN_STREAM_FILTER_READ, line);
@@ -61525,10 +61700,12 @@ static int ptn_php_filter_apply_iconv_filter(
 }
 
 static int ptn_php_filter_apply_filter_name(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *filter_name,
-    size_t filter_name_len
+    size_t filter_name_len,
+    size_t line
 ) {
     if (ptn_php_filter_apply_iconv_filter(data_io, len_io, filter_name, filter_name_len)) {
         return 1;
@@ -61537,7 +61714,61 @@ static int ptn_php_filter_apply_filter_name(
     PtnStringOperand name = ptn_string_operand_borrowed_len(filter_name, filter_name_len);
     PtnStreamFilterKind kind;
     if (!ptn_stream_filter_kind_from_name(name, &kind)) {
-        return 0;
+        PtnUserStreamFilterRegistration *registration = ptn_user_stream_filter_find(name);
+        if (registration == NULL ||
+            !ptn_user_stream_filter_class_exists(runtime, registration->class_name)) {
+            return 0;
+        }
+        kind = PTN_STREAM_FILTER_USER;
+        PtnStreamFilter *filter = ptn_stream_filter_new(
+            kind,
+            name,
+            PTN_ZLIB_ENCODING_RAW,
+            -1,
+            PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
+        );
+        PtnResource *stream_resource = ptn_resource_new_memory_stream(
+            "php://filter",
+            "rb",
+            PTN_STREAM_BACKEND_MEMORY,
+            SIZE_MAX,
+            1,
+            0
+        );
+        if (ptn_stream_filter_initialize_user_object(
+                runtime,
+                filter,
+                registration,
+                name,
+                ptn_null(),
+                ptn_resource(stream_resource),
+                line
+            ) &&
+            runtime->exceptions->active_exception == NULL) {
+            size_t output_len = 0;
+            char *output = ptn_stream_apply_filter_chain_alloc(
+                runtime,
+                "php://filter",
+                filter,
+                (const char *)*data_io,
+                *len_io,
+                1,
+                line,
+                &output_len
+            );
+            if (runtime->exceptions->active_exception == NULL) {
+                free(*data_io);
+                *data_io = (unsigned char *)output;
+                *len_io = output_len;
+                ptn_stream_filter_free(filter);
+                ptn_resource_release(stream_resource);
+                return 1;
+            }
+            free(output);
+        }
+        ptn_stream_filter_free(filter);
+        ptn_resource_release(stream_resource);
+        return runtime->exceptions->active_exception == NULL ? 0 : 1;
     }
     PtnStreamFilter *filter = ptn_stream_filter_new(
         kind,
@@ -61565,10 +61796,12 @@ static int ptn_php_filter_apply_filter_name(
 }
 
 static int ptn_php_filter_apply_filter_list(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *filters,
-    size_t filters_len
+    size_t filters_len,
+    size_t line
 ) {
     size_t start = 0;
     while (start <= filters_len) {
@@ -61579,7 +61812,7 @@ static int ptn_php_filter_apply_filter_list(
         if (end > start) {
             size_t decoded_len = 0;
             char *decoded = ptn_url_decode_bytes(filters + start, end - start, 0, &decoded_len);
-            int applied = ptn_php_filter_apply_filter_name(data_io, len_io, decoded, decoded_len);
+            int applied = ptn_php_filter_apply_filter_name(runtime, data_io, len_io, decoded, decoded_len, line);
             free(decoded);
             if (!applied) {
                 return 0;
@@ -61594,10 +61827,12 @@ static int ptn_php_filter_apply_filter_list(
 }
 
 static int ptn_php_filter_apply_segment(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *segment,
-    size_t segment_len
+    size_t segment_len,
+    size_t line
 ) {
     const char *read_prefix = "read=";
     const char *write_prefix = "write=";
@@ -61608,13 +61843,15 @@ static int ptn_php_filter_apply_segment(
     if (segment_len >= strlen(read_prefix) &&
         ptn_php_filter_ascii_case_equal_len(segment, read_prefix, strlen(read_prefix))) {
         return ptn_php_filter_apply_filter_list(
+            runtime,
             data_io,
             len_io,
             segment + strlen(read_prefix),
-            segment_len - strlen(read_prefix)
+            segment_len - strlen(read_prefix),
+            line
         );
     }
-    return ptn_php_filter_apply_filter_list(data_io, len_io, segment, segment_len);
+    return ptn_php_filter_apply_filter_list(runtime, data_io, len_io, segment, segment_len, line);
 }
 
 static int ptn_try_read_php_filter_url_bytes(
@@ -61670,10 +61907,12 @@ static int ptn_try_read_php_filter_url_bytes(
         }
         if (segment_end > segment_start &&
             !ptn_php_filter_apply_segment(
+                runtime,
                 &data,
                 &data_len,
                 segment_start,
-                (size_t)(segment_end - segment_start)
+                (size_t)(segment_end - segment_start),
+                line
             )) {
             free(data);
             errno = ENOENT;
@@ -61814,15 +62053,69 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     size_t data_len = 0;
     char *opened_path = NULL;
     char *data_url_detail = NULL;
+    int read_result = 0;
+    PtnResource *context = NULL;
+    if (has_context &&
+        !ptn_file_get_contents_validate_context_arg(runtime, args[context_index], line, &context)) {
+        free(path);
+        return ptn_null();
+    }
+    PtnValue user_stream = ptn_null();
+    if (ptn_try_open_user_stream_wrapper(runtime, path, "rb", context, line, &user_stream)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            free(path);
+            return ptn_null();
+        }
+        PtnValue resolved_stream = ptn_value_deref(user_stream);
+        if (resolved_stream.type == PTN_RESOURCE &&
+            ptn_stream_resource_is_open(resolved_stream.as.resource)) {
+            PtnValue contents = ptn_stream_read_remaining(
+                runtime,
+                "file_get_contents",
+                resolved_stream.as.resource,
+                -1,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&contents);
+                ptn_value_destroy(&user_stream);
+                free(path);
+                return ptn_null();
+            }
+            PtnValue resolved_contents = ptn_value_deref(contents);
+            if (resolved_contents.type == PTN_STRING) {
+                data_len = resolved_contents.as.string.len;
+                data = malloc(data_len + 1);
+                if (data == NULL) {
+                    ptn_value_destroy(&contents);
+                    ptn_value_destroy(&user_stream);
+                    free(path);
+                    ptn_abort_out_of_memory();
+                }
+                if (data_len != 0) {
+                    memcpy(data, resolved_contents.as.string.data, data_len);
+                }
+                data[data_len] = '\0';
+                read_result = 1;
+            } else {
+                read_result = -1;
+            }
+            ptn_value_destroy(&contents);
+        }
+        ptn_value_destroy(&user_stream);
+    }
     char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
     char *fallback_path = NULL;
-    if (unknown_scheme != NULL) {
+    if (read_result == 0 && unknown_scheme != NULL) {
         ptn_emit_unknown_stream_wrapper_warning(runtime, "file_get_contents", unknown_scheme, line);
         fallback_path = ptn_unknown_wrapper_local_fallback_path(path);
         free(unknown_scheme);
+    } else {
+        free(unknown_scheme);
     }
     const char *read_path = fallback_path == NULL ? path : fallback_path;
-    int php_filter_result = fallback_path == NULL
+    int php_filter_result = read_result == 0 && fallback_path == NULL
         ? ptn_try_read_php_filter_url_bytes(
             runtime,
             path,
@@ -61833,7 +62126,9 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             line
         )
         : 0;
-    int read_result = php_filter_result != 0
+    read_result = read_result != 0
+        ? read_result
+        : php_filter_result != 0
         ? php_filter_result
         : fallback_path == NULL
         ? ptn_file_get_contents_read_non_filter_source_bytes(
@@ -175740,6 +176035,7 @@ static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, siz
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_make_writeable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_bucket_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -176857,6 +177153,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_bucket_append", 2, 2, ptn_internal_stream_bucket_append },
         { "stream_bucket_make_writeable", 1, 1, ptn_internal_stream_bucket_make_writeable },
+        { "stream_bucket_new", 2, 2, ptn_internal_stream_bucket_new },
         { "stream_bucket_prepend", 2, 2, ptn_internal_stream_bucket_prepend },
         { "stream_clear_errors", 0, 0, ptn_internal_stream_clear_errors },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
@@ -178553,8 +178850,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_append_iterator(const char *cla
     return ptn_ascii_case_equal(class_name, "AppendIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_caching_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RecursiveCachingIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_caching_iterator(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "CachingIterator");
+    return ptn_ascii_case_equal(class_name, "CachingIterator")
+        || ptn_internal_class_name_is_recursive_caching_iterator(class_name);
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name) {
@@ -178645,8 +178947,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_directory_iterator(const char *
         || ptn_ascii_case_equal(class_name, "RecursiveDirectoryIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_regex_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RecursiveRegexIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_regex_iterator(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "RegexIterator");
+    return ptn_ascii_case_equal(class_name, "RegexIterator")
+        || ptn_internal_class_name_is_recursive_regex_iterator(class_name);
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name) {
@@ -180356,11 +180663,16 @@ static int ptn_iterator_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_spl_file_info_method_exists(const char *method_name);
+
 static int ptn_recursive_iterator_iterator_method_exists(const char *method_name) {
     return ptn_iterator_iterator_method_exists(method_name)
+        || ptn_spl_file_info_method_exists(method_name)
         || ptn_ascii_case_equal(method_name, "getDepth")
         || ptn_ascii_case_equal(method_name, "getMaxDepth")
+        || ptn_ascii_case_equal(method_name, "getSubPath")
         || ptn_ascii_case_equal(method_name, "getSubIterator")
+        || ptn_ascii_case_equal(method_name, "seek")
         || ptn_ascii_case_equal(method_name, "setMaxDepth");
 }
 
@@ -180471,6 +180783,7 @@ static int ptn_spl_file_object_method_exists(const char *method_name) {
 
 static int ptn_directory_iterator_method_exists(const char *method_name) {
     return ptn_spl_file_info_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
         || ptn_ascii_case_equal(method_name, "getChildren")
         || ptn_ascii_case_equal(method_name, "hasChildren")
@@ -180486,10 +180799,12 @@ static int ptn_regex_iterator_method_exists(const char *method_name) {
     return ptn_iterator_iterator_method_exists(method_name)
         || ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "accept")
+        || ptn_ascii_case_equal(method_name, "getChildren")
         || ptn_ascii_case_equal(method_name, "getFlags")
         || ptn_ascii_case_equal(method_name, "getMode")
         || ptn_ascii_case_equal(method_name, "getPregFlags")
         || ptn_ascii_case_equal(method_name, "getRegex")
+        || ptn_ascii_case_equal(method_name, "hasChildren")
         || ptn_ascii_case_equal(method_name, "setFlags")
         || ptn_ascii_case_equal(method_name, "setMode")
         || ptn_ascii_case_equal(method_name, "setPregFlags");
@@ -181074,6 +181389,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "next")
             || ptn_ascii_case_equal(method_name, "rewind")
             || ptn_ascii_case_equal(method_name, "valid");
+    }
+    if (ptn_internal_class_name_is_recursive_caching_iterator(class_name)) {
+        return ptn_iterator_iterator_method_exists(method_name)
+            || ptn_ascii_case_equal(method_name, "__toString")
+            || ptn_ascii_case_equal(method_name, "getChildren")
+            || ptn_ascii_case_equal(method_name, "hasChildren");
     }
     if (ptn_internal_class_name_is_caching_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name)
@@ -182611,6 +182932,22 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
+    if (ptn_internal_class_name_is_recursive_caching_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getChildren",
+            "getInnerIterator",
+            "hasChildren",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "valid",
+            "__toString",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
     if (ptn_internal_class_name_is_caching_iterator(class_name)) {
         static const char *const names[] = {
             "current",
@@ -182683,11 +183020,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getDepth",
             "getInnerIterator",
             "getMaxDepth",
+            "getSubPath",
             "getSubIterator",
             "key",
             "next",
             "offsetGet",
             "rewind",
+            "seek",
             "setMaxDepth",
             "valid",
         };
@@ -192727,6 +193066,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
             return ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
         }
+        if (ptn_internal_class_name_is_directory_iterator(class_name)) {
+            return ptn_object_new_shell(runtime, class_name);
+        }
         ptn_throw_exception(runtime, "ReflectionException", "Cannot instantiate internal class without constructor");
         return ptn_null();
     }
@@ -196186,9 +196528,22 @@ static PtnDirectoryIteratorData *ptn_directory_iterator_data(PtnRuntime *runtime
     if (
         receiver.type != PTN_OBJECT
         || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "DirectoryIterator")
-        || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid DirectoryIterator object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s is not initialized",
+            receiver.as.object->class_name == NULL ? "DirectoryIterator" : receiver.as.object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
         return NULL;
     }
     return (PtnDirectoryIteratorData *)receiver.as.object->native_data;
@@ -210008,6 +210363,22 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->key);
     }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "GlobIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (resolved_receiver.type != PTN_OBJECT ||
+            !ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "GlobIterator")) {
+            ptn_throw_exception(runtime, "Error", "Call to undefined method DirectoryIterator::count()");
+            return ptn_null();
+        }
+        if (data->glob_count > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)data->glob_count);
+    }
     if (ptn_ascii_case_equal(name, "valid")) {
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->valid);
@@ -211557,6 +211928,15 @@ static PTN_UNUSED PtnValue ptn_caching_iterator_new(
     return ptn_iterator_iterator_new_for_class(runtime, "CachingIterator", argc, args, line);
 }
 
+static PTN_UNUSED PtnValue ptn_recursive_caching_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_iterator_iterator_new_for_class(runtime, "RecursiveCachingIterator", argc, args, line);
+}
+
 static PTN_UNUSED PtnValue ptn_no_rewind_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -211848,13 +212228,12 @@ static PTN_UNUSED PtnValue ptn_multiple_iterator_new(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    if (argc != 0) {
+    if (argc > 1) {
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
-            "MultipleIterator::__construct() expects exactly 0 arguments, %zu given",
+            "MultipleIterator::__construct() expects at most 1 argument, %zu given",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -211876,7 +212255,23 @@ static PTN_UNUSED PtnValue ptn_multiple_iterator_new(
     }
 
     PtnValue object = ptn_object_new_shell(runtime, "MultipleIterator");
-    object.as.object->native_data = ptn_multiple_iterator_data_new();
+    PtnMultipleIteratorData *data = ptn_multiple_iterator_data_new();
+    if (argc == 1) {
+        data->flags = ptn_internal_expect_integer_arg(
+            runtime,
+            "MultipleIterator::__construct",
+            1,
+            "flags",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_multiple_iterator_data_free(data);
+            ptn_value_destroy(&object);
+            return ptn_null();
+        }
+    }
+    object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_multiple_iterator_data_free;
     return object;
 }
@@ -211891,12 +212286,16 @@ static int ptn_multiple_iterator_info_keys_equal(PtnValue left, PtnValue right) 
         !ptn_multiple_iterator_info_is_key(right)) {
         return 0;
     }
-    PtnArrayKey left_key = ptn_array_key_from_value(ptn_value_deref(left));
-    PtnArrayKey right_key = ptn_array_key_from_value(ptn_value_deref(right));
-    int equal = ptn_array_keys_equal(left_key, right_key);
-    ptn_array_key_free(left_key);
-    ptn_array_key_free(right_key);
-    return equal;
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type != right.type) {
+        return 0;
+    }
+    if (left.type == PTN_INT) {
+        return left.as.integer == right.as.integer;
+    }
+    return left.as.string.len == right.as.string.len &&
+        memcmp(left.as.string.data, right.as.string.data, left.as.string.len) == 0;
 }
 
 static PtnArrayKey ptn_multiple_iterator_info_key(PtnValue info) {
@@ -212396,18 +212795,21 @@ static PTN_UNUSED PtnValue ptn_filter_iterator_new(
     return ptn_iterator_iterator_new_for_class(runtime, "FilterIterator", argc, args, line);
 }
 
-static PTN_UNUSED PtnValue ptn_regex_iterator_new(
+static PtnValue ptn_regex_iterator_new_for_class(
     PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
 ) {
+    int recursive = ptn_internal_class_name_is_recursive_regex_iterator(class_name);
     if (argc < 2) {
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
-            "RegexIterator::__construct() expects at least 2 arguments, %zu given",
+            "%s::__construct() expects at least 2 arguments, %zu given",
+            recursive ? "RecursiveRegexIterator" : "RegexIterator",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -212421,7 +212823,8 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         int written = snprintf(
             message,
             sizeof(message),
-            "RegexIterator::__construct() expects at most 5 arguments, %zu given",
+            "%s::__construct() expects at most 5 arguments, %zu given",
+            recursive ? "RecursiveRegexIterator" : "RegexIterator",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -212431,19 +212834,39 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         return ptn_null();
     }
 
-    PtnValue inner = ptn_iterator_iterator_resolve_inner(runtime, "RegexIterator", args[0], line);
+    PtnValue inner = ptn_iterator_iterator_resolve_inner(runtime, class_name, args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    if (recursive && !ptn_value_object_implements_interface(inner, "RecursiveIterator")) {
+        ptn_value_destroy(&inner);
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "RecursiveRegexIterator::__construct(): Argument #1 ($iterator) must be of type RecursiveIterator"
+        );
+        return ptn_null();
+    }
+    char constructor_name[64];
+    int constructor_name_len = snprintf(
+        constructor_name,
+        sizeof(constructor_name),
+        "%s::__construct",
+        recursive ? "RecursiveRegexIterator" : "RegexIterator"
+    );
+    if (constructor_name_len < 0 || (size_t)constructor_name_len >= sizeof(constructor_name)) {
+        ptn_value_destroy(&inner);
+        ptn_abort_out_of_memory();
+    }
     PtnStringOperand pattern =
-        ptn_internal_expect_string_arg(runtime, "RegexIterator::__construct", 2, "pattern", args[1], line);
+        ptn_internal_expect_string_arg(runtime, constructor_name, 2, "pattern", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
         ptn_value_destroy(&inner);
         return ptn_null();
     }
     int64_t mode = argc >= 3
-        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 3, "mode", args[2], line)
+        ? ptn_internal_expect_integer_arg(runtime, constructor_name, 3, "mode", args[2], line)
         : 0;
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
@@ -212451,13 +212874,13 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         return ptn_null();
     }
     if (!ptn_regex_iterator_mode_is_valid(mode)) {
-        ptn_regex_iterator_throw_invalid_mode(runtime, "RegexIterator::__construct", 3);
+        ptn_regex_iterator_throw_invalid_mode(runtime, constructor_name, 3);
         ptn_string_operand_free(pattern);
         ptn_value_destroy(&inner);
         return ptn_null();
     }
     int64_t flags = argc >= 4
-        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 4, "flags", args[3], line)
+        ? ptn_internal_expect_integer_arg(runtime, constructor_name, 4, "flags", args[3], line)
         : 0;
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
@@ -212465,7 +212888,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         return ptn_null();
     }
     int64_t preg_flags = argc >= 5
-        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 5, "pregFlags", args[4], line)
+        ? ptn_internal_expect_integer_arg(runtime, constructor_name, 5, "pregFlags", args[4], line)
         : 0;
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
@@ -212487,7 +212910,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
     data->positioned = 0;
     ptn_string_operand_free(pattern);
 
-    PtnValue object = ptn_object_new_shell(runtime, "RegexIterator");
+    PtnValue object = ptn_object_new_shell(runtime, recursive ? "RecursiveRegexIterator" : "RegexIterator");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_regex_iterator_data_free;
     ptn_array_set_entry(
@@ -212496,6 +212919,24 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         ptn_string("")
     );
     return object;
+}
+
+static PTN_UNUSED PtnValue ptn_regex_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_regex_iterator_new_for_class(runtime, "RegexIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_regex_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_regex_iterator_new_for_class(runtime, "RecursiveRegexIterator", argc, args, line);
 }
 
 static PTN_UNUSED PtnValue ptn_infinite_iterator_new(
@@ -215735,12 +216176,23 @@ static int ptn_regex_iterator_has_user_accept(PtnRuntime *runtime, PtnValue rece
         runtime->declared_method_exists(resolved.as.object->class_name, "accept");
 }
 
+static int ptn_recursive_regex_iterator_receiver(PtnValue receiver);
+
 static int ptn_regex_iterator_accepts_current_for_filter(
     PtnRuntime *runtime,
     PtnValue receiver,
     PtnRegexIteratorData *data,
     size_t line
 ) {
+    if (ptn_recursive_regex_iterator_receiver(receiver) &&
+        ptn_value_object_implements_interface(data->inner, "RecursiveIterator")) {
+        PtnValue has_children = ptn_iterator_inner_call_no_args(runtime, data->inner, "hasChildren", line);
+        int has = runtime->exceptions->active_exception == NULL && ptn_is_truthy(has_children);
+        ptn_value_destroy(&has_children);
+        if (has || runtime->exceptions->active_exception != NULL) {
+            return has;
+        }
+    }
     if (!ptn_regex_iterator_has_user_accept(runtime, receiver)) {
         return ptn_regex_iterator_accepts_current(runtime, data, line);
     }
@@ -215881,6 +216333,63 @@ static PtnValue ptn_regex_iterator_key_value(
     ptn_value_destroy(&replace_args[0]);
     ptn_value_destroy(&replace_args[1]);
     ptn_value_destroy(&replace_args[2]);
+    return result;
+}
+
+static int ptn_recursive_regex_iterator_receiver(PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    return resolved.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(
+            resolved.as.object->class_name,
+            "RecursiveRegexIterator"
+        );
+}
+
+static PtnValue ptn_recursive_regex_iterator_has_children(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || !data->positioned || !ptn_iterator_inner_valid(runtime, data->inner, line)) {
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_iterator_inner_call_no_args(runtime, data->inner, "hasChildren", line);
+    return runtime->exceptions->active_exception != NULL ? ptn_null() : result;
+}
+
+static PtnValue ptn_recursive_regex_iterator_children(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    PtnValue has_children = ptn_recursive_regex_iterator_has_children(runtime, data, line);
+    int has = runtime->exceptions->active_exception == NULL && ptn_is_truthy(has_children);
+    ptn_value_destroy(&has_children);
+    if (runtime->exceptions->active_exception != NULL || !has) {
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+    }
+    PtnValue child = ptn_iterator_inner_call_no_args(runtime, data->inner, "getChildren", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&child);
+        return ptn_null();
+    }
+    PtnValue args[5] = {
+        child,
+        ptn_regex_iterator_pattern_value(data),
+        ptn_int(data->mode),
+        ptn_int(data->flags),
+        ptn_int(data->preg_flags)
+    };
+    PtnValue result = ptn_regex_iterator_new_for_class(
+        runtime,
+        "RecursiveRegexIterator",
+        5,
+        args,
+        line
+    );
+    for (size_t i = 0; i < 5; i++) {
+        ptn_value_destroy(&args[i]);
+    }
     return result;
 }
 
@@ -216037,6 +216546,26 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "hasChildren")) {
+        if (!ptn_recursive_regex_iterator_receiver(receiver)) {
+            ptn_throw_exception(runtime, "Error", "Call to undefined method RegexIterator::hasChildren()");
+            return ptn_null();
+        }
+        ptn_reflection_check_no_arguments(runtime, "RecursiveRegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_recursive_regex_iterator_has_children(runtime, data, line);
+    }
+    if (ptn_ascii_case_equal(name, "getChildren")) {
+        if (!ptn_recursive_regex_iterator_receiver(receiver)) {
+            ptn_throw_exception(runtime, "Error", "Call to undefined method RegexIterator::getChildren()");
+            return ptn_null();
+        }
+        ptn_reflection_check_no_arguments(runtime, "RecursiveRegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_recursive_regex_iterator_children(runtime, data, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -216243,6 +216772,46 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_value_destroy(&current);
         return result;
     }
+    if (ptn_declared_class_is_same_or_descendant(receiver_class_name, "RecursiveCachingIterator") &&
+        ptn_ascii_case_equal(name, "hasChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveCachingIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!ptn_value_object_implements_interface(data->inner, "RecursiveIterator")) {
+            return ptn_bool(0);
+        }
+        PtnValue result = ptn_iterator_inner_call_no_args(runtime, data->inner, "hasChildren", line);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : result;
+    }
+    if (ptn_declared_class_is_same_or_descendant(receiver_class_name, "RecursiveCachingIterator") &&
+        ptn_ascii_case_equal(name, "getChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveCachingIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL ||
+            !ptn_value_object_implements_interface(data->inner, "RecursiveIterator")) {
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        PtnValue has_children = ptn_iterator_inner_call_no_args(runtime, data->inner, "hasChildren", line);
+        int has = runtime->exceptions->active_exception == NULL && ptn_is_truthy(has_children);
+        ptn_value_destroy(&has_children);
+        if (runtime->exceptions->active_exception != NULL || !has) {
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        PtnValue child = ptn_iterator_inner_call_no_args(runtime, data->inner, "getChildren", line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&child);
+            return ptn_null();
+        }
+        PtnValue result = ptn_iterator_iterator_new_for_class(
+            runtime,
+            "RecursiveCachingIterator",
+            1,
+            &child,
+            line
+        );
+        ptn_value_destroy(&child);
+        return result;
+    }
     if (
         ptn_ascii_case_equal(name, "valid") ||
         ptn_ascii_case_equal(name, "key") ||
@@ -216280,6 +216849,39 @@ static void ptn_recursive_iterator_iterator_ensure_initialized(
     }
 }
 
+static PtnValue ptn_recursive_iterator_iterator_get_sub_path_value(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data
+) {
+    if (data == NULL || data->frame_count == 0) {
+        return ptn_string("");
+    }
+    PtnValue root_value = ptn_value_deref(data->frames[0].iterator);
+    PtnValue current_value = ptn_value_deref(data->frames[data->frame_count - 1].iterator);
+    if (root_value.type != PTN_OBJECT ||
+        current_value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(root_value.as.object->class_name, "DirectoryIterator") ||
+        !ptn_declared_class_is_same_or_descendant(current_value.as.object->class_name, "DirectoryIterator") ||
+        root_value.as.object->native_data == NULL ||
+        current_value.as.object->native_data == NULL) {
+        return ptn_string("");
+    }
+    PtnDirectoryIteratorData *root = (PtnDirectoryIteratorData *)root_value.as.object->native_data;
+    PtnDirectoryIteratorData *current = (PtnDirectoryIteratorData *)current_value.as.object->native_data;
+    const char *root_path = root->directory_path == NULL ? "" : root->directory_path;
+    const char *current_path = current->directory_path == NULL ? "" : current->directory_path;
+    size_t root_len = strlen(root_path);
+    const char *relative = current_path;
+    if (root_len > 0 && strncmp(current_path, root_path, root_len) == 0) {
+        relative = current_path + root_len;
+        while (*relative == '/' || *relative == '\\') {
+            relative++;
+        }
+    }
+    (void)runtime;
+    return ptn_owned_string(ptn_duplicate_string(relative));
+}
+
 static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -216288,8 +216890,6 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    (void)line;
     PtnRecursiveIteratorIteratorData *data =
         ptn_recursive_iterator_iterator_data(runtime, receiver);
     if (data == NULL) {
@@ -216325,6 +216925,16 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
             return ptn_int(0);
         }
         return ptn_int((int64_t)data->frame_count - 1);
+    }
+    if (ptn_ascii_case_equal(name, "getSubPath")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_recursive_iterator_iterator_ensure_initialized(runtime, data, line);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_recursive_iterator_iterator_get_sub_path_value(runtime, data);
     }
     if (ptn_ascii_case_equal(name, "getMaxDepth")) {
         ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
@@ -216420,6 +217030,51 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
             }
         }
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "RecursiveIteratorIterator::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t target = ptn_internal_expect_integer_arg(
+            runtime,
+            "RecursiveIteratorIterator::seek",
+            1,
+            "offset",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (target < 0) {
+            ptn_throw_exception(runtime, "OutOfBoundsException", "Seek position must be non-negative");
+            return ptn_null();
+        }
+        ptn_recursive_iterator_iterator_rewind_data(runtime, data, line);
+        int64_t position = 0;
+        while (runtime->exceptions->active_exception == NULL && data->valid && position < target) {
+            ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+            position++;
+        }
+        if (runtime->exceptions->active_exception == NULL && !data->valid) {
+            ptn_throw_exception(runtime, "OutOfBoundsException", "Seek position is out of range");
+        }
+        return ptn_null();
+    }
+    if (ptn_spl_file_info_method_exists(name)) {
+        ptn_recursive_iterator_iterator_ensure_initialized(runtime, data, line);
+        if (runtime->exceptions->active_exception != NULL || data->frame_count == 0) {
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        return ptn_iterator_inner_call(
+            runtime,
+            data->frames[data->frame_count - 1].iterator,
+            name,
+            argc,
+            args,
+            line
+        );
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -218787,6 +219442,18 @@ static int ptn_eval_parse_primary_expression(
     if (ptn_eval_parse_new_expression(runtime, code, len, pos, line, out)) {
         return 1;
     }
+    if (code[cursor] == '!') {
+        cursor++;
+        PtnValue operand = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &operand)) {
+            return 0;
+        }
+        int truthy = ptn_is_truthy(operand);
+        ptn_value_destroy(&operand);
+        *out = ptn_bool(!truthy);
+        *pos = cursor;
+        return 1;
+    }
     if (code[cursor] == '\'' || code[cursor] == '"') {
         return ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
     }
@@ -220073,6 +220740,93 @@ static int ptn_dynamic_execute_try_catch_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_if_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "if")) {
+        return 0;
+    }
+    cursor += strlen("if");
+    if (!ptn_eval_consume_char(code, end, &cursor, '(')) {
+        return 0;
+    }
+    size_t line = ptn_eval_line_for_pos(code, cursor, base_line);
+    PtnValue condition = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, end, &cursor, line, &condition)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, end, &cursor, ')') ||
+        !ptn_eval_consume_char(code, end, &cursor, '{')) {
+        ptn_value_destroy(&condition);
+        return 0;
+    }
+    size_t body_start = cursor;
+    size_t body_end = ptn_eval_find_matching_brace(code, end, body_start - 1);
+    if (body_end >= end) {
+        ptn_value_destroy(&condition);
+        return 0;
+    }
+    int run_then = ptn_is_truthy(condition);
+    ptn_value_destroy(&condition);
+    cursor = body_end + 1;
+
+    size_t else_body_start = 0;
+    size_t else_body_end = 0;
+    size_t after_if = cursor;
+    size_t else_cursor = ptn_eval_skip_ws(code, end, cursor);
+    if (ptn_eval_keyword_at(code, end, else_cursor, "else")) {
+        else_cursor += strlen("else");
+        size_t possible_if = ptn_eval_skip_ws(code, end, else_cursor);
+        if (ptn_eval_keyword_at(code, end, possible_if, "if")) {
+            after_if = else_cursor;
+        } else if (ptn_eval_consume_char(code, end, &else_cursor, '{')) {
+            else_body_start = else_cursor;
+            else_body_end = ptn_eval_find_matching_brace(code, end, else_body_start - 1);
+            if (else_body_end >= end) {
+                return 0;
+            }
+            after_if = else_body_end + 1;
+        }
+    }
+
+    int ok = 1;
+    if (run_then) {
+        size_t nested = body_start;
+        ok = ptn_dynamic_execute_statements_range(
+            runtime,
+            code,
+            len,
+            &nested,
+            body_end,
+            base_line,
+            return_out,
+            returned
+        );
+    } else if (else_body_end > else_body_start) {
+        size_t nested = else_body_start;
+        ok = ptn_dynamic_execute_statements_range(
+            runtime,
+            code,
+            len,
+            &nested,
+            else_body_end,
+            base_line,
+            return_out,
+            returned
+        );
+    }
+    *pos = after_if;
+    return ok;
+}
+
 static int ptn_dynamic_execute_return_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -220174,6 +220928,22 @@ static int ptn_dynamic_execute_statements_range(
         size_t line = ptn_eval_line_for_pos(code, statement_pos, base_line);
         if (ptn_dynamic_execute_return_statement(runtime, code, end, pos, line, return_out, returned)) {
             return 1;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_execute_if_statement(
+                runtime,
+                code,
+                len,
+                pos,
+                end,
+                base_line,
+                return_out,
+                returned
+            )) {
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
         }
         *pos = statement_pos;
         if (ptn_dynamic_execute_try_catch_statement(
@@ -220385,8 +221155,36 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     }
     char *code = NULL;
     size_t code_len = 0;
-    if (!ptn_dynamic_read_file(path, &code, &code_len)) {
-        return 0;
+    unsigned char *filtered_data = NULL;
+    size_t filtered_len = 0;
+    char *filter_detail = NULL;
+    int filter_read = ptn_try_read_php_filter_url_bytes(
+        runtime,
+        path,
+        0,
+        &filtered_data,
+        &filtered_len,
+        &filter_detail,
+        line
+    );
+    free(filter_detail);
+    if (filter_read > 0) {
+        code = malloc(filtered_len + 1);
+        if (code == NULL) {
+            free(filtered_data);
+            ptn_abort_out_of_memory();
+        }
+        if (filtered_len != 0) {
+            memcpy(code, filtered_data, filtered_len);
+        }
+        code[filtered_len] = '\0';
+        code_len = filtered_len;
+        free(filtered_data);
+    } else {
+        free(filtered_data);
+        if (!ptn_dynamic_read_file(path, &code, &code_len)) {
+            return 0;
+        }
     }
 
     const char *saved_source_path = runtime != NULL ? runtime->source_path : NULL;
