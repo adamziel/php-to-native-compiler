@@ -13088,7 +13088,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         return ptn_value_clone(*entry->slot);
     }
     PtnValue resolved = ptn_value_deref(*entry->slot);
-    if (resolved.type == PTN_OBJECT) {
+    if (resolved.type == PTN_OBJECT && !entry->slot_is_container_entry) {
         return ptn_value_clone(resolved);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
@@ -15545,6 +15545,30 @@ static int ptn_unserialize_store_object_property_entry(
     PtnArray *properties = object->properties;
     size_t existing_index = ptn_array_find_key(properties, property_key);
     PtnArrayKey lookup = ptn_array_key_clone(property_key);
+    if (existing_index < properties->len &&
+        properties->entries[existing_index].value.type == PTN_REFERENCE) {
+        PtnReference *reference = properties->entries[existing_index].value.as.reference;
+        ptn_reference_adopt_property_type(reference, metadata);
+        if (!ptn_reference_assign_publish_first(runtime, reference, parsed.value)) {
+            ptn_array_key_free(property_key);
+            ptn_array_key_free(lookup);
+            ptn_value_destroy(&parsed.value);
+            return 0;
+        }
+        ptn_value_destroy(&parsed.value);
+        ptn_array_key_free(property_key);
+        ptn_array_key_free(lookup);
+        ptn_unserialize_update_slot_ex(state, parsed.id, &reference->value, 1, metadata);
+        PtnObjectPropertyMetadata *mutable_metadata =
+            properties->entries[existing_index].key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_mutable_property_metadata(object, properties->entries[existing_index].key.as.string)
+                : NULL;
+        if (mutable_metadata != NULL) {
+            mutable_metadata->is_unset = 0;
+            ptn_object_metadata_remember_value_type(mutable_metadata, properties->entries[existing_index].value);
+        }
+        return 1;
+    }
     if (existing_index < properties->len) {
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
     } else if (metadata == NULL &&

@@ -17486,9 +17486,14 @@ fn compile_unserialize_object_reference_overwrite_preserves_root_to_native_binar
         r#"<?php
 class TestUntyped { public $prop; }
 class TestTyped { public ?object $prop; }
+class TestSelf { public ?TestSelf $prop; }
 
 var_dump(unserialize('O:11:"TestUntyped":2:{s:4:"prop";R:1;s:4:"prop";i:0;}'));
 var_dump(unserialize('O:9:"TestTyped":2:{s:4:"prop";R:1;s:4:"prop";N;}'));
+$pair = unserialize('a:2:{i:0;O:8:"stdClass":0:{}i:1;R:2;}');
+$pair[0] = "changed";
+var_dump($pair);
+var_dump(unserialize('O:8:"TestSelf":2:{s:4:"prop";N;s:4:"prop";O:8:"TestSelf":1:{s:4:"prop";R:2;}}'));
 "#,
     )
     .unwrap();
@@ -17513,6 +17518,19 @@ var_dump(unserialize('O:9:"TestTyped":2:{s:4:"prop";R:1;s:4:"prop";N;}'));
             "object(TestTyped)#1 (1) {\n",
             "  [\"prop\"]=>\n",
             "  NULL\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  &string(7) \"changed\"\n",
+            "  [1]=>\n",
+            "  &string(7) \"changed\"\n",
+            "}\n",
+            "object(TestSelf)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  &object(TestSelf)#2 (1) {\n",
+            "    [\"prop\"]=>\n",
+            "    *RECURSION*\n",
+            "  }\n",
             "}\n",
         )
     );
