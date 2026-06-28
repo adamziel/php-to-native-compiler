@@ -24284,6 +24284,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "get_class"
             | "get_parent_class"
             | "interface_exists"
+            | "iterator_apply"
             | "iterator_to_array"
             | "stat"
             | "isset"

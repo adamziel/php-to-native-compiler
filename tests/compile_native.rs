@@ -2453,6 +2453,125 @@ var_dump(iterator_to_array(new RecursiveIteratorIterator($filter), false));
 }
 
 #[test]
+fn compile_iterator_apply_object_magic_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-iterator-apply-object-magic-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterator-apply-object-magic-callback.php");
+    let output = root.join("iterator-apply-object-magic-callback-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ApplyMagic {
+    public $count = 0;
+    public function __call($name, $params) {
+        echo "Called $name.\n";
+        return ++$this->count < 3;
+    }
+}
+
+$callback = new ApplyMagic();
+var_dump(iterator_apply(new ArrayIterator([1, 2, 3]), [$callback, "foobar"]));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Called foobar.\n",
+            "Called foobar.\n",
+            "Called foobar.\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_iterator_apply"));
+}
+
+#[test]
+fn compile_recursive_iterator_iterator_max_depth_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-max-depth");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-max-depth.php");
+    let output = root.join("recursive-iterator-iterator-max-depth-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data = [1, [21, [221]], 3];
+$it = new RecursiveIteratorIterator(new RecursiveArrayIterator($data));
+var_dump($it->getMaxDepth());
+foreach ($it as $value) {
+    echo $it->getDepth(), ':';
+    var_dump($value);
+}
+$it->setMaxDepth(1);
+var_dump($it->getMaxDepth());
+foreach ($it as $value) {
+    echo $it->getDepth(), ':';
+    var_dump($value);
+}
+$it->setMaxDepth();
+var_dump($it->getMaxDepth());
+$it->setMaxDepth(-1);
+var_dump($it->getMaxDepth());
+$it->setMaxDepth(2);
+try {
+    $it->setMaxDepth(-2);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($it->getMaxDepth());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "0:int(1)\n",
+            "1:int(21)\n",
+            "2:int(221)\n",
+            "0:int(3)\n",
+            "int(1)\n",
+            "0:int(1)\n",
+            "1:int(21)\n",
+            "0:int(3)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "RecursiveIteratorIterator::setMaxDepth(): Argument #1 ($maxDepth) must be greater than or equal to -1\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_call_method"));
+}
+
+#[test]
 fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
     fs::create_dir_all(&root).unwrap();
@@ -39018,6 +39137,43 @@ foreach (['MyAutoLoader::dynaLoad', ['MyAutoLoader', 'dynaLoad']] as $callback) 
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_autoload_rejects_recursive_call_loader_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-reject-recursive-loader");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-autoload-reject-recursive-loader.php");
+    let output = root.join("spl-autoload-reject-recursive-loader-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    spl_autoload_register('spl_autoload_call');
+} catch (ValueError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_autoload_register"));
 }
 
 #[test]
