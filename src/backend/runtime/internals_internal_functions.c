@@ -116022,7 +116022,74 @@ static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnVa
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "DateObjectError", message);
+    const char *path = NULL;
+    size_t line = 0;
+    if (runtime != NULL) {
+        if (
+            runtime->trace_frame != NULL &&
+            runtime->trace_frame->file != NULL &&
+            runtime->trace_frame->line != 0
+        ) {
+            path = runtime->trace_frame->file;
+            line = runtime->trace_frame->line;
+        } else {
+            path = runtime->source_path;
+            line = runtime->call_site_line;
+        }
+    }
+    ptn_throw_exception_at(runtime, "DateObjectError", message, path, line);
+}
+
+static void ptn_date_throw_uninitialized_method_object_error(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *ancestor,
+    const char *method_class,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue object = ptn_value_deref(value);
+    const char *source_class = object.type == PTN_OBJECT && object.as.object != NULL
+        ? object.as.object->class_name
+        : ancestor;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+        source_class,
+        ancestor
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    char frame_name[96];
+    int frame_written = snprintf(
+        frame_name,
+        sizeof(frame_name),
+        "%s->%s",
+        method_class,
+        method_name
+    );
+    if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+        ptn_abort_out_of_memory();
+    }
+    const char *path = runtime == NULL ? NULL : runtime->source_path;
+    size_t throw_line = line != 0 ? line : (runtime == NULL ? 0 : runtime->call_site_line);
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "DateObjectError",
+        ptn_duplicate_string(message),
+        path,
+        throw_line,
+        frame_name,
+        path,
+        throw_line,
+        argc,
+        args
+    );
 }
 
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name) {
@@ -119328,12 +119395,12 @@ static int ptn_datetime_iso_week_to_date(int64_t year, int64_t week, int64_t day
     return 1;
 }
 
-static PtnValue ptn_datetime_unserialize_array(
+static void ptn_datetime_throw_invalid_serialization(
     PtnRuntime *runtime,
-    PtnValue receiver,
-    PtnArray *array,
     const char *serialization_class_name,
-    size_t line
+    PtnArray *array,
+    size_t line,
+    int include_unserialize_trace_frame
 ) {
     char invalid_message[96];
     int invalid_written = snprintf(
@@ -119345,6 +119412,49 @@ static PtnValue ptn_datetime_unserialize_array(
     if (invalid_written < 0 || (size_t)invalid_written >= sizeof(invalid_message)) {
         ptn_abort_out_of_memory();
     }
+    if (include_unserialize_trace_frame) {
+        char frame_name[64];
+        int frame_written = snprintf(
+            frame_name,
+            sizeof(frame_name),
+            "%s->__unserialize",
+            serialization_class_name
+        );
+        if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue frame_arg = ptn_value_borrow(ptn_array(array));
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(invalid_message),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            frame_name,
+            NULL,
+            0,
+            1,
+            &frame_arg
+        );
+        return;
+    }
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        ptn_duplicate_string(invalid_message),
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
+static PtnValue ptn_datetime_unserialize_array(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnArray *array,
+    const char *serialization_class_name,
+    size_t line,
+    int include_unserialize_trace_frame
+) {
     PtnValue date = ptn_null();
     PtnValue timezone_value = ptn_null();
     PtnValue timezone_type_value = ptn_int(3);
@@ -119367,11 +119477,23 @@ static PtnValue ptn_datetime_unserialize_array(
         timezone_type_value = ptn_value_deref(entry->value);
     }
     if (date.type != PTN_STRING || timezone_value.type != PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     if (timezone_type_value.type != PTN_INT) {
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     char *date_string = ptn_duplicate_string_len((const char *)date.as.string.data, date.as.string.len);
@@ -119380,7 +119502,13 @@ static PtnValue ptn_datetime_unserialize_array(
     if (!ptn_datetime_zone_state_is_valid(timezone_type, timezone)) {
         free(date_string);
         free(timezone);
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     char *canonical_timezone = ptn_timezone_canonical_offset_name(timezone);
@@ -119391,7 +119519,13 @@ static PtnValue ptn_datetime_unserialize_array(
         free(date_string);
         free(timezone);
         free(canonical_timezone);
-        ptn_throw_exception(runtime, "Error", invalid_message);
+        ptn_datetime_throw_invalid_serialization(
+            runtime,
+            serialization_class_name,
+            array,
+            line,
+            include_unserialize_trace_frame
+        );
         return ptn_null();
     }
     free(parsed_timezone);
@@ -119435,7 +119569,7 @@ static PtnValue ptn_datetime_from_state(
         return ptn_null();
     }
     PtnValue object = ptn_object_new_shell(runtime, class_name);
-    ptn_datetime_unserialize_array(runtime, object, state.as.array, class_name, line);
+    ptn_datetime_unserialize_array(runtime, object, state.as.array, class_name, line, 0);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&object);
         return ptn_null();
@@ -119489,7 +119623,16 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         }
         PtnDateTimeData *data = ptn_datetime_data_from_value(receiver);
         if (data == NULL) {
-            ptn_date_throw_uninitialized_object_error(runtime, receiver, ptn_date_datetime_ancestor_for_value(receiver));
+            ptn_date_throw_uninitialized_method_object_error(
+                runtime,
+                receiver,
+                ptn_date_datetime_ancestor_for_value(receiver),
+                class_name,
+                "format",
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         PtnStringOperand format = ptn_internal_expect_string_arg(runtime, immutable ? "DateTimeImmutable::format" : "DateTime::format", 1, "format", args[0], line);
@@ -119690,7 +119833,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
             ptn_date_throw_type_error(runtime, immutable ? "DateTimeImmutable::__unserialize" : "DateTime::__unserialize", 1, "data", "array", args[0]);
             return ptn_null();
         }
-        PtnValue result = ptn_datetime_unserialize_array(runtime, receiver, data.as.array, class_name, line);
+        PtnValue result = ptn_datetime_unserialize_array(runtime, receiver, data.as.array, class_name, line, 1);
         if (runtime->exceptions->active_exception == NULL &&
             receiver.type == PTN_OBJECT &&
             !ptn_datetime_unserialize_extra_properties(runtime, receiver.as.object, data.as.array, line)) {
@@ -196941,7 +197084,8 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
             object,
             instance->properties,
             ptn_date_datetime_ancestor_for_value(object),
-            line
+            line,
+            1
         );
         return;
     }
