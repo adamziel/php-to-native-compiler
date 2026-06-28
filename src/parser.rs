@@ -24271,6 +24271,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "numfmt_get_symbol"
             | "numfmt_parse_currency"
             | "numfmt_set_symbol"
+            | "resourcebundle_count"
+            | "resourcebundle_create"
             | "resourcebundle_get"
             | "transliterator_create"
             | "localeconv"

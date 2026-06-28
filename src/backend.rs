@@ -36222,6 +36222,27 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         }
     }
     if class_name.eq_ignore_ascii_case("Spoofchecker") {
+        if name.eq_ignore_ascii_case("SINGLE_SCRIPT_CONFUSABLE") {
+            return Some("1");
+        }
+        if name.eq_ignore_ascii_case("MIXED_SCRIPT_CONFUSABLE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("WHOLE_SCRIPT_CONFUSABLE") {
+            return Some("4");
+        }
+        if name.eq_ignore_ascii_case("ANY_CASE") {
+            return Some("8");
+        }
+        if name.eq_ignore_ascii_case("SINGLE_SCRIPT") {
+            return Some("16");
+        }
+        if name.eq_ignore_ascii_case("INVISIBLE") {
+            return Some("32");
+        }
+        if name.eq_ignore_ascii_case("CHAR_LIMIT") {
+            return Some("64");
+        }
         if name.eq_ignore_ascii_case("IGNORE_SPACE") {
             return Some("1");
         }

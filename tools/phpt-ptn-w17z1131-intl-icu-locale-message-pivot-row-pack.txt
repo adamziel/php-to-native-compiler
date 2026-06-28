@@ -1,0 +1,2 @@
+ext/intl/tests/resourcebundle_individual.phpt
+ext/intl/tests/spoofchecker_005.phpt

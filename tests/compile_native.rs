@@ -50180,6 +50180,53 @@ try {\n\
 }
 
 #[test]
+fn phpc_intl_resourcebundle_spoofchecker_and_ini_exception_edges() {
+    let root = temp_dir("ptn-phpc-intl-resourcebundle-spoofchecker-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-resourcebundle-spoofchecker-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(resourcebundle_create('en_US', __DIR__ . '/missing-bundle'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$spoof = new Spoofchecker();\n\
+var_dump($spoof->areConfusable(\"HELLO\", \"H\\xD0\\x95LLO\"));\n\
+var_dump($spoof->areConfusable(\"hello\", \"h\\xD0\\xB5llo\"));\n\
+$spoof->setChecks(Spoofchecker::MIXED_SCRIPT_CONFUSABLE |\n\
+    Spoofchecker::WHOLE_SCRIPT_CONFUSABLE |\n\
+    Spoofchecker::SINGLE_SCRIPT_CONFUSABLE);\n\
+var_dump($spoof->areConfusable(\"hello, world\", \"he11o, wor1d\"));\n\
+$mf = new MessageFormatter('en_US', '{foo,number,percent}');\n\
+try {\n\
+    var_dump($mf->format(['foo' => 7, -1 => 'bar']));\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("intl.use_exceptions=On")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\n\
+resourcebundle_create(): Cannot load libICU resource bundle: U_MISSING_RESOURCE_ERROR\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+IntlException: MessageFormatter::format(): Found negative or too large array key\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
     let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
     fs::create_dir_all(&root).unwrap();

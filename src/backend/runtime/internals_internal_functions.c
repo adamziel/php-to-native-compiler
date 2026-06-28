@@ -82023,6 +82023,8 @@ typedef struct PtnIcuCollator PtnIcuCollator;
 typedef struct PtnIcuBreakIterator PtnIcuBreakIterator;
 typedef struct PtnIcuEnumeration PtnIcuEnumeration;
 typedef struct PtnIcuResourceBundle PtnIcuResourceBundle;
+typedef struct PtnIcuSpoofChecker PtnIcuSpoofChecker;
+typedef struct PtnIcuUSet PtnIcuUSet;
 typedef uint16_t PtnIcuUChar;
 
 typedef struct {
@@ -82051,6 +82053,8 @@ typedef struct {
     const uint8_t *(*ures_getBinary)(const PtnIcuResourceBundle *, int32_t *, int32_t *);
     int32_t (*ures_getInt)(const PtnIcuResourceBundle *, int32_t *);
     const int32_t *(*ures_getIntVector)(const PtnIcuResourceBundle *, int32_t *, int32_t *);
+    PtnIcuUSet *(*uset_openPatternOptions)(const PtnIcuUChar *, int32_t, uint32_t, int32_t *);
+    void (*uset_close)(PtnIcuUSet *);
     PtnIcuCollator *(*ucol_open)(const char *, int32_t *);
     void (*ucol_close)(PtnIcuCollator *);
     int32_t (*ucol_strcollUTF8)(const PtnIcuCollator *, const char *, int32_t, const char *, int32_t, int32_t *);
@@ -82066,6 +82070,13 @@ typedef struct {
     void (*ubrk_close)(PtnIcuBreakIterator *);
     int32_t (*ubrk_first)(PtnIcuBreakIterator *);
     int32_t (*ubrk_next)(PtnIcuBreakIterator *);
+    PtnIcuSpoofChecker *(*uspoof_open)(int32_t *);
+    void (*uspoof_close)(PtnIcuSpoofChecker *);
+    void (*uspoof_setChecks)(PtnIcuSpoofChecker *, int32_t, int32_t *);
+    void (*uspoof_setAllowedLocales)(PtnIcuSpoofChecker *, const char *, int32_t *);
+    void (*uspoof_setAllowedChars)(PtnIcuSpoofChecker *, const PtnIcuUSet *, int32_t *);
+    int32_t (*uspoof_checkUTF8)(const PtnIcuSpoofChecker *, const char *, int32_t, int32_t *, int32_t *);
+    int32_t (*uspoof_areConfusableUTF8)(const PtnIcuSpoofChecker *, const char *, int32_t, const char *, int32_t, int32_t *);
 } PtnIcuApi;
 
 static PtnIcuApi ptn_icu_api = {0};
@@ -82085,6 +82096,10 @@ static PtnIcuApi ptn_icu_api = {0};
 #define PTN_ICU_URES_INT 7
 #define PTN_ICU_URES_ARRAY 8
 #define PTN_ICU_URES_INT_VECTOR 14
+#define PTN_USET_IGNORE_SPACE 1
+#define PTN_USET_CASE_INSENSITIVE 2
+#define PTN_USET_ADD_CASE_MAPPINGS 4
+#define PTN_USET_SIMPLE_CASE_INSENSITIVE 6
 #define PTN_UCONVERTER_REASON_UNASSIGNED 0
 #define PTN_UCONVERTER_REASON_ILLEGAL 1
 #define PTN_UCONVERTER_REASON_IRREGULAR 2
@@ -82242,6 +82257,8 @@ static PtnIcuApi *ptn_icu_load(void) {
     PTN_ICU_LOAD_UC(ures_getBinary, "ures_getBinary");
     PTN_ICU_LOAD_UC(ures_getInt, "ures_getInt");
     PTN_ICU_LOAD_UC(ures_getIntVector, "ures_getIntVector");
+    PTN_ICU_LOAD_UC(uset_openPatternOptions, "uset_openPatternOptions");
+    PTN_ICU_LOAD_UC(uset_close, "uset_close");
     if (ptn_icu_api.i18n_handle != NULL) {
         PTN_ICU_LOAD_I18N(ucol_open, "ucol_open");
         PTN_ICU_LOAD_I18N(ucol_close, "ucol_close");
@@ -82256,6 +82273,13 @@ static PtnIcuApi *ptn_icu_load(void) {
         PTN_ICU_LOAD_I18N(ubrk_close, "ubrk_close");
         PTN_ICU_LOAD_I18N(ubrk_first, "ubrk_first");
         PTN_ICU_LOAD_I18N(ubrk_next, "ubrk_next");
+        PTN_ICU_LOAD_I18N(uspoof_open, "uspoof_open");
+        PTN_ICU_LOAD_I18N(uspoof_close, "uspoof_close");
+        PTN_ICU_LOAD_I18N(uspoof_setChecks, "uspoof_setChecks");
+        PTN_ICU_LOAD_I18N(uspoof_setAllowedLocales, "uspoof_setAllowedLocales");
+        PTN_ICU_LOAD_I18N(uspoof_setAllowedChars, "uspoof_setAllowedChars");
+        PTN_ICU_LOAD_I18N(uspoof_checkUTF8, "uspoof_checkUTF8");
+        PTN_ICU_LOAD_I18N(uspoof_areConfusableUTF8, "uspoof_areConfusableUTF8");
     }
 #undef PTN_ICU_LOAD_UC
 #undef PTN_ICU_LOAD_I18N
@@ -82790,6 +82814,33 @@ static PtnValue ptn_intl_resourcebundle_get(
     ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
     ptn_array_key_free(key);
     return ptn_value_clone_deref(array->entries[found].value);
+}
+
+static PtnValue ptn_internal_resourcebundle_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue bundle = ptn_intl_resourcebundle_new(runtime, "ResourceBundle", argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&bundle);
+        return ptn_null();
+    }
+    PtnIntlResourceBundleData *data = ptn_intl_resourcebundle_data(bundle);
+    if (data == NULL || data->bundle == NULL) {
+        ptn_value_destroy(&bundle);
+        ptn_intl_set_error_message(runtime, "resourcebundle_create(): Cannot load libICU resource bundle: U_MISSING_RESOURCE_ERROR");
+        return ptn_null();
+    }
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return bundle;
+}
+
+static PtnValue ptn_internal_resourcebundle_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    if (argc < 1) {
+        return ptn_int(0);
+    }
+    PtnIntlResourceBundleData *data = ptn_intl_resourcebundle_data(args[0]);
+    PtnValue entries = data == NULL ? ptn_null() : ptn_value_deref(data->entries);
+    return entries.type == PTN_ARRAY ? ptn_int((int64_t)entries.as.array->len) : ptn_int(0);
 }
 
 static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
@@ -83502,9 +83553,8 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
 }
 
 typedef struct {
-    char *allowed_pattern;
-    char *allowed_locales;
-    int case_insensitive;
+    PtnIcuSpoofChecker *checker;
+    int64_t checks;
 } PtnIntlSpoofCheckerData;
 
 static void ptn_intl_spoofchecker_data_free(void *ptr) {
@@ -83512,8 +83562,10 @@ static void ptn_intl_spoofchecker_data_free(void *ptr) {
     if (data == NULL) {
         return;
     }
-    free(data->allowed_pattern);
-    free(data->allowed_locales);
+    PtnIcuApi *api = ptn_icu_load();
+    if (api != NULL && api->uspoof_close != NULL && data->checker != NULL) {
+        api->uspoof_close(data->checker);
+    }
     free(data);
 }
 
@@ -83522,9 +83574,19 @@ static PtnValue ptn_intl_spoofchecker_new(PtnRuntime *runtime, const char *class
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    data->allowed_pattern = NULL;
-    data->allowed_locales = NULL;
-    data->case_insensitive = 0;
+    data->checker = NULL;
+    data->checks = 0;
+    PtnIcuApi *api = ptn_icu_load();
+    if (api != NULL && api->uspoof_open != NULL) {
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        data->checker = api->uspoof_open(&status);
+        if (data->checker != NULL && ptn_icu_failure(status)) {
+            if (api->uspoof_close != NULL) {
+                api->uspoof_close(data->checker);
+            }
+            data->checker = NULL;
+        }
+    }
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "Spoofchecker" : class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_intl_spoofchecker_data_free;
@@ -83539,85 +83601,55 @@ static PtnIntlSpoofCheckerData *ptn_intl_spoofchecker_data(PtnValue receiver) {
     return (PtnIntlSpoofCheckerData *)resolved.as.object->native_data;
 }
 
-static int ptn_intl_spoofchecker_pattern_is_valid(PtnStringOperand pattern) {
-    return pattern.len >= 2 && pattern.data[0] == '[' && pattern.data[pattern.len - 1] == ']';
+static int ptn_intl_spoofchecker_pattern_options_are_valid(int64_t options) {
+    return options == 0 ||
+        options == PTN_USET_IGNORE_SPACE ||
+        options == (PTN_USET_IGNORE_SPACE | PTN_USET_CASE_INSENSITIVE) ||
+        options == (PTN_USET_IGNORE_SPACE | PTN_USET_ADD_CASE_MAPPINGS) ||
+        options == (PTN_USET_IGNORE_SPACE | PTN_USET_SIMPLE_CASE_INSENSITIVE);
 }
 
-static int ptn_intl_spoofchecker_byte_allowed(PtnIntlSpoofCheckerData *data, unsigned char byte) {
-    if (data == NULL || data->allowed_pattern == NULL) {
-        return 1;
+static PtnIcuUSet *ptn_intl_spoofchecker_open_allowed_chars_set(
+    PtnIcuApi *api,
+    PtnStringOperand pattern,
+    int64_t options,
+    int32_t *status_out
+) {
+    if (status_out != NULL) {
+        *status_out = PTN_ICU_ZERO_ERROR;
     }
-    if (data->case_insensitive) {
-        byte = (unsigned char)tolower(byte);
+    if (api == NULL ||
+        api->u_strFromUTF8 == NULL ||
+        api->uset_openPatternOptions == NULL ||
+        pattern.len >= (size_t)INT32_MAX ||
+        options < 0 ||
+        options > UINT32_MAX) {
+        if (status_out != NULL) {
+            *status_out = 1;
+        }
+        return NULL;
     }
-    const char *pattern = data->allowed_pattern;
-    size_t len = strlen(pattern);
-    if (len < 2) {
-        return 1;
+    PtnIcuUChar *utf16 = malloc(sizeof(PtnIcuUChar) * (pattern.len + 1));
+    if (utf16 == NULL) {
+        ptn_abort_out_of_memory();
     }
-    for (size_t i = 1; i + 1 < len; i++) {
-        unsigned char start = (unsigned char)pattern[i];
-        if (data->case_insensitive) {
-            start = (unsigned char)tolower(start);
+    int32_t utf16_len = 0;
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    api->u_strFromUTF8(utf16, (int32_t)pattern.len + 1, &utf16_len, pattern.data, (int32_t)pattern.len, &status);
+    if (ptn_icu_failure(status)) {
+        free(utf16);
+        if (status_out != NULL) {
+            *status_out = status;
         }
-        if (i + 2 < len - 1 && pattern[i + 1] == '-') {
-            unsigned char end = (unsigned char)pattern[i + 2];
-            if (data->case_insensitive) {
-                end = (unsigned char)tolower(end);
-            }
-            if (start <= byte && byte <= end) {
-                return 1;
-            }
-            i += 2;
-            continue;
-        }
-        if (byte == start) {
-            return 1;
-        }
+        return NULL;
     }
-    return 0;
-}
-
-static int ptn_intl_spoofchecker_contains_hangul(PtnStringOperand text) {
-    for (size_t i = 0; i + 2 < text.len; i++) {
-        unsigned char first = (unsigned char)text.data[i];
-        unsigned char second = (unsigned char)text.data[i + 1];
-        unsigned char third = (unsigned char)text.data[i + 2];
-        if (first >= 0xE1 && first <= 0xED &&
-            second >= 0x80 && second <= 0xBF &&
-            third >= 0x80 && third <= 0xBF) {
-            return 1;
-        }
+    status = PTN_ICU_ZERO_ERROR;
+    PtnIcuUSet *set = api->uset_openPatternOptions(utf16, utf16_len, (uint32_t)options, &status);
+    free(utf16);
+    if (status_out != NULL) {
+        *status_out = status;
     }
-    return 0;
-}
-
-static int ptn_intl_spoofchecker_locales_allow(PtnIntlSpoofCheckerData *data, const char *locale_prefix) {
-    if (data == NULL || data->allowed_locales == NULL || data->allowed_locales[0] == '\0') {
-        return 1;
-    }
-    size_t prefix_len = strlen(locale_prefix);
-    const char *cursor = data->allowed_locales;
-    while (*cursor != '\0') {
-        while (*cursor != '\0' && (isspace((unsigned char)*cursor) || *cursor == ',' || *cursor == ';')) {
-            cursor++;
-        }
-        const char *start = cursor;
-        while (*cursor != '\0' && *cursor != ',' && *cursor != ';') {
-            cursor++;
-        }
-        const char *end = cursor;
-        while (end > start && isspace((unsigned char)end[-1])) {
-            end--;
-        }
-        if ((size_t)(end - start) >= prefix_len &&
-            ptn_ascii_case_equal_n(start, locale_prefix, prefix_len) &&
-            (start[prefix_len] == '\0' || start[prefix_len] == '_' || start[prefix_len] == '-' ||
-             start + prefix_len == end)) {
-            return 1;
-        }
-    }
-    return 0;
+    return set;
 }
 
 static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
@@ -83644,7 +83676,7 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
             return ptn_null();
         }
         int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
-        if (!(options == 0 || options == 1 || options == 3 || options == 5 || options == 7)) {
+        if (!ptn_intl_spoofchecker_pattern_options_are_valid(options)) {
             ptn_string_operand_free(pattern);
             ptn_throw_exception(
                 runtime,
@@ -83653,7 +83685,13 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
             );
             return ptn_null();
         }
-        if (!ptn_intl_spoofchecker_pattern_is_valid(pattern)) {
+        PtnIcuApi *api = ptn_icu_load();
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        PtnIcuUSet *set = ptn_intl_spoofchecker_open_allowed_chars_set(api, pattern, options, &status);
+        if (set == NULL || ptn_icu_failure(status)) {
+            if (set != NULL && api != NULL && api->uset_close != NULL) {
+                api->uset_close(set);
+            }
             ptn_string_operand_free(pattern);
             ptn_throw_exception(
                 runtime,
@@ -83662,10 +83700,18 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
             );
             return ptn_null();
         }
-        free(data->allowed_pattern);
-        data->allowed_pattern = ptn_duplicate_string_len(pattern.data, pattern.len);
-        data->case_insensitive = options != 0 && options != 1;
+        if (data->checker != NULL && api != NULL && api->uspoof_setAllowedChars != NULL) {
+            status = PTN_ICU_ZERO_ERROR;
+            api->uspoof_setAllowedChars(data->checker, set, &status);
+        }
+        if (api != NULL && api->uset_close != NULL) {
+            api->uset_close(set);
+        }
         ptn_string_operand_free(pattern);
+        if (ptn_icu_failure(status)) {
+            ptn_throw_exception(runtime, "IntlException", "Spoofchecker::setAllowedChars(): unable to set allowed chars");
+            return ptn_null();
+        }
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "setAllowedLocales")) {
@@ -83679,16 +83725,40 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
             ptn_string_operand_free(locales);
             return ptn_null();
         }
-        free(data->allowed_locales);
-        data->allowed_locales = ptn_duplicate_string_len(locales.data, locales.len);
+        PtnIcuApi *api = ptn_icu_load();
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        if (data->checker != NULL && api != NULL && api->uspoof_setAllowedLocales != NULL) {
+            char *locales_copy = ptn_duplicate_string_len(locales.data, locales.len);
+            api->uspoof_setAllowedLocales(data->checker, locales_copy, &status);
+            free(locales_copy);
+        }
         ptn_string_operand_free(locales);
+        if (ptn_icu_failure(status)) {
+            ptn_throw_exception(runtime, "IntlException", "Spoofchecker::setAllowedLocales(): unable to set allowed locales");
+            return ptn_null();
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "setChecks")) {
+        PtnIntlSpoofCheckerData *data = ptn_intl_spoofchecker_data(receiver);
+        if (data == NULL) {
+            return ptn_bool(0);
+        }
+        data->checks = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
+        PtnIcuApi *api = ptn_icu_load();
+        if (data->checker != NULL && api != NULL && api->uspoof_setChecks != NULL) {
+            int32_t status = PTN_ICU_ZERO_ERROR;
+            api->uspoof_setChecks(data->checker, (int32_t)data->checks, &status);
+            if (ptn_icu_failure(status)) {
+                ptn_throw_exception(runtime, "IntlException", "Spoofchecker::setChecks(): unable to set checks");
+                return ptn_null();
+            }
+        }
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "isSuspicious")) {
-        if (!ptn_intl_assign_reference_string(runtime, args, argc, 1, "0")) {
-            return ptn_null();
-        }
         PtnIntlSpoofCheckerData *data = ptn_intl_spoofchecker_data(receiver);
+        int32_t bitmask = 0;
         if (argc >= 1) {
             PtnStringOperand text =
                 ptn_internal_expect_string_arg(runtime, "Spoofchecker::isSuspicious", 1, "string", args[0], line);
@@ -83696,26 +83766,74 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
                 ptn_string_operand_free(text);
                 return ptn_null();
             }
-            for (size_t i = 0; i < text.len; i++) {
-                if (!ptn_intl_spoofchecker_byte_allowed(data, (unsigned char)text.data[i])) {
-                    ptn_string_operand_free(text);
-                    return ptn_bool(1);
+            PtnIcuApi *api = ptn_icu_load();
+            if (data != NULL &&
+                data->checker != NULL &&
+                api != NULL &&
+                api->uspoof_checkUTF8 != NULL &&
+                text.len <= (size_t)INT32_MAX) {
+                int32_t status = PTN_ICU_ZERO_ERROR;
+                int32_t position = 0;
+                bitmask = api->uspoof_checkUTF8(
+                    data->checker,
+                    text.data,
+                    (int32_t)text.len,
+                    &position,
+                    &status
+                );
+                if (ptn_icu_failure(status)) {
+                    bitmask = 0;
                 }
-            }
-            if (ptn_intl_spoofchecker_contains_hangul(text) &&
-                !ptn_intl_spoofchecker_locales_allow(data, "ko")) {
-                ptn_string_operand_free(text);
-                return ptn_bool(1);
             }
             ptn_string_operand_free(text);
         }
-        return ptn_bool(0);
-    }
-    if (ptn_ascii_case_equal(name, "areConfusable")) {
-        if (!ptn_intl_assign_reference_string(runtime, args, argc, 2, "1")) {
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 1, ptn_int(bitmask))) {
             return ptn_null();
         }
-        return ptn_bool(0);
+        return ptn_bool(bitmask != 0);
+    }
+    if (ptn_ascii_case_equal(name, "areConfusable")) {
+        PtnStringOperand first =
+            ptn_internal_expect_string_arg(runtime, "Spoofchecker::areConfusable", 1, "string1", argc >= 1 ? args[0] : ptn_null(), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(first);
+            return ptn_null();
+        }
+        PtnStringOperand second =
+            ptn_internal_expect_string_arg(runtime, "Spoofchecker::areConfusable", 2, "string2", argc >= 2 ? args[1] : ptn_null(), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(first);
+            ptn_string_operand_free(second);
+            return ptn_null();
+        }
+        int32_t bitmask = 0;
+        PtnIntlSpoofCheckerData *data = ptn_intl_spoofchecker_data(receiver);
+        PtnIcuApi *api = ptn_icu_load();
+        if (data != NULL &&
+            data->checker != NULL &&
+            api != NULL &&
+            api->uspoof_areConfusableUTF8 != NULL &&
+            first.len <= (size_t)INT32_MAX &&
+            second.len <= (size_t)INT32_MAX) {
+            int32_t status = PTN_ICU_ZERO_ERROR;
+            bitmask = api->uspoof_areConfusableUTF8(
+                data->checker,
+                first.data,
+                (int32_t)first.len,
+                second.data,
+                (int32_t)second.len,
+                &status
+            );
+            if (ptn_icu_failure(status)) {
+                bitmask = 0;
+            }
+        }
+        ptn_string_operand_free(first);
+        ptn_string_operand_free(second);
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 2, ptn_int(bitmask))) {
+            return ptn_null();
+        }
+        return ptn_bool(bitmask != 0);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -177427,7 +177545,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },
         { "SplFileObject::fputcsv", 1, 5, ptn_internal_method_metadata_stub },
         { "SplFileObject::setCsvControl", 0, 3, ptn_internal_method_metadata_stub },
-        { "resourcebundle_get", 2, 2, ptn_internal_resourcebundle_get },
+        { "resourcebundle_count", 1, 1, ptn_internal_resourcebundle_count },
+        { "resourcebundle_create", 2, 3, ptn_internal_resourcebundle_create },
+        { "resourcebundle_get", 2, 3, ptn_internal_resourcebundle_get },
         { "reset", 1, 1, ptn_internal_reset },
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "restore_exception_handler", 0, 0, ptn_internal_restore_exception_handler },
@@ -181716,6 +181836,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "isSuspicious")
             || ptn_ascii_case_equal(method_name, "setAllowedChars")
             || ptn_ascii_case_equal(method_name, "setAllowedLocales")
+            || ptn_ascii_case_equal(method_name, "setChecks")
             || ptn_ascii_case_equal(method_name, "areConfusable");
     }
     if (ptn_internal_class_name_is_uconverter(class_name)) {
@@ -183066,6 +183187,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__construct",
             "isSuspicious",
             "areConfusable",
+            "setAllowedChars",
+            "setAllowedLocales",
+            "setChecks",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
