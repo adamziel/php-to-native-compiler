@@ -55925,6 +55925,83 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_php_stub_phar_include_path_entries_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_manifest_entry(manifest: &mut Vec<u8>, name: &[u8], content: &[u8]) {
+        push_u32(manifest, name.len() as u32);
+        manifest.extend_from_slice(name);
+        push_u32(manifest, content.len() as u32);
+        push_u32(manifest, 0);
+        push_u32(manifest, content.len() as u32);
+        push_u32(manifest, 0);
+        push_u32(manifest, 0);
+        push_u32(manifest, 0);
+    }
+
+    let root = temp_dir("ptn-native-php-stub-phar-include-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("include-path-archive.php");
+    let output = root.join("include-path-archive-bin");
+
+    let entry = b"<?php include \"file1.php\";";
+    let root_file = b"<?php echo \"file1.php\\n\";";
+    let nested_file = b"<?php echo \"test/file1.php\\n\";";
+
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 3);
+    push_u16(&mut manifest, 0x0011);
+    push_u32(&mut manifest, 0x00010000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_manifest_entry(&mut manifest, b"hello/test.php", entry);
+    push_manifest_entry(&mut manifest, b"file1.php", root_file);
+    push_manifest_entry(&mut manifest, b"test/file1.php", nested_file);
+
+    let mut source = Vec::new();
+    source.extend_from_slice(
+        b"<?php\n\
+set_include_path('phar://' . __FILE__);\n\
+include 'phar://' . __FILE__ . '/hello/test.php';\n\
+set_include_path('phar://' . __FILE__ . '/test');\n\
+include 'phar://' . __FILE__ . '/hello/test.php';\n\
+echo \"ok\\n\";\n\
+__HALT_COMPILER(); ?>\r\n",
+    );
+    push_u32(&mut source, manifest.len() as u32);
+    source.extend_from_slice(&manifest);
+    source.extend_from_slice(entry);
+    source.extend_from_slice(root_file);
+    source.extend_from_slice(nested_file);
+    fs::write(&input, source).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "file1.php\ntest/file1.php\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_file_looks_like_archive"));
+    assert!(c_source.contains("ptn_resolve_existing_include_path"));
+}
+
+#[test]
 fn compile_phar_manifest_corruption_diagnostics_to_native_binary() {
     fn push_u16(bytes: &mut Vec<u8>, value: u16) {
         bytes.extend_from_slice(&value.to_le_bytes());
