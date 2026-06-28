@@ -33429,6 +33429,64 @@ dump_order();\n",
 }
 
 #[test]
+fn compile_mbstring_conversion_case_and_regex_residual_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-conversion-case-regex-residual");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-conversion-case-regex-residual.php");
+    let output = root.join("mb-conversion-case-regex-residual-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+class Enc {\n\
+    public function __toString() { return 'UTF-8'; }\n\
+}\n\
+$from_encoding = [new Enc];\n\
+echo bin2hex(mb_convert_encoding(\"\\xc2\\xa3\", 'UTF-16BE', $from_encoding)), \"\\n\";\n\
+var_dump($from_encoding[0] instanceof Enc);\n\
+try {\n\
+    mb_convert_case('x', 999, 'UTF-8');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_UPPER, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_UPPER_SIMPLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_FOLD, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"\\xce\\x9f\\xce\\xa3\\xce\\x9f\\xce\\xa3\", MB_CASE_LOWER, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"\\xc5\\x89\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+mb_regex_encoding('UTF-8');\n\
+var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "00a3\n",
+            "bool(true)\n",
+            "mb_convert_case(): Argument #2 ($mode) must be one of the MB_CASE_* constants\n",
+            "53545241535345\n",
+            "53545241c39f45\n",
+            "73747261737365\n",
+            "cebfcf83cebfcf82\n",
+            "cabc4e\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_mbstring_residual_state_and_diagnostics_edges() {
     let root = temp_dir("ptn-phpc-mbstring-residual-edges");
     fs::create_dir_all(&root).unwrap();

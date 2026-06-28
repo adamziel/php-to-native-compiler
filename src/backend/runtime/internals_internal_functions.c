@@ -92226,7 +92226,6 @@ static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mod
     size_t ignorable_since_cased = 0;
     while (offset < input_len) {
         uint32_t cp = 0;
-        size_t cp_start = offset;
         ptn_mb_utf8_decode_one(input, input_len, &offset, &cp);
         uint32_t original_cp = cp;
         int final_sigma_context =
@@ -92274,7 +92273,6 @@ update_case_state:
             previous_cased = 0;
             ignorable_since_cased = 0;
         }
-        (void)cp_start;
     }
     *output_len = output.len;
     return output.data;
