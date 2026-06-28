@@ -156711,6 +156711,7 @@ typedef struct {
     int document_finished;
     int dtd_subset_open;
     int context_returns_to_dtd;
+    int pi_just_closed;
 } PtnXmlWriterData;
 
 #define PTN_XMLWRITER_MAXPATHLEN 4096
@@ -156986,20 +156987,36 @@ static void ptn_xmlwriter_prepare_child(PtnXmlWriterData *data, int block_child)
             ptn_string_buffer_append_char(&data->buffer, '\n');
             ptn_xmlwriter_append_indent(data, data->depth);
         }
-    } else if (
-        block_child &&
-        data->indent &&
-        parent->has_children &&
-        !parent->has_text &&
-        !ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')
-    ) {
-        ptn_string_buffer_append_char(&data->buffer, '\n');
+    } else if (block_child && data->indent && parent->has_children && !parent->has_text) {
+        if (!ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')) {
+            ptn_string_buffer_append_char(&data->buffer, '\n');
+        }
         ptn_xmlwriter_append_indent(data, data->depth);
     }
     parent->has_children = 1;
     if (!block_child) {
         parent->has_text = 1;
     }
+    data->pi_just_closed = 0;
+}
+
+static void ptn_xmlwriter_prepare_pi_child(PtnXmlWriterData *data) {
+    PtnXmlWriterFrame *parent = ptn_xmlwriter_top_frame(data);
+    if (parent == NULL) {
+        return;
+    }
+    if (parent->open_start) {
+        ptn_xmlwriter_append_pending_namespace(data, parent);
+        ptn_string_buffer_append_char(&data->buffer, '>');
+        parent->open_start = 0;
+    } else if (data->indent && parent->has_children && !parent->has_text) {
+        if (!ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')) {
+            ptn_string_buffer_append_char(&data->buffer, '\n');
+        }
+        ptn_xmlwriter_append_indent(data, data->depth);
+    }
+    parent->has_children = 1;
+    data->pi_just_closed = 0;
 }
 
 static void ptn_xmlwriter_push_frame(
@@ -157056,6 +157073,7 @@ static PtnXmlWriterData *ptn_xmlwriter_data_new(void) {
     data->document_finished = 0;
     data->dtd_subset_open = 0;
     data->context_returns_to_dtd = 0;
+    data->pi_just_closed = 0;
     return data;
 }
 
@@ -157085,6 +157103,10 @@ static void ptn_xmlwriter_close_context(PtnXmlWriterData *data) {
             break;
         case PTN_XMLWRITER_CONTEXT_PI:
             ptn_string_buffer_append(&data->buffer, "?>");
+            if (data->indent) {
+                ptn_string_buffer_append_char(&data->buffer, '\n');
+                data->pi_just_closed = 1;
+            }
             break;
         case PTN_XMLWRITER_CONTEXT_CDATA:
             ptn_string_buffer_append(&data->buffer, "]]>");
@@ -157159,12 +157181,19 @@ static void ptn_xmlwriter_end_element_data(PtnXmlWriterData *data, int full_end)
         ptn_string_buffer_append_char(&data->buffer, '>');
         frame->open_start = 0;
     } else if (data->indent && frame->has_children && !frame->has_text) {
-        ptn_string_buffer_append_char(&data->buffer, '\n');
-        ptn_xmlwriter_append_indent(data, data->depth - 1);
+        int suppress_indent_after_pi =
+            data->pi_just_closed && ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n');
+        if (!suppress_indent_after_pi && !ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')) {
+            ptn_string_buffer_append_char(&data->buffer, '\n');
+        }
+        if (!suppress_indent_after_pi) {
+            ptn_xmlwriter_append_indent(data, data->depth - 1);
+        }
     }
     ptn_string_buffer_append(&data->buffer, "</");
     ptn_string_buffer_append(&data->buffer, frame->name);
     ptn_string_buffer_append_char(&data->buffer, '>');
+    data->pi_just_closed = 0;
     ptn_xmlwriter_pop_frame(data);
     ptn_xmlwriter_append_document_trailing_newline(data);
 }
@@ -157898,7 +157927,7 @@ static PtnValue ptn_xmlwriter_dispatch(
             return ptn_null();
         }
         ptn_xmlwriter_close_context(data);
-        ptn_xmlwriter_prepare_child(data, 0);
+        ptn_xmlwriter_prepare_pi_child(data);
         ptn_string_buffer_append(&data->buffer, "<?");
         ptn_string_buffer_append_len(&data->buffer, target.data, target.len);
         data->context_kind = PTN_XMLWRITER_CONTEXT_PI;

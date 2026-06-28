@@ -49749,6 +49749,66 @@ echo xmlwriter_flush($xw);
 }
 
 #[test]
+fn compile_xmlwriter_indented_processing_instruction_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlwriter-indented-pi");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlwriter-indented-pi.php");
+    let output = root.join("xmlwriter-indented-pi-bin");
+    fs::write(
+        &input,
+        "<?php
+$xw = new XMLWriter();
+$xw->openMemory();
+$xw->setIndent(true);
+$xw->startDocument('1.0', 'UTF-8');
+$xw->startElement('root');
+$xw->writeAttribute('id', 'elem1');
+$xw->startElement('elem1');
+$xw->writeAttribute('attr1', 'first');
+$xw->writeComment('start PI');
+$xw->startElement('pi');
+$xw->writePi('php', 'echo \"hello world\"; ');
+$xw->endElement();
+$xw->startElement('child');
+$xw->writePi('php', 'echo 1; ');
+$xw->startElement('leaf');
+$xw->endElement();
+$xw->endElement();
+$xw->endElement();
+$xw->endElement();
+$xw->endDocument();
+echo $xw->flush(true);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<root id=\"elem1\">\n",
+            " <elem1 attr1=\"first\">\n",
+            "  <!--start PI-->\n",
+            "  <pi><?php echo \"hello world\"; ?>\n",
+            "</pi>\n",
+            "  <child><?php echo 1; ?>\n",
+            "   <leaf/>\n",
+            "  </child>\n",
+            " </elem1>\n",
+            "</root>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xmlwriter_prepare_pi_child"));
+}
+
+#[test]
 fn compile_xmlwriter_shift_jis_output_to_native_binary() {
     let root = temp_dir("ptn-native-xmlwriter-shift-jis-output");
     fs::create_dir_all(&root).unwrap();
