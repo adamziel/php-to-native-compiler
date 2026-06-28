@@ -129441,7 +129441,10 @@ static int ptn_dom_selector_is_empty(PtnXmlNode *node) {
 }
 
 static int ptn_dom_selector_is_checked(PtnXmlNode *node) {
-    if (!ptn_dom_selector_node_is_html_element(node)) {
+    if (node == NULL ||
+        node->type != PTN_XML_NODE_ELEMENT ||
+        node->namespace_uri == NULL ||
+        strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) != 0) {
         return 0;
     }
     const char *local = ptn_xml_local_name(node->name == NULL ? "" : node->name);
@@ -129456,7 +129459,10 @@ static int ptn_dom_selector_is_checked(PtnXmlNode *node) {
 }
 
 static int ptn_dom_selector_is_placeholder_shown(PtnXmlNode *node) {
-    if (!ptn_dom_selector_node_is_html_element(node) ||
+    if (node == NULL ||
+        node->type != PTN_XML_NODE_ELEMENT ||
+        node->namespace_uri == NULL ||
+        strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) != 0 ||
         ptn_xml_element_attribute_value(node, "placeholder") == NULL) {
         return 0;
     }

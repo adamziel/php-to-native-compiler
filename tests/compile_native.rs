@@ -51402,10 +51402,11 @@ fn compile_modern_dom_selector_namespace_and_state_pseudos_to_native_binary() {
         &input,
         r#"<?php
 function report($dom, string $selector) {
+    echo $selector, '=';
     try {
-        echo $selector, '=', count($dom->querySelectorAll($selector)), "\n";
+        echo count($dom->querySelectorAll($selector)), "\n";
     } catch (DOMException $e) {
-        echo $selector, '=ERR:', $e->getCode(), ':', $e->getMessage(), "\n";
+        echo 'ERR:', $e->getCode(), ':', $e->getMessage(), "\n";
     }
 }
 
