@@ -58515,6 +58515,22 @@ static int ptn_existing_file_or_current_source_snapshot(PtnRuntime *runtime, con
         ptn_current_source_snapshot_matches(runtime, path);
 }
 
+static const char *ptn_include_path_segment_end(const char *segment, char separator) {
+    for (const char *cursor = segment; cursor != NULL && *cursor != '\0'; cursor++) {
+        if (*cursor != separator) {
+            continue;
+        }
+#if !defined(_WIN32)
+        if (separator == ':' && cursor[1] == '/' && cursor[2] == '/') {
+            cursor += 2;
+            continue;
+        }
+#endif
+        return cursor;
+    }
+    return NULL;
+}
+
 static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *path) {
     if (path == NULL ||
         path[0] == '\0' ||
@@ -58532,7 +58548,7 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
 #endif
     const char *segment = include_path;
     while (segment != NULL && *segment != '\0') {
-        const char *end = strchr(segment, separator);
+        const char *end = ptn_include_path_segment_end(segment, separator);
         size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
         char *directory = ptn_duplicate_string_len(segment, segment_len);
         char *candidate = ptn_path_join_alloc(directory, path);
@@ -62873,6 +62889,9 @@ static void ptn_emit_stat_warning(
     if (written < 0 || written != needed) {
         free(message);
         ptn_abort_out_of_memory();
+    }
+    if (runtime != NULL && ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        ptn_output_write_cstr(runtime, "\n");
     }
     ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
     free(message);
@@ -155422,6 +155441,7 @@ static mode_t ptn_phar_archive_entry_mode(PtnPharArchiveEntry *entry) {
 
 static void ptn_phar_stat_fill_entry(PtnPharArchiveEntry *entry, struct stat *info) {
     memset(info, 0, sizeof(*info));
+    info->st_dev = 12;
     info->st_mode = ptn_phar_archive_entry_mode(entry);
     info->st_nlink = 1;
     if (entry != NULL) {
@@ -155459,6 +155479,7 @@ static int ptn_phar_uri_stat(const char *uri, struct stat *info) {
         }
         if (name[entry_len] == '/' || name[entry_len] == '\\') {
             memset(info, 0, sizeof(*info));
+            info->st_dev = 12;
 #if defined(S_IFDIR)
             info->st_mode = S_IFDIR | 0777;
 #else

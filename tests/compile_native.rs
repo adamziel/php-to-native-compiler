@@ -56133,6 +56133,59 @@ var_dump(method_exists(Phar::class, 'interceptFileFuncs'));
 }
 
 #[test]
+fn compile_phar_stub_include_path_stat_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-stub-include-path-stat");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-stub-include-path-stat.php");
+    let output = root.join("phar-stub-include-path-stat-bin");
+    fs::write(
+        &input,
+        r#"<?php
+umask(0);
+Phar::interceptFileFuncs();
+$fname = __DIR__ . '/stat.phar.php';
+$phar = new Phar($fname);
+$phar['my/index.php'] = '<?php
+echo "stat\n";
+$stat = stat("dir/file1.txt");
+var_dump($stat["dev"]);
+var_dump($stat["size"]);
+var_dump(file_exists("dir/file1.txt"));
+var_dump(is_file("dir/file1.txt"));
+var_dump(is_writable("dir/file1.txt"));
+var_dump(is_writeable("dir/file1.txt"));
+?>';
+$phar['dir/file1.txt'] = 'hi';
+$phar->setStub('<?php
+set_include_path("phar://" . __FILE__ . "/dir" . PATH_SEPARATOR . "phar://" . __FILE__);
+include "my/index.php";
+__HALT_COMPILER();');
+include $fname;
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stat\nint(12)\nint(2)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_path_segment_end"));
+    assert!(c_source.contains("ptn_phar_stat_fill_entry"));
+}
+
+#[test]
 fn compile_phar_data_dispatch_and_entry_validation_to_native_binary() {
     let root = temp_dir("ptn-native-phar-data-entry-validation");
     fs::create_dir_all(&root).unwrap();
