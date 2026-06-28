@@ -15390,6 +15390,114 @@ var_dump($contents);\n",
 }
 
 #[test]
+fn compile_standard_output_handlers_and_status_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-output-handlers-status");
+    fs::create_dir_all(&root).unwrap();
+
+    let iconv_input = root.join("ob-iconv-handler.php");
+    let iconv_output = root.join("ob-iconv-handler-bin");
+    fs::write(
+        &iconv_input,
+        "<?php\n\
+var_dump($args);\n\
+ob_start('ob_iconv_handler');\n\
+ob_clean();\n\
+var_dump(ob_get_contents());\n",
+    )
+    .unwrap();
+
+    let iconv_compiled =
+        compile_file(&iconv_input, &iconv_output, CompileOptions { emit_c: true }).unwrap();
+    let iconv_execution = Command::new(&iconv_output).output().unwrap();
+    assert!(iconv_execution.status.success());
+    assert_eq!(
+        String::from_utf8(iconv_execution.stdout).unwrap(),
+        format!(
+            "{}NULL\nstring(0) \"\"\n",
+            undefined_variable_warning(&iconv_input, "args", 2)
+        )
+    );
+    assert_eq!(String::from_utf8(iconv_execution.stderr).unwrap(), "");
+    let iconv_c_source = fs::read_to_string(iconv_compiled.c_source.unwrap()).unwrap();
+    assert!(iconv_c_source.contains("ptn_internal_ob_iconv_handler"));
+
+    let callback_input = root.join("ob-callback-arity.php");
+    let callback_output = root.join("ob-callback-arity-bin");
+    fs::write(
+        &callback_input,
+        "<?php\n\
+ob_start('str_rot13', 1);\n\
+try {\n\
+    echo \"foo\\n\";\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+ob_end_flush();\n",
+    )
+    .unwrap();
+
+    compile_file(
+        &callback_input,
+        &callback_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let callback_execution = Command::new(&callback_output).output().unwrap();
+    assert!(callback_execution.status.success());
+    assert_eq!(
+        String::from_utf8(callback_execution.stdout).unwrap(),
+        "foo\nstr_rot13() expects exactly 1 argument, 2 given\n"
+    );
+    assert_eq!(String::from_utf8(callback_execution.stderr).unwrap(), "");
+
+    let status_input = root.join("ob-status-buffer-size.php");
+    let status_output = root.join("ob-status-buffer-size-bin");
+    fs::write(
+        &status_input,
+        "<?php\n\
+ob_start(null, 0);\n\
+ob_start(null, 1);\n\
+ob_start(null, 2);\n\
+ob_start(null, 8191);\n\
+ob_start(null, 8192);\n\
+ob_start(null, 8193);\n\
+var_dump(array_map(fn ($s) => $s['buffer_size'], ob_get_status(true)));\n",
+    )
+    .unwrap();
+
+    let status_compiled = compile_file(
+        &status_input,
+        &status_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let status_execution = Command::new(&status_output).output().unwrap();
+    assert!(status_execution.status.success());
+    assert_eq!(
+        String::from_utf8(status_execution.stdout).unwrap(),
+        concat!(
+            "array(6) {\n",
+            "  [0]=>\n",
+            "  int(16384)\n",
+            "  [1]=>\n",
+            "  int(4096)\n",
+            "  [2]=>\n",
+            "  int(4096)\n",
+            "  [3]=>\n",
+            "  int(8192)\n",
+            "  [4]=>\n",
+            "  int(8192)\n",
+            "  [5]=>\n",
+            "  int(12288)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(status_execution.stderr).unwrap(), "");
+    let status_c_source = fs::read_to_string(status_compiled.c_source.unwrap()).unwrap();
+    assert!(status_c_source.contains("ptn_output_buffer_reported_size"));
+}
+
+#[test]
 fn compile_exception_handler_ob_end_clean_notice_reenters_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-exception-ob-end-clean-handler");
     fs::create_dir_all(&root).unwrap();

@@ -1982,6 +1982,8 @@ static PTN_UNUSED int ptn_declared_class_is_final(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
+static PTN_UNUSED void ptn_diagnostic_output_write(PtnDiagnosticSink *diagnostics, const char *data, size_t len);
+static PTN_UNUSED void ptn_diagnostic_output_html_text_len(PtnDiagnosticSink *diagnostics, const char *data, size_t len);
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message);
 static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *frame);

@@ -24087,6 +24087,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "htmlentities"
             | "ob_get_contents"
             | "ob_gzhandler"
+            | "ob_iconv_handler"
             | "octdec"
             | "boolval"
             | "doubleval"
