@@ -1299,6 +1299,14 @@ static PTN_UNUSED void ptn_runtime_clear_temporary_roots(PtnRuntime *runtime) {
     while (root->temporary_roots_len > 0) {
         ptn_runtime_pop_temporary_root(root);
     }
+    if (
+        runtime->defer_unreferenced_destructors_for_catch ||
+        root->defer_unreferenced_destructors_for_catch
+    ) {
+        runtime->defer_unreferenced_destructors_for_catch = 0;
+        root->defer_unreferenced_destructors_for_catch = 0;
+        return;
+    }
     ptn_runtime_run_unreferenced_object_destructors_for_unwind(runtime);
 }
 
