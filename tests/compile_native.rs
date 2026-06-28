@@ -30889,6 +30889,108 @@ ABC\n"
 }
 
 #[test]
+fn compile_user_stream_filter_lifecycle_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-lifecycle.php");
+    let output = root.join("stream-user-filter-lifecycle-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class pass_filter {
+    public $filtername;
+    public $params;
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        var_dump(property_exists($this, "stream"));
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("pass", "pass_filter");
+$fp = fopen("php://memory", "w");
+stream_filter_append($fp, "pass");
+fwrite($fp, "data");
+rewind($fp);
+echo fread($fp, 1024), "\n";
+
+class native_filter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        var_dump(property_exists($this, "stream"));
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("native.pass", "native_filter");
+$native = fopen("php://memory", "w+");
+stream_filter_append($native, "native.pass", STREAM_FILTER_READ);
+fwrite($native, "x");
+rewind($native);
+echo fread($native, 1), "\n";
+
+class FeedMeFilter extends php_user_filter {
+    private $data = "";
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $this->data .= $bucket->data;
+        }
+        stream_bucket_append($out, stream_bucket_new($this->stream, $this->data));
+        return PSFS_FEED_ME;
+    }
+}
+stream_filter_register("feed.me", FeedMeFilter::class);
+var_dump(file_get_contents("php://filter/read=feed.me/resource=" . __FILE__));
+
+var_dump(stream_filter_register("missing.filter", "MissingFilter"));
+var_dump(stream_filter_append(STDOUT, "missing.filter"));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+data\n\
+bool(true)\n\
+bool(true)\n\
+x\n\
+string(0) \"\"\n\
+bool(true)\n\nWarning: stream_filter_append(): User-filter \"missing.filter\" requires class \"MissingFilter\", but that class is not defined"
+    ), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Warning: stream_filter_append(): Unable to create or locate filter \"missing.filter\""
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.trim_end().ends_with("bool(false)\nbool(false)"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("user_filter_closed"));
+    assert!(c_source.contains("PTN_PSFS_FEED_ME"));
+    assert!(c_source.contains("ptn_stream_flush_read_filters_closing"));
+    assert!(c_source.contains("ptn_user_stream_filter_emit_missing_class_warning"));
+}
+
+#[test]
 fn compile_user_stream_filter_shutdown_flush_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-shutdown");
     fs::create_dir_all(&root).unwrap();
