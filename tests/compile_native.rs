@@ -2355,6 +2355,10 @@ var_dump(class_exists("CachingIterator"), $cache instanceof Iterator, $cache ins
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -2720,6 +2724,18 @@ echo unserialize(serialize($offsetTz))->getName(), "\n";
 eval('$restored = ' . var_export(new DateTimeZone('America/New_York'), true) . ';');
 echo $restored->getName(), "\n";
 
+date_default_timezone_set('Etc/GMT+1');
+$rfcZone = new DateTime('Fri, 07 Dec 2007 19:05:14 +1000');
+echo $rfcZone->getTimezone()->getName(), "\n";
+
+date_default_timezone_set('UTC');
+$boise = new DateTime('@1604219400');
+$boise->setTimezone(new DateTimeZone('America/Boise'));
+echo $boise->format('Y-m-d H:i:s T'), "\n";
+echo "{$boise->format('Y-m-d H:i:s T')} | {$boise->getTimestamp()}", "\n";
+$sunInfo = date_sun_info(strtotime('2006-12-12'), 31.7667, 35.2333);
+echo $sunInfo['sunrise'], '/', $sunInfo['sunset'], '/', $sunInfo['transit'], '/', $sunInfo['civil_twilight_begin'], '/', $sunInfo['astronomical_twilight_end'], "\n";
+
 $transitions = timezone_transitions_get(new DateTimeZone('Europe/London'), -306972000, -37241999);
 var_dump(count($transitions));
 var_dump($transitions[6]['abbr']);
@@ -2769,6 +2785,10 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "+01:00\n",
             "+01:00\n",
             "America/New_York\n",
+            "+10:00\n",
+            "2020-11-01 01:30:00 MST\n",
+            "2020-11-01 01:30:00 MST | 1604219400\n",
+            "1165897761/1165934160/1165915961/1165896156/1165939371\n",
             "int(18)\n",
             "string(3) \"BST\"\n",
             "string(2) \"NO\"\n",
@@ -26825,7 +26845,29 @@ var_dump($state['interval']->__serialize());\n\
 $restored = unserialize(serialize($period));\n\
 $restoredState = $restored->__serialize();\n\
 echo $restoredState['current']->format(DateTime::ISO8601), \"\\n\";\n\
-var_dump($restoredState['interval']->__serialize());\n",
+var_dump($restoredState['interval']->__serialize());\n\
+class NativeDatePeriodPrivateState extends DatePeriod {\n\
+    private int $var1;\n\
+    private $var2 = 2;\n\
+    protected int $var3 = 3;\n\
+    protected $var4;\n\
+    public function __construct($start, $interval, $end) {\n\
+        parent::__construct($start, $interval, $end);\n\
+        $this->var1 = 1;\n\
+        $this->var4 = 4;\n\
+    }\n\
+}\n\
+$privatePeriod = new NativeDatePeriodPrivateState(new DateTimeImmutable('2023-03-03 16:24'), DateInterval::createFromDateString('+1 hour'), new DateTimeImmutable('2023-03-09 16:24'));\n\
+$privateIntervalState = $privatePeriod->__serialize()['interval']->__serialize();\n\
+echo $privateIntervalState['h'], ' ', (int) $privateIntervalState['from_string'], \"\\n\";\n\
+$privateSerialized = str_replace(chr(0), '!', serialize($privatePeriod));\n\
+var_dump(str_contains($privateSerialized, 's:34:\"!NativeDatePeriodPrivateState!var1\";i:1;'));\n\
+var_dump(str_contains($privateSerialized, 's:7:\"!*!var4\";i:4;'));\n\
+var_dump(strpos($privateSerialized, '!NativeDatePeriodPrivateState!var1') < strpos($privateSerialized, '!NativeDatePeriodPrivateState!var2') && strpos($privateSerialized, '!NativeDatePeriodPrivateState!var2') < strpos($privateSerialized, '!*!var3') && strpos($privateSerialized, '!*!var3') < strpos($privateSerialized, '!*!var4'));\n\
+$privateRestored = unserialize(serialize($privatePeriod));\n\
+$privateRestoredSerialized = str_replace(chr(0), '!', serialize($privateRestored));\n\
+var_dump(str_contains($privateRestoredSerialized, 's:34:\"!NativeDatePeriodPrivateState!var2\";i:2;'));\n\
+var_dump(strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var1') < strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var2') && strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var2') < strpos($privateRestoredSerialized, '!*!var3') && strpos($privateRestoredSerialized, '!*!var3') < strpos($privateRestoredSerialized, '!*!var4'));\n",
     )
     .unwrap();
 
@@ -26882,6 +26924,12 @@ var_dump($restoredState['interval']->__serialize());\n",
             "  [\"from_string\"]=>\n",
             "  bool(false)\n",
             "}\n",
+            "1 0\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -27389,6 +27437,12 @@ echo $rfc->format(DATE_ISO8601), "\n";
 echo $rfc->format('U e'), "\n";
 echo DateTime::createFromFormat('Y-m-d|', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
 echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
+$offsetCases = [['O', 'GMT+0800'], ['P', 'GMT-08:00'], ['[O]', '[+0800]']];
+foreach ($offsetCases as $case) {
+    $dt = DateTime::createFromFormat($case[0], $case[1]);
+    echo $dt ? $dt->getOffset() : 'false', "\n";
+}
+var_dump(DateTime::createFromFormat('O', 'invalid'));
 "#,
     )
     .unwrap();
@@ -27429,6 +27483,10 @@ echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e')
             "-461203200 Europe/Budapest\n",
             "2011-02-02 00:00:00 UTC\n",
             "1970-01-01 00:00:00 UTC\n",
+            "28800\n",
+            "-28800\n",
+            "28800\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -77173,6 +77231,92 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(0) \"\"\nstring(1) \"1\"\nstring(1) \"0\"\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_error_get_last_tracks_last_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-phpc-error-get-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-get-last.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(error_get_last());\n\
+try { var_dump(error_get_last(true)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(error_get_last());\n\
+$a = $missing;\n\
+$last = error_get_last();\n\
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("NULL\nerror_get_last() expects exactly 0 arguments, 1 given\nNULL\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Undefined variable $missing"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(2)\nstring(27) \"Undefined variable $missing\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(18) \"error-get-last.php\"\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_ini_set_accepts_scalar_value_types_to_native_binary() {
+    let root = temp_dir("ptn-phpc-ini-set-scalar-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-set-scalar-types.php");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+ini_set('docref_root', null);\n\
+var_dump(ini_get('docref_root'));\n\
+ini_set('html_errors', true);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('html_errors', false);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('precision', 6);\n\
+var_dump(ini_get('precision'));\n\
+ini_set('user_agent', 3.14);\n\
+var_dump(ini_get('user_agent'));\n\
+try { ini_set('foo', []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(1) \"1\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"6\"\n",
+            "string(4) \"3.14\"\n",
+            "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

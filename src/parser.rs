@@ -8987,6 +8987,9 @@ impl Parser<'_> {
         match part {
             TokenStringPart::Literal(value) => Ok(StringPart::Literal(value)),
             TokenStringPart::Variable(name) => Ok(StringPart::Variable(name)),
+            TokenStringPart::Expression(expr) => Ok(StringPart::Expression(Box::new(
+                self.parse_interpolation_expr_fragment(&expr, span)?,
+            ))),
             TokenStringPart::LegacyDollarBraceVariable(name) => {
                 Ok(StringPart::LegacyDollarBraceVariable(name))
             }
@@ -12793,7 +12796,8 @@ fn collect_arrow_captures_from_string_part(
                 captures,
             );
         }
-        StringPart::LegacyDollarBraceExpression(expr)
+        StringPart::Expression(expr)
+        | StringPart::LegacyDollarBraceExpression(expr)
         | StringPart::DynamicVariableExpression(expr) => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
@@ -28591,7 +28595,8 @@ fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> 
                     .first()
                     .is_some_and(|property| property == property_name)
         }
-        StringPart::LegacyDollarBraceExpression(expr)
+        StringPart::Expression(expr)
+        | StringPart::LegacyDollarBraceExpression(expr)
         | StringPart::DynamicVariableExpression(expr) => {
             expr_uses_this_property(expr, property_name)
         }
