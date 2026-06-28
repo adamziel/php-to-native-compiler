@@ -130881,6 +130881,30 @@ static int ptn_xml_parent_serialized_default_namespace_matches(PtnXmlNode *node,
     return !ptn_xml_name_has_prefix(parent->name == NULL ? "" : parent->name);
 }
 
+static void ptn_xml_append_serialized_element_attribute(
+    PtnStringBuffer *buffer,
+    PtnXmlNode *attr,
+    PtnXmlNode *document,
+    int ascii_only
+) {
+    if (attr == NULL) {
+        return;
+    }
+    const char *attr_name = attr->serialized_name != NULL
+        ? attr->serialized_name
+        : (attr->name == NULL ? "" : attr->name);
+    ptn_string_buffer_append_char(buffer, ' ');
+    ptn_string_buffer_append(buffer, attr_name);
+    ptn_string_buffer_append(buffer, "=\"");
+    ptn_xml_append_escaped_attribute_value(
+        buffer,
+        attr->serialized_value == NULL ? (attr->value == NULL ? "" : attr->value) : attr->serialized_value,
+        document,
+        ascii_only
+    );
+    ptn_string_buffer_append_char(buffer, '"');
+}
+
 static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, int pretty, size_t depth) {
     if (node == NULL) {
         return;
@@ -130984,6 +131008,8 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
             if (node->value != NULL && node->value[0] != '\0') {
                 ptn_string_buffer_append_char(buffer, ' ');
                 ptn_string_buffer_append(buffer, node->value);
+            } else if (document != NULL && document->modern_dom) {
+                ptn_string_buffer_append_char(buffer, ' ');
             }
             ptn_string_buffer_append(buffer, "?>");
             return;
@@ -131074,28 +131100,39 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         free(xmlns_name);
         free(element_prefix);
     }
-    for (int namespace_pass = 1; namespace_pass >= 0; namespace_pass--) {
+    if (document != NULL && document->modern_dom && !document->html_document) {
         for (size_t i = 0; i < node->attribute_count; i++) {
             PtnXmlNode *attr = node->attributes[i];
-            if (ptn_xml_attribute_is_namespace_declaration(attr) != namespace_pass) {
+            if (!ptn_xml_attribute_is_namespace_declaration(attr) || attr->synthetic_namespace_declaration) {
                 continue;
             }
             if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
                 continue;
             }
-            const char *attr_name = attr->serialized_name != NULL
-                ? attr->serialized_name
-                : (attr->name == NULL ? "" : attr->name);
-            ptn_string_buffer_append_char(buffer, ' ');
-            ptn_string_buffer_append(buffer, attr_name);
-            ptn_string_buffer_append(buffer, "=\"");
-            ptn_xml_append_escaped_attribute_value(
-                buffer,
-                attr->serialized_value == NULL ? (attr->value == NULL ? "" : attr->value) : attr->serialized_value,
-                document,
-                ascii_only
-            );
-            ptn_string_buffer_append_char(buffer, '"');
+            ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
+        }
+        for (size_t i = 0; i < node->attribute_count; i++) {
+            PtnXmlNode *attr = node->attributes[i];
+            if (ptn_xml_attribute_is_namespace_declaration(attr) && !attr->synthetic_namespace_declaration) {
+                continue;
+            }
+            if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
+                continue;
+            }
+            ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
+        }
+    } else {
+        for (int namespace_pass = 1; namespace_pass >= 0; namespace_pass--) {
+            for (size_t i = 0; i < node->attribute_count; i++) {
+                PtnXmlNode *attr = node->attributes[i];
+                if (ptn_xml_attribute_is_namespace_declaration(attr) != namespace_pass) {
+                    continue;
+                }
+                if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
+                    continue;
+                }
+                ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
+            }
         }
     }
     if (node->child_count == 0) {

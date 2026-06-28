@@ -51431,6 +51431,7 @@ report($namespaces, 'container[a\:bar]');
 report($namespaces, 'a:first-of-type');
 report($namespaces, 'a:last-of-type');
 report($namespaces, 'container[* | bar]');
+echo 'namespace-save=', $namespaces->saveXML($container), "\n";
 
 $pseudo = Dom\XMLDocument::createFromString(<<<'XML'
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -51445,6 +51446,7 @@ $pseudo = Dom\XMLDocument::createFromString(<<<'XML'
     <h2>1</h2><h2>2</h2><h2>3</h2><h2>4</h2><h2>5</h2>
 </html>
 XML);
+$pi = Dom\XMLDocument::createFromString('<root><div><?foo?></div></root>');
 report($pseudo, ':checked');
 report($pseudo, ':placeholder-shown');
 report($pseudo, '.empty > div:empty');
@@ -51454,6 +51456,7 @@ report($pseudo, 'h2:nth-of-type(n+2):nth-last-of-type(n+2)');
 report($pseudo, 'h2:not(:first-of-type):not(:last-of-type)');
 report($pseudo, ':blank');
 report($pseudo, ':dir(rtl)');
+echo 'pi-save=', $pi->saveXML($pi->documentElement->firstElementChild), "\n";
 
 try {
     $pseudo->documentElement->closest('@invalid');
@@ -51487,6 +51490,7 @@ echo 'foreign-meta=', $html->saveHtml($meta), "\n";
             "a:first-of-type=3\n",
             "a:last-of-type=3\n",
             "container[* | bar]=ERR:12:Invalid selector (Selectors. Unexpected token: *)\n",
+            "namespace-save=<container align=\"left\" foo:bar=\"baz\" xmlns:a=\"urn:a\" a:bar=\"baz\"/>\n",
             ":checked=3\n",
             ":placeholder-shown=2\n",
             ".empty > div:empty=3\n",
@@ -51496,6 +51500,7 @@ echo 'foreign-meta=', $html->saveHtml($meta), "\n";
             "h2:not(:first-of-type):not(:last-of-type)=3\n",
             ":blank=ERR:12::blank selector is not implemented because CSSWG has not yet decided its semantics (https://github.com/w3c/csswg-drafts/issues/1967)\n",
             ":dir(rtl)=ERR:12:Invalid selector (Selectors. Not supported: dir)\n",
+            "pi-save=<div><?foo ?></div>\n",
             "closest=Invalid selector (Selectors. Unexpected token: @invalid)\n",
             "foreign-meta=<meta charset=\"x\"></meta>\n",
         )
