@@ -753,6 +753,7 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn phpt_classifier_selects_user_stream_wrapper_and_filter_registration() {
     let wrapper = classify(
         "--TEST--\nstream wrapper\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
@@ -769,6 +770,31 @@ fn phpt_classifier_selects_user_stream_wrapper_and_filter_registration() {
         filter.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
+=======
+fn phpt_classifier_keeps_user_stream_registration_rows_runnable() {
+    let cases = [
+        (
+            "user stream wrapper",
+            "--TEST--\nstream wrapper\n--FILE--\n<?php\nstream_wrapper_register('test', TestWrapper::class);\n--EXPECT--\n",
+        ),
+        (
+            "user stream wrapper alias",
+            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+        ),
+        (
+            "user stream filter",
+            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{name}: {classification:?}"
+        );
+    }
+>>>>>>> origin/master
 }
 
 #[test]

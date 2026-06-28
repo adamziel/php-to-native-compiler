@@ -1,0 +1,14 @@
+# Source: ptn-3uuq9 exact current-red row pack from
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T230732Z.tsv
+ext/standard/tests/file/userdirstream.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/streams/stream_set_timeout_error.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/standard/tests/streams/bug60602.phpt
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/standard/tests/streams/opendir-004.phpt
+ext/standard/tests/filters/bug79468.phpt
+ext/standard/tests/file/userstreams_002.phpt
