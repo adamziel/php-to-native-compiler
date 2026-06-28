@@ -737,18 +737,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "unsupported-internal-call-binding\t",
             "requires named-argument binding for modeled array internal calls",
         ),
-        (
-            "user stream wrapper alias",
-            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
-        (
-            "user stream filter",
-            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
     ];
 
     for (name, phpt, category, reason) in cases {
@@ -759,6 +747,32 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         );
         assert!(
             classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_user_stream_registration_rows_runnable() {
+    let cases = [
+        (
+            "user stream wrapper",
+            "--TEST--\nstream wrapper\n--FILE--\n<?php\nstream_wrapper_register('test', TestWrapper::class);\n--EXPECT--\n",
+        ),
+        (
+            "user stream wrapper alias",
+            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+        ),
+        (
+            "user stream filter",
+            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
             "{name}: {classification:?}"
         );
     }
