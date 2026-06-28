@@ -149068,12 +149068,6 @@ static int ptn_stream_select_arg_array(
     return 1;
 }
 
-<<<<<<< HEAD
-static void ptn_stream_select_emit_user_unrepresentable(PtnRuntime *runtime, size_t line) {
-    ptn_emit_warning(
-        &runtime->diagnostics,
-        "stream_select(): Cannot represent a stream of type user-space as a select()able descriptor",
-=======
 static const char *ptn_user_stream_wrapper_class_name(PtnUserStreamResourceData *data) {
     if (data == NULL) {
         return "user-space";
@@ -149100,7 +149094,6 @@ static void ptn_stream_select_report_user_stream_not_representable(
         "CastNotSupported",
         1,
         replace_existing,
->>>>>>> origin/master
         line
     );
 }
