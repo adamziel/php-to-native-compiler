@@ -33455,7 +33455,10 @@ echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_FOLD, 'UTF-8')), \"\\n
 echo bin2hex(mb_convert_case(\"\\xce\\x9f\\xce\\xa3\\xce\\x9f\\xce\\xa3\", MB_CASE_LOWER, 'UTF-8')), \"\\n\";\n\
 echo bin2hex(mb_convert_case(\"\\xc5\\x89\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
 mb_regex_encoding('UTF-8');\n\
-var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n",
+var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n\
+foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
+    echo strlen($chunk), ':', bin2hex($chunk), \"\\n\";\n\
+}\n",
     )
     .unwrap();
 
@@ -33481,6 +33484,8 @@ var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n",
             "cebfcf83cebfcf82\n",
             "cabc4e\n",
             "bool(false)\n",
+            "2:3132\n",
+            "3:33f092\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

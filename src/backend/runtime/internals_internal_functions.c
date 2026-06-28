@@ -92033,6 +92033,76 @@ static size_t ptn_mb_utf8_char_index_for_byte(const char *data, size_t len, size
     return index;
 }
 
+static size_t ptn_mb_utf8_split_next_span(const char *data, size_t len, size_t offset) {
+    if (offset >= len) {
+        return 0;
+    }
+    unsigned char b0 = (unsigned char)data[offset];
+    if (b0 < 0x80) {
+        return 1;
+    }
+    size_t need = 0;
+    uint32_t cp = 0;
+    uint32_t min = 0;
+    if ((b0 & 0xe0) == 0xc0) {
+        need = 2;
+        cp = b0 & 0x1f;
+        min = 0x80;
+    } else if ((b0 & 0xf0) == 0xe0) {
+        need = 3;
+        cp = b0 & 0x0f;
+        min = 0x800;
+    } else if ((b0 & 0xf8) == 0xf0) {
+        need = 4;
+        cp = b0 & 0x07;
+        min = 0x10000;
+    } else {
+        return 1;
+    }
+    if (offset + need > len) {
+        return len - offset;
+    }
+    for (size_t i = 1; i < need; i++) {
+        unsigned char bx = (unsigned char)data[offset + i];
+        if ((bx & 0xc0) != 0x80) {
+            return 1;
+        }
+        cp = (cp << 6) | (uint32_t)(bx & 0x3f);
+    }
+    if (cp < min || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
+        return 1;
+    }
+    return need;
+}
+
+static size_t ptn_mb_utf8_split_strlen(const char *data, size_t len) {
+    size_t offset = 0;
+    size_t count = 0;
+    while (offset < len) {
+        size_t span = ptn_mb_utf8_split_next_span(data, len, offset);
+        if (span == 0) {
+            break;
+        }
+        offset += span;
+        count++;
+    }
+    return count;
+}
+
+static size_t ptn_mb_utf8_split_byte_offset_for_char(const char *data, size_t len, size_t char_index) {
+    size_t offset = 0;
+    size_t index = 0;
+    while (offset < len && index < char_index) {
+        size_t span = ptn_mb_utf8_split_next_span(data, len, offset);
+        if (span == 0) {
+            break;
+        }
+        offset += span;
+        index++;
+    }
+    return offset;
+}
+
 static void ptn_mb_utf8_append_codepoint(PtnStringBuffer *buffer, uint32_t cp) {
     if (cp <= 0x7f) {
         ptn_string_buffer_append_char(buffer, (char)cp);
@@ -93324,14 +93394,24 @@ static PtnValue ptn_internal_mb_str_split(PtnRuntime *runtime, size_t argc, cons
     }
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
-    size_t chars = ptn_mb_encoding_is_raw(encoding) ? utf8_len : ptn_mb_utf8_strlen(utf8, utf8_len);
+    size_t chars = ptn_mb_encoding_is_raw(encoding)
+        ? utf8_len
+        : (ptn_mb_encoding_is_utf8(encoding) ? ptn_mb_utf8_split_strlen(utf8, utf8_len) : ptn_mb_utf8_strlen(utf8, utf8_len));
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t chunk_chars = (size_t)raw_length;
     int64_t index = 0;
     for (size_t start = 0; start < chars; start += chunk_chars) {
         size_t end = start + chunk_chars > chars ? chars : start + chunk_chars;
-        size_t byte_start = ptn_mb_encoding_is_raw(encoding) ? start : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, start);
-        size_t byte_end = ptn_mb_encoding_is_raw(encoding) ? end : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, end);
+        size_t byte_start = ptn_mb_encoding_is_raw(encoding)
+            ? start
+            : (ptn_mb_encoding_is_utf8(encoding)
+                ? ptn_mb_utf8_split_byte_offset_for_char(utf8, utf8_len, start)
+                : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, start));
+        size_t byte_end = ptn_mb_encoding_is_raw(encoding)
+            ? end
+            : (ptn_mb_encoding_is_utf8(encoding)
+                ? ptn_mb_utf8_split_byte_offset_for_char(utf8, utf8_len, end)
+                : ptn_mb_utf8_byte_offset_for_char(utf8, utf8_len, end));
         char *slice = ptn_duplicate_string_len(utf8 + byte_start, byte_end - byte_start);
         ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_mb_string_from_utf8(slice, byte_end - byte_start, encoding));
     }
