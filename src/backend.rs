@@ -4015,6 +4015,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            (!ptn_ascii_case_equal(class_name, \"MultipleIterator\") && ptn_ascii_case_equal(interface_name, \"OuterIterator\")) ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveCachingIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveRegexIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"RecursiveCallbackFilterIterator\")) {\n",
     );
@@ -4082,6 +4089,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"GlobIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveDirectoryIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            (ptn_ascii_case_equal(class_name, \"GlobIterator\") && ptn_ascii_case_equal(interface_name, \"Countable\")) ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Stringable\") ||\n");
@@ -10404,6 +10412,7 @@ fn emit_class_metadata_helpers(
         "SplPriorityQueue",
         "AppendIterator",
         "CachingIterator",
+        "RecursiveCachingIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
         "FilterIterator",
@@ -10422,6 +10431,8 @@ fn emit_class_metadata_helpers(
         "FilesystemIterator",
         "GlobIterator",
         "RecursiveDirectoryIterator",
+        "RegexIterator",
+        "RecursiveRegexIterator",
         "ReflectionAttribute",
         "ReflectionClass",
         "ReflectionClassConstant",
@@ -11306,6 +11317,7 @@ fn emit_class_metadata_helpers(
         "SplFixedArray",
         "AppendIterator",
         "CachingIterator",
+        "RecursiveCachingIterator",
         "CallbackFilterIterator",
         "RecursiveCallbackFilterIterator",
         "DirectoryIterator",
@@ -11321,6 +11333,7 @@ fn emit_class_metadata_helpers(
         "MultipleIterator",
         "NoRewindIterator",
         "RegexIterator",
+        "RecursiveRegexIterator",
         "SplDoublyLinkedList",
         "SplQueue",
         "SplStack",
@@ -11934,6 +11947,7 @@ fn emit_class_metadata_helpers(
     for (class_name, parent_name) in [
         ("AppendIterator", "IteratorIterator"),
         ("CachingIterator", "IteratorIterator"),
+        ("RecursiveCachingIterator", "CachingIterator"),
         ("CallbackFilterIterator", "FilterIterator"),
         ("DirectoryIterator", "SplFileInfo"),
         ("FilesystemIterator", "DirectoryIterator"),
@@ -11943,6 +11957,7 @@ fn emit_class_metadata_helpers(
         ("LimitIterator", "IteratorIterator"),
         ("NoRewindIterator", "IteratorIterator"),
         ("RegexIterator", "FilterIterator"),
+        ("RecursiveRegexIterator", "RegexIterator"),
         ("RecursiveCallbackFilterIterator", "CallbackFilterIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("RecursiveDirectoryIterator", "DirectoryIterator"),
@@ -23024,6 +23039,15 @@ fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str)
         || candidate_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
     {
         &["Iterator", "OuterIterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveCachingIterator")
+        || candidate_name.eq_ignore_ascii_case("RecursiveRegexIterator")
+    {
+        &[
+            "Iterator",
+            "OuterIterator",
+            "RecursiveIterator",
+            "Traversable",
+        ][..]
     } else if candidate_name.eq_ignore_ascii_case("MultipleIterator") {
         &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator") {
@@ -23059,9 +23083,16 @@ fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str)
             "SeekableIterator",
             "Traversable",
         ][..]
+    } else if candidate_name.eq_ignore_ascii_case("GlobIterator") {
+        &[
+            "Countable",
+            "Iterator",
+            "SeekableIterator",
+            "Stringable",
+            "Traversable",
+        ][..]
     } else if candidate_name.eq_ignore_ascii_case("DirectoryIterator")
         || candidate_name.eq_ignore_ascii_case("FilesystemIterator")
-        || candidate_name.eq_ignore_ascii_case("GlobIterator")
         || candidate_name.eq_ignore_ascii_case("RecursiveDirectoryIterator")
     {
         &[
@@ -24667,8 +24698,10 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "multipleiterator" => Some("MultipleIterator"),
         "norewinditerator" => Some("NoRewindIterator"),
         "regexiterator" => Some("RegexIterator"),
+        "recursivecachingiterator" => Some("RecursiveCachingIterator"),
         "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
+        "recursiveregexiterator" => Some("RecursiveRegexIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
         "splfixedarray" => Some("SplFixedArray"),
@@ -35440,8 +35473,10 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("NoRewindIterator")
                 || class_name.eq_ignore_ascii_case("RegexIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveCachingIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveRegexIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
                 || class_name.eq_ignore_ascii_case("SplFixedArray")

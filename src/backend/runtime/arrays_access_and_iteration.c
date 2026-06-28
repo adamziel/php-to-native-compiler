@@ -305,7 +305,21 @@ static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArr
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_caching_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_caching_iterator(const char *class_name);
 static PTN_UNUSED PtnValue ptn_caching_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_recursive_caching_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_regex_iterator(const char *class_name);
+static PTN_UNUSED PtnValue ptn_recursive_regex_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -1273,6 +1287,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_append_iterator(lookup_class_name)) {
         return ptn_append_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_recursive_caching_iterator(lookup_class_name)) {
+        return ptn_recursive_caching_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_caching_iterator(lookup_class_name)) {
         return ptn_caching_iterator_new(runtime, argc, args, line);
     }
@@ -1284,6 +1301,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_filter_iterator(lookup_class_name)) {
         return ptn_filter_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_regex_iterator(lookup_class_name)) {
+        return ptn_recursive_regex_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_regex_iterator(lookup_class_name)) {
         return ptn_regex_iterator_new(runtime, argc, args, line);
