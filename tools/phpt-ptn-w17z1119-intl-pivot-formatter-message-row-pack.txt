@@ -1,0 +1,18 @@
+# ptn-w17z.1119 pivot focused intl formatter/message current-red row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T045921Z.tsv
+# Pivot reason:
+# The exact selected rows from the bead are already green on this branch
+# (selected=12 runnable=11 excluded=1 passed=11 failed=0), so this manifest
+# uses nearby ext/intl/tests FAIL rows from the same artifact.
+# Shared blocker: compact/native intl formatter/message runtime gaps.
+# Run with:
+#   PTN_PHPT_TEST_TIMEOUT=180 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1119-intl-pivot-formatter-message-row-pack.txt
+
+# bucket: ext/intl rows=6
+ext/intl/tests/intl_get_error_message.phpt
+ext/intl/tests/msgfmt_get_locale.phpt
+ext/intl/tests/msgfmt_format_mixed_params.phpt
+ext/intl/tests/msgfmt_clone.phpt
+ext/intl/tests/formatter_clone.phpt
+ext/intl/tests/formatter_get_error.phpt

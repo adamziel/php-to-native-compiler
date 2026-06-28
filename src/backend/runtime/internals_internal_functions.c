@@ -74357,6 +74357,8 @@ typedef struct {
     char *locale;
     char *pattern;
     int style;
+    int error_code;
+    char *error_message;
     char *symbols[PTN_NUMBER_FORMATTER_SYMBOL_COUNT];
 } PtnIntlNumberFormatterData;
 
@@ -74456,6 +74458,7 @@ static void ptn_intl_number_formatter_data_free(void *ptr) {
     }
     free(data->locale);
     free(data->pattern);
+    free(data->error_message);
     for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
         free(data->symbols[i]);
     }
@@ -76265,6 +76268,19 @@ static PtnIntlMessageFormatterData *ptn_intl_message_formatter_data(PtnValue rec
     return (PtnIntlMessageFormatterData *)resolved.as.object->native_data;
 }
 
+static PtnIntlMessageFormatterData *ptn_intl_message_formatter_data_clone(PtnIntlMessageFormatterData *source) {
+    if (source == NULL) {
+        return NULL;
+    }
+    PtnIntlMessageFormatterData *clone = malloc(sizeof(PtnIntlMessageFormatterData));
+    if (clone == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    clone->locale = ptn_duplicate_string(source->locale == NULL ? "" : source->locale);
+    clone->pattern = ptn_duplicate_string(source->pattern == NULL ? "" : source->pattern);
+    return clone;
+}
+
 static char *ptn_intl_message_trim_token(char *token) {
     while (*token != '\0' && isspace((unsigned char)*token)) {
         token++;
@@ -76707,6 +76723,8 @@ static PtnValue ptn_intl_message_parse(PtnRuntime *runtime, PtnValue input_value
     return result;
 }
 
+static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
 static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_message_formatter_new(runtime, "MessageFormatter", "MessageFormatter::__construct", 1, argc, args, line);
@@ -76722,6 +76740,12 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
     }
     if (ptn_ascii_case_equal(name, "getPattern")) {
         return data == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(data->pattern));
+    }
+    if (ptn_ascii_case_equal(name, "setPattern")) {
+        PtnValue call_args[2];
+        call_args[0] = receiver;
+        call_args[1] = argc >= 1 ? args[0] : ptn_null();
+        return ptn_internal_msgfmt_set_pattern(runtime, argc + 1, call_args, line);
     }
     if (ptn_ascii_case_equal(name, "getErrorCode")) {
         return ptn_int(0);
@@ -76792,6 +76816,20 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_intl_message_formatter_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source);
+    PtnIntlMessageFormatterData *data = ptn_intl_message_formatter_data(resolved);
+    if (resolved.type != PTN_OBJECT || resolved.as.object == NULL || data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized MessageFormatter");
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, resolved.as.object);
+    clone.as.object->native_data = ptn_intl_message_formatter_data_clone(data);
+    clone.as.object->native_data_free = ptn_intl_message_formatter_data_free;
+    return clone;
 }
 
 static int ptn_intl_locale_identifier_is_valid(const char *locale) {
@@ -77305,6 +77343,28 @@ static PtnValue ptn_internal_msgfmt_get_pattern(PtnRuntime *runtime, size_t argc
     }
     PtnIntlMessageFormatterData *data = ptn_intl_message_formatter_data(args[0]);
     return data == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(data->pattern));
+}
+
+static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 2) {
+        return ptn_bool(0);
+    }
+    PtnIntlMessageFormatterData *data = ptn_intl_message_formatter_data(args[0]);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed MessageFormatter");
+        return ptn_null();
+    }
+    PtnStringOperand pattern =
+        ptn_internal_expect_string_arg(runtime, "MessageFormatter::setPattern", 1, "pattern", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_null();
+    }
+    free(data->pattern);
+    data->pattern = ptn_duplicate_string_len(pattern.data, pattern.len);
+    ptn_string_operand_free(pattern);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_msgfmt_format_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -79871,6 +79931,8 @@ static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data_new(const char
     data->locale = ptn_duplicate_string(locale == NULL ? "" : locale);
     data->pattern = ptn_duplicate_string(pattern == NULL ? "" : pattern);
     data->style = style;
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
     for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
         data->symbols[i] = ptn_duplicate_string(ptn_intl_number_formatter_default_symbol((int)i));
     }
@@ -79943,6 +80005,36 @@ static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data(PtnValue recei
         return NULL;
     }
     return (PtnIntlNumberFormatterData *)resolved.as.object->native_data;
+}
+
+static void ptn_intl_number_formatter_set_error(
+    PtnRuntime *runtime,
+    PtnIntlNumberFormatterData *data,
+    int error_code,
+    const char *message
+) {
+    const char *resolved_message = message == NULL ? "U_ZERO_ERROR" : message;
+    if (data != NULL) {
+        free(data->error_message);
+        data->error_code = error_code;
+        data->error_message = ptn_duplicate_string(resolved_message);
+    }
+    ptn_intl_set_error_message(runtime, resolved_message);
+}
+
+static PtnIntlNumberFormatterData *ptn_intl_number_formatter_data_clone(PtnIntlNumberFormatterData *source) {
+    if (source == NULL) {
+        return NULL;
+    }
+    PtnIntlNumberFormatterData *clone = ptn_intl_number_formatter_data_new(source->locale, source->style, source->pattern);
+    clone->error_code = source->error_code;
+    free(clone->error_message);
+    clone->error_message = ptn_duplicate_string(source->error_message == NULL ? "U_ZERO_ERROR" : source->error_message);
+    for (size_t i = 0; i < PTN_NUMBER_FORMATTER_SYMBOL_COUNT; i++) {
+        free(clone->symbols[i]);
+        clone->symbols[i] = ptn_duplicate_string(source->symbols[i] == NULL ? "" : source->symbols[i]);
+    }
+    return clone;
 }
 
 static char ptn_intl_number_formatter_decimal_separator(const char *locale) {
@@ -80897,26 +80989,44 @@ static PtnValue ptn_intl_number_formatter_format_spellout(PtnIntlNumberFormatter
 }
 
 static PtnValue ptn_intl_number_formatter_format_pattern_decimal(PtnIntlNumberFormatterData *data, double number) {
-    (void)data;
-    char formatted[128];
-    int written = snprintf(formatted, sizeof(formatted), "%.15f", fabs(number));
-    if (written < 0 || (size_t)written >= sizeof(formatted)) {
-        ptn_abort_out_of_memory();
+    int precision = 6;
+    int trim_fraction = 1;
+    const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
+    const char *dot = strchr(pattern, '.');
+    if (dot != NULL) {
+        precision = 0;
+        trim_fraction = 0;
+        for (const char *cursor = dot + 1; *cursor != '\0'; cursor++) {
+            if (*cursor == '0' || *cursor == '#') {
+                precision++;
+                if (*cursor == '#') {
+                    trim_fraction = 1;
+                }
+            }
+        }
+        if (precision > 24) {
+            precision = 24;
+        }
     }
-    size_t len = strlen(formatted);
-    while (len > 0 && formatted[len - 1] == '0') {
-        formatted[len - 1] = '\0';
-        len--;
-    }
-    if (len > 0 && formatted[len - 1] == '.') {
-        formatted[len - 1] = '\0';
+    size_t len = 0;
+    char *fixed = ptn_number_format_fixed_abs(number, precision, &len);
+    if (trim_fraction && precision > 0) {
+        while (len > 0 && fixed[len - 1] == '0') {
+            len--;
+        }
+        if (len > 0 && fixed[len - 1] == '.') {
+            len--;
+        }
     }
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     if (number < 0.0) {
-        ptn_string_buffer_append_char(&output, '-');
+        PtnStringOperand minus_symbol =
+            ptn_intl_number_formatter_symbol_operand(data, PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL);
+        ptn_string_buffer_append_len(&output, minus_symbol.data, minus_symbol.len);
     }
-    ptn_string_buffer_append(&output, formatted);
+    ptn_string_buffer_append_len(&output, fixed, len);
+    free(fixed);
     return ptn_owned_string_len(output.data, output.len);
 }
 
@@ -80964,9 +81074,13 @@ static PtnValue ptn_intl_number_formatter_format_duration(PtnIntlNumberFormatter
     return ptn_intl_number_formatter_format_fixed(data, integer, 0, 0);
 }
 
+
 static PtnValue ptn_intl_number_formatter_format_standard(PtnIntlNumberFormatterData *data, double number) {
     if (isnan(number) || isinf(number)) {
         return ptn_intl_number_formatter_special_value(data, number);
+    }
+    if (data != NULL && data->style == PTN_NUMBER_FORMATTER_PATTERN_DECIMAL) {
+        return ptn_intl_number_formatter_format_pattern_decimal(data, number);
     }
     if (data != NULL && ptn_intl_number_formatter_style_is_currency(data->style)) {
         return ptn_intl_number_formatter_format_currency(data, number);
@@ -81292,12 +81406,60 @@ static PTN_UNUSED PtnValue ptn_intl_number_range_formatter_call_method(
     return ptn_null();
 }
 
-static PtnValue ptn_internal_numfmt_parse_currency(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_internal_numfmt_parse_currency_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     (void)line;
+    PtnIntlNumberFormatterData *data = argc >= 1 ? ptn_intl_number_formatter_data(args[0]) : NULL;
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed NumberFormatter");
+        return ptn_null();
+    }
+    PtnStringOperand source =
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "string", argc >= 2 ? args[1] : ptn_null(), line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    int has_currency = 0;
+    for (size_t i = 0; i < source.len; i++) {
+        unsigned char byte = (unsigned char)source.data[i];
+        if (byte == '$' || byte == 0xC2 || isalpha(byte)) {
+            has_currency = 1;
+            break;
+        }
+    }
+    ptn_string_operand_free(source);
+    if (!has_currency) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Number parsing failed: U_PARSE_ERROR",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_intl_number_formatter_set_error(runtime, data, 9, message);
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 2, ptn_null())) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
     if (!ptn_intl_assign_reference_string(runtime, args, argc, 2, "USD")) {
         return ptn_null();
     }
+    ptn_intl_number_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
     return ptn_float(1.0);
+}
+
+static PtnValue ptn_internal_numfmt_parse_currency(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_numfmt_parse_currency_impl(runtime, "numfmt_parse_currency", argc, args, line);
 }
 
 static PtnValue ptn_internal_numfmt_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -81385,6 +81547,42 @@ static PtnValue ptn_internal_numfmt_set_symbol(PtnRuntime *runtime, size_t argc,
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_numfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 2) {
+        return ptn_bool(0);
+    }
+    PtnIntlNumberFormatterData *data = ptn_intl_number_formatter_data(args[0]);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed NumberFormatter");
+        return ptn_null();
+    }
+    PtnStringOperand pattern =
+        ptn_internal_expect_string_arg(runtime, "NumberFormatter::setPattern", 1, "pattern", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_null();
+    }
+    free(data->pattern);
+    data->pattern = ptn_duplicate_string_len(pattern.data, pattern.len);
+    ptn_string_operand_free(pattern);
+    ptn_intl_number_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_numfmt_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnIntlNumberFormatterData *data = argc >= 1 ? ptn_intl_number_formatter_data(args[0]) : NULL;
+    return data == NULL ? ptn_int(0) : ptn_int(data->error_code);
+}
+
+static PtnValue ptn_internal_numfmt_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnIntlNumberFormatterData *data = argc >= 1 ? ptn_intl_number_formatter_data(args[0]) : NULL;
+    return ptn_owned_string(ptn_duplicate_string(data == NULL || data->error_message == NULL ? "U_ZERO_ERROR" : data->error_message));
+}
+
 static PtnValue ptn_internal_numfmt_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 2) {
         return ptn_bool(0);
@@ -81460,7 +81658,7 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
         call_args[1] = argc >= 1 ? args[0] : ptn_null();
         call_args[2] = argc >= 2 ? args[1] : ptn_null();
         call_args[3] = argc >= 3 ? args[2] : ptn_null();
-        return ptn_internal_numfmt_parse_currency(runtime, argc + 1, call_args, line);
+        return ptn_internal_numfmt_parse_currency_impl(runtime, "NumberFormatter::parseCurrency", argc + 1, call_args, line);
     }
     if (ptn_ascii_case_equal(name, "parse")) {
         PtnValue call_args[3];
@@ -81482,8 +81680,38 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
         call_args[2] = argc >= 2 ? args[1] : ptn_null();
         return ptn_internal_numfmt_set_symbol(runtime, argc + 1, call_args, line);
     }
+    if (ptn_ascii_case_equal(name, "setPattern")) {
+        PtnValue call_args[2];
+        call_args[0] = receiver;
+        call_args[1] = argc >= 1 ? args[0] : ptn_null();
+        return ptn_internal_numfmt_set_pattern(runtime, argc + 1, call_args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorCode")) {
+        PtnValue call_args[1];
+        call_args[0] = receiver;
+        return ptn_internal_numfmt_get_error_code(runtime, 1, call_args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+        PtnValue call_args[1];
+        call_args[0] = receiver;
+        return ptn_internal_numfmt_get_error_message(runtime, 1, call_args, line);
+    }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_intl_number_formatter_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source);
+    PtnIntlNumberFormatterData *data = ptn_intl_number_formatter_data(resolved);
+    if (resolved.type != PTN_OBJECT || resolved.as.object == NULL || data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, resolved.as.object);
+    clone.as.object->native_data = ptn_intl_number_formatter_data_clone(data);
+    clone.as.object->native_data_free = ptn_intl_number_formatter_data_free;
+    return clone;
 }
 
 typedef struct PtnIcuConverter PtnIcuConverter;
@@ -175846,6 +176074,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "MessageFormatter::formatMessage", 3, 3, ptn_internal_msgfmt_format_message },
         { "msgfmt_get_locale", 1, 1, ptn_internal_msgfmt_get_locale },
         { "msgfmt_get_pattern", 1, 1, ptn_internal_msgfmt_get_pattern },
+        { "msgfmt_set_pattern", 2, 2, ptn_internal_msgfmt_set_pattern },
         { "msgfmt_create", 2, 2, ptn_internal_msgfmt_create },
         { "msgfmt_format", 2, 2, ptn_internal_msgfmt_format },
         { "msgfmt_format_message", 3, 3, ptn_internal_msgfmt_format_message },
@@ -180184,7 +180413,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getErrorMessage")
             || ptn_ascii_case_equal(method_name, "getLocale")
             || ptn_ascii_case_equal(method_name, "getPattern")
-            || ptn_ascii_case_equal(method_name, "parse");
+            || ptn_ascii_case_equal(method_name, "parse")
+            || ptn_ascii_case_equal(method_name, "setPattern");
     }
     if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -180219,9 +180449,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "create")
             || ptn_ascii_case_equal(method_name, "format")
             || ptn_ascii_case_equal(method_name, "formatCurrency")
+            || ptn_ascii_case_equal(method_name, "getErrorCode")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage")
             || ptn_ascii_case_equal(method_name, "getSymbol")
             || ptn_ascii_case_equal(method_name, "parse")
             || ptn_ascii_case_equal(method_name, "parseCurrency")
+            || ptn_ascii_case_equal(method_name, "setPattern")
             || ptn_ascii_case_equal(method_name, "setSymbol");
     }
     if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
@@ -181546,9 +181779,12 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "create",
             "format",
             "formatCurrency",
+            "getErrorCode",
+            "getErrorMessage",
             "getSymbol",
             "parse",
             "parseCurrency",
+            "setPattern",
             "setSymbol",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -181643,6 +181879,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getLocale",
             "getPattern",
             "parse",
+            "setPattern",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;

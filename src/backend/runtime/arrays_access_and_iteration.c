@@ -330,6 +330,16 @@ static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_clone(
     PtnValue source,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_intl_message_formatter_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_number_formatter_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1852,6 +1862,16 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         source->native_data == NULL) {
         ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
         return ptn_null();
+    }
+    if (ptn_internal_class_name_is_message_formatter(source->class_name)) {
+        if (source->native_data == NULL) {
+            ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized MessageFormatter");
+            return ptn_null();
+        }
+        return ptn_intl_message_formatter_clone(runtime, resolved, line);
+    }
+    if (ptn_internal_class_name_is_number_formatter(source->class_name)) {
+        return ptn_intl_number_formatter_clone(runtime, resolved, line);
     }
     if (ptn_internal_class_name_is_intl_number_range_formatter(source->class_name)) {
         char message[192];

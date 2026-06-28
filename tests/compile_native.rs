@@ -49723,6 +49723,59 @@ MessageFormatter::format(): Found negative or too large array key\n"
 }
 
 #[test]
+fn compile_intl_formatter_clone_pattern_and_error_state_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-formatter-clone-error-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-formatter-clone-error-state.php");
+    let output = root.join("intl-formatter-clone-error-state-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$nf = new NumberFormatter('en_US', NumberFormatter::PATTERN_DECIMAL);\n\
+echo $nf->format(12345.123456), \"\\n\";\n\
+$nfClone = clone $nf;\n\
+$nf->setPattern('0.0');\n\
+echo $nf->format(12345.123456), \"\\n\";\n\
+echo $nfClone->format(12345.123456), \"\\n\";\n\
+$currency = 'keep';\n\
+var_dump($nf->parseCurrency('123.45', $currency));\n\
+var_dump($currency);\n\
+var_dump($nf->getErrorMessage());\n\
+var_dump($nf->getErrorCode());\n\
+$mf = new MessageFormatter('en_US', '{0,number} monkeys on {1,number} trees');\n\
+$mfClone = clone $mf;\n\
+$mf->setPattern('{0,number} trees hosting {1,number} monkeys');\n\
+echo $mf->format([123, 456]), \"\\n\";\n\
+echo $mfClone->format([123, 456]), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "12345.123456\n\
+12345.1\n\
+12345.123456\n\
+bool(false)\n\
+NULL\n\
+string(70) \"NumberFormatter::parseCurrency(): Number parsing failed: U_PARSE_ERROR\"\n\
+int(9)\n\
+123 trees hosting 456 monkeys\n\
+123 monkeys on 456 trees\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_number_formatter_clone"));
+    assert!(c_source.contains("ptn_intl_message_formatter_clone"));
+    assert!(c_source.contains("ptn_internal_numfmt_parse_currency_impl"));
+    assert!(c_source.contains("ptn_internal_msgfmt_set_pattern"));
+}
+
+#[test]
 fn compile_intl_locale_resourcebundle_current_red_edges_to_native_binary() {
     let root = temp_dir("ptn-native-intl-locale-resourcebundle-current-red");
     fs::create_dir_all(&root).unwrap();
