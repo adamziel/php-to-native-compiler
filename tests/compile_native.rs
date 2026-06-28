@@ -27417,6 +27417,14 @@ $tz = new DateTimeZone('Europe/Berlin');
 $tzRoundTrip = unserialize(serialize($tz));
 $tzPayload = $tzRoundTrip->__serialize();
 var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
+
+$legacy = new DateTimeZone('CST6CDT');
+$legacyPayload = $legacy->__serialize();
+var_dump($legacyPayload['timezone_type'], $legacyPayload['timezone']);
+$gmtOffset = new DateTimeZone('GMT+0100');
+$gmtPayload = $gmtOffset->__serialize();
+var_dump($gmtPayload['timezone_type'], $gmtPayload['timezone']);
+var_dump(date_create('Invalid'), date_create_immutable('Invalid'));
 "#,
     )
     .unwrap();
@@ -27444,6 +27452,12 @@ var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
             "2020-01-05 05:07:05 UTC UTC\n",
             "string(13) \"Europe/Berlin\"\n",
             "string(13) \"Europe/Berlin\"\n",
+            "int(3)\n",
+            "string(7) \"CST6CDT\"\n",
+            "int(1)\n",
+            "string(6) \"+01:00\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

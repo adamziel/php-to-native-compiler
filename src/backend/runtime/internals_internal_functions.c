@@ -114853,6 +114853,33 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Australia/South", 8, 0 },
     { "Australia/Sydney", 8, 0 },
     { "Australia/Yancowinna", 8, 0 },
+    { "CST6CDT", 4095, 1 },
+    { "Cuba", 4095, 1 },
+    { "Egypt", 4095, 1 },
+    { "Eire", 4095, 1 },
+    { "EST5EDT", 4095, 1 },
+    { "Factory", 4095, 1 },
+    { "GB-Eire", 4095, 1 },
+    { "GMT0", 4095, 1 },
+    { "Greenwich", 4095, 1 },
+    { "Hongkong", 4095, 1 },
+    { "Iceland", 4095, 1 },
+    { "Iran", 4095, 1 },
+    { "Israel", 4095, 1 },
+    { "Jamaica", 4095, 1 },
+    { "Japan", 4095, 1 },
+    { "Kwajalein", 4095, 1 },
+    { "Libya", 4095, 1 },
+    { "MST7MDT", 4095, 1 },
+    { "Navajo", 4095, 1 },
+    { "NZ-CHAT", 4095, 1 },
+    { "Poland", 4095, 1 },
+    { "Portugal", 4095, 1 },
+    { "PST8PDT", 4095, 1 },
+    { "Singapore", 4095, 1 },
+    { "Turkey", 4095, 1 },
+    { "Universal", 4095, 1 },
+    { "W-SU", 4095, 1 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Budapest", 128, 0 },
@@ -115090,6 +115117,16 @@ static int ptn_timezone_parse_offset_literal(const char *name, int *offset_out) 
     return 1;
 }
 
+static int ptn_timezone_parse_gmt_offset_literal(const char *name, int *offset_out) {
+    if (name == NULL || strlen(name) <= 3 || !ptn_ascii_case_equal_n(name, "GMT", 3)) {
+        return 0;
+    }
+    if (name[3] != '+' && name[3] != '-') {
+        return 0;
+    }
+    return ptn_timezone_parse_offset_literal(name + 3, offset_out);
+}
+
 static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out) {
     if (name == NULL || strlen(name) < 8 || !ptn_ascii_case_equal_n(name, "Etc/GMT", 7)) {
         return 0;
@@ -115118,7 +115155,8 @@ static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out)
 
 static char *ptn_timezone_canonical_offset_name(const char *name) {
     int offset = 0;
-    if (!ptn_timezone_parse_offset_literal(name, &offset)) {
+    if (!ptn_timezone_parse_offset_literal(name, &offset) &&
+        !ptn_timezone_parse_gmt_offset_literal(name, &offset)) {
         return ptn_duplicate_string(name);
     }
     int sign = offset < 0 ? -1 : 1;
@@ -115135,12 +115173,25 @@ static char *ptn_timezone_canonical_offset_name(const char *name) {
     return ptn_duplicate_string(buffer);
 }
 
+static const PtnTimezoneIdentifier *ptn_timezone_identifier_for_name(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof(ptn_timezone_identifiers) / sizeof(ptn_timezone_identifiers[0]); i++) {
+        if (ptn_ascii_case_equal(name, ptn_timezone_identifiers[i].name)) {
+            return &ptn_timezone_identifiers[i];
+        }
+    }
+    return NULL;
+}
+
 static int ptn_timezone_identifier_is_known(const char *name) {
     if (name == NULL || name[0] == '\0') {
         return 0;
     }
     int ignored_offset = 0;
-    if (ptn_timezone_parse_offset_literal(name, &ignored_offset)) {
+    if (ptn_timezone_parse_offset_literal(name, &ignored_offset) ||
+        ptn_timezone_parse_gmt_offset_literal(name, &ignored_offset)) {
         return 1;
     }
     if (ptn_timezone_parse_etc_gmt_literal(name, &ignored_offset)) {
@@ -115163,23 +115214,20 @@ static int ptn_timezone_identifier_is_known(const char *name) {
         ptn_ascii_case_equal(name, "ADT")) {
         return 1;
     }
-    for (size_t i = 0; i < sizeof(ptn_timezone_identifiers) / sizeof(ptn_timezone_identifiers[0]); i++) {
-        if (ptn_ascii_case_equal(name, ptn_timezone_identifiers[i].name)) {
-            return 1;
-        }
-    }
-    return 0;
+    return ptn_timezone_identifier_for_name(name) != NULL;
 }
 
 static int ptn_timezone_name_type(const char *name) {
     int ignored_offset = 0;
     if (ptn_timezone_parse_offset_literal(name, &ignored_offset) ||
+        ptn_timezone_parse_gmt_offset_literal(name, &ignored_offset) ||
         ptn_timezone_parse_etc_gmt_literal(name, &ignored_offset)) {
         return 1;
     }
     if (ptn_ascii_case_equal(name, "UTC") ||
         ptn_ascii_case_equal(name, "Zulu") ||
-        strchr(name, '/') != NULL) {
+        strchr(name, '/') != NULL ||
+        ptn_timezone_identifier_for_name(name) != NULL) {
         return 3;
     }
     return 2;
@@ -117437,7 +117485,8 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
     const char *class_name,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    int malformed_returns_false
 ) {
     if (argc > 2) {
         char message[128];
@@ -117516,6 +117565,10 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
             free(input_name);
             ptn_string_operand_free(input);
             free(owned_timezone);
+            if (malformed_returns_false) {
+                free(message);
+                return ptn_bool(0);
+            }
             ptn_throw_exception_owned_message(runtime, "DateMalformedStringException", message);
             return ptn_null();
         }
@@ -119474,7 +119527,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "DateTimeImmutable");
     const char *class_name = immutable ? "DateTimeImmutable" : "DateTime";
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_datetime_new(runtime, class_name, argc, args, line);
+        PtnValue replacement = ptn_datetime_new(runtime, class_name, argc, args, line, 0);
         if (runtime->exceptions->active_exception != NULL || replacement.type != PTN_OBJECT) {
             ptn_value_destroy(&replacement);
             return ptn_null();
@@ -121903,11 +121956,11 @@ static PtnValue ptn_timezone_abbreviations_value(void) {
 }
 
 static PtnValue ptn_internal_date_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_datetime_new(runtime, "DateTime", argc, args, line);
+    return ptn_datetime_new(runtime, "DateTime", argc, args, line, 1);
 }
 
 static PtnValue ptn_internal_date_create_immutable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line);
+    return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line, 1);
 }
 
 static PtnValue ptn_internal_date_interval_create_from_date_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
