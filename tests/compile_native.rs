@@ -54629,6 +54629,18 @@ try {
     echo $e->getMessage(), "\n";
 }
 
+echo "--document-child-load-reset--\n";
+$v2 = new DOMDocument("t");
+$v2->loadHTML("t");
+$v4 = $v2->createElement('foo');
+try {
+    $v4->appendChild($v2);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+$v2->loadHTML("<p>oU</p>");
+echo $v2->saveXML();
+
 echo "--element-constructor--\n";
 $v0 = new DOMElement("jg");
 $v1 = new DOMDocument("Zb");
@@ -54731,6 +54743,9 @@ var_dump($ns->parentNode->nodeName);
     assert!(stdout
         .contains("Warning: DOMDocument::importNode(): Cannot import: Node Type Not Supported"));
     assert!(stdout.contains("bool(false)\nNot Supported Error\n"));
+    assert!(stdout.contains(
+        "--document-child-load-reset--\nHierarchy Request Error\n<?xml version=\"1.0\" standalone=\"yes\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\" \"http://www.w3.org/TR/REC-html40/loose.dtd\">\n<html><body><p>oU</p></body></html>\n"
+    ));
     assert!(stdout.contains(
         "<?xml version=\"Zb\"?>\n<jg xmlns:default=\"df\"><IU/><default:L xmlns=\"df\"/></jg>\n"
     ));
