@@ -26085,6 +26085,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        int valid = 0;\n");
     out.push_str("        char *separator = strstr(method_name, \"::\");\n");
     out.push_str("        int ptn_scoped_object_callable_class_compatible = 1;\n");
+    out.push_str("        int ptn_scoped_object_callable_inaccessible = 0;\n");
     out.push_str(
         "        if (separator != NULL && separator != method_name && separator[2] != '\\0') {\n",
     );
@@ -26102,16 +26103,25 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                target_class_name = ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(method_name));\n");
     out.push_str("            }\n");
     out.push_str("            if (ptn_declared_class_is_same_or_descendant(receiver_class_name, target_class_name)) {\n");
-    out.push_str("                valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope) || ptn_declared_class_has_call_magic(target_class_name);\n");
+    out.push_str("                char *ptn_scoped_invalid_reason = ptn_inaccessible_declared_method_callback_reason(runtime, target_class_name, separator + 2);\n");
+    out.push_str("                if (ptn_scoped_invalid_reason != NULL) {\n");
+    out.push_str("                    free(ptn_scoped_invalid_reason);\n");
+    out.push_str("                    ptn_scoped_object_callable_inaccessible = 1;\n");
+    out.push_str("                    valid = 0;\n");
+    out.push_str("                } else {\n");
+    out.push_str("                    valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope) || ptn_declared_class_has_call_magic(target_class_name);\n");
+    out.push_str("                }\n");
     out.push_str("            } else {\n");
     out.push_str("                ptn_scoped_object_callable_class_compatible = 0;\n");
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
-    out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
+    out.push_str("        if (!ptn_scoped_object_callable_inaccessible && ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
     out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
     out.push_str("        }\n");
-    out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        if (!ptn_scoped_object_callable_inaccessible) {\n");
+    out.push_str("            valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        }\n");
     out.push_str("        if (runtime != NULL && !valid && ptn_scoped_object_callable_class_compatible && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
     out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line);\n");
     out.push_str("        }\n");
@@ -26196,7 +26206,16 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                target_class_name = runtime == NULL ? lookup_target_class_name : ptn_runtime_resolve_class_alias(runtime, lookup_target_class_name);\n");
     out.push_str("            }\n");
     out.push_str("            const char *target_method_name = scoped_method_separator + 2;\n");
-    out.push_str("            int valid = ptn_declared_class_static_method_is_callable(target_class_name, target_method_name, access_scope) || (ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_static_method_exists(target_class_name, target_method_name));\n");
+    out.push_str("            int ptn_scoped_inaccessible = 0;\n");
+    out.push_str("            int valid = 0;\n");
+    out.push_str("            char *ptn_scoped_invalid_reason = ptn_inaccessible_declared_method_callback_reason(runtime, target_class_name, target_method_name);\n");
+    out.push_str("            if (ptn_scoped_invalid_reason != NULL) {\n");
+    out.push_str("                free(ptn_scoped_invalid_reason);\n");
+    out.push_str("                ptn_scoped_inaccessible = 1;\n");
+    out.push_str("                valid = 0;\n");
+    out.push_str("            } else {\n");
+    out.push_str("                valid = ptn_declared_class_static_method_is_callable(target_class_name, target_method_name, access_scope) || (ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_static_method_exists(target_class_name, target_method_name));\n");
+    out.push_str("            }\n");
     out.push_str("            if (!valid && runtime != NULL && runtime->has_current_receiver) {\n");
     out.push_str(
         "                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n",
@@ -26211,7 +26230,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
         "                    current_receiver_class = current_receiver.as.exception->class_name;\n",
     );
     out.push_str("                }\n");
-    out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, target_class_name)) {\n");
+    out.push_str("                if (!ptn_scoped_inaccessible && current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, target_class_name)) {\n");
     out.push_str("                    valid = ptn_declared_class_method_is_callable(target_class_name, target_method_name, current_receiver_class) || ptn_declared_class_has_call_magic(target_class_name);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
@@ -27927,6 +27946,26 @@ fn emit_callable_dispatch(
         out.push_str("                    *separator = ':';\n");
         out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
         out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                    }\n");
+        out.push_str("                    if (target_class_name != NULL) {\n");
+        out.push_str("                        char *ptn_scoped_invalid_reason = ptn_inaccessible_declared_method_callback_reason(runtime, target_class_name, target_method_name);\n");
+        out.push_str("                        if (ptn_scoped_invalid_reason != NULL) {\n");
+        out.push_str("                            int ptn_scoped_invalid_needed = snprintf(NULL, 0, \"call_user_func(): Argument #1 ($callback) must be a valid callback, %s\", ptn_scoped_invalid_reason);\n");
+        out.push_str("                            if (ptn_scoped_invalid_needed < 0) {\n");
+        out.push_str("                                ptn_abort_out_of_memory();\n");
+        out.push_str("                            }\n");
+        out.push_str("                            char *ptn_scoped_invalid_message = malloc((size_t)ptn_scoped_invalid_needed + 1);\n");
+        out.push_str("                            if (ptn_scoped_invalid_message == NULL) {\n");
+        out.push_str("                                ptn_abort_out_of_memory();\n");
+        out.push_str("                            }\n");
+        out.push_str("                            snprintf(ptn_scoped_invalid_message, (size_t)ptn_scoped_invalid_needed + 1, \"call_user_func(): Argument #1 ($callback) must be a valid callback, %s\", ptn_scoped_invalid_reason);\n");
+        out.push_str("                            free(ptn_scoped_invalid_reason);\n");
+        out.push_str("                            ptn_throw_exception_owned_message(runtime, \"TypeError\", ptn_scoped_invalid_message);\n");
+        out.push_str("                            free(target_method_name);\n");
+        out.push_str("                            free(target_class_name);\n");
+        out.push_str("                            free(method_name);\n");
+        out.push_str("                            return ptn_null();\n");
+        out.push_str("                        }\n");
         out.push_str("                    }\n");
         out.push_str("                }\n");
         out.push_str("                PtnValue result;\n");

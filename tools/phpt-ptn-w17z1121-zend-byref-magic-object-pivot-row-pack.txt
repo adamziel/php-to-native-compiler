@@ -1,0 +1,12 @@
+tests/classes/bug27468.phpt
+tests/classes/abstract_static.phpt
+tests/classes/private_006b.phpt
+tests/classes/private_007b.phpt
+tests/classes/interface_and_extends.phpt
+tests/classes/private_004b.phpt
+tests/classes/private_003b.phpt
+tests/classes/factory_and_singleton_004.phpt
+tests/classes/constants_scope_001.phpt
+tests/classes/type_hinting_005c.phpt
+tests/classes/private_005.phpt
+tests/classes/abstract_user_call.phpt

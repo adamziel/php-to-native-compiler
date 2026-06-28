@@ -13073,6 +13073,30 @@ class MyHelloWorld extends Base {
 }
 
 #[test]
+fn compile_array_parameter_override_missing_parent_class_reports_incompatibility_to_native_binary()
+{
+    let root = temp_dir("ptn-native-array-override-missing-parent-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-override-missing-parent-class.php");
+    let output = root.join("array-override-missing-parent-class-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class C { function f(SomeClass $a) {} }\n\
+class D extends C { function f(array $a) {} }\n",
+    )
+    .unwrap();
+
+    let error = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "Declaration of D::f(array $a) must be compatible with C::f(SomeClass $a)"
+    );
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn compile_imported_trait_method_signature_fatal_reports_trait_source_file_to_native_binary() {
     let root = temp_dir("ptn-native-trait-signature-source-file");
     fs::create_dir_all(&root).unwrap();
@@ -13589,6 +13613,42 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_interface_exists(ptn_static_magic_resolved_class)"));
     assert!(c_source.contains("ptn_static_magic_abstract_message"));
+}
+
+#[test]
+fn compile_abstract_scoped_object_callback_rejected_before_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-abstract-scoped-object-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("abstract-scoped-object-callback.php");
+    let output = root.join("abstract-scoped-object-callback-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+abstract class BaseCallback { abstract function run(); }\n\
+class ConcreteCallback extends BaseCallback { function run() { echo __METHOD__, \"\\n\"; } }\n\
+$object = new ConcreteCallback;\n\
+$object->run();\n\
+try {\n\
+    call_user_func([$object, 'BaseCallback::run']);\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ConcreteCallback::run\n",
+            "\nDeprecated: Callables of the form [\"ConcreteCallback\", \"BaseCallback::run\"] are deprecated in ptn on line 7\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, cannot call abstract method BaseCallback::run()\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

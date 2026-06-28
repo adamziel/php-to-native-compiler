@@ -17333,16 +17333,65 @@ fn parameter_signature_compatibility_error_named(
         if let Some(unavailable_name) =
             unresolved_compatibility_class(type_hint, parent_type_hint, classes)
         {
-            return method_signature_unresolved_compatibility_error_named(
-                class,
-                method,
-                parent_class_name,
-                parent_method,
-                &unavailable_name,
-            );
+            if unresolved_class_can_affect_subtype_check(parent_type_hint, type_hint) {
+                return method_signature_unresolved_compatibility_error_named(
+                    class,
+                    method,
+                    parent_class_name,
+                    parent_method,
+                    &unavailable_name,
+                );
+            }
         }
     }
     method_signature_compatibility_error_named(class, method, parent_class_name, parent_method)
+}
+
+fn unresolved_class_can_affect_subtype_check(candidate: &TypeHint, target: &TypeHint) -> bool {
+    type_hint_alternatives(candidate).iter().any(|candidate| {
+        type_hint_alternatives(target)
+            .iter()
+            .any(|target| type_alternative_unresolved_class_can_affect(candidate, target))
+    })
+}
+
+fn type_alternative_unresolved_class_can_affect(
+    candidate: &TypeAlternative,
+    target: &TypeAlternative,
+) -> bool {
+    candidate.atoms.iter().any(|candidate_atom| {
+        target
+            .atoms
+            .iter()
+            .any(|target_atom| type_atom_unresolved_class_can_affect(candidate_atom, target_atom))
+    })
+}
+
+fn type_atom_unresolved_class_can_affect(candidate: &TypeAtom, target: &TypeAtom) -> bool {
+    match (candidate, target) {
+        (TypeAtom::Class(_), TypeAtom::Array)
+        | (TypeAtom::Class(_), TypeAtom::Int)
+        | (TypeAtom::Class(_), TypeAtom::Float)
+        | (TypeAtom::Class(_), TypeAtom::String)
+        | (TypeAtom::Class(_), TypeAtom::Bool)
+        | (TypeAtom::Class(_), TypeAtom::True)
+        | (TypeAtom::Class(_), TypeAtom::False)
+        | (TypeAtom::Class(_), TypeAtom::Null)
+        | (TypeAtom::Class(_), TypeAtom::Void)
+        | (TypeAtom::Class(_), TypeAtom::Never)
+        | (TypeAtom::Array, TypeAtom::Class(_))
+        | (TypeAtom::Int, TypeAtom::Class(_))
+        | (TypeAtom::Float, TypeAtom::Class(_))
+        | (TypeAtom::String, TypeAtom::Class(_))
+        | (TypeAtom::Bool, TypeAtom::Class(_))
+        | (TypeAtom::True, TypeAtom::Class(_))
+        | (TypeAtom::False, TypeAtom::Class(_))
+        | (TypeAtom::Null, TypeAtom::Class(_))
+        | (TypeAtom::Void, TypeAtom::Class(_))
+        | (TypeAtom::Never, TypeAtom::Class(_)) => false,
+        (TypeAtom::Class(_), _) | (_, TypeAtom::Class(_)) => true,
+        _ => false,
+    }
 }
 
 fn unresolved_compatibility_class(

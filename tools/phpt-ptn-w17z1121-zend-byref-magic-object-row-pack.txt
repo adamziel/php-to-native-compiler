@@ -1,0 +1,12 @@
+Zend/tests/exception_with_by_ref_message.phpt
+tests/lang/passByReference_006.phpt
+Zend/tests/magic_methods/magic_by_ref_001.phpt
+Zend/tests/magic_methods/magic_by_ref_002.phpt
+Zend/tests/foreach/bug39990.phpt
+Zend/tests/traits/bugs/alias01.phpt
+Zend/tests/class_alias/bug54268.phpt
+tests/classes/__set__get_003.phpt
+Zend/tests/magic_methods/bug38146.phpt
+tests/classes/factory_and_singleton_009.phpt
+tests/classes/destructor_visibility_002.phpt
+tests/classes/destructor_inheritance.phpt
