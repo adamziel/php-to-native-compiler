@@ -1,0 +1,12 @@
+ext/reflection/tests/bug74949.phpt
+ext/reflection/tests/gh9447.phpt
+ext/reflection/tests/closures_003.phpt
+ext/reflection/tests/ReflectionProperty_isReadable_lazy_isset.phpt
+ext/reflection/tests/closures_002.phpt
+ext/reflection/tests/property_hooks/ReflectionProperty_getSetRawValue.phpt
+ext/reflection/tests/bug40431.phpt
+ext/reflection/tests/property_hooks/ReflectionProperty_isInitialized.phpt
+ext/reflection/tests/bug69802.phpt
+ext/reflection/tests/types/ReflectionType_002.phpt
+ext/reflection/tests/property_hooks/gh17713.phpt
+ext/reflection/tests/ReflectionParameter_new_initializer.phpt

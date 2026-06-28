@@ -20553,7 +20553,7 @@ fn reflection_default_class_name_repr(class_name: &str) -> String {
     {
         class_name.to_string()
     } else {
-        class_name.trim_start_matches('\\').to_string()
+        format!("\\{}", class_name.trim_start_matches('\\'))
     }
 }
 
