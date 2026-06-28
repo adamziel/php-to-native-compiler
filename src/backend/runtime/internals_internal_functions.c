@@ -48,6 +48,20 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     if (ptn_ascii_case_equal(name, "__FILE__")) {
         return ptn_owned_string(ptn_duplicate_string(path != NULL ? path : ""));
     }
+    if (strcmp(name, "PATH_SEPARATOR") == 0) {
+#if defined(_WIN32)
+        return ptn_string(";");
+#else
+        return ptn_string(":");
+#endif
+    }
+    if (strcmp(name, "DIRECTORY_SEPARATOR") == 0) {
+#if defined(_WIN32)
+        return ptn_string("\\");
+#else
+        return ptn_string("/");
+#endif
+    }
     if (strcmp(name, "WSDL_CACHE_NONE") == 0) {
         return ptn_int(0);
     }
@@ -62860,7 +62874,7 @@ static void ptn_emit_stat_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
     free(message);
 }
 
