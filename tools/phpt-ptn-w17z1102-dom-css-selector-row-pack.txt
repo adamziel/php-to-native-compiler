@@ -1,0 +1,15 @@
+# ptn-w17z.1102 exact DOM CSS selector current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T031845Z.tsv
+
+ext/dom/tests/modern/css_selectors/gh17802.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_only_of_type.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_placeholder_shown.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_empty.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_has.phpt
+ext/dom/tests/modern/css_selectors/closest_invalid_selector.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_nth_child.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_checked.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_dir.phpt
+ext/dom/tests/modern/css_selectors/namespaces.phpt
+ext/dom/tests/modern/css_selectors/entities.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_blank.phpt
