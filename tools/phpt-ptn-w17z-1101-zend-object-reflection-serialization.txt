@@ -1,0 +1,12 @@
+ext/reflection/tests/ReflectionFiber_notrace_2.phpt
+ext/standard/tests/serialize/serialization_objects_012.phpt
+ext/standard/tests/serialize/typed_property_ref_overwrite2.phpt
+ext/standard/tests/serialize/bug31402.phpt
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/magic_methods/bug38146.phpt
+Zend/tests/fibers/gh9916-008.phpt
+Zend/tests/fibers/gh15108-006.phpt
+Zend/tests/fibers/gh9735-008.phpt
+Zend/tests/fibers/resume.phpt
+Zend/tests/fibers/gh9916-003.phpt
+Zend/tests/fibers/gh15108-001.phpt
