@@ -1,0 +1,20 @@
+# ptn-w17z.1111 SPL iterator/file/autoload residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T041906Z.tsv
+# Pivot: the original bead rows were baselined on current origin/master; 8/12 were already green.
+# Kept the 4 still-red assigned rows and replaced the green slots with the next
+# nearby SPL current-red rows from the same artifact. A second baseline found
+# three adjacent replacements already green, so those slots were moved to the
+# next same-artifact SPL current-red rows.
+# bucket: spl-iterator-file-object-residual rows=12
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/iterator_048.phpt
+ext/spl/tests/GlobIterator_constructor_count.phpt
+ext/spl/tests/bug41828.phpt
+ext/spl/tests/bug70053.phpt
+ext/spl/tests/dit_004.phpt
+ext/spl/tests/bug81587.phpt
+ext/spl/tests/RecursiveDirectoryIterator_getSubPath_basic.phpt
+ext/spl/tests/bug67359.phpt
+ext/spl/tests/iterator_043.phpt
