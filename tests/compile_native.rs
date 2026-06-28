@@ -5619,6 +5619,41 @@ class MissingParameterTypeTest extends DateTime {
 }
 
 #[test]
+fn parser_reports_decidable_builtin_class_method_variance_without_unavailable_class() {
+    let error = parser::parse(
+        "<?php
+class ParentArrayHint {
+    public function f(array $value) {}
+}
+class ChildClassHint extends ParentArrayHint {
+    public function f(SomeClass $value) {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of ChildClassHint::f(SomeClass $value) must be compatible with ParentArrayHint::f(array $value)"
+    );
+
+    let error = parser::parse(
+        "<?php
+class ParentMissingHint {
+    public function f(SomeClass $value) {}
+}
+class ChildArrayHint extends ParentMissingHint {
+    public function f(array $value) {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of ChildArrayHint::f(array $value) must be compatible with ParentMissingHint::f(SomeClass $value)"
+    );
+}
+
+#[test]
 fn parser_validates_internal_method_signature_defaults() {
     let error = parser::parse(
         "<?php
