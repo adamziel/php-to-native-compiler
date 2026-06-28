@@ -76152,6 +76152,58 @@ Filter\\FilterFailedException: filter validation failed: filter validate_email n
 }
 
 #[test]
+fn phpc_filter_regexp_callback_and_array_option_edges() {
+    let root = temp_dir("ptn-phpc-filter-regexp-callback-array-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-regexp-callback-array-options.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function test($var) { return strtoupper($var); }\n\
+class test_class { static function test($var) { return strtolower($var); } }\n\
+\n\
+var_dump(filter_input(INPUT_GET, 'missing', FILTER_DEFAULT, FILTER_NULL_ON_FAILURE));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/.*/']]));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/^b(.*)/']]));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/^d(.*)/']]));\n\
+try { filter_var('data', FILTER_VALIDATE_REGEXP); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(filter_var('data', FILTER_CALLBACK, ['options' => 'test']));\n\
+var_dump(filter_var('dAtA', FILTER_CALLBACK, ['options' => ['test_class', 'test']]));\n\
+try { filter_var('qwe', FILTER_CALLBACK, ['options' => 'no such func']); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var('qwe', FILTER_CALLBACK); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var_array([], ''); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var_array([], new stdClass); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("variables_order=EGPCS")
+        .arg("run")
+        .arg(&input)
+        .env("QUERY_STRING", "")
+        .env("PATH", "/")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+string(4) \"data\"\n\
+bool(false)\n\
+string(4) \"data\"\n\
+filter_var(): \"regexp\" option is missing\n\
+string(4) \"DATA\"\n\
+string(4) \"data\"\n\
+filter_var(): Option must be a valid callback\n\
+filter_var(): Option must be a valid callback\n\
+filter_var_array(): Argument #2 ($options) must be of type array|int, string given\n\
+filter_var_array(): Argument #2 ($options) must be of type array|int, stdClass given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cgi_php_input_fopen_streams_are_seekable_and_independent() {
     let root = temp_dir("ptn-phpc-cgi-php-input-stream");
     fs::create_dir_all(&root).unwrap();

@@ -19637,10 +19637,10 @@ static int ptn_filter_options_from_value(
     if (options_entry == NULL) {
         return 1;
     }
+    filter_options->has_callback = 1;
+    filter_options->callback = options_entry->value;
     PtnValue raw_options = ptn_value_deref(options_entry->value);
     if (raw_options.type != PTN_ARRAY) {
-        filter_options->has_callback = 1;
-        filter_options->callback = options_entry->value;
         return 1;
     }
 
@@ -19728,6 +19728,41 @@ static PtnValue ptn_filter_failure_owned_message(
     }
     free(message);
     return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_null() : ptn_bool(0);
+}
+
+static PtnValue ptn_filter_missing_input_value(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    PtnStringOperand variable_name
+) {
+    if (options->has_default) {
+        return ptn_value_clone_deref(options->default_value);
+    }
+    if ((options->flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "input value '%.*s' not found",
+            (int)variable_name.len,
+            variable_name.data
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "input value '%.*s' not found",
+            (int)variable_name.len,
+            variable_name.data
+        );
+        return ptn_filter_failure_owned_message(runtime, options, message);
+    }
+    return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_bool(0) : ptn_null();
 }
 
 static PtnValue ptn_filter_failure_not_array(
@@ -20922,31 +20957,46 @@ static int ptn_filter_validate_mac_operand(PtnStringOperand input, const PtnFilt
     return 1;
 }
 
-static int ptn_filter_validate_regexp_operand(PtnRuntime *runtime, PtnStringOperand input, const PtnFilterOptions *options, size_t line) {
+static int ptn_filter_validate_regexp_operand(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand input,
+    const PtnFilterOptions *options,
+    size_t line
+) {
     if (!options->has_regexp) {
-        return 0;
-    }
-    PtnStringOperand pattern = ptn_value_to_string_operand_with_runtime(runtime, options->regexp, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(pattern);
-        return 0;
-    }
-    int ok = 0;
-    if (pattern.len >= 4 && pattern.data[0] == '/' && pattern.data[1] == '^' && pattern.data[pattern.len - 1] == '/') {
-        if (pattern.len >= 5 && pattern.data[pattern.len - 2] == '$') {
-            size_t exact_len = pattern.len - 4;
-            ok = input.len == exact_len && memcmp(input.data, pattern.data + 2, exact_len) == 0;
-        } else if (pattern.len >= 5 && pattern.data[pattern.len - 3] == '.' && pattern.data[pattern.len - 2] == '*') {
-            size_t prefix_len = pattern.len - 5;
-            ok = input.len >= prefix_len && memcmp(input.data, pattern.data + 2, prefix_len) == 0;
+        char message[96];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): \"regexp\" option is missing",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
         }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return -1;
     }
-    ptn_string_operand_free(pattern);
+
+    PtnValue match_args[2];
+    match_args[0] = ptn_value_clone_deref(options->regexp);
+    match_args[1] = ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len);
+    PtnValue match_result = ptn_call_internal(runtime, "preg_match", 2, match_args, line);
+    ptn_value_destroy(&match_args[0]);
+    ptn_value_destroy(&match_args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&match_result);
+        return -1;
+    }
+    int ok = ptn_is_truthy(match_result);
+    ptn_value_destroy(&match_result);
     return ok;
 }
 
 static PtnValue ptn_filter_apply_scalar(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnValue value,
     int64_t filter_id,
     const PtnFilterOptions *options,
@@ -21006,7 +21056,11 @@ static PtnValue ptn_filter_apply_scalar(
         } else if (filter_id == PTN_FILTER_VALIDATE_MAC) {
             ok = ptn_filter_validate_mac_operand(input, options);
         } else {
-            ok = ptn_filter_validate_regexp_operand(runtime, input, options, line);
+            ok = ptn_filter_validate_regexp_operand(runtime, function_name, input, options, line);
+        }
+        if (ok < 0) {
+            ptn_string_operand_free(input);
+            return ptn_null();
         }
         PtnFilterOptions ip_failure_options;
         const PtnFilterOptions *failure_options = options;
@@ -21022,11 +21076,22 @@ static PtnValue ptn_filter_apply_scalar(
         return result;
     }
     if (filter_id == PTN_FILTER_CALLBACK) {
-        if (!options->has_callback) {
-            return ptn_filter_failure_value(runtime, options, "filter validation failed");
+        if (!options->has_callback || !ptn_callable_is_valid(runtime, options->callback, 0)) {
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Option must be a valid callback",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
         }
         PtnValue callback_arg = ptn_value_clone_deref(value);
-        PtnValue result = ptn_call_callable(runtime, options->callback, 1, &callback_arg, line, 0);
+        PtnValue result = ptn_internal_call_callback(runtime, options->callback, 1, &callback_arg, line);
         ptn_value_destroy(&callback_arg);
         return result;
     }
@@ -21035,6 +21100,7 @@ static PtnValue ptn_filter_apply_scalar(
 
 static PtnValue ptn_filter_apply_value(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnValue value,
     int64_t filter_id,
     const PtnFilterOptions *options,
@@ -21059,7 +21125,7 @@ static PtnValue ptn_filter_apply_value(
             if (entry_value.type == PTN_ARRAY) {
                 entry_options.flags |= PTN_FILTER_REQUIRE_ARRAY;
             }
-            PtnValue filtered = ptn_filter_apply_value(runtime, entry->value, filter_id, &entry_options, line);
+            PtnValue filtered = ptn_filter_apply_value(runtime, function_name, entry->value, filter_id, &entry_options, line);
             ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), filtered);
         }
         return result;
@@ -21067,7 +21133,7 @@ static PtnValue ptn_filter_apply_value(
     if ((options->flags & PTN_FILTER_REQUIRE_ARRAY) != 0) {
         return ptn_filter_failure_not_array(runtime, options, value);
     }
-    PtnValue filtered = ptn_filter_apply_scalar(runtime, value, filter_id, options, line);
+    PtnValue filtered = ptn_filter_apply_scalar(runtime, function_name, value, filter_id, options, line);
     if ((options->flags & PTN_FILTER_FORCE_ARRAY) != 0) {
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(result.as.array, ptn_array_int_key(0), filtered);
@@ -21105,7 +21171,7 @@ static PtnValue ptn_internal_filter_var(PtnRuntime *runtime, size_t argc, const 
     if (!ptn_filter_validate_id(runtime, "filter_var", filter_id, line)) {
         return ptn_bool(0);
     }
-    return ptn_filter_apply_value(runtime, args[0], filter_id, &options, line);
+    return ptn_filter_apply_value(runtime, "filter_var", args[0], filter_id, &options, line);
 }
 
 static const char *ptn_filter_input_global_name(int64_t input_type) {
@@ -21151,75 +21217,29 @@ static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, cons
     PtnLookupResult global = ptn_runtime_read_global_variable_quiet(runtime, global_name);
     PtnValue container = ptn_value_deref(global.value);
     if (!global.exists || container.type != PTN_ARRAY) {
-        if (!options.has_default && (options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
-            int needed = snprintf(
-                NULL,
-                0,
-                "input value '%.*s' not found",
-                (int)variable_name.len,
-                variable_name.data
-            );
-            if (needed < 0) {
-                ptn_abort_out_of_memory();
-            }
-            char *message = malloc((size_t)needed + 1);
-            if (message == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            snprintf(
-                message,
-                (size_t)needed + 1,
-                "input value '%.*s' not found",
-                (int)variable_name.len,
-                variable_name.data
-            );
-            ptn_string_operand_free(variable_name);
-            return ptn_filter_failure_owned_message(runtime, &options, message);
-        }
+        PtnValue result = ptn_filter_missing_input_value(runtime, &options, variable_name);
         ptn_string_operand_free(variable_name);
-        return options.has_default
-            ? ptn_value_clone_deref(options.default_value)
-            : ptn_null();
+        return result;
     }
     PtnArrayKey key = ptn_array_string_key_len(variable_name.data, variable_name.len);
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     ptn_array_key_free(key);
     if (entry == NULL) {
-        if (!options.has_default && (options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
-            int needed = snprintf(
-                NULL,
-                0,
-                "input value '%.*s' not found",
-                (int)variable_name.len,
-                variable_name.data
-            );
-            if (needed < 0) {
-                ptn_abort_out_of_memory();
-            }
-            char *message = malloc((size_t)needed + 1);
-            if (message == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            snprintf(
-                message,
-                (size_t)needed + 1,
-                "input value '%.*s' not found",
-                (int)variable_name.len,
-                variable_name.data
-            );
-            ptn_string_operand_free(variable_name);
-            return ptn_filter_failure_owned_message(runtime, &options, message);
-        }
+        PtnValue result = ptn_filter_missing_input_value(runtime, &options, variable_name);
         ptn_string_operand_free(variable_name);
-        return options.has_default
-            ? ptn_value_clone_deref(options.default_value)
-            : ptn_null();
+        return result;
     }
     ptn_string_operand_free(variable_name);
-    return ptn_filter_apply_value(runtime, entry->value, filter_id, &options, line);
+    return ptn_filter_apply_value(runtime, "filter_input", entry->value, filter_id, &options, line);
 }
 
-static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_filter_var_array_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 
 static PtnValue ptn_internal_filter_input_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t input_type = ptn_value_to_integer(args[0]);
@@ -21237,7 +21257,7 @@ static PtnValue ptn_internal_filter_input_array(PtnRuntime *runtime, size_t argc
     var_args[0] = container;
     var_args[1] = argc >= 2 ? args[1] : ptn_int(PTN_FILTER_DEFAULT);
     var_args[2] = argc >= 3 ? args[2] : ptn_bool(1);
-    return ptn_internal_filter_var_array(runtime, argc >= 3 ? 3 : (argc >= 2 ? 2 : 1), var_args, line);
+    return ptn_filter_var_array_impl(runtime, "filter_input_array", argc >= 3 ? 3 : (argc >= 2 ? 2 : 1), var_args, line);
 }
 
 static int ptn_filter_spec_from_value(
@@ -21258,20 +21278,99 @@ static int ptn_filter_spec_from_value(
     return 1;
 }
 
-static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static const char *ptn_filter_options_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static int ptn_filter_string_is_numeric(PtnString string) {
+    if (ptn_string_has_embedded_nul(string)) {
+        return 0;
+    }
+    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);
+    double number = 0.0;
+    int is_numeric = ptn_is_numeric_string(copy, &number);
+    free(copy);
+    return is_numeric;
+}
+
+static int ptn_filter_array_definition_type_is_valid(PtnValue definition) {
+    definition = ptn_value_deref(definition);
+    if (definition.type == PTN_ARRAY || definition.type == PTN_INT ||
+        definition.type == PTN_BOOL || definition.type == PTN_NULL ||
+        definition.type == PTN_FLOAT) {
+        return 1;
+    }
+    return definition.type == PTN_STRING && ptn_filter_string_is_numeric(definition.as.string);
+}
+
+static PtnValue ptn_filter_array_options_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #2 ($options) must be of type array|int, %s given",
+        function_name,
+        ptn_filter_options_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_filter_array_empty_key_error(PtnRuntime *runtime, const char *function_name) {
+    char message[112];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #2 ($options) cannot contain empty keys",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_filter_var_array_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     PtnValue data = ptn_value_deref(args[0]);
     if (data.type != PTN_ARRAY) {
         return ptn_bool(0);
     }
     int add_empty = argc < 3 || ptn_is_truthy(args[2]);
     PtnValue definition = argc >= 2 ? ptn_value_deref(args[1]) : ptn_int(PTN_FILTER_DEFAULT);
+    if (!ptn_filter_array_definition_type_is_valid(definition)) {
+        return ptn_filter_array_options_type_error(runtime, function_name, definition);
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
 
     if (definition.type != PTN_ARRAY) {
         int64_t filter_id = ptn_value_to_integer(definition);
         PtnFilterOptions options;
         ptn_filter_options_init(&options);
-        if (!ptn_filter_validate_id(runtime, "filter_var_array", filter_id, line)) {
+        if (!ptn_filter_validate_id(runtime, function_name, filter_id, line)) {
             return ptn_bool(0);
         }
         options.flags |= PTN_FILTER_FORCE_ARRAY;
@@ -21282,7 +21381,7 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
             if (entry_value.type != PTN_ARRAY) {
                 entry_options.flags &= ~PTN_FILTER_FORCE_ARRAY;
             }
-            PtnValue filtered = ptn_filter_apply_value(runtime, entry->value, filter_id, &entry_options, line);
+            PtnValue filtered = ptn_filter_apply_value(runtime, function_name, entry->value, filter_id, &entry_options, line);
             if (entry->value.type == PTN_REFERENCE && entry_value.type == PTN_ARRAY) {
                 ptn_reference_assign(runtime, entry->value.as.reference, filtered);
                 ptn_value_destroy(&filtered);
@@ -21296,6 +21395,9 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
 
     for (size_t i = 0; i < definition.as.array->len; i++) {
         PtnArrayEntry *spec_entry = &definition.as.array->entries[i];
+        if (spec_entry->key.type == PTN_ARRAY_KEY_STRING && spec_entry->key.string_len == 0) {
+            return ptn_filter_array_empty_key_error(runtime, function_name);
+        }
         PtnArrayEntry *data_entry = ptn_array_entry_for_key(data.as.array, spec_entry->key);
         if (data_entry == NULL) {
             if (add_empty) {
@@ -21308,7 +21410,7 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
         if (!ptn_filter_spec_from_value(runtime, spec_entry->value, &filter_id, &options, line)) {
             return ptn_null();
         }
-        if (!ptn_filter_validate_id(runtime, "filter_var_array", filter_id, line)) {
+        if (!ptn_filter_validate_id(runtime, function_name, filter_id, line)) {
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_key_clone(spec_entry->key),
@@ -21316,10 +21418,14 @@ static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, 
             );
             continue;
         }
-        PtnValue filtered = ptn_filter_apply_value(runtime, data_entry->value, filter_id, &options, line);
+        PtnValue filtered = ptn_filter_apply_value(runtime, function_name, data_entry->value, filter_id, &options, line);
         ptn_array_set_entry(result.as.array, ptn_array_key_clone(spec_entry->key), filtered);
     }
     return result;
+}
+
+static PtnValue ptn_internal_filter_var_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_filter_var_array_impl(runtime, "filter_var_array", argc, args, line);
 }
 
 static const char *ptn_internal_array_arg_type_name(PtnValue value) {
