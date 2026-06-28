@@ -57470,6 +57470,57 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap_server_non_wsdl_header_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-server-non-wsdl-header-response");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-server-non-wsdl-header-response.php");
+    let output = root.join("soap-server-non-wsdl-header-response-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Tool {
+    public function TOKEN($id) {
+        return new SoapHeader('namespace1', 'TOKEN', $id, true);
+    }
+
+    public function Method() {}
+}
+
+$request =
+    '<?xml version="1.0"?>' . PHP_EOL .
+    '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="namespace1"' .
+    ' xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' .
+    ' xmlns:xsd="http://www.w3.org/2001/XMLSchema">' .
+    '<SOAP-ENV:Header><ns1:TOKEN soapenv:mustUnderstand="1">abc</ns1:TOKEN></SOAP-ENV:Header>' .
+    '<SOAP-ENV:Body><ns1:Method /></SOAP-ENV:Body></SOAP-ENV:Envelope>';
+
+$soap = new SoapServer(null, ['uri' => '127.0.0.1']);
+$soap->setClass(Tool::class);
+$soap->handle($request);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"namespace1\" xmlns:ns2=\"127.0.0.1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Header><ns1:TOKEN SOAP-ENV:mustUnderstand=\"1\">abc</ns1:TOKEN></SOAP-ENV:Header><SOAP-ENV:Body><ns2:MethodResponse><return xsi:nil=\"true\"/></ns2:MethodResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>\n"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_process_non_wsdl_soap11_headers"));
+}
+
+#[test]
 fn compile_soap_server_get_functions_and_soap12_edges_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-get-functions-soap12");
     fs::create_dir_all(&root).unwrap();
@@ -57933,6 +57984,152 @@ var_dump(SOAP_USE_XSI_ARRAY_TYPE);
     assert!(c_source.contains("ptn_soap_cache_wsdl_file"));
     assert!(c_source.contains("ptn_soap_parse_wsdl_types_from_source"));
     assert!(c_source.contains("ptn_soap_wsdl_input_part_type_dup"));
+}
+
+#[test]
+fn compile_soap_wsdl_backed_enum_field_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-backed-enum-field-encoding");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("gh15711.wsdl"),
+        r#"<wsdl:definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://schemas.nothing.com" targetNamespace="http://schemas.nothing.com">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://schemas.nothing.com">
+      <xsd:complexType name="book">
+        <xsd:all>
+          <xsd:element name="base64" type="xsd:base64Binary"/>
+          <xsd:element name="string" type="xsd:string"/>
+          <xsd:element name="any" type="xsd:any"/>
+          <xsd:element name="hexbin" type="xsd:hexBinary"/>
+          <xsd:element name="nmtokens" type="xsd:NMTOKENS"/>
+          <xsd:element name="integer" type="xsd:integer"/>
+          <xsd:element name="short" type="xsd:short"/>
+        </xsd:all>
+      </xsd:complexType>
+    </xsd:schema>
+  </wsdl:types>
+  <message name="dotestRequest">
+    <part name="dotestReturn" type="tns:book"/>
+  </message>
+  <portType name="testPortType">
+    <operation name="dotest">
+      <input message="tns:dotestRequest"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="dotest">
+      <soap:operation soapAction="http://localhost:81/test/interface.php?class=test/dotest" style="rpc"/>
+      <input>
+        <soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" namespace="http://schemas.nothing.com"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="test">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</wsdl:definitions>
+"#,
+    )
+    .unwrap();
+    let input = root.join("soap-wsdl-backed-enum-field-encoding.php");
+    let output = root.join("soap-wsdl-backed-enum-field-encoding-bin");
+    fs::write(
+        &input,
+        r#"<?php
+enum StringBackedEnum: string {
+    case First = 'BackingValue1';
+    case Second = 'BackingValue2';
+    case Third = 'BackingValue3';
+    case Fourth = 'BackingValue4';
+    case Fifth = 'BackingValue5';
+}
+
+enum IntBackedEnum: int {
+    case First = 1;
+    case Second = 2;
+}
+
+enum NonBackedEnum {
+    case First;
+}
+
+class TestSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): ?string {
+        echo $request;
+    }
+}
+
+$client = new TestSoapClient(__DIR__ . '/gh15711.wsdl', ['classmap' => ['book' => 'book']]);
+
+echo "--- Test with backed enum ---\n";
+$book = new stdClass();
+$book->base64 = StringBackedEnum::First;
+$book->string = StringBackedEnum::Second;
+$book->any = StringBackedEnum::Third;
+$book->hexbin = StringBackedEnum::Fourth;
+$book->nmtokens = StringBackedEnum::Fifth;
+$book->integer = IntBackedEnum::First;
+$book->short = IntBackedEnum::Second;
+try {
+    $client->dotest($book);
+} catch (Throwable) {}
+
+echo "--- Test with non-backed enum ---\n";
+$book = new stdClass();
+$book->base64 = NonBackedEnum::First;
+$book->string = NonBackedEnum::First;
+$book->any = NonBackedEnum::First;
+$book->hexbin = NonBackedEnum::First;
+$book->nmtokens = NonBackedEnum::First;
+$book->integer = NonBackedEnum::First;
+$book->short = NonBackedEnum::First;
+try {
+    $client->dotest($book);
+} catch (ValueError $e) {
+    echo "ValueError: ", $e->getMessage(), "\n";
+}
+
+echo "--- Test with mismatched enum backing type ---\n";
+$book->integer = StringBackedEnum::First;
+$book->short = StringBackedEnum::First;
+try {
+    $client->dotest($book);
+} catch (ValueError $e) {
+    echo "ValueError: ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<any xsi:type=\"xsd:any\"><name xsi:type=\"xsd:string\">Third</name><value xsi:type=\"xsd:string\">BackingValue3</value></any>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("ValueError: Non-backed enums have no default serialization\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("ValueError: String-backed enum cannot be serialized as int\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_any_value"));
+    assert!(c_source.contains("ptn_soap_validate_enum_for_type"));
 }
 
 #[test]
