@@ -899,6 +899,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
             ptn_runtime_session_shutdown(runtime);
         }
         ptn_runtime_run_static_property_destructors(runtime);
+        ptn_standard_streams_shutdown();
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }

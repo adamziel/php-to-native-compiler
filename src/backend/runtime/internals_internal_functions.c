@@ -54115,7 +54115,7 @@ static PtnResource *ptn_effective_stream_context(size_t argc, const PtnValue *ar
             return context;
         }
     }
-    return ptn_default_stream_context;
+    return ptn_default_stream_context_ensure();
 }
 
 typedef enum {
@@ -56319,7 +56319,7 @@ static char *ptn_stream_apply_user_filter_alloc(
         : ptn_duplicate_string_len(output_brigade->output.data, output_len);
     *out_len = output_len;
 
-    if (status != PTN_PSFS_PASS_ON || output_len == 0) {
+    if ((status != PTN_PSFS_PASS_ON || output_len == 0) && !(closing && len == 0)) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
@@ -56706,6 +56706,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
     PtnStreamFilter *filter,
     const char *data,
     size_t len,
+    int closing,
     size_t line,
     size_t *out_len
 ) {
@@ -56720,7 +56721,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 filter,
                 output,
                 output_len,
-                0,
+                closing,
                 line,
                 &output_len,
                 &ok
@@ -56792,6 +56793,33 @@ static char *ptn_stream_apply_filter_chain_alloc(
     }
     *out_len = output_len;
     return output;
+}
+
+static void ptn_stream_filter_chain_flush_closing_impl(PtnStreamFilter *filter) {
+    PtnRuntime *runtime = NULL;
+    for (PtnStreamFilter *candidate = filter; candidate != NULL; candidate = candidate->next) {
+        if (candidate->has_user_filter_object && candidate->user_filter_runtime != NULL) {
+            runtime = candidate->user_filter_runtime;
+            break;
+        }
+    }
+    if (runtime == NULL) {
+        return;
+    }
+
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        "stream filter",
+        filter,
+        "",
+        0,
+        1,
+        0,
+        &output_len
+    );
+    free(output);
+    (void)output_len;
 }
 
 static const char *ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(PtnStreamFilter *filter) {
@@ -56944,6 +56972,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
             raw.data,
             raw.len,
             0,
+            0,
             &filtered_len
         );
         free(raw.data);
@@ -56972,6 +57001,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         resource->read_filters,
         (const char *)chunk,
         read_len,
+        0,
         0,
         &filtered_len
     );
@@ -57224,6 +57254,7 @@ static size_t ptn_stream_write_filtered(
         resource->write_filters,
         data,
         len,
+        0,
         line,
         &output_len
     );
@@ -57307,6 +57338,7 @@ static PtnValue ptn_internal_stream_filter_attach(
         ptn_string_operand_free(name);
         return ptn_bool(0);
     }
+    ptn_stream_filter_chain_flush_closing_hook = ptn_stream_filter_chain_flush_closing_impl;
 
     PtnStreamFilterKind kind;
     PtnUserStreamFilterRegistration *user_registration = NULL;
@@ -58800,6 +58832,7 @@ static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const P
                 resource->read_filters,
                 (const char *)buffer,
                 read_len,
+                0,
                 line,
                 &filtered_len
             );
@@ -59011,6 +59044,7 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
                 source->read_filters,
                 (const char *)buffer,
                 read_len,
+                0,
                 line,
                 &filtered_len
             );
@@ -60957,6 +60991,7 @@ static int ptn_php_filter_apply_filter_name(
         filter,
         (const char *)*data_io,
         *len_io,
+        0,
         0,
         &output_len
     );

@@ -2380,7 +2380,13 @@ static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, c
         );
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "\nWarning: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
