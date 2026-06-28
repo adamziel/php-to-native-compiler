@@ -1361,7 +1361,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_class_name_is_datetime(lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line);
+        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line, 0);
 #else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
@@ -1372,7 +1372,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_class_name_is_datetime_immutable(lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line);
+        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line, 0);
 #else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTimeImmutable constructor expects at most 1 argument");
