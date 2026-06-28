@@ -216551,6 +216551,86 @@ static char *ptn_eval_unexpected_identifier_message(const char *name, size_t len
     return message;
 }
 
+static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t pos) {
+    if (pos + 3 > len ||
+        code[pos] != '<' ||
+        code[pos + 1] != '<' ||
+        code[pos + 2] != '<') {
+        return pos;
+    }
+    size_t cursor = ptn_eval_skip_ws(code, len, pos + 3);
+    size_t label_start = cursor;
+    size_t label_len = 0;
+    if (cursor < len && (code[cursor] == '\'' || code[cursor] == '"')) {
+        char quote = code[cursor++];
+        label_start = cursor;
+        while (cursor < len && code[cursor] != quote) {
+            cursor++;
+        }
+        if (cursor >= len) {
+            return len;
+        }
+        label_len = cursor - label_start;
+        cursor++;
+    } else {
+        if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            return pos;
+        }
+        label_start = cursor;
+        cursor++;
+        while (cursor < len && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        label_len = cursor - label_start;
+    }
+    while (cursor < len && code[cursor] != '\n') {
+        cursor++;
+    }
+    if (cursor < len) {
+        cursor++;
+    }
+    while (cursor < len) {
+        size_t line_start = cursor;
+        size_t label_pos = line_start;
+        while (label_pos < len && (code[label_pos] == ' ' || code[label_pos] == '\t')) {
+            label_pos++;
+        }
+        if (label_pos + label_len <= len &&
+            memcmp(code + label_pos, code + label_start, label_len) == 0) {
+            size_t after = label_pos + label_len;
+            while (after < len && (code[after] == ' ' || code[after] == '\t')) {
+                after++;
+            }
+            if (after < len && code[after] == ';') {
+                after++;
+            }
+            while (after < len && (code[after] == ' ' || code[after] == '\t')) {
+                after++;
+            }
+            if (after >= len) {
+                return after;
+            }
+            if (code[after] == '\r') {
+                after++;
+                if (after < len && code[after] == '\n') {
+                    after++;
+                }
+                return after;
+            }
+            if (code[after] == '\n') {
+                return after + 1;
+            }
+        }
+        while (cursor < len && code[cursor] != '\n') {
+            cursor++;
+        }
+        if (cursor < len) {
+            cursor++;
+        }
+    }
+    return len;
+}
+
 static char *ptn_eval_dynamic_parse_error_message(const char *code) {
     size_t len = strlen(code);
     size_t pos = 0;
@@ -216561,6 +216641,12 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
             break;
         }
         unsigned char ch = (unsigned char)code[pos];
+        size_t heredoc_end = ptn_eval_skip_heredoc_literal(code, len, pos);
+        if (heredoc_end != pos) {
+            pos = heredoc_end;
+            previous_can_end_expression = 1;
+            continue;
+        }
         if (code[pos] == '\'' || code[pos] == '"') {
             pos = ptn_eval_skip_quoted_string(code, len, pos);
             previous_can_end_expression = 1;
