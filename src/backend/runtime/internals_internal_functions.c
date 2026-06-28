@@ -164613,6 +164613,42 @@ static PtnSoapHeaderData *ptn_soap_header_data(PtnValue value) {
     return (PtnSoapHeaderData *)value.as.object->native_data;
 }
 
+static int ptn_soap_header_actor_dup(
+    PtnRuntime *runtime,
+    PtnValue value,
+    char **actor_out,
+    size_t line
+) {
+    *actor_out = NULL;
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type == PTN_INT) {
+        if (value.as.integer == 1) {
+            *actor_out = ptn_duplicate_string("http://schemas.xmlsoap.org/soap/actor/next");
+            return 1;
+        }
+        if (value.as.integer == 2 || value.as.integer == 3) {
+            return 1;
+        }
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "SoapHeader::__construct(): Argument #5 ($actor) must be one of SOAP_ACTOR_NEXT, SOAP_ACTOR_NONE, or SOAP_ACTOR_UNLIMATERECEIVER"
+        );
+        return 0;
+    }
+    PtnStringOperand actor = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(actor);
+        return 0;
+    }
+    *actor_out = ptn_soap_duplicate_len(actor.data, actor.len);
+    ptn_string_operand_free(actor);
+    return 1;
+}
+
 static const char *ptn_soap_tag_end(const char *start, const char *limit) {
     const char *cursor = start;
     while (cursor < limit && *cursor != '>') {
@@ -173559,17 +173595,13 @@ static PTN_UNUSED PtnValue ptn_soap_header_new(
     data->name = ptn_soap_duplicate_len(header_name.data, header_name.len);
     data->data = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();
     data->must_understand = argc >= 4 && ptn_is_truthy(args[3]);
-    if (argc >= 5 && ptn_value_deref(args[4]).type != PTN_NULL) {
-        PtnStringOperand actor = ptn_value_to_string_operand_with_runtime(runtime, args[4], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(actor);
+    if (argc >= 5) {
+        if (!ptn_soap_header_actor_dup(runtime, args[4], &data->actor, line)) {
             ptn_soap_header_data_free(data);
             ptn_string_operand_free(namespace_name);
             ptn_string_operand_free(header_name);
             return ptn_null();
         }
-        data->actor = ptn_soap_duplicate_len(actor.data, actor.len);
-        ptn_string_operand_free(actor);
     }
     ptn_string_operand_free(namespace_name);
     ptn_string_operand_free(header_name);
@@ -173663,6 +173695,23 @@ static void ptn_soap_namespace_list_free(PtnSoapNamespaceList *namespaces) {
     namespaces->uris = NULL;
     namespaces->count = 0;
     namespaces->capacity = 0;
+}
+
+static void ptn_soap_append_soap11_header_attributes(
+    PtnStringBuffer *buffer,
+    PtnSoapHeaderData *header
+) {
+    if (header == NULL) {
+        return;
+    }
+    if (header->must_understand) {
+        ptn_string_buffer_append(buffer, " SOAP-ENV:mustUnderstand=\"1\"");
+    }
+    if (header->actor != NULL && header->actor[0] != '\0') {
+        ptn_string_buffer_append(buffer, " SOAP-ENV:actor=\"");
+        ptn_xml_append_escaped_ex(buffer, header->actor, 1, 0);
+        ptn_string_buffer_append_char(buffer, '"');
+    }
 }
 
 static size_t ptn_soap_namespace_list_add(PtnSoapNamespaceList *namespaces, const char *uri) {
@@ -173770,6 +173819,7 @@ static void ptn_soap_append_one_header_xml(
     size_t prefix = ptn_soap_namespace_list_add(namespaces, header->namespace_uri);
     ptn_string_buffer_append_format(buffer, "<ns%zu:", prefix);
     ptn_xml_append_escaped_ex(buffer, header->name, 0, 0);
+    ptn_soap_append_soap11_header_attributes(buffer, header);
     PtnValue data = ptn_value_deref(header->data);
     if (data.type == PTN_NULL) {
         ptn_string_buffer_append(buffer, "/>");
@@ -173912,14 +173962,7 @@ static void ptn_soap_append_one_literal_header_xml(
     size_t prefix = ptn_soap_namespace_list_add(namespaces, header->namespace_uri);
     ptn_string_buffer_append_format(buffer, "<ns%zu:", prefix);
     ptn_xml_append_escaped_ex(buffer, header->name, 0, 0);
-    if (header->must_understand) {
-        ptn_string_buffer_append(buffer, " SOAP-ENV:mustUnderstand=\"1\"");
-    }
-    if (header->actor != NULL && header->actor[0] != '\0') {
-        ptn_string_buffer_append(buffer, " SOAP-ENV:actor=\"");
-        ptn_xml_append_escaped_ex(buffer, header->actor, 1, 0);
-        ptn_string_buffer_append_char(buffer, '"');
-    }
+    ptn_soap_append_soap11_header_attributes(buffer, header);
     if (inner.len == 0) {
         ptn_string_buffer_append(buffer, "/>");
         free(inner.data);

@@ -1,0 +1,14 @@
+# ptn-w17z.1123 exact SOAP Round4 GroupI XSD interop current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T061944Z.tsv
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_034w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_035w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_033w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_032w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_009w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_031w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_008w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_030w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_007w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_006w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_004w.phpt
+ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_005w.phpt

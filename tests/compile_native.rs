@@ -59044,6 +59044,109 @@ var_dump(method_exists($client, '__getFunctions'));
 }
 
 #[test]
+fn compile_soap_wsdl_header_actor_constant_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-header-actor-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-header-actor-constant.php");
+    let output = root.join("soap-wsdl-header-actor-constant-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$wsdl = __DIR__ . '/header-actor.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:tns="http://soapinterop.org"
+  xmlns:hdr="http://soapinterop.org/echoheader/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="http://soapinterop.org/echoheader/" elementFormDefault="qualified">
+      <xsd:complexType name="StringHeader">
+        <xsd:sequence>
+          <xsd:element name="varString" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="echoMeStringRequest" type="hdr:StringHeader"/>
+    </xsd:schema>
+    <xsd:schema targetNamespace="http://soapinterop.org" elementFormDefault="qualified">
+      <xsd:element name="echoVoidSoapHeader"><xsd:complexType/></xsd:element>
+      <xsd:element name="echoVoidSoapHeaderResponse"><xsd:complexType/></xsd:element>
+    </xsd:schema>
+  </types>
+  <message name="echoVoidSoapHeaderRequest"><part name="parameters" element="tns:echoVoidSoapHeader"/></message>
+  <message name="echoVoidSoapHeaderResponse"><part name="parameters" element="tns:echoVoidSoapHeaderResponse"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoVoidSoapHeader">
+      <input message="tns:echoVoidSoapHeaderRequest"/>
+      <output message="tns:echoVoidSoapHeaderResponse"/>
+    </operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoVoidSoapHeader">
+      <soap:operation soapAction="http://soapinterop.org/" style="document"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding">
+      <soap:address location="test://"/>
+    </port>
+  </service>
+</definitions>
+WSDL);
+
+class TestSoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        exit(0);
+    }
+}
+
+$client = new TestSoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$header = new SoapHeader(
+    'http://soapinterop.org/',
+    'echoMeStringRequest',
+    ['varString' => 'Hello World'],
+    true,
+    SOAP_ACTOR_NEXT
+);
+$client->__soapCall('echoVoidSoapHeader', [], null, $header);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("SOAP-ENV:actor=\"http://schemas.xmlsoap.org/soap/actor/next\""),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("SOAP-ENV:actor=\"1\""), "{stdout}");
+    assert!(
+        stdout.contains("<ns2:varString>Hello World</ns2:varString>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_header_actor_dup"));
+    assert!(c_source.contains("ptn_soap_append_soap11_header_attributes"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_property_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-property-defaults");
     fs::create_dir_all(&root).unwrap();
