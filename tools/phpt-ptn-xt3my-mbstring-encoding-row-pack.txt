@@ -1,0 +1,12 @@
+ext/mbstring/tests/iso2022jp_encoding.phpt
+ext/mbstring/tests/zend_multibyte-14.phpt
+ext/mbstring/tests/zend_multibyte-04.phpt
+ext/mbstring/tests/mb_send_mail06.phpt
+ext/mbstring/tests/bug77367.phpt
+ext/mbstring/tests/mb_str_split_utf8_utf16.phpt
+ext/mbstring/tests/casemapping.phpt
+ext/mbstring/tests/iso2022jp_2004_encoding.phpt
+ext/mbstring/tests/gh9535.phpt
+ext/mbstring/tests/cp5022x_encoding.phpt
+ext/mbstring/tests/mb_convert_case_various_mode.phpt
+ext/mbstring/tests/bug79154.phpt
