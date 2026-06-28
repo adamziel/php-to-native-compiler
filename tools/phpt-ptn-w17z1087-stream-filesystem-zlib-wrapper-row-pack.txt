@@ -1,0 +1,12 @@
+ext/standard/tests/file/userdirstream.phpt
+ext/zlib/tests/gzseek_basic.phpt
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/zlib/tests/gzrewind_basic.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/streams/stream_set_timeout_error.phpt
+ext/standard/tests/file/popen_pclose_error.phpt
+ext/zlib/tests/bug75273.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/zlib/tests/gzopen_variation8.phpt
