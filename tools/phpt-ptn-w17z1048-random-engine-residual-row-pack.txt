@@ -1,0 +1,15 @@
+# ptn-w17z.1048: focused random engine/randomizer residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T163458Z.tsv
+# Rows were selected as current FAIL entries from the full PHPT dashboard artifact.
+ext/random/tests/03_randomizer/methods/getBytes_expansion.phpt
+ext/random/tests/03_randomizer/methods/getFloat.phpt
+ext/random/tests/03_randomizer/engine_unsafe_biased.phpt
+ext/random/tests/03_randomizer/engine_unsafe_empty_string.phpt
+ext/random/tests/01_functions/lcg_value_deprecation.phpt
+ext/random/tests/02_engine/mt19937_error.phpt
+ext/random/tests/03_randomizer/compatibility_mt_rand.phpt
+ext/random/tests/03_randomizer/readonly.phpt
+ext/random/tests/02_engine/pcgoneseq128xslrr64_seed.phpt
+ext/random/tests/03_randomizer/methods/getBytesFromString_fast_path.phpt
+ext/random/tests/02_engine/xoshiro256starstar_seed.phpt
+ext/random/tests/03_randomizer/methods/shuffleBytes.phpt
