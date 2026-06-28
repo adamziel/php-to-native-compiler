@@ -33381,6 +33381,12 @@ echo bin2hex(mb_convert_encoding(hex2bin('1b2849211b2842'), 'UTF-16BE', 'JIS')),
 var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'JIS'));\n\
 var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'ISO-2022-JP'));\n\
 echo bin2hex(mb_convert_encoding(hex2bin('a3'), 'JIS', 'JIS')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b244221001b2842'), 'UTF-16BE', 'JIS')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b244221001b2842'), 'UTF-16BE', 'ISO-2022-JP')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b2442210e1b2842'), 'UTF-16BE', 'JIS')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b244221a11b2842'), 'UTF-16BE', 'ISO-2022-JP')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b2c'), 'UTF-8', 'JIS')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('e0'), 'UTF-8', 'JIS')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('ff61'), 'JIS', 'UTF-16BE')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \"\\n\";\n",
     )
@@ -33407,6 +33413,12 @@ echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \
             "bool(true)\n",
             "bool(false)\n",
             "1b2849231b2842\n",
+            "0025\n",
+            "0025\n",
+            "0025\n",
+            "0025\n",
+            "252c\n",
+            "25\n",
             "1b2849211b2842\n",
             "1b244221311b2842\n",
         )
@@ -43055,6 +43067,39 @@ enum ReflectMethodEnum {
     public function enumMethod() {}
 }
 
+interface ReflectPrototypeInterfaceA {
+    function viaInterface();
+    function inheritedViaInterface();
+}
+
+interface ReflectPrototypeInterfaceB {
+    function viaInterface();
+}
+
+class ReflectPrototypeParent {
+    public function inheritedViaInterface() {}
+}
+
+class ReflectPrototypeChild extends ReflectPrototypeParent implements ReflectPrototypeInterfaceA, ReflectPrototypeInterfaceB {
+    public function viaInterface() {}
+}
+
+class ReflectPlainParent {
+    public function plainInherited() {}
+}
+
+class ReflectPlainChild extends ReflectPlainParent {}
+
+class ReflectParentPrototypeA {
+    public function f() {}
+}
+
+class ReflectParentPrototypeB extends ReflectParentPrototypeA {
+    public function f() {}
+}
+
+class ReflectParentPrototypeC extends ReflectParentPrototypeB {}
+
 $inherited = new ReflectionMethod(\"ReflectMethodSubject\", \"inherited\");
 var_dump($inherited->getName());
 var_dump($inherited->getDeclaringClass()->getName());
@@ -43109,6 +43154,20 @@ var_dump(get_class($enumMethod->getDeclaringClass()));
 var_dump($enumMethod->getDeclaringClass()->getName());
 $enumFactory = ReflectionMethod::createFromMethodName(\"ReflectMethodEnum::enumMethod\");
 var_dump(get_class($enumFactory->getDeclaringClass()));
+
+$directInterfacePrototype = (new ReflectionMethod(\"ReflectPrototypeChild\", \"viaInterface\"))->getPrototype();
+var_dump($directInterfacePrototype->class);
+$inheritedInterfacePrototype = (new ReflectionMethod(\"ReflectPrototypeChild\", \"inheritedViaInterface\"))->getPrototype();
+var_dump($inheritedInterfacePrototype->class);
+$plainInherited = new ReflectionMethod(\"ReflectPlainChild\", \"plainInherited\");
+var_dump($plainInherited->hasPrototype());
+try {
+    $plainInherited->getPrototype();
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$inheritedParentPrototype = (new ReflectionMethod(\"ReflectParentPrototypeC\", \"f\"))->getPrototype();
+var_dump($inheritedParentPrototype->class);
 ",
     )
     .unwrap();
@@ -43161,6 +43220,11 @@ var_dump(get_class($enumFactory->getDeclaringClass()));
             "string(14) \"ReflectionEnum\"\n",
             "string(17) \"ReflectMethodEnum\"\n",
             "string(14) \"ReflectionEnum\"\n",
+            "string(26) \"ReflectPrototypeInterfaceB\"\n",
+            "string(26) \"ReflectPrototypeInterfaceA\"\n",
+            "bool(false)\n",
+            "Method ReflectPlainChild::plainInherited does not have a prototype\n",
+            "string(23) \"ReflectParentPrototypeA\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -49060,6 +49124,12 @@ var_dump(phpinfo(INFO_LICENSE));\n",
     assert!(stdout.contains("\n _______________________________________________________________________\n\n\nConfiguration\n"));
     assert!(stdout.contains("\nCore\n\nPHP Version => 8.4.0\n"));
     assert!(stdout.contains("\nAdditional Modules\n"));
+    let expected_pcre_jit = if discover_pcre2_library().is_some() {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    assert!(stdout.contains(&format!("PCRE JIT Support => {expected_pcre_jit}\n")));
     assert!(stdout.contains("\nEnvironment\n"));
     assert!(stdout.contains("\nLicense\n\nThis program is free software;"));
     assert!(stdout.contains("bool(true)\n--\nphpinfo()\nbool(true)\n--\nphpinfo()\n\nLicense\n"));
@@ -49638,6 +49708,77 @@ MessageFormatter::format(): Found negative or too large array key\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_compact_intl_signal_error"));
     assert!(c_source.contains("MessageFormatter::format(): Found negative or too large array key"));
+}
+
+#[test]
+fn compile_intl_locale_resourcebundle_current_red_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-locale-resourcebundle-current-red");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-locale-resourcebundle-current-red.php");
+    let output = root.join("intl-locale-resourcebundle-current-red-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    grapheme_extract(-1, -1, -1, -1, $next);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$fmt = new NumberFormatter('en_US', NumberFormatter::DECIMAL);\n\
+var_dump($fmt->format(INF), $fmt->format(-INF), $fmt->format(NAN));\n\
+var_dump(Locale::lookup(['de-DEVA', 'de-DE-1996', 'de-DE'], 'de-de', false, 'en_US'));\n\
+var_dump(locale_lookup(['sl_IT', 'sl_IT_nedis-a-kirti-x-xyz'], 'sl_IT_Nedis', true, 'en_US'));\n\
+var_dump(Locale::lookup(['art-lojban', 'jbo'], 'jbo', true, 'en_US'));\n\
+var_dump(locale_filter_matches('de-DE-1996', 'de-de', false));\n\
+var_dump(Locale::filterMatches('sl_IT_NEDIS_ROJAZ_1901', 'sl_IT_Nedis', true));\n\
+echo locale_get_display_language('fr', 'de'), \"\\n\";\n\
+var_dump(Locale::getRegion('zh-min'));\n\
+echo Locale::getRegion('zh-min-nan-Hant-CN'), \"\\n\";\n\
+$bundle = new ResourceBundle('en_US', __DIR__ . '/missing-bundle');\n\
+var_dump(resourcebundle_get($bundle, 'nonexisting'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$korean = \"\\xED\\x95\\x9C\" . \"\\xEA\\xB5\\xAD\" . \"\\xEB\\xA7\\x90\";\n\
+$spoof = new Spoofchecker();\n\
+$spoof->setAllowedLocales('en_US');\n\
+var_dump($spoof->isSuspicious($korean));\n\
+$spoof->setAllowedLocales('en_US, ko_KR');\n\
+var_dump($spoof->isSuspicious($korean));\n\
+class A extends NumberFormatter { public function __construct() {} }\n\
+try {\n\
+    clone new A();\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError: grapheme_extract(): Argument #3 ($type) must be one of GRAPHEME_EXTR_COUNT, GRAPHEME_EXTR_MAXBYTES, or GRAPHEME_EXTR_MAXCHARS\n",
+            "string(3) \"\u{221e}\"\n",
+            "string(4) \"-\u{221e}\"\n",
+            "string(3) \"NaN\"\n",
+            "string(5) \"de-DE\"\n",
+            "string(5) \"sl_it\"\n",
+            "string(3) \"jbo\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Franz\u{00f6}sisch\n",
+            "string(0) \"\"\n",
+            "MIN\n",
+            "NULL\n",
+            "resourcebundle_get(): Cannot load resource element 'nonexisting': U_MISSING_RESOURCE_ERROR\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "Error: Cannot clone uninitialized NumberFormatter\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -76787,6 +76928,58 @@ string(11) \"!@#$%^&*()>\"\n\
 string(43) \"\"verî.uñusual.@.uñusual.com\"@example.com\"\n\
 NULL\n\
 Filter\\FilterFailedException: filter validation failed: filter validate_email not satisfied by '1'\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_filter_regexp_callback_and_array_option_edges() {
+    let root = temp_dir("ptn-phpc-filter-regexp-callback-array-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-regexp-callback-array-options.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function test($var) { return strtoupper($var); }\n\
+class test_class { static function test($var) { return strtolower($var); } }\n\
+\n\
+var_dump(filter_input(INPUT_GET, 'missing', FILTER_DEFAULT, FILTER_NULL_ON_FAILURE));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/.*/']]));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/^b(.*)/']]));\n\
+var_dump(filter_var('data', FILTER_VALIDATE_REGEXP, ['options' => ['regexp' => '/^d(.*)/']]));\n\
+try { filter_var('data', FILTER_VALIDATE_REGEXP); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(filter_var('data', FILTER_CALLBACK, ['options' => 'test']));\n\
+var_dump(filter_var('dAtA', FILTER_CALLBACK, ['options' => ['test_class', 'test']]));\n\
+try { filter_var('qwe', FILTER_CALLBACK, ['options' => 'no such func']); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var('qwe', FILTER_CALLBACK); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var_array([], ''); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { filter_var_array([], new stdClass); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("variables_order=EGPCS")
+        .arg("run")
+        .arg(&input)
+        .env("QUERY_STRING", "")
+        .env("PATH", "/")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+string(4) \"data\"\n\
+bool(false)\n\
+string(4) \"data\"\n\
+filter_var(): \"regexp\" option is missing\n\
+string(4) \"DATA\"\n\
+string(4) \"data\"\n\
+filter_var(): Option must be a valid callback\n\
+filter_var(): Option must be a valid callback\n\
+filter_var_array(): Argument #2 ($options) must be of type array|int, string given\n\
+filter_var_array(): Argument #2 ($options) must be of type array|int, stdClass given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

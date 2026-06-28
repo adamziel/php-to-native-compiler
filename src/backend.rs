@@ -127,6 +127,9 @@ pub fn emit_c(module: &Module) -> String {
     if module_uses_callable_type_hint(module) {
         runtime_requirements.internal_function_dispatch = true;
     }
+    if runtime_requirements.pcre_internal_helpers {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
@@ -17161,9 +17164,35 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method_prototype(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method_prototype(PtnRuntime *runtime, const char *declaring_class_name, const char *reflected_class_name, const char *method_name) {\n",
     );
-    let method_prototypes = classes
+    let interface_method_prototypes = classes
+        .iter()
+        .map(|class| {
+            let mut entries = Vec::new();
+            for interface_name in class_transitive_interfaces(class, classes)
+                .into_iter()
+                .rev()
+            {
+                let Some(interface) = class_by_name(classes, interface_name) else {
+                    continue;
+                };
+                for method in interface
+                    .methods
+                    .iter()
+                    .filter(|method| method.visibility == PropertyVisibility::Public)
+                {
+                    entries.push((
+                        method.name.as_str(),
+                        interface.name.as_str(),
+                        method.name.as_str(),
+                    ));
+                }
+            }
+            entries
+        })
+        .collect::<Vec<_>>();
+    let declaring_method_prototypes = classes
         .iter()
         .map(|class| {
             let mut entries = Vec::new();
@@ -17185,22 +17214,6 @@ fn emit_class_reflection_metadata_helpers(
                 }
                 parent_name = parent.parent_name.as_deref();
             }
-            for interface_name in class_transitive_interfaces(class, classes) {
-                let Some(interface) = class_by_name(classes, interface_name) else {
-                    continue;
-                };
-                for method in interface
-                    .methods
-                    .iter()
-                    .filter(|method| method.visibility == PropertyVisibility::Public)
-                {
-                    entries.push((
-                        method.name.as_str(),
-                        interface.name.as_str(),
-                        method.name.as_str(),
-                    ));
-                }
-            }
             if let Some(internal_name) = inherited_modeled_internal_class_name(class, classes) {
                 for (method_name, prototype_method) in
                     reflection_modeled_internal_method_prototypes(internal_name)
@@ -17211,16 +17224,23 @@ fn emit_class_reflection_metadata_helpers(
             entries
         })
         .collect::<Vec<_>>();
-    let has_method_prototypes = method_prototypes.iter().any(|entries| !entries.is_empty());
+    let has_method_prototypes = interface_method_prototypes
+        .iter()
+        .chain(declaring_method_prototypes.iter())
+        .any(|entries| !entries.is_empty());
     if !has_method_prototypes {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)method_name;\n");
     }
     if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)declaring_class_name;\n");
+        out.push_str("    (void)reflected_class_name;\n");
     }
-    for (class, prototypes) in classes.iter().zip(method_prototypes.iter()) {
-        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+    for (class, prototypes) in classes.iter().zip(interface_method_prototypes.iter()) {
+        if prototypes.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(reflected_class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         for (lookup_method, prototype_class, prototype_method) in prototypes {
@@ -17234,7 +17254,26 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("\");\n");
             out.push_str("        }\n");
         }
-        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    for (class, prototypes) in classes.iter().zip(declaring_method_prototypes.iter()) {
+        if prototypes.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(declaring_class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for (lookup_method, prototype_class, prototype_method) in prototypes {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(lookup_method));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(prototype_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(prototype_method));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_null();\n");
