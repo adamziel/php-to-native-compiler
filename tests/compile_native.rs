@@ -42449,6 +42449,39 @@ enum ReflectMethodEnum {
     public function enumMethod() {}
 }
 
+interface ReflectPrototypeInterfaceA {
+    function viaInterface();
+    function inheritedViaInterface();
+}
+
+interface ReflectPrototypeInterfaceB {
+    function viaInterface();
+}
+
+class ReflectPrototypeParent {
+    public function inheritedViaInterface() {}
+}
+
+class ReflectPrototypeChild extends ReflectPrototypeParent implements ReflectPrototypeInterfaceA, ReflectPrototypeInterfaceB {
+    public function viaInterface() {}
+}
+
+class ReflectPlainParent {
+    public function plainInherited() {}
+}
+
+class ReflectPlainChild extends ReflectPlainParent {}
+
+class ReflectParentPrototypeA {
+    public function f() {}
+}
+
+class ReflectParentPrototypeB extends ReflectParentPrototypeA {
+    public function f() {}
+}
+
+class ReflectParentPrototypeC extends ReflectParentPrototypeB {}
+
 $inherited = new ReflectionMethod(\"ReflectMethodSubject\", \"inherited\");
 var_dump($inherited->getName());
 var_dump($inherited->getDeclaringClass()->getName());
@@ -42503,6 +42536,20 @@ var_dump(get_class($enumMethod->getDeclaringClass()));
 var_dump($enumMethod->getDeclaringClass()->getName());
 $enumFactory = ReflectionMethod::createFromMethodName(\"ReflectMethodEnum::enumMethod\");
 var_dump(get_class($enumFactory->getDeclaringClass()));
+
+$directInterfacePrototype = (new ReflectionMethod(\"ReflectPrototypeChild\", \"viaInterface\"))->getPrototype();
+var_dump($directInterfacePrototype->class);
+$inheritedInterfacePrototype = (new ReflectionMethod(\"ReflectPrototypeChild\", \"inheritedViaInterface\"))->getPrototype();
+var_dump($inheritedInterfacePrototype->class);
+$plainInherited = new ReflectionMethod(\"ReflectPlainChild\", \"plainInherited\");
+var_dump($plainInherited->hasPrototype());
+try {
+    $plainInherited->getPrototype();
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$inheritedParentPrototype = (new ReflectionMethod(\"ReflectParentPrototypeC\", \"f\"))->getPrototype();
+var_dump($inheritedParentPrototype->class);
 ",
     )
     .unwrap();
@@ -42555,6 +42602,11 @@ var_dump(get_class($enumFactory->getDeclaringClass()));
             "string(14) \"ReflectionEnum\"\n",
             "string(17) \"ReflectMethodEnum\"\n",
             "string(14) \"ReflectionEnum\"\n",
+            "string(26) \"ReflectPrototypeInterfaceB\"\n",
+            "string(26) \"ReflectPrototypeInterfaceA\"\n",
+            "bool(false)\n",
+            "Method ReflectPlainChild::plainInherited does not have a prototype\n",
+            "string(23) \"ReflectParentPrototypeA\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
