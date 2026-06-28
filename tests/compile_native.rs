@@ -51446,6 +51446,127 @@ report_count($standards, '#hI');
 }
 
 #[test]
+fn compile_modern_dom_selector_namespace_and_state_pseudos_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-selector-namespace-state-pseudos");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-selector-namespace-state-pseudos.php");
+    let output = root.join("modern-dom-selector-namespace-state-pseudos-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function report($dom, string $selector) {
+    echo $selector, '=';
+    try {
+        echo count($dom->querySelectorAll($selector)), "\n";
+    } catch (DOMException $e) {
+        echo 'ERR:', $e->getCode(), ':', $e->getMessage(), "\n";
+    }
+}
+
+$namespaces = Dom\XMLDocument::createFromString(<<<'XML'
+<root>
+    <container align="left"/>
+    <only>
+        <a xmlns="urn:a"/>
+        <a xmlns="urn:a"/>
+        <a xmlns="urn:b"/>
+        <a xmlns=""/>
+        <a/>
+    </only>
+</root>
+XML);
+$container = $namespaces->documentElement->firstElementChild;
+$container->setAttribute("foo:bar", "baz");
+$container->setAttributeNS("urn:a", "a:bar", "baz");
+report($namespaces, 'container[align]');
+report($namespaces, 'container[foo\:bar]');
+report($namespaces, 'container[a\:bar]');
+report($namespaces, 'a:first-of-type');
+report($namespaces, 'a:last-of-type');
+report($namespaces, 'container[* | bar]');
+echo 'namespace-save=', $namespaces->saveXML($container), "\n";
+
+$pseudo = Dom\XMLDocument::createFromString(<<<'XML'
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <input type="checkbox" checked="checked" />
+    <input type="radio" checked="checked" />
+    <option selected="" />
+    <input type="text" placeholder="" />
+    <textarea placeholder="" />
+    <div class="empty"><div></div><div><!-- c --></div><div><?pi?></div><div><![CDATA[x]]></div></div>
+    <section><p class="foo"/></section>
+    <section><p/></section>
+    <h2>1</h2><h2>2</h2><h2>3</h2><h2>4</h2><h2>5</h2>
+</html>
+XML);
+$pi = Dom\XMLDocument::createFromString('<root><div><?foo?></div></root>');
+report($pseudo, ':checked');
+report($pseudo, ':placeholder-shown');
+report($pseudo, '.empty > div:empty');
+report($pseudo, 'section:has(p.foo)');
+report($pseudo, 'section:has(:not(p.foo))');
+report($pseudo, 'h2:nth-of-type(n+2):nth-last-of-type(n+2)');
+report($pseudo, 'h2:not(:first-of-type):not(:last-of-type)');
+report($pseudo, ':blank');
+report($pseudo, ':dir(rtl)');
+echo 'pi-save=', $pi->saveXML($pi->documentElement->firstElementChild), "\n";
+
+try {
+    $pseudo->documentElement->closest('@invalid');
+} catch (DOMException $e) {
+    echo 'closest=', $e->getMessage(), "\n";
+}
+
+$html = Dom\HTMLDocument::createFromString('<html><head></head><body></body></html>', LIBXML_NOERROR);
+$meta = $html->head->appendChild($html->createElementNS('urn:x', 'meta'));
+$meta->setAttribute('charset', 'x');
+echo 'foreign-meta=', $html->saveHtml($meta), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "container[align]=1\n",
+            "container[foo\\:bar]=1\n",
+            "container[a\\:bar]=0\n",
+            "a:first-of-type=3\n",
+            "a:last-of-type=3\n",
+            "container[* | bar]=ERR:12:Invalid selector (Selectors. Unexpected token: *)\n",
+            "namespace-save=<container align=\"left\" foo:bar=\"baz\" xmlns:a=\"urn:a\" a:bar=\"baz\"/>\n",
+            ":checked=3\n",
+            ":placeholder-shown=2\n",
+            ".empty > div:empty=3\n",
+            "section:has(p.foo)=1\n",
+            "section:has(:not(p.foo))=1\n",
+            "h2:nth-of-type(n+2):nth-last-of-type(n+2)=3\n",
+            "h2:not(:first-of-type):not(:last-of-type)=3\n",
+            ":blank=ERR:12::blank selector is not implemented because CSSWG has not yet decided its semantics (https://github.com/w3c/csswg-drafts/issues/1967)\n",
+            ":dir(rtl)=ERR:12:Invalid selector (Selectors. Not supported: dir)\n",
+            "pi-save=<div><?foo ?></div>\n",
+            "closest=Invalid selector (Selectors. Unexpected token: @invalid)\n",
+            "foreign-meta=<meta charset=\"x\"></meta>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_selector_same_element_type"));
+    assert!(c_source.contains("ptn_dom_selector_validate_or_throw"));
+    assert!(c_source.contains("ptn_dom_selector_has_descendant"));
+}
+
+#[test]
 fn compile_modern_dom_character_data_index_rules_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-character-data-index-rules");
     fs::create_dir_all(&root).unwrap();
