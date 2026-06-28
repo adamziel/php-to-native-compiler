@@ -27668,10 +27668,11 @@ fn emit_declaration_dependency_autoload(
     out.push_str(&frame_temp);
     out.push_str(".jump) == 0) {\n");
     out.push_str(indent);
-    out.push_str("    ptn_runtime_autoload_class(&runtime, ");
+    out.push_str("    ptn_runtime_autoload_class_with_call_frame(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(", ");
     out.push_str(&line.to_string());
+    out.push_str(", 0");
     out.push_str(");\n");
     out.push_str(indent);
     out.push_str("    ptn_try_frame_pop(&runtime, &");

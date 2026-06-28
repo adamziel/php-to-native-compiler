@@ -13287,6 +13287,17 @@ try {
         if name == "autoload-variance-no-extra-candidate" {
             assert!(stdout.contains("object(Y)#"), "{stdout}");
         }
+        if name.starts_with("autoload-variance-loading-exception-") {
+            assert!(
+                stderr.contains(&format!("#0 {}(", input.display()))
+                    && stderr.contains(": {closure:"),
+                "{name}: {stderr}"
+            );
+            assert!(
+                !stderr.contains("#0 [internal function]: {closure:"),
+                "{name}: {stderr}"
+            );
+        }
     }
 }
 
