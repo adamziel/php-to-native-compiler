@@ -1769,6 +1769,8 @@ struct PtnRuntime {
     int generator_aborted_after_yield;
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
+    int defer_unreferenced_destructors_for_catch;
+    PtnValue deferred_yield_from_iterator_object;
     int suppress_generator_rewind_trace_frame;
     PtnObject *current_fiber;
     int has_current_receiver;

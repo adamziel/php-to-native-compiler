@@ -11288,6 +11288,10 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
         );
         return ptn_null();
     }
+    if (runtime != NULL && runtime->current_generator == generator) {
+        generator->executing = 0;
+        runtime->current_generator = NULL;
+    }
     return ptn_value_clone_deref(generator->return_value);
 }
 
@@ -11348,6 +11352,8 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         } else {
             ptn_generator_flush_pending_output(runtime, generator);
         }
+    } else if (generator != NULL) {
+        ptn_generator_flush_pending_output(runtime, generator);
     }
     return ptn_null();
 }
@@ -11882,6 +11888,7 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGe
     ptn_value_destroy(&generator->return_value);
     generator->return_value = ptn_value_clone_deref(value);
     generator->completed = 1;
+    ptn_generator_flush_pending_output(runtime, generator);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {
@@ -14002,7 +14009,23 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         yield_from_frame_active = 1;
         if (setjmp(yield_from_frame.jump) != 0) {
             ptn_try_frame_pop(runtime, &yield_from_frame);
-            ptn_array_iterator_destroy_with_runtime_scope_at(&iterator, runtime, line);
+            ptn_value_destroy(&runtime->deferred_yield_from_iterator_object);
+            if (iterator.has_iterator_object) {
+                runtime->deferred_yield_from_iterator_object =
+                    ptn_value_clone_deref(iterator.iterator_object);
+            } else if (iterator.object != NULL) {
+                runtime->deferred_yield_from_iterator_object =
+                    ptn_value_clone_deref(ptn_object(iterator.object));
+            } else {
+                runtime->deferred_yield_from_iterator_object = ptn_null();
+            }
+            ptn_gc_attach_value_runtime(runtime, runtime->deferred_yield_from_iterator_object, 0);
+            runtime->defer_unreferenced_destructors_for_catch = 1;
+            PtnRuntime *root = ptn_runtime_root(runtime);
+            if (root != NULL) {
+                root->defer_unreferenced_destructors_for_catch = 1;
+            }
+            ptn_array_iterator_destroy(&iterator);
             ptn_rethrow_exception(runtime);
             return ptn_null();
         }

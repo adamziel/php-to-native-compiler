@@ -230,6 +230,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->defer_unreferenced_destructors_for_catch = 0;
+    runtime->deferred_yield_from_iterator_object = ptn_null();
     runtime->suppress_generator_rewind_trace_frame =
         caller_runtime->suppress_generator_rewind_trace_frame;
     runtime->current_fiber = caller_runtime->current_fiber;
@@ -918,6 +920,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constant_sources, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
+    ptn_value_destroy_with_runtime_scope(runtime, &runtime->deferred_yield_from_iterator_object);
     if (runtime->lifecycle_root == runtime && runtime->last_opened_directory != NULL) {
         ptn_resource_release(runtime->last_opened_directory);
         runtime->last_opened_directory = NULL;
