@@ -13087,10 +13087,6 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         entry->reference = entry->slot->as.reference;
         return ptn_value_clone(*entry->slot);
     }
-    PtnValue resolved = ptn_value_deref(*entry->slot);
-    if (resolved.type == PTN_OBJECT) {
-        return ptn_value_clone(resolved);
-    }
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
     ptn_reference_adopt_property_type(reference, entry->property_metadata);
