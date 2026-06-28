@@ -178356,6 +178356,7 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
+            || ptn_ascii_case_equal(method_name, "interceptFileFuncs")
             || ptn_ascii_case_equal(method_name, "loadPhar")
             || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")

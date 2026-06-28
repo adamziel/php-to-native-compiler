@@ -56102,6 +56102,37 @@ for ($i = 0; $i < 4; $i++) {
 }
 
 #[test]
+fn compile_phar_intercept_file_funcs_static_call_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-intercept-file-funcs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-intercept-file-funcs.php");
+    let output = root.join("phar-intercept-file-funcs-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(Phar::interceptFileFuncs());
+var_dump(method_exists(Phar::class, 'interceptFileFuncs'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nbool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_intercept_file_funcs"));
+}
+
+#[test]
 fn compile_phar_data_dispatch_and_entry_validation_to_native_binary() {
     let root = temp_dir("ptn-native-phar-data-entry-validation");
     fs::create_dir_all(&root).unwrap();
