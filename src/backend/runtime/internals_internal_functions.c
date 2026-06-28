@@ -113144,6 +113144,20 @@ static PtnValue ptn_internal_ob_list_handlers(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static size_t ptn_output_buffer_reported_size(PtnOutputBuffer *buffer) {
+    if (buffer == NULL || buffer->chunk_size == 0) {
+        return 16384;
+    }
+    size_t blocks = (buffer->chunk_size + 4095) / 4096;
+    if (blocks == 0) {
+        blocks = 1;
+    }
+    if (blocks > SIZE_MAX / 4096) {
+        ptn_abort_out_of_memory();
+    }
+    return blocks * 4096;
+}
+
 static PtnValue ptn_output_buffer_status_value(PtnOutputBuffer *buffer, size_t level) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     char *name = ptn_output_buffer_name(buffer);
@@ -113154,13 +113168,14 @@ static PtnValue ptn_output_buffer_status_value(PtnOutputBuffer *buffer, size_t l
         ptn_int(buffer->has_callback ? PTN_PHP_OUTPUT_HANDLER_TYPE_USER : PTN_PHP_OUTPUT_HANDLER_TYPE_INTERNAL)
     );
     ptn_array_set_entry(result.as.array, ptn_array_string_key("flags"), ptn_int(buffer->flags));
+    size_t reported_size = ptn_output_buffer_reported_size(buffer);
     if (level > (size_t)INT64_MAX || buffer->chunk_size > (size_t)INT64_MAX ||
-        buffer->buffer.len > (size_t)INT64_MAX) {
+        buffer->buffer.len > (size_t)INT64_MAX || reported_size > (size_t)INT64_MAX) {
         ptn_abort_out_of_memory();
     }
     ptn_array_set_entry(result.as.array, ptn_array_string_key("level"), ptn_int((int64_t)level));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("chunk_size"), ptn_int((int64_t)buffer->chunk_size));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("buffer_size"), ptn_int(16384));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("buffer_size"), ptn_int((int64_t)reported_size));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("buffer_used"), ptn_int((int64_t)buffer->buffer.len));
     return result;
 }
@@ -150135,11 +150150,52 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
     (void)argc;
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "ob_gzhandler", 1, "data", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data);
         return ptn_null();
     }
-    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(data.data, data.len), data.len);
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "ob_gzhandler",
+        data,
+        0,
+        PTN_ZLIB_ENCODING_GZIP,
+        -1,
+        0,
+        line
+    );
     ptn_string_operand_free(data);
     return result;
+}
+
+static PtnValue ptn_internal_ob_iconv_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "ob_iconv_handler", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
+    const char *from_encoding = ptn_iconv_effective_internal_encoding(runtime);
+    const char *to_encoding = ptn_iconv_effective_output_encoding(runtime);
+    size_t output_len = 0;
+    int status = PTN_ICONV_CONVERT_OK;
+    char *output = ptn_iconv_convert_alloc(
+        data.data,
+        data.len,
+        from_encoding,
+        to_encoding,
+        &status,
+        &output_len
+    );
+    ptn_string_operand_free(data);
+    if (status == PTN_ICONV_CONVERT_ILLEGAL) {
+        ptn_iconv_emit_conversion_notice(runtime, "ob_iconv_handler(): Detected an illegal character in input string", line);
+    } else if (status == PTN_ICONV_CONVERT_INCOMPLETE) {
+        ptn_iconv_emit_conversion_notice(runtime, "ob_iconv_handler(): Detected an incomplete multibyte character in input string", line);
+    }
+    if (output == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string_len(output, output_len);
 }
 
 static int ptn_try_open_plain_gz_read_stream(const char *path, const char *mode, PtnValue *out) {
@@ -173287,6 +173343,7 @@ static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_ob_iconv_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -174215,6 +174272,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_implicit_flush", 0, 1, ptn_internal_ob_implicit_flush },
         { "ob_list_handlers", 0, 0, ptn_internal_ob_list_handlers },
         { "ob_gzhandler", 2, 2, ptn_internal_ob_gzhandler },
+        { "ob_iconv_handler", 2, 2, ptn_internal_ob_iconv_handler },
         { "ob_start", 0, 3, ptn_internal_ob_start },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "opcache_compile_file", 1, 1, ptn_internal_opcache_compile_file },

@@ -1,0 +1,12 @@
+ext/standard/tests/general_functions/proc_open_sockets1.phpt
+tests/output/gh20837.phpt
+tests/output/gh14808.phpt
+tests/output/gh15179.phpt
+tests/output/bug74725.phpt
+tests/output/ob_018.phpt
+tests/output/gh15181.phpt
+tests/output/gh16135.phpt
+tests/output/gh20352.phpt
+tests/output/ob_start_basic_003.phpt
+tests/output/ob_015.phpt
+ext/standard/tests/general_functions/proc_open_sockets2.phpt

@@ -33575,6 +33575,82 @@ echo bin2hex(ob_get_clean()), \"\\n\";\n",
 }
 
 #[test]
+fn compile_standard_output_handlers_and_status_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-output-handlers-status");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-output-handlers-status.php");
+    let output = root.join("standard-output-handlers-status-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start('ob_iconv_handler');\n\
+ob_clean();\n\
+$empty = ob_get_contents();\n\
+ob_end_clean();\n\
+var_dump($empty);\n\
+\n\
+ob_start();\n\
+ob_start('ob_iconv_handler');\n\
+echo \"\\xe9\";\n\
+ob_end_flush();\n\
+echo bin2hex(ob_get_clean()), \"\\n\";\n\
+\n\
+ob_start();\n\
+ob_start('ob_gzhandler');\n\
+echo \"hello\";\n\
+ob_end_flush();\n\
+$gz = ob_get_clean();\n\
+echo bin2hex(substr($gz, 0, 2)), \"\\n\";\n\
+echo gzdecode($gz), \"\\n\";\n\
+\n\
+foreach ([0, 1, 2, 8191, 8192, 8193] as $chunkSize) {\n\
+    ob_start(NULL, $chunkSize);\n\
+}\n\
+$sizes = [];\n\
+foreach (ob_get_status(true) as $status) {\n\
+    $sizes[] = $status['buffer_size'];\n\
+}\n\
+while (ob_get_level()) {\n\
+    ob_end_clean();\n\
+}\n\
+foreach ($sizes as $size) {\n\
+    echo $size, \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ICONV_INTERNAL_ENCODING", "ISO-8859-1")
+        .env("PTN_ICONV_OUTPUT_ENCODING", "UTF-8")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "c3a9\n",
+            "1f8b\n",
+            "hello\n",
+            "16384\n",
+            "4096\n",
+            "4096\n",
+            "8192\n",
+            "8192\n",
+            "12288\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_ob_iconv_handler"));
+    assert!(c_source.contains("ptn_internal_ob_gzhandler"));
+    assert!(c_source.contains("ptn_output_buffer_reported_size"));
+}
+
+#[test]
 fn compile_mbstring_encoding_table_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-mb-encoding-table-overrides");
     fs::create_dir_all(&root).unwrap();
