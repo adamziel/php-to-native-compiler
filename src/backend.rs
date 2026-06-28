@@ -127,6 +127,9 @@ pub fn emit_c(module: &Module) -> String {
     if module_uses_callable_type_hint(module) {
         runtime_requirements.internal_function_dispatch = true;
     }
+    if runtime_requirements.pcre_internal_helpers {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
