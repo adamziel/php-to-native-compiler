@@ -5361,12 +5361,18 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             ptn_direct_dump_seen_array_push(seen, array);
             for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
                 PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
-                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
+                PtnValue entry_value = array->entries[i].value;
+                int cloned_entry_value = entry_value.type != PTN_REFERENCE;
+                if (cloned_entry_value) {
+                    entry_value = ptn_value_clone(entry_value);
+                }
                 ptn_direct_var_dump_indent(runtime, indent + 1);
                 ptn_direct_var_dump_array_key(runtime, key);
                 ptn_direct_var_dump_value_indented(runtime, entry_value, indent + 1, seen);
                 ptn_array_key_free(key);
-                ptn_value_destroy(&entry_value);
+                if (cloned_entry_value) {
+                    ptn_value_destroy(&entry_value);
+                }
             }
             ptn_direct_dump_seen_array_pop(seen);
             ptn_direct_var_dump_indent(runtime, indent);
@@ -9563,12 +9569,18 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
                 PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
-                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
+                PtnValue entry_value = array->entries[i].value;
+                int cloned_entry_value = entry_value.type != PTN_REFERENCE;
+                if (cloned_entry_value) {
+                    entry_value = ptn_value_clone(entry_value);
+                }
                 ptn_var_dump_indent(indent + 1);
                 ptn_var_dump_array_key(key);
                 ptn_debug_zval_dump_value_indented(entry_value, indent + 1, seen);
                 ptn_array_key_free(key);
-                ptn_value_destroy(&entry_value);
+                if (cloned_entry_value) {
+                    ptn_value_destroy(&entry_value);
+                }
             }
             ptn_dump_seen_arrays_pop(seen);
             ptn_var_dump_indent(indent);
@@ -24865,7 +24877,8 @@ static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, c
         if (value.type == PTN_ARRAY) {
             PtnArray *array = value.as.array;
             int mutable = 0;
-            if (args[i].type == PTN_REFERENCE && args[i].as.reference->value.type == PTN_ARRAY) {
+            if (ptn_value_is_by_ref_argument_source(args[i]) &&
+                args[i].as.reference->value.type == PTN_ARRAY) {
                 array = ptn_array_detach_value(&args[i].as.reference->value);
                 mutable = 1;
             }
@@ -113499,13 +113512,12 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
     PtnValue *target_args = NULL;
     const char *const *target_arg_names = NULL;
     const char **allocated_target_names = NULL;
-    if (callback_index == 0) {
-        target_args = NULL;
-        target_arg_names = call_arg_names == NULL ? NULL : call_arg_names + 1;
-    } else if (target_argc != 0) {
+    if (target_argc != 0) {
         target_args = malloc(target_argc * sizeof(PtnValue));
-        allocated_target_names = malloc(target_argc * sizeof(char *));
-        if (target_args == NULL || allocated_target_names == NULL) {
+        if (call_arg_names != NULL) {
+            allocated_target_names = malloc(target_argc * sizeof(char *));
+        }
+        if (target_args == NULL || (call_arg_names != NULL && allocated_target_names == NULL)) {
             free(target_args);
             free(allocated_target_names);
             ptn_abort_out_of_memory();
@@ -113515,11 +113527,16 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
             if (i == callback_index) {
                 continue;
             }
-            target_args[target_index] = args[i];
-            allocated_target_names[target_index] = call_arg_names == NULL ? NULL : call_arg_names[i];
+            target_args[target_index] =
+                ptn_value_disable_by_ref_argument_source(ptn_value_clone(args[i]));
+            if (allocated_target_names != NULL) {
+                allocated_target_names[target_index] = call_arg_names[i];
+            }
             target_index++;
         }
-        target_arg_names = (const char *const *)allocated_target_names;
+        if (allocated_target_names != NULL) {
+            target_arg_names = (const char *const *)allocated_target_names;
+        }
     }
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
@@ -113527,11 +113544,14 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
         runtime,
         callback,
         target_argc,
-        callback_index == 0 ? (argc > 1 ? args + 1 : NULL) : target_args,
+        target_args,
         target_arg_names,
         line
     );
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    for (size_t i = 0; i < target_argc; i++) {
+        ptn_value_destroy(&target_args[i]);
+    }
     free(target_args);
     free(allocated_target_names);
     ptn_value_destroy(&callback);
@@ -113574,7 +113594,11 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
             argument_name = ptn_duplicate_string_len(entry->key.as.string, entry->key.string_len);
         }
-        ptn_call_arguments_append_named_owned(&expanded, argument_name, ptn_value_clone(entry->value));
+        PtnValue argument_value = ptn_value_clone(entry->value);
+        if (!entry->by_ref_argument_eligible) {
+            argument_value = ptn_value_disable_by_ref_argument_source(argument_value);
+        }
+        ptn_call_arguments_append_named_owned(&expanded, argument_name, argument_value);
         free(argument_name);
     }
 

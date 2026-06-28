@@ -5518,6 +5518,7 @@ fn assertion_operand_text(expr: &Expr, parent_precedence: u8) -> String {
         {
             return assertion_expr_text(grouped);
         }
+        return assertion_expr_text(expr);
     }
     let text = assertion_expr_text(expr);
     if assertion_expr_precedence(expr) < parent_precedence {

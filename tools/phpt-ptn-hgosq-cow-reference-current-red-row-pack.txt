@@ -1,0 +1,13 @@
+Zend/tests/exception_with_by_ref_message.phpt
+tests/lang/this_assignment.phpt
+ext/standard/tests/general_functions/debug_zval_dump_refs.phpt
+Zend/tests/traits/bugs/alias01.phpt
+tests/lang/passByReference_006.phpt
+Zend/tests/exceptions/exception_getters_with_ref_props.phpt
+Zend/tests/magic_methods/magic_by_ref_002.phpt
+Zend/tests/class_alias/bug54268.phpt
+Zend/tests/ast/zend-pow-assign.phpt
+Zend/tests/generators/func_get_args.phpt
+Zend/tests/foreach/bug39990.phpt
+Zend/tests/magic_methods/magic_by_ref_001.phpt
+Zend/tests/call_user_functions/call_user_func_array_prefer_ref.phpt
