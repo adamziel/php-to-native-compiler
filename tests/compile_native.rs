@@ -44829,8 +44829,7 @@ namespace Test {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    let helper = generated_c_static_function_body(&c_source, "ptn_compact_append_var_export");
-    assert!(helper.contains("enum_case_name"));
+    assert!(c_source.contains("ptn_internal_var_export"));
 }
 
 #[test]
@@ -47854,6 +47853,56 @@ var_dump(function_exists(\"settype\"));",
             "string(5) \"Array\"\n",
             "Cannot convert to resource type\n",
             "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_settype_object_string_conversion_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-settype-object-string-conversion-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("settype-object-string-conversion-exception.php");
+    let output = root.join("settype-object-string-conversion-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+$value = new stdClass;
+try {
+    var_dump(settype($value, \"string\"));
+} catch (Throwable $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+var_dump($value);
+
+class ThrowsString {
+    public function __toString(): string {
+        throw new Exception(\"bad\");
+    }
+}
+
+$throwing = new ThrowsString;
+try {
+    var_dump(settype($throwing, \"string\"));
+} catch (Throwable $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+var_dump($throwing);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Object of class stdClass could not be converted to string\n",
+            "string(0) \"\"\n",
+            "Exception: bad\n",
+            "string(0) \"\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

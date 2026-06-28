@@ -3811,9 +3811,6 @@ static PTN_UNUSED PtnValue ptn_compact_intl_call(
     if (ptn_ascii_case_equal(name, "printf")) {
         return ptn_compact_printf(runtime, argc, args, line);
     }
-    if (ptn_ascii_case_equal(name, "var_export")) {
-        return ptn_compact_var_export(runtime, argc, args, line);
-    }
     if (ptn_ascii_case_equal(name, "is_null")) {
         if (!ptn_compact_intl_expect_exact_argc(runtime, name, 1, argc, line)) {
             return ptn_null();
@@ -36317,7 +36314,6 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
     }
     let _ = argument_count;
     name.eq_ignore_ascii_case("printf")
-        || name.eq_ignore_ascii_case("var_export")
         || name.eq_ignore_ascii_case("is_null")
         || name.eq_ignore_ascii_case("msgfmt_create")
         || name.eq_ignore_ascii_case("msgfmt_format")

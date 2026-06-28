@@ -67631,6 +67631,26 @@ static PtnValue ptn_internal_settype_cast_object(PtnRuntime *runtime, PtnReferen
     return ptn_cast_object(runtime, value);
 }
 
+static int ptn_internal_settype_assign_preserving_active_exception(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue converted
+) {
+    if (runtime == NULL || runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL) {
+        return ptn_reference_assign(runtime, reference, converted);
+    }
+
+    PtnException *saved_exception = runtime->exceptions->active_exception;
+    runtime->exceptions->active_exception = NULL;
+    int assigned = ptn_reference_assign(runtime, reference, converted);
+    if (runtime->exceptions->active_exception == NULL) {
+        runtime->exceptions->active_exception = saved_exception;
+    } else {
+        ptn_exception_free(saved_exception);
+    }
+    return assigned;
+}
+
 static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     if (args[0].type != PTN_REFERENCE) {
@@ -67646,6 +67666,7 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
     PtnValue current = ptn_value_deref(args[0].as.reference->value);
     PtnValue converted;
     int valid = 1;
+    int preserve_active_exception_assignment = 0;
 
     if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "null")) {
         converted = ptn_internal_settype_cast_null(runtime, current, line);
@@ -67656,7 +67677,21 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
         converted = ptn_cast_float_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
-        converted = ptn_internal_settype_cast_string(runtime, current, line);
+        int caught_string_conversion_exception = 0;
+        PtnTryFrame string_conversion_frame;
+        ptn_try_frame_push(runtime, &string_conversion_frame);
+        if (setjmp(string_conversion_frame.jump) != 0) {
+            caught_string_conversion_exception = 1;
+            converted = ptn_string("");
+        } else {
+            converted = ptn_internal_settype_cast_string(runtime, current, line);
+        }
+        ptn_try_frame_pop(runtime, &string_conversion_frame);
+        preserve_active_exception_assignment =
+            caught_string_conversion_exception ||
+            runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL;
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "boolean") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "bool")) {
         converted = ptn_internal_settype_cast_bool(runtime, current, line);
@@ -67679,11 +67714,23 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_null();
     }
 
-    if (!ptn_reference_assign(runtime, args[0].as.reference, converted)) {
+    int assigned = preserve_active_exception_assignment
+        ? ptn_internal_settype_assign_preserving_active_exception(runtime, args[0].as.reference, converted)
+        : ptn_reference_assign(runtime, args[0].as.reference, converted);
+    if (!assigned) {
         ptn_value_destroy(&converted);
         return ptn_null();
     }
     ptn_value_destroy(&converted);
+    if (
+        preserve_active_exception_assignment &&
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL
+    ) {
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
     return ptn_bool(1);
 }
 

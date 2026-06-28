@@ -1,0 +1,13 @@
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T080006Z.tsv
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/array/var_export2.phpt
+ext/standard/tests/array/array_diff_max_elements.phpt
+ext/standard/tests/array/var_export.phpt
+ext/standard/tests/general_functions/var_export_basic5.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic2.phpt
+ext/standard/tests/general_functions/var_export_error3.phpt
+ext/standard/tests/general_functions/error_get_last.phpt
+ext/standard/tests/general_functions/type.phpt
+ext/standard/tests/general_functions/ini_get_all_builtin_default_value_null.phpt
+ext/standard/tests/general_functions/debug_zval_dump_refs.phpt
+ext/standard/tests/general_functions/ini_set_types.phpt
