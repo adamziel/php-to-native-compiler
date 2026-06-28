@@ -1385,6 +1385,9 @@ struct PtnStreamFilter {
     PtnStreamFilter *next;
 };
 
+typedef void (*PtnStreamFilterChainFlushClosingHook)(PtnStreamFilter *filter);
+static PtnStreamFilterChainFlushClosingHook ptn_stream_filter_chain_flush_closing_hook = NULL;
+
 typedef struct {
     int has_handler;
     PtnValue handler;
@@ -4181,7 +4184,7 @@ static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
     exception->refcount++;
 }
 
-static int64_t ptn_next_resource_id = 5;
+static int64_t ptn_next_resource_id = 4;
 static PtnResource *ptn_resource_registry_head = NULL;
 static PtnResource *ptn_resource_registry_tail = NULL;
 
@@ -4876,6 +4879,13 @@ static PTN_UNUSED void ptn_stream_filter_chain_free(PtnStreamFilter *filter) {
     }
 }
 
+static PTN_UNUSED void ptn_stream_filter_chain_flush_closing(PtnStreamFilter *filter) {
+    if (ptn_stream_filter_chain_flush_closing_hook == NULL) {
+        return;
+    }
+    ptn_stream_filter_chain_flush_closing_hook(filter);
+}
+
 static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     if (resource == NULL) {
         return;
@@ -4901,6 +4911,12 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     }
     resource->closed = 1;
     if (resource->persistent) {
+        ptn_stream_filter_chain_flush_closing(resource->read_filters);
+        ptn_stream_filter_chain_flush_closing(resource->write_filters);
+        ptn_stream_filter_chain_free(resource->read_filters);
+        ptn_stream_filter_chain_free(resource->write_filters);
+        resource->read_filters = NULL;
+        resource->write_filters = NULL;
         resource->stream = NULL;
         resource->memory_stream = NULL;
 #if !defined(_WIN32)
@@ -4920,6 +4936,8 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
             close_hook_data_free(close_hook_data);
         }
     }
+    ptn_stream_filter_chain_flush_closing(resource->read_filters);
+    ptn_stream_filter_chain_flush_closing(resource->write_filters);
     ptn_stream_filter_chain_free(resource->read_filters);
     ptn_stream_filter_chain_free(resource->write_filters);
     resource->read_filters = NULL;
@@ -4985,7 +5003,7 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
     return value;
 }
 
-static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
+static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
     static PtnResource stdin_resource = {
         SIZE_MAX,
         1,
@@ -5064,6 +5082,11 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
     } else if (id == 3) {
         resource = &stderr_resource;
     }
+    return resource;
+}
+
+static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
+    PtnResource *resource = ptn_standard_stream_resource_ptr(id);
     resource->closed = 0;
     resource->stream = id == 1 ? stdin : (id == 2 ? stdout : stderr);
     resource->stream_uri = id == 1 ? "php://stdin" : (id == 2 ? "php://stdout" : "php://stderr");
@@ -5071,6 +5094,12 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
     PtnValue value = ptn_resource(resource);
     value.owned = 0;
     return value;
+}
+
+static PTN_UNUSED void ptn_standard_streams_shutdown(void) {
+    ptn_resource_close(ptn_standard_stream_resource_ptr(1));
+    ptn_resource_close(ptn_standard_stream_resource_ptr(2));
+    ptn_resource_close(ptn_standard_stream_resource_ptr(3));
 }
 
 static PTN_UNUSED PtnValue ptn_reference_value(PtnReference *reference) {
