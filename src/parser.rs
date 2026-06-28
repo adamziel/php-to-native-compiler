@@ -23926,6 +23926,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_copy_to_stream"
             | "stream_bucket_append"
             | "stream_bucket_make_writeable"
+            | "stream_bucket_new"
             | "stream_bucket_prepend"
             | "stream_clear_errors"
             | "stream_filter_append"

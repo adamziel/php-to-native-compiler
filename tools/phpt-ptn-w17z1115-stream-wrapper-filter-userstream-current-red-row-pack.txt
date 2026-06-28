@@ -1,0 +1,27 @@
+# ptn-w17z.1115 exact stream wrapper/filter/userstream current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T045921Z.tsv
+# Pivot note: the originally assigned runnable rows were already green on
+# current origin/master baseline. The runnable implementation targets below are
+# same-artifact current-red stream/filter/userstream rows from the full-PHPT
+# artifact; the boundary rows are retained and classified by the runner.
+# - ext/standard/tests/file/userdirstream.phpt
+# - ext/standard/tests/filters/bug46164-2.phpt
+# - ext/standard/tests/file/userstreams_007.phpt
+# - ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+# - ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+# - ext/standard/tests/filters/stream_filter_register.phpt
+# - ext/standard/tests/streams/user_streams_context_001.phpt
+# - ext/standard/tests/filters/bug79468.phpt
+# bucket: stream-wrapper-filter-userstream-current-red rows=12
+ext/standard/tests/filters/bug78406.phpt
+ext/standard/tests/filters/convert.phpt
+ext/standard/tests/filters/gh20370_no_stream_property.phpt
+ext/standard/tests/filters/stream_filter_register_non_existing_class.phpt
+ext/standard/tests/streams/stream_read_object_return.phpt
+ext/standard/tests/filters/oss_fuzz_385993744.phpt
+ext/standard/tests/filters/chunked_002.phpt
+ext/standard/tests/filters/bug74267.phpt
+ext/standard/tests/streams/stream_set_timeout_error.phpt
+ext/standard/tests/file/popen_pclose_error.phpt
+ext/standard/tests/streams/bug60602.phpt
+ext/standard/tests/streams/opendir-004.phpt

@@ -55893,15 +55893,6 @@ static PtnValue ptn_internal_stream_filter_register(PtnRuntime *runtime, size_t 
         free(class_copy);
         class_copy = ptn_duplicate_string(resolved);
     }
-    if (!ptn_declared_runtime_user_class_exists(runtime, class_copy) &&
-        !ptn_declared_runtime_class_exists(runtime, class_copy)) {
-        ptn_emit_warning(&runtime->diagnostics, "stream_filter_register(): class does not exist", line);
-        free(class_copy);
-        ptn_string_operand_free(filter_name);
-        ptn_string_operand_free(class_name);
-        return ptn_bool(0);
-    }
-
     if (ptn_user_stream_filter_count == ptn_user_stream_filter_capacity) {
         size_t new_capacity = ptn_user_stream_filter_capacity == 0 ? 8 : ptn_user_stream_filter_capacity * 2;
         if (new_capacity < ptn_user_stream_filter_capacity ||
@@ -55925,6 +55916,51 @@ static PtnValue ptn_internal_stream_filter_register(PtnRuntime *runtime, size_t 
     ptn_string_operand_free(filter_name);
     ptn_string_operand_free(class_name);
     return ptn_bool(1);
+}
+
+static int ptn_user_stream_filter_class_exists(PtnRuntime *runtime, const char *class_name) {
+    return ptn_declared_runtime_user_class_exists(runtime, class_name) ||
+        ptn_declared_runtime_class_exists(runtime, class_name);
+}
+
+static void ptn_user_stream_filter_emit_missing_class_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand filter_name,
+    const char *class_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): User-filter \"%.*s\" requires class \"%s\", but that class is not defined",
+        function_name,
+        (int)filter_name.len,
+        filter_name.data,
+        class_name == NULL ? "" : class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): User-filter \"%.*s\" requires class \"%s\", but that class is not defined",
+        function_name,
+        (int)filter_name.len,
+        filter_name.data,
+        class_name == NULL ? "" : class_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static PtnStreamFilter *ptn_stream_filter_new(
@@ -55963,6 +55999,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_error = 0;
     filter->write_seek_mode = write_seek_mode;
     filter->user_filter_invalid_callback_reported = 0;
+    filter->user_filter_closed = 0;
     filter->has_user_filter_object = 0;
     filter->user_filter_object = ptn_null();
     filter->user_filter_runtime = NULL;
@@ -56006,6 +56043,7 @@ static int ptn_stream_filter_initialize_user_object(
     PtnUserStreamFilterRegistration *registration,
     PtnStringOperand filter_name,
     PtnValue filter_params,
+    PtnValue stream_value,
     size_t line
 ) {
     if (filter == NULL || registration == NULL) {
@@ -56029,6 +56067,23 @@ static int ptn_stream_filter_initialize_user_object(
         filter_name.len
     );
     PtnValue params_value = ptn_value_clone_deref(filter_params);
+    if (native_php_user_filter && ptn_value_deref(stream_value).type == PTN_RESOURCE) {
+        ptn_stream_filter_write_user_object_property(
+            runtime,
+            object,
+            object_ptr,
+            object_class,
+            native_php_user_filter,
+            "stream",
+            stream_value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&params_value);
+            ptn_value_destroy(&filter_name_value);
+            return 0;
+        }
+    }
     int filtername_declared = native_php_user_filter ||
         ptn_object_metadata_for_display_name(object_ptr, "filtername") != NULL;
     if (filtername_declared) {
@@ -56200,6 +56255,22 @@ static PtnValue ptn_internal_stream_bucket_make_writeable(PtnRuntime *runtime, s
     }
     brigade->input_consumed = 1;
     return ptn_stream_bucket_object(runtime, brigade->input, brigade->input_len);
+}
+
+static PtnValue ptn_internal_stream_bucket_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *stream = ptn_internal_expect_open_stream_arg(runtime, "stream_bucket_new", args[0], line);
+    if (stream == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "stream_bucket_new", 2, "buffer", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
+    PtnValue bucket = ptn_stream_bucket_object(runtime, data.data, data.len);
+    ptn_string_operand_free(data);
+    return bucket;
 }
 
 static int ptn_stream_bucket_data_operand(
@@ -56469,6 +56540,7 @@ static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
         memset(filter->base64_values, 0, sizeof(filter->base64_values));
+        filter->user_filter_closed = 0;
     }
 }
 
@@ -56613,6 +56685,7 @@ static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
     filter->zlib_error = 0;
+    filter->user_filter_closed = 0;
 }
 
 static int ptn_stream_filter_chain_has_strict_write_seek(PtnStreamFilter *filter) {
@@ -56716,6 +56789,7 @@ static char *ptn_stream_apply_user_filter_alloc(
     *ok = 1;
     *out_len = 0;
     if (filter == NULL || !filter->has_user_filter_object || runtime == NULL || runtime->method_dispatch == NULL) {
+        *out_len = len;
         return ptn_duplicate_string_len(data, len);
     }
 
@@ -56825,12 +56899,17 @@ static char *ptn_stream_apply_user_filter_alloc(
 
     PtnStreamBucketBrigade *output_brigade = (PtnStreamBucketBrigade *)output_resource->close_hook_data;
     size_t output_len = output_brigade == NULL ? 0 : output_brigade->output.len;
+    if (status == PTN_PSFS_FEED_ME) {
+        output_len = 0;
+    }
     char *filtered = output_len == 0
         ? ptn_duplicate_string_len("", 0)
         : ptn_duplicate_string_len(output_brigade->output.data, output_len);
     *out_len = output_len;
 
-    if ((status != PTN_PSFS_PASS_ON || output_len == 0) && !(closing && len == 0)) {
+    if (status != PTN_PSFS_PASS_ON && status != PTN_PSFS_FEED_ME && !(closing && len == 0)) {
+        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && len != 0) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
@@ -57088,13 +57167,6 @@ static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
     ptn_string_buffer_init(&output);
     size_t line_len = filter->filter_line_position;
     for (size_t i = 0; i < len; i++) {
-        if (ptn_stream_qp_matches_line_break(filter, data, len, i)) {
-            ptn_string_buffer_append_len(&output, filter->filter_line_break, filter->filter_line_break_len);
-            i += filter->filter_line_break_len - 1;
-            line_len = 0;
-            continue;
-        }
-
         unsigned char byte = (unsigned char)data[i];
         int trailing_whitespace = ptn_stream_qp_whitespace_is_trailing(filter, data, len, i);
         if (ptn_stream_qp_should_escape(byte, trailing_whitespace)) {
@@ -57225,15 +57297,20 @@ static char *ptn_stream_apply_filter_chain_alloc(
     size_t output_len = len;
     for (; filter != NULL; filter = filter->next) {
         if (filter->kind == PTN_STREAM_FILTER_USER) {
+            if (filter->user_filter_closed) {
+                continue;
+            }
             int ok = 1;
+            PtnRuntime *filter_runtime = runtime == NULL ? filter->user_filter_runtime : runtime;
+            size_t filter_line = runtime == NULL && line == 0 ? filter->user_filter_line : line;
             char *transformed = ptn_stream_apply_user_filter_alloc(
-                runtime,
+                filter_runtime,
                 function_name == NULL ? "stream filter" : function_name,
                 filter,
                 output,
                 output_len,
                 closing,
-                line,
+                filter_line,
                 &output_len,
                 &ok
             );
@@ -57242,6 +57319,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
             if (!ok) {
                 output_len = 0;
                 break;
+            }
+            if (closing) {
+                filter->user_filter_closed = 1;
             }
             continue;
         }
@@ -57422,6 +57502,74 @@ static void ptn_stream_filtered_read_pending_append(PtnResource *resource, const
     resource->filtered_read_buffer_offset = 0;
 }
 
+static void ptn_stream_flush_write_filters(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    int closing,
+    size_t line
+) {
+    if (resource == NULL || resource->write_filters == NULL) {
+        return;
+    }
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        resource->write_filters,
+        "",
+        0,
+        closing,
+        line,
+        &output_len
+    );
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        free(output);
+        return;
+    }
+    if (output_len != 0) {
+        int user_write_failed = 0;
+        size_t written = ptn_user_stream_resource_data(resource) != NULL
+            ? ptn_user_stream_write_bytes(runtime, resource, output, output_len, line, &user_write_failed)
+            : ptn_stream_write_bytes(resource, output, output_len);
+        (void)written;
+        (void)user_write_failed;
+    }
+    free(output);
+}
+
+static void ptn_stream_flush_read_filters_closing(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t line
+) {
+    if (resource == NULL || resource->read_filters == NULL) {
+        return;
+    }
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        resource->read_filters,
+        "",
+        0,
+        1,
+        line,
+        &output_len
+    );
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        free(output);
+        return;
+    }
+    ptn_stream_filtered_read_pending_append(resource, output, output_len);
+    free(output);
+}
+
 static size_t ptn_stream_filtered_read_pending_take(PtnResource *resource, char *dest, size_t len) {
     size_t available = ptn_stream_filtered_read_pending_available(resource);
     size_t take = len < available ? len : available;
@@ -57473,6 +57621,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         }
         if (raw.len == 0) {
             free(raw.data);
+            ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
             return 0;
         }
         size_t filtered_len = 0;
@@ -57489,6 +57638,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         free(raw.data);
         ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
         free(filtered);
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
         return total;
     }
 
@@ -57503,6 +57653,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         return read_len;
     }
     if (read_len == 0) {
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
         return 0;
     }
     size_t filtered_len = 0;
@@ -57518,6 +57669,9 @@ static size_t ptn_stream_filtered_read_fill_pending(
     );
     ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
     free(filtered);
+    if (read_len < want) {
+        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
+    }
     return read_len;
 }
 
@@ -57860,6 +58014,18 @@ static PtnValue ptn_internal_stream_filter_attach(
             ptn_string_operand_free(name);
             return ptn_bool(0);
         }
+        if (!ptn_user_stream_filter_class_exists(runtime, user_registration->class_name)) {
+            ptn_user_stream_filter_emit_missing_class_warning(
+                runtime,
+                function_name,
+                name,
+                user_registration->class_name,
+                line
+            );
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
         kind = PTN_STREAM_FILTER_USER;
     }
 
@@ -57906,6 +58072,7 @@ static PtnValue ptn_internal_stream_filter_attach(
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filtered_read_pending_clear(stream);
     }
+    PtnValue stream_object = ptn_resource(stream);
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         read_filter = ptn_stream_filter_new(
             kind,
@@ -57921,7 +58088,7 @@ static PtnValue ptn_internal_stream_filter_attach(
             prepend
         );
         if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, line)) {
+            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, stream_object, line)) {
             if (ptn_stream_filter_keep_after_user_init_failure(runtime, read_filter)) {
                 ptn_string_operand_free(name);
                 return ptn_null();
@@ -57943,7 +58110,7 @@ static PtnValue ptn_internal_stream_filter_attach(
             prepend
         );
         if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, line)) {
+            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, stream_object, line)) {
             int keep_write_filter = ptn_stream_filter_keep_after_user_init_failure(runtime, write_filter);
             if (!keep_write_filter &&
                 ptn_stream_filter_chain_unlink(&stream->write_filters, write_filter)) {
@@ -58245,6 +58412,10 @@ static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     ptn_stream_clear_error(resource);
+    ptn_stream_flush_write_filters(runtime, "rewind", resource, 0, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     if (ptn_stream_seek(resource, 0, SEEK_SET) == 0) {
         ptn_stream_filtered_read_pending_clear(resource);
         ptn_stream_filter_chain_reset(resource->read_filters);
@@ -58504,6 +58675,10 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
         }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         return ptn_int(-1);
+    }
+    ptn_stream_flush_write_filters(runtime, "fseek", resource, 0, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
     }
     if (ptn_stream_seek(resource, offset, seek_whence) == 0) {
         ptn_stream_filter_chain_call_seek(runtime, resource->read_filters, offset, whence, PTN_STREAM_FILTER_READ, line);
@@ -61516,10 +61691,12 @@ static int ptn_php_filter_apply_iconv_filter(
 }
 
 static int ptn_php_filter_apply_filter_name(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *filter_name,
-    size_t filter_name_len
+    size_t filter_name_len,
+    size_t line
 ) {
     if (ptn_php_filter_apply_iconv_filter(data_io, len_io, filter_name, filter_name_len)) {
         return 1;
@@ -61528,7 +61705,61 @@ static int ptn_php_filter_apply_filter_name(
     PtnStringOperand name = ptn_string_operand_borrowed_len(filter_name, filter_name_len);
     PtnStreamFilterKind kind;
     if (!ptn_stream_filter_kind_from_name(name, &kind)) {
-        return 0;
+        PtnUserStreamFilterRegistration *registration = ptn_user_stream_filter_find(name);
+        if (registration == NULL ||
+            !ptn_user_stream_filter_class_exists(runtime, registration->class_name)) {
+            return 0;
+        }
+        kind = PTN_STREAM_FILTER_USER;
+        PtnStreamFilter *filter = ptn_stream_filter_new(
+            kind,
+            name,
+            PTN_ZLIB_ENCODING_RAW,
+            -1,
+            PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
+        );
+        PtnResource *stream_resource = ptn_resource_new_memory_stream(
+            "php://filter",
+            "rb",
+            PTN_STREAM_BACKEND_MEMORY,
+            SIZE_MAX,
+            1,
+            0
+        );
+        if (ptn_stream_filter_initialize_user_object(
+                runtime,
+                filter,
+                registration,
+                name,
+                ptn_null(),
+                ptn_resource(stream_resource),
+                line
+            ) &&
+            runtime->exceptions->active_exception == NULL) {
+            size_t output_len = 0;
+            char *output = ptn_stream_apply_filter_chain_alloc(
+                runtime,
+                "php://filter",
+                filter,
+                (const char *)*data_io,
+                *len_io,
+                1,
+                line,
+                &output_len
+            );
+            if (runtime->exceptions->active_exception == NULL) {
+                free(*data_io);
+                *data_io = (unsigned char *)output;
+                *len_io = output_len;
+                ptn_stream_filter_free(filter);
+                ptn_resource_release(stream_resource);
+                return 1;
+            }
+            free(output);
+        }
+        ptn_stream_filter_free(filter);
+        ptn_resource_release(stream_resource);
+        return runtime->exceptions->active_exception == NULL ? 0 : 1;
     }
     PtnStreamFilter *filter = ptn_stream_filter_new(
         kind,
@@ -61556,10 +61787,12 @@ static int ptn_php_filter_apply_filter_name(
 }
 
 static int ptn_php_filter_apply_filter_list(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *filters,
-    size_t filters_len
+    size_t filters_len,
+    size_t line
 ) {
     size_t start = 0;
     while (start <= filters_len) {
@@ -61570,7 +61803,7 @@ static int ptn_php_filter_apply_filter_list(
         if (end > start) {
             size_t decoded_len = 0;
             char *decoded = ptn_url_decode_bytes(filters + start, end - start, 0, &decoded_len);
-            int applied = ptn_php_filter_apply_filter_name(data_io, len_io, decoded, decoded_len);
+            int applied = ptn_php_filter_apply_filter_name(runtime, data_io, len_io, decoded, decoded_len, line);
             free(decoded);
             if (!applied) {
                 return 0;
@@ -61585,10 +61818,12 @@ static int ptn_php_filter_apply_filter_list(
 }
 
 static int ptn_php_filter_apply_segment(
+    PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
     const char *segment,
-    size_t segment_len
+    size_t segment_len,
+    size_t line
 ) {
     const char *read_prefix = "read=";
     const char *write_prefix = "write=";
@@ -61599,13 +61834,15 @@ static int ptn_php_filter_apply_segment(
     if (segment_len >= strlen(read_prefix) &&
         ptn_php_filter_ascii_case_equal_len(segment, read_prefix, strlen(read_prefix))) {
         return ptn_php_filter_apply_filter_list(
+            runtime,
             data_io,
             len_io,
             segment + strlen(read_prefix),
-            segment_len - strlen(read_prefix)
+            segment_len - strlen(read_prefix),
+            line
         );
     }
-    return ptn_php_filter_apply_filter_list(data_io, len_io, segment, segment_len);
+    return ptn_php_filter_apply_filter_list(runtime, data_io, len_io, segment, segment_len, line);
 }
 
 static int ptn_try_read_php_filter_url_bytes(
@@ -61661,10 +61898,12 @@ static int ptn_try_read_php_filter_url_bytes(
         }
         if (segment_end > segment_start &&
             !ptn_php_filter_apply_segment(
+                runtime,
                 &data,
                 &data_len,
                 segment_start,
-                (size_t)(segment_end - segment_start)
+                (size_t)(segment_end - segment_start),
+                line
             )) {
             free(data);
             errno = ENOENT;
@@ -61805,15 +62044,69 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     size_t data_len = 0;
     char *opened_path = NULL;
     char *data_url_detail = NULL;
+    int read_result = 0;
+    PtnResource *context = NULL;
+    if (has_context &&
+        !ptn_file_get_contents_validate_context_arg(runtime, args[context_index], line, &context)) {
+        free(path);
+        return ptn_null();
+    }
+    PtnValue user_stream = ptn_null();
+    if (ptn_try_open_user_stream_wrapper(runtime, path, "rb", context, line, &user_stream)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            free(path);
+            return ptn_null();
+        }
+        PtnValue resolved_stream = ptn_value_deref(user_stream);
+        if (resolved_stream.type == PTN_RESOURCE &&
+            ptn_stream_resource_is_open(resolved_stream.as.resource)) {
+            PtnValue contents = ptn_stream_read_remaining(
+                runtime,
+                "file_get_contents",
+                resolved_stream.as.resource,
+                -1,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&contents);
+                ptn_value_destroy(&user_stream);
+                free(path);
+                return ptn_null();
+            }
+            PtnValue resolved_contents = ptn_value_deref(contents);
+            if (resolved_contents.type == PTN_STRING) {
+                data_len = resolved_contents.as.string.len;
+                data = malloc(data_len + 1);
+                if (data == NULL) {
+                    ptn_value_destroy(&contents);
+                    ptn_value_destroy(&user_stream);
+                    free(path);
+                    ptn_abort_out_of_memory();
+                }
+                if (data_len != 0) {
+                    memcpy(data, resolved_contents.as.string.data, data_len);
+                }
+                data[data_len] = '\0';
+                read_result = 1;
+            } else {
+                read_result = -1;
+            }
+            ptn_value_destroy(&contents);
+        }
+        ptn_value_destroy(&user_stream);
+    }
     char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
     char *fallback_path = NULL;
-    if (unknown_scheme != NULL) {
+    if (read_result == 0 && unknown_scheme != NULL) {
         ptn_emit_unknown_stream_wrapper_warning(runtime, "file_get_contents", unknown_scheme, line);
         fallback_path = ptn_unknown_wrapper_local_fallback_path(path);
         free(unknown_scheme);
+    } else {
+        free(unknown_scheme);
     }
     const char *read_path = fallback_path == NULL ? path : fallback_path;
-    int php_filter_result = fallback_path == NULL
+    int php_filter_result = read_result == 0 && fallback_path == NULL
         ? ptn_try_read_php_filter_url_bytes(
             runtime,
             path,
@@ -61824,7 +62117,9 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             line
         )
         : 0;
-    int read_result = php_filter_result != 0
+    read_result = read_result != 0
+        ? read_result
+        : php_filter_result != 0
         ? php_filter_result
         : fallback_path == NULL
         ? ptn_file_get_contents_read_non_filter_source_bytes(
@@ -174228,6 +174523,7 @@ static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, siz
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_make_writeable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_bucket_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_bucket_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -175341,6 +175637,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_bucket_append", 2, 2, ptn_internal_stream_bucket_append },
         { "stream_bucket_make_writeable", 1, 1, ptn_internal_stream_bucket_make_writeable },
+        { "stream_bucket_new", 2, 2, ptn_internal_stream_bucket_new },
         { "stream_bucket_prepend", 2, 2, ptn_internal_stream_bucket_prepend },
         { "stream_clear_errors", 0, 0, ptn_internal_stream_clear_errors },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
@@ -217263,6 +217560,18 @@ static int ptn_eval_parse_primary_expression(
     if (ptn_eval_parse_new_expression(runtime, code, len, pos, line, out)) {
         return 1;
     }
+    if (code[cursor] == '!') {
+        cursor++;
+        PtnValue operand = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &operand)) {
+            return 0;
+        }
+        int truthy = ptn_is_truthy(operand);
+        ptn_value_destroy(&operand);
+        *out = ptn_bool(!truthy);
+        *pos = cursor;
+        return 1;
+    }
     if (code[cursor] == '\'' || code[cursor] == '"') {
         return ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
     }
@@ -218549,6 +218858,93 @@ static int ptn_dynamic_execute_try_catch_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_if_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "if")) {
+        return 0;
+    }
+    cursor += strlen("if");
+    if (!ptn_eval_consume_char(code, end, &cursor, '(')) {
+        return 0;
+    }
+    size_t line = ptn_eval_line_for_pos(code, cursor, base_line);
+    PtnValue condition = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, end, &cursor, line, &condition)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, end, &cursor, ')') ||
+        !ptn_eval_consume_char(code, end, &cursor, '{')) {
+        ptn_value_destroy(&condition);
+        return 0;
+    }
+    size_t body_start = cursor;
+    size_t body_end = ptn_eval_find_matching_brace(code, end, body_start - 1);
+    if (body_end >= end) {
+        ptn_value_destroy(&condition);
+        return 0;
+    }
+    int run_then = ptn_is_truthy(condition);
+    ptn_value_destroy(&condition);
+    cursor = body_end + 1;
+
+    size_t else_body_start = 0;
+    size_t else_body_end = 0;
+    size_t after_if = cursor;
+    size_t else_cursor = ptn_eval_skip_ws(code, end, cursor);
+    if (ptn_eval_keyword_at(code, end, else_cursor, "else")) {
+        else_cursor += strlen("else");
+        size_t possible_if = ptn_eval_skip_ws(code, end, else_cursor);
+        if (ptn_eval_keyword_at(code, end, possible_if, "if")) {
+            after_if = else_cursor;
+        } else if (ptn_eval_consume_char(code, end, &else_cursor, '{')) {
+            else_body_start = else_cursor;
+            else_body_end = ptn_eval_find_matching_brace(code, end, else_body_start - 1);
+            if (else_body_end >= end) {
+                return 0;
+            }
+            after_if = else_body_end + 1;
+        }
+    }
+
+    int ok = 1;
+    if (run_then) {
+        size_t nested = body_start;
+        ok = ptn_dynamic_execute_statements_range(
+            runtime,
+            code,
+            len,
+            &nested,
+            body_end,
+            base_line,
+            return_out,
+            returned
+        );
+    } else if (else_body_end > else_body_start) {
+        size_t nested = else_body_start;
+        ok = ptn_dynamic_execute_statements_range(
+            runtime,
+            code,
+            len,
+            &nested,
+            else_body_end,
+            base_line,
+            return_out,
+            returned
+        );
+    }
+    *pos = after_if;
+    return ok;
+}
+
 static int ptn_dynamic_execute_return_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -218650,6 +219046,22 @@ static int ptn_dynamic_execute_statements_range(
         size_t line = ptn_eval_line_for_pos(code, statement_pos, base_line);
         if (ptn_dynamic_execute_return_statement(runtime, code, end, pos, line, return_out, returned)) {
             return 1;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_execute_if_statement(
+                runtime,
+                code,
+                len,
+                pos,
+                end,
+                base_line,
+                return_out,
+                returned
+            )) {
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
         }
         *pos = statement_pos;
         if (ptn_dynamic_execute_try_catch_statement(
@@ -218861,8 +219273,36 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     }
     char *code = NULL;
     size_t code_len = 0;
-    if (!ptn_dynamic_read_file(path, &code, &code_len)) {
-        return 0;
+    unsigned char *filtered_data = NULL;
+    size_t filtered_len = 0;
+    char *filter_detail = NULL;
+    int filter_read = ptn_try_read_php_filter_url_bytes(
+        runtime,
+        path,
+        0,
+        &filtered_data,
+        &filtered_len,
+        &filter_detail,
+        line
+    );
+    free(filter_detail);
+    if (filter_read > 0) {
+        code = malloc(filtered_len + 1);
+        if (code == NULL) {
+            free(filtered_data);
+            ptn_abort_out_of_memory();
+        }
+        if (filtered_len != 0) {
+            memcpy(code, filtered_data, filtered_len);
+        }
+        code[filtered_len] = '\0';
+        code_len = filtered_len;
+        free(filtered_data);
+    } else {
+        free(filtered_data);
+        if (!ptn_dynamic_read_file(path, &code, &code_len)) {
+            return 0;
+        }
     }
 
     const char *saved_source_path = runtime != NULL ? runtime->source_path : NULL;
