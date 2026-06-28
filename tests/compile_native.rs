@@ -49522,6 +49522,64 @@ var_dump(NumberFormatter::DECIMAL_COMPACT_SHORT, NumberFormatter::DECIMAL_COMPAC
 }
 
 #[test]
+fn compile_intl_number_formatter_icu_style_matrix_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-icu-style-matrix");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-icu-style-matrix.php");
+    let output = root.join("intl-number-formatter-icu-style-matrix-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$n = 1234567.891234567890000;\n\
+$pattern = numfmt_create('de', NumberFormatter::PATTERN_DECIMAL, '##.#####################');\n\
+echo substr(numfmt_format($pattern, $n), 0, 15), \"\\n\";\n\
+$decimal = numfmt_create('fr', NumberFormatter::DECIMAL);\n\
+echo numfmt_format($decimal, $n), \"\\n\";\n\
+$currency = numfmt_create('de', NumberFormatter::CURRENCY);\n\
+echo numfmt_format($currency, $n), \"\\n\";\n\
+$iso = numfmt_create('ru_UA', NumberFormatter::CURRENCY_ISO);\n\
+echo numfmt_format($iso, $n), \"\\n\";\n\
+$percent = numfmt_create('de', NumberFormatter::PERCENT);\n\
+echo numfmt_format($percent, $n), \"\\n\";\n\
+$scientific = numfmt_create('en_US', NumberFormatter::SCIENTIFIC);\n\
+echo substr(numfmt_format($scientific, $n), 0, 15), \"\\n\";\n\
+$spellout = numfmt_create('en_US', NumberFormatter::SPELLOUT, '@@@@@@@');\n\
+echo numfmt_format($spellout, $n), \"\\n\";\n\
+$ruSpellout = numfmt_create('ru_UA', NumberFormatter::SPELLOUT, '@@@@@@@');\n\
+echo numfmt_format($ruSpellout, $n), \"\\n\";\n\
+$ordinal = numfmt_create('fr', NumberFormatter::ORDINAL);\n\
+echo numfmt_format($ordinal, $n, NumberFormatter::TYPE_INT32), \"\\n\";\n\
+$duration = numfmt_create('en_UK', NumberFormatter::DURATION);\n\
+echo numfmt_format($duration, $n, NumberFormatter::TYPE_INT32), \"\\n\";\n\
+$rulebased = numfmt_create('fr', NumberFormatter::PATTERN_RULEBASED, '#####.###');\n\
+echo numfmt_format($rulebased, $n), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1234567.8912345\n",
+            "1\u{202f}234\u{202f}567,891\n",
+            "1.234.567,89\u{00a0}XXX\n",
+            "1\u{00a0}234\u{00a0}567,89\u{00a0}UAH\n",
+            "123.456.789\u{00a0}%\n",
+            "1.2345678912345\n",
+            "one million two hundred and thirty-four thousand five hundred and sixty-seven point eight nine one two three four five six seven nine\n",
+            "\u{043e}\u{0434}\u{0438}\u{043d} \u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d} \u{0434}\u{0432}\u{0435}\u{0441}\u{0442}\u{0438} \u{0442}\u{0440}\u{0438}\u{0434}\u{0446}\u{0430}\u{0442}\u{044c} \u{0447}\u{0435}\u{0442}\u{044b}\u{0440}\u{0435} \u{0442}\u{044b}\u{0441}\u{044f}\u{0447}\u{0438} \u{043f}\u{044f}\u{0442}\u{044c}\u{0441}\u{043e}\u{0442} \u{0448}\u{0435}\u{0441}\u{0442}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0441}\u{0435}\u{043c}\u{044c} \u{0446}\u{0435}\u{043b}\u{044b}\u{0445} \u{0432}\u{043e}\u{0441}\u{0435}\u{043c}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0434}\u{0435}\u{0432}\u{044f}\u{0442}\u{044c} \u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d}\u{043e}\u{0432} \u{0441}\u{0442}\u{043e} \u{0434}\u{0432}\u{0430}\u{0434}\u{0446}\u{0430}\u{0442}\u{044c} \u{0442}\u{0440}\u{0438} \u{0442}\u{044b}\u{0441}\u{044f}\u{0447}\u{0438} \u{0447}\u{0435}\u{0442}\u{044b}\u{0440}\u{0435}\u{0441}\u{0442}\u{0430} \u{043f}\u{044f}\u{0442}\u{044c}\u{0434}\u{0435}\u{0441}\u{044f}\u{0442} \u{0441}\u{0435}\u{043c}\u{044c} \u{0441}\u{0442}\u{043e}\u{043c}\u{0438}\u{043b}\u{043b}\u{0438}\u{043e}\u{043d}\u{043d}\u{044b}\u{0445}\n",
+            "1\u{202f}234\u{202f}567e\n",
+            "342:56:07\n",
+            "#####.###\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_formatter_symbols_message_static_and_error_code_to_native_binary() {
     let root = temp_dir("ptn-native-intl-formatter-symbols-message-error");
     fs::create_dir_all(&root).unwrap();
