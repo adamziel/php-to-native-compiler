@@ -63627,7 +63627,6 @@ static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnVa
     free(path);
     return ptn_bool(0);
 #else
-    PtnValue user_value = ptn_value_deref(args[1]);
     uid_t uid = (uid_t)-1;
     if (!ptn_internal_chown_uid_arg(runtime, args[1], line, &uid)) {
         free(path);
@@ -63680,7 +63679,6 @@ static PtnValue ptn_internal_chgrp(PtnRuntime *runtime, size_t argc, const PtnVa
     free(path);
     return ptn_bool(0);
 #else
-    PtnValue group_value = ptn_value_deref(args[1]);
     gid_t gid = (gid_t)-1;
     if (!ptn_internal_chgrp_gid_arg(runtime, args[1], line, &gid)) {
         free(path);
@@ -149098,55 +149096,6 @@ static void ptn_stream_select_report_user_stream_not_representable(
     );
 }
 
-<<<<<<< HEAD
-static int ptn_stream_select_cast_fd(
-    PtnRuntime *runtime,
-    PtnResource *resource,
-    PtnResource *origin,
-    int *fd_out,
-    size_t line
-) {
-    if (resource == NULL || !ptn_stream_resource_is_open(resource)) {
-        return 0;
-    }
-    PtnUserStreamResourceData *user_stream = ptn_user_stream_data_from_resource(resource);
-    if (user_stream == NULL) {
-        if (resource->stream == NULL) {
-            ptn_emit_warning(&runtime->diagnostics, "stream_select(): supplied stream file descriptor cannot be selected", line);
-            return 0;
-        }
-        int fd = fileno(resource->stream);
-        if (fd < 0 || fd >= FD_SETSIZE) {
-            ptn_emit_warning(&runtime->diagnostics, "stream_select(): supplied stream file descriptor cannot be selected", line);
-            return 0;
-        }
-        *fd_out = fd;
-        return 1;
-    }
-
-    PtnValue wrapper = ptn_value_deref(user_stream->wrapper_object);
-    const char *class_name = (wrapper.type == PTN_OBJECT && wrapper.as.object != NULL && wrapper.as.object->class_name != NULL)
-        ? wrapper.as.object->class_name
-        : "streamWrapper";
-    if (user_stream->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_cast")) {
-        char message[192];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "stream_select(): %s::stream_cast is not implemented!",
-            class_name
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_emit_warning(&runtime->diagnostics, message, line);
-        ptn_stream_select_emit_user_unrepresentable(runtime, line);
-        return 0;
-    }
-
-    PtnValue cast_arg = ptn_int(0);
-=======
 static PtnResource *ptn_stream_select_cast_resource(
     PtnRuntime *runtime,
     const char *function_name,
@@ -149193,7 +149142,6 @@ static PtnResource *ptn_stream_select_cast_resource(
     }
 
     PtnValue cast_arg = ptn_int(3);
->>>>>>> origin/master
     PtnValue cast_result = user_stream->runtime->method_dispatch(
         user_stream->runtime,
         user_stream->wrapper_object,
@@ -149205,15 +149153,6 @@ static PtnResource *ptn_stream_select_cast_resource(
     ptn_value_destroy(&cast_arg);
     if (user_stream->runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&cast_result);
-<<<<<<< HEAD
-        return 0;
-    }
-    PtnValue resolved = ptn_value_deref(cast_result);
-    if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
-        ptn_value_destroy(&cast_result);
-        ptn_stream_select_emit_user_unrepresentable(runtime, line);
-        return 0;
-=======
         return NULL;
     }
 
@@ -149222,32 +149161,18 @@ static PtnResource *ptn_stream_select_cast_resource(
         ptn_value_destroy(&cast_result);
         ptn_stream_select_report_user_stream_not_representable(runtime, function_name, resource, line, 1);
         return NULL;
->>>>>>> origin/master
     }
     if (resolved.type != PTN_RESOURCE || resolved.as.resource == NULL) {
         char message[192];
         int written = snprintf(
             message,
             sizeof(message),
-<<<<<<< HEAD
-            "stream_select(): %s::stream_cast must return a stream resource",
-            class_name
-=======
             "%s::stream_cast must return a stream resource",
             class_name == NULL ? "user-space" : class_name
->>>>>>> origin/master
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-<<<<<<< HEAD
-        ptn_emit_warning(&runtime->diagnostics, message, line);
-        ptn_value_destroy(&cast_result);
-        ptn_stream_select_emit_user_unrepresentable(runtime, line);
-        return 0;
-    }
-    if (resolved.as.resource == origin) {
-=======
         ptn_value_destroy(&cast_result);
         ptn_stream_report_resource_error(
             runtime,
@@ -149268,35 +149193,16 @@ static PtnResource *ptn_stream_select_cast_resource(
     }
     PtnResource *cast_resource = resolved.as.resource;
     if (cast_resource == resource) {
->>>>>>> origin/master
         char message[192];
         int written = snprintf(
             message,
             sizeof(message),
-<<<<<<< HEAD
-            "stream_select(): %s::stream_cast must not return itself",
-            class_name
-=======
             "%s::stream_cast must not return itself",
             class_name == NULL ? "user-space" : class_name
->>>>>>> origin/master
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-<<<<<<< HEAD
-        ptn_emit_warning(&runtime->diagnostics, message, line);
-        ptn_value_destroy(&cast_result);
-        ptn_stream_select_emit_user_unrepresentable(runtime, line);
-        return 0;
-    }
-    int ok = ptn_stream_select_cast_fd(runtime, resolved.as.resource, origin, fd_out, line);
-    ptn_value_destroy(&cast_result);
-    if (!ok) {
-        ptn_stream_select_emit_user_unrepresentable(runtime, line);
-    }
-    return ok;
-=======
         ptn_value_destroy(&cast_result);
         ptn_stream_report_resource_error(
             runtime,
@@ -149331,7 +149237,6 @@ static PtnResource *ptn_stream_select_cast_resource(
     ptn_resource_retain(cast_resource);
     ptn_value_destroy(&cast_result);
     return cast_resource;
->>>>>>> origin/master
 }
 
 static int ptn_stream_select_add_array(
@@ -149363,66 +149268,11 @@ static int ptn_stream_select_add_array(
             ptn_emit_warning(&runtime->diagnostics, message, line);
             return 0;
         }
-<<<<<<< HEAD
-        if (ptn_user_stream_data_from_resource(value.as.resource) != NULL) {
-            int fd = -1;
-            if (ptn_stream_select_cast_fd(runtime, value.as.resource, value.as.resource, &fd, line)) {
-                FD_SET(fd, set);
-                if (fd > *max_fd) {
-                    *max_fd = fd;
-                }
-            }
-            continue;
-        }
-        if (read_interest && value.as.resource->memory_stream != NULL) {
-            PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(value.as.resource);
-            if (user_stream != NULL) {
-                PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
-                const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
-                    ? wrapper_object.as.object->class_name
-                    : "user-space";
-                char not_implemented[192];
-                int written = snprintf(
-                    not_implemented,
-                    sizeof(not_implemented),
-                    "%s::stream_cast is not implemented!",
-                    class_name == NULL ? "user-space" : class_name
-                );
-                if (written < 0 || (size_t)written >= sizeof(not_implemented)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_stream_report_resource_error(
-                    runtime,
-                    value.as.resource,
-                    function_name,
-                    not_implemented,
-                    "user-space",
-                    "NotImplemented",
-                    1,
-                    1,
-                    line
-                );
-                if (runtime->exceptions->active_exception != NULL) {
-                    return 0;
-                }
-                ptn_stream_report_resource_error(
-                    runtime,
-                    value.as.resource,
-                    function_name,
-                    "Cannot represent a stream of type user-space as a select()able descriptor",
-                    "user-space",
-                    "CastNotSupported",
-                    1,
-                    0,
-                    line
-                );
-=======
         PtnResource *select_resource = value.as.resource;
         int release_select_resource = 0;
         if (ptn_user_stream_resource_data(value.as.resource) != NULL) {
             select_resource = ptn_stream_select_cast_resource(runtime, function_name, value.as.resource, line, 0);
             if (runtime->exceptions->active_exception != NULL) {
->>>>>>> origin/master
                 return 0;
             }
             if (select_resource == NULL) {
@@ -149465,13 +149315,7 @@ static int ptn_stream_select_add_array(
     return 1;
 }
 
-static PtnValue ptn_stream_select_selected_array(
-    PtnRuntime *runtime,
-    PtnArray *array,
-    fd_set *set,
-    int read_interest,
-    size_t line
-) {
+static PtnValue ptn_stream_select_selected_array(PtnArray *array, fd_set *set, int read_interest) {
     PtnValue selected = ptn_array_from_literal_entries(0, NULL);
     if (array == NULL) {
         return selected;
@@ -149479,20 +149323,6 @@ static PtnValue ptn_stream_select_selected_array(
     for (size_t i = 0; i < array->len; i++) {
         PtnValue value = ptn_value_deref(array->entries[i].value);
         if (value.type != PTN_RESOURCE) {
-            continue;
-        }
-        if (ptn_user_stream_data_from_resource(value.as.resource) != NULL) {
-            int fd = -1;
-            if (!ptn_stream_select_cast_fd(runtime, value.as.resource, value.as.resource, &fd, line)) {
-                continue;
-            }
-            if (fd >= 0 && fd < FD_SETSIZE && FD_ISSET(fd, set)) {
-                ptn_array_set_entry(
-                    selected.as.array,
-                    ptn_array_key_clone(array->entries[i].key),
-                    ptn_value_clone_deref(array->entries[i].value)
-                );
-            }
             continue;
         }
         if (read_interest &&
@@ -149626,17 +149456,17 @@ static PtnValue ptn_internal_stream_select(PtnRuntime *runtime, size_t argc, con
     ptn_stream_select_assign_result(
         runtime,
         args[0],
-        read_null ? ptn_null() : ptn_stream_select_selected_array(runtime, read_array, &read_set, 1, line)
+        read_null ? ptn_null() : ptn_stream_select_selected_array(read_array, &read_set, 1)
     );
     ptn_stream_select_assign_result(
         runtime,
         args[1],
-        write_null ? ptn_null() : ptn_stream_select_selected_array(runtime, write_array, &write_set, 0, line)
+        write_null ? ptn_null() : ptn_stream_select_selected_array(write_array, &write_set, 0)
     );
     ptn_stream_select_assign_result(
         runtime,
         args[2],
-        except_null ? ptn_null() : ptn_stream_select_selected_array(runtime, except_array, &except_set, 0, line)
+        except_null ? ptn_null() : ptn_stream_select_selected_array(except_array, &except_set, 0)
     );
     return ptn_int(selected);
 #endif

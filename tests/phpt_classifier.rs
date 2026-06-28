@@ -753,37 +753,19 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn phpt_classifier_selects_user_stream_wrapper_and_filter_registration() {
-    let wrapper = classify(
-        "--TEST--\nstream wrapper\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
-    );
-    assert_eq!(
-        wrapper.trim_end(),
-        "runnable\tselected for PTN semantic measurement"
-    );
-
-    let filter = classify(
-        "--TEST--\nstream filter\n--FILE--\n<?php\nclass SampleFilter extends php_user_filter { public function filter($in, $out, &$consumed, bool $closing): int { return PSFS_PASS_ON; } }\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
-    );
-    assert_eq!(
-        filter.trim_end(),
-        "runnable\tselected for PTN semantic measurement"
-    );
-=======
 fn phpt_classifier_keeps_user_stream_registration_rows_runnable() {
     let cases = [
         (
             "user stream wrapper",
-            "--TEST--\nstream wrapper\n--FILE--\n<?php\nstream_wrapper_register('test', TestWrapper::class);\n--EXPECT--\n",
+            "--TEST--\nstream wrapper\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_wrapper_register('test', TestWrapper::class);\n--EXPECT--\n",
         ),
         (
             "user stream wrapper alias",
-            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+            "--TEST--\nstream alias\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
         ),
         (
             "user stream filter",
-            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+            "--TEST--\nstream filter\n--FILE--\n<?php\nclass SampleFilter extends php_user_filter { public function filter($in, $out, &$consumed, bool $closing): int { return PSFS_PASS_ON; } }\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
         ),
     ];
 
@@ -794,7 +776,6 @@ fn phpt_classifier_keeps_user_stream_registration_rows_runnable() {
             "{name}: {classification:?}"
         );
     }
->>>>>>> origin/master
 }
 
 #[test]
