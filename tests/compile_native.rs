@@ -30465,6 +30465,48 @@ var_dump(fwrite(STDOUT, 'Hello'));\n",
 }
 
 #[test]
+fn compile_user_stream_filter_typed_filtername_keeps_partial_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-typed-filtername");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-typed-filtername.php");
+    let output = root.join("stream-user-filter-typed-filtername-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class foo {\n\
+    public array $filtername;\n\
+}\n\
+var_dump(stream_filter_register('invalid_filter', 'foo'));\n\
+var_dump(stream_filter_append(STDOUT, 'invalid_filter'));\n\
+fwrite(STDOUT, \"Hello\\n\");\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    let params_deprecation = combined
+        .find("Deprecated: Creation of dynamic property foo::$params is deprecated")
+        .unwrap_or_else(|| panic!("{combined}"));
+    let filtername_type_error = combined
+        .find("Fatal error: Uncaught TypeError: Cannot assign string to property foo::$filtername of type array")
+        .unwrap_or_else(|| panic!("{combined}"));
+    let invalid_callback = combined
+        .find("Fatal error: Invalid callback foo::filter, class foo does not have a method \"filter\" in Unknown on line 0")
+        .unwrap_or_else(|| panic!("{combined}"));
+    assert!(stdout.starts_with("bool(true)\n"), "{stdout}");
+    assert!(params_deprecation < filtername_type_error, "{combined}");
+    assert!(filtername_type_error < invalid_callback, "{combined}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_keep_after_user_init_failure"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_read_nul_delimiter_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-nul-line");
     fs::create_dir_all(&root).unwrap();

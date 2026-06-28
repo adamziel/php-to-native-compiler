@@ -55696,8 +55696,38 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->user_filter_object = ptn_null();
     filter->user_filter_runtime = NULL;
     filter->user_filter_line = 0;
+    filter->user_filter_invalid_callback_reported = 0;
     filter->next = NULL;
     return filter;
+}
+
+static void ptn_stream_filter_write_user_object_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnObject *object_ptr,
+    const char *object_class,
+    int native_php_user_filter,
+    const char *property,
+    PtnValue value,
+    size_t line
+) {
+    if (native_php_user_filter) {
+        ptn_array_set_entry(
+            object_ptr->properties,
+            ptn_array_string_key(property),
+            ptn_value_clone_deref(value)
+        );
+        return;
+    }
+    PtnValue written = ptn_object_write_property(
+        runtime,
+        object,
+        property,
+        object_class,
+        value,
+        line
+    );
+    ptn_value_destroy(&written);
 }
 
 static int ptn_stream_filter_initialize_user_object(
@@ -55720,66 +55750,75 @@ static int ptn_stream_filter_initialize_user_object(
     const char *object_class = object_ptr->class_name;
     int native_php_user_filter = ptn_declared_class_is_same_or_descendant(object_class, "php_user_filter");
 
-    PtnValue filter_name_value = ptn_owned_string_len(
-        ptn_duplicate_string_len(filter_name.data, filter_name.len),
-        filter_name.len
-    );
-    if (native_php_user_filter) {
-        ptn_array_set_entry(
-            object_ptr->properties,
-            ptn_array_string_key("filtername"),
-            ptn_value_clone_deref(filter_name_value)
-        );
-    } else {
-        PtnValue written = ptn_object_write_property(
-            runtime,
-            object,
-            "filtername",
-            object_class,
-            filter_name_value,
-            line
-        );
-        ptn_value_destroy(&written);
-    }
-    ptn_value_destroy(&filter_name_value);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&object);
-        return 0;
-    }
-
-    PtnValue params_value = ptn_value_clone_deref(filter_params);
-    if (native_php_user_filter) {
-        ptn_array_set_entry(
-            object_ptr->properties,
-            ptn_array_string_key("params"),
-            ptn_value_clone_deref(params_value)
-        );
-    } else {
-        PtnValue written = ptn_object_write_property(
-            runtime,
-            object,
-            "params",
-            object_class,
-            params_value,
-            line
-        );
-        ptn_value_destroy(&written);
-    }
-    ptn_value_destroy(&params_value);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&object);
-        return 0;
-    }
-
     filter->has_user_filter_object = 1;
     filter->user_filter_object = object;
     filter->user_filter_runtime = runtime;
     filter->user_filter_line = line;
+
+    PtnValue filter_name_value = ptn_owned_string_len(
+        ptn_duplicate_string_len(filter_name.data, filter_name.len),
+        filter_name.len
+    );
+    PtnValue params_value = ptn_value_clone_deref(filter_params);
+    int filtername_declared = native_php_user_filter ||
+        ptn_object_metadata_for_display_name(object_ptr, "filtername") != NULL;
+    if (filtername_declared) {
+        ptn_stream_filter_write_user_object_property(
+            runtime,
+            object,
+            object_ptr,
+            object_class,
+            native_php_user_filter,
+            "params",
+            params_value,
+            line
+        );
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_stream_filter_write_user_object_property(
+                runtime,
+                object,
+                object_ptr,
+                object_class,
+                native_php_user_filter,
+                "filtername",
+                filter_name_value,
+                line
+            );
+        }
+    } else {
+        ptn_stream_filter_write_user_object_property(
+            runtime,
+            object,
+            object_ptr,
+            object_class,
+            native_php_user_filter,
+            "filtername",
+            filter_name_value,
+            line
+        );
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_stream_filter_write_user_object_property(
+                runtime,
+                object,
+                object_ptr,
+                object_class,
+                native_php_user_filter,
+                "params",
+                params_value,
+                line
+            );
+        }
+    }
+    ptn_value_destroy(&params_value);
+    ptn_value_destroy(&filter_name_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+
     if (ptn_object_has_declared_method(runtime, object, "onCreate") && runtime->method_dispatch != NULL) {
         PtnValue created = runtime->method_dispatch(runtime, object, "onCreate", 0, NULL, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&created);
-            ptn_stream_filter_cleanup_user_object(filter);
             return 0;
         }
         int ok = ptn_is_truthy(created);
@@ -55790,6 +55829,17 @@ static int ptn_stream_filter_initialize_user_object(
         }
     }
     return 1;
+}
+
+static int ptn_stream_filter_keep_after_user_init_failure(
+    PtnRuntime *runtime,
+    PtnStreamFilter *filter
+) {
+    return runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        filter != NULL &&
+        filter->has_user_filter_object;
 }
 
 static void ptn_stream_bucket_brigade_data_free(void *opaque) {
@@ -56342,6 +56392,19 @@ static void ptn_stream_filter_emit_unprocessed_buckets_warning(
 
 static void ptn_throw_stream_filter_invalid_callback_error(PtnRuntime *runtime, char *message, size_t line) {
     char *secondary_message = ptn_duplicate_string(message == NULL ? "" : message);
+    int has_active_exception = runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL;
+    if (has_active_exception && runtime->exceptions->try_frame == NULL) {
+        if (runtime->diagnostics.display_errors) {
+            FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+            fprintf(stream, "\nFatal error: %s in Unknown on line 0\n", secondary_message);
+        }
+        free(secondary_message);
+        free(message);
+        ptn_runtime_shutdown_before_exit(runtime);
+        exit(255);
+    }
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -56408,7 +56471,17 @@ static char *ptn_stream_apply_user_filter_alloc(
         invalid_filter_reason = ptn_format_missing_method_callback_reason(filter_class_name, "filter");
     }
     if (invalid_filter_reason != NULL) {
-        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        int has_active_exception = runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL;
+        if (has_active_exception && filter->user_filter_invalid_callback_reported) {
+            free(invalid_filter_reason);
+            *ok = 0;
+            return NULL;
+        }
+        filter->user_filter_invalid_callback_reported = 1;
+        if (!has_active_exception) {
+            ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        }
         int needed = snprintf(
             NULL,
             0,
@@ -56972,9 +57045,6 @@ static void ptn_stream_filter_chain_flush_closing_impl(PtnStreamFilter *filter) 
         }
     }
     if (runtime == NULL) {
-        return;
-    }
-    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         return;
     }
 
@@ -57575,36 +57645,51 @@ static PtnValue ptn_internal_stream_filter_attach(
             PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
         );
         ptn_stream_filter_apply_options(read_filter, filter_params);
-        if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, line)) {
-            ptn_stream_filter_free(read_filter);
-            ptn_string_operand_free(name);
-            return runtime->exceptions->active_exception == NULL ? ptn_bool(0) : ptn_null();
-        }
         ptn_stream_filter_chain_insert(
             &stream->read_filters,
             read_filter,
             prepend
         );
-        ptn_stream_filter_probe_prebuffered_zlib(runtime, function_name, stream, read_filter, line);
-    }
-    if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
-        write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level, write_seek_mode);
-        ptn_stream_filter_apply_options(write_filter, filter_params);
         if (kind == PTN_STREAM_FILTER_USER &&
-            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, line)) {
-            ptn_stream_filter_free(write_filter);
-            if (read_filter != NULL && ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
+            !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, line)) {
+            if (ptn_stream_filter_keep_after_user_init_failure(runtime, read_filter)) {
+                ptn_string_operand_free(name);
+                return ptn_null();
+            }
+            if (ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
                 ptn_stream_filter_free(read_filter);
             }
             ptn_string_operand_free(name);
             return runtime->exceptions->active_exception == NULL ? ptn_bool(0) : ptn_null();
         }
+        ptn_stream_filter_probe_prebuffered_zlib(runtime, function_name, stream, read_filter, line);
+    }
+    if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
+        write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level, write_seek_mode);
+        ptn_stream_filter_apply_options(write_filter, filter_params);
         ptn_stream_filter_chain_insert(
             &stream->write_filters,
             write_filter,
             prepend
         );
+        if (kind == PTN_STREAM_FILTER_USER &&
+            !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, line)) {
+            int keep_write_filter = ptn_stream_filter_keep_after_user_init_failure(runtime, write_filter);
+            if (!keep_write_filter &&
+                ptn_stream_filter_chain_unlink(&stream->write_filters, write_filter)) {
+                ptn_stream_filter_free(write_filter);
+            }
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(name);
+                return ptn_null();
+            }
+            if (read_filter != NULL &&
+                ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
+                ptn_stream_filter_free(read_filter);
+            }
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
     }
     ptn_string_operand_free(name);
 
