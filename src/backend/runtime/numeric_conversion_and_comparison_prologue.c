@@ -342,6 +342,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->gc_roots = caller_runtime->gc_roots;
     runtime->active_serialize_state = caller_runtime->active_serialize_state;
     runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
+    runtime->in_unserialize_magic_callback = caller_runtime->in_unserialize_magic_callback;
     runtime->strtok_string = NULL;
     runtime->strtok_len = 0;
     runtime->strtok_offset = 0;
@@ -2722,6 +2723,28 @@ static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
     return ptn_exception_borrow(runtime->exceptions->active_exception);
 }
 
+static PTN_UNUSED void ptn_exception_fill_missing_location_from_trace(
+    PtnRuntime *runtime,
+    const char **path,
+    size_t *line
+) {
+    if (runtime == NULL || path == NULL || line == NULL || (*path != NULL && *line != 0)) {
+        return;
+    }
+    for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
+        if (frame->file == NULL || frame->line == 0) {
+            continue;
+        }
+        if (*path == NULL) {
+            *path = frame->file;
+        }
+        if (*line == 0) {
+            *line = frame->line;
+        }
+        return;
+    }
+}
+
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right);
 
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name) {
@@ -3142,6 +3165,7 @@ static PTN_UNUSED void ptn_throw_exception_at(
     const char *path,
     size_t line
 ) {
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -3175,6 +3199,7 @@ static PTN_UNUSED void ptn_throw_exception_at_without_current_trace_frame(
     if (saved_trace_frame != NULL) {
         runtime->trace_frame = saved_trace_frame->previous;
     }
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -3207,6 +3232,9 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     const char *class_name,
     char *message
 ) {
+    const char *path = NULL;
+    size_t line = 0;
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -3216,8 +3244,8 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
         0,
         previous,
         PTN_E_ERROR,
-        NULL,
-        0
+        path,
+        line
     );
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = exception;
@@ -3236,6 +3264,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
     const char *path,
     size_t line
 ) {
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -3265,6 +3294,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_defined_location(
     const char *path,
     size_t line
 ) {
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
@@ -3302,6 +3332,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame(
 ) {
     PtnTraceFrame trace_frame;
     ptn_runtime_push_trace_frame(runtime, &trace_frame, function_name, frame_file, frame_line, argc, args);
+    ptn_exception_fill_missing_location_from_trace(runtime, &path, &line);
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,

@@ -3154,6 +3154,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->gc_roots = 0;
     runtime->active_serialize_state = NULL;
     runtime->active_unserialize_state = NULL;
+    runtime->in_unserialize_magic_callback = 0;
     runtime->strtok_string = NULL;
     runtime->strtok_len = 0;
     runtime->strtok_offset = 0;

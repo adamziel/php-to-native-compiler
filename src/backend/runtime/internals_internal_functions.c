@@ -14718,7 +14718,9 @@ static void ptn_unserialize_call_magic_method(
     size_t line
 ) {
     void *saved_active_unserialize_state = runtime->active_unserialize_state;
+    int saved_in_unserialize_magic_callback = runtime->in_unserialize_magic_callback;
     runtime->active_unserialize_state = NULL;
+    runtime->in_unserialize_magic_callback = ptn_ascii_case_equal(method_name, "__unserialize");
     PtnValue result = ptn_null();
     int caught_exception = 0;
     PtnTryFrame magic_frame;
@@ -14739,6 +14741,7 @@ static void ptn_unserialize_call_magic_method(
     }
     ptn_try_frame_pop(runtime, &magic_frame);
     runtime->active_unserialize_state = saved_active_unserialize_state;
+    runtime->in_unserialize_magic_callback = saved_in_unserialize_magic_callback;
     if (caught_exception) {
         ptn_value_destroy(&result);
         ptn_rethrow_exception(runtime);
@@ -119809,7 +119812,7 @@ static PtnValue ptn_datetime_from_state(
     return object;
 }
 
-static PTN_UNUSED PtnValue ptn_datetime_call_method(
+static PtnValue ptn_datetime_call_method_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
@@ -120320,6 +120323,62 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_datetime_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    const char *class_name =
+        resolved.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(resolved.as.object->class_name, "DateTimeImmutable")
+            ? "DateTimeImmutable"
+            : "DateTime";
+    int needed = snprintf(NULL, 0, "%s->%s", class_name, name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *frame_name = malloc((size_t)needed + 1);
+    if (frame_name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(frame_name, (size_t)needed + 1, "%s->%s", class_name, name);
+
+    int internal_unserialize_frame =
+        runtime->in_unserialize_magic_callback && ptn_ascii_case_equal(name, "__unserialize");
+    const char *trace_file = internal_unserialize_frame
+        ? NULL
+        : ptn_runtime_internal_trace_file(runtime, line);
+    size_t trace_line = internal_unserialize_frame ? 0 : line;
+    PtnTraceFrame trace_frame;
+    PtnTryFrame try_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        frame_name,
+        trace_file,
+        trace_line,
+        argc,
+        args
+    );
+    ptn_try_frame_push(runtime, &try_frame);
+    if (setjmp(try_frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &try_frame);
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        free(frame_name);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
+    PtnValue result = ptn_datetime_call_method_impl(runtime, resolved, name, argc, args, line);
+    ptn_try_frame_pop(runtime, &try_frame);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    free(frame_name);
+    return result;
 }
 
 static void ptn_date_interval_append_padded(PtnStringBuffer *buffer, int64_t value) {
@@ -197566,6 +197625,32 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
     PtnObject *instance = object.as.object;
     if (ptn_declared_class_is_same_or_descendant(instance->class_name, "DateTime") ||
         ptn_declared_class_is_same_or_descendant(instance->class_name, "DateTimeImmutable")) {
+        const char *ptn_datetime_unserialize_frame_name =
+            ptn_declared_class_is_same_or_descendant(instance->class_name, "DateTimeImmutable")
+                ? "DateTimeImmutable->__unserialize"
+                : "DateTime->__unserialize";
+        PtnValue ptn_datetime_unserialize_arg = ptn_array(instance->properties);
+        ptn_array_retain(instance->properties);
+        PtnValue ptn_datetime_unserialize_args[1] = { ptn_datetime_unserialize_arg };
+        PtnTraceFrame ptn_datetime_unserialize_trace_frame;
+        PtnTryFrame ptn_datetime_unserialize_try_frame;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &ptn_datetime_unserialize_trace_frame,
+            ptn_datetime_unserialize_frame_name,
+            NULL,
+            0,
+            1,
+            ptn_datetime_unserialize_args
+        );
+        ptn_try_frame_push(runtime, &ptn_datetime_unserialize_try_frame);
+        if (setjmp(ptn_datetime_unserialize_try_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &ptn_datetime_unserialize_try_frame);
+            ptn_runtime_pop_trace_frame(runtime, &ptn_datetime_unserialize_trace_frame);
+            ptn_value_destroy(&ptn_datetime_unserialize_arg);
+            ptn_rethrow_exception(runtime);
+            return;
+        }
         ptn_datetime_unserialize_array(
             runtime,
             object,
@@ -197573,6 +197658,9 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
             ptn_date_datetime_ancestor_for_value(object),
             line
         );
+        ptn_try_frame_pop(runtime, &ptn_datetime_unserialize_try_frame);
+        ptn_runtime_pop_trace_frame(runtime, &ptn_datetime_unserialize_trace_frame);
+        ptn_value_destroy(&ptn_datetime_unserialize_arg);
         return;
     }
     if (ptn_declared_class_is_same_or_descendant(instance->class_name, "DateTimeZone")) {

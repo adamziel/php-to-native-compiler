@@ -27232,6 +27232,81 @@ foreach ([[$dt, $bad], [$bad, $dt], [$dti, $bad], [$bad, $dti]] as $pair) {\n\
 }
 
 #[test]
+fn compile_incomplete_datetime_method_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-datetime-method-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-datetime-method-trace.php");
+    let output = root.join("incomplete-datetime-method-trace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('Europe/Berlin');\n\
+class MyDateTime extends DateTime {\n\
+    public function __construct($time = 'now', $tz = null) {\n\
+        try {\n\
+            @parent::__construct($time, new DateTimeZone($tz));\n\
+        } catch (Exception $e) {\n\
+            $this->format('Y');\n\
+        }\n\
+    }\n\
+}\n\
+new MyDateTime('not a date', 'UTC');\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught DateObjectError: Object of type MyDateTime (inheriting DateTime) has not been correctly initialized by calling parent::__construct() in its constructor in "),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("#0 ") && stderr.contains(": DateTime->format('Y')"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("MyDateTime->__construct("), "{stderr}");
+}
+
+#[test]
+fn compile_datetime_unserialize_invalid_data_reports_internal_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-unserialize-internal-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-unserialize-internal-frame.php");
+    let output = root.join("datetime-unserialize-internal-frame-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+unserialize('a:2:{i:0;O:8:\"DateTime\":3:{s:4:\"date\";s:26:\"2000-01-01 00:00:00.000000\";s:13:\"timezone_type\";a:2:{i:0;i:1;i:1;i:2;}s:8:\"timezone\";s:1:\"A\";}i:1;R:5;}');\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught Error: Invalid serialization data for DateTime object in "
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("#0 [internal function]: DateTime->__unserialize(Array)"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(": unserialize('a:2:{i:0;O:8:\"D...')"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_dateinterval_comparison_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-dateinterval-comparison-warnings");
     fs::create_dir_all(&root).unwrap();

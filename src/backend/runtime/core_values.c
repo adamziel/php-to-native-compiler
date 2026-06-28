@@ -1888,6 +1888,7 @@ struct PtnRuntime {
     size_t gc_roots;
     void *active_serialize_state;
     void *active_unserialize_state;
+    int in_unserialize_magic_callback;
     char *strtok_string;
     size_t strtok_len;
     size_t strtok_offset;
