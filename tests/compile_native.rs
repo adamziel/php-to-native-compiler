@@ -23675,6 +23675,51 @@ var_dump($generator->getReturn());
 }
 
 #[test]
+fn compile_generator_return_yield_uses_resume_value_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-return-yield-resume");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-return-yield-resume.php");
+    let output = root.join("generator-return-yield-resume-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    try {
+        return yield 10;
+    } finally {
+        echo "finally\n";
+    }
+}
+
+$generator = gen();
+var_dump($generator->current());
+var_dump($generator->send("done"));
+var_dump($generator->getReturn());
+
+$next = (function() {
+    return yield "x";
+})();
+$next->next();
+var_dump($next->getReturn());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(10)\nfinally\nNULL\nstring(4) \"done\"\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_mark_return_yield"));
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();
@@ -89315,6 +89360,80 @@ test('$bar = []; return Foo::{$bar};');
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_eval_execute_return_statement"));
     assert!(c_source.contains("ptn_eval_parse_dynamic_class_constant_fetch"));
+}
+
+#[test]
+fn compile_literal_eval_returned_closure_call_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-eval-returned-closure-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-eval-returned-closure-call.php");
+    let output = root.join("literal-eval-returned-closure-call-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fn = eval('return function($value) { return $value + 1; };');
+var_dump($fn(41));
+var_dump((eval('return function() { return "direct"; };'))());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\nstring(6) \"direct\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("Call to undefined function function()"));
+}
+
+#[test]
+fn compile_interpolated_eval_returned_generator_closure_to_native_binary() {
+    let root = temp_dir("ptn-native-interpolated-eval-generator-closure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("interpolated-eval-generator-closure.php");
+    let output = root.join("interpolated-eval-generator-closure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$num = 8;
+$add = str_repeat("1 +", $num);
+$gen = (eval(<<<PHP
+return function (): \Generator {
+    try {
+        \$a = 1;
+        \$foo = \$a + $add \$a;
+        return yield \$foo;
+    } finally {
+        print "Ok\n";
+    }
+};
+PHP
+))();
+var_dump($gen->current());
+$gen->send("Success");
+var_dump($gen->getReturn());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(10)\nOk\nstring(7) \"Success\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("Call to undefined function function()"));
 }
 
 #[test]

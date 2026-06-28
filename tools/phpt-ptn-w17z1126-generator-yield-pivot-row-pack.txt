@@ -1,0 +1,6 @@
+Zend/tests/generators/yield_without_value.phpt
+Zend/tests/generators/yield_unary_precedence.phpt
+Zend/tests/generators/yield_precedence.phpt
+Zend/tests/generators/generator_with_nonscalar_keys.phpt
+Zend/tests/generators/generator_with_type_check.phpt
+Zend/tests/generators/get_return_errors.phpt

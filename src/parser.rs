@@ -140,6 +140,7 @@ fn parse_with_options(
         external_classes: external_classes.to_vec(),
         external_traits: external_traits.to_vec(),
         eval_string_constants: HashMap::new(),
+        eval_scalar_variables: HashMap::new(),
         eval_visible_classes: external_classes.to_vec(),
         eval_visible_traits: external_traits.to_vec(),
         declared_functions: HashSet::new(),
@@ -217,6 +218,7 @@ struct Parser<'a> {
     external_classes: Vec<ClassDecl>,
     external_traits: Vec<TraitDecl>,
     eval_string_constants: HashMap<String, String>,
+    eval_scalar_variables: HashMap<String, EvalScalarValue>,
     eval_visible_classes: Vec<ClassDecl>,
     eval_visible_traits: Vec<TraitDecl>,
     declared_functions: HashSet<String>,
@@ -245,6 +247,21 @@ struct Parser<'a> {
     validate_method_signatures: bool,
     validate_function_names: bool,
     current_statement_doc_comment: Option<String>,
+}
+
+#[derive(Clone)]
+enum EvalScalarValue {
+    Int(i64),
+    String(String),
+}
+
+impl EvalScalarValue {
+    fn to_interpolated_string(&self) -> String {
+        match self {
+            Self::Int(value) => value.to_string(),
+            Self::String(value) => value.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -769,6 +786,7 @@ impl Parser<'_> {
                 let statement =
                     self.parse_statement_with_attributes(attributes, attribute_start_span)?;
                 self.note_runtime_class_alias_statement(&statement);
+                self.note_eval_scalar_variable_statement(&statement);
                 statements.push(statement);
             }
             self.current_statement_doc_comment = previous_doc_comment;
@@ -4225,6 +4243,9 @@ impl Parser<'_> {
         );
         let statement = self.parse_statement_with_attributes(attributes, attribute_start_span);
         self.current_statement_doc_comment = previous_doc_comment;
+        if let Ok(statement) = &statement {
+            self.note_eval_scalar_variable_statement(statement);
+        }
         statement
     }
 
@@ -5833,6 +5854,58 @@ impl Parser<'_> {
         }
     }
 
+    fn note_eval_scalar_variable_statement(&mut self, statement: &Statement) {
+        if self.block_depth != 0 || self.function_depth != 0 {
+            return;
+        }
+
+        match statement {
+            Statement::Assign {
+                name,
+                op: AssignmentOp::Assign,
+                value,
+                ..
+            } => {
+                if let Some(value) = self.compile_time_eval_scalar(value) {
+                    self.eval_scalar_variables.insert(name.clone(), value);
+                } else {
+                    self.eval_scalar_variables.remove(name);
+                }
+            }
+            Statement::Assign { name, .. } | Statement::AssignRef { name, .. } => {
+                self.eval_scalar_variables.remove(name);
+            }
+            Statement::Unset { targets, .. } => {
+                for target in targets {
+                    match target {
+                        UnsetTarget::Variable { name, .. } => {
+                            self.eval_scalar_variables.remove(name);
+                        }
+                        _ => {
+                            self.eval_scalar_variables.clear();
+                            break;
+                        }
+                    }
+                }
+            }
+            Statement::Increment {
+                target: IncDecTarget::Variable { name, .. },
+                ..
+            } => {
+                self.eval_scalar_variables.remove(name);
+            }
+            Statement::Empty { .. }
+            | Statement::ClassDeclaration { .. }
+            | Statement::TraitDeclaration { .. }
+            | Statement::FunctionDeclaration { .. }
+            | Statement::Const { .. }
+            | Statement::InlineHtml { .. } => {}
+            _ => {
+                self.eval_scalar_variables.clear();
+            }
+        }
+    }
+
     fn parse_global(&mut self) -> Result<Statement> {
         let span = self.advance().span;
         let mut targets = Vec::new();
@@ -6761,14 +6834,142 @@ impl Parser<'_> {
         Ok(None)
     }
 
+    fn literal_eval_return_expr(
+        &mut self,
+        arguments: &[Expr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+    ) -> Result<Option<Expr>> {
+        if arguments.len() != 1
+            || argument_names.iter().any(Option::is_some)
+            || argument_unpacks.iter().any(|unpack| *unpack)
+        {
+            return Ok(None);
+        }
+
+        let Some(eval_source) = self.compile_time_eval_source(&arguments[0]) else {
+            return Ok(None);
+        };
+        let eval_source = eval_source.trim();
+        if !eval_source.to_ascii_lowercase().starts_with("return") {
+            return Ok(None);
+        }
+
+        let eval_program = match parse_with_options(
+            &format!("<?php {eval_source}"),
+            &self.runtime_class_aliases,
+            &self.eval_visible_classes,
+            &self.eval_visible_traits,
+            false,
+            true,
+        ) {
+            Ok(program) => program,
+            Err(_) => return Ok(None),
+        };
+
+        if !eval_program.functions.is_empty()
+            || !eval_program.classes.is_empty()
+            || !eval_program.traits.is_empty()
+            || eval_program.statements.len() != 1
+        {
+            return Ok(None);
+        }
+
+        let Some(Statement::Return {
+            value: Some(value), ..
+        }) = eval_program.statements.into_iter().next()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(value))
+    }
+
     fn compile_time_eval_source(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::String(value, _) => Some(value.clone()),
+            Expr::InterpolatedString(parts, _) => self.compile_time_interpolated_string(parts),
             Expr::Constant(name, _) => self
                 .eval_string_constants
                 .get(&name.to_ascii_lowercase())
                 .cloned(),
             Expr::Grouped { expr, .. } => self.compile_time_eval_source(expr),
+            _ => None,
+        }
+    }
+
+    fn compile_time_interpolated_string(&self, parts: &[StringPart]) -> Option<String> {
+        let mut result = String::new();
+        for part in parts {
+            match part {
+                StringPart::Literal(value) => result.push_str(value),
+                StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
+                    result.push_str(&self.compile_time_eval_scalar_string_for_variable(name)?);
+                }
+                StringPart::Expression(expr)
+                | StringPart::LegacyDollarBraceExpression(expr)
+                | StringPart::DynamicVariableExpression(expr) => {
+                    result.push_str(&self.compile_time_eval_scalar_string(expr)?);
+                }
+                StringPart::PropertyFetch { .. }
+                | StringPart::PropertyChain { .. }
+                | StringPart::MethodCall { .. }
+                | StringPart::ArrayAccess { .. } => return None,
+            }
+        }
+        Some(result)
+    }
+
+    fn compile_time_eval_scalar_string(&self, expr: &Expr) -> Option<String> {
+        Some(self.compile_time_eval_scalar(expr)?.to_interpolated_string())
+    }
+
+    fn compile_time_eval_scalar_string_for_variable(&self, name: &str) -> Option<String> {
+        Some(
+            self.eval_scalar_variables
+                .get(name)?
+                .to_interpolated_string(),
+        )
+    }
+
+    fn compile_time_eval_scalar(&self, expr: &Expr) -> Option<EvalScalarValue> {
+        match expr {
+            Expr::String(value, _) => Some(EvalScalarValue::String(value.clone())),
+            Expr::Int(value, _) => Some(EvalScalarValue::Int(*value)),
+            Expr::Variable(name, _) => self.eval_scalar_variables.get(name).cloned(),
+            Expr::Grouped { expr, .. } => self.compile_time_eval_scalar(expr),
+            Expr::Binary {
+                op: BinaryOp::Concat,
+                left,
+                right,
+                ..
+            } => {
+                let mut value = self.compile_time_eval_scalar_string(left)?;
+                value.push_str(&self.compile_time_eval_scalar_string(right)?);
+                Some(EvalScalarValue::String(value))
+            }
+            Expr::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            } if name.trim_start_matches('\\').eq_ignore_ascii_case("str_repeat")
+                && arguments.len() == 2
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack) =>
+            {
+                let value = self.compile_time_eval_scalar_string(&arguments[0])?;
+                let EvalScalarValue::Int(count) = self.compile_time_eval_scalar(&arguments[1])?
+                else {
+                    return None;
+                };
+                let count = usize::try_from(count).ok()?;
+                let total_len = value.len().checked_mul(count)?;
+                if total_len > 1_000_000 {
+                    return None;
+                }
+                Some(EvalScalarValue::String(value.repeat(count)))
+            }
             _ => None,
         }
     }
@@ -8820,6 +9021,15 @@ impl Parser<'_> {
                             let (arguments, argument_names, argument_unpacks, right_span) =
                                 self.parse_call_arguments()?;
                             let resolved_name = self.resolve_function_name(&parsed_name);
+                            if unqualified && lowercase == "eval" {
+                                if let Some(expr) = self.literal_eval_return_expr(
+                                    &arguments,
+                                    &argument_names,
+                                    &argument_unpacks,
+                                )? {
+                                    return Ok(expr);
+                                }
+                            }
                             validate_mutating_array_internal_call(
                                 &resolved_name,
                                 &arguments,
@@ -9059,6 +9269,7 @@ impl Parser<'_> {
             external_classes: self.external_classes.clone(),
             external_traits: self.external_traits.clone(),
             eval_string_constants: self.eval_string_constants.clone(),
+            eval_scalar_variables: self.eval_scalar_variables.clone(),
             eval_visible_classes: self.eval_visible_classes.clone(),
             eval_visible_traits: self.eval_visible_traits.clone(),
             declared_functions: self.declared_functions.clone(),

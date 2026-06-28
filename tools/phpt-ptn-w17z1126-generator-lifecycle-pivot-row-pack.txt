@@ -1,0 +1,6 @@
+Zend/tests/generators/throw_caught.phpt
+Zend/tests/generators/bug71441.phpt
+Zend/tests/generators/bug71980.phpt
+Zend/tests/generators/gh15275-001.phpt
+Zend/tests/generators/yield_from_multi_tree_exception.phpt
+Zend/tests/generators/yield_from_force_closed.phpt

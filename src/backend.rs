@@ -30676,6 +30676,9 @@ fn emit_instruction(
                 if values.current_function_is_generator {
                     if let Some(value) = value {
                         let return_temp = values.emit_materialized_value(out, value);
+                        if matches!(value, ValueExpr::Yield { .. }) {
+                            out.push_str("    ptn_generator_mark_return_yield(runtime.current_generator);\n");
+                        }
                         out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
                         out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
                         out.push_str(&return_temp);
