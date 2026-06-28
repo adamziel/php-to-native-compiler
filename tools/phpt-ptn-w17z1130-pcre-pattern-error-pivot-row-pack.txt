@@ -1,0 +1,18 @@
+# ptn-w17z.1130 PCRE pattern/error pivot row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T071956Z.tsv
+# Pivot reason: the original 12 bead rows in
+# tools/phpt-ptn-w17z1130-pcre-pattern-error-row-pack.txt are green on current
+# origin/master baseline (run-20260628T072923Z-1194719, 12/12 pass).
+# Replacement rows are nearby ext/pcre FAIL rows from the same artifact.
+ext/pcre/tests/gh11956.phpt
+ext/pcre/tests/preg_match_non_capture.phpt
+ext/pcre/tests/preg_match_error1.phpt
+ext/pcre/tests/pcre_extra.phpt
+ext/pcre/tests/bug72688.phpt
+ext/pcre/tests/preg_match_caseless_restrict.phpt
+ext/pcre/tests/bug40195.phpt
+ext/pcre/tests/bug42945.phpt
+ext/pcre/tests/bug78853.phpt
+ext/pcre/tests/preg_match_latin.phpt
+ext/pcre/tests/bug38600.phpt
+ext/pcre/tests/bug52732.phpt
