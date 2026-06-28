@@ -153613,6 +153613,33 @@ static void ptn_phar_archive_set_internal_corruption(
     ptn_phar_archive_set_load_error_owned(archive, message);
 }
 
+static void ptn_phar_archive_set_tar_magic_metadata_error(PtnPharArchiveState *archive) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: tar-based phar \"%s\" has invalid metadata in magic file \".phar/.metadata.bin\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: tar-based phar \"%s\" has invalid metadata in magic file \".phar/.metadata.bin\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
 static char *ptn_phar_archive_entry_stream_error(
     PtnPharArchiveState *archive,
     const char *entry_name,
@@ -155133,6 +155160,13 @@ static void ptn_phar_parse_tar(PtnPharArchiveState *archive, const unsigned char
                 free(archive->stub);
                 archive->stub = ptn_duplicate_string_len((const char *)data + content_offset, content_len);
                 archive->stub_len = content_len;
+            } else if (strcmp(name, ".phar/.metadata.bin") == 0) {
+                if (archive->metadata != NULL) {
+                    ptn_phar_archive_set_tar_magic_metadata_error(archive);
+                } else {
+                    archive->metadata = ptn_phar_copy_bytes(data + content_offset, content_len);
+                    archive->metadata_len = content_len;
+                }
             } else {
                 ptn_phar_archive_add_parent_dirs(archive, name);
                 ptn_phar_archive_set_entry_with_timestamp(archive, name, data + content_offset, content_len, timestamp);
@@ -155195,7 +155229,8 @@ static void ptn_phar_archive_load_file(PtnPharArchiveState *archive) {
     }
     size_t stub_len = 0;
     size_t payload_offset = 0;
-    if (archive->format == PTN_PHAR_FORMAT_TAR) {
+    if (archive->format == PTN_PHAR_FORMAT_TAR || ptn_phar_tar_data_looks_like_archive(data, len)) {
+        archive->format = PTN_PHAR_FORMAT_TAR;
         archive->stub = ptn_duplicate_string("");
         archive->stub_len = 0;
         ptn_phar_parse_tar(archive, data, len);
@@ -156341,6 +156376,12 @@ static char *ptn_phar_relative_entry_name(const char *path, const char *base_dir
         (source[base_len] == '/' || source[base_len] == '\\')) {
         return ptn_phar_normalize_entry_name(ptn_duplicate_string(source + base_len + 1));
     }
+    if (base_len != 0 && !ptn_path_string_is_absolute(source)) {
+        while (source[0] == '.' && (source[1] == '/' || source[1] == '\\')) {
+            source += 2;
+        }
+        return ptn_phar_normalize_entry_name(ptn_duplicate_string(source));
+    }
     return ptn_phar_normalize_entry_name(ptn_spl_path_filename_alloc(source));
 }
 
@@ -156351,6 +156392,13 @@ static char *ptn_phar_iterator_string_from_value(PtnValue value) {
     return result;
 }
 
+static int ptn_phar_iterator_value_is_spl_file_info(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        (ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFileInfo") ||
+            ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DirectoryIterator"));
+}
+
 static int ptn_phar_iterator_value_has_method(PtnValue value, const char *method_name) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT) {
@@ -156358,7 +156406,7 @@ static int ptn_phar_iterator_value_has_method(PtnValue value, const char *method
     }
     return ptn_declared_class_method_exists(value.as.object->class_name, method_name) ||
         ptn_internal_class_method_exists(value.as.object->class_name, method_name) ||
-        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFileInfo");
+        ptn_phar_iterator_value_is_spl_file_info(value);
 }
 
 static char *ptn_phar_iterator_item_path(
@@ -156533,6 +156581,34 @@ static void ptn_phar_throw_iterator_file_open_failed(
     free(message);
 }
 
+static void ptn_phar_throw_iterator_spl_requires_base(PtnRuntime *runtime, const char *iterator_class) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Iterator %s returns an SplFileInfo object, so base directory must be specified",
+        iterator_class == NULL ? "Iterator" : iterator_class
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Iterator %s returns an SplFileInfo object, so base directory must be specified",
+        iterator_class == NULL ? "Iterator" : iterator_class
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "BadMethodCallException", message);
+    free(message);
+}
+
 static int ptn_phar_build_from_iterator_add_path(
     PtnRuntime *runtime,
     PtnPharArchiveState *archive,
@@ -156598,6 +156674,11 @@ static PtnValue ptn_phar_build_from_iterator_result(
         }
         PtnValue current = runtime->method_dispatch(runtime, iterator, "current", 0, NULL, line);
         if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            break;
+        }
+        if (base_directory == NULL && ptn_phar_iterator_value_is_spl_file_info(current)) {
+            ptn_phar_throw_iterator_spl_requires_base(runtime, iterator_class);
             ptn_value_destroy(&current);
             break;
         }
@@ -157441,7 +157522,7 @@ static PtnValue ptn_phar_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "Phar::buildFromIterator() expects between 1 and 2 arguments");
             return ptn_null();
         }
-        if (argc < 2) {
+        if (argc < 2 || ptn_value_deref(args[1]).type == PTN_NULL) {
             return ptn_phar_build_from_iterator_result(runtime, data->archive, args[0], NULL, line);
         }
         PtnStringOperand base_directory =
@@ -157511,6 +157592,43 @@ static PtnValue ptn_phar_call_method(
         char *directory = ptn_phar_string_arg(runtime, "Phar::extractTo", 1, "directory", args[0], line);
         if (directory == NULL) {
             return ptn_null();
+        }
+        if (data->archive == NULL || data->archive->entry_count == 0) {
+            struct stat archive_info;
+            int missing_archive = data->archive == NULL ||
+                data->archive->path == NULL ||
+                ptn_stat_path(data->archive->path, &archive_info) != 0 ||
+                archive_info.st_size == 0;
+            if (missing_archive) {
+                const char *path = data->archive == NULL || data->archive->path == NULL
+                    ? ""
+                    : data->archive->path;
+                int needed = snprintf(NULL, 0, "Invalid argument, %s cannot be found", path);
+                if (needed < 0) {
+                    free(directory);
+                    ptn_abort_out_of_memory();
+                }
+                char *message = malloc((size_t)needed + 1);
+                if (message == NULL) {
+                    free(directory);
+                    ptn_abort_out_of_memory();
+                }
+                int written = snprintf(
+                    message,
+                    (size_t)needed + 1,
+                    "Invalid argument, %s cannot be found",
+                    path
+                );
+                if (written < 0 || written != needed) {
+                    free(message);
+                    free(directory);
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "Exception", message);
+                free(message);
+                free(directory);
+                return ptn_null();
+            }
         }
         int overwrite = argc >= 3 && ptn_is_truthy(args[2]);
         PtnValue files_value = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();

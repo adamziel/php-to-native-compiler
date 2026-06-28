@@ -57208,6 +57208,122 @@ for ($i = 0; $i < 4; $i++) {
 }
 
 #[test]
+fn compile_phar_archive_runtime_residuals_to_native_binary() {
+    fn push_tar_entry(out: &mut Vec<u8>, name: &str, content: &[u8]) {
+        let mut header = [0_u8; 512];
+        header[..name.len()].copy_from_slice(name.as_bytes());
+        header[100..108].copy_from_slice(b"0000666\0");
+        header[124..136].copy_from_slice(format!("{:011o}\0", content.len()).as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[148..156].copy_from_slice(b"        ");
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let padding = (512 - (content.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0).take(padding));
+    }
+
+    let root = temp_dir("ptn-native-phar-archive-runtime-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-archive-runtime-residuals.php");
+    let output = root.join("phar-archive-runtime-residuals-bin");
+    let bad_metadata = root.join("bad-metadata.phar");
+    let mut tar = Vec::new();
+    push_tar_entry(
+        &mut tar,
+        ".phar/stub.php",
+        b"<?php __HALT_COMPILER(); ?>\r\n",
+    );
+    push_tar_entry(&mut tar, ".phar/.metadata.bin", b"s:12:\"MY_METADATA_\";");
+    push_tar_entry(&mut tar, ".phar/.metadata.bin", b"s:12:\"MY_METADATA_\";");
+    tar.extend(std::iter::repeat(0).take(1024));
+    fs::write(&bad_metadata, tar).unwrap();
+
+    fs::write(
+        &input,
+        r#"<?php
+$workdir = __DIR__ . '/archive_runtime';
+mkdir($workdir . '/sub', recursive: true);
+file_put_contents($workdir . '/sub/keep.txt', 'keep');
+
+$cwd = getcwd();
+chdir($workdir);
+$phar = new Phar($workdir . '/iter.phar');
+$dir = new RecursiveDirectoryIterator('.', FilesystemIterator::SKIP_DOTS);
+$iter = new RecursiveIteratorIterator($dir);
+$result = $phar->buildFromIterator(
+    new RegexIterator($iter, '/keep\.txt$/'),
+    $workdir . DIRECTORY_SEPARATOR
+);
+ksort($result);
+var_dump($result);
+
+try {
+    $phar->buildFromIterator(
+        new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator('.', FilesystemIterator::SKIP_DOTS)
+        ),
+        null
+    );
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+chdir($cwd);
+
+$empty = __DIR__ . '/empty.zip';
+file_put_contents($empty, '');
+$emptyPhar = new PharData($empty);
+try {
+    $emptyPhar->extractTo(__DIR__ . '/extract');
+} catch (Throwable $e) {
+    echo 'extract:', $e->getMessage(), "\n";
+}
+
+try {
+    new Phar(__DIR__ . '/bad-metadata.phar');
+} catch (Throwable $e) {
+    echo 'metadata:', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "array(1) {{\n",
+                "  [\"sub/keep.txt\"]=>\n",
+                "  string(14) \"./sub/keep.txt\"\n",
+                "}}\n",
+                "BadMethodCallException:Iterator RecursiveIteratorIterator returns an SplFileInfo object, so base directory must be specified\n",
+                "extract:Invalid argument, {}/empty.zip cannot be found\n",
+                "metadata:phar error: tar-based phar \"{}\" has invalid metadata in magic file \".phar/.metadata.bin\"\n",
+            ),
+            root.display(),
+            bad_metadata.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_set_tar_magic_metadata_error"));
+    assert!(c_source.contains("ptn_phar_throw_iterator_spl_requires_base"));
+    assert!(c_source.contains("Invalid argument, %s cannot be found"));
+}
+
+#[test]
 fn compile_phar_intercept_file_funcs_static_call_to_native_binary() {
     let root = temp_dir("ptn-native-phar-intercept-file-funcs");
     fs::create_dir_all(&root).unwrap();

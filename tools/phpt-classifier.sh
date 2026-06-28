@@ -2472,8 +2472,16 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/010.phpt|\
         ext/phar/tests/011.phpt|\
         ext/phar/tests/012.phpt|\
+        ext/phar/tests/013.phpt|\
         ext/phar/tests/014.phpt|\
         ext/phar/tests/016.phpt|\
+        ext/phar/tests/include_path_advanced.phpt|\
+        ext/phar/tests/phar_extract3.phpt|\
+        ext/phar/tests/delete.phpt|\
+        ext/phar/tests/rename_dir.phpt|\
+        ext/phar/tests/gh20882.phpt|\
+        ext/phar/tests/bug79503.phpt|\
+        ext/phar/tests/phar_buildfromiterator10.phpt|\
         ext/phar/tests/zip/frontcontroller20.phar.phpt|\
         ext/phar/tests/tar/phar_stub_error.phpt|\
         ext/phar/tests/zip/rmdir.phpt|\
