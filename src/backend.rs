@@ -2597,6 +2597,23 @@ static PTN_UNUSED void ptn_compact_append_exported_string(
     ptn_string_buffer_append_char(output, '\'');
 }
 
+static PTN_UNUSED void ptn_compact_append_var_export_string(
+    PtnStringBuffer *output,
+    const unsigned char *data,
+    size_t len
+) {
+    size_t segment_start = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] != '\0') {
+            continue;
+        }
+        ptn_compact_append_exported_string(output, data + segment_start, i - segment_start);
+        ptn_string_buffer_append(output, " . \"\\0\" . ");
+        segment_start = i + 1;
+    }
+    ptn_compact_append_exported_string(output, data + segment_start, len - segment_start);
+}
+
 static PTN_UNUSED void ptn_compact_append_var_export(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
@@ -2621,7 +2638,7 @@ static PTN_UNUSED void ptn_compact_append_var_export(
             return;
         }
         case PTN_STRING:
-            ptn_compact_append_exported_string(output, value.as.string.data, value.as.string.len);
+            ptn_compact_append_var_export_string(output, value.as.string.data, value.as.string.len);
             return;
         case PTN_ARRAY:
             ptn_string_buffer_append(output, "array (\n)");
@@ -2646,7 +2663,7 @@ static PTN_UNUSED void ptn_compact_append_var_export(
         ptn_string_operand_free(string);
         return;
     }
-    ptn_compact_append_exported_string(output, (const unsigned char *)string.data, string.len);
+    ptn_compact_append_var_export_string(output, (const unsigned char *)string.data, string.len);
     ptn_string_operand_free(string);
 }
 
@@ -3408,6 +3425,12 @@ static PTN_UNUSED PtnValue ptn_compact_intl_message_formatter_format(
     return ptn_compact_intl_message_format_array(runtime, data, values.as.array, line);
 }
 
+static PTN_UNUSED void ptn_compact_printf_append_repeated(PtnStringBuffer *output, char byte, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_buffer_append_char(output, byte);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_compact_printf(
     PtnRuntime *runtime,
     size_t argc,
@@ -3432,7 +3455,60 @@ static PTN_UNUSED PtnValue ptn_compact_printf(
             ptn_string_buffer_append_char(&output, byte);
             continue;
         }
-        char specifier = format.data[++i];
+        i++;
+        int left_adjust = 0;
+        int show_sign = 0;
+        int space_sign = 0;
+        int zero_pad = 0;
+        int alternate = 0;
+        while (i < format.len) {
+            if (format.data[i] == '-') {
+                left_adjust = 1;
+            } else if (format.data[i] == '+') {
+                show_sign = 1;
+            } else if (format.data[i] == ' ') {
+                space_sign = 1;
+            } else if (format.data[i] == '0') {
+                zero_pad = 1;
+            } else if (format.data[i] == '#') {
+                alternate = 1;
+            } else if (format.data[i] == '\'' && i + 1 < format.len) {
+                i += 2;
+                continue;
+            } else {
+                break;
+            }
+            i++;
+        }
+        int has_width = 0;
+        int width = 0;
+        while (i < format.len && isdigit((unsigned char)format.data[i])) {
+            has_width = 1;
+            if (width <= (INT_MAX - 9) / 10) {
+                width = width * 10 + (format.data[i] - '0');
+            }
+            i++;
+        }
+        int has_precision = 0;
+        int precision = 0;
+        if (i < format.len && format.data[i] == '.') {
+            i++;
+            has_precision = 1;
+            while (i < format.len && isdigit((unsigned char)format.data[i])) {
+                if (precision <= (INT_MAX - 9) / 10) {
+                    precision = precision * 10 + (format.data[i] - '0');
+                }
+                i++;
+            }
+        }
+        while (i < format.len && strchr("lLjzt", format.data[i]) != NULL) {
+            i++;
+        }
+        if (i >= format.len) {
+            ptn_string_buffer_append_char(&output, '%');
+            break;
+        }
+        char specifier = format.data[i];
         if (specifier == '%') {
             ptn_string_buffer_append_char(&output, '%');
             continue;
@@ -3446,12 +3522,142 @@ static PTN_UNUSED PtnValue ptn_compact_printf(
                 free(output.data);
                 return ptn_null();
             }
-            ptn_string_buffer_append_len(&output, string.data, string.len);
+            size_t string_len = string.len;
+            if (has_precision && precision >= 0 && (size_t)precision < string_len) {
+                string_len = (size_t)precision;
+            }
+            size_t padding = has_width && width > 0 && (size_t)width > string_len
+                ? (size_t)width - string_len
+                : 0;
+            if (!left_adjust) {
+                ptn_compact_printf_append_repeated(&output, zero_pad ? '0' : ' ', padding);
+            }
+            ptn_string_buffer_append_len(&output, string.data, string_len);
+            if (left_adjust) {
+                ptn_compact_printf_append_repeated(&output, ' ', padding);
+            }
             ptn_string_operand_free(string);
+        } else if (specifier == 'c') {
+            char character = (char)((unsigned char)ptn_value_to_integer(value));
+            size_t padding = has_width && width > 1 ? (size_t)width - 1 : 0;
+            if (!left_adjust) {
+                ptn_compact_printf_append_repeated(&output, zero_pad ? '0' : ' ', padding);
+            }
+            ptn_string_buffer_append_char(&output, character);
+            if (left_adjust) {
+                ptn_compact_printf_append_repeated(&output, ' ', padding);
+            }
+        } else if (specifier == 'b') {
+            uint64_t number = (uint64_t)ptn_value_to_integer(value);
+            char digits[65];
+            size_t len = 0;
+            if (number == 0) {
+                digits[len++] = '0';
+            } else {
+                while (number != 0) {
+                    digits[len++] = (number & 1) ? '1' : '0';
+                    number >>= 1;
+                }
+                for (size_t left = 0, right = len - 1; left < right; left++, right--) {
+                    char tmp = digits[left];
+                    digits[left] = digits[right];
+                    digits[right] = tmp;
+                }
+            }
+            size_t padding = has_width && width > 0 && (size_t)width > len
+                ? (size_t)width - len
+                : 0;
+            if (!left_adjust) {
+                ptn_compact_printf_append_repeated(&output, zero_pad ? '0' : ' ', padding);
+            }
+            ptn_string_buffer_append_len(&output, digits, len);
+            if (left_adjust) {
+                ptn_compact_printf_append_repeated(&output, ' ', padding);
+            }
         } else if (specifier == 'd' || specifier == 'i') {
-            ptn_string_buffer_append_format(&output, "%lld", (long long)ptn_value_to_integer(value));
+            char c_format[64];
+            char *cursor = c_format;
+            char *end = c_format + sizeof(c_format);
+            *cursor++ = '%';
+            if (left_adjust && cursor < end) *cursor++ = '-';
+            if (show_sign && cursor < end) *cursor++ = '+';
+            if (space_sign && cursor < end) *cursor++ = ' ';
+            if (zero_pad && cursor < end) *cursor++ = '0';
+            if (has_width) {
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", width);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            if (has_precision) {
+                *cursor++ = '.';
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", precision);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            *cursor++ = 'l';
+            *cursor++ = 'l';
+            *cursor++ = specifier;
+            *cursor = '\0';
+            ptn_string_buffer_append_format(&output, c_format, (long long)ptn_value_to_integer(value));
+        } else if (specifier == 'u' || specifier == 'o' || specifier == 'x' || specifier == 'X') {
+            char c_format[64];
+            char *cursor = c_format;
+            char *end = c_format + sizeof(c_format);
+            *cursor++ = '%';
+            if (left_adjust && cursor < end) *cursor++ = '-';
+            if (zero_pad && cursor < end) *cursor++ = '0';
+            if (alternate && cursor < end) *cursor++ = '#';
+            if (has_width) {
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", width);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            if (has_precision) {
+                *cursor++ = '.';
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", precision);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            *cursor++ = 'l';
+            *cursor++ = 'l';
+            *cursor++ = specifier;
+            *cursor = '\0';
+            ptn_string_buffer_append_format(&output, c_format, (unsigned long long)((uint64_t)ptn_value_to_integer(value)));
         } else if (specifier == 'f' || specifier == 'F') {
-            ptn_string_buffer_append_format(&output, "%f", ptn_compact_intl_numeric_value(value));
+            char c_format[64];
+            char *cursor = c_format;
+            char *end = c_format + sizeof(c_format);
+            *cursor++ = '%';
+            if (left_adjust && cursor < end) *cursor++ = '-';
+            if (show_sign && cursor < end) *cursor++ = '+';
+            if (space_sign && cursor < end) *cursor++ = ' ';
+            if (zero_pad && cursor < end) *cursor++ = '0';
+            if (has_width) {
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", width);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            if (has_precision) {
+                *cursor++ = '.';
+                int written = snprintf(cursor, (size_t)(end - cursor), "%d", precision);
+                if (written < 0 || written >= end - cursor) {
+                    ptn_abort_out_of_memory();
+                }
+                cursor += written;
+            }
+            *cursor++ = specifier;
+            *cursor = '\0';
+            ptn_string_buffer_append_format(&output, c_format, ptn_compact_intl_numeric_value(value));
         } else {
             ptn_string_buffer_append_char(&output, '%');
             ptn_string_buffer_append_char(&output, specifier);

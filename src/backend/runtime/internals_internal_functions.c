@@ -8617,7 +8617,7 @@ static void ptn_var_dump_object_header(
             object->class_name,
             object->object_id,
             property_count,
-            object->refcount
+            ptn_object_debug_visible_refcount(object)
         );
     } else {
         printf(
@@ -9586,12 +9586,14 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 int cloned_entry_value = entry_value.type != PTN_REFERENCE;
                 if (cloned_entry_value) {
                     entry_value = ptn_value_clone(entry_value);
+                    ptn_value_debug_hide_ref(entry_value);
                 }
                 ptn_var_dump_indent(indent + 1);
                 ptn_var_dump_array_key(key);
                 ptn_debug_zval_dump_value_indented(entry_value, indent + 1, seen);
                 ptn_array_key_free(key);
                 if (cloned_entry_value) {
+                    ptn_value_debug_unhide_ref(entry_value);
                     ptn_value_destroy(&entry_value);
                 }
             }
