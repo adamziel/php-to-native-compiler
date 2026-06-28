@@ -152988,25 +152988,86 @@ static char *ptn_phar_iterator_item_path(
     return NULL;
 }
 
-static int64_t ptn_phar_iterator_item_timestamp(
+static void ptn_phar_throw_entry_create_error(
+    PtnRuntime *runtime,
+    const char *entry_name,
+    const char *reason
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Entry %s cannot be created: %s",
+        entry_name == NULL ? "" : entry_name,
+        reason == NULL ? "" : reason
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Entry %s cannot be created: %s",
+        entry_name == NULL ? "" : entry_name,
+        reason == NULL ? "" : reason
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message(runtime, "UnexpectedValueException", message);
+}
+
+static int ptn_phar_iterator_item_timestamp(
     PtnRuntime *runtime,
     PtnValue current,
     const char *path,
-    size_t line
+    const char *entry_name,
+    size_t line,
+    int64_t *timestamp_out
 ) {
+    if (timestamp_out == NULL) {
+        return 0;
+    }
+    *timestamp_out = 0;
     if (runtime->method_dispatch != NULL &&
         ptn_phar_iterator_value_has_method(current, "getMTime")) {
-        PtnValue mtime_value = runtime->method_dispatch(runtime, current, "getMTime", 0, NULL, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&mtime_value);
+        PtnValue mtime_value = ptn_null();
+        PtnTryFrame callback_frame;
+        ptn_try_frame_push(runtime, &callback_frame);
+        if (setjmp(callback_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &callback_frame);
+            ptn_phar_throw_entry_create_error(runtime, entry_name, "getMTime() must return an int");
             return 0;
         }
-        int64_t timestamp = ptn_value_to_integer(mtime_value);
+        mtime_value = runtime->method_dispatch(runtime, current, "getMTime", 0, NULL, line);
+        ptn_try_frame_pop(runtime, &callback_frame);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&mtime_value);
+            ptn_phar_throw_entry_create_error(runtime, entry_name, "getMTime() must return an int");
+            return 0;
+        }
+        PtnValue resolved_mtime = ptn_value_deref(mtime_value);
+        if (resolved_mtime.type != PTN_INT) {
+            ptn_value_destroy(&mtime_value);
+            ptn_phar_throw_entry_create_error(runtime, entry_name, "getMTime() must return an int");
+            return 0;
+        }
+        int64_t timestamp = resolved_mtime.as.integer;
         ptn_value_destroy(&mtime_value);
-        return timestamp;
+        if (timestamp < 0 || timestamp > UINT32_MAX) {
+            ptn_phar_throw_entry_create_error(runtime, entry_name, "timestamp is limited to 32-bit");
+            return 0;
+        }
+        *timestamp_out = timestamp;
+        return 1;
     }
     struct stat info;
-    return path != NULL && ptn_stat_path(path, &info) == 0 ? (int64_t)info.st_mtime : 0;
+    *timestamp_out = path != NULL && ptn_stat_path(path, &info) == 0 ? (int64_t)info.st_mtime : 0;
+    return 1;
 }
 
 static void ptn_phar_throw_iterator_invalid_value(PtnRuntime *runtime, const char *iterator_class) {
@@ -153150,8 +153211,10 @@ static PtnValue ptn_phar_build_from_iterator_result(
             ptn_phar_throw_iterator_invalid_value(runtime, iterator_class);
         }
         if (runtime->exceptions->active_exception == NULL) {
-            int64_t timestamp = ptn_phar_iterator_item_timestamp(runtime, current, path, line);
-            if (runtime->exceptions->active_exception == NULL) {
+            char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
+            int64_t timestamp = 0;
+            if (ptn_phar_iterator_item_timestamp(runtime, current, path, entry_name, line, &timestamp) &&
+                runtime->exceptions->active_exception == NULL) {
                 ptn_phar_build_from_iterator_add_path(
                     runtime,
                     archive,
@@ -153163,6 +153226,7 @@ static PtnValue ptn_phar_build_from_iterator_result(
                     line
                 );
             }
+            free(entry_name);
         }
         free(path);
         ptn_value_destroy(&current);
