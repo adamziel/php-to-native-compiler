@@ -1,0 +1,14 @@
+# ptn-w17z.1109 exact standard proc/output buffer current-red row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T041906Z.tsv
+tests/output/stream_isatty_non_castable_userwrapper.phpt
+tests/output/gh20837.phpt
+tests/output/gh14808.phpt
+tests/output/gh15179.phpt
+tests/output/bug74725.phpt
+tests/output/ob_018.phpt
+tests/output/gh15181.phpt
+tests/output/gh16135.phpt
+tests/output/gh20352.phpt
+tests/output/ob_start_basic_003.phpt
+tests/output/ob_015.phpt
+ext/standard/tests/general_functions/proc_open_array.phpt

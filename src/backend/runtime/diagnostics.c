@@ -1605,12 +1605,15 @@ static int ptn_diagnostic_utf8_sequence_len(const unsigned char *data, size_t le
     return 0;
 }
 
-static PTN_UNUSED void ptn_diagnostic_output_html_text(PtnDiagnosticSink *diagnostics, const char *data) {
-    if (data == NULL) {
+static PTN_UNUSED void ptn_diagnostic_output_html_text_len(
+    PtnDiagnosticSink *diagnostics,
+    const char *data,
+    size_t len
+) {
+    if (data == NULL || len == 0) {
         return;
     }
     const unsigned char *bytes = (const unsigned char *)data;
-    size_t len = strlen(data);
     size_t offset = 0;
     while (offset < len) {
         size_t sequence_len = 0;
@@ -1622,6 +1625,10 @@ static PTN_UNUSED void ptn_diagnostic_output_html_text(PtnDiagnosticSink *diagno
         ptn_diagnostic_output_write(diagnostics, "\xef\xbf\xbd", 3);
         offset++;
     }
+}
+
+static PTN_UNUSED void ptn_diagnostic_output_html_text(PtnDiagnosticSink *diagnostics, const char *data) {
+    ptn_diagnostic_output_html_text_len(diagnostics, data, data == NULL ? 0 : strlen(data));
 }
 
 static PTN_UNUSED void ptn_diagnostic_emit_html_message(

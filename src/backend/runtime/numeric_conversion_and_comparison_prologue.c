@@ -2934,6 +2934,56 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
+static PtnDiagnosticSink *ptn_uncaught_exception_diagnostics(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return NULL;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? &runtime->diagnostics : &root->diagnostics;
+}
+
+static void ptn_uncaught_exception_output_write(PtnRuntime *runtime, const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    PtnDiagnosticSink *diagnostics = ptn_uncaught_exception_diagnostics(runtime);
+    if (diagnostics == NULL) {
+        fwrite(data, 1, len, stderr);
+        return;
+    }
+    ptn_diagnostic_output_write(diagnostics, data, len);
+}
+
+static void ptn_uncaught_exception_output_cstr(PtnRuntime *runtime, const char *data) {
+    ptn_uncaught_exception_output_write(runtime, data, data == NULL ? 0 : strlen(data));
+}
+
+static void ptn_uncaught_exception_output_printf(PtnRuntime *runtime, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list copy;
+    va_copy(copy, args);
+    int needed = vsnprintf(NULL, 0, format, args);
+    va_end(args);
+    if (needed < 0) {
+        va_end(copy);
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        va_end(copy);
+        ptn_abort_out_of_memory();
+    }
+    int written = vsnprintf(buffer, (size_t)needed + 1, format, copy);
+    va_end(copy);
+    if (written < 0 || written != needed) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+    ptn_uncaught_exception_output_write(runtime, buffer, (size_t)written);
+    free(buffer);
+}
+
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -2951,44 +3001,44 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
     size_t display_line = exception->line;
     if (*first) {
-        fputc('\n', stderr);
-        fprintf(
-            stderr,
+        ptn_uncaught_exception_output_cstr(runtime, "\n");
+        ptn_uncaught_exception_output_printf(
+            runtime,
             "%s: Uncaught %s",
             first_label,
             exception->class_name
         );
         if (exception->message_len != 0) {
-            fputs(": ", stderr);
-            fwrite(exception->message, 1, exception->message_len, stderr);
+            ptn_uncaught_exception_output_cstr(runtime, ": ");
+            ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
         }
         if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
-            fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
+            ptn_uncaught_exception_output_printf(runtime, " and defined in %s:%zu\n", exception->path, exception->line);
         } else {
-            fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+            ptn_uncaught_exception_output_printf(runtime, " in %s:%zu\n", display_path, display_line);
         }
         *first = 0;
     } else {
-        fprintf(
-            stderr,
+        ptn_uncaught_exception_output_printf(
+            runtime,
             "\nNext %s",
             exception->class_name
         );
         if (exception->message_len != 0) {
-            fputs(": ", stderr);
-            fwrite(exception->message, 1, exception->message_len, stderr);
+            ptn_uncaught_exception_output_cstr(runtime, ": ");
+            ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
         }
         if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
-            fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
+            ptn_uncaught_exception_output_printf(runtime, " and defined in %s:%zu\n", exception->path, exception->line);
         } else {
-            fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+            ptn_uncaught_exception_output_printf(runtime, " in %s:%zu\n", display_path, display_line);
         }
     }
-    fputs("Stack trace:\n", stderr);
+    ptn_uncaught_exception_output_cstr(runtime, "Stack trace:\n");
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
-    fwrite(trace.data, 1, trace.len, stderr);
+    ptn_uncaught_exception_output_write(runtime, trace.data, trace.len);
     free(trace.owned);
-    fputc('\n', stderr);
+    ptn_uncaught_exception_output_cstr(runtime, "\n");
 }
 
 static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
@@ -3015,7 +3065,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         int first = 1;
         ptn_emit_uncaught_exception_chain_entry(runtime, exception, &first, label);
         const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
-        fprintf(stderr, "  thrown in %s on line %zu\n", display_path, exception->line);
+        ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, exception->line);
         return;
     }
     const char *display_path = exception->path;
@@ -3033,44 +3083,91 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         display_line = frame->line;
     }
     if (display_path == NULL) {
-        fprintf(stderr, "%s: ", label);
-        fwrite(exception->message, 1, exception->message_len, stderr);
-        fputc('\n', stderr);
+        ptn_uncaught_exception_output_printf(runtime, "%s: ", label);
+        ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
+        ptn_uncaught_exception_output_cstr(runtime, "\n");
+        return;
+    }
+
+    PtnDiagnosticSink *diagnostics = ptn_uncaught_exception_diagnostics(runtime);
+    if (diagnostics != NULL && diagnostics->html_errors) {
+        ptn_uncaught_exception_output_printf(runtime, "<br />\n<b>%s</b>:  Uncaught ", label);
+        if (exception->uncaught_text != NULL) {
+            ptn_uncaught_exception_output_write(runtime, exception->uncaught_text, exception->uncaught_text_len);
+            ptn_uncaught_exception_output_cstr(runtime, "\n");
+            ptn_uncaught_exception_output_printf(
+                runtime,
+                "  thrown in <b>%s</b> on line <b>%zu</b><br />\n",
+                display_path,
+                display_line
+            );
+            return;
+        }
+        ptn_uncaught_exception_output_cstr(runtime, exception->class_name);
+        if (exception->message_len != 0) {
+            ptn_uncaught_exception_output_cstr(runtime, ": ");
+            ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
+            if (
+                exception->message_defined_at_location &&
+                exception->path != NULL &&
+                exception->line != 0
+            ) {
+                ptn_uncaught_exception_output_printf(
+                    runtime,
+                    " and defined in %s:%zu",
+                    exception->path,
+                    exception->line
+                );
+            }
+        }
+        if (!exception->message_defined_at_location) {
+            ptn_uncaught_exception_output_printf(runtime, " in %s:%zu", display_path, display_line);
+        }
+        ptn_uncaught_exception_output_cstr(runtime, "\nStack trace:\n");
+        PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
+        ptn_uncaught_exception_output_write(runtime, trace.data, trace.len);
+        free(trace.owned);
+        ptn_uncaught_exception_output_printf(
+            runtime,
+            "\n  thrown in <b>%s</b> on line <b>%zu</b><br />\n",
+            display_path,
+            display_line
+        );
         return;
     }
 
     if (exception->uncaught_text != NULL) {
-        fputc('\n', stderr);
-        fprintf(stderr, "%s: Uncaught ", label);
-        fwrite(exception->uncaught_text, 1, exception->uncaught_text_len, stderr);
-        fputc('\n', stderr);
-        fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
+        ptn_uncaught_exception_output_cstr(runtime, "\n");
+        ptn_uncaught_exception_output_printf(runtime, "%s: Uncaught ", label);
+        ptn_uncaught_exception_output_write(runtime, exception->uncaught_text, exception->uncaught_text_len);
+        ptn_uncaught_exception_output_cstr(runtime, "\n");
+        ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, display_line);
         return;
     }
 
-    fputc('\n', stderr);
-    fprintf(stderr, "%s: Uncaught %s", label, exception->class_name);
+    ptn_uncaught_exception_output_cstr(runtime, "\n");
+    ptn_uncaught_exception_output_printf(runtime, "%s: Uncaught %s", label, exception->class_name);
     if (exception->message_len != 0) {
-        fputs(": ", stderr);
-        fwrite(exception->message, 1, exception->message_len, stderr);
+        ptn_uncaught_exception_output_cstr(runtime, ": ");
+        ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
         if (
             exception->message_defined_at_location &&
             exception->path != NULL &&
             exception->line != 0
         ) {
-            fprintf(stderr, " and defined in %s:%zu", exception->path, exception->line);
+            ptn_uncaught_exception_output_printf(runtime, " and defined in %s:%zu", exception->path, exception->line);
         }
     }
     if (!exception->message_defined_at_location) {
-        fprintf(stderr, " in %s:%zu", display_path, display_line);
+        ptn_uncaught_exception_output_printf(runtime, " in %s:%zu", display_path, display_line);
     }
-    fputc('\n', stderr);
-    fputs("Stack trace:\n", stderr);
+    ptn_uncaught_exception_output_cstr(runtime, "\n");
+    ptn_uncaught_exception_output_cstr(runtime, "Stack trace:\n");
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
-    fwrite(trace.data, 1, trace.len, stderr);
+    ptn_uncaught_exception_output_write(runtime, trace.data, trace.len);
     free(trace.owned);
-    fputc('\n', stderr);
-    fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
+    ptn_uncaught_exception_output_cstr(runtime, "\n");
+    ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, display_line);
 }
 
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
