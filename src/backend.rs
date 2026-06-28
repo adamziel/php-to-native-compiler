@@ -56710,6 +56710,46 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(";\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = 1;\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        let checked_callable_temp = self.next_temp();
+        let invalid_callback_message_temp = self.next_temp();
+        let callback_valid_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&checked_callable_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&callable_temp);
+        out.push_str(");\n");
+        out.push_str("    int ");
+        out.push_str(&callback_valid_temp);
+        out.push_str(" = ptn_callable_is_valid(&runtime, ");
+        out.push_str(&checked_callable_temp);
+        out.push_str(", 0);\n");
+        out.push_str("    if (!");
+        out.push_str(&callback_valid_temp);
+        out.push_str(") {\n");
+        out.push_str("        char *");
+        out.push_str(&invalid_callback_message_temp);
+        out.push_str(
+            " = ptn_invalid_callback_message(&runtime, \"call_user_func\", 1, \"callback\", ",
+        );
+        out.push_str(&checked_callable_temp);
+        out.push_str(", 0);\n");
+        out.push_str("        ptn_value_destroy(&");
+        out.push_str(&checked_callable_temp);
+        out.push_str(");\n");
+        out.push_str("        ptn_throw_exception_owned_message(&runtime, \"TypeError\", ");
+        out.push_str(&invalid_callback_message_temp);
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ptn_value_destroy(&");
+        out.push_str(&checked_callable_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        out.push_str("    if (");
+        out.push_str(&callback_valid_temp);
+        out.push_str(" && runtime.exceptions->active_exception == NULL) {\n");
         out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
         out.push_str(&callable_temp);
         out.push_str(", ");
@@ -56719,13 +56759,13 @@ impl ValueEmitter {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
             }
-            out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
             out.push_str(&callable_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(", 1);\n");
+            out.push_str("    }\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
             out.push_str(";\n");
@@ -56770,7 +56810,6 @@ impl ValueEmitter {
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
         }
-        out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
         out.push_str(&callable_temp);
@@ -56781,12 +56820,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", 1);\n");
-        out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
-        out.push_str(&previous_warn_by_ref_temp);
-        out.push_str(";\n");
-        out.push_str("    runtime.call_site_line = ");
-        out.push_str(&previous_call_site_line_temp);
-        out.push_str(";\n");
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
@@ -56797,6 +56830,13 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        out.push_str("    }\n");
+        out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
+        out.push_str(&previous_warn_by_ref_temp);
+        out.push_str(";\n");
+        out.push_str("    runtime.call_site_line = ");
+        out.push_str(&previous_call_site_line_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &callable_temp);
         result_temp
     }

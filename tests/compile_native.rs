@@ -84956,6 +84956,44 @@ try {
 }
 
 #[test]
+fn compile_call_user_func_invalid_callback_skips_later_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-callback-argument-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-callback-argument-order.php");
+    let output = root.join("call-user-func-invalid-callback-argument-order-bin");
+    fs::write(
+        &input,
+        "<?php
+function side_effect() {
+    echo \"side effect\\n\";
+    return 1;
+}
+
+try {
+    call_user_func([null, 'missing'], side_effect());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_callable_is_valid(&runtime"));
+    assert!(c_source.contains("ptn_invalid_callback_message(&runtime, \"call_user_func\""));
+}
+
+#[test]
 fn compile_string_static_callable_error_precedence_to_native_binary() {
     let root = temp_dir("ptn-native-string-static-callable-errors");
     fs::create_dir_all(&root).unwrap();
