@@ -70700,17 +70700,25 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
     return ptn_text_operand_ascii_case_equal(algo, "md5") ||
         ptn_text_operand_ascii_case_equal(algo, "md4") ||
         ptn_text_operand_ascii_case_equal(algo, "sha1") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha224") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha256") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha384") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha512/224") ||
         ptn_text_operand_ascii_case_equal(algo, "sha512/256") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha512") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32b") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32c") ||
         ptn_text_operand_ascii_case_equal(algo, "adler32") ||
         ptn_text_operand_ascii_case_equal(algo, "fnv1a64") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd128") ||
+        ptn_text_operand_ascii_case_equal(algo, "ripemd160") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd256") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd320") ||
         ptn_text_operand_ascii_case_equal(algo, "snefru") ||
         ptn_text_operand_ascii_case_equal(algo, "snefru256") ||
+        ptn_text_operand_ascii_case_equal(algo, "xxh32") ||
+        ptn_text_operand_ascii_case_equal(algo, "xxh64") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh128");
 }
@@ -70719,19 +70727,74 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "md5",
     "md4",
     "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512/224",
     "sha512/256",
+    "sha512",
     "crc32",
     "crc32b",
     "crc32c",
     "adler32",
     "fnv1a64",
     "ripemd128",
+    "ripemd160",
     "ripemd256",
     "ripemd320",
     "snefru",
     "snefru256",
+    "xxh32",
+    "xxh64",
     "xxh3",
     "xxh128",
+};
+
+static const char *const PTN_HASH_HMAC_ALGOS[] = {
+    "md2",
+    "md4",
+    "md5",
+    "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512/224",
+    "sha512/256",
+    "sha512",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
+    "ripemd128",
+    "ripemd160",
+    "ripemd256",
+    "ripemd320",
+    "whirlpool",
+    "tiger128,3",
+    "tiger160,3",
+    "tiger192,3",
+    "tiger128,4",
+    "tiger160,4",
+    "tiger192,4",
+    "snefru",
+    "snefru256",
+    "gost",
+    "gost-crypto",
+    "haval128,3",
+    "haval160,3",
+    "haval192,3",
+    "haval224,3",
+    "haval256,3",
+    "haval128,4",
+    "haval160,4",
+    "haval192,4",
+    "haval224,4",
+    "haval256,4",
+    "haval128,5",
+    "haval160,5",
+    "haval192,5",
+    "haval224,5",
+    "haval256,5",
 };
 
 static int ptn_hash_algorithm_name_is_supported(const char *algo) {
@@ -70745,11 +70808,26 @@ static int ptn_hash_algorithm_name_is_supported(const char *algo) {
 
 static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
     return ptn_ascii_case_equal(algo, "md5") ||
-        ptn_ascii_case_equal(algo, "sha1");
+        ptn_ascii_case_equal(algo, "md4") ||
+        ptn_ascii_case_equal(algo, "sha1") ||
+        ptn_ascii_case_equal(algo, "sha224") ||
+        ptn_ascii_case_equal(algo, "sha256") ||
+        ptn_ascii_case_equal(algo, "sha384") ||
+        ptn_ascii_case_equal(algo, "sha512/224") ||
+        ptn_ascii_case_equal(algo, "sha512/256") ||
+        ptn_ascii_case_equal(algo, "sha512") ||
+        ptn_ascii_case_equal(algo, "ripemd128") ||
+        ptn_ascii_case_equal(algo, "ripemd160") ||
+        ptn_ascii_case_equal(algo, "ripemd256") ||
+        ptn_ascii_case_equal(algo, "ripemd320") ||
+        ptn_ascii_case_equal(algo, "snefru") ||
+        ptn_ascii_case_equal(algo, "snefru256");
 }
 
 static int ptn_hash_algorithm_name_is_xxhash(const char *algo) {
-    return ptn_ascii_case_equal(algo, "xxh3") ||
+    return ptn_ascii_case_equal(algo, "xxh32") ||
+        ptn_ascii_case_equal(algo, "xxh64") ||
+        ptn_ascii_case_equal(algo, "xxh3") ||
         ptn_ascii_case_equal(algo, "xxh128");
 }
 
@@ -70762,6 +70840,8 @@ typedef struct {
     int attempted;
     int available;
     void *handle;
+    uint32_t (*xxh32)(const void *, size_t, uint32_t);
+    uint64_t (*xxh64)(const void *, size_t, uint64_t);
     uint64_t (*xxh3_64bits)(const void *, size_t);
     uint64_t (*xxh3_64bits_with_secret)(const void *, size_t, const void *, size_t);
     PtnXxhash128 (*xxh3_128bits)(const void *, size_t);
@@ -70850,6 +70930,8 @@ static PtnXxhashApi *ptn_xxhash_api_get(void) {
         } \
     } while (0)
 
+    PTN_XXHASH_LOAD(xxh32, "XXH32");
+    PTN_XXHASH_LOAD(xxh64, "XXH64");
     PTN_XXHASH_LOAD(xxh3_64bits, "XXH3_64bits");
     PTN_XXHASH_LOAD(xxh3_64bits_with_secret, "XXH3_64bits_withSecret");
     PTN_XXHASH_LOAD(xxh3_128bits, "XXH3_128bits");
