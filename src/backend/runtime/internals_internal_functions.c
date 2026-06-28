@@ -72646,14 +72646,21 @@ static PtnValue ptn_internal_hash_pbkdf2(PtnRuntime *runtime, size_t argc, const
 
     PtnValue result;
     if (raw_output) {
-        result = ptn_owned_string_len((char *)derived, output_len);
+        char *raw = ptn_duplicate_string_len(
+            output_len == 0 ? "" : (const char *)derived,
+            output_len
+        );
+        free(derived);
+        result = ptn_owned_string_len(raw, output_len);
     } else {
         char *hex = ptn_digest_hex_string(derived, needed_bytes);
         free(derived);
-        if (length > 0 && (size_t)length < strlen(hex)) {
+        size_t hex_len = strlen(hex);
+        if (length > 0 && (size_t)length < hex_len) {
             hex[(size_t)length] = '\0';
+            hex_len = (size_t)length;
         }
-        result = ptn_owned_string_len(hex, strlen(hex));
+        result = ptn_owned_string_len(hex, hex_len);
     }
     free(algo_name);
     ptn_string_operand_free(algo);
