@@ -139564,6 +139564,9 @@ static void ptn_xml_set_text_content(PtnRuntime *runtime, PtnXmlNode *node, cons
         return;
     }
     node->child_count = 0;
+    if (len == 0) {
+        return;
+    }
     PtnXmlNode *text = ptn_xml_node_alloc(PTN_XML_NODE_TEXT, NULL, "");
     free(text->value);
     text->value = ptn_duplicate_string_len(data, len);

@@ -50232,6 +50232,52 @@ try {
 }
 
 #[test]
+fn compile_simplexml_empty_string_assignment_serializes_empty_element_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-empty-string-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-empty-string-assignment.php");
+    let output = root.join("simplexml-empty-string-assignment-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sxe = new SimpleXMLElement('<foo></foo>');
+$sxe->addChild('bar', '');
+echo $sxe->asXML();
+
+$sxe = new SimpleXMLElement('<foo></foo>');
+$sxe->addChild('bar');
+$sxe->bar = '';
+echo $sxe->asXML();
+
+$sxe = new SimpleXMLElement('<foo><bar>text</bar></foo>');
+$sxe->bar = '';
+echo $sxe->asXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_set_text_content"));
+}
+
+#[test]
 fn compile_simplexml_iterator_keys_and_attribute_unset_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-iterator-keys-attribute-unset");
     fs::create_dir_all(&root).unwrap();
