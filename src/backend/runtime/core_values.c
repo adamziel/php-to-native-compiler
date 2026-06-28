@@ -1442,6 +1442,7 @@ struct PtnTraceFrame {
 struct PtnTryFrame {
     jmp_buf jump;
     PtnTryFrame *previous;
+    int is_user_try;
 };
 
 typedef struct {

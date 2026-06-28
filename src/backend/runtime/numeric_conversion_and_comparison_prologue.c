@@ -2924,6 +2924,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
 
 static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *frame) {
     frame->previous = runtime->exceptions->try_frame;
+    frame->is_user_try = 0;
     runtime->exceptions->try_frame = frame;
 }
 

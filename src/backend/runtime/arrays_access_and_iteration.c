@@ -14143,15 +14143,23 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
     if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
         return ptn_generator_yield_delegate(runtime, resolved, line);
     }
-    int has_nested_generator_try_frame =
-        runtime != NULL &&
-        runtime->exceptions != NULL &&
-        runtime->exceptions->try_frame != NULL &&
-        runtime->exceptions->try_frame->previous != NULL;
+    int has_user_try_frame = 0;
+    if (runtime != NULL && runtime->exceptions != NULL) {
+        for (
+            PtnTryFrame *frame = runtime->exceptions->try_frame;
+            frame != NULL;
+            frame = frame->previous
+        ) {
+            if (frame->is_user_try) {
+                has_user_try_frame = 1;
+                break;
+            }
+        }
+    }
     if (
         runtime != NULL &&
         runtime->current_generator != NULL &&
-        !has_nested_generator_try_frame &&
+        !has_user_try_frame &&
         resolved.type == PTN_OBJECT &&
         ptn_value_is_unpack_traversable(resolved) &&
         ptn_generator_append_delegate_entry(runtime, runtime->current_generator, resolved, line)

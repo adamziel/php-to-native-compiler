@@ -30672,6 +30672,9 @@ fn emit_try(
     out.push_str("        ptn_try_frame_push(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    out.push_str("        ");
+    out.push_str(&frame_temp);
+    out.push_str(".is_user_try = 1;\n");
     if let Some(frame_active_temp) = &frame_active_temp {
         out.push_str("        ");
         out.push_str(frame_active_temp);
