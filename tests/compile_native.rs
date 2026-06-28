@@ -30626,6 +30626,74 @@ array(0) {\n\
 }
 
 #[test]
+fn compile_stream_process_zlib_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-process-zlib-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-process-zlib-residuals.php");
+    let output = root.join("stream-process-zlib-residuals-bin");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let php = r#"<?php
+$port = __PORT__;
+try {
+    popen("abc.txt", "x");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$plain = __DIR__ . "/gzopen-plain.txt";
+file_put_contents($plain, "Here is some plain\ntext");
+$gz = gzopen($plain, "r");
+var_dump(is_resource($gz));
+gzpassthru($gz);
+gzclose($gz);
+echo "\n";
+unlink($plain);
+
+$server = stream_socket_server("tcp://127.0.0.1:$port");
+var_dump(is_resource($server));
+$client = fsockopen("tcp://127.0.0.1:$port");
+var_dump(is_resource($client));
+fclose($client);
+try {
+    var_dump(stream_set_timeout($client, 10));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+$file = fopen(__FILE__, "r");
+var_dump(stream_set_timeout($file, 10));
+fclose($file);
+fclose($server);
+"#
+    .replace("__PORT__", &port.to_string());
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "popen(): Argument #2 ($mode) must be one of \"r\", \"rb\", \"w\", or \"wb\"\n\
+bool(true)\n\
+Here is some plain\n\
+text\n\
+bool(true)\n\
+bool(true)\n\
+stream_set_timeout(): Argument #1 ($stream) must be an open stream resource\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_popen"));
+    assert!(c_source.contains("ptn_internal_fsockopen"));
+    assert!(c_source.contains("ptn_internal_stream_set_timeout"));
+    assert!(c_source.contains("ptn_try_open_plain_gz_read_stream"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();

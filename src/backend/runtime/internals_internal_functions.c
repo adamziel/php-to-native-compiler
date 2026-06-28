@@ -109711,6 +109711,121 @@ static int ptn_shell_validate_command(
     return 1;
 }
 
+static int ptn_popen_mode_is_valid(const char *mode) {
+    return strcmp(mode, "r") == 0 ||
+        strcmp(mode, "rb") == 0 ||
+        strcmp(mode, "w") == 0 ||
+        strcmp(mode, "wb") == 0;
+}
+
+static void ptn_popen_throw_invalid_mode(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "popen(): Argument #2 ($mode) must be one of \"r\", \"rb\", \"w\", or \"wb\""
+    );
+}
+
+static void ptn_popen_close_hook(PtnResource *resource, void *data) {
+    (void)data;
+    if (resource == NULL || resource->stream == NULL) {
+        return;
+    }
+    FILE *stream = resource->stream;
+    resource->stream = NULL;
+    (void)ptn_platform_pclose(stream);
+}
+
+static int ptn_popen_close_resource(PtnResource *resource) {
+    if (resource == NULL || resource->stream == NULL) {
+        return -1;
+    }
+    FILE *stream = resource->stream;
+    resource->stream = NULL;
+    resource->close_hook = NULL;
+    int status = ptn_platform_pclose(stream);
+    ptn_resource_close(resource);
+    return ptn_shell_status_code(status);
+}
+
+static PtnValue ptn_internal_popen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand command = ptn_internal_expect_string_arg(runtime, "popen", 1, "command", args[0], line);
+    PtnStringOperand mode_operand = ptn_internal_expect_string_arg(runtime, "popen", 2, "mode", args[1], line);
+    char *mode = ptn_path_operand_to_c_string(mode_operand);
+    ptn_string_operand_free(mode_operand);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(command);
+        free(mode);
+        return ptn_null();
+    }
+    if (mode == NULL) {
+        ptn_string_operand_free(command);
+        ptn_popen_throw_invalid_mode(runtime);
+        return ptn_null();
+    }
+    if (!ptn_popen_mode_is_valid(mode)) {
+        ptn_string_operand_free(command);
+        free(mode);
+        ptn_popen_throw_invalid_mode(runtime);
+        return ptn_null();
+    }
+    if (!ptn_shell_validate_command(runtime, "popen", command)) {
+        ptn_string_operand_free(command);
+        free(mode);
+        return ptn_null();
+    }
+
+    char *command_c = ptn_duplicate_string_len(command.data, command.len);
+    ptn_string_operand_free(command);
+    FILE *stream = ptn_platform_popen(command_c, mode);
+    free(command_c);
+    if (stream == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "popen(): Unable to execute command", line);
+        free(mode);
+        return ptn_bool(0);
+    }
+    PtnResource *resource = ptn_resource_new_stream(stream, "php://stdio", mode);
+    resource->stream_backend = PTN_STREAM_BACKEND_PIPE;
+    resource->close_hook = ptn_popen_close_hook;
+    PtnValue result = ptn_resource(resource);
+    free(mode);
+    return result;
+}
+
+static PtnValue ptn_internal_pclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "pclose(): Argument #1 ($handle) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (!ptn_stream_resource_is_open(value.as.resource)) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "pclose(): Argument #1 ($handle) must be an open stream resource"
+        );
+        return ptn_null();
+    }
+    if (value.as.resource->stream_backend != PTN_STREAM_BACKEND_PIPE ||
+        value.as.resource->close_hook != ptn_popen_close_hook) {
+        ptn_emit_warning(&runtime->diagnostics, "pclose(): supplied resource is not a valid stream resource", line);
+        return ptn_int(-1);
+    }
+    return ptn_int((int64_t)ptn_popen_close_resource(value.as.resource));
+}
+
 static int ptn_shell_run_command(
     PtnRuntime *runtime,
     const char *function_name,
@@ -145956,6 +146071,14 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
     return ptn_string(message == NULL ? "" : message);
 }
 
+static void ptn_stream_socket_server_assign_error(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    int error_code,
+    const char *message
+);
+
 static void ptn_stream_socket_client_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
     if (arg.type == PTN_REFERENCE) {
         (void)ptn_reference_assign(runtime, arg.as.reference, value);
@@ -145983,6 +146106,302 @@ static int ptn_stream_socket_address_is_unix_like(
         return 1;
     }
     return 0;
+}
+
+static int ptn_stream_socket_address_parse_tcp(
+    PtnStringOperand address,
+    char **host_out,
+    char **service_out
+) {
+    const char *prefix = "tcp://";
+    size_t prefix_len = strlen(prefix);
+    *host_out = NULL;
+    *service_out = NULL;
+    if (address.len <= prefix_len || memcmp(address.data, prefix, prefix_len) != 0) {
+        return 0;
+    }
+
+    const char *body = address.data + prefix_len;
+    size_t body_len = address.len - prefix_len;
+    const char *host = body;
+    size_t host_len = 0;
+    const char *service = NULL;
+    size_t service_len = 0;
+
+    if (body_len >= 4 && body[0] == '[') {
+        const char *end = memchr(body, ']', body_len);
+        if (end == NULL || end + 1 >= body + body_len || end[1] != ':') {
+            return 0;
+        }
+        host = body + 1;
+        host_len = (size_t)(end - host);
+        service = end + 2;
+        service_len = (size_t)((body + body_len) - service);
+    } else {
+        const char *colon = NULL;
+        for (size_t i = 0; i < body_len; i++) {
+            if (body[i] == ':') {
+                colon = body + i;
+            }
+        }
+        if (colon == NULL) {
+            return 0;
+        }
+        host_len = (size_t)(colon - body);
+        service = colon + 1;
+        service_len = (size_t)((body + body_len) - service);
+    }
+
+    if (host_len == 0 || service_len == 0) {
+        return 0;
+    }
+    *host_out = ptn_duplicate_string_len(host, host_len);
+    *service_out = ptn_duplicate_string_len(service, service_len);
+    return 1;
+}
+
+static PtnValue ptn_stream_socket_client_open_tcp(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand address,
+    PtnValue error_code_arg,
+    PtnValue error_message_arg,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)address;
+    (void)function_name;
+    ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): TCP sockets are not supported on this platform", line);
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string("not supported on this platform"));
+    return ptn_bool(0);
+#else
+    char *host = NULL;
+    char *service = NULL;
+    if (!ptn_stream_socket_address_parse_tcp(address, &host, &service)) {
+        char *address_c = ptn_duplicate_string_len(address.data, address.len);
+        int message_needed = snprintf(NULL, 0, "Failed to parse address \"%s\"", address_c);
+        if (message_needed < 0) {
+            free(address_c);
+            ptn_abort_out_of_memory();
+        }
+        char *parse_message = malloc((size_t)message_needed + 1);
+        if (parse_message == NULL) {
+            free(address_c);
+            ptn_abort_out_of_memory();
+        }
+        int message_written = snprintf(parse_message, (size_t)message_needed + 1, "Failed to parse address \"%s\"", address_c);
+        if (message_written < 0 || message_written != message_needed) {
+            free(parse_message);
+            free(address_c);
+            ptn_abort_out_of_memory();
+        }
+        char warning[256];
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %s (%s)",
+            function_name,
+            address_c,
+            parse_message
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(parse_message);
+            free(address_c);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(parse_message));
+        free(address_c);
+        return ptn_bool(0);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+    struct addrinfo *addresses = NULL;
+    int gai = getaddrinfo(host, service, &hints, &addresses);
+    if (gai != 0) {
+        char warning[256];
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %.*s (%s)",
+            function_name,
+            (int)address.len,
+            address.data,
+            gai_strerror(gai)
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(gai));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(gai_strerror(gai))));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    int descriptor = -1;
+    int error_code = 0;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        descriptor = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        if (descriptor < 0) {
+            error_code = errno;
+            continue;
+        }
+        if (connect(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0) {
+            error_code = 0;
+            break;
+        }
+        error_code = errno;
+        close(descriptor);
+        descriptor = -1;
+    }
+    freeaddrinfo(addresses);
+    if (descriptor < 0) {
+        char warning[256];
+        const char *message = error_code == 0 ? "connection failed" : strerror(error_code);
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %.*s (%s)",
+            function_name,
+            (int)address.len,
+            address.data,
+            message
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(error_code));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(message)));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fdopen(descriptor, "r+");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(descriptor);
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to open socket stream", line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(saved_errno));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(strerror(saved_errno))));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    free(uri);
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+    free(host);
+    free(service);
+    return result;
+#endif
+}
+
+static PtnValue ptn_stream_socket_server_open_tcp(
+    PtnRuntime *runtime,
+    PtnStringOperand address,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)address;
+    ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): TCP sockets are not supported on this platform", line);
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "not supported on this platform");
+    return ptn_bool(0);
+#else
+    char *host = NULL;
+    char *service = NULL;
+    if (!ptn_stream_socket_address_parse_tcp(address, &host, &service)) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): failed to parse tcp socket address", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "failed to parse address");
+        return ptn_bool(0);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_flags = AI_PASSIVE;
+    struct addrinfo *addresses = NULL;
+    int gai = getaddrinfo(host, service, &hints, &addresses);
+    if (gai != 0) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): unable to resolve tcp socket address", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, gai, gai_strerror(gai));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    int descriptor = -1;
+    int error_code = 0;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        descriptor = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        if (descriptor < 0) {
+            error_code = errno;
+            continue;
+        }
+        int reuse = 1;
+        (void)setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        if (bind(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0 &&
+            listen(descriptor, 32) == 0) {
+            error_code = 0;
+            break;
+        }
+        error_code = errno;
+        close(descriptor);
+        descriptor = -1;
+    }
+    freeaddrinfo(addresses);
+    if (descriptor < 0) {
+        char detail[192];
+        const char *message = error_code == 0 ? "bind failed" : strerror(error_code);
+        int written = snprintf(detail, sizeof(detail), "stream_socket_server(): unable to bind tcp socket: %s", message);
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, error_code, message);
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fdopen(descriptor, "r+");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(descriptor);
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): unable to open socket stream", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, saved_errno, strerror(saved_errno));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    free(uri);
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
+    free(host);
+    free(service);
+    return result;
+#endif
 }
 
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
@@ -146150,12 +146569,113 @@ static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const 
 #endif
 }
 
+static char *ptn_fsockopen_tcp_address(PtnStringOperand hostname, int64_t port) {
+    const char *prefix = "tcp://";
+    size_t prefix_len = strlen(prefix);
+    int has_tcp_prefix = hostname.len >= prefix_len && memcmp(hostname.data, prefix, prefix_len) == 0;
+    if (has_tcp_prefix) {
+        PtnStringOperand borrowed = hostname;
+        char *parsed_host = NULL;
+        char *parsed_service = NULL;
+        if (ptn_stream_socket_address_parse_tcp(borrowed, &parsed_host, &parsed_service)) {
+            free(parsed_host);
+            free(parsed_service);
+            return ptn_duplicate_string_len(hostname.data, hostname.len);
+        }
+        if (port < 0 || port > 65535) {
+            return NULL;
+        }
+        int needed = snprintf(NULL, 0, "%.*s:%lld", (int)hostname.len, hostname.data, (long long)port);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *address = malloc((size_t)needed + 1);
+        if (address == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(address, (size_t)needed + 1, "%.*s:%lld", (int)hostname.len, hostname.data, (long long)port);
+        if (written < 0 || written != needed) {
+            free(address);
+            ptn_abort_out_of_memory();
+        }
+        return address;
+    }
+
+    if (port < 0 || port > 65535) {
+        return NULL;
+    }
+    int needed = snprintf(NULL, 0, "tcp://%.*s:%lld", (int)hostname.len, hostname.data, (long long)port);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *address = malloc((size_t)needed + 1);
+    if (address == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(address, (size_t)needed + 1, "tcp://%.*s:%lld", (int)hostname.len, hostname.data, (long long)port);
+    if (written < 0 || written != needed) {
+        free(address);
+        ptn_abort_out_of_memory();
+    }
+    return address;
+}
+
+static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "fsockopen", 1, "hostname", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t port = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? ptn_internal_expect_integer_arg(runtime, "fsockopen", 2, "port", args[1], line)
+        : -1;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    char *address = ptn_fsockopen_tcp_address(hostname, port);
+    ptn_string_operand_free(hostname);
+    if (address == NULL) {
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 4 ? args[3] : ptn_null(), ptn_string("unsupported socket address"));
+        return ptn_bool(0);
+    }
+    PtnStringOperand address_operand = {
+        .data = address,
+        .owned = NULL,
+        .len = strlen(address),
+    };
+    PtnValue result = ptn_stream_socket_client_open_tcp(
+        runtime,
+        "fsockopen",
+        address_operand,
+        argc >= 3 ? args[2] : ptn_null(),
+        argc >= 4 ? args[3] : ptn_null(),
+        line
+    );
+    free(address);
+    return result;
+}
+
 static int ptn_stream_socket_server_path_limit(int abstract);
 
 static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "stream_socket_client", 1, "address", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    const char *tcp_prefix = "tcp://";
+    size_t tcp_prefix_len = strlen(tcp_prefix);
+    if (address.len >= tcp_prefix_len && memcmp(address.data, tcp_prefix, tcp_prefix_len) == 0) {
+        PtnValue result = ptn_stream_socket_client_open_tcp(
+            runtime,
+            "stream_socket_client",
+            address,
+            argc >= 2 ? args[1] : ptn_null(),
+            argc >= 3 ? args[2] : ptn_null(),
+            line
+        );
+        ptn_string_operand_free(address);
+        return result;
     }
 #if !defined(_WIN32)
     const char *prefix = NULL;
@@ -146512,6 +147032,13 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    const char *tcp_prefix = "tcp://";
+    size_t tcp_prefix_len = strlen(tcp_prefix);
+    if (address.len >= tcp_prefix_len && memcmp(address.data, tcp_prefix, tcp_prefix_len) == 0) {
+        PtnValue result = ptn_stream_socket_server_open_tcp(runtime, address, argc, args, line);
+        ptn_string_operand_free(address);
+        return result;
+    }
 #if defined(_WIN32)
     ptn_string_operand_free(address);
     ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): not supported on this platform", line);
@@ -146603,6 +147130,17 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
 #endif
 }
 
+static int ptn_stream_resource_is_socket_like(PtnResource *resource) {
+    if (resource == NULL || resource->stream_uri == NULL) {
+        return 0;
+    }
+    const char *uri = resource->stream_uri;
+    return ptn_ascii_case_has_prefix(uri, "tcp://") ||
+        ptn_ascii_case_has_prefix(uri, "udp://") ||
+        ptn_ascii_case_has_prefix(uri, "unix://") ||
+        ptn_ascii_case_has_prefix(uri, "udg://");
+}
+
 static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_blocking", args[0], line);
@@ -146632,6 +147170,48 @@ static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t arg
         flags |= O_NONBLOCK;
     }
     return ptn_bool(fcntl(fd, F_SETFL, flags) == 0);
+#endif
+}
+
+static PtnValue ptn_internal_stream_set_timeout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_timeout", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t seconds = ptn_internal_expect_integer_arg(runtime, "stream_set_timeout", 2, "seconds", args[1], line);
+    int64_t microseconds = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "stream_set_timeout", 3, "microseconds", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (seconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "stream_set_timeout(): Argument #2 ($seconds) must be greater than or equal to 0");
+        return ptn_null();
+    }
+    if (microseconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "stream_set_timeout(): Argument #3 ($microseconds) must be greater than or equal to 0");
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)resource;
+    (void)seconds;
+    (void)microseconds;
+    return ptn_bool(0);
+#else
+    if (resource->stream == NULL || !ptn_stream_resource_is_socket_like(resource)) {
+        return ptn_bool(0);
+    }
+    int fd = fileno(resource->stream);
+    if (fd < 0) {
+        return ptn_bool(0);
+    }
+    struct timeval timeout;
+    timeout.tv_sec = (time_t)seconds;
+    timeout.tv_usec = (suseconds_t)microseconds;
+    int receive_ok = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0;
+    int send_ok = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == 0;
+    return ptn_bool(receive_ok && send_ok);
 #endif
 }
 
@@ -148581,6 +149161,33 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
     return result;
 }
 
+static int ptn_try_open_plain_gz_read_stream(const char *path, const char *mode, PtnValue *out) {
+    if (!ptn_zlib_stream_mode_can_read(mode) || ptn_zlib_stream_mode_can_write(mode)) {
+        return 0;
+    }
+    FILE *stream = fopen(path, "rb");
+    if (stream == NULL) {
+        return 0;
+    }
+    unsigned char header[2] = { 0, 0 };
+    size_t header_len = fread(header, 1, sizeof(header), stream);
+    if (ferror(stream)) {
+        fclose(stream);
+        return 0;
+    }
+    if (header_len == sizeof(header) && header[0] == 0x1f && header[1] == 0x8b) {
+        fclose(stream);
+        errno = EIO;
+        return 0;
+    }
+    if (fseek(stream, 0, SEEK_SET) != 0) {
+        fclose(stream);
+        return 0;
+    }
+    *out = ptn_resource(ptn_resource_new_stream(stream, path, mode));
+    return 1;
+}
+
 static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "gzopen", 1, "filename", args[0], line);
     if (path == NULL) {
@@ -148648,6 +149255,11 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
     PtnValue stream;
     int opened = ptn_try_open_zlib_path_stream(path, path, mode, -1, &stream);
     if (opened > 0) {
+        free(mode);
+        free(path);
+        return stream;
+    }
+    if (opened < 0 && ptn_try_open_plain_gz_read_stream(path, mode, &stream)) {
         free(mode);
         free(path);
         return stream;
@@ -171358,6 +171970,7 @@ static PtnValue ptn_internal_fscanf(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -171391,6 +172004,8 @@ static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_pclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_popen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -171429,6 +172044,7 @@ static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t 
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_set_chunk_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_set_timeout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -171879,6 +172495,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "forward_static_call_array", 2, 2, ptn_internal_forward_static_call_array },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fpassthru", 1, 1, ptn_internal_fpassthru },
+        { "fsockopen", 1, 5, ptn_internal_fsockopen },
         { "pfsockopen", 1, 5, ptn_internal_pfsockopen },
         { "fpow", 2, 2, ptn_internal_fpow },
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
@@ -172337,6 +172954,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "parse_ini_string", 1, 3, ptn_internal_parse_ini_string },
         { "parse_url", 1, 2, ptn_internal_parse_url },
         { "passthru", 1, 2, ptn_internal_passthru },
+        { "pclose", 1, 1, ptn_internal_pclose },
         { "password_get_info", 1, 1, ptn_internal_password_get_info },
         { "password_hash", 2, 3, ptn_internal_password_hash },
         { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
@@ -172364,6 +172982,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "pdo_drivers", 0, 0, ptn_internal_pdo_drivers },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
+        { "popen", 2, 2, ptn_internal_popen },
         { "pow", 2, 2, ptn_internal_pow },
         { "preg_filter", 3, 5, ptn_internal_preg_filter },
         { "preg_grep", 2, 3, ptn_internal_preg_grep },
@@ -172533,6 +173152,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_select", 4, 6, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
         { "stream_set_chunk_size", 2, 2, ptn_internal_stream_set_chunk_size },
+        { "stream_set_timeout", 2, 3, ptn_internal_stream_set_timeout },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
