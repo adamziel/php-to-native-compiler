@@ -54690,6 +54690,55 @@ echo $error->message, "\n";
 }
 
 #[test]
+fn compile_dom_html_document_implied_option_and_head_whitespace_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-document-implied-option-head-whitespace");
+    fs::create_dir_all(&root).unwrap();
+    let fixture = root.join("parser-warning-option.html");
+    fs::write(
+        &fixture,
+        "<title>foo</title>\n<datalist id=\"fruits\">\n    <option value=\"Apple\">\n    <option value=\"Banana\">\n    <option value=\"Pear\">\n</datalist>\n<p>error</>\n",
+    )
+    .unwrap();
+    let input = root.join("dom-html-document-implied-option-head-whitespace.php");
+    let output = root.join("dom-html-document-implied-option-head-whitespace-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$html = file_get_contents({});
+$expected = "<html><head><title>foo</title>\n</head><body><datalist id=\"fruits\">\n    <option value=\"Apple\">\n    </option><option value=\"Banana\">\n    </option><option value=\"Pear\">\n</option></datalist>\n<p>error</p></body></html>";
+$fromFile = Dom\HTMLDocument::createFromFile({}, LIBXML_NOERROR);
+$fromString = Dom\HTMLDocument::createFromString($html, LIBXML_NOERROR);
+var_dump($fromFile->saveHtml() === $expected);
+var_dump($fromString->saveHtml() === $expected);
+"#,
+            php_string_literal(&fixture),
+            php_string_literal(&fixture)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_normalize_root_whitespace"));
+    assert!(c_source.contains("ptn_dom_html_direct_element_named"));
+}
+
+#[test]
 fn compile_dom_html_document_encoding_bom_override_and_eof_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-document-encoding-bom-override-eof");
     fs::create_dir_all(&root).unwrap();

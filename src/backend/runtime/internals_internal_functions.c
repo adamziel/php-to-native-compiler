@@ -133025,6 +133025,7 @@ static PtnValue ptn_libxml_error_object(PtnRuntime *runtime, const PtnLibxmlStor
 }
 
 static void ptn_dom_html_store_parser_error(
+    PtnRuntime *runtime,
     const char *error_kind,
     const char *error_name,
     const char *display_uri,
@@ -133032,9 +133033,6 @@ static void ptn_dom_html_store_parser_error(
     int column_start,
     int column_end
 ) {
-    if (!ptn_libxml_internal_errors) {
-        return;
-    }
     const char *uri = display_uri == NULL || display_uri[0] == '\0' ? "Entity" : display_uri;
     int needed = column_end > column_start
         ? snprintf(
@@ -133091,7 +133089,31 @@ static void ptn_dom_html_store_parser_error(
         free(message);
         ptn_abort_out_of_memory();
     }
-    ptn_libxml_store_error_fields(2, 1, column_start, line, message, uri);
+    if (ptn_libxml_internal_errors) {
+        ptn_libxml_store_error_fields(2, 1, column_start, line, message, uri);
+    } else if (runtime != NULL && !ptn_dom_xml_parse_suppress_warnings) {
+        const char *function_name = ptn_dom_xml_parse_warning_function_name == NULL
+            ? "DOMDocument::loadXML"
+            : ptn_dom_xml_parse_warning_function_name;
+        int warning_needed = snprintf(NULL, 0, "%s(): %s", function_name, message);
+        if (warning_needed < 0) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        char *warning = malloc((size_t)warning_needed + 1);
+        if (warning == NULL) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        int warning_written = snprintf(warning, (size_t)warning_needed + 1, "%s(): %s", function_name, message);
+        if (warning_written < 0 || warning_written != warning_needed) {
+            free(warning);
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, ptn_dom_xml_parse_warning_php_line);
+        free(warning);
+    }
     free(message);
 }
 
@@ -133106,13 +133128,13 @@ static size_t ptn_dom_html_find_doctype_offset(const char *data, size_t len) {
 }
 
 static void ptn_dom_html_store_modeled_parser_errors(
+    PtnRuntime *runtime,
     const char *data,
     size_t len,
     const char *display_uri,
     int options
 ) {
-    if (!ptn_libxml_internal_errors ||
-        (options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0 ||
+    if ((options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0 ||
         data == NULL ||
         len == 0) {
         return;
@@ -133126,6 +133148,7 @@ static void ptn_dom_html_store_modeled_parser_errors(
             int line = ptn_xml_line_map_line_for_offset(&line_map, i + 2);
             int column = ptn_xml_line_map_column_for_offset(&line_map, i + 2);
             ptn_dom_html_store_parser_error(
+                runtime,
                 "tokenizer",
                 "missing-end-tag-name",
                 display_uri,
@@ -133155,6 +133178,7 @@ static void ptn_dom_html_store_modeled_parser_errors(
                 range_end = name_end - 1;
             } else {
                 ptn_dom_html_store_parser_error(
+                    runtime,
                     "tokenizer",
                     "invalid-first-character-of-tag-name",
                     display_uri,
@@ -133173,6 +133197,7 @@ static void ptn_dom_html_store_modeled_parser_errors(
             ? ptn_xml_line_map_column_for_offset(&line_map, range_end)
             : column_start;
         ptn_dom_html_store_parser_error(
+            runtime,
             "tree",
             "unexpected-token-in-initial-mode",
             display_uri,
@@ -136025,7 +136050,11 @@ static void ptn_xml_document_wrap_implied_html_body(PtnXmlNode *document) {
         }
         if (ptn_xml_node_is_document_whitespace(child)) {
             ptn_xml_detach_node(child);
-            if (head_from_source && body == NULL && head_body_whitespace == NULL) {
+            if (head != NULL && !head_from_source && body == NULL) {
+                ptn_xml_append_child(head, child);
+            } else if (body != NULL) {
+                ptn_xml_append_child(body, child);
+            } else if (head_from_source && body == NULL && head_body_whitespace == NULL) {
                 head_body_whitespace = child;
             }
             continue;
@@ -136729,6 +136758,18 @@ static int ptn_xml_parse_document_into_mode_with_recover(
                 }
             } else if (!html_mode && stack_len > 1) {
                 stack_len--;
+            } else if (html_mode && !has_closing_name && stack_len > 1) {
+                if (ptn_dom_html_direct_element_named(stack[stack_len - 1], "p")) {
+                    stack_len--;
+                }
+                if (pos < len && data[pos] == '\r') {
+                    pos++;
+                    if (pos < len && data[pos] == '\n') {
+                        pos++;
+                    }
+                } else if (pos < len && data[pos] == '\n') {
+                    pos++;
+                }
             }
             free(closing_name);
             continue;
@@ -136754,6 +136795,12 @@ static int ptn_xml_parse_document_into_mode_with_recover(
         }
         if (pos < len && data[pos] == '>') {
             pos++;
+        }
+        if (html_mode &&
+            ptn_dom_html_direct_element_named(element, "option") &&
+            stack_len > 1 &&
+            ptn_dom_html_direct_element_named(stack[stack_len - 1], "option")) {
+            stack_len--;
         }
         ptn_xml_append_child(stack[stack_len - 1], element);
         ptn_xml_resolve_namespace_recursive(element);
@@ -141533,13 +141580,13 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
         html_document,
         !html_document && ((options & PTN_LIBXML_RECOVER) != 0)
     );
-    free(parse_data);
     if (ok && !html_document) {
         ptn_xml_document_mark_duplicate_xml_ids(runtime, document);
     }
     if (html_document) {
-        ptn_dom_html_store_modeled_parser_errors(source.data, source.len, "Entity", (int)options);
+        ptn_dom_html_store_modeled_parser_errors(runtime, parse_source, parse_len, "Entity", (int)options);
     }
+    free(parse_data);
     ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
     ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
     ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
@@ -141735,8 +141782,8 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
         size_t parse_len = 0;
         char *parse_data = ptn_dom_html_prepare_source_for_parse(document, (const char *)data, data_len, !has_override_encoding, &parse_len);
         int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_data, parse_len, 1);
+        ptn_dom_html_store_modeled_parser_errors(runtime, parse_data, parse_len, path, (int)options);
         free(parse_data);
-        ptn_dom_html_store_modeled_parser_errors((const char *)data, data_len, path, (int)options);
         ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
         ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
         ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
