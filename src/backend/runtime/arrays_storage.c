@@ -1275,7 +1275,6 @@ static PTN_UNUSED void ptn_runtime_push_owned_temporary_root(
     root->temporary_roots[root->temporary_roots_len++] = *value;
     value->owned = 0;
     value->by_ref_return_fallback = 0;
-    value->by_ref_argument_source_disabled = 0;
     value->from_string_offset = 0;
 }
 

@@ -26470,7 +26470,9 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String, full_internal_
     );
     out.push_str("        return NULL;\n");
     out.push_str("    }\n");
-    out.push_str("    if (args[0].type != PTN_REFERENCE) {\n");
+    out.push_str(
+        "    if (args[0].type != PTN_REFERENCE || !ptn_value_is_by_ref_argument_source(args[0])) {\n",
+    );
     out.push_str("        PtnValue first = ptn_value_deref(args[0]);\n");
     out.push_str("        if (first.type != PTN_ARRAY) {\n");
     out.push_str("            return NULL;\n");
@@ -54571,9 +54573,18 @@ impl ValueEmitter {
         argument_index: usize,
         argument: &ValueExpr,
         line: usize,
+        disable_by_ref_argument_source: bool,
     ) -> String {
         if !value_needs_runtime_by_ref_argument_check(argument) {
-            return self.emit_dynamic_call_argument(out, argument);
+            let temp = self.emit_dynamic_call_argument(out, argument);
+            if disable_by_ref_argument_source {
+                out.push_str("    ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_value_disable_by_ref_argument_source(");
+                out.push_str(&temp);
+                out.push_str(");\n");
+            }
+            return temp;
         }
 
         let mode_temp = self.next_temp();
@@ -54647,9 +54658,15 @@ impl ValueEmitter {
             );
             out.push_str("        ");
             out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(&by_ref_temp);
-            out.push_str(";\n");
+            if disable_by_ref_argument_source {
+                out.push_str(" = ptn_value_disable_by_ref_argument_source(");
+                out.push_str(&by_ref_temp);
+                out.push_str(");\n");
+            } else {
+                out.push_str(" = ");
+                out.push_str(&by_ref_temp);
+                out.push_str(";\n");
+            }
         }
 
         out.push_str("    } else if (");
@@ -55624,6 +55641,7 @@ impl ValueEmitter {
                 argument_index - 1,
                 argument,
                 line,
+                true,
             );
             if value_is_array_dim_reference_target(argument) {
                 unwrap_array_dim_reference_temps.push(temp.clone());
@@ -57114,6 +57132,7 @@ impl ValueEmitter {
                 argument_index,
                 argument,
                 line,
+                false,
             ));
         }
         let args_temp = self.next_temp();
@@ -57968,6 +57987,7 @@ impl ValueEmitter {
                 argument_index,
                 argument,
                 line,
+                false,
             );
             if value_is_array_dim_reference_target(argument) {
                 unwrap_array_dim_reference_temps.push(temp.clone());
