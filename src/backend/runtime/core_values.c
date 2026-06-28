@@ -1452,6 +1452,12 @@ typedef struct {
     int64_t error_reporting;
     int display_errors;
     int html_errors;
+    char *html_errors_ini_value;
+    int last_error_set;
+    int64_t last_error_type;
+    char *last_error_message;
+    char *last_error_file;
+    size_t last_error_line;
     int has_error_handler;
     PtnValue error_handler;
     int64_t error_handler_levels;

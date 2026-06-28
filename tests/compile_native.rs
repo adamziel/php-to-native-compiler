@@ -76881,6 +76881,92 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_error_get_last_tracks_last_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-phpc-error-get-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-get-last.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(error_get_last());\n\
+try { var_dump(error_get_last(true)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(error_get_last());\n\
+$a = $missing;\n\
+$last = error_get_last();\n\
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("NULL\nerror_get_last() expects exactly 0 arguments, 1 given\nNULL\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Undefined variable $missing"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(2)\nstring(27) \"Undefined variable $missing\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(18) \"error-get-last.php\"\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_ini_set_accepts_scalar_value_types_to_native_binary() {
+    let root = temp_dir("ptn-phpc-ini-set-scalar-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-set-scalar-types.php");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+ini_set('docref_root', null);\n\
+var_dump(ini_get('docref_root'));\n\
+ini_set('html_errors', true);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('html_errors', false);\n\
+var_dump(ini_get('html_errors'));\n\
+ini_set('precision', 6);\n\
+var_dump(ini_get('precision'));\n\
+ini_set('user_agent', 3.14);\n\
+var_dump(ini_get('user_agent'));\n\
+try { ini_set('foo', []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(1) \"1\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"6\"\n",
+            "string(4) \"3.14\"\n",
+            "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_zend_enable_gc_ini_controls_gc_enabled_state() {
     let root = temp_dir("ptn-phpc-zend-enable-gc-ini");
     fs::create_dir_all(&root).unwrap();

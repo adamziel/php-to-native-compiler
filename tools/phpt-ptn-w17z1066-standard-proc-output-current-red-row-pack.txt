@@ -1,0 +1,15 @@
+# ptn-w17z.1066 exact current-red standard general_functions row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T194602Z.tsv
+# bucket: standard-proc-output-current-red rows=12
+ext/standard/tests/general_functions/proc_open_array.phpt
+ext/standard/tests/general_functions/url_rewriting_basic3.phpt
+ext/standard/tests/general_functions/proc_open_sockets2.phpt
+ext/standard/tests/general_functions/bug60723.phpt
+ext/standard/tests/general_functions/var_export_basic5.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic2.phpt
+ext/standard/tests/general_functions/var_export_error3.phpt
+ext/standard/tests/general_functions/error_get_last.phpt
+ext/standard/tests/general_functions/type.phpt
+ext/standard/tests/general_functions/ini_get_all_builtin_default_value_null.phpt
+ext/standard/tests/general_functions/debug_zval_dump_refs.phpt
+ext/standard/tests/general_functions/ini_set_types.phpt

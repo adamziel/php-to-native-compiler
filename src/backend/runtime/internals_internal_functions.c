@@ -102757,6 +102757,17 @@ static int ptn_ini_set_value_type_is_allowed(PtnValue value) {
     return 0;
 }
 
+static char *ptn_ini_value_to_string(PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_NULL || (resolved.type == PTN_BOOL && !resolved.as.boolean)) {
+        return ptn_duplicate_string("");
+    }
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    char *text = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
+    return text;
+}
+
 static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
@@ -103093,7 +103104,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
         PtnRuntime *root = ptn_runtime_root(runtime);
-        *out = ptn_ini_bool_string(root == NULL ? runtime->diagnostics.html_errors : root->diagnostics.html_errors);
+        const char *value = root == NULL
+            ? runtime->diagnostics.html_errors_ini_value
+            : root->diagnostics.html_errors_ini_value;
+        *out = ptn_owned_string(ptn_duplicate_string(value == NULL ? "0" : value));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "intl.error_level")) {
@@ -104359,8 +104373,14 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         if (root == NULL) {
             root = runtime;
         }
-        PtnValue previous = ptn_ini_bool_string(root->diagnostics.html_errors);
-        root->diagnostics.html_errors = ptn_is_truthy(args[1]);
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(
+            root->diagnostics.html_errors_ini_value == NULL ? "0" : root->diagnostics.html_errors_ini_value
+        ));
+        char *next = ptn_ini_value_to_string(args[1]);
+        free(root->diagnostics.html_errors_ini_value);
+        root->diagnostics.html_errors_ini_value = ptn_duplicate_string(next);
+        root->diagnostics.html_errors = ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]));
+        free(next);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -104386,11 +104406,9 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (ptn_string_operand_ascii_case_equal(option, "docref_root")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_docref_root(runtime)));
-        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
-        char *next = ptn_duplicate_string_len(value.data, value.len);
+        char *next = ptn_ini_value_to_string(args[1]);
         ptn_runtime_set_docref_root(runtime, next);
         free(next);
-        ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -104424,11 +104442,9 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
-        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
-        char *next = ptn_duplicate_string_len(value.data, value.len);
+        char *next = ptn_ini_value_to_string(args[1]);
         ptn_runtime_set_user_agent(runtime, next);
         free(next);
-        ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -105012,6 +105028,41 @@ static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const Ptn
     int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_error_get_last(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || !root->diagnostics.last_error_set) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("type"),
+        ptn_int(root->diagnostics.last_error_type)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("message"),
+        ptn_owned_string(ptn_duplicate_string(root->diagnostics.last_error_message == NULL ? "" : root->diagnostics.last_error_message))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("file"),
+        ptn_owned_string(ptn_duplicate_string(root->diagnostics.last_error_file == NULL ? "" : root->diagnostics.last_error_file))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("line"),
+        ptn_int((int64_t)root->diagnostics.last_error_line)
+    );
+    return result;
 }
 
 static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -172444,6 +172495,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "enum_exists", 1, 2, ptn_internal_enum_exists },
         { "end", 1, 1, ptn_internal_end },
+        { "error_get_last", 0, 0, ptn_internal_error_get_last },
         { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
@@ -173518,6 +173570,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "define") ||
         ptn_ascii_case_equal(name, "defined") ||
         ptn_ascii_case_equal(name, "enum_exists") ||
+        ptn_ascii_case_equal(name, "error_get_last") ||
         ptn_ascii_case_equal(name, "extension_loaded") ||
         ptn_ascii_case_equal(name, "function_exists") ||
         ptn_ascii_case_equal(name, "gc_collect_cycles") ||
