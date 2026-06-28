@@ -82501,7 +82501,48 @@ static void ptn_mb_iconv_ensure_output_capacity(
     }
 }
 
-static size_t ptn_mb_invalid_input_skip(const char *encoding, size_t in_left, int incomplete) {
+static int ptn_mb_iso2022jp_double_byte_state_at(const char *input_start, const char *cursor) {
+    int double_byte = 0;
+    const char *p = input_start;
+    while (p < cursor) {
+        unsigned char byte = (unsigned char)*p;
+        if (byte == 0x1b && p + 2 < cursor) {
+            if (p[1] == '(') {
+                unsigned char final = (unsigned char)p[2];
+                if (final == 'B' || final == 'H' || final == 'I' || final == 'J') {
+                    double_byte = 0;
+                    p += 3;
+                    continue;
+                }
+            } else if (p[1] == '$') {
+                unsigned char final = (unsigned char)p[2];
+                if (final == '@' || final == 'B') {
+                    double_byte = 1;
+                    p += 3;
+                    continue;
+                }
+                if (final == '(' && p + 3 < cursor) {
+                    unsigned char nested = (unsigned char)p[3];
+                    if (nested == '@' || nested == 'B' || nested == 'D') {
+                        double_byte = 1;
+                        p += 4;
+                        continue;
+                    }
+                }
+            }
+        }
+        p += double_byte && p + 1 < cursor ? 2 : 1;
+    }
+    return double_byte;
+}
+
+static size_t ptn_mb_invalid_input_skip(
+    const char *encoding,
+    const char *input_start,
+    const char *in_ptr,
+    size_t in_left,
+    int incomplete
+) {
     if (in_left == 0) {
         return 0;
     }
@@ -82527,6 +82568,16 @@ static size_t ptn_mb_invalid_input_skip(const char *encoding, size_t in_left, in
         ptn_ascii_case_equal(encoding, "byte4be") ||
         ptn_ascii_case_equal(encoding, "byte4le")) {
         return in_left >= 4 ? 4 : in_left;
+    }
+    if ((ptn_ascii_case_equal(encoding, "ISO-2022-JP") ||
+         ptn_ascii_case_equal(encoding, "ISO-2022-JP-2")) &&
+        input_start != NULL &&
+        in_ptr != NULL &&
+        ptn_mb_iso2022jp_double_byte_state_at(input_start, in_ptr)) {
+        unsigned char byte = (unsigned char)in_ptr[0];
+        if (byte >= 0x21 && byte <= 0x7e) {
+            return in_left >= 2 ? 2 : in_left;
+        }
     }
     return 1;
 }
@@ -82716,7 +82767,7 @@ static char *ptn_iconv_convert_alloc(
             continue;
         }
         if (saved_errno == EILSEQ && ignore_errors) {
-            size_t skip = ptn_mb_invalid_input_skip(from_encoding, in_left, 0);
+            size_t skip = ptn_mb_invalid_input_skip(from_encoding, convert_input, in_ptr, in_left, 0);
             if (skip == 0) {
                 *status = PTN_ICONV_CONVERT_ILLEGAL;
                 iconv_close(cd);
@@ -87081,7 +87132,7 @@ static char *ptn_mb_iconv_convert_alloc_options(
         char *dynamic_replacement = NULL;
         const char *append_replacement = replacement;
         size_t append_replacement_len = replacement_len;
-        size_t skip = ptn_mb_invalid_input_skip(from_encoding, in_left, errno == EINVAL);
+        size_t skip = ptn_mb_invalid_input_skip(from_encoding, input, in_ptr, in_left, errno == EINVAL);
         uint32_t source_cp = 0;
         size_t source_skip = 0;
         if (ptn_mb_decode_source_codepoint_for_substitution(from_encoding, in_ptr, in_left, &source_cp, &source_skip)) {
@@ -88197,9 +88248,58 @@ static void ptn_mb_jis_append_ascii_escape(PtnStringBuffer *output) {
 static char *ptn_mb_jis_normalize_to_iso2022jp2_alloc(const char *input, size_t input_len, size_t *output_len) {
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
+    int state = 0;
     size_t i = 0;
     while (i < input_len) {
         unsigned char byte = (unsigned char)input[i];
+        if (byte == 0x1b) {
+            if (i + 2 < input_len && input[i + 1] == '(') {
+                unsigned char final = (unsigned char)input[i + 2];
+                if (final == 'H') {
+                    ptn_mb_jis_append_ascii_escape(&output);
+                    state = 0;
+                    i += 3;
+                    continue;
+                }
+                if (final == 'B' || final == 'J' || final == 'I') {
+                    ptn_string_buffer_append_len(&output, input + i, 3);
+                    state = final == 'I' ? 1 : 0;
+                    i += 3;
+                    continue;
+                }
+            }
+            if (i + 2 < input_len && input[i + 1] == '$') {
+                unsigned char final = (unsigned char)input[i + 2];
+                if (final == '@' || final == 'B') {
+                    ptn_string_buffer_append_len(&output, input + i, 3);
+                    state = 2;
+                    i += 3;
+                    continue;
+                }
+                if (final == '(' && i + 3 < input_len) {
+                    unsigned char nested = (unsigned char)input[i + 3];
+                    if (nested == '@' || nested == 'B') {
+                        ptn_string_buffer_append_char(&output, '\x1b');
+                        ptn_string_buffer_append_char(&output, '$');
+                        ptn_string_buffer_append_char(&output, (char)nested);
+                        state = 2;
+                        i += 4;
+                        continue;
+                    }
+                    if (nested == 'D') {
+                        ptn_string_buffer_append_len(&output, input + i, 4);
+                        state = 3;
+                        i += 4;
+                        continue;
+                    }
+                }
+            }
+        }
+        if (state == 2 || state == 3) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            i++;
+            continue;
+        }
         if (byte >= 0xa1 && byte <= 0xdf) {
             ptn_string_buffer_append_len(&output, "\x1b(I", 3);
             ptn_string_buffer_append_char(&output, (char)(byte - 0x80));
@@ -88224,26 +88324,75 @@ static char *ptn_mb_jis_normalize_to_iso2022jp2_alloc(const char *input, size_t 
         }
         if (byte == 0x0f) {
             ptn_mb_jis_append_ascii_escape(&output);
+            state = 0;
             i++;
             continue;
         }
+        ptn_string_buffer_append_char(&output, (char)byte);
+        i++;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static void ptn_mb_jis_append_state_escape(PtnStringBuffer *output, int state) {
+    if (state == 1) {
+        ptn_string_buffer_append_len(output, "\x1b(I", 3);
+    } else if (state == 2) {
+        ptn_string_buffer_append_len(output, "\x1b$B", 3);
+    } else if (state == 3) {
+        ptn_string_buffer_append_len(output, "\x1b$(D", 4);
+    }
+}
+
+static void ptn_mb_jis_append_replacement_in_ascii(
+    PtnStringBuffer *output,
+    const char *replacement,
+    size_t replacement_len,
+    int state
+) {
+    if (replacement_len == 0) {
+        return;
+    }
+    if (state != 0) {
+        ptn_mb_jis_append_ascii_escape(output);
+    }
+    ptn_string_buffer_append_len(output, replacement, replacement_len);
+    if (state != 0) {
+        ptn_mb_jis_append_state_escape(output, state);
+    }
+}
+
+static char *ptn_mb_jis_collapse_invalid_double_trails_alloc(
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    int state = 0;
+    size_t i = 0;
+    while (i < input_len) {
+        unsigned char byte = (unsigned char)input[i];
         if (byte == 0x1b) {
             if (i + 2 < input_len && input[i + 1] == '(') {
                 unsigned char final = (unsigned char)input[i + 2];
-                if (final == 'H') {
-                    ptn_mb_jis_append_ascii_escape(&output);
-                    i += 3;
-                    continue;
+                if (final == 'B' || final == 'H' || final == 'J') {
+                    state = 0;
+                } else if (final == 'I') {
+                    state = 1;
                 }
-                if (final == 'B' || final == 'J' || final == 'I') {
-                    ptn_string_buffer_append_len(&output, input + i, 3);
-                    i += 3;
-                    continue;
-                }
+                ptn_string_buffer_append_len(&output, input + i, 3);
+                i += 3;
+                continue;
             }
             if (i + 2 < input_len && input[i + 1] == '$') {
                 unsigned char final = (unsigned char)input[i + 2];
                 if (final == '@' || final == 'B') {
+                    state = 2;
                     ptn_string_buffer_append_len(&output, input + i, 3);
                     i += 3;
                     continue;
@@ -88251,23 +88400,211 @@ static char *ptn_mb_jis_normalize_to_iso2022jp2_alloc(const char *input, size_t 
                 if (final == '(' && i + 3 < input_len) {
                     unsigned char nested = (unsigned char)input[i + 3];
                     if (nested == '@' || nested == 'B') {
-                        ptn_string_buffer_append_char(&output, '\x1b');
-                        ptn_string_buffer_append_char(&output, '$');
-                        ptn_string_buffer_append_char(&output, (char)nested);
+                        state = 2;
+                        ptn_string_buffer_append_len(&output, input + i, 4);
                         i += 4;
                         continue;
                     }
                     if (nested == 'D') {
+                        state = 3;
                         ptn_string_buffer_append_len(&output, input + i, 4);
                         i += 4;
                         continue;
                     }
                 }
             }
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_mb_jis_append_replacement_in_ascii(&output, replacement, replacement_len, state);
+            if (i + 2 == input_len && (input[i + 1] == '$' || input[i + 1] == '(')) {
+                i += 2;
+            } else {
+                i++;
+            }
+            continue;
+        }
+        if (state == 2 || state == 3) {
+            if (byte >= 0x21 && byte <= 0x7e) {
+                if (i + 1 < input_len) {
+                    unsigned char trail = (unsigned char)input[i + 1];
+                    if (trail >= 0x21 && trail <= 0x7e) {
+                        if (state == 3 && byte == 0x22 && trail == 0x37) {
+                            ptn_mb_jis_append_replacement_in_ascii(&output, "~", 1, state);
+                            i += 2;
+                            continue;
+                        }
+                        ptn_string_buffer_append_len(&output, input + i, 2);
+                        i += 2;
+                        continue;
+                    }
+                    if (illegal_chars != NULL) {
+                        (*illegal_chars)++;
+                    }
+                    ptn_mb_jis_append_replacement_in_ascii(&output, replacement, replacement_len, state);
+                    i += 2;
+                    continue;
+                }
+                if (illegal_chars != NULL) {
+                    (*illegal_chars)++;
+                }
+                ptn_mb_jis_append_replacement_in_ascii(&output, replacement, replacement_len, state);
+                i++;
+                continue;
+            }
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_mb_jis_append_replacement_in_ascii(&output, replacement, replacement_len, state);
+            i++;
+            continue;
+        }
+        if (byte >= 0x80) {
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_mb_jis_append_replacement_in_ascii(&output, replacement, replacement_len, state);
+            i++;
+            continue;
         }
         ptn_string_buffer_append_char(&output, (char)byte);
         i++;
     }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static int ptn_mb_jis_utf8_encode_override_at(
+    const char *input,
+    size_t input_len,
+    size_t offset,
+    const char **encoded,
+    size_t *encoded_len,
+    size_t *skip
+) {
+    if (offset + 2 < input_len &&
+        (unsigned char)input[offset] == 0xe2 &&
+        (unsigned char)input[offset + 1] == 0x88 &&
+        (unsigned char)input[offset + 2] == 0xa5) {
+        *encoded = "\x1b$B!B\x1b(B";
+        *encoded_len = 8;
+        *skip = 3;
+        return 1;
+    }
+    if (offset + 2 < input_len &&
+        (unsigned char)input[offset] == 0xef &&
+        (unsigned char)input[offset + 1] == 0xbc &&
+        (unsigned char)input[offset + 2] == 0x8d) {
+        *encoded = "\x1b$B!]\x1b(B";
+        *encoded_len = 8;
+        *skip = 3;
+        return 1;
+    }
+    if (offset + 2 < input_len &&
+        (unsigned char)input[offset] == 0xef &&
+        (unsigned char)input[offset + 1] == 0xbf &&
+        (unsigned char)input[offset + 2] == 0xa0) {
+        *encoded = "\x1b$B!q\x1b(B";
+        *encoded_len = 8;
+        *skip = 3;
+        return 1;
+    }
+    if (offset + 2 < input_len &&
+        (unsigned char)input[offset] == 0xef &&
+        (unsigned char)input[offset + 1] == 0xbf &&
+        (unsigned char)input[offset + 2] == 0xa1) {
+        *encoded = "\x1b$B!r\x1b(B";
+        *encoded_len = 8;
+        *skip = 3;
+        return 1;
+    }
+    if (offset + 2 < input_len &&
+        (unsigned char)input[offset] == 0xef &&
+        (unsigned char)input[offset + 1] == 0xbf &&
+        (unsigned char)input[offset + 2] == 0xa2) {
+        *encoded = "\x1b$B\"L\x1b(B";
+        *encoded_len = 8;
+        *skip = 3;
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_mb_jis_flush_utf8_chunk(
+    PtnStringBuffer *output,
+    const char *chunk,
+    size_t chunk_len,
+    const char *raw_target,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars
+) {
+    if (chunk_len == 0) {
+        return;
+    }
+    size_t converted_len = 0;
+    char *converted = ptn_mb_iconv_convert_alloc_options(
+        chunk,
+        chunk_len,
+        "UTF-8",
+        raw_target,
+        replacement,
+        replacement_len,
+        illegal_chars,
+        &converted_len
+    );
+    ptn_string_buffer_append_len(output, converted, converted_len);
+    free(converted);
+}
+
+static char *ptn_mb_jis_encode_utf8_with_overrides_alloc(
+    const char *input,
+    size_t input_len,
+    const char *raw_target,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t chunk_start = 0;
+    size_t offset = 0;
+    while (offset < input_len) {
+        const char *encoded = NULL;
+        size_t encoded_len = 0;
+        size_t skip = 0;
+        if (ptn_mb_jis_utf8_encode_override_at(input, input_len, offset, &encoded, &encoded_len, &skip)) {
+            ptn_mb_jis_flush_utf8_chunk(
+                &output,
+                input + chunk_start,
+                offset - chunk_start,
+                raw_target,
+                replacement,
+                replacement_len,
+                illegal_chars
+            );
+            ptn_string_buffer_append_len(&output, encoded, encoded_len);
+            offset += skip;
+            chunk_start = offset;
+            continue;
+        }
+        size_t sequence_len = 0;
+        if (ptn_mb_utf8_valid_sequence_len_at(input, input_len, offset, &sequence_len)) {
+            offset += sequence_len;
+        } else {
+            offset++;
+        }
+    }
+    ptn_mb_jis_flush_utf8_chunk(
+        &output,
+        input + chunk_start,
+        input_len - chunk_start,
+        raw_target,
+        replacement,
+        replacement_len,
+        illegal_chars
+    );
     *output_len = output.len;
     return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
 }
@@ -88417,10 +88754,21 @@ static char *ptn_mb_jis_convert_alloc_options(
     if (ptn_mb_encoding_is_jis_family(from_encoding)) {
         size_t normalized_len = 0;
         char *normalized = ptn_mb_jis_normalize_to_iso2022jp2_alloc(input, input_len, &normalized_len);
-        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
-        utf8 = ptn_mb_iconv_convert_alloc_options(
+        size_t source_replacement_len = 0;
+        char *source_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("ISO-2022-JP-2", &source_replacement_len);
+        size_t collapsed_len = 0;
+        char *collapsed = ptn_mb_jis_collapse_invalid_double_trails_alloc(
             normalized,
             normalized_len,
+            source_replacement,
+            source_replacement_len,
+            illegal_chars,
+            &collapsed_len
+        );
+        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
+        utf8 = ptn_mb_iconv_convert_alloc_options(
+            collapsed,
+            collapsed_len,
             "ISO-2022-JP-2",
             "UTF-8",
             utf8_replacement,
@@ -88428,7 +88776,9 @@ static char *ptn_mb_jis_convert_alloc_options(
             illegal_chars,
             &utf8_len
         );
+        free(source_replacement);
         free(utf8_replacement);
+        free(collapsed);
         free(normalized);
     } else if (ptn_mb_encoding_is_utf8(from_encoding)) {
         utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
@@ -88475,10 +88825,9 @@ static char *ptn_mb_jis_convert_alloc_options(
         return converted;
     }
     const char *raw_target = ptn_ascii_case_equal(to_encoding, "JIS") ? "ISO-2022-JP-2" : "ISO-2022-JP-MS";
-    char *encoded = ptn_mb_iconv_convert_alloc_options(
+    char *encoded = ptn_mb_jis_encode_utf8_with_overrides_alloc(
         utf8,
         utf8_len,
-        "UTF-8",
         raw_target,
         replacement,
         replacement_len,
@@ -88720,12 +89069,40 @@ static void ptn_mb_utf8_append_codepoint(PtnStringBuffer *buffer, uint32_t cp) {
     }
 }
 
+static int ptn_mb_jis_no_escape_fast_path_safe(PtnStringOperand input) {
+    int kana_mode = 0;
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte == 0x0e) {
+            kana_mode = 1;
+            continue;
+        }
+        if (byte == 0x0f) {
+            kana_mode = 0;
+            continue;
+        }
+        if (kana_mode) {
+            if (byte < 0x21 || byte > 0x5f) {
+                return 0;
+            }
+            continue;
+        }
+        if (byte < 0x80 || (byte >= 0xa1 && byte <= 0xdf)) {
+            continue;
+        }
+        return 0;
+    }
+    return !kana_mode;
+}
+
 static char *ptn_mb_operand_to_utf8(PtnStringOperand input, const char *encoding, size_t *utf8_len) {
     if (ptn_mb_encoding_is_utf8(encoding) || ptn_mb_encoding_is_raw(encoding) || ptn_ascii_case_equal(encoding, "ASCII")) {
         *utf8_len = input.len;
         return ptn_duplicate_string_len(input.data, input.len);
     }
-    if (ptn_ascii_case_equal(encoding, "JIS") && memchr(input.data, 0x1b, input.len) == NULL) {
+    if (ptn_ascii_case_equal(encoding, "JIS") &&
+        memchr(input.data, 0x1b, input.len) == NULL &&
+        ptn_mb_jis_no_escape_fast_path_safe(input)) {
         PtnStringBuffer output;
         ptn_string_buffer_init(&output);
         int kana_mode = 0;
@@ -89205,7 +89582,9 @@ static PtnValue ptn_mb_convert_string_operand(
         free(utf8);
         return ptn_owned_string_len(out, out_len);
     }
-    if (ptn_ascii_case_equal(from_encoding, "JIS") && memchr(input.data, 0x1b, input.len) == NULL) {
+    if (ptn_ascii_case_equal(from_encoding, "JIS") &&
+        memchr(input.data, 0x1b, input.len) == NULL &&
+        ptn_mb_jis_no_escape_fast_path_safe(input)) {
         size_t utf8_len = 0;
         char *utf8 = ptn_mb_operand_to_utf8(input, from_encoding, &utf8_len);
         if (ptn_mb_encoding_is_utf8(to_encoding)) {
