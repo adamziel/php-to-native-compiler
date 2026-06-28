@@ -55988,6 +55988,120 @@ echo $result['inline.txt']->getContent(), "\n";
 }
 
 #[test]
+fn compile_phar_build_from_iterator_get_mtime_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-iterator-mtime-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-iterator-mtime-errors.php");
+    let output = root.join("phar-iterator-mtime-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MySplFileInfo1 extends SplFileInfo {
+    public function getMTime(): int|false {
+        echo "[MTime]\n";
+        return PHP_INT_MAX;
+    }
+}
+
+class MySplFileInfo2 extends SplFileInfo {
+    public function getMTime(): int|false {
+        echo "[MTime]\n";
+        return false;
+    }
+}
+
+class MySplFileInfo3 extends SplFileInfo {
+    public function getMTime(): int|false {
+        echo "[MTime]\n";
+        throw new Error('Throwing an exception inside getMTime()');
+    }
+}
+
+class MySplFileInfo4 extends SplFileInfo {
+    #[\ReturnTypeWillChange]
+    public function getMTime(): string {
+        echo "[MTime]\n";
+        return "wrong type";
+    }
+}
+
+class MyIterator extends RecursiveDirectoryIterator {
+    public function current(): SplFileInfo {
+        static $counter = 0;
+        $counter++;
+        echo "[ Found: " . parent::current()->getPathname() . " ]\n";
+        if ($counter === 1) {
+            return new MySplFileInfo1(parent::current()->getPathname());
+        } else if ($counter === 2) {
+            return new MySplFileInfo2(parent::current()->getPathname());
+        } else if ($counter === 3) {
+            return new MySplFileInfo3(parent::current()->getPathname());
+        }
+        return new MySplFileInfo4(parent::current()->getPathname());
+    }
+}
+
+$workdir = __DIR__ . '/getMTime_errors';
+mkdir($workdir . '/content', recursive: true);
+file_put_contents($workdir . '/content/hello.txt', 'Hello world.');
+
+for ($i = 0; $i < 4; $i++) {
+    echo "--- Iteration $i ---\n";
+    try {
+        $phar = new Phar($workdir . "/test$i.phar");
+        $phar->startBuffering();
+        $phar->buildFromIterator(
+            new RecursiveIteratorIterator(
+                new MyIterator($workdir . '/content', FilesystemIterator::SKIP_DOTS)
+            ),
+            $workdir
+        );
+        $phar->stopBuffering();
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+        if ($previous = $e->getPrevious()) {
+            echo "Previous: ", $previous->getMessage(), "\n";
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("--- Iteration 0 ---\n"), "{stdout}");
+    assert!(
+        stdout.contains("Entry content/hello.txt cannot be created: timestamp is limited to 32-bit\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("--- Iteration 1 ---\n"), "{stdout}");
+    assert!(
+        stdout.contains("Entry content/hello.txt cannot be created: getMTime() must return an int\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("--- Iteration 2 ---\n"), "{stdout}");
+    assert!(
+        stdout.contains("Previous: Throwing an exception inside getMTime()\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("--- Iteration 3 ---\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_throw_entry_create_error"));
+    assert!(c_source.contains("getMTime"));
+}
+
+#[test]
 fn compile_phar_data_dispatch_and_entry_validation_to_native_binary() {
     let root = temp_dir("ptn-native-phar-data-entry-validation");
     fs::create_dir_all(&root).unwrap();

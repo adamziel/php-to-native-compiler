@@ -156292,6 +156292,21 @@ static PtnValue ptn_internal_phar_running(PtnRuntime *runtime, size_t argc, cons
     return ptn_string("");
 }
 
+static PtnValue ptn_internal_phar_intercept_file_funcs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "Phar::interceptFileFuncs() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
 static int ptn_phar_mung_server_variable_is_allowed(PtnStringOperand value) {
     return ptn_string_operand_ascii_case_equal(value, "PHP_SELF") ||
         ptn_string_operand_ascii_case_equal(value, "REQUEST_URI") ||
@@ -158429,6 +158444,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
         if (ptn_ascii_case_equal(name, "isValidPharFilename")) {
             return ptn_internal_phar_is_valid_phar_filename(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "interceptFileFuncs")) {
+            return ptn_internal_phar_intercept_file_funcs(runtime, argc, args, line);
         }
         if (ptn_ascii_case_equal(name, "loadPhar")) {
             return ptn_internal_phar_load_phar(runtime, argc, args, line);
@@ -173550,6 +173568,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Phar::getSupportedCompression", 0, 0, ptn_internal_phar_get_supported_compression },
         { "Phar::getSupportedSignatures", 0, 0, ptn_internal_phar_get_supported_signatures },
         { "Phar::isValidPharFilename", 1, 2, ptn_internal_phar_is_valid_phar_filename },
+        { "Phar::interceptFileFuncs", 0, 0, ptn_internal_phar_intercept_file_funcs },
         { "Phar::loadPhar", 1, 2, ptn_internal_phar_load_phar },
         { "Phar::mapPhar", 0, 2, ptn_internal_phar_map_phar },
         { "Phar::mount", 2, 2, ptn_internal_phar_mount },
@@ -178068,6 +178087,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getStub")
             || ptn_ascii_case_equal(method_name, "isFileFormat")
             || ptn_ascii_case_equal(method_name, "isCompressed")
+            || ptn_ascii_case_equal(method_name, "interceptFileFuncs")
             || ptn_ascii_case_equal(method_name, "key")
             || ptn_ascii_case_equal(method_name, "next")
             || ptn_ascii_case_equal(method_name, "offsetExists")
@@ -178090,6 +178110,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
+            || ptn_ascii_case_equal(method_name, "interceptFileFuncs")
             || ptn_ascii_case_equal(method_name, "loadPhar")
             || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")
@@ -179859,6 +179880,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "getSupportedCompression");
         ptn_append_method_name(result, &index, "getSupportedSignatures");
         ptn_append_method_name(result, &index, "isFileFormat");
+        ptn_append_method_name(result, &index, "interceptFileFuncs");
         ptn_append_method_name(result, &index, "isValidPharFilename");
         ptn_append_method_name(result, &index, "key");
         ptn_append_method_name(result, &index, "loadPhar");
