@@ -2562,6 +2562,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{phar_archive_ini:?}"
     );
 
+    let phar_cache_list_recursive_iterator = classify_at_relative_path(
+        "--TEST--\nphar cache-list recursive iterator\n--EXTENSIONS--\nphar\n--INI--\nphar.cache_list={PWD}/files/nophar.phar\n--FILE--\n<?php\n$p = 'phar://' . __DIR__ . '/files/nophar.phar';\nforeach (new RecursiveIteratorIterator(new Phar($p)) as $f) echo $f->getPathName(), \"\\n\";\n--EXPECT--\n",
+        "ext/phar/tests/cached_manifest_1.phpt",
+    );
+    assert_eq!(
+        phar_cache_list_recursive_iterator.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let pdo_mysql_service = classify_at_relative_path(
         "--TEST--\npdo mysql service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
         "ext/pdo_mysql/tests/service.phpt",

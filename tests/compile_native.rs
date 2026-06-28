@@ -56721,8 +56721,9 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
 
     let text_entry = b"hi\n";
     let script_entry = b"<?php echo \"from phar include\\n\"; ?>";
+    let nested_entry = b"nested\n";
     let mut manifest = Vec::new();
-    push_u32(&mut manifest, 2);
+    push_u32(&mut manifest, 3);
     push_u16(&mut manifest, 0x0011);
     push_u32(&mut manifest, 0x00010000);
     push_u32(&mut manifest, 0);
@@ -56733,6 +56734,14 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, text_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, text_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 12);
+    manifest.extend_from_slice(b"a/nested.txt");
+    push_u32(&mut manifest, nested_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, nested_entry.len() as u32);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 0);
@@ -56752,6 +56761,9 @@ $phar = new Phar(__FILE__);\n\
 var_dump($phar->getMetadata());\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 include \"phar://\" . __FILE__ . \"/script.php\";\n\
+foreach (new RecursiveIteratorIterator(new Phar(\"phar://\" . __FILE__)) as $file) {\n\
+    echo basename($file->getPathName()), \"\\n\";\n\
+}\n\
 $phar[\"test.txt\"] = \"changed\\n\";\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
@@ -56767,6 +56779,7 @@ __HALT_COMPILER(); ?>\r\n",
     push_u32(&mut source, manifest.len() as u32);
     source.extend_from_slice(&manifest);
     source.extend_from_slice(text_entry);
+    source.extend_from_slice(nested_entry);
     source.extend_from_slice(script_entry);
     fs::write(&input, source).unwrap();
 
@@ -56776,7 +56789,7 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"hi\"\nhi\nfrom phar include\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\nbool(false)\n"
+        "string(2) \"hi\"\nhi\nfrom phar include\nnested.txt\nscript.php\ntest.txt\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
