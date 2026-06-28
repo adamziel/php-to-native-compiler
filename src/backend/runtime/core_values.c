@@ -1378,6 +1378,7 @@ struct PtnStreamFilter {
     int64_t zlib_level;
     int zlib_error;
     int write_seek_mode;
+    int user_filter_invalid_callback_reported;
     int has_user_filter_object;
     PtnValue user_filter_object;
     PtnRuntime *user_filter_runtime;
