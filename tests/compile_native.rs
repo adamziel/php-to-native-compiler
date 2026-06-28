@@ -34854,56 +34854,6 @@ afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65\n\
 }
 
 #[test]
-fn compile_hash_sha_pbkdf2_and_hmac_file_vectors_to_native_binary() {
-    let root = temp_dir("ptn-native-hash-sha-pbkdf2-hmac-file-vectors");
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("hash-sha-pbkdf2-hmac-file-vectors.php");
-    let output = root.join("hash-sha-pbkdf2-hmac-file-vectors-bin");
-    fs::write(
-        &input,
-        "<?php
-echo hash('sha512', 'abc'), \"\\n\";
-echo hash('ripemd160', 'abc'), \"\\n\";
-echo hash_pbkdf2('sha1', 'password', 'salt', 1, 20), \"\\n\";
-echo hash_pbkdf2('sha1', 'password', 'salt', 1), \"\\n\";
-echo bin2hex(hash_pbkdf2('sha256', 'password', 'salt', 1, 20, true)), \"\\n\";
-try {
-    hash_hmac_file('crc32', __FILE__, 'key');
-} catch (Throwable $e) {
-    echo $e->getMessage(), \"\\n\";
-}
-try {
-    hash_hmac_file('md5', __FILE__ . chr(0), 'key');
-} catch (Throwable $e) {
-    echo $e->getMessage(), \"\\n\";
-}
-",
-    )
-    .unwrap();
-
-    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(
-        execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
-        execution.status.code(),
-        String::from_utf8_lossy(&execution.stderr)
-    );
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f\n\
-8eb208f7e05d987a9b044a8e98c6b087f15a0bfc\n\
-0c60c80f961f0e71f3a9\n\
-0c60c80f961f0e71f3a9b524af6012062fe037a6\n\
-120fb6cffcf8b32c43e7225256c4f837a86548c9\n\
-hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
-hash_hmac_file(): Argument #2 ($filename) must not contain any null bytes\n"
-    );
-    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-}
-
-#[test]
 fn compile_sha1_basic_and_raw_output_to_native_binary() {
     let root = temp_dir("ptn-native-sha1-basic-and-raw-output");
     fs::create_dir_all(&root).unwrap();

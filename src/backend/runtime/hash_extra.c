@@ -180,24 +180,6 @@ static void ptn_hash_extra_sha512_256_digest_bytes(const unsigned char *input, s
     memcpy(digest, full_digest, 32);
 }
 
-static void ptn_hash_extra_sha256_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[32]) {
-    struct sha256_ctx ctx;
-    sha256_init_ctx(&ctx);
-    if (input_len != 0) {
-        sha256_process_bytes(input, input_len, &ctx);
-    }
-    sha256_finish_ctx(&ctx, digest);
-}
-
-static void ptn_hash_extra_sha512_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[64]) {
-    struct sha512_ctx ctx;
-    sha512_init_ctx(&ctx);
-    if (input_len != 0) {
-        sha512_process_bytes(input, input_len, &ctx);
-    }
-    sha512_finish_ctx(&ctx, digest);
-}
-
 typedef struct {
     uint32_t state[4];
     uint32_t count[2];
