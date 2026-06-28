@@ -2341,6 +2341,44 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
+    let cases = [
+        (
+            "ext/spl/tests/spl_007.phpt",
+            "--TEST--\niterator apply\n--FILE--\n<?php\niterator_apply(new ArrayIterator([1]), [new Foo, 'bar']);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplTempFileObject_constructor_memory_lt1_variation.phpt",
+            "--TEST--\ntemp file object\n--FILE--\n<?php\nvar_dump(new SplTempFileObject(-1));\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/gh9883-extra.phpt",
+            "--TEST--\ntemp file string\n--FILE--\n<?php\necho new SplTempFileObject();\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug47534.phpt",
+            "--TEST--\nrecursive directory current mode\n--FILE--\n<?php\nnew RecursiveDirectoryIterator(__DIR__, FileSystemIterator::CURRENT_AS_PATHNAME);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_028.phpt",
+            "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt",
+            "--TEST--\nautoload validation\n--FILE--\n<?php\nspl_autoload_register('spl_autoload_call');\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
     let cases = [
         (
