@@ -1430,7 +1430,7 @@ ptn_phpt_first_unsupported_language_surface() {
             return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|splfixedarray|spltempfileobject)([^[:alnum:]_]|$)/
         }
         function ptn_has_unmodeled_spl_function(line) {
-            return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|spl_classes)[[:space:]]*\(/ ||
+            return line ~ /(^|[^[:alnum:]_$\\])(iterator_count|spl_classes)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
@@ -1453,12 +1453,25 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009a[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/bug73209[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_028[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/
         }
         function ptn_supported_recursive_iterator_iterator_surface_line(line) {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
                 line ~ /(^|[^[:alnum:]_$\\])(recursivearrayiterator|recursiveiteratoriterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_spl_temp_file_object_surface_line(line) {
+            return (ptn_path ~ /ext\/spl\/tests\/SplTempFileObject_constructor_memory_lt1_variation[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/gh9883-extra[.]phpt$/) &&
+                line ~ /(^|[^[:alnum:]_$\\])spltempfileobject([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_recursive_directory_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])(filesystemiterator|recursivedirectoryiterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_spl_autoload_register_validation_row() {
+            return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_throw_with_spl_autoloader_call_as_autoloader[.]phpt$/
         }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
@@ -1603,7 +1616,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/) {
+            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/ &&
+                !ptn_supported_spl_autoload_register_validation_row()) {
                 print "unsupported-autoload-metadata\trequires default spl_autoload callback resolution, outside PTN modeled autoload registry"
                 found = 1
                 exit
@@ -1628,7 +1642,9 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if ((ptn_has_unmodeled_spl_symbol(line) &&
                     !ptn_supported_spl_fixed_array_surface_line(line) &&
-                    !ptn_supported_recursive_iterator_iterator_surface_line(line)) ||
+                    !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
+                    !ptn_supported_spl_temp_file_object_surface_line(line) &&
+                    !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
                 ptn_has_unmodeled_spl_function(line)) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1

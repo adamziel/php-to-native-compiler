@@ -5116,8 +5116,48 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "FilesystemIterator") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "GlobIterator") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveDirectoryIterator")) {
+        if (strcmp(constant, "CURRENT_AS_FILEINFO") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "CURRENT_AS_SELF") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "CURRENT_AS_PATHNAME") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "CURRENT_MODE_MASK") == 0) {
+            *out = ptn_int(240);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_AS_PATHNAME") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_AS_FILENAME") == 0) {
+            *out = ptn_int(256);
+            return 1;
+        }
+        if (strcmp(constant, "FOLLOW_SYMLINKS") == 0) {
+            *out = ptn_int(512);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_MODE_MASK") == 0) {
+            *out = ptn_int(3840);
+            return 1;
+        }
+        if (strcmp(constant, "NEW_CURRENT_AND_KEY") == 0) {
+            *out = ptn_int(256);
+            return 1;
+        }
         if (strcmp(constant, "SKIP_DOTS") == 0) {
             *out = ptn_int(4096);
+            return 1;
+        }
+        if (strcmp(constant, "UNIX_PATHS") == 0) {
+            *out = ptn_int(8192);
             return 1;
         }
     }

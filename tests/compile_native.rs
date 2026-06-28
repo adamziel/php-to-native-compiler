@@ -2576,6 +2576,91 @@ var_dump($it->getMaxDepth());
 }
 
 #[test]
+fn compile_spl_current_red_iterator_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-current-red-iterator-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-current-red-iterator-helpers.php");
+    let output = root.join("spl-current-red-iterator-helpers-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+class Foo {{
+    public function __call($name, $params) {{
+        echo "called:$name\n";
+        return true;
+    }}
+}}
+
+$it = new ArrayIterator([1, 2, 3]);
+var_dump(iterator_apply($it, [new Foo, "foobar"]));
+
+try {{
+    spl_autoload_register('spl_autoload_call');
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+$pathMode = new RecursiveDirectoryIterator('{}', FileSystemIterator::CURRENT_AS_PATHNAME);
+$pathMode->rewind();
+echo gettype($pathMode->current()), "\n";
+
+$objectMode = new RecursiveDirectoryIterator('{}');
+$objectMode->rewind();
+echo gettype($objectMode->current()), "\n";
+
+$nested = [1, [2, [3]], 4];
+$recursive = new RecursiveIteratorIterator(new RecursiveArrayIterator($nested));
+var_dump($recursive->getMaxDepth());
+$recursive->setMaxDepth(1);
+var_dump($recursive->getMaxDepth());
+foreach ($recursive as $value) {{
+    echo $recursive->getDepth(), ":", $value, "\n";
+}}
+$recursive->setMaxDepth();
+var_dump($recursive->getMaxDepth());
+"#,
+            root.display(),
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "called:foobar\n",
+            "called:foobar\n",
+            "called:foobar\n",
+            "int(3)\n",
+            "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function\n",
+            "string\n",
+            "object\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "0:1\n",
+            "1:2\n",
+            "0:4\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_call_method"));
+    assert!(c_source.contains("getMaxDepth"));
+}
+
+#[test]
 fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
     fs::create_dir_all(&root).unwrap();
@@ -99688,6 +99773,8 @@ scandir(): Argument #1 ($directory) must not be empty\n\
 fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     let root = temp_dir("ptn-native-include-path-zlib-streams");
     fs::create_dir_all(&root).unwrap();
+    let plain_path = root.join("payload.txt");
+    fs::write(&plain_path, "plain\ntext").unwrap();
     let gzip_path = root.join("payload.txt.gz");
     fs::write(
         &gzip_path,
@@ -99699,6 +99786,7 @@ fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     .unwrap();
     let input = root.join("include-path-zlib-streams.php");
     let output = root.join("include-path-zlib-streams-bin");
+    let plain_path = plain_path.to_string_lossy();
     let gzip_path = gzip_path.to_string_lossy();
     fs::write(
         &input,
@@ -99713,8 +99801,12 @@ $read = readfile($src);\n\
 echo \"\\n\", $read, \"\\n\";\n\
 $gz = gzopen(\"{}\", 'r');\n\
 var_dump(fstat($gz));\n\
-fclose($gz);\n",
-            gzip_path, gzip_path
+fclose($gz);\n\
+$plain = gzopen(\"{}\", 'r');\n\
+$count = gzpassthru($plain);\n\
+echo \"\\n\", $count, \"\\n\";\n\
+fclose($plain);\n",
+            gzip_path, gzip_path, plain_path
         ),
     )
     .unwrap();
@@ -99729,7 +99821,10 @@ fclose($gz);\n",
 hello\n\
 \n\
 6\n\
-bool(false)\n"
+bool(false)\n\
+plain\n\
+text\n\
+10\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

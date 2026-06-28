@@ -7898,6 +7898,17 @@ static int ptn_spl_heap_unserialize_apply(
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH 3
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_PRIORITY 2
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_DATA 1
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_FILEINFO 0
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_SELF 16
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME 32
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK 240
+#define PTN_FILESYSTEM_ITERATOR_KEY_AS_PATHNAME 0
+#define PTN_FILESYSTEM_ITERATOR_KEY_AS_FILENAME 256
+#define PTN_FILESYSTEM_ITERATOR_FOLLOW_SYMLINKS 512
+#define PTN_FILESYSTEM_ITERATOR_KEY_MODE_MASK 3840
+#define PTN_FILESYSTEM_ITERATOR_NEW_CURRENT_AND_KEY 256
+#define PTN_FILESYSTEM_ITERATOR_SKIP_DOTS 4096
+#define PTN_FILESYSTEM_ITERATOR_UNIX_PATHS 8192
 
 typedef struct {
     PtnValue storage;
@@ -7936,6 +7947,7 @@ typedef struct {
     size_t glob_index;
     char *current_name;
     int64_t key;
+    int64_t current_mode;
     int valid;
     int skip_dots;
 } PtnDirectoryIteratorData;
@@ -53269,6 +53281,11 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
         *len_out = 0;
         free(compressed);
         return read_result;
+    }
+    if (compressed_len < 2 || compressed[0] != 0x1f || compressed[1] != 0x8b) {
+        *data_out = compressed;
+        *len_out = compressed_len;
+        return 1;
     }
     int ok = ptn_zlib_transform_bytes_no_dictionary(
         compressed,
@@ -188573,7 +188590,17 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         return;
     }
     if (ptn_internal_class_name_is_directory_iterator(class_name)) {
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DOTS"), ptn_int(4096));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_PATHNAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_FILEINFO"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_FILEINFO));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_SELF"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_SELF));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_MODE_MASK"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_AS_PATHNAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_AS_PATHNAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_AS_FILENAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_AS_FILENAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FOLLOW_SYMLINKS"), ptn_int(PTN_FILESYSTEM_ITERATOR_FOLLOW_SYMLINKS));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_MODE_MASK"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_MODE_MASK));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NEW_CURRENT_AND_KEY"), ptn_int(PTN_FILESYSTEM_ITERATOR_NEW_CURRENT_AND_KEY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DOTS"), ptn_int(PTN_FILESYSTEM_ITERATOR_SKIP_DOTS));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("UNIX_PATHS"), ptn_int(PTN_FILESYSTEM_ITERATOR_UNIX_PATHS));
         return;
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
@@ -207493,7 +207520,8 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     data->current_name = NULL;
     data->key = 0;
     data->valid = 0;
-    data->skip_dots = (flags & 4096) != 0;
+    data->current_mode = flags & PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK;
+    data->skip_dots = (flags & PTN_FILESYSTEM_ITERATOR_SKIP_DOTS) != 0;
     ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
 
 #if defined(_WIN32)
@@ -207603,9 +207631,13 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     }
     if (ptn_ascii_case_equal(name, "current")) {
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_value_clone_deref(receiver);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->current_mode == PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME) {
+            return ptn_owned_string(ptn_duplicate_string(data->info.path == NULL ? "" : data->info.path));
+        }
+        return ptn_value_clone_deref(receiver);
     }
     if (ptn_ascii_case_equal(name, "key")) {
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
@@ -209865,6 +209897,15 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
             ptn_value_destroy(&current);
             ptn_value_destroy(&key);
             return;
+        }
+
+        if (has_children && data->has_max_depth &&
+            data->frame_count > 0 &&
+            (int64_t)(data->frame_count - 1) >= data->max_depth) {
+            frame->pending_advance = 1;
+            ptn_value_destroy(&current);
+            ptn_value_destroy(&key);
+            continue;
         }
 
         if (!has_children) {
