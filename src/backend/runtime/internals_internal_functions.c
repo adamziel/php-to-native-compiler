@@ -127646,6 +127646,28 @@ static PtnValue ptn_datetime_zone_create_from_name(PtnRuntime *runtime, const ch
     return object;
 }
 
+static int ptn_date_timezone_operand_has_null_byte(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand timezone
+) {
+    if (memchr(timezone.data, '\0', timezone.len) == NULL) {
+        return 0;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($timezone) must not contain any null bytes",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 1;
+}
+
 static PtnDateTimeZoneData *ptn_datetime_zone_data_from_value(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT ||
@@ -129411,13 +129433,8 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+    if (ptn_date_timezone_operand_has_null_byte(runtime, "DateTimeZone::__construct", timezone)) {
         ptn_string_operand_free(timezone);
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes"
-        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
@@ -135514,13 +135531,8 @@ static PtnValue ptn_internal_timezone_open(PtnRuntime *runtime, size_t argc, con
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+    if (ptn_date_timezone_operand_has_null_byte(runtime, "timezone_open", timezone)) {
         ptn_string_operand_free(timezone);
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "timezone_open(): Argument #1 ($timezone) must not contain any null bytes"
-        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);

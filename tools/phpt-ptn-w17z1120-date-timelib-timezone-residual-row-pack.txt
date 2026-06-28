@@ -1,0 +1,12 @@
+ext/date/tests/DateTimeZone_set_state.phpt
+ext/date/tests/gh10747-4.phpt
+ext/date/tests/bug67118.phpt
+ext/date/tests/bug70810.phpt
+ext/date/tests/bug51393.phpt
+ext/date/tests/bug68942_2.phpt
+ext/date/tests/bug80974.phpt
+ext/date/tests/bug43527.phpt
+ext/date/tests/date_sun_info_001.phpt
+ext/date/tests/bug34676.phpt
+ext/date/tests/date_time_fractions.phpt
+ext/date/tests/bug80664.phpt

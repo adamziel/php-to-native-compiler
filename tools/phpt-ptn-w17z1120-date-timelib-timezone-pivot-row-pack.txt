@@ -1,0 +1,12 @@
+ext/date/tests/bug20382-1.phpt
+ext/date/tests/date_modify-2.phpt
+ext/date/tests/gh9700.phpt
+ext/date/tests/bug49585.phpt
+ext/date/tests/bug70277.phpt
+ext/date/tests/bug45543.phpt
+ext/date/tests/bug54597.phpt
+ext/date/tests/bug29150.phpt
+ext/date/tests/bug62852_var2.phpt
+ext/date/tests/bug33415-2.phpt
+ext/date/tests/bug75851.phpt
+ext/date/tests/bug66721.phpt

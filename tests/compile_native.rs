@@ -3171,6 +3171,47 @@ var_dump(date_sunrise(1, SUNFUNCS_RET_STRING, 1, NAN));
 }
 
 #[test]
+fn compile_datetime_timezone_null_byte_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-timezone-null-byte-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-timezone-null-byte-errors.php");
+    let output = root.join("datetime-timezone-null-byte-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$timezone = "Europe/Zurich" . chr(0) . "Foo";
+try {
+    var_dump(timezone_open($timezone));
+} catch (ValueError $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    var_dump(new DateTimeZone($timezone));
+} catch (ValueError $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ValueError: timezone_open(): Argument #1 ($timezone) must not contain any null bytes\n\
+ValueError: DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_by_ref_callback_return_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-by-ref-callback-return");
     fs::create_dir_all(&root).unwrap();
