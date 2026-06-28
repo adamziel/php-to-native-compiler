@@ -120852,6 +120852,76 @@ static void ptn_date_period_reorder_extra_properties_before_internal(PtnObject *
     free(used);
 }
 
+static void ptn_date_period_reorder_properties_from_serialized_order(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnArray *data,
+    size_t line
+) {
+    if (object == NULL || object->properties == NULL || data == NULL || object->properties->len < 2) {
+        return;
+    }
+    PtnArray *properties = object->properties;
+    PtnArrayEntry *ordered_entries = malloc(sizeof(PtnArrayEntry) * properties->len);
+    unsigned char *copied_entries = calloc(properties->len, sizeof(unsigned char));
+    if (ordered_entries == NULL || copied_entries == NULL) {
+        free(ordered_entries);
+        free(copied_entries);
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    for (size_t i = 0; i < data->len; i++) {
+        PtnArrayEntry *entry = &data->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING || ptn_date_period_key_is_internal(entry->key)) {
+            continue;
+        }
+        PtnArrayKey property_key =
+            ptn_unserialize_object_property_key(runtime, object, ptn_array_key_clone(entry->key), line);
+        size_t index = ptn_array_find_key(properties, property_key);
+        if (index >= properties->len) {
+            for (size_t metadata_index = 0; metadata_index < object->property_metadata_len; metadata_index++) {
+                const PtnObjectPropertyMetadata *metadata = &object->property_metadata[metadata_index];
+                PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+                PtnArrayKey serialized_key =
+                    ptn_serialize_spl_property_table_key_from_metadata(metadata, storage_key);
+                int key_matches = ptn_array_keys_equal(serialized_key, entry->key);
+                size_t storage_index = key_matches
+                    ? ptn_array_find_key(properties, storage_key)
+                    : properties->len;
+                ptn_array_key_free(serialized_key);
+                ptn_array_key_free(storage_key);
+                if (storage_index < properties->len) {
+                    index = storage_index;
+                    break;
+                }
+            }
+        }
+        ptn_array_key_free(property_key);
+        if (index < properties->len && !copied_entries[index]) {
+            ordered_entries[out++] = properties->entries[index];
+            copied_entries[index] = 1;
+        }
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        if (copied_entries[i] || ptn_date_period_key_is_internal(properties->entries[i].key)) {
+            continue;
+        }
+        ordered_entries[out++] = properties->entries[i];
+        copied_entries[i] = 1;
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        if (copied_entries[i]) {
+            continue;
+        }
+        ordered_entries[out++] = properties->entries[i];
+    }
+    memcpy(properties->entries, ordered_entries, sizeof(PtnArrayEntry) * properties->len);
+    free(ordered_entries);
+    free(copied_entries);
+    properties->current_index = 0;
+    ptn_array_rebuild_index(properties);
+}
+
 static PtnValue ptn_date_period_create_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -121245,7 +121315,12 @@ static PTN_UNUSED PtnValue ptn_date_period_call_method(
             )) {
             return ptn_null();
         }
-        ptn_date_period_reorder_extra_properties_before_internal(receiver.as.object);
+        ptn_date_period_reorder_properties_from_serialized_order(
+            runtime,
+            receiver.as.object,
+            data.as.array,
+            line
+        );
         return ptn_null();
     }
     PtnDatePeriodData *data = receiver.type == PTN_OBJECT
@@ -196663,6 +196738,14 @@ static void ptn_date_period_unserialize_array(
         return;
     }
     int include_end_date = ptn_date_period_state_bool(array, "include_end_date", 0);
+    PtnValue serialized_order = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_set_entry(
+            serialized_order.as.array,
+            ptn_array_key_clone(array->entries[i].key),
+            ptn_null()
+        );
+    }
     ptn_date_period_apply_unserialized_state(
         runtime,
         object,
@@ -196675,6 +196758,15 @@ static void ptn_date_period_unserialize_array(
         include_end_date,
         line
     );
+    if (runtime->exceptions->active_exception == NULL && object.type == PTN_OBJECT) {
+        ptn_date_period_reorder_properties_from_serialized_order(
+            runtime,
+            object.as.object,
+            serialized_order.as.array,
+            line
+        );
+    }
+    ptn_value_destroy(&serialized_order);
 }
 
 static int ptn_unserialize_store_object_property_entry(
