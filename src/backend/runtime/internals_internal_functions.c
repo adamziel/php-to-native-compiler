@@ -52964,6 +52964,175 @@ static int ptn_zlib_write_all_fd(int fd, const unsigned char *data, size_t len) 
     return 1;
 }
 
+#if PTN_HAVE_ZLIB
+static int ptn_zlib_native_flush_mode(int64_t flush_mode) {
+    switch (flush_mode) {
+        case PTN_ZLIB_NO_FLUSH:
+            return Z_NO_FLUSH;
+        case PTN_ZLIB_PARTIAL_FLUSH:
+            return Z_PARTIAL_FLUSH;
+        case PTN_ZLIB_SYNC_FLUSH:
+            return Z_SYNC_FLUSH;
+        case PTN_ZLIB_FULL_FLUSH:
+            return Z_FULL_FLUSH;
+        case PTN_ZLIB_BLOCK:
+#ifdef Z_BLOCK
+            return Z_BLOCK;
+#else
+            return Z_SYNC_FLUSH;
+#endif
+        case PTN_ZLIB_FINISH:
+        default:
+            return Z_FINISH;
+    }
+}
+
+static int ptn_zlib_transform_bytes_native(
+    const unsigned char *data,
+    size_t len,
+    int decompress,
+    int64_t window_bits,
+    int64_t level,
+    int64_t flush_mode,
+    const unsigned char *dictionary,
+    size_t dictionary_len,
+    int allow_truncated_decompress,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    *data_out = NULL;
+    *len_out = 0;
+    if (len > UINT_MAX || dictionary_len > UINT_MAX) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+
+    z_stream stream;
+    memset(&stream, 0, sizeof(stream));
+    int status = decompress
+        ? inflateInit2(&stream, (int)window_bits)
+        : deflateInit2(
+            &stream,
+            (int)level,
+            Z_DEFLATED,
+            (int)window_bits,
+            9,
+            Z_DEFAULT_STRATEGY
+        );
+    if (status != Z_OK) {
+        errno = EIO;
+        return -1;
+    }
+
+    if (!decompress && dictionary != NULL && dictionary_len != 0) {
+        if (deflateSetDictionary(&stream, dictionary, (uInt)dictionary_len) != Z_OK) {
+            deflateEnd(&stream);
+            errno = EIO;
+            return -1;
+        }
+    } else if (decompress &&
+        window_bits == PTN_ZLIB_ENCODING_RAW &&
+        dictionary != NULL &&
+        dictionary_len != 0) {
+        if (inflateSetDictionary(&stream, dictionary, (uInt)dictionary_len) != Z_OK) {
+            inflateEnd(&stream);
+            errno = EIO;
+            return -1;
+        }
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    stream.next_in = (Bytef *)data;
+    stream.avail_in = (uInt)len;
+
+    int native_flush = ptn_zlib_native_flush_mode(flush_mode);
+    int saw_stream_end = 0;
+    for (;;) {
+        unsigned char chunk[8192];
+        stream.next_out = chunk;
+        stream.avail_out = (uInt)sizeof(chunk);
+        uInt before_in = stream.avail_in;
+
+        status = decompress
+            ? inflate(&stream, Z_SYNC_FLUSH)
+            : deflate(&stream, native_flush);
+
+        if (decompress && status == Z_NEED_DICT) {
+            if (dictionary == NULL ||
+                dictionary_len == 0 ||
+                inflateSetDictionary(&stream, dictionary, (uInt)dictionary_len) != Z_OK) {
+                free(output.data);
+                inflateEnd(&stream);
+                errno = EIO;
+                return -1;
+            }
+            continue;
+        }
+
+        if (status == Z_STREAM_ERROR ||
+            status == Z_DATA_ERROR ||
+            status == Z_MEM_ERROR ||
+            (!decompress && status == Z_BUF_ERROR)) {
+            free(output.data);
+            if (decompress) {
+                inflateEnd(&stream);
+            } else {
+                deflateEnd(&stream);
+            }
+            errno = EIO;
+            return -1;
+        }
+
+        size_t produced = sizeof(chunk) - stream.avail_out;
+        if (produced != 0) {
+            ptn_string_buffer_append_len(&output, (const char *)chunk, produced);
+        }
+
+        if (status == Z_STREAM_END) {
+            saw_stream_end = 1;
+            break;
+        }
+
+        if (decompress) {
+            if (status == Z_BUF_ERROR && produced == 0 && stream.avail_in == before_in) {
+                break;
+            }
+            if (stream.avail_in == 0 && stream.avail_out != 0) {
+                break;
+            }
+        } else {
+            if (native_flush == Z_FINISH) {
+                if (status == Z_STREAM_END) {
+                    break;
+                }
+            } else if (stream.avail_in == 0 && stream.avail_out != 0) {
+                break;
+            }
+        }
+    }
+
+    if (decompress) {
+        inflateEnd(&stream);
+        if (!allow_truncated_decompress && !saw_stream_end) {
+            free(output.data);
+            errno = EIO;
+            return -1;
+        }
+    } else {
+        deflateEnd(&stream);
+    }
+
+    if (output.data == NULL) {
+        output.data = ptn_duplicate_string_len("", 0);
+        output.len = 0;
+    }
+    *data_out = (unsigned char *)output.data;
+    *len_out = output.len;
+    return 1;
+}
+#endif
+
 static int ptn_zlib_transform_bytes(
     const unsigned char *data,
     size_t len,
@@ -52979,6 +53148,40 @@ static int ptn_zlib_transform_bytes(
 ) {
     *data_out = NULL;
     *len_out = 0;
+#if PTN_HAVE_ZLIB
+    int native_result = ptn_zlib_transform_bytes_native(
+        data,
+        len,
+        decompress,
+        window_bits,
+        level,
+        flush_mode,
+        dictionary,
+        dictionary_len,
+        allow_truncated_decompress,
+        data_out,
+        len_out
+    );
+    if (native_result <= 0 &&
+        decompress &&
+        window_bits > MAX_WBITS &&
+        window_bits < PTN_ZLIB_ENCODING_GZIP) {
+        native_result = ptn_zlib_transform_bytes_native(
+            data,
+            len,
+            decompress,
+            PTN_ZLIB_ENCODING_GZIP,
+            level,
+            flush_mode,
+            dictionary,
+            dictionary_len,
+            allow_truncated_decompress,
+            data_out,
+            len_out
+        );
+    }
+    return native_result;
+#endif
 #if defined(_WIN32)
     (void)data;
     (void)len;
@@ -55733,11 +55936,11 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
     filter->write_seek_mode = write_seek_mode;
+    filter->user_filter_invalid_callback_reported = 0;
     filter->has_user_filter_object = 0;
     filter->user_filter_object = ptn_null();
     filter->user_filter_runtime = NULL;
     filter->user_filter_line = 0;
-    filter->user_filter_invalid_callback_reported = 0;
     filter->next = NULL;
     return filter;
 }
@@ -55790,7 +55993,6 @@ static int ptn_stream_filter_initialize_user_object(
     PtnObject *object_ptr = ptn_value_deref(object).as.object;
     const char *object_class = object_ptr->class_name;
     int native_php_user_filter = ptn_declared_class_is_same_or_descendant(object_class, "php_user_filter");
-
     filter->has_user_filter_object = 1;
     filter->user_filter_object = object;
     filter->user_filter_runtime = runtime;
@@ -56512,7 +56714,8 @@ static char *ptn_stream_apply_user_filter_alloc(
         invalid_filter_reason = ptn_format_missing_method_callback_reason(filter_class_name, "filter");
     }
     if (invalid_filter_reason != NULL) {
-        int has_active_exception = runtime->exceptions != NULL &&
+        int has_active_exception = runtime != NULL &&
+            runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL;
         if (has_active_exception && filter->user_filter_invalid_callback_reported) {
             free(invalid_filter_reason);
