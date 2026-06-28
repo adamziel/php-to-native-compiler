@@ -1173,13 +1173,16 @@ static PTN_UNUSED void ptn_emit_arithmetic_non_numeric_value_warning(PtnRuntime 
         return;
     }
     const char *message = "A non-numeric value encountered";
-    if (ptn_diagnostics_try_error_handler(&runtime->diagnostics, PTN_E_WARNING, message, "ptn", line)) {
+    const char *path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn";
+    if (ptn_diagnostics_try_error_handler(&runtime->diagnostics, PTN_E_WARNING, message, path, line)) {
         return;
     }
     fputc('\n', stdout);
     fputs("Warning: ", stdout);
     fputs(message, stdout);
-    fputs(" in ptn on line ", stdout);
+    fputs(" in ", stdout);
+    fputs(path, stdout);
+    fputs(" on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
 }
@@ -1888,7 +1891,11 @@ static PTN_UNUSED int ptn_string_has_trailing_non_numeric_data(const char *strin
     return *end != '\0';
 }
 
-static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *diagnostics) {
+static PTN_UNUSED void ptn_emit_non_numeric_value_warning_at(
+    PtnDiagnosticSink *diagnostics,
+    const char *path,
+    size_t line
+) {
     if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
@@ -1898,15 +1905,21 @@ static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *dia
             diagnostics,
             PTN_E_WARNING,
             message,
-            "ptn-generated-code",
-            0
+            path,
+            line
         )) {
         return;
     }
-    ptn_diagnostic_output_cstr(
+    ptn_diagnostic_printf(
         diagnostics,
-        "\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n"
+        "\nWarning: A non-numeric value encountered in %s on line %zu\n",
+        path,
+        line
     );
+}
+
+static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *diagnostics) {
+    ptn_emit_non_numeric_value_warning_at(diagnostics, "ptn-generated-code", 0);
 }
 
 static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
@@ -1961,7 +1974,7 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
     PtnNumber number = ptn_to_number(value);
     const char *string_data = value.type == PTN_STRING ? (const char *)value.as.string.data : "";
     if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(string_data)) {
-        ptn_emit_non_numeric_value_warning(diagnostics);
+        ptn_emit_non_numeric_value_warning_at(diagnostics, path, line);
     }
     if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
         if (value.type == PTN_STRING) {
@@ -2754,11 +2767,21 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand_checked(
             return ptn_float_to_php_integer(value.as.floating);
         }
         if (ptn_float_to_int_loses_precision(value.as.floating)) {
-            ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
+            ptn_emit_float_to_int_precision_deprecation_at(
+                &runtime->diagnostics,
+                value.as.floating,
+                runtime->source_path,
+                line
+            );
         }
         return ptn_float_to_php_integer(value.as.floating);
     }
-    return ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, value);
+    return ptn_value_to_integer_with_precision_deprecation_at(
+        &runtime->diagnostics,
+        value,
+        runtime->source_path,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_and(
