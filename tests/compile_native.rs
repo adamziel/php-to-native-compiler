@@ -102511,6 +102511,96 @@ class C extends DateTime {
     );
 }
 
+#[test]
+fn compile_zend_residual_eval_callback_and_static_property_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-residual-eval-callback-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-residual-eval-callback-static-property.php");
+    let output = root.join("zend-residual-eval-callback-static-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$code = <<<'CODE'
+function test_missing_semicolon() : string {
+     $x = []
+     FOO
+}
+CODE;
+
+for ($i = 0; $i < 2; $i++) {
+    try {
+        eval($code);
+    } catch (ParseError $e) {
+        echo "parse:", $e->getMessage(), "\n";
+    }
+}
+
+class Loader {
+    function __call($method, $args) {
+        eval("<<<ENDOFSTRING\n Test\n ENDOFSTRING;");
+        spl_autoload_register('Loader::load');
+        array_map('MissingCallbackClass::test', []);
+    }
+}
+
+try {
+    (new Loader)->test();
+} catch (Throwable $e) {
+    echo "callback:", $e->getMessage(), "\n";
+}
+
+class A {
+    private static $a = "a";
+    private static $b = "b";
+    private static $c = "c";
+    public function __construct() {
+        var_dump($this->a, $this->b, $this->c);
+    }
+}
+class B extends A {
+    private static $a = "a1";
+    protected static $b = "b1";
+    public static $c = "c1";
+}
+new B;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("parse:syntax error, unexpected identifier \"FOO\"\n")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "callback:array_map(): Argument #1 ($callback) must be a valid callback or null, class \"MissingCallbackClass\" not found\n"
+        ),
+        "{stdout}"
+    );
+    for property in ["a", "b", "c"] {
+        assert!(
+            stdout.contains(&format!(
+                "Notice: Accessing static property B::${property} as non static"
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!("Warning: Undefined property: B::${property}")),
+            "{stdout}"
+        );
+    }
+    assert!(stdout.ends_with("NULL\nNULL\nNULL\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

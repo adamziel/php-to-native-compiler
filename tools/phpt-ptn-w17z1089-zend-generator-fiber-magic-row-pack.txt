@@ -1,0 +1,12 @@
+Zend/tests/generators/bug74840.phpt
+Zend/tests/rope_with_exception.phpt
+Zend/tests/bug75252.phpt
+Zend/tests/gh20564.phpt
+Zend/tests/magic_methods/bug38146.phpt
+Zend/tests/bug41421.phpt
+Zend/tests/fibers/gh9916-008.phpt
+Zend/tests/fibers/gh15108-006.phpt
+Zend/tests/constexpr/gh7771_2.phpt
+Zend/tests/magic_methods/magic_methods_wakeup.phpt
+Zend/tests/traits/abstract_method_8.phpt
+Zend/tests/bug76860_2.phpt

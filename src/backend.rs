@@ -25006,7 +25006,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only) {\n",
+        "\nstatic int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     out.push_str(
@@ -25044,7 +25044,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                }\n");
     out.push_str("            } else {\n");
     out.push_str("                resolved_class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);\n");
-    out.push_str("                if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(class_name)) {\n");
+    out.push_str("                if (runtime != NULL && autoload && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(class_name)) {\n");
     out.push_str("                    ptn_runtime_autoload_class(runtime, class_name, runtime->call_site_line);\n");
     out.push_str("                    if (runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("                        free(name);\n");
@@ -25203,7 +25203,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        } else {\n");
     out.push_str("            const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);\n");
     out.push_str("            resolved_class_name = runtime == NULL ? lookup_class_name : ptn_runtime_resolve_class_alias(runtime, lookup_class_name);\n");
-    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(lookup_class_name)) {\n");
+    out.push_str("            if (runtime != NULL && autoload && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(lookup_class_name)) {\n");
     out.push_str("                ptn_runtime_autoload_class(runtime, lookup_class_name, runtime->call_site_line);\n");
     out.push_str("                if (runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("                    free(method_name);\n");
@@ -25291,6 +25291,11 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only) {\n",
+    );
+    out.push_str("    return ptn_callable_is_valid_ex(runtime, callable, syntax_only, 1);\n");
     out.push_str("}\n");
 }
 

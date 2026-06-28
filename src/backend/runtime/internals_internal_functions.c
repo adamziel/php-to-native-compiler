@@ -5646,6 +5646,7 @@ static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
@@ -6337,7 +6338,7 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     int accepts_null
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
-    if (ptn_callable_is_valid(runtime, checked, 0)) {
+    if (ptn_callable_is_valid_ex(runtime, checked, 0, 0)) {
         return checked;
     }
     char *message = ptn_invalid_callback_message(
@@ -54141,6 +54142,47 @@ static size_t ptn_user_stream_read_bytes(
     return copied;
 }
 
+static int ptn_user_stream_eof(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    size_t line,
+    int *handled
+) {
+    *handled = 0;
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL) {
+        return 0;
+    }
+    *handled = 1;
+    if (ptn_user_stream_read_buffer_available(data) != 0) {
+        return 0;
+    }
+    if (data->runtime == NULL ||
+        data->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_eof")) {
+        return ptn_stream_eof(resource);
+    }
+    PtnValue eof_result = data->runtime->method_dispatch(
+        data->runtime,
+        data->wrapper_object,
+        "stream_eof",
+        0,
+        NULL,
+        line
+    );
+    if (data->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&eof_result);
+        return 1;
+    }
+    int eof = ptn_is_truthy(eof_result);
+    ptn_value_destroy(&eof_result);
+    if (resource != NULL && resource->memory_stream != NULL) {
+        resource->memory_stream->eof = eof;
+    }
+    (void)runtime;
+    return eof;
+}
+
 static size_t ptn_user_stream_write_bytes(
     PtnRuntime *runtime,
     PtnResource *resource,
@@ -57801,6 +57843,14 @@ static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnVal
     }
     if (ptn_stream_filtered_read_pending_available(resource) != 0) {
         return ptn_bool(0);
+    }
+    int user_stream_handled = 0;
+    int user_stream_eof = ptn_user_stream_eof(runtime, resource, line, &user_stream_handled);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (user_stream_handled) {
+        return ptn_bool(user_stream_eof);
     }
     return ptn_bool(ptn_stream_eof(resource));
 }
@@ -172280,6 +172330,7 @@ static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnValue ptn_user_function_names(PtnRuntime *runtime);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
@@ -216941,6 +216992,255 @@ static int ptn_eval_execute_supported_statements(
     }
 }
 
+static int ptn_eval_parse_error_non_expression_keyword(const char *name, size_t len) {
+    static const char *const keywords[] = {
+        "abstract",
+        "as",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "default",
+        "echo",
+        "else",
+        "elseif",
+        "extends",
+        "final",
+        "finally",
+        "fn",
+        "for",
+        "foreach",
+        "function",
+        "global",
+        "if",
+        "implements",
+        "interface",
+        "namespace",
+        "new",
+        "print",
+        "private",
+        "protected",
+        "public",
+        "readonly",
+        "return",
+        "static",
+        "switch",
+        "throw",
+        "trait",
+        "try",
+        "unset",
+        "use",
+        "var",
+        "while",
+        "yield",
+    };
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        const char *keyword = keywords[i];
+        size_t keyword_len = strlen(keyword);
+        if (keyword_len != len) {
+            continue;
+        }
+        int equal = 1;
+        for (size_t j = 0; j < len; j++) {
+            if (ptn_ascii_lower_char(name[j]) != keyword[j]) {
+                equal = 0;
+                break;
+            }
+        }
+        if (equal) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_eval_unexpected_identifier_message(const char *name, size_t len) {
+    char *identifier = ptn_duplicate_string_len(name, len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "syntax error, unexpected identifier \"%s\"",
+        identifier
+    );
+    if (needed < 0) {
+        free(identifier);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(identifier);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "syntax error, unexpected identifier \"%s\"",
+        identifier
+    );
+    free(identifier);
+    return message;
+}
+
+static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t pos) {
+    if (pos + 3 > len ||
+        code[pos] != '<' ||
+        code[pos + 1] != '<' ||
+        code[pos + 2] != '<') {
+        return pos;
+    }
+    size_t cursor = ptn_eval_skip_ws(code, len, pos + 3);
+    size_t label_start = cursor;
+    size_t label_len = 0;
+    if (cursor < len && (code[cursor] == '\'' || code[cursor] == '"')) {
+        char quote = code[cursor++];
+        label_start = cursor;
+        while (cursor < len && code[cursor] != quote) {
+            cursor++;
+        }
+        if (cursor >= len) {
+            return len;
+        }
+        label_len = cursor - label_start;
+        cursor++;
+    } else {
+        if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            return pos;
+        }
+        label_start = cursor;
+        cursor++;
+        while (cursor < len && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        label_len = cursor - label_start;
+    }
+    while (cursor < len && code[cursor] != '\n') {
+        cursor++;
+    }
+    if (cursor < len) {
+        cursor++;
+    }
+    while (cursor < len) {
+        size_t line_start = cursor;
+        size_t label_pos = line_start;
+        while (label_pos < len && (code[label_pos] == ' ' || code[label_pos] == '\t')) {
+            label_pos++;
+        }
+        if (label_pos + label_len <= len &&
+            memcmp(code + label_pos, code + label_start, label_len) == 0) {
+            size_t after = label_pos + label_len;
+            while (after < len && (code[after] == ' ' || code[after] == '\t')) {
+                after++;
+            }
+            if (after < len && code[after] == ';') {
+                after++;
+            }
+            while (after < len && (code[after] == ' ' || code[after] == '\t')) {
+                after++;
+            }
+            if (after >= len) {
+                return after;
+            }
+            if (code[after] == '\r') {
+                after++;
+                if (after < len && code[after] == '\n') {
+                    after++;
+                }
+                return after;
+            }
+            if (code[after] == '\n') {
+                return after + 1;
+            }
+        }
+        while (cursor < len && code[cursor] != '\n') {
+            cursor++;
+        }
+        if (cursor < len) {
+            cursor++;
+        }
+    }
+    return len;
+}
+
+static char *ptn_eval_dynamic_parse_error_message(const char *code) {
+    size_t len = strlen(code);
+    size_t pos = 0;
+    int previous_can_end_expression = 0;
+    while (pos < len) {
+        pos = ptn_eval_skip_ws(code, len, pos);
+        if (pos >= len) {
+            break;
+        }
+        unsigned char ch = (unsigned char)code[pos];
+        size_t heredoc_end = ptn_eval_skip_heredoc_literal(code, len, pos);
+        if (heredoc_end != pos) {
+            pos = heredoc_end;
+            previous_can_end_expression = 1;
+            continue;
+        }
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            previous_can_end_expression = 1;
+            continue;
+        }
+        if (code[pos] == '$') {
+            pos++;
+            if (pos < len && ptn_eval_variable_identifier_start((unsigned char)code[pos])) {
+                pos++;
+                while (pos < len && ptn_eval_variable_identifier_part((unsigned char)code[pos])) {
+                    pos++;
+                }
+            }
+            previous_can_end_expression = 1;
+            continue;
+        }
+        if (ptn_eval_identifier_start(ch)) {
+            size_t name_start = pos;
+            pos++;
+            while (pos < len && ptn_eval_identifier_part((unsigned char)code[pos])) {
+                pos++;
+            }
+            if (previous_can_end_expression) {
+                return ptn_eval_unexpected_identifier_message(
+                    code + name_start,
+                    pos - name_start
+                );
+            }
+            previous_can_end_expression =
+                !ptn_eval_parse_error_non_expression_keyword(code + name_start, pos - name_start);
+            continue;
+        }
+        if (ch >= '0' && ch <= '9') {
+            pos++;
+            while (pos < len &&
+                (isalnum((unsigned char)code[pos]) ||
+                    code[pos] == '_' ||
+                    code[pos] == '.')) {
+                pos++;
+            }
+            previous_can_end_expression = 1;
+            continue;
+        }
+        switch (code[pos]) {
+            case ';':
+            case '{':
+            case '}':
+                previous_can_end_expression = 0;
+                pos++;
+                break;
+            case ')':
+            case ']':
+                previous_can_end_expression = 1;
+                pos++;
+                break;
+            default:
+                previous_can_end_expression = 0;
+                pos++;
+                break;
+        }
+    }
+    return NULL;
+}
+
 static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *code = ptn_value_to_string(args[0]);
@@ -216949,6 +217249,12 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     if (ptn_eval_execute_supported_statements(runtime, code, line, &result)) {
         free(code);
         return result;
+    }
+    char *parse_error_message = ptn_eval_dynamic_parse_error_message(code);
+    if (parse_error_message != NULL) {
+        free(code);
+        ptn_throw_exception_owned_message(runtime, "ParseError", parse_error_message);
+        return ptn_null();
     }
     free(code);
     return ptn_null();
