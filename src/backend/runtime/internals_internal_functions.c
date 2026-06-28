@@ -157422,7 +157422,7 @@ static PtnValue ptn_xml_parser_new_with_encoding(PtnRuntime *runtime, const char
 static PTN_UNUSED PtnValue ptn_xml_parser_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *encoding = "UTF-8";
     PtnStringOperand operand = ptn_string_operand_borrowed("");
-    if (argc >= 1) {
+    if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
         operand = ptn_internal_expect_string_arg(runtime, "XMLParser::__construct", 1, "encoding", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
@@ -157645,14 +157645,7 @@ static int ptn_xml_parser_validate_handler(
             }
         }
         if (!data->has_callback_object) {
-            ptn_xml_parser_throw_handler_value_error(
-                runtime,
-                function_name,
-                position,
-                parameter_name,
-                "an object must be set via xml_set_object() to be able to lookup method"
-            );
-            return 0;
+            return 1;
         }
         if (!ptn_xml_parser_object_string_handler_is_valid(runtime, data, deref)) {
             if (runtime->exceptions->active_exception != NULL) {
@@ -217912,7 +217905,9 @@ static void ptn_simplexml_set_element_text_content(PtnRuntime *runtime, PtnXmlNo
     if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
         return;
     }
-    node->child_count = 0;
+    while (node->child_count > 0) {
+        ptn_xml_detach_child(node->children[0]);
+    }
     if (len > 0) {
         ptn_xml_append_text_span(runtime, node, data == NULL ? "" : data, len);
     }

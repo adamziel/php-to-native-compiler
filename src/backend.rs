@@ -25169,7 +25169,6 @@ fn class_constructor_method<'a>(
     {
         return Some(constructor);
     }
-
     let class_short_name = class.name.rsplit('\\').next().unwrap_or(&class.name);
     methods.iter().copied().find(|method| {
         !method.is_static

@@ -40249,12 +40249,22 @@ class ModernBox {
     }
 }
 
+class testcase {
+    public $encoding = \"unset\";
+
+    function testcase($encoding) {
+        $this->encoding = $encoding;
+    }
+}
+
 $legacy = new LegacyBox(\"old\", \"?\");
 echo $legacy->read(), \"\\n\";
 $legacy->LegacyBox(\"again\", \".\");
 echo $legacy->read(), \"\\n\";
 $modern = new ModernBox(\"ok\");
 echo $modern->label, \"\\n\";
+$lower = new testcase(\"EUC-JP\");
+echo $lower->encoding, \"\\n\";
 ",
     )
     .unwrap();
@@ -40265,7 +40275,7 @@ echo $modern->label, \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "old?\nagain.\nnew:ok\n"
+        "old?\nagain.\nnew:ok\nEUC-JP\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -53352,6 +53362,11 @@ xml_set_object($delayed, new A());
 xml_set_element_handler($delayed, \"start_element\", \"end_element\");
 xml_parse($delayed, \"<delayed/>\");
 
+$lateObject = xml_parser_create(NULL);
+xml_set_element_handler($lateObject, \"start_element\", \"end_element\");
+xml_set_object($lateObject, new A());
+xml_parse($lateObject, \"<late/>\");
+
 try {
     serialize(xml_parser_create());
 } catch (Throwable $exception) {
@@ -53405,6 +53420,8 @@ while ($reader->read()) {
     ));
     assert!(stdout.contains("A::start_element(DELAYED)\n"));
     assert!(stdout.contains("A::end_element(DELAYED)\n"));
+    assert!(stdout.contains("A::start_element(LATE)\n"));
+    assert!(stdout.contains("A::end_element(LATE)\n"));
     assert!(stdout.contains("Serialization of 'XMLParser' is not allowed\n"));
     assert!(stdout.contains("Error: Parser must not be called recursively\n"));
     assert!(stdout.contains("Warning: XMLReader::expand(): Couldn't fetch DOMCharacterData"));
@@ -53446,6 +53463,12 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
         echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
     }
 }
+try {
+    xml_set_object($parser, new stdClass());
+} catch (Throwable $exception) {
+    echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+}
+$parser = xml_parser_create();
 xml_set_object($parser, new stdClass());
 foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
     try {
@@ -53479,13 +53502,10 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
         stdout
             .matches("Deprecated: Function xml_set_object() is deprecated since 8.4")
             .count(),
-        1
+        2
     );
     assert!(stdout.contains(
-        "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) an object must be set via xml_set_object() to be able to lookup method\n"
-    ));
-    assert!(stdout.contains(
-        "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) an object must be set via xml_set_object() to be able to lookup method\n"
+        "ValueError: xml_set_object(): Argument #2 ($object) cannot safely swap to object of class stdClass as method \"missing_end\" does not exist, which was set via xml_set_element_handler()\n"
     ));
     assert!(stdout.contains(
         "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) method stdClass::missing_start() does not exist\n"
@@ -53909,6 +53929,15 @@ try {
 } catch (ValueError $exception) {
     echo $exception->getMessage(), "\n";
 }
+
+$empty = new SimpleXMLElement('<foo></foo>');
+$empty->addChild('bar');
+$empty->bar = '';
+echo $empty->asXML();
+$empty->bar = 'text';
+echo $empty->asXML();
+$empty->bar[0] = '';
+echo $empty->asXML();
 "#,
     )
     .unwrap();
@@ -53933,6 +53962,12 @@ try {
             "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n",
             "<foo attr=\"new value\"/>\n",
             "Cannot append to an attribute list\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar>text</bar></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
