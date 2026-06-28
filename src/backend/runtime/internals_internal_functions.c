@@ -152037,8 +152037,23 @@ static int ptn_phar_file_looks_like_archive(const char *path) {
     unsigned char header[512];
     size_t len = fread(header, 1, sizeof(header), file);
     fclose(file);
-    return ptn_phar_zip_data_looks_like_archive(header, len) ||
-        ptn_phar_tar_data_looks_like_archive(header, len);
+    if (ptn_phar_zip_data_looks_like_archive(header, len) ||
+        ptn_phar_tar_data_looks_like_archive(header, len)) {
+        return 1;
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    if (ptn_read_file_bytes(path, &data, &data_len) <= 0) {
+        free(data);
+        return 0;
+    }
+    size_t stub_len = 0;
+    size_t payload_offset = 0;
+    int looks_like_phar =
+        ptn_phar_find_halt_payload_offset(data, data_len, &stub_len, &payload_offset);
+    free(data);
+    return looks_like_phar;
 }
 
 static int ptn_phar_zip_inflate_entry(
@@ -155470,8 +155485,10 @@ static int ptn_phar_uri_archive_and_entry_mode(
         char *archive_path = NULL;
         if (archive == NULL) {
             archive_path = ptn_duplicate_string_len(body, i);
-            if (ptn_phar_path_looks_like_archive(archive_path) &&
-                (create_archive || ptn_path_exists_c(archive_path))) {
+            int path_looks_like_archive = ptn_phar_path_looks_like_archive(archive_path);
+            int existing_archive_path = ptn_path_exists_c(archive_path);
+            if ((path_looks_like_archive && (create_archive || existing_archive_path)) ||
+                (!create_archive && existing_archive_path && ptn_phar_file_looks_like_archive(archive_path))) {
                 archive = ptn_phar_archive_for_path(archive_path);
             }
         }
