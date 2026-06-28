@@ -23113,6 +23113,56 @@ var_dump(method_exists($gen, "valid"));
 }
 
 #[test]
+fn compile_generator_yield_from_iterator_enters_inside_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-iterator-in-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-iterator-in-fiber.php");
+    let output = root.join("generator-yield-from-iterator-in-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$it = new class implements Iterator {
+    public function current(): mixed { return null; }
+    public function key(): mixed { return 0; }
+    public function next(): void {}
+    public function rewind(): void {
+        print "Before suspend\n";
+        Fiber::suspend();
+    }
+    public function valid(): bool { return true; }
+};
+
+print "A\n";
+$gen = (function() use ($it) { yield from $it; })();
+print "B\n";
+$fiber = new Fiber(function() use ($gen) {
+    print "C\n";
+    $gen->current();
+    print "D\n";
+});
+print "E\n";
+$fiber->start();
+print "F\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "A\nB\nE\nC\nBefore suspend\nF\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_yield_from"));
+    assert!(c_source.contains("ptn_generator_traversable_delegate_source_value"));
+}
+
+#[test]
 fn compile_generator_yield_from_shared_delegate_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-shared-delegate");
     fs::create_dir_all(&root).unwrap();
