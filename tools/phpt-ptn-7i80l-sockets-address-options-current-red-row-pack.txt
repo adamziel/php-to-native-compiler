@@ -1,0 +1,20 @@
+# ptn-7i80l exact sockets address/options current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T211017Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-7i80l-sockets-address-options-current-red-row-pack.txt
+#
+# bucket: ext/sockets rows=12
+ext/sockets/tests/socket_getsockname.phpt
+ext/sockets/tests/socket_dontfragment.phpt
+ext/sockets/tests/socket_addrinfo_bind.phpt
+ext/sockets/tests/bug76839.phpt
+ext/sockets/tests/socket_import_stream-1.phpt
+ext/sockets/tests/gh17921.phpt
+ext/sockets/tests/socket_select-wrongparams-2.phpt
+ext/sockets/tests/socket_select_error.phpt
+ext/sockets/tests/socket_set_nonblock.phpt
+ext/sockets/tests/unixloop.phpt
+ext/sockets/tests/socket_set_option_seolinger.phpt
+ext/sockets/tests/socket_clear_error.phpt

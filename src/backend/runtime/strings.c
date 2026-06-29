@@ -2173,6 +2173,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(17);
         return 1;
     }
+    if (strcmp(name, "SOL_SOCKET") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     if (strcmp(name, "IPPROTO_IP") == 0) {
         *out = ptn_int(0);
         return 1;
@@ -2187,6 +2191,26 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "SO_REUSEPORT") == 0) {
         *out = ptn_int(15);
+        return 1;
+    }
+    if (strcmp(name, "SO_REUSEADDR") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "SO_ERROR") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "SO_LINGER") == 0) {
+        *out = ptn_int(13);
+        return 1;
+    }
+    if (strcmp(name, "PHP_NORMAL_READ") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "PHP_BINARY_READ") == 0) {
+        *out = ptn_int(2);
         return 1;
     }
     if (strcmp(name, "XSD_NAMESPACE") == 0) {

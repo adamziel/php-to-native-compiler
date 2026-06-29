@@ -4311,6 +4311,20 @@ static PTN_UNUSED const char *ptn_resource_curl_class_name(PtnResource *resource
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_resource_object_class_name(PtnResource *resource) {
+    const char *curl_class_name = ptn_resource_curl_class_name(resource);
+    if (curl_class_name != NULL) {
+        return curl_class_name;
+    }
+    if (resource == NULL || !ptn_resource_is_open(resource) || resource->type_name == NULL) {
+        return NULL;
+    }
+    if (strcmp(resource->type_name, "Socket") == 0) {
+        return "Socket";
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_resource_is_curl_handle(PtnResource *resource) {
     return ptn_resource_curl_class_name(resource) != NULL;
 }

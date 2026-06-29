@@ -4336,12 +4336,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 ptn_direct_dump_printf(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_value_var_dump_indent(runtime, indent);
@@ -6067,12 +6067,12 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             ptn_direct_var_dump_exception_indented(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 ptn_direct_var_dump_writef(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_var_dump_indent(runtime, indent);
@@ -10174,11 +10174,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_var_dump_indent(indent);
@@ -10410,11 +10410,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) refcount(%zu){\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource),
                     value.as.resource->refcount
                 );
@@ -68010,8 +68010,8 @@ static PtnValue ptn_internal_get_debug_type(PtnRuntime *runtime, size_t argc, co
         case PTN_EXCEPTION:
             return ptn_runtime_debug_class_name_string(value.as.exception->class_name);
         case PTN_RESOURCE:
-            if (ptn_resource_curl_class_name(value.as.resource) != NULL) {
-                return ptn_string(ptn_resource_curl_class_name(value.as.resource));
+            if (ptn_resource_object_class_name(value.as.resource) != NULL) {
+                return ptn_string(ptn_resource_object_class_name(value.as.resource));
             }
             if (ptn_resource_is_open(value.as.resource)) {
                 int needed = snprintf(NULL, 0, "resource (%s)", value.as.resource->type_name);
@@ -153492,6 +153492,1148 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
     return ptn_string(message == NULL ? "" : message);
 }
 
+typedef struct {
+    int fd;
+    int domain;
+    int type;
+    int protocol;
+    int last_error;
+} PtnSocketData;
+
+static int ptn_socket_last_error_global = 0;
+
+static void ptn_socket_close_hook(PtnResource *resource, void *opaque) {
+    (void)resource;
+#if !defined(_WIN32)
+    PtnSocketData *data = opaque;
+    if (data != NULL && data->fd >= 0) {
+        (void)shutdown(data->fd, SHUT_RDWR);
+        close(data->fd);
+        data->fd = -1;
+    }
+#else
+    (void)opaque;
+#endif
+}
+
+static PtnSocketData *ptn_socket_data(PtnResource *resource) {
+    if (resource == NULL ||
+        !ptn_resource_is_open(resource) ||
+        resource->type_name == NULL ||
+        strcmp(resource->type_name, "Socket") != 0) {
+        return NULL;
+    }
+    return (PtnSocketData *)resource->close_hook_data;
+}
+
+static PtnResource *ptn_socket_new_resource(
+    PtnRuntime *runtime,
+    int fd,
+    int domain,
+    int type,
+    int protocol
+) {
+    PtnSocketData *data = malloc(sizeof(PtnSocketData));
+    if (data == NULL) {
+#if !defined(_WIN32)
+        if (fd >= 0) {
+            close(fd);
+        }
+#endif
+        ptn_abort_out_of_memory();
+    }
+    data->fd = fd;
+    data->domain = domain;
+    data->type = type;
+    data->protocol = protocol;
+    data->last_error = 0;
+
+    PtnResource *resource = ptn_resource_new_named("Socket");
+    ptn_resource_assign_object_id(runtime, resource);
+    resource->close_hook = ptn_socket_close_hook;
+    resource->close_hook_data = data;
+    resource->close_hook_data_free = free;
+    return resource;
+}
+
+static void ptn_socket_set_last_error(PtnSocketData *data, int error_code) {
+    if (data != NULL) {
+        data->last_error = error_code;
+    }
+    ptn_socket_last_error_global = error_code;
+}
+
+static PtnResource *ptn_internal_expect_socket_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || ptn_socket_data(value.as.resource) == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type Socket, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    return value.as.resource;
+}
+
+static void ptn_socket_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
+    if (arg.type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, arg.as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_socket_false_with_error(PtnSocketData *data, int error_code) {
+    ptn_socket_set_last_error(data, error_code);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_socket_false_from_errno(PtnSocketData *data) {
+    return ptn_socket_false_with_error(data, errno);
+}
+
+static char *ptn_socket_sockaddr_un_path(const struct sockaddr_un *addr, socklen_t len) {
+    if (len <= (socklen_t)offsetof(struct sockaddr_un, sun_path)) {
+        return ptn_duplicate_string("");
+    }
+    size_t path_len = (size_t)len - offsetof(struct sockaddr_un, sun_path);
+    if (path_len > sizeof(addr->sun_path)) {
+        path_len = sizeof(addr->sun_path);
+    }
+    if (path_len > 0 && addr->sun_path[0] != '\0') {
+        size_t trimmed = strnlen(addr->sun_path, path_len);
+        path_len = trimmed;
+    }
+    return ptn_duplicate_string_len(addr->sun_path, path_len);
+}
+
+static int ptn_socket_make_unix_addr(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand path,
+    struct sockaddr_un *addr,
+    socklen_t *len_out,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)runtime;
+    (void)function_name;
+    (void)path;
+    (void)addr;
+    (void)len_out;
+    (void)line;
+    return 0;
+#else
+    size_t max_len = sizeof(addr->sun_path);
+    int abstract = path.len > 0 && path.data[0] == '\0';
+    if (!abstract && max_len > 0) {
+        max_len--;
+    }
+    if (path.len > max_len) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): socket path exceeded the maximum allowed length of %zu bytes",
+            function_name,
+            max_len
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+    memset(addr, 0, sizeof(*addr));
+    addr->sun_family = AF_UNIX;
+    memcpy(addr->sun_path, path.data, path.len);
+    *len_out = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + path.len);
+    if (!abstract) {
+        addr->sun_path[path.len] = '\0';
+        (*len_out)++;
+    }
+    return 1;
+#endif
+}
+
+static int ptn_socket_make_inet_addr(
+    PtnStringOperand address,
+    int64_t port,
+    struct sockaddr_in *addr
+) {
+    if (port < 0 || port > 65535) {
+        return 0;
+    }
+    char *address_c = ptn_duplicate_string_len(address.data, address.len);
+    memset(addr, 0, sizeof(*addr));
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons((uint16_t)port);
+    int ok = inet_pton(AF_INET, address_c, &addr->sin_addr) == 1;
+    free(address_c);
+    return ok;
+}
+
+static PtnValue ptn_internal_socket_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t domain = ptn_internal_expect_integer_arg(runtime, "socket_create", 1, "domain", args[0], line);
+    int64_t type = ptn_internal_expect_integer_arg(runtime, "socket_create", 2, "type", args[1], line);
+    int64_t protocol = ptn_internal_expect_integer_arg(runtime, "socket_create", 3, "protocol", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)domain;
+    (void)type;
+    (void)protocol;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int fd = socket((int)domain, (int)type, (int)protocol);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, (int)domain, (int)type, (int)protocol));
+#endif
+}
+
+static PtnValue ptn_internal_socket_create_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t port = ptn_internal_expect_integer_arg(runtime, "socket_create_listen", 1, "port", args[0], line);
+    int64_t backlog = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "socket_create_listen", 2, "backlog", args[1], line)
+        : 128;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (port < 0 || port > 65535) {
+        ptn_socket_set_last_error(NULL, EINVAL);
+        return ptn_bool(0);
+    }
+#if defined(_WIN32)
+    (void)backlog;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
+        listen(fd, backlog < 0 ? 0 : (int)backlog) != 0) {
+        int error_code = errno;
+        close(fd);
+        return ptn_socket_false_with_error(NULL, error_code);
+    }
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, AF_INET, SOCK_STREAM, IPPROTO_TCP));
+#endif
+}
+
+static PtnValue ptn_internal_socket_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_close", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_close(resource);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_socket_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_bind", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_bind", 2, "address", args[1], line);
+    int64_t port = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_bind", 3, "port", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un addr;
+        socklen_t len = 0;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_bind", address, &addr, &len, line)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = bind(data->fd, (struct sockaddr *)&addr, len);
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in addr;
+        if (!ptn_socket_make_inet_addr(address, port, &addr)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = bind(data->fd, (struct sockaddr *)&addr, sizeof(addr));
+    } else {
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_string_operand_free(address);
+    if (result != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_getsockname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_getsockname", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+    if (getsockname(data->fd, (struct sockaddr *)&addr, &len) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    if (addr.ss_family == AF_INET) {
+        char buffer[INET_ADDRSTRLEN];
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&addr;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, buffer, sizeof(buffer));
+        if (formatted == NULL) {
+            return ptn_socket_false_from_errno(data);
+        }
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(formatted));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+        }
+    } else if (addr.ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((struct sockaddr_un *)&addr, len);
+        ptn_socket_assign_reference(runtime, args[1], ptn_owned_string(path));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int(0));
+        }
+    } else {
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_listen", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t backlog = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "socket_listen", 2, "backlog", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    (void)backlog;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    if (listen(data->fd, backlog < 0 ? 0 : (int)backlog) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_connect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_connect", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_connect", 2, "address", args[1], line);
+    int64_t port = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_connect", 3, "port", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un addr;
+        socklen_t len = 0;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_connect", address, &addr, &len, line)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = connect(data->fd, (struct sockaddr *)&addr, len);
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in addr;
+        if (!ptn_socket_make_inet_addr(address, port, &addr)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = connect(data->fd, (struct sockaddr *)&addr, sizeof(addr));
+    } else {
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_string_operand_free(address);
+    if (result != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_accept(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_accept", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int fd;
+    do {
+        fd = accept(data->fd, NULL, NULL);
+    } while (fd < 0 && errno == EINTR);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, data->domain, data->type, data->protocol));
+#endif
+}
+
+static int ptn_socket_length_is_usable(int64_t length) {
+    return length > 0 && length <= INT_MAX;
+}
+
+static PtnValue ptn_internal_socket_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_read", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_read", 2, "length", args[1], line);
+    int64_t mode = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_read", 3, "mode", args[2], line)
+        : 2;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)mode;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t used = 0;
+    if (mode == 1) {
+        while (used < (size_t)length) {
+            char byte = '\0';
+            ssize_t received = recv(data->fd, &byte, 1, 0);
+            if (received <= 0) {
+                if (received < 0) {
+                    free(buffer);
+                    return ptn_socket_false_from_errno(data);
+                }
+                break;
+            }
+            buffer[used++] = byte;
+            if (byte == '\n') {
+                break;
+            }
+        }
+    } else {
+        ssize_t received;
+        do {
+            received = recv(data->fd, buffer, (size_t)length, 0);
+        } while (received < 0 && errno == EINTR);
+        if (received < 0) {
+            free(buffer);
+            return ptn_socket_false_from_errno(data);
+        }
+        used = (size_t)received;
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_owned_string_len(buffer, used);
+#endif
+}
+
+static PtnValue ptn_internal_socket_write(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_write", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand buffer = ptn_internal_expect_string_arg(runtime, "socket_write", 2, "data", args[1], line);
+    int64_t length = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_write", 3, "length", args[2], line)
+        : (int64_t)buffer.len;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(buffer);
+        return ptn_null();
+    }
+    if (length < 0) {
+        ptn_string_operand_free(buffer);
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+    size_t write_len = (size_t)length;
+    if (write_len > buffer.len) {
+        write_len = buffer.len;
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(buffer);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    ssize_t sent;
+    do {
+        sent = send(data->fd, buffer.data, write_len, 0);
+    } while (sent < 0 && errno == EINTR);
+    ptn_string_operand_free(buffer);
+    if (sent < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)sent);
+#endif
+}
+
+static PtnValue ptn_internal_socket_recv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_recv", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_recv", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_recv", 4, "flags", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)flags;
+    ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ssize_t received;
+    do {
+        received = recv(data->fd, buffer, (size_t)length, (int)flags);
+    } while (received < 0 && errno == EINTR);
+    if (received < 0) {
+        free(buffer);
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_assign_reference(runtime, args[1], ptn_owned_string_len(buffer, (size_t)received));
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)received);
+#endif
+}
+
+static PtnValue ptn_internal_socket_sendto(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_sendto", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand buffer = ptn_internal_expect_string_arg(runtime, "socket_sendto", 2, "data", args[1], line);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_sendto", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_sendto", 4, "flags", args[3], line);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_sendto", 5, "address", args[4], line);
+    int64_t port = argc >= 6
+        ? ptn_internal_expect_integer_arg(runtime, "socket_sendto", 6, "port", args[5], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+    if (length < 0) {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+    size_t send_len = (size_t)length;
+    if (send_len > buffer.len) {
+        send_len = buffer.len;
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(buffer);
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage storage;
+    struct sockaddr *sockaddr_ptr = (struct sockaddr *)&storage;
+    socklen_t sockaddr_len = 0;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un *unix_addr = (struct sockaddr_un *)&storage;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_sendto", address, unix_addr, &sockaddr_len, line)) {
+            ptn_string_operand_free(buffer);
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&storage;
+        if (!ptn_socket_make_inet_addr(address, port, inet_addr)) {
+            ptn_string_operand_free(buffer);
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        sockaddr_len = sizeof(*inet_addr);
+    } else {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ssize_t sent;
+    do {
+        sent = sendto(data->fd, buffer.data, send_len, (int)flags, sockaddr_ptr, sockaddr_len);
+    } while (sent < 0 && errno == EINTR);
+    ptn_string_operand_free(buffer);
+    ptn_string_operand_free(address);
+    if (sent < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)sent);
+#endif
+}
+
+static PtnValue ptn_internal_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_recvfrom", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_recvfrom", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_recvfrom", 4, "flags", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)flags;
+    ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+    ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+    if (argc >= 6) {
+        ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+    }
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    struct sockaddr_storage from;
+    socklen_t from_len = sizeof(from);
+    ssize_t received;
+    do {
+        received = recvfrom(data->fd, buffer, (size_t)length, (int)flags, (struct sockaddr *)&from, &from_len);
+    } while (received < 0 && errno == EINTR);
+    if (received < 0) {
+        free(buffer);
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_assign_reference(runtime, args[1], ptn_owned_string_len(buffer, (size_t)received));
+    if (from.ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((struct sockaddr_un *)&from, from_len);
+        ptn_socket_assign_reference(runtime, args[4], ptn_owned_string(path));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+    } else if (from.ss_family == AF_INET) {
+        char addr_buffer[INET_ADDRSTRLEN];
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&from;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, addr_buffer, sizeof(addr_buffer));
+        ptn_socket_assign_reference(runtime, args[4], formatted == NULL ? ptn_string("") : ptn_string(formatted));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+        }
+    } else {
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)received);
+#endif
+}
+
+static int ptn_socket_set_blocking(PtnSocketData *data, int enabled) {
+#if defined(_WIN32)
+    (void)data;
+    (void)enabled;
+    return 0;
+#else
+    int flags = fcntl(data->fd, F_GETFL, 0);
+    if (flags < 0) {
+        return 0;
+    }
+    if (enabled) {
+        flags &= ~O_NONBLOCK;
+    } else {
+        flags |= O_NONBLOCK;
+    }
+    return fcntl(data->fd, F_SETFL, flags) == 0;
+#endif
+}
+
+static PtnValue ptn_internal_socket_set_nonblock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_nonblock", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    if (!ptn_socket_set_blocking(data, 0)) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_socket_set_block(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_block", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    if (!ptn_socket_set_blocking(data, 1)) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+}
+
+static void ptn_socket_linger_missing_key(PtnRuntime *runtime, const char *key_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "socket_set_option(): Argument #4 ($value) must have key \"%s\"",
+        key_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_socket_array_integer_value(PtnArray *array, const char *key_name, int *out) {
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 0;
+    }
+    *out = (int)ptn_value_to_integer(entry->value);
+    return 1;
+}
+
+static PtnValue ptn_internal_socket_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_option", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t level = ptn_internal_expect_integer_arg(runtime, "socket_set_option", 2, "level", args[1], line);
+    int64_t option = ptn_internal_expect_integer_arg(runtime, "socket_set_option", 3, "option", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)level;
+    (void)option;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (level == SOL_SOCKET && option == SO_LINGER) {
+        PtnValue option_value = ptn_value_deref(args[3]);
+        if (option_value.type != PTN_ARRAY) {
+            ptn_socket_linger_missing_key(runtime, "l_onoff");
+            return ptn_null();
+        }
+        struct linger linger_value;
+        if (!ptn_socket_array_integer_value(option_value.as.array, "l_onoff", &linger_value.l_onoff)) {
+            ptn_socket_linger_missing_key(runtime, "l_onoff");
+            return ptn_null();
+        }
+        if (!ptn_socket_array_integer_value(option_value.as.array, "l_linger", &linger_value.l_linger)) {
+            ptn_socket_linger_missing_key(runtime, "l_linger");
+            return ptn_null();
+        }
+        result = setsockopt(data->fd, (int)level, (int)option, &linger_value, sizeof(linger_value));
+    } else {
+        int value = (int)ptn_value_to_integer(args[3]);
+        result = setsockopt(data->fd, (int)level, (int)option, &value, sizeof(value));
+    }
+    if (result != 0) {
+        int error_code = errno;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_set_option(): Unable to set socket option [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_socket_false_with_error(data, error_code);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_get_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_get_option", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t level = ptn_internal_expect_integer_arg(runtime, "socket_get_option", 2, "level", args[1], line);
+    int64_t option = ptn_internal_expect_integer_arg(runtime, "socket_get_option", 3, "option", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)level;
+    (void)option;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    if (level == SOL_SOCKET && option == SO_LINGER) {
+        struct linger linger_value;
+        socklen_t len = sizeof(linger_value);
+        if (getsockopt(data->fd, (int)level, (int)option, &linger_value, &len) != 0) {
+            return ptn_socket_false_from_errno(data);
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("l_onoff"), ptn_int(linger_value.l_onoff));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("l_linger"), ptn_int(linger_value.l_linger));
+        ptn_socket_set_last_error(data, 0);
+        return result;
+    }
+    int value = 0;
+    socklen_t len = sizeof(value);
+    if (getsockopt(data->fd, (int)level, (int)option, &value, &len) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int(value);
+#endif
+}
+
+static PtnValue ptn_internal_socket_last_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        (void)runtime;
+        return ptn_int(ptn_socket_last_error_global);
+    }
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_last_error", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    return ptn_int(data == NULL ? ptn_socket_last_error_global : data->last_error);
+}
+
+static PtnValue ptn_internal_socket_clear_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        (void)runtime;
+        ptn_socket_last_error_global = 0;
+        return ptn_null();
+    }
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_clear_error", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    ptn_socket_set_last_error(data, 0);
+    return ptn_null();
+}
+
+static int ptn_socket_select_arg_array(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    PtnArray **array_out,
+    int *is_null_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *array_out = NULL;
+        *is_null_out = 1;
+        return 1;
+    }
+    *is_null_out = 0;
+    if (value.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_select(): Argument #%zu ($%s) must be of type ?array, %s given",
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *array_out = value.as.array;
+    return 1;
+}
+
+static int ptn_socket_select_add_array(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t position,
+    const char *argument_name,
+    fd_set *set,
+    int *max_fd
+) {
+    if (array == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnSocketData *data = value.type == PTN_RESOURCE ? ptn_socket_data(value.as.resource) : NULL;
+        if (data == NULL) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "socket_select(): Argument #%zu ($%s) must only have elements of type Socket, %s given",
+                position,
+                argument_name,
+                ptn_offset_container_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        if (data->fd < 0 || data->fd >= FD_SETSIZE) {
+            ptn_throw_exception(runtime, "ValueError", "socket_select(): supplied Socket is not a valid select descriptor");
+            return 0;
+        }
+        FD_SET(data->fd, set);
+        if (data->fd > *max_fd) {
+            *max_fd = data->fd;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_socket_select_selected_array(PtnArray *array, fd_set *set) {
+    PtnValue selected = ptn_array_from_literal_entries(0, NULL);
+    if (array == NULL) {
+        return selected;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnSocketData *data = value.type == PTN_RESOURCE ? ptn_socket_data(value.as.resource) : NULL;
+        if (data != NULL && data->fd >= 0 && data->fd < FD_SETSIZE && FD_ISSET(data->fd, set)) {
+            ptn_array_set_entry(
+                selected.as.array,
+                ptn_array_key_clone(array->entries[i].key),
+                ptn_value_clone_deref(array->entries[i].value)
+            );
+        }
+    }
+    return selected;
+}
+
+static PtnValue ptn_internal_socket_select(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *read_array = NULL;
+    PtnArray *write_array = NULL;
+    PtnArray *except_array = NULL;
+    int read_null = 0;
+    int write_null = 0;
+    int except_null = 0;
+    if (!ptn_socket_select_arg_array(runtime, 1, "read", args[0], &read_array, &read_null) ||
+        !ptn_socket_select_arg_array(runtime, 2, "write", args[1], &write_array, &write_null) ||
+        !ptn_socket_select_arg_array(runtime, 3, "except", args[2], &except_array, &except_null)) {
+        return ptn_null();
+    }
+    if ((read_array == NULL || read_array->len == 0) &&
+        (write_array == NULL || write_array->len == 0) &&
+        (except_array == NULL || except_array->len == 0)) {
+        ptn_throw_exception(runtime, "ValueError", "socket_select(): At least one array argument must be passed");
+        return ptn_null();
+    }
+    int64_t seconds = ptn_value_deref(args[3]).type == PTN_NULL
+        ? -1
+        : ptn_internal_expect_integer_arg(runtime, "socket_select", 4, "seconds", args[3], line);
+    int64_t microseconds = argc >= 5
+        ? ptn_internal_expect_integer_arg(runtime, "socket_select", 5, "microseconds", args[4], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (seconds < -1 || microseconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "socket_select(): timeout must be greater than or equal to 0");
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)read_null;
+    (void)write_null;
+    (void)except_null;
+    return ptn_bool(0);
+#else
+    fd_set read_set;
+    fd_set write_set;
+    fd_set except_set;
+    FD_ZERO(&read_set);
+    FD_ZERO(&write_set);
+    FD_ZERO(&except_set);
+    int max_fd = -1;
+    if (!ptn_socket_select_add_array(runtime, read_array, 1, "read", &read_set, &max_fd) ||
+        !ptn_socket_select_add_array(runtime, write_array, 2, "write", &write_set, &max_fd) ||
+        !ptn_socket_select_add_array(runtime, except_array, 3, "except", &except_set, &max_fd)) {
+        return ptn_null();
+    }
+    struct timeval timeout;
+    struct timeval *timeout_ptr = NULL;
+    if (seconds >= 0) {
+        timeout.tv_sec = (time_t)seconds;
+        timeout.tv_usec = (suseconds_t)microseconds;
+        timeout_ptr = &timeout;
+    }
+    int selected;
+    do {
+        selected = select(
+            max_fd + 1,
+            read_array == NULL ? NULL : &read_set,
+            write_array == NULL ? NULL : &write_set,
+            except_array == NULL ? NULL : &except_set,
+            timeout_ptr
+        );
+    } while (selected < 0 && errno == EINTR);
+    if (selected < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    ptn_socket_assign_reference(runtime, args[0], read_null ? ptn_null() : ptn_socket_select_selected_array(read_array, &read_set));
+    ptn_socket_assign_reference(runtime, args[1], write_null ? ptn_null() : ptn_socket_select_selected_array(write_array, &write_set));
+    ptn_socket_assign_reference(runtime, args[2], except_null ? ptn_null() : ptn_socket_select_selected_array(except_array, &except_set));
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_int(selected);
+#endif
+}
+
+static PtnValue ptn_internal_socket_import_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *stream = ptn_internal_expect_open_stream_arg(runtime, "socket_import_stream", args[0], line);
+    if (stream == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    return ptn_bool(0);
+#else
+    if (stream->stream == NULL) {
+        return ptn_bool(0);
+    }
+    int fd = fileno(stream->stream);
+    if (fd < 0) {
+        return ptn_bool(0);
+    }
+    int dup_fd = dup(fd);
+    if (dup_fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    int domain = AF_UNIX;
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    if (getsockname(dup_fd, (struct sockaddr *)&addr, &addr_len) == 0) {
+        domain = addr.ss_family;
+    }
+    int type = SOCK_STREAM;
+    socklen_t type_len = sizeof(type);
+    (void)getsockopt(dup_fd, SOL_SOCKET, SO_TYPE, &type, &type_len);
+    return ptn_resource(ptn_socket_new_resource(runtime, dup_fd, domain, type, 0));
+#endif
+}
+
 static void ptn_stream_socket_server_assign_error(
     PtnRuntime *runtime,
     size_t argc,
@@ -181541,7 +182683,28 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sleep", 1, 1, ptn_internal_sleep },
+        { "socket_accept", 1, 1, ptn_internal_socket_accept },
+        { "socket_bind", 2, 3, ptn_internal_socket_bind },
+        { "socket_clear_error", 0, 1, ptn_internal_socket_clear_error },
+        { "socket_close", 1, 1, ptn_internal_socket_close },
+        { "socket_connect", 2, 3, ptn_internal_socket_connect },
+        { "socket_create", 3, 3, ptn_internal_socket_create },
+        { "socket_create_listen", 1, 2, ptn_internal_socket_create_listen },
+        { "socket_get_option", 3, 3, ptn_internal_socket_get_option },
+        { "socket_getsockname", 2, 3, ptn_internal_socket_getsockname },
+        { "socket_import_stream", 1, 1, ptn_internal_socket_import_stream },
+        { "socket_last_error", 0, 1, ptn_internal_socket_last_error },
+        { "socket_listen", 1, 2, ptn_internal_socket_listen },
+        { "socket_read", 2, 3, ptn_internal_socket_read },
+        { "socket_recv", 4, 4, ptn_internal_socket_recv },
+        { "socket_recvfrom", 5, 6, ptn_internal_socket_recvfrom },
+        { "socket_select", 4, 5, ptn_internal_socket_select },
+        { "socket_sendto", 5, 6, ptn_internal_socket_sendto },
+        { "socket_set_block", 1, 1, ptn_internal_socket_set_block },
+        { "socket_set_nonblock", 1, 1, ptn_internal_socket_set_nonblock },
+        { "socket_set_option", 4, 4, ptn_internal_socket_set_option },
         { "socket_strerror", 1, 1, ptn_internal_socket_strerror },
+        { "socket_write", 2, 3, ptn_internal_socket_write },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "spl_autoload", 1, 2, ptn_internal_spl_autoload },
