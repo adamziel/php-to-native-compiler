@@ -1232,6 +1232,10 @@ typedef struct {
     PtnValue callback;
     size_t chunk_size;
     int64_t flags;
+    int trans_sid_rewrite;
+    char *trans_sid_session_name;
+    char *trans_sid_session_id;
+    char *trans_sid_hosts;
 } PtnOutputBuffer;
 
 typedef struct {

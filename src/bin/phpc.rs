@@ -665,6 +665,7 @@ fn canonical_session_ini_name(name: &str) -> Option<&'static str> {
         "session.serialize_handler" => Some("session.serialize_handler"),
         "session.sid_bits_per_character" => Some("session.sid_bits_per_character"),
         "session.sid_length" => Some("session.sid_length"),
+        "session.trans_sid_hosts" => Some("session.trans_sid_hosts"),
         "session.upload_progress.cleanup" => Some("session.upload_progress.cleanup"),
         "session.upload_progress.enabled" => Some("session.upload_progress.enabled"),
         "session.upload_progress.freq" => Some("session.upload_progress.freq"),
@@ -1040,6 +1041,20 @@ fn session_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
     {
         warnings.push(
             "Deprecated: PHP Startup: Disabling session.use_only_cookies INI setting is deprecated in Unknown on line 0",
+        );
+    }
+    if ini
+        .session
+        .iter()
+        .rev()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("session.use_trans_sid")
+                .then_some(value)
+        })
+        .is_some_and(|value| ini_scalar_truthy(value))
+    {
+        warnings.push(
+            "Deprecated: PHP Startup: Enabling session.use_trans_sid INI setting is deprecated in Unknown on line 0",
         );
     }
     warnings
@@ -1462,8 +1477,11 @@ fn compile_and_run(
     if let Some(warning) = session_save_handler_warning {
         println!("{warning}");
     }
-    for warning in &session_startup_deprecations {
+    for (index, warning) in session_startup_deprecations.iter().enumerate() {
         println!("{warning}");
+        if index + 1 < session_startup_deprecations.len() {
+            println!();
+        }
     }
     for (index, warning) in assert_startup_deprecations.iter().enumerate() {
         println!("{warning}");

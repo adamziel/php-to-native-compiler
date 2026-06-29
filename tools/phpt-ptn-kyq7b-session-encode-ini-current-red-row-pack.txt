@@ -1,0 +1,5 @@
+ext/session/tests/014.phpt
+ext/session/tests/018.phpt
+ext/session/tests/bug51338.phpt
+ext/session/tests/bug74892.phpt
+ext/session/tests/session_basic5.phpt
