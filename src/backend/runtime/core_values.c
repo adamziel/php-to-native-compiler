@@ -1383,6 +1383,10 @@ struct PtnStreamFilter {
     size_t filter_line_break_len;
     int filter_line_break_configured;
     int quoted_printable_invalid_sequence;
+    char *iconv_from_encoding;
+    char *iconv_to_encoding;
+    char *iconv_from_display;
+    char *iconv_to_display;
     int iconv_error;
     size_t dechunk_remaining;
     size_t dechunk_size;

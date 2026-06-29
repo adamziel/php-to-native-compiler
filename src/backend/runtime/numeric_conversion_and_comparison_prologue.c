@@ -532,6 +532,9 @@ static PTN_UNUSED void ptn_runtime_register_shutdown_function(
     if (root == NULL) {
         root = runtime;
     }
+    if (root == NULL || root->header_callback_running) {
+        return;
+    }
     if (root->shutdown_functions_len == root->shutdown_functions_capacity) {
         size_t new_capacity = root->shutdown_functions_capacity == 0
             ? 4
