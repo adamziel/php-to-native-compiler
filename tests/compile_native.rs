@@ -57314,6 +57314,117 @@ try {
 }
 
 #[test]
+fn compile_zip_name_metadata_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-zip-name-metadata-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zip-name-metadata-edges.php");
+    let output = root.join("zip-name-metadata-edges-bin");
+
+    fn push_u16(out: &mut Vec<u8>, value: u16) {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    fn push_u32(out: &mut Vec<u8>, value: u32) {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    fn push_central_entry(out: &mut Vec<u8>, name: &str) {
+        push_u32(out, 0x02014b50);
+        push_u16(out, 20);
+        push_u16(out, 20);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u32(out, 0);
+        push_u32(out, 0);
+        push_u32(out, 0);
+        push_u16(out, name.len() as u16);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u16(out, 0);
+        push_u32(out, 0);
+        push_u32(out, 0);
+        out.extend_from_slice(name.as_bytes());
+    }
+
+    let names = ["foo", "bar", "foobar/", "foobar/baz"];
+    let mut zip_bytes = Vec::new();
+    for name in names {
+        push_central_entry(&mut zip_bytes, name);
+    }
+    let central_size = zip_bytes.len() as u32;
+    push_u32(&mut zip_bytes, 0x06054b50);
+    push_u16(&mut zip_bytes, 0);
+    push_u16(&mut zip_bytes, 0);
+    push_u16(&mut zip_bytes, names.len() as u16);
+    push_u16(&mut zip_bytes, names.len() as u16);
+    push_u32(&mut zip_bytes, central_size);
+    push_u32(&mut zip_bytes, 0);
+    push_u16(&mut zip_bytes, 0);
+    fs::write(root.join("names.zip"), zip_bytes).unwrap();
+    fs::write(
+        root.join("zip-subclass.inc"),
+        r#"<?php
+class myZip extends ZipArchive {
+    private $test = 0;
+    public $testp = 1;
+    private $testarray = [];
+
+    public function __construct() {
+        $this->testarray[] = 1;
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        &input,
+        r#"<?php
+$zip = zip_open(__DIR__ . '/names.zip');
+while ($entry = zip_read($zip)) {
+    echo zip_entry_name($entry), "\n";
+}
+zip_close($zip);
+
+include __DIR__ . '/zip-subclass.inc';
+$z = new myZip;
+$z->testp = 'foobar';
+var_dump($z);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("foo\n"), "{stdout}");
+    assert!(stdout.contains("bar\n"), "{stdout}");
+    assert!(stdout.contains("foobar/\n"), "{stdout}");
+    assert!(stdout.contains("foobar/baz\n"), "{stdout}");
+    assert!(stdout.contains("object(myZip)#"), "{stdout}");
+    assert!(stdout.contains("[\"lastId\"]=>\n  int(-1)"), "{stdout}");
+    assert!(stdout.contains("[\"numFiles\"]=>\n  int(0)"), "{stdout}");
+    assert!(
+        stdout.contains("[\"testp\"]=>\n  string(6) \"foobar\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zip_entry_name"));
+    assert!(c_source.contains("ptn_zip_archive_initialize_properties"));
+}
+
+#[test]
 fn compile_phar_map_phar_static_method_to_native_binary() {
     let root = temp_dir("ptn-native-phar-map-phar-static-method");
     fs::create_dir_all(&root).unwrap();
@@ -57731,6 +57842,42 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(c_source.contains("ptn_phar_manifest_read_u16"));
     assert!(c_source.contains("ptn_phar_uri_read_entry"));
     assert!(c_source.contains("ptn_internal_phar_mount"));
+}
+
+#[test]
+fn compile_phar_mount_failure_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-mount-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-mount-failure.php");
+    let output = root.join("phar-mount-failure-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    phar::mount(1, 1);\n\
+} catch (Exception $e) {\n\
+    var_dump($e->getMessage());\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(25) \"Mounting of 1 to 1 failed\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_throw_mount_failed"));
 }
 
 #[test]

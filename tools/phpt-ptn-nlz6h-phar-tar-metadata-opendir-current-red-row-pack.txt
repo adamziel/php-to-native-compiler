@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/phar/tests/tar/tar_004.phpt
+/home/claude/php-src-phpt/ext/phar/tests/tar/phar_stub.phpt
+/home/claude/php-src-phpt/ext/phar/tests/phar_metadata_write3.phpt
+/home/claude/php-src-phpt/ext/phar/tests/cache_list/frontcontroller18.phpt
+/home/claude/php-src-phpt/ext/phar/tests/bug69441.phpt
+/home/claude/php-src-phpt/ext/phar/tests/dir.phpt
+/home/claude/php-src-phpt/ext/phar/tests/zip/open_for_write_newfile_c.phpt
+/home/claude/php-src-phpt/ext/phar/tests/gh17808.phpt
+/home/claude/php-src-phpt/ext/phar/tests/bug54395.phpt
+/home/claude/php-src-phpt/ext/phar/tests/phar_ctx_001.phpt
+/home/claude/php-src-phpt/ext/phar/tests/opendir_edgecases.phpt
+/home/claude/php-src-phpt/ext/phar/tests/zip/notphar.phpt

@@ -2562,6 +2562,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{phar_archive_ini:?}"
     );
 
+    let phar_mount_failure = classify_at_relative_path(
+        "--TEST--\nphar mount failure\n--EXTENSIONS--\nphar\n--FILE--\n<?php\ntry { phar::mount(1, 1); } catch (Exception $e) { var_dump($e->getMessage()); }\n--EXPECT--\nstring(25) \"Mounting of 1 to 1 failed\"\n",
+        "ext/phar/tests/bug54395.phpt",
+    );
+    assert_eq!(
+        phar_mount_failure.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_cache_list_recursive_iterator = classify_at_relative_path(
         "--TEST--\nphar cache-list recursive iterator\n--EXTENSIONS--\nphar\n--INI--\nphar.cache_list={PWD}/files/nophar.phar\n--FILE--\n<?php\n$p = 'phar://' . __DIR__ . '/files/nophar.phar';\nforeach (new RecursiveIteratorIterator(new Phar($p)) as $f) echo $f->getPathName(), \"\\n\";\n--EXPECT--\n",
         "ext/phar/tests/cached_manifest_1.phpt",

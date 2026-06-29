@@ -227,6 +227,7 @@ pub fn emit_c(module: &Module) -> String {
         needs_method_dispatch,
     );
     emit_function_static_variable_provider_prototypes(&mut out, &module.functions);
+    emit_declared_property_default_array_helper_prototypes(&mut out, &module.classes);
     emit_include_helpers(
         &mut out,
         &module.includes,
@@ -9752,6 +9753,26 @@ fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[Cla
             out.push_str("    }\n");
             out.push_str("    return ptn_value_clone(value);\n");
             out.push_str("}\n");
+        }
+    }
+}
+
+fn emit_declared_property_default_array_helper_prototypes(out: &mut String, classes: &[ClassDecl]) {
+    for class in classes {
+        for property in &class.properties {
+            let Some(value @ ValueExpr::Array(_)) = property.value.as_ref() else {
+                continue;
+            };
+            if !value_expr_is_shareable_property_default(value) {
+                continue;
+            }
+            out.push_str("static PTN_UNUSED PtnValue ");
+            out.push_str(&property_default_array_helper_name(
+                &class.name,
+                &property.name,
+                property.line,
+            ));
+            out.push_str("(PtnRuntime *runtime);\n");
         }
     }
 }
@@ -50055,7 +50076,7 @@ impl ValueEmitter {
         out: &mut String,
         result_temp: &str,
         declared_class: &ClassDecl,
-        _line: usize,
+        line: usize,
         declare_result: bool,
     ) {
         out.push_str("    ");
@@ -50066,6 +50087,15 @@ impl ValueEmitter {
         out.push_str(" = ptn_object_new_shell(&runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\");\n");
+        if inherited_modeled_internal_class_name(declared_class, &self.classes)
+            .is_some_and(|name| name.eq_ignore_ascii_case("ZipArchive"))
+        {
+            out.push_str("    ptn_zip_archive_initialize_properties(&runtime, ");
+            out.push_str(result_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         self.emit_runtime_alias_parent_property_initializers(out, result_temp, declared_class);
         self.emit_declared_property_initializers(
             out,
