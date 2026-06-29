@@ -50973,6 +50973,59 @@ int(2147570047)\n"
 }
 
 #[test]
+fn compile_intl_message_calendar_locale_and_interpolation_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-calendar-locale-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-calendar-locale-interpolation.php");
+    let output = root.join("intl-message-calendar-locale-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class ChainEnd { public function current() { return 42; } }\n\
+class ChainStart { public function getBreakIterator() { return new ChainEnd(); } }\n\
+$it = new ChainStart();\n\
+echo \"at {$it->getBreakIterator()->current()}\\n\";\n\
+$cal = IntlCalendar::createInstance('Europe/Amsterdam', 'nl');\n\
+echo $cal->getLocale(Locale::ACTUAL_LOCALE), \"\\n\";\n\
+var_dump($cal->getWeekendTransition(IntlCalendar::DOW_SUNDAY));\n\
+$cal->clear();\n\
+var_dump($cal->getTime());\n\
+$parsed = Locale::parseLocale('zh-CN-a-myExt-x-private');\n\
+echo $parsed['language'], '|', $parsed['region'], '|', $parsed['private0'], \"\\n\";\n\
+$private = locale_parse('x-AAAAAA');\n\
+echo $private['private0'], \"\\n\";\n\
+try {\n\
+    new MessageFormatter('en', '{0,choice}');\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(MessageFormatter::create('fr', '{0,'));\n\
+echo intl_get_error_message(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "at 42\n\
+nl\n\
+int(86400000)\n\
+float(-3600000)\n\
+zh|CN|private\n\
+AAAAAA\n\
+IntlException: MessageFormatter::__construct(): pattern syntax error (parse error at offset 1, after \"{\", before or at \"0,choice}\")\n\
+MessageFormatter::__construct(): pattern syntax error (parse error at offset 1, after \"{\", before or at \"0,choice}\"): U_PATTERN_SYNTAX_ERROR\n\
+NULL\n\
+MessageFormatter::create(): message formatter creation failed: U_UNMATCHED_BRACES\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();

@@ -329,6 +329,7 @@ struct RuntimeIni {
     mbstring_encoding_translation: Option<String>,
     intl_error_level: Option<String>,
     intl_use_exceptions: Option<String>,
+    intl_default_locale: Option<String>,
     zend_multibyte: Option<String>,
     zend_script_encoding: Option<String>,
     zend_assertions: Option<String>,
@@ -582,6 +583,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.intl_error_level = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("intl.use_exceptions") {
         ini.intl_use_exceptions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("intl.default_locale") {
+        ini.intl_default_locale = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.multibyte") {
         ini.zend_multibyte = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.script_encoding") {
@@ -1147,6 +1150,7 @@ fn compile_and_run(
         mbstring_encoding_translation: ini.mbstring_encoding_translation.clone(),
         intl_error_level: ini.intl_error_level.clone(),
         intl_use_exceptions: ini.intl_use_exceptions.clone(),
+        intl_default_locale: ini.intl_default_locale.clone(),
         zend_multibyte: ini.zend_multibyte.clone(),
         zend_script_encoding: ini.zend_script_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
@@ -1388,6 +1392,9 @@ fn compile_and_run(
     }
     if let Some(intl_use_exceptions) = &ini.intl_use_exceptions {
         command.env("PTN_INTL_USE_EXCEPTIONS", intl_use_exceptions);
+    }
+    if let Some(intl_default_locale) = &ini.intl_default_locale {
+        command.env("PTN_INTL_DEFAULT_LOCALE", intl_default_locale);
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
