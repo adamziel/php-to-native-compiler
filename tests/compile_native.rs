@@ -85112,6 +85112,121 @@ try {
 }
 
 #[test]
+fn compile_call_user_func_invalid_callback_skips_later_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-callback-argument-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-callback-argument-order.php");
+    let output = root.join("call-user-func-invalid-callback-argument-order-bin");
+    fs::write(
+        &input,
+        "<?php
+function side_effect() {
+    echo \"side effect\\n\";
+    return 1;
+}
+
+try {
+    call_user_func([null, 'missing'], side_effect());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(
+        c_source.contains("ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\"")
+    );
+    assert!(c_source.contains("runtime.exceptions->active_exception == NULL"));
+}
+
+#[test]
+fn compile_call_user_func_by_ref_array_dim_argument_is_read_by_value_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-dim-by-value");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-dim-by-value.php");
+    let output = root.join("call-user-func-array-dim-by-value-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo(&$ref) { $ref = 24; }
+
+$a = [];
+call_user_func('foo', $a[0][0]);
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: Undefined array key 0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Trying to access array offset on null"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: foo(): Argument #1 ($ref) must be passed by reference, value given"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("array(0) {\n}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_disable_by_ref_argument_source"));
+    assert!(c_source.contains("ptn_internal_call_callback_capturing_exception_impl"));
+}
+
+#[test]
+fn compile_call_user_func_internal_callback_uses_weak_arginfo_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-internal-weak-arginfo");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-internal-weak-arginfo.php");
+    let output = root.join("call-user-func-internal-weak-arginfo-bin");
+    fs::write(
+        &input,
+        "<?php
+declare(strict_types=1);
+
+namespace Foo;
+
+var_dump(call_user_func('strlen', false));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_user_func_previous_strict_types"));
+    assert!(c_source.contains("runtime->strict_types = 0"));
+}
+
+#[test]
 fn compile_string_static_callable_error_precedence_to_native_binary() {
     let root = temp_dir("ptn-native-string-static-callable-errors");
     fs::create_dir_all(&root).unwrap();
