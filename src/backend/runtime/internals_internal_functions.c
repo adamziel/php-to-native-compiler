@@ -120901,6 +120901,16 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     }
     PtnStringOperand timezone = ptn_internal_expect_string_arg(runtime, "DateTimeZone::__construct", 1, "timezone", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone);
+        return ptn_null();
+    }
+    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+        ptn_string_operand_free(timezone);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes"
+        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
@@ -122644,7 +122654,7 @@ static PtnValue ptn_datetime_apply_interval(
     return immutable ? target : ptn_value_clone(target);
 }
 
-static int ptn_datetime_update_wall_date(PtnValue target, int year, int month, int day) {
+static int ptn_datetime_update_wall_date(PtnValue target, int64_t year, int month, int day) {
     PtnDateTimeData *data = ptn_datetime_data_from_value(target);
     if (data == NULL) {
         return 0;
@@ -122658,6 +122668,19 @@ static int ptn_datetime_update_wall_date(PtnValue target, int year, int month, i
     }
     parts_storage = *parts;
     parts = &parts_storage;
+    if (year < (int64_t)INT_MIN + 1900 || year > (int64_t)INT_MAX + 1900) {
+        time_t adjusted_wall = ptn_datetime_utc_timestamp_for_parts(
+            year,
+            month,
+            day,
+            parts->tm_hour,
+            parts->tm_min,
+            parts->tm_sec
+        );
+        int adjusted_offset = ptn_timezone_offset_for_name(data->timezone, adjusted_wall);
+        data->timestamp = adjusted_wall - adjusted_offset;
+        return 1;
+    }
     parts->tm_year = year - 1900;
     parts->tm_mon = month - 1;
     parts->tm_mday = day;
@@ -123258,7 +123281,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
             return ptn_null();
         }
         PtnValue target = immutable ? ptn_datetime_clone(runtime, receiver, line) : receiver;
-        if (!ptn_datetime_update_wall_date(target, (int)year, (int)month, (int)day)) {
+        if (!ptn_datetime_update_wall_date(target, year, (int)month, (int)day)) {
             if (immutable) {
                 ptn_value_destroy(&target);
             }
@@ -126697,6 +126720,16 @@ static PtnValue ptn_internal_timezone_open(PtnRuntime *runtime, size_t argc, con
     (void)argc;
     PtnStringOperand timezone = ptn_internal_expect_string_arg(runtime, "timezone_open", 1, "timezone", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone);
+        return ptn_null();
+    }
+    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+        ptn_string_operand_free(timezone);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "timezone_open(): Argument #1 ($timezone) must not contain any null bytes"
+        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);

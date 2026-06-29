@@ -27671,6 +27671,24 @@ fn compile_timelib_timestamp_and_negative_year_rows_to_native_binary() {
 date_default_timezone_set('UTC');
 echo date('Y-m-d o-W-N', -62167046400 - (((99 * 365) + 25) * 86400) + (6 * 86400)), "\n";
 
+$wide = new DateTime('-1500-01-01');
+echo $wide->format('r'), "\n";
+$wide->setDate(-2147483648, 1, 1);
+echo $wide->format('r'), "\n";
+echo $wide->format('c'), "\n";
+
+$nulTimezone = "Europe/Zurich" . "\0" . "Foo";
+try {
+    timezone_open($nulTimezone);
+} catch (ValueError $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone($nulTimezone);
+} catch (ValueError $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+
 date_default_timezone_set('Europe/London');
 $empty = new DateTime('');
 echo $empty->getTimezone()->getName(), "\n";
@@ -27700,6 +27718,11 @@ echo $a->format(DateTime::ATOM), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "-0099-01-08 -99-02-2\n\
+Fri, 01 Jan -1500 00:00:00 +0000\n\
+Tue, 01 Jan -2147483648 00:00:00 +0000\n\
+-2147483648-01-01T00:00:00+00:00\n\
+ValueError: timezone_open(): Argument #1 ($timezone) must not contain any null bytes\n\
+ValueError: DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes\n\
 Europe/London\n\
 int(1234567890)\n\
 2009-02-13T23:31:30+00:00\n\
