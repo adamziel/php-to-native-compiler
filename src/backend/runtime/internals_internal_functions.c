@@ -155770,8 +155770,16 @@ static int ptn_zlib_option_value(PtnValue options, const char *name, PtnValue *v
         PtnArrayKey key = ptn_array_string_key(name);
         PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
         ptn_array_key_free(key);
-        *value_out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
+        if (entry != NULL) {
+            *value_out = ptn_value_clone_deref(entry->value);
+            return 1;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(options.as.object, name);
+        if (metadata != NULL && metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+            *value_out = ptn_null();
+            return 1;
+        }
     }
     *value_out = ptn_null();
     return 0;
@@ -155810,7 +155818,7 @@ static int ptn_zlib_option_integer(
     int64_t *out
 ) {
     PtnValue option = ptn_null();
-    if (!ptn_stream_filter_option(options, option_name, &option)) {
+    if (!ptn_zlib_option_value(options, option_name, &option)) {
         return 1;
     }
 
@@ -157155,6 +157163,21 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(data);
         return ptn_null();
+    }
+    const char *accept_encoding = getenv("HTTP_ACCEPT_ENCODING");
+    int accepts_gzip = 0;
+    if (accept_encoding != NULL) {
+        size_t accept_len = strlen(accept_encoding);
+        for (size_t i = 0; i + 4 <= accept_len; i++) {
+            if (ptn_ascii_case_equal_n(accept_encoding + i, "gzip", 4)) {
+                accepts_gzip = 1;
+                break;
+            }
+        }
+    }
+    if (!accepts_gzip) {
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
     }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,

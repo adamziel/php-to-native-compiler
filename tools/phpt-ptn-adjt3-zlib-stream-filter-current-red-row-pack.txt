@@ -1,0 +1,2 @@
+ext/zlib/tests/bug61820.phpt
+ext/zlib/tests/gh22142.phpt
