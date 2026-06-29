@@ -56594,8 +56594,17 @@ static int ptn_stream_filter_option(PtnValue options, const char *name, PtnValue
         PtnArrayKey key = ptn_array_string_key(name);
         PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
         ptn_array_key_free(key);
-        *out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
+        if (entry != NULL) {
+            *out = ptn_value_clone_deref(entry->value);
+            return 1;
+        }
+        for (size_t i = 0; i < options.as.object->property_metadata_len; i++) {
+            const PtnObjectPropertyMetadata *metadata = &options.as.object->property_metadata[i];
+            if (strcmp(metadata->display_name, name) == 0) {
+                *out = ptn_null();
+                return 1;
+            }
+        }
     }
     *out = ptn_null();
     return 0;
@@ -152353,6 +152362,20 @@ static int ptn_zlib_encoding_is_valid(int64_t encoding) {
         encoding == PTN_ZLIB_ENCODING_DEFLATE;
 }
 
+static int64_t ptn_zlib_output_encoding(void) {
+    const char *accept_encoding = getenv("HTTP_ACCEPT_ENCODING");
+    if (accept_encoding == NULL) {
+        return 0;
+    }
+    if (strstr(accept_encoding, "gzip") != NULL) {
+        return PTN_ZLIB_ENCODING_GZIP;
+    }
+    if (strstr(accept_encoding, "deflate") != NULL) {
+        return PTN_ZLIB_ENCODING_DEFLATE;
+    }
+    return 0;
+}
+
 static void ptn_zlib_throw_encoding_value_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -152393,23 +152416,7 @@ static void ptn_zlib_throw_level_value_error(PtnRuntime *runtime, const char *fu
 }
 
 static int ptn_zlib_option_value(PtnValue options, const char *name, PtnValue *value_out) {
-    options = ptn_value_deref(options);
-    if (options.type == PTN_ARRAY && options.as.array != NULL) {
-        PtnArrayKey key = ptn_array_string_key(name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.array, key);
-        ptn_array_key_free(key);
-        *value_out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
-    }
-    if (options.type == PTN_OBJECT && options.as.object != NULL && options.as.object->properties != NULL) {
-        PtnArrayKey key = ptn_array_string_key(name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
-        ptn_array_key_free(key);
-        *value_out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
-    }
-    *value_out = ptn_null();
-    return 0;
+    return ptn_stream_filter_option(options, name, value_out);
 }
 
 static void ptn_zlib_throw_option_range_value_error(
@@ -153791,12 +153798,17 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
         ptn_string_operand_free(data);
         return ptn_null();
     }
+    int64_t encoding = ptn_zlib_output_encoding();
+    if (encoding == 0) {
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
+    }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
         "ob_gzhandler",
         data,
         0,
-        PTN_ZLIB_ENCODING_GZIP,
+        encoding,
         -1,
         0,
         line
@@ -154254,6 +154266,13 @@ static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t ar
     (void)argc;
     (void)args;
     (void)line;
+    int64_t encoding = ptn_zlib_output_encoding();
+    if (encoding == PTN_ZLIB_ENCODING_GZIP) {
+        return ptn_string("gzip");
+    }
+    if (encoding == PTN_ZLIB_ENCODING_DEFLATE) {
+        return ptn_string("deflate");
+    }
     return ptn_bool(0);
 }
 
