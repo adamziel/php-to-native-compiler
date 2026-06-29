@@ -4831,9 +4831,6 @@ static PTN_UNUSED int ptn_stream_truncate(PtnResource *resource, int64_t size) {
         memset(stream->data + stream->len, 0, new_len - stream->len);
     }
     stream->len = new_len;
-    if (stream->position > new_len) {
-        stream->position = new_len;
-    }
     ptn_memory_stream_note_size(resource, stream);
     stream->eof = 0;
     stream->error = 0;

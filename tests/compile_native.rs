@@ -30389,6 +30389,12 @@ var_dump(fwrite($rw_memory, "bar"));
 rewind($rw_memory);
 var_dump(stream_get_contents($rw_memory));
 
+$alternate = fopen("php://memory", "+r");
+var_dump(stream_get_meta_data($alternate)["mode"]);
+var_dump(fwrite($alternate, "baz"));
+rewind($alternate);
+var_dump(stream_get_contents($alternate));
+
 var_dump(fclose($temp));
 var_dump(is_resource($temp), gettype($temp));
 try {
@@ -30434,6 +30440,9 @@ bool(false)\n\
 string(3) \"w+b\"\n\
 int(3)\n\
 string(3) \"bar\"\n\
+string(3) \"w+b\"\n\
+int(3)\n\
+string(3) \"baz\"\n\
 bool(true)\n\
 bool(false)\n\
 string(17) \"resource (closed)\"\n\
