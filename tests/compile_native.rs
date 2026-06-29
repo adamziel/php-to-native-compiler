@@ -34307,6 +34307,49 @@ var_dump($converted);\n",
 }
 
 #[test]
+fn compile_mb_convert_variables_recursive_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-variables-recursive-arrays");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-variables-recursive-arrays.php");
+    let output = root.join("mb-convert-variables-recursive-arrays-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('UTF-8', 'auto', $a));\n\
+unset($a);\n\
+$a = ['hé', ['nested' => '日本語テキスト']];\n\
+var_dump(mb_convert_variables('UTF-8', 'UTF-8', $a), $a);\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('UTF-8', 'UTF-8', $a), $a);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("mb_convert_variables(): Cannot convert recursively referenced values")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("string(5) \"UTF-8\"\n"), "{stdout}");
+    assert!(stdout.contains("string(3) \"hé\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(21) \"日本語テキスト\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("*RECURSION*"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_ucs4_bom_and_invalid_codepoints_to_native_binary() {
     let root = temp_dir("ptn-native-mb-ucs4-bom-invalid");
     fs::create_dir_all(&root).unwrap();
