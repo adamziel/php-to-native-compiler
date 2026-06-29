@@ -109450,6 +109450,16 @@ static int ptn_session_parent_save_handler_available(PtnRuntime *runtime) {
     return handler != NULL && handler[0] != '\0';
 }
 
+static const char *ptn_session_parent_save_handler_name(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return "";
+    }
+    return root->session_parent_save_handler != NULL
+        ? root->session_parent_save_handler
+        : ptn_runtime_session_ini(runtime, "session.save_handler");
+}
+
 static int ptn_session_parent_handler_is_open(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_session_root(runtime);
     return root != NULL && root->session_parent_handler_open;
@@ -109460,6 +109470,21 @@ static void ptn_session_parent_handler_set_open(PtnRuntime *runtime, int open) {
     if (root != NULL) {
         root->session_parent_handler_open = open ? 1 : 0;
     }
+}
+
+static int ptn_session_parent_handler_open_storage(PtnRuntime *runtime, size_t line) {
+    const char *handler = ptn_session_parent_save_handler_name(runtime);
+    if (ptn_ascii_case_equal(handler, "files")) {
+        char *dir = ptn_session_storage_dir(runtime);
+        if (!ptn_open_basedir_allows_path(runtime, dir)) {
+            ptn_emit_open_basedir_warning(runtime, "SessionHandler::open", dir, line);
+            free(dir);
+            return 0;
+        }
+        free(dir);
+    }
+    ptn_session_parent_handler_set_open(runtime, 1);
+    return 1;
 }
 
 static PtnValue ptn_session_call_user_handler(
@@ -110497,6 +110522,10 @@ static int ptn_session_decode_keyed_payload_into_array(
 }
 
 static int ptn_session_decode_payload(PtnRuntime *runtime, const char *data, size_t len, PtnValue *out, size_t line) {
+    if (len == 0) {
+        *out = ptn_array_from_literal_entries(0, NULL);
+        return 1;
+    }
     const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
     if (ptn_ascii_case_equal(handler, "php_serialize")) {
         return ptn_session_decode_serialized_value(runtime, data, len, out, line);
@@ -110720,14 +110749,24 @@ static PtnValue ptn_internal_session_save_path(PtnRuntime *runtime, size_t argc,
 static PtnValue ptn_internal_session_module_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_handler")));
     if (argc >= 1) {
-        if (ptn_session_reject_active_change(runtime, "session_module_name(): Session module name cannot be changed when a session is active (started from ptn on line 0)", line)) {
+        if (ptn_session_reject_active_change(runtime, "session_module_name(): Session save handler module cannot be changed when a session is active (started from ptn on line 0)", line)) {
             ptn_value_destroy(&previous);
             return ptn_bool(0);
         }
         PtnStringOperand value = ptn_value_to_string_operand(args[0]);
-        if (value.len == 0 ||
-            (!ptn_string_operand_ascii_case_equal(value, "files") &&
-             !ptn_string_operand_ascii_case_equal(value, "user"))) {
+        if (ptn_string_operand_ascii_case_equal(value, "user")) {
+            ptn_string_operand_free(value);
+            ptn_value_destroy(&previous);
+            ptn_throw_exception(runtime, "ValueError", "session_module_name(): Argument #1 ($module) must not be \"user\"");
+            return ptn_null();
+        }
+        if (value.len != 0 && memchr(value.data, '\0', value.len) != NULL) {
+            ptn_string_operand_free(value);
+            ptn_value_destroy(&previous);
+            ptn_throw_exception(runtime, "ValueError", "session_module_name(): Argument #1 ($module) must not contain any null bytes");
+            return ptn_null();
+        }
+        if (value.len == 0 || !ptn_string_operand_ascii_case_equal(value, "files")) {
             char *module = ptn_duplicate_string_len(value.data, value.len);
             char message[256];
             snprintf(message, sizeof(message), "session_module_name(): Session handler module \"%s\" cannot be found", module);
@@ -110879,6 +110918,10 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
             return ptn_null();
         }
         if (!open_ok) {
+            (void)ptn_session_user_close(runtime, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
             ptn_emit_runtime_warning(runtime, "session_start(): Failed to initialize storage module: user (path: )", line);
             return ptn_bool(0);
         }
@@ -111507,8 +111550,7 @@ static PTN_UNUSED PtnValue ptn_session_handler_call_method(
             ptn_throw_exception(runtime, "Error", "Session is not active");
             return ptn_null();
         }
-        ptn_session_parent_handler_set_open(runtime, 1);
-        return ptn_bool(1);
+        return ptn_bool(ptn_session_parent_handler_open_storage(runtime, line));
     }
     if (ptn_ascii_case_equal(name, "close")) {
         if (argc != 0) {
