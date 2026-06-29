@@ -16335,6 +16335,33 @@ echo 'M';
 }
 
 #[test]
+fn compile_header_callback_shutdown_registration_does_not_run_to_native_binary() {
+    let root = temp_dir("ptn-native-header-callback-shutdown-registration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("header-callback-shutdown-registration.php");
+    let output = root.join("header-callback-shutdown-registration-bin");
+    fs::write(
+        &input,
+        "<?php
+header_register_callback(function () {
+    echo 'header';
+    register_shutdown_function(function () {
+        echo 'shutdown';
+    });
+});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "header");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();
@@ -79243,6 +79270,42 @@ var_dump($inis['serialize_precision']);\n",
 }
 
 #[test]
+fn phpc_ini_get_all_reports_precision_startup_local_and_builtin_defaults() {
+    let root = temp_dir("ptn-phpc-ini-get-all-precision-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-get-all-precision-defaults.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n\
+ini_set('precision', '3');\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n\
+var_dump(ini_get_all('Core', false)['precision']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("precision=8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"8\"\nstring(1) \"8\"\nstring(2) \"14\"\nstring(1) \"8\"\nstring(1) \"3\"\nstring(2) \"14\"\nstring(1) \"3\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_serialize_precision_ini_controls_var_dump_float_stringification() {
     let root = temp_dir("ptn-phpc-serialize-precision-var-dump");
     fs::create_dir_all(&root).unwrap();
@@ -93124,6 +93187,22 @@ try {
 }
 restore_error_handler();
 var_dump(ReflectStaticChild::staticData());
+
+#[AllowDynamicProperties]
+class ReflectRawDynamic {}
+
+$sourceDynamic = new ReflectRawDynamic();
+$sourceDynamic->dyn = 1;
+$targetDynamic = new ReflectRawDynamic();
+$rawDynamic = new ReflectionProperty($sourceDynamic, 'dyn');
+set_error_handler(function ($errno, $errstr) {
+    echo \"handled:$errstr\\n\";
+    return true;
+});
+var_dump($rawDynamic->getRawValue($targetDynamic));
+restore_error_handler();
+$rawDynamic->setRawValue($targetDynamic, 5);
+var_dump($targetDynamic->dyn);
 ",
     )
     .unwrap();
@@ -93157,6 +93236,9 @@ var_dump(ReflectStaticChild::staticData());
             "string(5) \"hello\"\n",
             "caught:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
             "string(5) \"hello\"\n",
+            "handled:Undefined property: ReflectRawDynamic::$dyn\n",
+            "NULL\n",
+            "int(5)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
