@@ -182008,6 +182008,7 @@ static int ptn_spl_file_info_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getFilename")
         || ptn_ascii_case_equal(method_name, "getGroup")
         || ptn_ascii_case_equal(method_name, "getInode")
+        || ptn_ascii_case_equal(method_name, "getLinkTarget")
         || ptn_ascii_case_equal(method_name, "getMTime")
         || ptn_ascii_case_equal(method_name, "getOwner")
         || ptn_ascii_case_equal(method_name, "getPath")
@@ -184390,6 +184391,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -184439,6 +184441,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFileInfo",
             "getFilename",
             "getFlags",
+            "getLinkTarget",
             "getMaxLineLen",
             "getPath",
             "getPathname",
@@ -184477,6 +184480,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -211926,6 +211930,68 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_bool(0);
         }
         return ptn_owned_string(ptn_duplicate_string(resolved));
+    }
+    if (ptn_ascii_case_equal(name, "getLinkTarget")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->path == NULL || data->path[0] == '\0') {
+            ptn_throw_exception(runtime, "ValueError", "Filename must not be empty");
+            return ptn_null();
+        }
+#if defined(_WIN32)
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Unable to read link %s, error: %s",
+            data->path,
+            "Invalid argument"
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "RuntimeException", message);
+        return ptn_null();
+#else
+        size_t capacity = 256;
+        char *buffer = NULL;
+        for (;;) {
+            char *next = realloc(buffer, capacity + 1);
+            if (next == NULL) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            buffer = next;
+            ssize_t len = readlink(data->path, buffer, capacity);
+            if (len < 0) {
+                char message[512];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Unable to read link %s, error: %s",
+                    data->path,
+                    strerror(errno)
+                );
+                free(buffer);
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "RuntimeException", message);
+                return ptn_null();
+            }
+            if ((size_t)len < capacity) {
+                buffer[len] = '\0';
+                return ptn_owned_string_len(buffer, (size_t)len);
+            }
+            if (capacity > SIZE_MAX / 2) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            capacity *= 2;
+        }
+#endif
     }
     if (ptn_ascii_case_equal(name, "getType") ||
         ptn_ascii_case_equal(name, "getSize") ||

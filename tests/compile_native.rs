@@ -2290,6 +2290,74 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[cfg(unix)]
+#[test]
+fn compile_directory_iterator_get_link_target_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-iterator-link-target");
+    fs::create_dir_all(&root).unwrap();
+    let target = root.join("target.txt");
+    let link = root.join("bug");
+    fs::write(&target, "target\n").unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let input = root.join("directory-iterator-link-target.php");
+    let output = root.join("directory-iterator-link-target-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$link = {};
+$target = {};
+$found = false;
+foreach (new DirectoryIterator(__DIR__) as $entry) {{
+    if ($entry->getFilename() === 'bug') {{
+        $found = true;
+        var_dump($entry->isLink());
+        var_dump($entry->getLinkTarget() === $target);
+        var_dump(method_exists($entry, 'getLinkTarget'));
+    }}
+}}
+var_dump($found);
+$info = new SplFileInfo($link);
+var_dump($info->getLinkTarget() === $target);
+try {{
+    (new SplFileInfo($target))->getLinkTarget();
+}} catch (RuntimeException $e) {{
+    echo $e::class, "\n";
+}}
+"#,
+            php_string_literal(&link),
+            php_string_literal(&target)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("getLinkTarget"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "RuntimeException\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 #[test]
 fn compile_caching_iterator_current_string_and_inner_forwarding_to_native_binary() {
     let root = temp_dir("ptn-native-caching-iterator");
