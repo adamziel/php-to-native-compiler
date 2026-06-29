@@ -6920,7 +6920,10 @@ impl Parser<'_> {
     }
 
     fn compile_time_eval_scalar_string(&self, expr: &Expr) -> Option<String> {
-        Some(self.compile_time_eval_scalar(expr)?.to_interpolated_string())
+        Some(
+            self.compile_time_eval_scalar(expr)?
+                .to_interpolated_string(),
+        )
     }
 
     fn compile_time_eval_scalar_string_for_variable(&self, name: &str) -> Option<String> {
@@ -6953,7 +6956,9 @@ impl Parser<'_> {
                 argument_names,
                 argument_unpacks,
                 ..
-            } if name.trim_start_matches('\\').eq_ignore_ascii_case("str_repeat")
+            } if name
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("str_repeat")
                 && arguments.len() == 2
                 && argument_names.iter().all(Option::is_none)
                 && argument_unpacks.iter().all(|unpack| !*unpack) =>
