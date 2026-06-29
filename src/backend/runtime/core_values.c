@@ -59,12 +59,15 @@
 #if PTN_HAVE_OPENSSL
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
+#include <openssl/buffer.h>
 #include <openssl/cms.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/opensslv.h>
+#include <openssl/pkcs12.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 #include <openssl/x509.h>
 #endif
 

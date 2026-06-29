@@ -6899,6 +6899,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_random_pseudo_bytes") && argument_index == 1 {
         return Some("strong_result");
     }
+    if name.eq_ignore_ascii_case("openssl_pkcs12_read") && argument_index == 1 {
+        return Some("certificates");
+    }
+    if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
+        return Some("encrypted_data");
+    }
+    if name.eq_ignore_ascii_case("openssl_private_decrypt") && argument_index == 1 {
+        return Some("decrypted_data");
+    }
     if name.eq_ignore_ascii_case("curl_multi_exec") && argument_index == 1 {
         return Some("still_running");
     }
@@ -37598,6 +37607,94 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static OPENSSL_ENCRYPT_PARAMETERS: [InternalParameterSpec; 7] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "cipher_algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "iv",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "tag",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "aad",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
+    static OPENSSL_PKCS12_READ_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "pkcs12",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "certificates",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: None,
+        },
+    ];
+    static OPENSSL_PUBLIC_ENCRYPT_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "encrypted_data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "public_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "padding",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "digest_algo",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static OPENSSL_PRIVATE_DECRYPT_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "decrypted_data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "padding",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "digest_algo",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static UNPACK_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "format",
@@ -37964,6 +38061,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&CRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_cms_encrypt") {
         Some(&OPENSSL_CMS_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_encrypt")
+        || name.eq_ignore_ascii_case("openssl_decrypt")
+    {
+        Some(&OPENSSL_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkcs12_read") {
+        Some(&OPENSSL_PKCS12_READ_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_public_encrypt") {
+        Some(&OPENSSL_PUBLIC_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_private_decrypt") {
+        Some(&OPENSSL_PRIVATE_DECRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("count_chars") {
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {

@@ -35475,6 +35475,103 @@ if (strcmp(bin2hex($md5_raw), $md5) == 0 ) {\n\
 }
 
 #[test]
+fn compile_openssl_stream_row_primitives_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-stream-row-primitives");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("private.key"),
+        r#"-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQDLXp6PkCtbpV+P1gwFQWH6Ez0U83uEmS8IGnpeI8Fk8rY/vHOZ
+zZZaxRCw+loyc342qCDIQheMOCNm5Fkevz06q757/oooiLR3yryYGKiKG1IZIipl
+mtsC95oKrzUSKk60wuI1mbgpMUP5LKi/Tvxes5PmkUtXfimz2qgkeUcPpQIDAQAB
+AoGBAMcP/dp+fsI9FFYBaVC3mASlUjOwxKWdH3kqGb8N9p4uKRAoEWtp3hNJM7ZX
+x3P8sn0jgrsiXlRFGvn65/T9shp8hj+CdJKg2jKCs7S58v60TLfSvOQSIYsw9Qm9
+Bsx4hKfz+d52ptuJRbv8tDxsYP3D/KjQfpX1OysiP/WBfeg9AkEA+AGT0goqjWOM
+YgFtZGrefIegF31XSCQTaLIml6/2JwF+oBKjJUQFar2Rwn6qUwrsGtSPMM0Iz8ry
+9uvUbs8PPwJBANHsuTVWzLf8TJNGc+xIlhvzKFkF0nJIWx4ozhlMNDQMMF/3FRSo
+zvHIgUnpG9Vwa2GtjTDnD8jHtzTauAZmjBsCQCGDVQ5VAVsJ0LaNqtKe/mGlkiSa
+c2j0Nws2x7BHvuOWeB35ZsJqZrD93OyDYVDHcRBPGOpnSoGJ0zs6swImSNECQHSH
+0BgH4wSPDYMDrP4RHSLOzCr+zF+cQthvFll8r83kpkXfRth9DMOy5fI9cLH/Adzr
+FmF7Iov2MYEpmNYUvtkCQHfW0ntkVY9xS2/VTs57F5tUkfNG2hG74pJM6vSfTNWn
+R/oI5m2sDtRWQ88LCYJMEmIZhN00Ys4xOSoTs+SUakY=
+-----END RSA PRIVATE KEY-----
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("public.key"),
+        r#"-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLXp6PkCtbpV+P1gwFQWH6Ez0U
+83uEmS8IGnpeI8Fk8rY/vHOZzZZaxRCw+loyc342qCDIQheMOCNm5Fkevz06q757
+/oooiLR3yryYGKiKG1IZIiplmtsC95oKrzUSKk60wuI1mbgpMUP5LKi/Tvxes5Pm
+kUtXfimz2qgkeUcPpQIDAQAB
+-----END PUBLIC KEY-----
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("cert.pem"),
+        r#"-----BEGIN CERTIFICATE-----
+MIICLDCCAdYCAQAwDQYJKoZIhvcNAQEEBQAwgaAxCzAJBgNVBAYTAlBUMRMwEQYD
+VQQIEwpRdWVlbnNsYW5kMQ8wDQYDVQQHEwZMaXNib2ExFzAVBgNVBAoTDk5ldXJv
+bmlvLCBMZGEuMRgwFgYDVQQLEw9EZXNlbnZvbHZpbWVudG8xGzAZBgNVBAMTEmJy
+dXR1cy5uZXVyb25pby5wdDEbMBkGCSqGSIb3DQEJARYMc2FtcG9AaWtpLmZpMB4X
+DTk2MDkwNTAzNDI0M1oXDTk2MTAwNTAzNDI0M1owgaAxCzAJBgNVBAYTAlBUMRMw
+EQYDVQQIEwpRdWVlbnNsYW5kMQ8wDQYDVQQHEwZMaXNib2ExFzAVBgNVBAoTDk5l
+dXJvbmlvLCBMZGEuMRgwFgYDVQQLEw9EZXNlbnZvbHZpbWVudG8xGzAZBgNVBAMT
+EmJydXR1cy5uZXVyb25pby5wdDEbMBkGCSqGSIb3DQEJARYMc2FtcG9AaWtpLmZp
+MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAL7+aty3S1iBA/+yxjxv4q1MUTd1kjNw
+L4lYKbpzzlmC5beaQXeQ2RmGMTXU+mDvuqItjVHOK3DvPK7lTcSGftUCAwEAATAN
+BgkqhkiG9w0BAQQFAANBAFqPEKFjk6T6CKTHvaQeEAsX0/8YHPHqH/9AnhSjrwuX
+9EBc0n6bVGhN7XaXd6sJ7dym9sbsWxb+pJdurnkxjx4=
+-----END CERTIFICATE-----
+"#,
+    )
+    .unwrap();
+    let input = root.join("openssl-stream-row-primitives.php");
+    let output = root.join("openssl-stream-row-primitives-bin");
+    fs::write(
+        &input,
+        "<?php
+$priv = 'file://' . __DIR__ . '/private.key';
+$pub = 'file://' . __DIR__ . '/public.key';
+$data = 'row-pack';
+
+var_dump(OPENSSL_PKCS1_OAEP_PADDING);
+var_dump(in_array('sha1', openssl_get_md_methods(), true));
+var_dump(openssl_public_encrypt($data, $encrypted, $pub, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
+var_dump(openssl_private_decrypt($encrypted, $out, $priv, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
+var_dump($out);
+var_dump(openssl_private_decrypt($encrypted, $mismatch, $priv, OPENSSL_PKCS1_OAEP_PADDING, 'sha1'));
+var_dump($mismatch);
+
+$parsed = openssl_x509_parse(file_get_contents(__DIR__ . '/cert.pem'));
+var_dump(strlen($parsed['hash']));
+
+$ciphertext = openssl_encrypt('secret', 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456');
+var_dump(openssl_decrypt($ciphertext, 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456'));
+var_dump(openssl_error_string());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(4)\nbool(true)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nstring(6) \"secret\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hash_context_file_and_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-hash-context-file-diagnostics");
     fs::create_dir_all(&root).unwrap();
