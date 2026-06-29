@@ -1,0 +1,12 @@
+ext/soap/tests/custom_content_type.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_011w.phpt
+ext/soap/tests/schema/schema082.phpt
+ext/soap/tests/schema/schema062.phpt
+ext/soap/tests/schema/schema072.phpt
+ext/soap/tests/server031.phpt
+ext/soap/tests/bugs/bug69085.phpt
+ext/soap/tests/typemap009.phpt
+ext/soap/tests/bugs/bug34643.phpt
+ext/soap/tests/schema/schema022.phpt
+ext/soap/tests/schema/schema002.phpt
+ext/soap/tests/schema/schema012.phpt
