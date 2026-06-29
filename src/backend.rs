@@ -4271,6 +4271,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"PDOStatement\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFixedArray\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
@@ -23272,6 +23276,7 @@ fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str)
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("EmptyIterator")
         || candidate_name.eq_ignore_ascii_case("InternalIterator")
+        || candidate_name.eq_ignore_ascii_case("PDOStatement")
     {
         &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("RecursiveArrayIterator") {
@@ -23630,6 +23635,11 @@ fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) 
                 | "errorcode"
                 | "errorinfo"
                 | "closecursor"
+                | "rewind"
+                | "valid"
+                | "current"
+                | "key"
+                | "next"
         ),
         _ => false,
     }
