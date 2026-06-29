@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-29T16:50:16Z |
+| last refresh | 2026-06-29T17:00:18Z |
 | source commit | `5fbf9ffdfcd8` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,16 +21,15 @@
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-29T16:00Z) | 0 |
-| last 24 hours (2026-06-28T17:00Z - 2026-06-29T16:00Z) | 0 |
-| last 7 days (2026-06-22T17:00Z - 2026-06-29T16:00Z) | 2072 |
+| latest hour (2026-06-29T17:00Z) | 0 |
+| last 24 hours (2026-06-28T18:00Z - 2026-06-29T17:00Z) | 0 |
+| last 7 days (2026-06-22T18:00Z - 2026-06-29T17:00Z) | 2072 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 13909 | 21867 |
-| hourly history retained 2026-06-22T17:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-22T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-22T19:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-22T20:00Z | 0 | 0 | 0 |
@@ -154,12 +153,12 @@
 | hourly history retained 2026-06-28T08:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T15:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-29T16:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-22T17:00Z | 0 | 11837 |
 | 2026-06-22T18:00Z | 0 | 11837 |
 | 2026-06-22T19:00Z | 0 | 11837 |
 | 2026-06-22T20:00Z | 0 | 11837 |
@@ -327,3 +326,4 @@
 | 2026-06-29T14:00Z | 0 | 13909 |
 | 2026-06-29T15:00Z | 0 | 13909 |
 | 2026-06-29T16:00Z | 0 | 13909 |
+| 2026-06-29T17:00Z | 0 | 13909 |
