@@ -1,0 +1,12 @@
+ext/zip/tests/zip_entry_name.phpt
+ext/zip/tests/stream_meta_data.phpt
+ext/zip/tests/bug70350.phpt
+ext/zip/tests/gh19688.phpt
+ext/zip/tests/bug38943_2.phpt
+ext/zip/tests/oo_namelocate.phpt
+ext/zip/tests/oo_count.phpt
+ext/zip/tests/oo_unchangeName.phpt
+ext/zip/tests/bug53603.phpt
+ext/zip/tests/bug7658.phpt
+ext/zip/tests/bug_gh8781.phpt
+ext/zip/tests/oo_getnameindex.phpt

@@ -14204,8 +14204,11 @@ static void ptn_zip_archive_declare_public_property(
     ptn_value_destroy(&value);
 }
 
-static PtnValue ptn_zip_archive_new_shell(PtnRuntime *runtime, size_t line) {
-    PtnValue object = ptn_object_new_shell(runtime, "ZipArchive");
+static PTN_UNUSED void ptn_zip_archive_initialize_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t line
+) {
     ptn_zip_archive_declare_public_property(runtime, object, "lastId", ptn_int(-1), line);
     ptn_zip_archive_declare_public_property(runtime, object, "status", ptn_int(0), line);
     ptn_zip_archive_declare_public_property(runtime, object, "statusSys", ptn_int(0), line);
@@ -14224,6 +14227,11 @@ static PtnValue ptn_zip_archive_new_shell(PtnRuntime *runtime, size_t line) {
         ptn_owned_string(ptn_duplicate_string("")),
         line
     );
+}
+
+static PtnValue ptn_zip_archive_new_shell(PtnRuntime *runtime, size_t line) {
+    PtnValue object = ptn_object_new_shell(runtime, "ZipArchive");
+    ptn_zip_archive_initialize_properties(runtime, object, line);
     return object;
 }
 
@@ -168584,7 +168592,7 @@ static void ptn_zip_archive_data_free(void *data_ptr) {
 static PtnZipArchiveData *ptn_zip_archive_data(PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT ||
-        !ptn_internal_class_name_is_zip_archive(receiver.as.object->class_name)) {
+        !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "ZipArchive")) {
         return NULL;
     }
     if (receiver.as.object->native_data == NULL) {
@@ -169139,6 +169147,24 @@ static PtnValue ptn_internal_zip_entry_close(PtnRuntime *runtime, size_t argc, c
     }
     ptn_resource_close(resource);
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_zip_entry_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_zip_emit_deprecation(
+        runtime,
+        "Function zip_entry_name() is deprecated since 8.0, use ZipArchive::statIndex() instead",
+        line
+    );
+    PtnResource *resource = ptn_internal_expect_resource_of_type(runtime, "zip_entry_name", 1, "zip_entry", args[0], "zip entry");
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnZipProceduralEntryData *entry = ptn_zip_entry_from_resource(resource);
+    if (entry == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(entry->name == NULL ? "" : entry->name));
 }
 
 static PtnValue ptn_internal_zip_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -182277,6 +182303,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zlib_encode", 2, 3, ptn_internal_zlib_encode },
         { "zip_close", 1, 1, ptn_internal_zip_close },
         { "zip_entry_close", 1, 1, ptn_internal_zip_entry_close },
+        { "zip_entry_name", 1, 1, ptn_internal_zip_entry_name },
         { "zip_entry_open", 2, 3, ptn_internal_zip_entry_open },
         { "zip_open", 1, 1, ptn_internal_zip_open },
         { "zip_read", 1, 1, ptn_internal_zip_read },

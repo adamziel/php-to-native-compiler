@@ -24371,6 +24371,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "zend_version"
             | "zip_close"
             | "zip_entry_close"
+            | "zip_entry_name"
             | "zip_entry_open"
             | "zip_open"
             | "zip_read"
