@@ -1,0 +1,12 @@
+ext/spl/tests/gh16604_2.phpt
+ext/spl/tests/gh16588.phpt
+ext/spl/tests/autoloading/spl_autoload_bug48541.phpt
+ext/spl/tests/gh17225.phpt
+ext/spl/tests/bug77431.phpt
+ext/spl/tests/bug79432.phpt
+ext/spl/tests/RecursiveIteratorIterator_dtor_order.phpt
+ext/spl/tests/spl_classes.phpt
+ext/spl/tests/autoloading/bug74372.phpt
+ext/spl/tests/bug69970.phpt
+ext/spl/tests/bug69181.phpt
+ext/spl/tests/DirectoryIterator_empty_constructor.phpt

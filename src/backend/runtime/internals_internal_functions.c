@@ -64496,7 +64496,13 @@ static char *ptn_internal_path_arg_c_string_or_value_error(
             ptn_abort_out_of_memory();
         }
         ptn_string_operand_free(operand);
-        ptn_throw_exception(runtime, "ValueError", message);
+        ptn_throw_exception_at(
+            runtime,
+            "ValueError",
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
         return NULL;
     }
     char *path = ptn_path_operand_to_c_string(operand);
@@ -211795,6 +211801,31 @@ static PtnStringOperand ptn_spl_file_path_operand(
     return ptn_internal_expect_string_arg(runtime, function_name, position, "filename", value, line);
 }
 
+static const char *ptn_spl_file_path_trace_function_name(const char *function_name) {
+    if (strcmp(function_name, "SplFileInfo::__construct") == 0) {
+        return "SplFileInfo->__construct";
+    }
+    if (strcmp(function_name, "SplFileObject::__construct") == 0) {
+        return "SplFileObject->__construct";
+    }
+    if (strcmp(function_name, "SplTempFileObject::__construct") == 0) {
+        return "SplTempFileObject->__construct";
+    }
+    if (strcmp(function_name, "DirectoryIterator::__construct") == 0) {
+        return "DirectoryIterator->__construct";
+    }
+    if (strcmp(function_name, "FilesystemIterator::__construct") == 0) {
+        return "FilesystemIterator->__construct";
+    }
+    if (strcmp(function_name, "RecursiveDirectoryIterator::__construct") == 0) {
+        return "RecursiveDirectoryIterator->__construct";
+    }
+    if (strcmp(function_name, "GlobIterator::__construct") == 0) {
+        return "GlobIterator->__construct";
+    }
+    return function_name;
+}
+
 static char *ptn_spl_file_path_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -211807,15 +211838,59 @@ static char *ptn_spl_file_path_arg(
         ptn_string_operand_free(operand);
         return NULL;
     }
-    char *path = ptn_path_operand_to_c_string(operand);
-    ptn_string_operand_free(operand);
-    if (path == NULL) {
-        char message[128];
-        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+    if (memchr(operand.data, '\0', operand.len) != NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($filename) must not contain any null bytes",
+            function_name,
+            position
+        );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "ValueError", message);
+        ptn_string_operand_free(operand);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "ValueError",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            ptn_spl_file_path_trace_function_name(function_name),
+            runtime->source_path,
+            line,
+            1,
+            &value
+        );
+        return NULL;
+    }
+    char *path = ptn_path_operand_to_c_string(operand);
+    ptn_string_operand_free(operand);
+    if (path == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($filename) must not contain any null bytes",
+            function_name,
+            position
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "ValueError",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            ptn_spl_file_path_trace_function_name(function_name),
+            runtime->source_path,
+            line,
+            1,
+            &value
+        );
     }
     return path;
 }
@@ -217883,33 +217958,13 @@ static PtnValue ptn_spl_file_object_call_method(
         ptn_value_destroy(&current);
         return ptn_owned_string(ptn_duplicate_string(""));
     }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_throw_exception(runtime, "Error", "Cannot call constructor twice");
+        return ptn_null();
+    }
     if (ptn_internal_class_method_exists("SplFileInfo", name) &&
         !ptn_ascii_case_equal(name, "openFile")) {
         return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
-    }
-    if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue resolved_receiver = ptn_value_deref(receiver);
-        const char *receiver_class = resolved_receiver.type == PTN_OBJECT
-            ? resolved_receiver.as.object->class_name
-            : "SplFileObject";
-        PtnValue replacement = ptn_spl_file_object_new_for_class(runtime, receiver_class, argc, args, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&replacement);
-            return ptn_null();
-        }
-        if (replacement.type == PTN_OBJECT &&
-            replacement.as.object->native_data != NULL &&
-            resolved_receiver.type == PTN_OBJECT) {
-            PtnSplFileObjectData *new_data = (PtnSplFileObjectData *)replacement.as.object->native_data;
-            replacement.as.object->native_data = NULL;
-            replacement.as.object->native_data_free = NULL;
-            ptn_spl_file_object_data_free(resolved_receiver.as.object->native_data);
-            resolved_receiver.as.object->native_data = new_data;
-            resolved_receiver.as.object->native_data_free = ptn_spl_file_object_data_free;
-            ptn_spl_file_object_sync_properties(runtime, resolved_receiver, new_data, line);
-        }
-        ptn_value_destroy(&replacement);
-        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "setFlags")) {
         if (argc != 1) {
@@ -228501,10 +228556,17 @@ static PtnValue ptn_internal_spl_autoload(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    char *class_name = ptn_value_to_string(args[0]);
-    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    PtnStringOperand class_name =
+        ptn_internal_expect_string_arg(runtime, "spl_autoload_call", 1, "class", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(class_name);
+        return ptn_null();
+    }
+    char *owned_class_name = ptn_duplicate_string_len(class_name.data, class_name.len);
+    ptn_string_operand_free(class_name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(owned_class_name);
     ptn_runtime_autoload_class(runtime, lookup_name, line);
-    free(class_name);
+    free(owned_class_name);
     return ptn_null();
 }
 
