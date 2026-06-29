@@ -53305,6 +53305,13 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
+static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path);
+static void ptn_emit_open_basedir_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line
+);
 static int ptn_try_read_data_url_bytes_with_detail(
     const char *path,
     unsigned char **data_out,
@@ -69274,10 +69281,21 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_READFUNCTION 20012
 #define PTN_CURLOPT_RETURNTRANSFER 19913
 #define PTN_CURLOPT_HEADERFUNCTION 20079
+#define PTN_CURLOPT_COOKIEFILE 10031
+#define PTN_CURLOPT_FOLLOWLOCATION 52
+#define PTN_CURLOPT_PROTOCOLS 181
+#define PTN_CURLOPT_REDIR_PROTOCOLS 182
+#define PTN_CURLOPT_DNS_USE_GLOBAL_CACHE 91
 #define PTN_CURLINFO_EFFECTIVE_URL 1048577
 #define PTN_CURLM_OK 0
+#define PTN_CURLM_CALL_MULTI_PERFORM -1
 #define PTN_CURLMSG_DONE 1
 #define PTN_CURLE_OK 0
+#define PTN_CURLE_UNSUPPORTED_PROTOCOL 1
+#define PTN_CURLPROTO_FILE 1024
+#define PTN_CURL_LOCK_DATA_COOKIE 2
+#define PTN_CURL_LOCK_DATA_DNS 3
+#define PTN_CURL_LOCK_DATA_CONNECT 5
 
 static int ptn_curl_runtime_has_active_exception(PtnRuntime *runtime) {
     return runtime != NULL &&
@@ -69396,6 +69414,16 @@ static PTN_UNUSED PtnValue ptn_curl_file_new(
     return object;
 }
 
+static PtnArray *ptn_curl_options_ensure(PtnResource *handle) {
+    PtnValue options = ptn_value_deref(handle->curl_options);
+    if (options.type != PTN_ARRAY) {
+        ptn_value_destroy(&handle->curl_options);
+        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+        options = ptn_value_deref(handle->curl_options);
+    }
+    return options.as.array;
+}
+
 static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
     PtnValue options = ptn_value_deref(handle->curl_options);
     if (options.type != PTN_ARRAY) {
@@ -69409,11 +69437,46 @@ static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
 }
 
 static void ptn_curl_store_option(PtnResource *handle, int64_t option, PtnValue value) {
-    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
-        ptn_value_destroy(&handle->curl_options);
-        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *options = ptn_curl_options_ensure(handle);
+    ptn_array_set_entry(options, ptn_array_int_key(option), value);
+}
+
+static PtnValue *ptn_curl_state_value(PtnResource *handle, const char *key_name) {
+    PtnValue options = ptn_value_deref(handle->curl_options);
+    if (options.type != PTN_ARRAY) {
+        return NULL;
     }
-    ptn_array_set_entry(handle->curl_options.as.array, ptn_array_int_key(option), value);
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    size_t index = ptn_array_find_key(options.as.array, key);
+    ptn_array_key_free(key);
+    if (index >= options.as.array->len) {
+        return NULL;
+    }
+    return &options.as.array->entries[index].value;
+}
+
+static void ptn_curl_store_state(PtnResource *handle, const char *key_name, PtnValue value) {
+    PtnArray *options = ptn_curl_options_ensure(handle);
+    ptn_array_set_entry(options, ptn_array_string_key(key_name), value);
+}
+
+static void ptn_curl_set_error(PtnResource *handle, int64_t code, const char *message) {
+    ptn_curl_store_state(handle, "__errno", ptn_int(code));
+    ptn_curl_store_state(handle, "__error", ptn_owned_string(ptn_duplicate_string(message == NULL ? "" : message)));
+}
+
+static int64_t ptn_curl_error_code(PtnResource *handle) {
+    PtnValue *value = ptn_curl_state_value(handle, "__errno");
+    return value == NULL ? 0 : ptn_value_to_integer(*value);
+}
+
+static const char *ptn_curl_error_message(PtnResource *handle) {
+    PtnValue *value = ptn_curl_state_value(handle, "__error");
+    if (value == NULL) {
+        return "";
+    }
+    PtnValue resolved = ptn_value_deref(*value);
+    return resolved.type == PTN_STRING ? (const char *)resolved.as.string.data : "";
 }
 
 static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
@@ -69428,6 +69491,85 @@ static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size
     );
     ptn_string_operand_free(string);
     return result;
+}
+
+static int ptn_curl_open_basedir_is_active(PtnRuntime *runtime) {
+    const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
+    return open_basedir != NULL && open_basedir[0] != '\0';
+}
+
+static int ptn_curl_validate_open_basedir_path(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(path_operand);
+        return 0;
+    }
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "Path must not contain any null bytes");
+        return 0;
+    }
+    if (path[0] != '\0' && !ptn_open_basedir_allows_path(runtime, path)) {
+        ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+        free(path);
+        return 0;
+    }
+    free(path);
+    return 1;
+}
+
+static int ptn_curl_value_enables_file_protocol(PtnValue value) {
+    return (ptn_value_to_integer(value) & PTN_CURLPROTO_FILE) != 0;
+}
+
+static char *ptn_curl_unsupported_protocol_message_alloc(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+    if (url_value == NULL) {
+        return NULL;
+    }
+    PtnStringOperand url = ptn_value_to_string_operand_with_runtime(runtime, *url_value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(url);
+        return NULL;
+    }
+    const char *scheme_end = NULL;
+    for (size_t i = 0; i + 2 < url.len; i++) {
+        if (url.data[i] == ':' && url.data[i + 1] == '/' && url.data[i + 2] == '/') {
+            scheme_end = url.data + i;
+            break;
+        }
+    }
+    char *message = NULL;
+    if (scheme_end != NULL) {
+        size_t scheme_len = (size_t)(scheme_end - url.data);
+        int unsupported =
+            !(scheme_len == 4 && ptn_ascii_case_equal_n(url.data, "file", 4)) &&
+            !(scheme_len == 4 && ptn_ascii_case_equal_n(url.data, "http", 4)) &&
+            !(scheme_len == 5 && ptn_ascii_case_equal_n(url.data, "https", 5));
+        if (unsupported) {
+            char *scheme = ptn_duplicate_string_len(url.data, scheme_len);
+            int needed = snprintf(NULL, 0, "Protocol \"%s\" not supported or disabled in libcurl", scheme);
+            if (needed < 0) {
+                free(scheme);
+                ptn_abort_out_of_memory();
+            }
+            message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(scheme);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, "Protocol \"%s\" not supported or disabled in libcurl", scheme);
+            free(scheme);
+        }
+    }
+    ptn_string_operand_free(url);
+    return message;
 }
 
 static PtnValue ptn_curl_options_copy(PtnValue options) {
@@ -69778,6 +69920,62 @@ static PtnValue ptn_internal_curl_getinfo(PtnRuntime *runtime, size_t argc, cons
     return ptn_null();
 }
 
+static void ptn_curl_emit_file_protocol_open_basedir_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): CURLPROTO_FILE cannot be activated when an open_basedir is set",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
+static int ptn_curl_setopt_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *handle,
+    int64_t option,
+    PtnValue value,
+    size_t line
+) {
+    if (option == PTN_CURLOPT_COOKIEFILE &&
+        !ptn_curl_validate_open_basedir_path(runtime, function_name, value, line)) {
+        return 0;
+    }
+    if ((option == PTN_CURLOPT_PROTOCOLS || option == PTN_CURLOPT_REDIR_PROTOCOLS) &&
+        ptn_curl_open_basedir_is_active(runtime) &&
+        ptn_curl_value_enables_file_protocol(value)) {
+        ptn_curl_emit_file_protocol_open_basedir_warning(runtime, function_name, line);
+        return 0;
+    }
+
+    PtnValue stored = ptn_null();
+    if (option == PTN_CURLOPT_WRITEFUNCTION || option == PTN_CURLOPT_HEADERFUNCTION || option == PTN_CURLOPT_READFUNCTION) {
+        stored = ptn_internal_expect_callback_arg(runtime, function_name, 3, "value", value);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&stored);
+            return 0;
+        }
+    } else if (option == PTN_CURLOPT_POSTFIELDS) {
+        PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(payload);
+            return 0;
+        }
+        stored = ptn_owned_string_len(ptn_duplicate_string_len(payload.data, payload.len), payload.len);
+        ptn_string_operand_free(payload);
+    } else {
+        stored = ptn_value_clone(value);
+    }
+    ptn_curl_store_option(handle, option, stored);
+    ptn_curl_set_error(handle, PTN_CURLE_OK, "");
+    return 1;
+}
+
 static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *handle = ptn_internal_expect_resource_of_type(
@@ -69802,26 +70000,63 @@ static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const
     if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnValue stored = ptn_null();
-    if (option == PTN_CURLOPT_WRITEFUNCTION || option == PTN_CURLOPT_HEADERFUNCTION || option == PTN_CURLOPT_READFUNCTION) {
-        stored = ptn_internal_expect_callback_arg(runtime, "curl_setopt", 3, "value", args[2]);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_value_destroy(&stored);
-            return ptn_null();
-        }
-    } else if (option == PTN_CURLOPT_POSTFIELDS) {
-        PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, args[2], line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_string_operand_free(payload);
-            return ptn_null();
-        }
-        stored = ptn_owned_string_len(ptn_duplicate_string_len(payload.data, payload.len), payload.len);
-        ptn_string_operand_free(payload);
-    } else {
-        stored = ptn_value_clone(args[2]);
+    int ok = ptn_curl_setopt_value(runtime, "curl_setopt", handle, option, args[2], line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        return ptn_null();
     }
-    ptn_curl_store_option(handle, option, stored);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_curl_setopt_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_setopt_array",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnArray *options = ptn_internal_expect_array_arg(runtime, "curl_setopt_array", 2, "options", args[1]);
+    if (ptn_curl_runtime_has_active_exception(runtime) || options == NULL) {
+        return ptn_null();
+    }
+    for (size_t i = 0; i < options->len; i++) {
+        PtnValue option_key = ptn_array_key_value(options->entries[i].key);
+        int64_t option = ptn_value_to_integer(option_key);
+        ptn_value_destroy(&option_key);
+        int ok = ptn_curl_setopt_value(runtime, "curl_setopt_array", handle, option, options->entries[i].value, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            return ptn_null();
+        }
+        if (!ok) {
+            return ptn_bool(0);
+        }
+    }
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_curl_errno(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_errno", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    return ptn_int(ptn_curl_error_code(handle));
+}
+
+static PtnValue ptn_internal_curl_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_error", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    return ptn_string(ptn_curl_error_message(handle));
 }
 
 static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -69836,6 +70071,16 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
     );
     if (handle == NULL) {
         return ptn_null();
+    }
+    char *protocol_error = ptn_curl_unsupported_protocol_message_alloc(runtime, handle, line);
+    if (protocol_error != NULL) {
+        ptn_curl_set_error(
+            handle,
+            PTN_CURLE_UNSUPPORTED_PROTOCOL,
+            protocol_error
+        );
+        free(protocol_error);
+        return ptn_bool(0);
     }
     PtnValue *upload = ptn_curl_option_value(handle, PTN_CURLOPT_UPLOAD);
     if (upload != NULL && ptn_is_truthy(*upload)) {
@@ -70082,9 +70327,27 @@ static PtnValue ptn_internal_curl_multi_info_read(PtnRuntime *runtime, size_t ar
         }
         ptn_reference_assign(runtime, args[1].as.reference, ptn_int((int64_t)completed->len));
     }
+    int64_t result_code = PTN_CURLE_OK;
+    PtnValue resolved_handle = ptn_value_deref(handle);
+    if (resolved_handle.type == PTN_RESOURCE) {
+        char *protocol_error = ptn_curl_unsupported_protocol_message_alloc(runtime, resolved_handle.as.resource, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            free(protocol_error);
+            ptn_value_destroy(&handle);
+            return ptn_null();
+        }
+        if (protocol_error != NULL) {
+            result_code = PTN_CURLE_UNSUPPORTED_PROTOCOL;
+            ptn_curl_set_error(resolved_handle.as.resource, result_code, protocol_error);
+            free(protocol_error);
+        } else {
+            ptn_curl_set_error(resolved_handle.as.resource, PTN_CURLE_OK, "");
+        }
+    }
+
     PtnValue info = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(info.as.array, ptn_array_string_key("msg"), ptn_int(PTN_CURLMSG_DONE));
-    ptn_array_set_entry(info.as.array, ptn_array_string_key("result"), ptn_int(PTN_CURLE_OK));
+    ptn_array_set_entry(info.as.array, ptn_array_string_key("result"), ptn_int(result_code));
     ptn_array_set_entry(info.as.array, ptn_array_string_key("handle"), handle);
     return info;
 }
@@ -70110,6 +70373,15 @@ static PtnValue ptn_internal_curl_multi_errno(PtnRuntime *runtime, size_t argc, 
     return ptn_int(PTN_CURLM_OK);
 }
 
+static PtnValue ptn_internal_curl_multi_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    if (ptn_internal_expect_resource_of_type(runtime, "curl_multi_close", 1, "multi_handle", args[0], "curl_multi") == NULL) {
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     int64_t code = ptn_internal_expect_integer_arg(runtime, "curl_multi_strerror", 1, "error_code", args[0], line);
@@ -70117,6 +70389,53 @@ static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t arg
         return ptn_null();
     }
     return ptn_string(code == PTN_CURLM_OK ? "No error" : "Unknown error");
+}
+
+static int ptn_curl_share_data_option_is_known(int64_t option) {
+    return option == PTN_CURL_LOCK_DATA_COOKIE ||
+        option == PTN_CURL_LOCK_DATA_DNS ||
+        option == PTN_CURL_LOCK_DATA_CONNECT;
+}
+
+static PtnValue ptn_internal_curl_share_init_persistent(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *options = ptn_internal_expect_array_arg(
+        runtime,
+        "curl_share_init_persistent",
+        1,
+        "share_options",
+        args[0]
+    );
+    if (ptn_curl_runtime_has_active_exception(runtime) || options == NULL) {
+        return ptn_null();
+    }
+    if (options->len == 0) {
+        ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must not be empty");
+        return ptn_null();
+    }
+    for (size_t i = 0; i < options->len; i++) {
+        int64_t option = ptn_value_to_integer(options->entries[i].value);
+        if (!ptn_curl_share_data_option_is_known(option)) {
+            ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must contain only CURL_LOCK_DATA_* constants");
+            return ptn_null();
+        }
+        if (option == PTN_CURL_LOCK_DATA_COOKIE) {
+            ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must not contain CURL_LOCK_DATA_COOKIE because sharing cookies across PHP requests is unsafe");
+            return ptn_null();
+        }
+    }
+    PtnResource *share = ptn_curl_new_resource(runtime, "curl_share");
+    share->persistent = 1;
+    share->curl_options = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < options->len; i++) {
+        ptn_array_set_entry(
+            share->curl_options.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone(options->entries[i].value)
+        );
+    }
+    return ptn_resource(share);
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -114798,10 +115117,21 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_READFUNCTION", PTN_CURLOPT_READFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_RETURNTRANSFER", PTN_CURLOPT_RETURNTRANSFER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", PTN_CURLOPT_HEADERFUNCTION);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_COOKIEFILE", PTN_CURLOPT_COOKIEFILE);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_FOLLOWLOCATION", PTN_CURLOPT_FOLLOWLOCATION);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_PROTOCOLS", PTN_CURLOPT_PROTOCOLS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_REDIR_PROTOCOLS", PTN_CURLOPT_REDIR_PROTOCOLS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_DNS_USE_GLOBAL_CACHE", PTN_CURLOPT_DNS_USE_GLOBAL_CACHE);
     ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
     ptn_get_defined_constants_add_int(table, "CURLM_OK", PTN_CURLM_OK);
+    ptn_get_defined_constants_add_int(table, "CURLM_CALL_MULTI_PERFORM", PTN_CURLM_CALL_MULTI_PERFORM);
     ptn_get_defined_constants_add_int(table, "CURLMSG_DONE", PTN_CURLMSG_DONE);
     ptn_get_defined_constants_add_int(table, "CURLE_OK", PTN_CURLE_OK);
+    ptn_get_defined_constants_add_int(table, "CURLE_UNSUPPORTED_PROTOCOL", PTN_CURLE_UNSUPPORTED_PROTOCOL);
+    ptn_get_defined_constants_add_int(table, "CURLPROTO_FILE", PTN_CURLPROTO_FILE);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_DNS", PTN_CURL_LOCK_DATA_DNS);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_CONNECT", PTN_CURL_LOCK_DATA_CONNECT);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_COOKIE", PTN_CURL_LOCK_DATA_COOKIE);
 }
 
 static PtnValue ptn_defined_constants_curl_table(void) {
@@ -115363,10 +115693,21 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_READFUNCTION",
         "CURLOPT_RETURNTRANSFER",
         "CURLOPT_HEADERFUNCTION",
+        "CURLOPT_COOKIEFILE",
+        "CURLOPT_FOLLOWLOCATION",
+        "CURLOPT_PROTOCOLS",
+        "CURLOPT_REDIR_PROTOCOLS",
+        "CURLOPT_DNS_USE_GLOBAL_CACHE",
         "CURLINFO_EFFECTIVE_URL",
         "CURLM_OK",
+        "CURLM_CALL_MULTI_PERFORM",
         "CURLMSG_DONE",
         "CURLE_OK",
+        "CURLE_UNSUPPORTED_PROTOCOL",
+        "CURLPROTO_FILE",
+        "CURL_LOCK_DATA_DNS",
+        "CURL_LOCK_DATA_CONNECT",
+        "CURL_LOCK_DATA_COOKIE",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -182501,10 +182842,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "curl_close", 1, 1, ptn_internal_curl_close },
         { "curl_copy_handle", 1, 1, ptn_internal_curl_copy_handle },
+        { "curl_errno", 1, 1, ptn_internal_curl_errno },
+        { "curl_error", 1, 1, ptn_internal_curl_error },
         { "curl_exec", 1, 1, ptn_internal_curl_exec },
         { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
+        { "curl_multi_close", 1, 1, ptn_internal_curl_multi_close },
         { "curl_multi_errno", 1, 1, ptn_internal_curl_multi_errno },
         { "curl_multi_exec", 2, 2, ptn_internal_curl_multi_exec },
         { "curl_multi_get_handles", 1, 1, ptn_internal_curl_multi_get_handles },
@@ -182513,7 +182857,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_multi_remove_handle", 2, 2, ptn_internal_curl_multi_remove_handle },
         { "curl_multi_select", 1, 2, ptn_internal_curl_multi_select },
         { "curl_multi_strerror", 1, 1, ptn_internal_curl_multi_strerror },
+        { "curl_share_init_persistent", 1, 1, ptn_internal_curl_share_init_persistent },
         { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
+        { "curl_setopt_array", 2, 2, ptn_internal_curl_setopt_array },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
         { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
