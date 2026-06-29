@@ -1,0 +1,20 @@
+# ptn-0t7sc exact random engine/randomizer current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T191013Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-0t7sc-random-engine-randomizer-current-red-row-pack.txt
+#
+# bucket: ext/random rows=12
+ext/random/tests/03_randomizer/methods/getBytesFromString.phpt
+ext/random/tests/03_randomizer/gh_19765_unserialize.phpt
+ext/random/tests/03_randomizer/methods/getBytes_expansion.phpt
+ext/random/tests/03_randomizer/engine_unsafe_biased.phpt
+ext/random/tests/03_randomizer/engine_unsafe_empty_string.phpt
+ext/random/tests/01_functions/lcg_value_deprecation.phpt
+ext/random/tests/02_engine/mt19937_error.phpt
+ext/random/tests/03_randomizer/readonly.phpt
+ext/random/tests/02_engine/pcgoneseq128xslrr64_seed.phpt
+ext/random/tests/03_randomizer/methods/getBytesFromString_fast_path.phpt
+ext/random/tests/02_engine/xoshiro256starstar_seed.phpt
+ext/random/tests/03_randomizer/construct_twice.phpt

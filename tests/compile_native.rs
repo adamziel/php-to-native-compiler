@@ -104942,6 +104942,8 @@ fn compile_random_engine_serialization_and_validation_to_native_binary() {
         r#"<?php
 use Random\Engine\PcgOneseq128XslRr64;
 use Random\Engine\Xoshiro256StarStar;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 
 echo serialize(new PcgOneseq128XslRr64(1234)), "\n";
 
@@ -104956,6 +104958,14 @@ try {
 } catch (Exception $e) {
     echo $e->getMessage(), "\n";
 }
+
+$randomizer = new Randomizer(new Mt19937());
+try {
+    $randomizer->__unserialize([['engine' => new PcgOneseq128XslRr64()]]);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($randomizer->engine::class);
 "#,
     )
     .unwrap();
@@ -104975,6 +104985,8 @@ try {
             "O:33:\"Random\\Engine\\PcgOneseq128XslRr64\":2:{i:0;a:0:{}i:1;a:2:{i:0;s:16:\"c6d571c37c41a8d1\";i:1;s:16:\"345e7e82265d6e27\";}}\n",
             "Invalid serialization data for Random\\Engine\\Xoshiro256StarStar object\n",
             "Invalid serialization data for Random\\Randomizer object\n",
+            "Invalid serialization data for Random\\Randomizer object\n",
+            "string(21) \"Random\\Engine\\Mt19937\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

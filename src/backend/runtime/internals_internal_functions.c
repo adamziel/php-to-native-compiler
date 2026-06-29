@@ -105105,6 +105105,10 @@ static PtnValue ptn_random_randomizer_unserialize(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
+    if (resolved.as.object->native_data != NULL) {
+        ptn_throw_exception(runtime, "Exception", "Invalid serialization data for Random\\Randomizer object");
+        return ptn_null();
+    }
 
     PtnValue payload = ptn_value_deref(args[0]);
     if (payload.type != PTN_ARRAY || payload.as.array->len != 1) {
