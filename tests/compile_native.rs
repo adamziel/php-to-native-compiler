@@ -50570,6 +50570,71 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_intl_timezone_transliterator_message_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-transliterator-message-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-transliterator-message-edges.php");
+    let output = root.join("intl-timezone-transliterator-message-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(IntlTimeZone::getTZDataVersion());\n\
+var_dump(intltz_get_tz_data_version());\n\
+var_dump(IntlTimeZone::getRegion(\"foo\\x81\"));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(IntlTimeZone::getRegion('foo'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$mf = new MessageFormatter('en_US', '{0} {1}');\n\
+var_dump($mf->format([7]));\n\
+try {\n\
+    new NumberFormatter('xx', NumberFormatter::DECIMAL);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+ini_set('intl.use_exceptions', '1');\n\
+$tr = Transliterator::create('latin');\n\
+var_dump($tr instanceof Transliterator);\n\
+try {\n\
+    transliterator_transliterate($tr, 'str', 7);\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    transliterator_transliterate($tr, 'str', 7, 6);\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    transliterator_transliterate($tr, \"\\x80\\x03\");\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"2025a\"\n\
+string(5) \"2025a\"\n\
+bool(false)\n\
+IntlTimeZone::getRegion(): could not convert time zone id to UTF-16: U_INVALID_CHAR_FOUND\n\
+bool(false)\n\
+IntlTimeZone::getRegion(): error obtaining region: U_ILLEGAL_ARGUMENT_ERROR\n\
+string(5) \"7 {1}\"\n\
+NumberFormatter::__construct(): Argument #1 ($locale) \"xx\" is invalid\n\
+bool(true)\n\
+IntlException: transliterator_transliterate(): Neither \"start\" nor the \"end\" arguments can exceed the number of UTF-16 code units (in this case, 3)\n\
+ValueError: transliterator_transliterate(): Argument #2 ($string) must be less than or equal to argument #3 ($end)\n\
+IntlException: transliterator_transliterate(): String conversion of string to UTF-16 failed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_formatter_calendar_timezone_locale_transliterator_edges_to_native_binary() {
     let root = temp_dir("ptn-native-intl-formatter-calendar-timezone-locale-transliterator");
     fs::create_dir_all(&root).unwrap();
