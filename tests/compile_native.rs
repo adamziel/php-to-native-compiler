@@ -3288,6 +3288,9 @@ var_dump(basename($wrappedReflection->getExecutingFile()));
 var_dump($wrappedReflection->getExecutingLine());
 $wrappedTrace = $wrappedReflection->getTrace();
 var_dump(count($wrappedTrace));
+var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[0]["type"], isset($wrappedTrace[0]["file"]), isset($wrappedTrace[0]["line"]));
+var_dump($wrappedTrace[1]["function"], basename($wrappedTrace[1]["file"]), $wrappedTrace[1]["line"], $wrappedTrace[1]["args"][0][0], $wrappedTrace[1]["args"][0][1]);
+var_dump(substr($wrappedTrace[2]["function"], 0, 9) === "{closure:", isset($wrappedTrace[2]["file"]), isset($wrappedTrace[2]["line"]));
 "#,
     )
     .unwrap();
@@ -3316,7 +3319,20 @@ var_dump(count($wrappedTrace));
             "}\n",
             "string(34) \"reflection-fiber-suspend-trace.php\"\n",
             "int(10)\n",
-            "int(2)\n",
+            "int(3)\n",
+            "string(7) \"suspend\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(2) \"::\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(14) \"call_user_func\"\n",
+            "string(34) \"reflection-fiber-suspend-trace.php\"\n",
+            "int(10)\n",
+            "string(5) \"Fiber\"\n",
+            "string(7) \"suspend\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
