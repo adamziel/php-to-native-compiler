@@ -99067,7 +99067,7 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
         ptn_reference_assign(runtime, args[i].as.reference, assigned);
         ptn_value_destroy(&assigned);
     }
-    return ptn_string(to_encoding);
+    return ptn_string(from_encoding);
 }
 
 static int ptn_ascii_is_letter(unsigned char byte) {

@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/mbstring/tests/casemapping.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/iso2022jp_2004_encoding.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/gh9535.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/cp5022x_encoding.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/bug52981.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/other_encodings.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/ini_mbstring_invalid.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/mb_str_split_error_conditions.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/iso2022jp_ms_encoding.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/mb_trim.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/bug52681.phpt
+/home/claude/php-src-phpt/ext/mbstring/tests/gh17503.phpt

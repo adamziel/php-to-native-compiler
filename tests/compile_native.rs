@@ -33803,6 +33803,39 @@ dump_order();\n",
 }
 
 #[test]
+fn compile_mb_convert_variables_returns_source_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-variables-source-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-variables-source-encoding.php");
+    let output = root.join("mb-convert-variables-source-encoding-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = array_fill(0, 500, '<blah>');\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $items));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"UTF-8\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_mb_convert_variables"));
+}
+
+#[test]
 fn compile_mbstring_conversion_case_and_regex_residual_edges_to_native_binary() {
     let root = temp_dir("ptn-native-mb-conversion-case-regex-residual");
     fs::create_dir_all(&root).unwrap();
