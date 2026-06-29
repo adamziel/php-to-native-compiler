@@ -37911,6 +37911,50 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static SIMPLEXML_LOAD_STRING_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "class_name",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "namespace_or_prefix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "is_prefix",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static SIMPLEXML_LOAD_FILE_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "class_name",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "namespace_or_prefix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "is_prefix",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     if name.eq_ignore_ascii_case("clone") {
         Some(&CLONE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_filter") {
@@ -38151,6 +38195,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&URI_RFC3986_URI_PARSE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") {
         Some(&URI_WHATWG_URL_PARSE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("simplexml_load_string") {
+        Some(&SIMPLEXML_LOAD_STRING_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("simplexml_load_file") {
+        Some(&SIMPLEXML_LOAD_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("XMLReader::fromStream")
         || name
             .rsplit_once("::")

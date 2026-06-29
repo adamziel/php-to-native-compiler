@@ -5268,6 +5268,12 @@ static PTN_UNUSED int ptn_internal_xml_property_write_indirect(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_internal_xml_property_unset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -7786,6 +7792,13 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             goto done;
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_value = ptn_null();
+    if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
+        result = ptn_lookup_found(internal_value);
+        goto done;
+    }
+#endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -9472,21 +9485,7 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    PtnValue internal_value = ptn_null();
-    if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
-        ptn_value_destroy(&internal_value);
-        char message[192];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Cannot unset %s::$%s",
-            receiver.as.object->class_name,
-            property
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "Error", message);
+    if (ptn_internal_xml_property_unset(runtime, receiver, property, line)) {
         return;
     }
     if (ptn_internal_array_object_property_unset(runtime, receiver, property, access_scope, line)) {

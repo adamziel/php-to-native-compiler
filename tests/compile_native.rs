@@ -52170,6 +52170,109 @@ var_dump($sxe->elem1['attr1']);
 }
 
 #[test]
+fn compile_simplexml_property_xpath_and_recover_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-property-xpath-recover-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-property-xpath-recover-edges.php");
+    let output = root.join("simplexml-property-xpath-recover-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = new SimpleXMLElement('<root xmlns:ns="ns"><foo>bar</foo><ns:foo>ns:bar</ns:foo><ns:foo2>ns:bar2</ns:foo2></root>');
+var_dump(isset($xml->foo2));
+unset($xml->foo);
+$ns = $xml->children('ns');
+var_dump(isset($ns->foo), isset($ns->foo2), isset($xml->foo));
+
+$x = simplexml_load_string('<r><p>Test</p><o d="h"><xx rr="info"/><yy rr="data"/></o></r>');
+echo "chain\n";
+var_dump(isset($x->o->yy), isset($x->o->xx), isset($x->o->zz));
+
+try {
+    $x->{""} .= "bar";
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$item = new SimpleXMLElement('<something />');
+$item->attribute = 'something';
+$item->otherAttribute = $item->attribute;
+$a = array();
+try {
+    $item->$a = new stdClass;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$recover = simplexml_load_string('<root><child/>', options: LIBXML_RECOVER);
+echo "recover\n";
+var_dump($recover instanceof SimpleXMLElement, isset($recover->child));
+
+$root = simplexml_load_string("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<test>\n\n</test>");
+$clone = clone $root;
+var_dump($clone);
+var_dump(strpos($clone->asXML(), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<test>") === 0);
+
+$iter = new SimpleXMLIterator('<xml><fieldset1></fieldset1><fieldset2><options></options></fieldset2></xml>');
+$rit = new RecursiveIteratorIterator($iter, RecursiveIteratorIterator::LEAVES_ONLY);
+foreach ($rit as $child) {
+    var_dump(count($child->xpath('ancestor-or-self::*')) > 0);
+}
+
+try {
+    simplexml_load_string("XXXXXXX^", $undefinedClassName, 0x6000000000000001);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(false)\nbool(true)\nbool(true)\nbool(false)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("chain\nbool(true)\nbool(true)\nbool(false)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot create element with an empty name\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Array to string conversion"), "{stdout}");
+    assert!(
+        stdout
+            .contains("It's not possible to assign a complex type to properties, stdClass given\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("recover\nbool(true)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(SimpleXMLElement)#"), "{stdout}");
+    assert!(
+        stdout.contains("bool(true)\nbool(true)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("simplexml_load_string(): Argument #3 ($options) is too large\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_property_unset"));
+    assert!(c_source.contains("ptn_simplexml_options_arg"));
+    assert!(c_source.contains("ancestor-or-self::*"));
+}
+
+#[test]
 fn compile_modern_dom_selector_methods_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-selector-methods");
     fs::create_dir_all(&root).unwrap();

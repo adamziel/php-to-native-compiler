@@ -1,0 +1,12 @@
+ext/simplexml/tests/gh15837.phpt
+ext/simplexml/tests/bug76712.phpt
+ext/simplexml/tests/bug51615.phpt
+ext/simplexml/tests/xml_parsing_LIBXML_RECOVER.phpt
+ext/simplexml/tests/sxe_004.phpt
+ext/simplexml/tests/bug37076_1.phpt
+ext/simplexml/tests/bug46003.phpt
+ext/simplexml/tests/gh14638.phpt
+ext/simplexml/tests/bug38406.phpt
+ext/simplexml/tests/bug39662.phpt
+ext/simplexml/tests/bug72971.phpt
+ext/simplexml/tests/SimpleXMLElement_xpath_4.phpt
