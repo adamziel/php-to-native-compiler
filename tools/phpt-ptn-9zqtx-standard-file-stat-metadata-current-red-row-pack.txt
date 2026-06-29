@@ -1,0 +1,12 @@
+ext/standard/tests/file/fileowner_variation3.phpt
+ext/standard/tests/file/file_variation5.phpt
+ext/standard/tests/file/filestat.phpt
+ext/standard/tests/file/lstat_stat_error.phpt
+ext/standard/tests/file/bug60120.phpt
+ext/standard/tests/file/fileinode_variation2.phpt
+ext/standard/tests/file/006_error.phpt
+ext/standard/tests/file/lstat_stat_variation22.phpt
+ext/standard/tests/file/bug38450_2.phpt
+ext/standard/tests/file/bug22414.phpt
+ext/standard/tests/file/filegroup_variation3.phpt
+ext/standard/tests/file/copy_variation12.phpt

@@ -55803,6 +55803,24 @@ static void ptn_stream_report_resource_error(
     }
 }
 
+static PtnValue ptn_new_user_stream_wrapper_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    int previous_suppress_user_call_frame_location =
+        runtime == NULL ? 0 : runtime->suppress_user_call_frame_location;
+    if (runtime != NULL) {
+        runtime->suppress_user_call_frame_location = 1;
+    }
+    PtnValue object = ptn_new_object(runtime, class_name, 0, NULL, line);
+    if (runtime != NULL) {
+        runtime->suppress_user_call_frame_location =
+            previous_suppress_user_call_frame_location;
+    }
+    return object;
+}
+
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
     const char *function_name,
@@ -55829,7 +55847,7 @@ static int ptn_try_open_user_stream_wrapper(
         return 1;
     }
 
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
@@ -56250,7 +56268,7 @@ static int ptn_try_open_user_directory_wrapper(
         return 0;
     }
 
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
@@ -56336,7 +56354,7 @@ static int ptn_try_user_stream_metadata(
     if (wrapper == NULL) {
         return 0;
     }
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_null();
@@ -60612,6 +60630,23 @@ static void ptn_emit_open_basedir_warning(
     free(message);
 }
 
+static int ptn_read_file_bytes_with_normalized_probe(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    char *probe_path = ptn_normalize_filesystem_path(path, strlen(path));
+    int result = ptn_read_file_bytes(probe_path, data_out, len_out);
+    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, probe_path, data_out, len_out)) {
+        result = 1;
+    }
+    int saved_errno = errno;
+    free(probe_path);
+    errno = saved_errno;
+    return result;
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *function_name,
@@ -60630,10 +60665,7 @@ static int ptn_read_file_bytes_with_search(
             *opened_path_out = ptn_duplicate_string(path);
             return 0;
         }
-        result = ptn_read_file_bytes(path, data_out, len_out);
-        if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
-            result = 1;
-        }
+        result = ptn_read_file_bytes_with_normalized_probe(runtime, path, data_out, len_out);
         *opened_path_out = ptn_duplicate_string(path);
         return result;
     }
@@ -60653,10 +60685,7 @@ static int ptn_read_file_bytes_with_search(
         char *candidate = ptn_path_join_alloc(directory, path);
         free(directory);
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
-            result = ptn_read_file_bytes(candidate, data_out, len_out);
-            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
-                result = 1;
-            }
+            result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
                 *opened_path_out = candidate;
                 return result;
@@ -60671,10 +60700,7 @@ static int ptn_read_file_bytes_with_search(
         char *candidate = ptn_path_join_alloc(source_dir, path);
         free(source_dir);
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
-            result = ptn_read_file_bytes(candidate, data_out, len_out);
-            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
-                result = 1;
-            }
+            result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
                 *opened_path_out = candidate;
                 return result;
@@ -60689,10 +60715,7 @@ static int ptn_read_file_bytes_with_search(
         *opened_path_out = ptn_duplicate_string(path);
         return 0;
     }
-    result = ptn_read_file_bytes(path, data_out, len_out);
-    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
-        result = 1;
-    }
+    result = ptn_read_file_bytes_with_normalized_probe(runtime, path, data_out, len_out);
     if (result != 0) {
         *opened_path_out = ptn_duplicate_string(path);
         return result;
@@ -64955,7 +64978,10 @@ static void ptn_emit_stat_warning(
         ptn_abort_out_of_memory();
     }
     if (runtime != NULL && ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        ptn_output_write_cstr(runtime, "\n");
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (!runtime->diagnostics.emitted_warning && root != NULL && root->output_has_started) {
+            ptn_output_write_cstr(runtime, "\n");
+        }
     }
     ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
     free(message);
