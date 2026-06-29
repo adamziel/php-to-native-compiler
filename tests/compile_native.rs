@@ -93124,6 +93124,22 @@ try {
 }
 restore_error_handler();
 var_dump(ReflectStaticChild::staticData());
+
+#[AllowDynamicProperties]
+class ReflectRawDynamic {}
+
+$sourceDynamic = new ReflectRawDynamic();
+$sourceDynamic->dyn = 1;
+$targetDynamic = new ReflectRawDynamic();
+$rawDynamic = new ReflectionProperty($sourceDynamic, 'dyn');
+set_error_handler(function ($errno, $errstr) {
+    echo \"handled:$errstr\\n\";
+    return true;
+});
+var_dump($rawDynamic->getRawValue($targetDynamic));
+restore_error_handler();
+$rawDynamic->setRawValue($targetDynamic, 5);
+var_dump($targetDynamic->dyn);
 ",
     )
     .unwrap();
@@ -93157,6 +93173,9 @@ var_dump(ReflectStaticChild::staticData());
             "string(5) \"hello\"\n",
             "caught:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
             "string(5) \"hello\"\n",
+            "handled:Undefined property: ReflectRawDynamic::$dyn\n",
+            "NULL\n",
+            "int(5)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

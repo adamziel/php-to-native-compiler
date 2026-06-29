@@ -192170,6 +192170,9 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
             line
         );
     }
+    if (is_dynamic) {
+        ptn_emit_undefined_property_warning(runtime, target.as.object, property_name, line);
+    }
     return ptn_null();
 }
 
