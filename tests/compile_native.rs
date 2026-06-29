@@ -55659,6 +55659,54 @@ echo $dest->saveXML();
 }
 
 #[test]
+fn compile_dom_current_red_import_prefix_and_xml_empty_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-current-red-import-prefix-xml-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-current-red-import-prefix-xml-empty.php");
+    let output = root.join("dom-current-red-import-prefix-xml-empty-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$source = new DOMDocument();
+$dest = new DOMDocument();
+$source->loadXML('<?xml version="1.0"?><container xmlns:foo="some:ns" foo:bar="1"/>');
+$dest->loadXML('<?xml version="1.0"?><container xmlns:foo="some:other"/>');
+$imported = $dest->importNode($source->documentElement->getAttributeNodeNS('some:ns', 'bar'));
+var_dump($imported->prefix, $imported->namespaceURI);
+$dest->documentElement->setAttributeNodeNS($imported);
+echo $dest->saveXML();
+
+$dom = new DOMDocument();
+$dom->loadXML('<hello:container xmlns:conflict="urn:foo" xmlns:hello="http://www.w3.org/1999/xhtml"/>');
+$dom->documentElement->prefix = '';
+echo $dom->saveXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(7) \"default\"\n",
+            "string(7) \"some:ns\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"some:other\" xmlns:default=\"some:ns\" default:bar=\"1\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_imported_attribute_prepare_for_element"));
+    assert!(c_source.contains("html_document"));
+}
+
+#[test]
 fn compile_dom_modern_attribute_metadata_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-modern-attribute-metadata-pack");
     fs::create_dir_all(&root).unwrap();
