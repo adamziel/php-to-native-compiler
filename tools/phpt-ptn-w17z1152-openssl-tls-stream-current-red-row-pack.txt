@@ -1,0 +1,19 @@
+# ptn-w17z.1152 exact OpenSSL/TLS stream current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T171010Z.tsv
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1152-openssl-tls-stream-current-red-row-pack.txt
+#
+# bucket: openssl-tls-stream-current-red rows=12
+ext/openssl/tests/bug48182.phpt
+ext/openssl/tests/tls_psk_client_callback_null.phpt
+ext/openssl/tests/tls_wrapper_with_tls_v1.3.phpt
+ext/openssl/tests/bug65538_001.phpt
+ext/openssl/tests/stream_crypto_flags_004.phpt
+ext/openssl/tests/sni_server_key_cert.phpt
+ext/openssl/tests/bug47828.phpt
+ext/openssl/tests/session_resumption_new_cb_no_context.phpt
+ext/openssl/tests/bug74022.phpt
+ext/openssl/tests/session_resumption_persistent_reject.phpt
+ext/openssl/tests/bug54060.phpt
+ext/openssl/tests/openssl_private_decrypt_digest.phpt

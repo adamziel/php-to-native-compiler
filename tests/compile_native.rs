@@ -3288,6 +3288,9 @@ var_dump(basename($wrappedReflection->getExecutingFile()));
 var_dump($wrappedReflection->getExecutingLine());
 $wrappedTrace = $wrappedReflection->getTrace();
 var_dump(count($wrappedTrace));
+var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[0]["type"], isset($wrappedTrace[0]["file"]), isset($wrappedTrace[0]["line"]));
+var_dump($wrappedTrace[1]["function"], basename($wrappedTrace[1]["file"]), $wrappedTrace[1]["line"], $wrappedTrace[1]["args"][0][0], $wrappedTrace[1]["args"][0][1]);
+var_dump(substr($wrappedTrace[2]["function"], 0, 9) === "{closure:", isset($wrappedTrace[2]["file"]), isset($wrappedTrace[2]["line"]));
 "#,
     )
     .unwrap();
@@ -3316,7 +3319,20 @@ var_dump(count($wrappedTrace));
             "}\n",
             "string(34) \"reflection-fiber-suspend-trace.php\"\n",
             "int(10)\n",
-            "int(2)\n",
+            "int(3)\n",
+            "string(7) \"suspend\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(2) \"::\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(14) \"call_user_func\"\n",
+            "string(34) \"reflection-fiber-suspend-trace.php\"\n",
+            "int(10)\n",
+            "string(5) \"Fiber\"\n",
+            "string(7) \"suspend\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -24234,6 +24250,66 @@ try {
 }
 
 #[test]
+fn compile_generator_call_unpack_rethrows_yield_from_delegate_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-call-unpack-yield-from-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-call-unpack-yield-from-exception.php");
+    let output = root.join("generator-call-unpack-yield-from-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function throwException(): iterable {
+    throw new Exception("delegated");
+}
+
+function loop(): iterable {
+    $callbacks = [
+        function () {
+            yield "first";
+        },
+        function () {
+            yield from throwException();
+        },
+    ];
+
+    foreach ($callbacks as $callback) {
+        yield from $callback();
+    }
+}
+
+function collect(string $first, int $second): array {
+    return [];
+}
+
+try {
+    collect(...loop());
+} catch (Throwable $e) {
+    echo get_class($e), "\n";
+    echo $e->getMessage(), "\n";
+    foreach ($e->getTrace() as $frame) {
+        echo $frame["function"] ?? "{main}", "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("Exception\ndelegated\n"), "{stdout}");
+    assert!(stdout.contains("throwException\n"), "{stdout}");
+    assert!(stdout.contains("loop\n"), "{stdout}");
+    assert!(
+        !stdout.contains("Keys must be of type int|string"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     let root = temp_dir("ptn-native-flush-binary-strings");
     fs::create_dir_all(&root).unwrap();
@@ -35470,6 +35546,103 @@ if (strcmp(bin2hex($md5_raw), $md5) == 0 ) {\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "*** Testing md5() : basic functionality - with raw output***\nstring(32) \"b10a8db164e0754105b7a99be72e3fe5\"\nTEST PASSED\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_openssl_stream_row_primitives_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-stream-row-primitives");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("private.key"),
+        r#"-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQDLXp6PkCtbpV+P1gwFQWH6Ez0U83uEmS8IGnpeI8Fk8rY/vHOZ
+zZZaxRCw+loyc342qCDIQheMOCNm5Fkevz06q757/oooiLR3yryYGKiKG1IZIipl
+mtsC95oKrzUSKk60wuI1mbgpMUP5LKi/Tvxes5PmkUtXfimz2qgkeUcPpQIDAQAB
+AoGBAMcP/dp+fsI9FFYBaVC3mASlUjOwxKWdH3kqGb8N9p4uKRAoEWtp3hNJM7ZX
+x3P8sn0jgrsiXlRFGvn65/T9shp8hj+CdJKg2jKCs7S58v60TLfSvOQSIYsw9Qm9
+Bsx4hKfz+d52ptuJRbv8tDxsYP3D/KjQfpX1OysiP/WBfeg9AkEA+AGT0goqjWOM
+YgFtZGrefIegF31XSCQTaLIml6/2JwF+oBKjJUQFar2Rwn6qUwrsGtSPMM0Iz8ry
+9uvUbs8PPwJBANHsuTVWzLf8TJNGc+xIlhvzKFkF0nJIWx4ozhlMNDQMMF/3FRSo
+zvHIgUnpG9Vwa2GtjTDnD8jHtzTauAZmjBsCQCGDVQ5VAVsJ0LaNqtKe/mGlkiSa
+c2j0Nws2x7BHvuOWeB35ZsJqZrD93OyDYVDHcRBPGOpnSoGJ0zs6swImSNECQHSH
+0BgH4wSPDYMDrP4RHSLOzCr+zF+cQthvFll8r83kpkXfRth9DMOy5fI9cLH/Adzr
+FmF7Iov2MYEpmNYUvtkCQHfW0ntkVY9xS2/VTs57F5tUkfNG2hG74pJM6vSfTNWn
+R/oI5m2sDtRWQ88LCYJMEmIZhN00Ys4xOSoTs+SUakY=
+-----END RSA PRIVATE KEY-----
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("public.key"),
+        r#"-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLXp6PkCtbpV+P1gwFQWH6Ez0U
+83uEmS8IGnpeI8Fk8rY/vHOZzZZaxRCw+loyc342qCDIQheMOCNm5Fkevz06q757
+/oooiLR3yryYGKiKG1IZIiplmtsC95oKrzUSKk60wuI1mbgpMUP5LKi/Tvxes5Pm
+kUtXfimz2qgkeUcPpQIDAQAB
+-----END PUBLIC KEY-----
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("cert.pem"),
+        r#"-----BEGIN CERTIFICATE-----
+MIICLDCCAdYCAQAwDQYJKoZIhvcNAQEEBQAwgaAxCzAJBgNVBAYTAlBUMRMwEQYD
+VQQIEwpRdWVlbnNsYW5kMQ8wDQYDVQQHEwZMaXNib2ExFzAVBgNVBAoTDk5ldXJv
+bmlvLCBMZGEuMRgwFgYDVQQLEw9EZXNlbnZvbHZpbWVudG8xGzAZBgNVBAMTEmJy
+dXR1cy5uZXVyb25pby5wdDEbMBkGCSqGSIb3DQEJARYMc2FtcG9AaWtpLmZpMB4X
+DTk2MDkwNTAzNDI0M1oXDTk2MTAwNTAzNDI0M1owgaAxCzAJBgNVBAYTAlBUMRMw
+EQYDVQQIEwpRdWVlbnNsYW5kMQ8wDQYDVQQHEwZMaXNib2ExFzAVBgNVBAoTDk5l
+dXJvbmlvLCBMZGEuMRgwFgYDVQQLEw9EZXNlbnZvbHZpbWVudG8xGzAZBgNVBAMT
+EmJydXR1cy5uZXVyb25pby5wdDEbMBkGCSqGSIb3DQEJARYMc2FtcG9AaWtpLmZp
+MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAL7+aty3S1iBA/+yxjxv4q1MUTd1kjNw
+L4lYKbpzzlmC5beaQXeQ2RmGMTXU+mDvuqItjVHOK3DvPK7lTcSGftUCAwEAATAN
+BgkqhkiG9w0BAQQFAANBAFqPEKFjk6T6CKTHvaQeEAsX0/8YHPHqH/9AnhSjrwuX
+9EBc0n6bVGhN7XaXd6sJ7dym9sbsWxb+pJdurnkxjx4=
+-----END CERTIFICATE-----
+"#,
+    )
+    .unwrap();
+    let input = root.join("openssl-stream-row-primitives.php");
+    let output = root.join("openssl-stream-row-primitives-bin");
+    fs::write(
+        &input,
+        "<?php
+$priv = 'file://' . __DIR__ . '/private.key';
+$pub = 'file://' . __DIR__ . '/public.key';
+$data = 'row-pack';
+
+var_dump(OPENSSL_PKCS1_OAEP_PADDING);
+var_dump(in_array('sha1', openssl_get_md_methods(), true));
+var_dump(openssl_public_encrypt($data, $encrypted, $pub, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
+var_dump(openssl_private_decrypt($encrypted, $out, $priv, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
+var_dump($out);
+var_dump(openssl_private_decrypt($encrypted, $mismatch, $priv, OPENSSL_PKCS1_OAEP_PADDING, 'sha1'));
+var_dump($mismatch);
+
+$parsed = openssl_x509_parse(file_get_contents(__DIR__ . '/cert.pem'));
+var_dump(strlen($parsed['hash']));
+
+$ciphertext = openssl_encrypt('secret', 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456');
+var_dump(openssl_decrypt($ciphertext, 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456'));
+var_dump(openssl_error_string());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(4)\nbool(true)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nstring(6) \"secret\"\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -85230,6 +85403,121 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_invalid_callback_message"));
     assert!(c_source.contains("ptn_throw_exception_owned_message_at(runtime, \"TypeError\""));
+}
+
+#[test]
+fn compile_call_user_func_invalid_callback_skips_later_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-callback-argument-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-callback-argument-order.php");
+    let output = root.join("call-user-func-invalid-callback-argument-order-bin");
+    fs::write(
+        &input,
+        "<?php
+function side_effect() {
+    echo \"side effect\\n\";
+    return 1;
+}
+
+try {
+    call_user_func([null, 'missing'], side_effect());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(
+        c_source.contains("ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\"")
+    );
+    assert!(c_source.contains("runtime.exceptions->active_exception == NULL"));
+}
+
+#[test]
+fn compile_call_user_func_by_ref_array_dim_argument_is_read_by_value_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-dim-by-value");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-dim-by-value.php");
+    let output = root.join("call-user-func-array-dim-by-value-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo(&$ref) { $ref = 24; }
+
+$a = [];
+call_user_func('foo', $a[0][0]);
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: Undefined array key 0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Trying to access array offset on null"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: foo(): Argument #1 ($ref) must be passed by reference, value given"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("array(0) {\n}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_disable_by_ref_argument_source"));
+    assert!(c_source.contains("ptn_internal_call_callback_capturing_exception_impl"));
+}
+
+#[test]
+fn compile_call_user_func_internal_callback_uses_weak_arginfo_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-internal-weak-arginfo");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-internal-weak-arginfo.php");
+    let output = root.join("call-user-func-internal-weak-arginfo-bin");
+    fs::write(
+        &input,
+        "<?php
+declare(strict_types=1);
+
+namespace Foo;
+
+var_dump(call_user_func('strlen', false));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_user_func_previous_strict_types"));
+    assert!(c_source.contains("runtime->strict_types = 0"));
 }
 
 #[test]
