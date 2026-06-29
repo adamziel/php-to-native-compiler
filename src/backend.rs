@@ -37520,6 +37520,32 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static HASH_HKDF_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "info",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "salt",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "binary",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     static HASH_HMAC_FILE_PARAMETERS: [InternalParameterSpec; 4] = [
         InternalParameterSpec {
             name: "algo",
@@ -37954,6 +37980,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&HASH_PARAMETERS)
     } else if name.eq_ignore_ascii_case("hash_init") {
         Some(&HASH_INIT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("hash_hkdf") {
+        Some(&HASH_HKDF_PARAMETERS)
     } else if name.eq_ignore_ascii_case("hash_hmac_file") {
         Some(&HASH_HMAC_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("md5") || name.eq_ignore_ascii_case("sha1") {
