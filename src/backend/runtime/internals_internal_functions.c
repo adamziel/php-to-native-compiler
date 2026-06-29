@@ -132477,10 +132477,27 @@ static void ptn_dom_attribute_set_id_state(PtnXmlNode *attr, int is_id) {
 static int ptn_xml_node_matches_tag(PtnXmlNode *node, const char *tag_name) {
     const char *requested = tag_name == NULL ? "*" : tag_name;
     const char *node_name = node == NULL || node->name == NULL ? "" : node->name;
-    return node != NULL &&
-        node->type == PTN_XML_NODE_ELEMENT &&
-        (ptn_ascii_case_equal(requested, "*") ||
-            ptn_ascii_case_equal(strchr(requested, ':') == NULL ? ptn_xml_local_name(node_name) : node_name, requested));
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(requested, "*")) {
+        return 1;
+    }
+    PtnXmlNode *document = ptn_xml_document_for_node(node);
+    const char *uri = node->namespace_uri == NULL ? "" : node->namespace_uri;
+    if (document != NULL &&
+        document->modern_dom &&
+        document->html_document &&
+        strcmp(uri, ptn_dom_xhtml_namespace_uri()) == 0) {
+        char *lowered = ptn_duplicate_string(requested);
+        for (char *cursor = lowered; *cursor != '\0'; cursor++) {
+            *cursor = (char)tolower((unsigned char)*cursor);
+        }
+        int matches = strcmp(node_name, lowered) == 0;
+        free(lowered);
+        return matches;
+    }
+    return strcmp(node_name, requested) == 0;
 }
 
 static const char *ptn_dom_html_parser_namespace_for_element(PtnXmlNode *element) {
@@ -144117,9 +144134,8 @@ static char *ptn_dom_node_name_property_copy(PtnXmlNode *node) {
         document->modern_dom &&
         document->html_document &&
         node != NULL &&
-        (node->namespace_uri == NULL ||
-            node->namespace_uri[0] == '\0' ||
-            strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0);
+        node->namespace_uri != NULL &&
+        strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0;
     if (node != NULL &&
         node->type == PTN_XML_NODE_ELEMENT &&
         ptn_dom_document_is_html(node) &&

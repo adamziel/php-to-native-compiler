@@ -56332,6 +56332,65 @@ echo $html->saveXml();
 }
 
 #[test]
+fn compile_modern_html_get_elements_by_tag_name_qualified_matching_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-html-get-elements-by-tag-name-qualified-matching");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-html-get-elements-by-tag-name-qualified-matching.php");
+    let output = root.join("modern-html-get-elements-by-tag-name-qualified-matching-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\HTMLDocument::createEmpty();
+$container = $dom->appendChild($dom->createElement("container"));
+$container->appendChild($dom->createElement("HTML", "1"));
+$container->appendChild($dom->createElementNS("http://www.w3.org/1999/xhtml", "html", "2"));
+$container->appendChild($dom->createElementNS(NULL, "html", "3"));
+$container->appendChild($dom->createElementNS(NULL, "HTML", "4"));
+$container->appendChild($dom->createElementNS("urn:foo", "htML", "5"));
+$container->appendChild($dom->createElement("foo:HTML", "6"));
+$container->appendChild($dom->createElementNS("urn:a", "foo:HTML", "7"));
+$container->appendChild($dom->createElementNS("http://www.w3.org/1999/xhtml", "bar:HTML", "8"));
+$container->appendChild($dom->createElementNS("http://www.w3.org/1999/xhtml", "bar:html", "9"));
+
+foreach (["HTml", "htML", "html", "HTML", "foo:html", "foo:HTML", "bar:HTML", "bar:html"] as $query) {
+    echo $query, "=";
+    $sep = "";
+    foreach ($dom->getElementsByTagName($query) as $node) {
+        echo $sep, $node->nodeName, ":", $node->textContent;
+        $sep = ",";
+    }
+    echo "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "HTml=HTML:1,HTML:2\n",
+            "htML=HTML:1,HTML:2,htML:5\n",
+            "html=HTML:1,HTML:2,html:3\n",
+            "HTML=HTML:1,HTML:2,HTML:4\n",
+            "foo:html=FOO:HTML:6\n",
+            "foo:HTML=FOO:HTML:6,foo:HTML:7\n",
+            "bar:HTML=BAR:HTML:9\n",
+            "bar:html=BAR:HTML:9\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dom_namespace_lookup_and_xmlns_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-dom-namespace-lookup-xmlns-serialization");
     fs::create_dir_all(&root).unwrap();
