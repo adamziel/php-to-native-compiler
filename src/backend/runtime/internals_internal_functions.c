@@ -196413,6 +196413,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             );
             return ptn_null();
         }
+        if (ptn_internal_class_name_is_sqlite3(class_name)) {
+            return ptn_object_new_shell(runtime, class_name);
+        }
         if (ptn_declared_class_exists(class_name) && runtime->new_instance_without_constructor != NULL) {
             PtnValue instance = runtime->new_instance_without_constructor(runtime, class_name, line);
             if (runtime->exceptions->active_exception != NULL || ptn_value_deref(instance).type != PTN_OBJECT) {
@@ -196445,9 +196448,6 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
         }
         if (ptn_internal_class_name_is_directory_iterator(class_name)) {
-            return ptn_object_new_shell(runtime, class_name);
-        }
-        if (ptn_internal_class_name_is_sqlite3(class_name)) {
             return ptn_object_new_shell(runtime, class_name);
         }
         ptn_throw_exception(runtime, "ReflectionException", "Cannot instantiate internal class without constructor");
