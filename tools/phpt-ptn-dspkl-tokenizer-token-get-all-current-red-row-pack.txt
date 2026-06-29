@@ -1,0 +1,15 @@
+# ptn-dspkl exact tokenizer token_get_all current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T175017Z.tsv
+# Scope: tokenizer token_get_all TOKEN_PARSE, bad-character, numeric literal, and variation rows.
+ext/tokenizer/tests/token_get_all_TOKEN_PARSE_001.phpt
+ext/tokenizer/tests/gh19507_eval.phpt
+ext/tokenizer/tests/token_get_all_variation10.phpt
+ext/tokenizer/tests/bug76991.phpt
+ext/tokenizer/tests/token_get_all_variation6.phpt
+ext/tokenizer/tests/token_get_all_variation17.phpt
+ext/tokenizer/tests/bug80462.phpt
+ext/tokenizer/tests/invalid_large_octal_with_underscores.phpt
+ext/tokenizer/tests/token_get_all_variation12.phpt
+ext/tokenizer/tests/token_get_all_variation8.phpt
+ext/tokenizer/tests/token_get_all_variation19.phpt
+ext/tokenizer/tests/bad_character.phpt

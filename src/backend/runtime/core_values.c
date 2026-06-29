@@ -739,6 +739,10 @@ typedef struct {
 #define PTN_T_NAME_RELATIVE 1118
 #define PTN_T_NAME_QUALIFIED 1119
 #define PTN_T_NS_SEPARATOR 1120
+#define PTN_T_TRAIT_C 1121
+#define PTN_T_NULLSAFE_OBJECT_OPERATOR 1122
+#define PTN_T_BAD_CHARACTER 1123
+#define PTN_TOKEN_PARSE 1
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
