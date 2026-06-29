@@ -137274,18 +137274,6 @@ static int ptn_xml_parse_document_into_mode_with_recover(
                 }
             } else if (!html_mode && stack_len > 1) {
                 stack_len--;
-            } else if (html_mode && !has_closing_name && stack_len > 1) {
-                if (ptn_dom_html_direct_element_named(stack[stack_len - 1], "p")) {
-                    stack_len--;
-                }
-                if (pos < len && data[pos] == '\r') {
-                    pos++;
-                    if (pos < len && data[pos] == '\n') {
-                        pos++;
-                    }
-                } else if (pos < len && data[pos] == '\n') {
-                    pos++;
-                }
             }
             free(closing_name);
             continue;
@@ -202745,6 +202733,16 @@ static PtnXmlNode *ptn_simplexml_create_text_child(
     return child;
 }
 
+static void ptn_simplexml_set_element_text_content(PtnRuntime *runtime, PtnXmlNode *node, const char *data, size_t len) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+        return;
+    }
+    node->child_count = 0;
+    if (len > 0) {
+        ptn_xml_append_text_span(runtime, node, data == NULL ? "" : data, len);
+    }
+}
+
 static PtnXmlNode *ptn_simplexml_append_pending_child(PtnRuntime *runtime, PtnSimpleXmlData *data) {
     if (data == NULL ||
         data->pending_property == NULL ||
@@ -202807,7 +202805,7 @@ static int ptn_simplexml_property_write(
             child = ptn_simplexml_create_text_child(runtime, parent, property, "", 0);
         }
         if (child != NULL) {
-            ptn_xml_set_text_content(runtime, child, string.data, string.len);
+            ptn_simplexml_set_element_text_content(runtime, child, string.data, string.len);
         }
     }
     ptn_string_operand_free(string);
@@ -204642,7 +204640,7 @@ static PtnValue ptn_simplexml_offset_set_method(
             node = ptn_simplexml_append_pending_child(runtime, data);
         }
         if (node != NULL && node->type == PTN_XML_NODE_ELEMENT) {
-            ptn_xml_set_text_content(runtime, node, value.data, value.len);
+            ptn_simplexml_set_element_text_content(runtime, node, value.data, value.len);
         }
         ptn_string_operand_free(value);
         return ptn_null();

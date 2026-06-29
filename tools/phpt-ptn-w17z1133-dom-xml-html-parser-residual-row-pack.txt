@@ -1,0 +1,14 @@
+# ptn-w17z.1133 exact DOM/XML/html parser residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T080006Z.tsv
+ext/simplexml/tests/gh15837.phpt
+ext/xmlwriter/tests/bug79029.phpt
+ext/dom/tests/bug80602_3.phpt
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Windows1251.phpt
+ext/dom/tests/modern/html/encoding/HTMLDocument_Shift_JIS.phpt
+ext/xmlwriter/tests/bug79344.phpt
+ext/xmlwriter/tests/OO_009.phpt
+ext/dom/tests/bug79852.phpt
+ext/simplexml/tests/bug76712.phpt
+ext/dom/tests/delayed_freeing/document_fragment.phpt
+ext/dom/tests/modern/spec/NamedNodeMap_dimensions_errors.phpt

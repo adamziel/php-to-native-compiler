@@ -51430,6 +51430,51 @@ try {
 }
 
 #[test]
+fn compile_simplexml_empty_string_assignment_keeps_empty_element_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-empty-string-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-empty-string-assignment.php");
+    let output = root.join("simplexml-empty-string-assignment-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sxe = new SimpleXMLElement('<foo></foo>');
+$sxe->addChild('bar', '');
+echo $sxe->asXML();
+
+$sxe = new SimpleXMLElement('<foo></foo>');
+$sxe->addChild('bar');
+$sxe->bar = '';
+echo $sxe->asXML();
+
+$sxe->bar[0] = '';
+echo $sxe->asXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<foo><bar/></foo>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_set_element_text_content"));
+}
+
+#[test]
 fn compile_simplexml_iterator_keys_and_attribute_unset_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-iterator-keys-attribute-unset");
     fs::create_dir_all(&root).unwrap();
@@ -54906,6 +54951,56 @@ echo $error->message, "\n";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dom_html_store_modeled_parser_errors"));
+}
+
+#[test]
+fn compile_dom_html_document_empty_malformed_end_tag_preserves_paragraph_whitespace_to_native_binary(
+) {
+    let root = temp_dir("ptn-native-dom-html-document-empty-malformed-end-tag");
+    fs::create_dir_all(&root).unwrap();
+    let fixture = root.join("parser-warning-empty-end-tag.html");
+    fs::write(
+        &fixture,
+        "<!DOCTYPE HTML>\n<html>\n    <body>\n        <p></>\n    </body>\n</html>\n",
+    )
+    .unwrap();
+    let input = root.join("dom-html-document-empty-malformed-end-tag.php");
+    let output = root.join("dom-html-document-empty-malformed-end-tag-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$expected = "<!DOCTYPE html><html><head></head><body>\n        <p>\n    \n</p></body></html>";
+$html = file_get_contents({});
+$fromFile = Dom\HTMLDocument::createFromFile({}, LIBXML_NOERROR);
+$fromString = Dom\HTMLDocument::createFromString($html, LIBXML_NOERROR);
+var_dump($fromFile->saveHtml() === $expected);
+var_dump($fromString->saveHtml() === $expected);
+"#,
+            php_string_literal(&fixture),
+            php_string_literal(&fixture)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_normalize_root_whitespace"));
+    assert!(c_source.contains("ptn_xml_read_name"));
 }
 
 #[test]
