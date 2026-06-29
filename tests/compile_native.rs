@@ -56529,6 +56529,69 @@ var_dump($sf->headerfault);
 }
 
 #[test]
+fn compile_ziparchive_compression_method_bounds_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-compression-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-compression-bounds.php");
+    let output = root.join("ziparchive-compression-bounds-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$zip = new ZipArchive;
+var_dump(
+    method_exists('ZipArchive', 'setCompressionName'),
+    method_exists($zip, 'setCompressionIndex')
+);
+
+try {
+    $zip->setCompressionName('entry5.txt', PHP_INT_MAX);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $zip->setCompressionIndex(4, PHP_INT_MAX);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $zip->setCompressionName('entry5.txt', 0, 65536);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "ZipArchive::setCompressionName(): Argument #2 ($method) must be between -1 and 2147483647\n",
+            "ZipArchive::setCompressionIndex(): Argument #2 ($method) must be between -1 and 2147483647\n",
+            "ZipArchive::setCompressionName(): Argument #3 ($compflags) must be between 0 and 65535\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_set_compression_name"));
+    assert!(c_source.contains("ptn_zip_archive_set_compression_index"));
+}
+
+#[test]
 fn compile_phar_map_phar_static_method_to_native_binary() {
     let root = temp_dir("ptn-native-phar-map-phar-static-method");
     fs::create_dir_all(&root).unwrap();
