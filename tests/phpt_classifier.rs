@@ -1332,6 +1332,32 @@ fn phpt_classifier_allows_supported_fiber_constructor_and_current_surface() {
 }
 
 #[test]
+fn phpt_classifier_allows_supported_fiber_lifecycle_rows() {
+    let cases = [
+        (
+            "Zend/tests/fibers/unfinished-fiber-with-finally.phpt",
+            "--TEST--\nfiber force close finally\n--FILE--\n<?php\n$fiber = new Fiber(function () {\n    try {\n        Fiber::suspend();\n    } finally {\n        echo \"finally\\n\";\n    }\n});\n$fiber->start();\n$fiber = null;\ngc_collect_cycles();\n--EXPECT--\nfinally\n",
+        ),
+        (
+            "Zend/tests/fibers/suspend-in-force-close-fiber-catching-exception.phpt",
+            "--TEST--\nfiber suspend during force close\n--FILE--\n<?php\n$fiber = new Fiber(function () {\n    try {\n        Fiber::suspend();\n    } finally {\n        try {\n            Fiber::suspend();\n        } catch (FiberError $e) {\n            echo $e->getMessage(), \"\\n\";\n        }\n    }\n});\n$fiber->start();\n$fiber = null;\ngc_collect_cycles();\n--EXPECT--\nCannot suspend in a force-closed fiber\n",
+        ),
+        (
+            "Zend/tests/fibers/gh9916-003.phpt",
+            "--TEST--\nfiber generator cleanup\n--FILE--\n<?php\nfunction gen() {\n    yield from [1];\n}\n$fiber = new Fiber(function () {\n    foreach (gen() as $value) {\n        Fiber::suspend();\n    }\n});\n$fiber->start();\n--EXPECT--\n",
+        ),
+    ];
+
+    for (relative_path, phpt) in cases {
+        let classification = classify_at_relative_path(phpt, relative_path);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{relative_path}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_allows_collected_generator_runtime_subset() {
     let cases = [
         (

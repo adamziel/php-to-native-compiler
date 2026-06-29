@@ -1332,6 +1332,7 @@ struct PtnException {
     PtnValue trace;
     PtnValue previous;
     int64_t severity;
+    int internal_force_close;
     PtnValue dynamic_properties;
     PtnValue errors;
     PtnValue soap_fault_headerfault;

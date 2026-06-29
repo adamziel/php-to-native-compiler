@@ -2742,6 +2742,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->trace = ptn_exception_capture_trace(runtime);
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
+    exception->internal_force_close = 0;
     exception->dynamic_properties = ptn_array_from_literal_entries(0, NULL);
     exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
         ? ptn_array_from_literal_entries(0, NULL)
@@ -2754,6 +2755,10 @@ static PTN_UNUSED void ptn_exception_mark_message_defined_at_location(PtnExcepti
     if (exception != NULL) {
         exception->message_defined_at_location = 1;
     }
+}
+
+static PTN_UNUSED int ptn_exception_is_internal_force_close(PtnException *exception) {
+    return exception != NULL && exception->internal_force_close;
 }
 
 static PTN_UNUSED PtnException *ptn_exception_new_owned_cstr(
@@ -2802,6 +2807,9 @@ static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
 ) {
     PtnValue resolved = ptn_value_deref(previous);
     if (resolved.type != PTN_NULL || runtime->exceptions->active_exception == NULL) {
+        return previous;
+    }
+    if (ptn_exception_is_internal_force_close(runtime->exceptions->active_exception)) {
         return previous;
     }
     return ptn_exception_borrow(runtime->exceptions->active_exception);
@@ -8364,6 +8372,9 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
 
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
     if (runtime->exceptions->active_exception == NULL) {
+        return 0;
+    }
+    if (ptn_exception_is_internal_force_close(runtime->exceptions->active_exception)) {
         return 0;
     }
     const char *class_name = runtime->exceptions->active_exception->class_name;

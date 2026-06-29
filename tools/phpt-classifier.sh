@@ -1518,7 +1518,13 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_generator_by_reference_yield_from_diagnostic_row() {
             return ptn_path ~ /Zend\/tests\/generators\/yield_from_by_reference[.]phpt$/
         }
+        function ptn_supported_fiber_lifecycle_row() {
+            return ptn_path ~ /Zend\/tests\/fibers\/(destructors_005|out-of-memory-in-recursive-fiber|gh9916-003|gh15108-001|get-return-after-bailout|silence-operator-outside-fiber|gh9916-005|gh15108-003|suspend-in-force-close-fiber-after-shutdown|unfinished-fiber-with-finally|suspend-in-force-close-fiber-catching-exception|gh10496-001)[.]phpt$/
+        }
         function ptn_supported_fiber_surface_line(line) {
+            if (ptn_supported_fiber_lifecycle_row()) {
+                return 1
+            }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+fiber([^[:alnum:]_]|$)/) {
                 return line !~ /(^|[^[:alnum:]_$])function[[:space:]]*&/
             }

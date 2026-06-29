@@ -85,6 +85,9 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_fiber_force_close(PtnRuntime *runtime, PtnObject *object);
+#endif
 
 typedef struct PtnFiberData {
     PtnObject *object;
@@ -103,6 +106,8 @@ typedef struct PtnFiberData {
     int completed;
     int threw;
     int resume_credit;
+    int force_closing;
+    int force_close_unwind;
 #if !defined(_WIN32)
     ucontext_t caller_context;
     ucontext_t fiber_context;
@@ -118,6 +123,7 @@ typedef struct PtnFiberData {
     PtnObject *caller_fiber;
     PtnGenerator *caller_generator;
     PtnGenerator *suspended_generator;
+    int caller_diagnostics_suppressed;
 #endif
 } PtnFiberData;
 
@@ -3736,6 +3742,11 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (ptn_object_is_generator(object)) {
         ptn_generator_force_close(object->lifecycle_runtime, (PtnGenerator *)object->native_data);
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        ptn_fiber_force_close(object->lifecycle_runtime, object);
+    }
+#endif
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);
     ptn_runtime_prune_weak_maps_for_released_object(object->lifecycle_runtime);

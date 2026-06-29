@@ -1,0 +1,12 @@
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt
+Zend/tests/fibers/gh9916-003.phpt
+Zend/tests/fibers/gh15108-001.phpt
+Zend/tests/fibers/get-return-after-bailout.phpt
+Zend/tests/fibers/silence-operator-outside-fiber.phpt
+Zend/tests/fibers/gh9916-005.phpt
+Zend/tests/fibers/gh15108-003.phpt
+Zend/tests/fibers/suspend-in-force-close-fiber-after-shutdown.phpt
+Zend/tests/fibers/unfinished-fiber-with-finally.phpt
+Zend/tests/fibers/suspend-in-force-close-fiber-catching-exception.phpt
+Zend/tests/fibers/gh10496-001.phpt

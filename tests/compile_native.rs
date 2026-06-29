@@ -3107,6 +3107,53 @@ var_dump($fiber->isTerminated());
 }
 
 #[test]
+fn compile_fiber_silence_operator_does_not_leak_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-silence-operator-boundary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-silence-operator-boundary.php");
+    let output = root.join("fiber-silence-operator-boundary-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = @new Fiber(function (): void {
+    trigger_error("fiber A", E_USER_WARNING);
+    Fiber::suspend();
+    trigger_error("fiber C", E_USER_WARNING);
+});
+
+@$fiber->start();
+trigger_error("outer B", E_USER_WARNING);
+@$fiber->resume();
+trigger_error("outer D", E_USER_WARNING);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.diagnostics.suppressed++"));
+    assert!(c_source.contains("data->caller_diagnostics_suppressed"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    for message in ["fiber A", "outer B", "fiber C", "outer D"] {
+        assert!(
+            stdout.contains(&format!("Warning: {message}")),
+            "{message} missing from stdout:\n{stdout}"
+        );
+    }
+    assert_eq!(stdout.matches("Warning:").count(), 4, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-return-gc");
     fs::create_dir_all(&root).unwrap();
@@ -3219,6 +3266,105 @@ print "3\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "1\n2\nC::__destruct\n3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_release_force_closes_suspended_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-release-force-close-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-release-force-close-finally.php");
+    let output = root.join("fiber-release-force-close-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function () {
+    echo "fiber\n";
+    try {
+        try {
+            Fiber::suspend();
+            echo "after\n";
+        } catch (FiberError $e) {
+            echo "caught original\n";
+        }
+    } finally {
+        echo "finally\n";
+    }
+});
+
+$fiber->start();
+$fiber = null;
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_fiber_force_close"));
+    assert!(c_source.contains("internal_force_close"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "fiber\nfinally\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_suspend_during_force_close_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-force-close-suspend-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-force-close-suspend-error.php");
+    let output = root.join("fiber-force-close-suspend-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function () {
+    try {
+        Fiber::suspend();
+    } finally {
+        try {
+            Fiber::suspend();
+        } catch (FiberError $e) {
+            echo $e->getMessage(), "\n";
+        }
+        echo "finally end\n";
+    }
+});
+
+$fiber->start();
+$fiber = null;
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot suspend in a force-closed fiber"));
+    assert!(c_source.contains("ptn_exception_is_internal_force_close"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot suspend in a force-closed fiber\nfinally end\ndone\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
