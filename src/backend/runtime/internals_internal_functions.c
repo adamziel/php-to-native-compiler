@@ -6389,10 +6389,11 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     size_t position,
     const char *parameter_name,
     PtnValue callback,
+    int autoload,
     int accepts_null
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
-    if (ptn_callable_is_valid_ex(runtime, checked, 0, 0)) {
+    if (ptn_callable_is_valid_ex(runtime, checked, 0, autoload)) {
         return checked;
     }
     char *message = ptn_invalid_callback_message(
@@ -6422,6 +6423,25 @@ static PtnValue ptn_internal_expect_callback_arg(
         position,
         parameter_name,
         callback,
+        0,
+        0
+    );
+}
+
+static PtnValue ptn_internal_expect_callback_arg_autoload(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg_impl(
+        runtime,
+        function_name,
+        position,
+        parameter_name,
+        callback,
+        1,
         0
     );
 }
@@ -6493,6 +6513,7 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
         position,
         parameter_name,
         callback,
+        0,
         1
     );
 }
@@ -6515,6 +6536,7 @@ static int ptn_internal_call_callback_capturing_exception_impl(
     }
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    int previous_strict_types = runtime->strict_types;
     int previous_suppress_user_call_frame_location =
         runtime->suppress_user_call_frame_location;
     int previous_suppress_user_argument_count_location =
@@ -6529,11 +6551,13 @@ static int ptn_internal_call_callback_capturing_exception_impl(
             previous_suppress_user_argument_count_location;
         runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
         runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+        runtime->strict_types = previous_strict_types;
         *result_out = ptn_null();
         return 0;
     }
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
+    runtime->strict_types = 0;
     if (!include_user_call_site) {
         runtime->suppress_user_call_frame_location = 1;
         runtime->suppress_user_argument_count_location = 1;
@@ -6547,6 +6571,7 @@ static int ptn_internal_call_callback_capturing_exception_impl(
         previous_suppress_user_argument_count_location;
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    runtime->strict_types = previous_strict_types;
     return 1;
 }
 
@@ -115994,7 +116019,7 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();
     }
-    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "call_user_func", 1, "callback", args[callback_index]);
+    PtnValue callback = ptn_internal_expect_callback_arg_autoload(runtime, "call_user_func", 1, "callback", args[callback_index]);
     if (runtime->exceptions->active_exception != NULL) {
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();
@@ -116071,7 +116096,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
     PtnArray *arguments = ptn_internal_expect_array_arg(runtime, "call_user_func_array", 2, "args", args[arguments_index]);
     size_t previous_call_site_line = runtime->call_site_line;
     runtime->call_site_line = line;
-    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "call_user_func_array", 1, "callback", args[callback_index]);
+    PtnValue callback = ptn_internal_expect_callback_arg_autoload(runtime, "call_user_func_array", 1, "callback", args[callback_index]);
     if (runtime->exceptions->active_exception != NULL) {
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();

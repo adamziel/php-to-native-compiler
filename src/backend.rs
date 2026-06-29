@@ -56700,56 +56700,60 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         let previous_call_site_line_temp = self.next_temp();
         let previous_warn_by_ref_temp = self.next_temp();
+        let previous_strict_types_temp = self.next_temp();
+        let checked_callback_temp = self.next_temp();
         out.push_str("    size_t ");
         out.push_str(&previous_call_site_line_temp);
         out.push_str(" = runtime.call_site_line;\n");
         out.push_str("    int ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(" = runtime.warn_by_ref_argument_mismatch;\n");
+        out.push_str("    int ");
+        out.push_str(&previous_strict_types_temp);
+        out.push_str(" = runtime.strict_types;\n");
         out.push_str("    runtime.call_site_line = ");
         out.push_str(&line.to_string());
         out.push_str(";\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = 1;\n");
-        out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
+        out.push_str("    PtnValue ");
+        out.push_str(&checked_callback_temp);
+        out.push_str(" = ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
         out.push_str(&callable_temp);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
+        out.push_str("));\n");
+        out.push_str("    runtime.strict_types = 0;\n");
         if arguments.len() == 1 {
             if discarded {
-                self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
+                self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
             }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
-            out.push_str(&callable_temp);
+            out.push_str(&checked_callback_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(", 1);\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
             out.push_str(";\n");
+            out.push_str("    runtime.strict_types = ");
+            out.push_str(&previous_strict_types_temp);
+            out.push_str(";\n");
             out.push_str("    runtime.call_site_line = ");
             out.push_str(&previous_call_site_line_temp);
             out.push_str(";\n");
+            emit_value_cleanup(out, "    ", &checked_callback_temp);
             emit_value_cleanup(out, "    ", &callable_temp);
             return result_temp;
         }
 
         let mut temps = Vec::with_capacity(arguments.len() - 1);
-        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate().skip(1) {
-            let temp = self.emit_runtime_callable_call_argument(
-                out,
-                &callable_temp,
-                argument_index - 1,
-                argument,
-                line,
-                true,
-            );
-            if value_is_array_dim_reference_target(argument) {
-                unwrap_array_dim_reference_temps.push(temp.clone());
-            }
+            let temp = self.emit_call_argument(out, "call_user_func", argument_index, argument);
+            out.push_str("    ");
+            out.push_str(&temp);
+            out.push_str(" = ptn_value_disable_by_ref_argument_source(");
+            out.push_str(&temp);
+            out.push_str(");\n");
             temps.push(temp);
         }
 
@@ -56768,12 +56772,12 @@ impl ValueEmitter {
         out.push_str(" };\n");
         emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if discarded {
-            self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
+            self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
         }
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
-        out.push_str(&callable_temp);
+        out.push_str(&checked_callback_temp);
         out.push_str(", ");
         out.push_str(&temps.len().to_string());
         out.push_str(", ");
@@ -56784,12 +56788,12 @@ impl ValueEmitter {
         out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(";\n");
+        out.push_str("    runtime.strict_types = ");
+        out.push_str(&previous_strict_types_temp);
+        out.push_str(";\n");
         out.push_str("    runtime.call_site_line = ");
         out.push_str(&previous_call_site_line_temp);
         out.push_str(";\n");
-        for temp in &unwrap_array_dim_reference_temps {
-            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
-        }
         emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -56797,6 +56801,7 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        emit_value_cleanup(out, "    ", &checked_callback_temp);
         emit_value_cleanup(out, "    ", &callable_temp);
         result_temp
     }
