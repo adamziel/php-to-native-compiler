@@ -51146,6 +51146,14 @@ var_dump(function_exists('simplexml_import_dom'));
 dump_map(simplexml_load_string($docXml)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($dom)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
+
+$sxe = simplexml_load_string('<container xmlns="urn:a">foo</container>');
+$element = Dom\import_simplexml($sxe);
+echo $element->ownerDocument->saveXml($element), "\n";
+$element->appendChild($element->ownerDocument->createElementNS('urn:a', 'child'));
+echo $element->ownerDocument->saveXml($element), "\n";
+$sxe->addChild('name', 'value');
+echo $element->ownerDocument->saveXml($element), "\n";
 "#,
     )
     .unwrap();
@@ -51184,6 +51192,9 @@ dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
             "a=urn:a\n",
             "d=urn:d\n",
             "--\n",
+            "<container xmlns=\"urn:a\">foo</container>\n",
+            "<container xmlns=\"urn:a\">foo<child/></container>\n",
+            "<container xmlns=\"urn:a\">foo<child/><name>value</name></container>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
