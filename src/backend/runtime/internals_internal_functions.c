@@ -165581,6 +165581,183 @@ static PtnValue ptn_zip_archive_add_from_string(
     return ptn_bool(1);
 }
 
+static int ptn_zip_archive_validate_compression_args(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int64_t *method,
+    int64_t *compflags
+) {
+    *method = ptn_internal_expect_integer_arg(runtime, method_name, 2, "method", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (*method < -1 || *method > INT_MAX) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($method) must be between -1 and %d",
+            method_name,
+            INT_MAX
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *compflags = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, method_name, 3, "compflags", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (*compflags < 0 || *compflags > USHRT_MAX) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #3 ($compflags) must be between 0 and %u",
+            method_name,
+            (unsigned int)USHRT_MAX
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    return 1;
+}
+
+static PtnValue ptn_zip_archive_set_compression_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 3) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 2
+                ? "ZipArchive::setCompressionName() expects at least 2 arguments, %zu given"
+                : "ZipArchive::setCompressionName() expects at most 3 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_internal_expect_string_arg(
+        runtime,
+        "ZipArchive::setCompressionName",
+        1,
+        "name",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    if (name.len == 0) {
+        ptn_string_operand_free(name);
+        ptn_throw_exception(runtime, "ValueError", "ZipArchive::setCompressionName(): Argument #1 ($name) must not be empty");
+        return ptn_null();
+    }
+    int64_t method = 0;
+    int64_t compflags = 0;
+    int ok = ptn_zip_archive_validate_compression_args(
+        runtime,
+        "ZipArchive::setCompressionName",
+        argc,
+        args,
+        line,
+        &method,
+        &compflags
+    );
+    (void)method;
+    (void)compflags;
+    ptn_string_operand_free(name);
+    if (!ok) {
+        return ptn_null();
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || !data->is_open) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid or uninitialized Zip object");
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_zip_archive_set_compression_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 3) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 2
+                ? "ZipArchive::setCompressionIndex() expects at least 2 arguments, %zu given"
+                : "ZipArchive::setCompressionIndex() expects at most 3 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    int64_t index = ptn_internal_expect_integer_arg(
+        runtime,
+        "ZipArchive::setCompressionIndex",
+        1,
+        "index",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (index < 0) {
+        return ptn_bool(0);
+    }
+    int64_t method = 0;
+    int64_t compflags = 0;
+    if (!ptn_zip_archive_validate_compression_args(
+            runtime,
+            "ZipArchive::setCompressionIndex",
+            argc,
+            args,
+            line,
+            &method,
+            &compflags
+        )) {
+        return ptn_null();
+    }
+    (void)method;
+    (void)compflags;
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || !data->is_open) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid or uninitialized Zip object");
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_zip_archive_close(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -165728,6 +165905,12 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     }
     if (ptn_ascii_case_equal(name, "addFromString")) {
         return ptn_zip_archive_add_from_string(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "setCompressionName")) {
+        return ptn_zip_archive_set_compression_name(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "setCompressionIndex")) {
+        return ptn_zip_archive_set_compression_index(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "statName")) {
         return ptn_zip_archive_stat_name(runtime, receiver, argc, args, line);
@@ -182934,6 +183117,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "open")
             || ptn_ascii_case_equal(method_name, "registerCancelCallback")
             || ptn_ascii_case_equal(method_name, "addFromString")
+            || ptn_ascii_case_equal(method_name, "setCompressionName")
+            || ptn_ascii_case_equal(method_name, "setCompressionIndex")
             || ptn_ascii_case_equal(method_name, "statName")
             || ptn_ascii_case_equal(method_name, "close");
     }
@@ -184715,6 +184900,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "open");
         ptn_append_method_name(result, &index, "registerCancelCallback");
         ptn_append_method_name(result, &index, "addFromString");
+        ptn_append_method_name(result, &index, "setCompressionName");
+        ptn_append_method_name(result, &index, "setCompressionIndex");
         ptn_append_method_name(result, &index, "statName");
         ptn_append_method_name(result, &index, "close");
         return result;
