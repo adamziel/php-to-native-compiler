@@ -109511,6 +109511,195 @@ static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const Ptn
     return found ? value : ptn_bool(0);
 }
 
+static int ptn_ini_global_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
+    if (ptn_ascii_case_equal(name, "precision")) {
+        *out = ptn_ini_int_string(ptn_default_float_precision());
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "serialize_precision")) {
+        *out = ptn_ini_int_string(ptn_default_serialize_precision());
+        return 1;
+    }
+    return ptn_ini_value(runtime, ptn_string_operand_borrowed(name), out);
+}
+
+static int ptn_ini_builtin_default_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
+    if (ptn_ascii_case_equal(name, "precision")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        *out = ptn_ini_int_string(root == NULL ? PTN_DEFAULT_PRECISION : root->initial_precision);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "serialize_precision")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        *out = ptn_ini_int_string(root == NULL ? PTN_DEFAULT_SERIALIZE_PRECISION : root->initial_serialize_precision);
+        return 1;
+    }
+    return ptn_ini_global_value(runtime, name, out);
+}
+
+static void ptn_ini_get_all_set_entry(PtnRuntime *runtime, PtnValue result, const char *name, int details) {
+    PtnValue local_value;
+    if (!ptn_ini_value(runtime, ptn_string_operand_borrowed(name), &local_value)) {
+        return;
+    }
+    if (!details) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key(name), local_value);
+        return;
+    }
+
+    PtnValue global_value;
+    if (!ptn_ini_global_value(runtime, name, &global_value)) {
+        ptn_value_destroy(&local_value);
+        return;
+    }
+    PtnValue builtin_default_value;
+    if (!ptn_ini_builtin_default_value(runtime, name, &builtin_default_value)) {
+        ptn_value_destroy(&local_value);
+        ptn_value_destroy(&global_value);
+        return;
+    }
+
+    PtnValue entry = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("global_value"), global_value);
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("local_value"), local_value);
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("access"), ptn_int(7));
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("builtin_default_value"), builtin_default_value);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key(name), entry);
+}
+
+static void ptn_ini_get_all_add_extension_entries(PtnRuntime *runtime, PtnValue result, const char *extension_name, int details) {
+    if (ptn_ascii_case_equal(extension_name, "Core")) {
+        ptn_ini_get_all_set_entry(runtime, result, "display_errors", details);
+        ptn_ini_get_all_set_entry(runtime, result, "html_errors", details);
+        ptn_ini_get_all_set_entry(runtime, result, "error_reporting", details);
+        ptn_ini_get_all_set_entry(runtime, result, "include_path", details);
+        ptn_ini_get_all_set_entry(runtime, result, "memory_limit", details);
+        ptn_ini_get_all_set_entry(runtime, result, "max_memory_limit", details);
+        ptn_ini_get_all_set_entry(runtime, result, "precision", details);
+        ptn_ini_get_all_set_entry(runtime, result, "serialize_precision", details);
+        ptn_ini_get_all_set_entry(runtime, result, "zend.assertions", details);
+        ptn_ini_get_all_set_entry(runtime, result, "zend.exception_ignore_args", details);
+        ptn_ini_get_all_set_entry(runtime, result, "zend.exception_string_param_max_len", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "date")) {
+        ptn_ini_get_all_set_entry(runtime, result, "date.timezone", details);
+        ptn_ini_get_all_set_entry(runtime, result, "date.default_latitude", details);
+        ptn_ini_get_all_set_entry(runtime, result, "date.default_longitude", details);
+        ptn_ini_get_all_set_entry(runtime, result, "date.sunset_zenith", details);
+        ptn_ini_get_all_set_entry(runtime, result, "date.sunrise_zenith", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "bcmath")) {
+        ptn_ini_get_all_set_entry(runtime, result, "bcmath.scale", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "pcre")) {
+        ptn_ini_get_all_set_entry(runtime, result, "pcre.backtrack_limit", details);
+        ptn_ini_get_all_set_entry(runtime, result, "pcre.jit", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "Phar")) {
+        ptn_ini_get_all_set_entry(runtime, result, "phar.readonly", details);
+        ptn_ini_get_all_set_entry(runtime, result, "phar.require_hash", details);
+        ptn_ini_get_all_set_entry(runtime, result, "phar.cache_list", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "Zend OPcache")) {
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.blacklist_filename", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.enable", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.enable_cli", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.fast_shutdown", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.file_cache_only", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.file_update_protection", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.interned_strings_buffer", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.log_verbosity_level", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.optimization_level", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.opt_debug_level", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.preload", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.preload_user", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.save_comments", details);
+        ptn_ini_get_all_set_entry(runtime, result, "opcache.validate_timestamps", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "mbstring")) {
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.language", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.internal_encoding", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.http_input", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.http_output", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.detect_order", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.substitute_character", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.regex_retry_limit", details);
+        ptn_ini_get_all_set_entry(runtime, result, "mbstring.regex_stack_limit", details);
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "session")) {
+        for (size_t i = 0; i < sizeof(PTN_SESSION_INI_DEFINITIONS) / sizeof(PTN_SESSION_INI_DEFINITIONS[0]); i++) {
+            ptn_ini_get_all_set_entry(runtime, result, PTN_SESSION_INI_DEFINITIONS[i].name, details);
+        }
+        return;
+    }
+    if (ptn_ascii_case_equal(extension_name, "standard")) {
+        ptn_ini_get_all_set_entry(runtime, result, "arg_separator.input", details);
+        ptn_ini_get_all_set_entry(runtime, result, "arg_separator.output", details);
+        ptn_ini_get_all_set_entry(runtime, result, "default_charset", details);
+        ptn_ini_get_all_set_entry(runtime, result, "filter.default", details);
+        ptn_ini_get_all_set_entry(runtime, result, "user_agent", details);
+        return;
+    }
+}
+
+static PtnValue ptn_internal_ini_get_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int details = argc < 2 || ptn_is_truthy(args[1]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        ptn_ini_get_all_add_extension_entries(runtime, result, "Core", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "date", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "bcmath", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "pcre", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "Phar", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "Zend OPcache", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "mbstring", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "session", details);
+        ptn_ini_get_all_add_extension_entries(runtime, result, "standard", details);
+        return result;
+    }
+
+    PtnStringOperand extension = ptn_internal_expect_string_arg(
+        runtime,
+        "ini_get_all",
+        1,
+        "extension",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        ptn_string_operand_free(extension);
+        return ptn_null();
+    }
+    const char *canonical_extension = ptn_modeled_extension_canonical_name(extension);
+    if (canonical_extension == NULL) {
+        char *extension_name = ptn_ini_duplicate_text(ptn_ini_text(extension.data, extension.len));
+        size_t message_len = strlen(extension_name) + 48;
+        char *message = malloc(message_len);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, message_len, "ini_get_all(): Extension \"%s\" cannot be found", extension_name);
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        free(extension_name);
+        ptn_value_destroy(&result);
+        ptn_string_operand_free(extension);
+        return ptn_bool(0);
+    }
+    ptn_ini_get_all_add_extension_entries(runtime, result, canonical_extension, details);
+    ptn_string_operand_free(extension);
+    return result;
+}
+
 static PtnValue ptn_internal_error_get_last(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -179963,6 +180152,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "image_type_to_mime_type", 1, 1, ptn_internal_image_type_to_mime_type },
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
+        { "ini_get_all", 0, 2, ptn_internal_ini_get_all },
         { "ini_get", 1, 1, ptn_internal_ini_get },
         { "ini_parse_quantity", 1, 1, ptn_internal_ini_parse_quantity },
         { "ini_restore", 1, 1, ptn_internal_ini_restore },
