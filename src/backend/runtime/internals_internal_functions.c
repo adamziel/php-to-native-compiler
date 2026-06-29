@@ -163570,6 +163570,31 @@ static int ptn_include_phar_plain_entry(
     return 1;
 }
 
+static void ptn_phar_throw_mount_failed(PtnRuntime *runtime, const char *target, const char *source) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Mounting of %s to %s failed",
+        target == NULL ? "" : target,
+        source == NULL ? "" : source
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Mounting of %s to %s failed",
+        target == NULL ? "" : target,
+        source == NULL ? "" : source
+    );
+    ptn_throw_exception_owned_message(runtime, "PharException", message);
+}
+
 static PtnValue ptn_internal_phar_mount(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc != 2) {
         char message[128];
@@ -163609,9 +163634,10 @@ static PtnValue ptn_internal_phar_mount(PtnRuntime *runtime, size_t argc, const 
     int read_result = strncmp(source, "phar://", 7) == 0
         ? ptn_phar_uri_read_entry(source, &data, &data_len)
         : ptn_read_file_bytes(source, &data, &data_len);
-    free(source);
     if (read_result <= 0) {
+        ptn_phar_throw_mount_failed(runtime, target, source);
         free(target);
+        free(source);
         free(data);
         return ptn_null();
     }
@@ -163630,9 +163656,12 @@ static PtnValue ptn_internal_phar_mount(PtnRuntime *runtime, size_t argc, const 
         ptn_phar_archive_set_virtual_entry(archive, target, data, data_len);
         mounted = 1;
     }
+    if (!mounted) {
+        ptn_phar_throw_mount_failed(runtime, target, source);
+    }
     free(target);
+    free(source);
     free(data);
-    (void)mounted;
     return ptn_null();
 }
 

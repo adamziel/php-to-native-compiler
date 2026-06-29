@@ -57534,6 +57534,42 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_mount_failure_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-mount-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-mount-failure.php");
+    let output = root.join("phar-mount-failure-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    phar::mount(1, 1);\n\
+} catch (Exception $e) {\n\
+    var_dump($e->getMessage());\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(25) \"Mounting of 1 to 1 failed\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_throw_mount_failed"));
+}
+
+#[test]
 fn compile_php_stub_phar_include_path_entries_to_native_binary() {
     fn push_u16(bytes: &mut Vec<u8>, value: u16) {
         bytes.extend_from_slice(&value.to_le_bytes());
