@@ -28043,6 +28043,107 @@ var_dump(DateTime::createFromFormat('O', 'invalid'));
 }
 
 #[test]
+fn compile_date_timelib_relative_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-date-timelib-relative-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-timelib-relative-edges.php");
+    let output = root.join("date-timelib-relative-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+error_reporting(0);
+
+try {
+    timezone_open("Europe/Zurich\0Foo");
+} catch (ValueError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone("Europe/Zurich\0Foo");
+} catch (ValueError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+$parsed = date_parse('A Revolution in Development');
+echo $parsed['zone'], ' ', $parsed['tz_abbr'], "\n";
+$parsed = date_parse('Ask the Experts');
+var_dump($parsed['zone'], $parsed['tz_abbr']);
+
+echo gmdate('Y-m-d H:i:s', strtotime('20 VI. 2005')), "\n";
+foreach (['January 0099', 'January 1, 0099', '0099-01'] as $source) {
+    echo (new DateTime($source))->format('Y'), "\n";
+}
+
+$huge = new DateTime('-1500-01-01');
+$huge->setDate(-2147483648, 1, 1);
+echo $huge->format(DateTime::ATOM), "\n";
+echo date('Y y o U', PHP_INT_MIN), "\n";
+echo gmdate(DateTime::ATOM, PHP_INT_MAX), "\n";
+
+$offset = date_create('2005-07-18 22:10:00 +0400');
+echo date_format($offset, 'D, d M Y H:i:s T'), "\n";
+$offset->modify('+1 hour');
+echo date_format($offset, 'D, d M Y H:i:s T'), "\n";
+
+$berlin = DateTime::createFromFormat('Y-m-d\TH:i:sP[e]', '2022-02-18T00:00:00+01:00[Europe/Berlin]');
+echo $berlin->format('Y-m-d H:i:s e'), "\n";
+
+$pdt = new DateTime('2008-01-01 12:00:00 PDT');
+echo $pdt->format('Y-m-d\TH:i:sO'), "\n";
+$timezone = $pdt->getTimezone();
+$utc = new DateTime('2008-01-01 12:00:00 UTC');
+$utc->setTimezone($timezone);
+echo $utc->format('Y-m-d\TH:i:sO'), "\n";
+
+date_default_timezone_set('Europe/Amsterdam');
+$base = mktime(17, 17, 17, 10, 27, 2004);
+echo date('l Y-m-d H:i:s T', strtotime('Monday', $base)), "\n";
+
+date_default_timezone_set('Asia/Tehran');
+$base = mktime(17, 17, 17, 10, 25, 1977);
+echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError: timezone_open(): Argument #1 ($timezone) must not contain any null bytes\n",
+            "ValueError: DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes\n",
+            "3600 A\n",
+            "NULL\n",
+            "NULL\n",
+            "2005-06-20 00:00:00\n",
+            "0099\n",
+            "0099\n",
+            "0099\n",
+            "-2147483648-01-01T00:00:00+00:00\n",
+            "-292277022657 -57 -292277022657 -9223372036854775808\n",
+            "292277026596-12-04T15:30:07+00:00\n",
+            "Mon, 18 Jul 2005 22:10:00 GMT+0400\n",
+            "Mon, 18 Jul 2005 23:10:00 GMT+0400\n",
+            "2022-02-18 00:00:00 Europe/Berlin\n",
+            "2008-01-01T12:00:00-0700\n",
+            "2008-01-01T05:00:00-0700\n",
+            "Monday 2004-11-01 00:00:00 CET\n",
+            "Tuesday 1977-11-01 00:00:00 +04 0\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_datetime_noon_and_fractional_interval_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-noon-fractional-interval");
     fs::create_dir_all(&root).unwrap();
