@@ -1,0 +1,12 @@
+ext/opcache/tests/opcache_enable_noop_001.phpt
+ext/opcache/tests/gh8063-002.phpt
+ext/opcache/tests/jit/gh16499.phpt
+ext/opcache/tests/opt/dce_005.phpt
+ext/opcache/tests/match/004.phpt
+ext/opcache/tests/opt/jmp_001.phpt
+ext/opcache/tests/bug78937_5.phpt
+ext/opcache/tests/gh16979_check_file_cache_function.phpt
+ext/opcache/tests/gh19867.phpt
+ext/opcache/tests/opt/sccp_003.phpt
+ext/opcache/tests/jit/gh8461-004.phpt
+ext/opcache/tests/preload_optimizer.phpt

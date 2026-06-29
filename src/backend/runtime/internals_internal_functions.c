@@ -109869,6 +109869,20 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, opcache_name)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
+        if (ptn_ascii_case_equal(opcache_name, "opcache.enable") &&
+            !ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, opcache_name), 1) &&
+            ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]))) {
+            ptn_emit_runtime_warning(
+                runtime,
+                "Zend OPcache can't be temporarily enabled (it may be only disabled until the end of request)",
+                line
+            );
+            free(next);
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         ptn_runtime_set_opcache_ini(runtime, opcache_name, next);
         free(next);
         ptn_string_operand_free(value);

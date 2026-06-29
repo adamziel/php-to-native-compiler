@@ -79833,6 +79833,52 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
 }
 
 #[test]
+fn phpc_opcache_enable_cannot_be_reenabled_after_runtime_disable() {
+    let root = temp_dir("ptn-phpc-opcache-enable-noop");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-enable-noop.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"Should not warn:\\n\";\n\
+var_dump(ini_set('opcache.enable', 1));\n\
+echo \"Disabling:\\n\";\n\
+var_dump(ini_set('opcache.enable', 0));\n\
+echo \"Should warn:\\n\";\n\
+var_dump(ini_set('opcache.enable', 1));\n\
+var_dump(ini_get('opcache.enable'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Should not warn:\n\
+string(1) \"1\"\n\
+Disabling:\n\
+string(1) \"1\"\n\
+Should warn:\n\
+\n\
+Warning: Zend OPcache can't be temporarily enabled (it may be only disabled until the end of request) in {} on line 7\n\
+bool(false)\n\
+string(1) \"0\"\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_version_compare_rejects_invalid_operator_to_native_binary() {
     let root = temp_dir("ptn-native-version-compare-invalid-operator");
     fs::create_dir_all(&root).unwrap();
