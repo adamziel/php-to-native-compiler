@@ -15354,6 +15354,98 @@ echo str_replace(\"\\n\", \"\", $dump), \"\\n\";\n",
 }
 
 #[test]
+fn compile_zlib_output_handler_negotiates_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-output-handler");
+    fs::create_dir_all(&root).unwrap();
+
+    let plain_input = root.join("ob-gzhandler-plain.php");
+    let plain_output = root.join("ob-gzhandler-plain-bin");
+    fs::write(
+        &plain_input,
+        "<?php\n\
+var_dump(ob_gzhandler(\"Hi\\n\", PHP_OUTPUT_HANDLER_START));\n\
+ob_start('ob_gzhandler');\n\
+echo \"Hi there.\\n\";\n\
+ob_flush();\n\
+flush();\n\
+echo \"This is confusing...\\n\";\n\
+ob_flush();\n\
+flush();\n",
+    )
+    .unwrap();
+
+    let plain_compiled =
+        compile_file(&plain_input, &plain_output, CompileOptions { emit_c: true }).unwrap();
+    let plain_execution = Command::new(&plain_output)
+        .env_remove("HTTP_ACCEPT_ENCODING")
+        .output()
+        .unwrap();
+    assert!(plain_execution.status.success());
+    assert_eq!(
+        String::from_utf8(plain_execution.stdout).unwrap(),
+        "bool(false)\nHi there.\nThis is confusing...\n"
+    );
+    assert_eq!(String::from_utf8(plain_execution.stderr).unwrap(), "");
+    let plain_c_source = fs::read_to_string(plain_compiled.c_source.unwrap()).unwrap();
+    assert!(plain_c_source.contains("ptn_internal_ob_gzhandler"));
+
+    let gzip_input = root.join("ob-gzhandler-gzip.php");
+    let gzip_output = root.join("ob-gzhandler-gzip-bin");
+    fs::write(
+        &gzip_input,
+        "<?php\n\
+var_dump(bin2hex(substr(ob_gzhandler(\"Hi\\n\", PHP_OUTPUT_HANDLER_START), 0, 2)));\n\
+var_dump(zlib_get_coding_type());\n",
+    )
+    .unwrap();
+
+    compile_file(&gzip_input, &gzip_output, CompileOptions { emit_c: false }).unwrap();
+    let gzip_execution = Command::new(&gzip_output)
+        .env("HTTP_ACCEPT_ENCODING", "gzip")
+        .output()
+        .unwrap();
+    assert!(gzip_execution.status.success());
+    assert_eq!(
+        String::from_utf8(gzip_execution.stdout).unwrap(),
+        "string(4) \"1f8b\"\nstring(4) \"gzip\"\n"
+    );
+    assert_eq!(String::from_utf8(gzip_execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zlib_object_options_read_declared_uninitialized_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-object-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-object-options.php");
+    let output = root.join("zlib-object-options-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Options {\n\
+    public int $level;\n\
+}\n\
+\n\
+try {\n\
+    deflate_init(ZLIB_ENCODING_DEFLATE, new Options());\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), PHP_EOL;\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "deflate_init(): Argument #2 ($options) the value for option \"level\" must be of type int, null given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_option"));
+}
+
+#[test]
 fn compile_output_buffer_captures_runtime_warning_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-warning");
     fs::create_dir_all(&root).unwrap();
