@@ -24257,6 +24257,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "locale_get_display_script"
             | "locale_get_display_variant"
             | "locale_get_keywords"
+            | "locale_parse"
             | "locale_get_primary_language"
             | "locale_get_region"
             | "locale_lookup"
