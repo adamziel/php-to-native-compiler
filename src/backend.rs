@@ -28384,9 +28384,18 @@ fn emit_callable_dispatch(
     out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
+    if full_internal_dispatch {
+        out.push_str("    int ptn_call_user_func_previous_strict_types = runtime->strict_types;\n");
+        out.push_str("    if (from_call_user_func && !ptn_user_function_exists(runtime, dynamic_lookup_name) && !ptn_runtime_function_disabled(runtime, dynamic_lookup_name) && ptn_find_internal_function(dynamic_lookup_name) != NULL) {\n");
+        out.push_str("        runtime->strict_types = 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str(
         "    PtnValue result = ptn_call_function(runtime, name, argc, call_args, line);\n",
     );
+    if full_internal_dispatch {
+        out.push_str("    runtime->strict_types = ptn_call_user_func_previous_strict_types;\n");
+    }
     out.push_str("    ptn_dynamic_call_free_prepared_first_array_argument(prepared_args);\n");
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
@@ -56777,19 +56786,8 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len() - 1);
-        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate().skip(1) {
-            let temp = self.emit_runtime_callable_call_argument(
-                out,
-                &callable_temp,
-                argument_index - 1,
-                argument,
-                line,
-                true,
-            );
-            if value_is_array_dim_reference_target(argument) {
-                unwrap_array_dim_reference_temps.push(temp.clone());
-            }
+            let temp = self.emit_call_argument(out, "call_user_func", argument_index, argument);
             temps.push(temp);
         }
 
@@ -56820,9 +56818,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", 1);\n");
-        for temp in &unwrap_array_dim_reference_temps {
-            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
-        }
         emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
