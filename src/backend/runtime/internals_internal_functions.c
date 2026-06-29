@@ -128877,6 +128877,38 @@ static int ptn_datetime_parse_relative_seconds(const char *input, int64_t base_t
     return 1;
 }
 
+static int ptn_datetime_parse_relative_interval_timestamp(
+    const char *input,
+    int64_t base_timestamp,
+    const char *timezone,
+    time_t *timestamp_out
+) {
+    if (input == NULL || timezone == NULL || timestamp_out == NULL) {
+        return 0;
+    }
+    PtnDateIntervalData interval;
+    if (!ptn_date_interval_parse_relative_spec(input, &interval) ||
+        (interval.years == 0 &&
+         interval.months == 0 &&
+         interval.days == 0 &&
+         interval.hours == 0 &&
+         interval.minutes == 0 &&
+         interval.seconds == 0 &&
+         !interval.has_relative_special)) {
+        return 0;
+    }
+
+    PtnDateTimeData base;
+    base.timestamp = (time_t)base_timestamp;
+    base.microsecond = 0;
+    base.timezone = (char *)timezone;
+    base.timezone_type = ptn_timezone_name_type(timezone);
+    interval.date_string = (char *)input;
+    *timestamp_out = ptn_datetime_apply_interval_to_timestamp(&base, &interval, 0);
+    interval.date_string = NULL;
+    return 1;
+}
+
 static int ptn_datetime_parse_relative_weekday(
     const char *input,
     int64_t base_timestamp,
@@ -129022,7 +129054,8 @@ static PtnValue ptn_internal_strtotime(PtnRuntime *runtime, size_t argc, const P
         ptn_datetime_parse_date_string(datetime, ptn_current_timezone_name(), &timestamp, &microsecond, &parsed_timezone) ||
         ptn_datetime_parse_partial_textual_date_string(datetime, base_timestamp, ptn_current_timezone_name(), &timestamp, &microsecond, &parsed_timezone) ||
         ptn_datetime_parse_relative_weekday(datetime, base_timestamp, ptn_current_timezone_name(), &timestamp) ||
-        ptn_datetime_parse_relative_seconds(datetime, base_timestamp, &timestamp)) {
+        ptn_datetime_parse_relative_seconds(datetime, base_timestamp, &timestamp) ||
+        ptn_datetime_parse_relative_interval_timestamp(datetime, base_timestamp, ptn_current_timezone_name(), &timestamp)) {
         free(parsed_timezone);
         free(datetime);
         return ptn_int((int64_t)timestamp);
