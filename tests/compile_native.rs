@@ -43871,7 +43871,7 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stdout.starts_with("test() called\nint(42)\nNULL\n"),
+        stdout.starts_with("test() called\nint(42)\nint(42)\n"),
         "{stdout}"
     );
     assert!(
@@ -43891,8 +43891,10 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
         stdout.contains("overwrites DateTimeZone, prototype DateTimeZone"),
         "{stdout}"
     );
-    assert!(stdout.contains("DateTimeZone::ALL"), "{stdout}");
-    assert!(!stdout.contains("\\DateTimeZone::ALL"), "{stdout}");
+    assert!(
+        stdout.contains("Parameter #0 [ <optional> int $timezoneGroup = DateTimeZone::ALL ]"),
+        "{stdout}"
+    );
     assert!(
         stdout.contains("string(37) \"SplFileInfo|FilesystemIterator|string\"")
             && stdout.contains("overwrites DirectoryIterator, prototype Iterator")
@@ -43905,6 +43907,38 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_function_metadata_with_tentative_return"));
     assert!(c_source.contains("ptn_runtime_static_local_values"));
+}
+
+#[test]
+fn compile_reflection_function_static_variables_deref_static_locals_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-static-vars-deref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-static-vars-deref.php");
+    let output = root.join("reflection-function-static-vars-deref-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo() {
+    static $a = 42;
+    var_dump((new ReflectionFunction(__FUNCTION__))->getStaticVariables());
+}
+foo();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("array(1) {\n", "  [\"a\"]=>\n", "  int(42)\n", "}\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_clone_deref(ptn_reference_value(slot->reference))"));
 }
 
 #[test]
@@ -64357,6 +64391,56 @@ array(0) {\n\
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval"));
+}
+
+#[test]
+fn compile_compound_array_dim_missing_base_handler_throws_before_key_to_native_binary() {
+    let root = temp_dir("ptn-native-compound-array-dim-missing-base-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound-array-dim-missing-base-handler.php");
+    let output = root.join("compound-array-dim-missing-base-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($_, $message) {
+    throw new Exception($message);
+});
+
+function test1() {
+    $res = $a[$undef] = null;
+}
+
+function test2() {
+    $res = $a[$undef] += 1;
+}
+
+try {
+    test1();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    test2();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Undefined variable $undef\nUndefined variable $a\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_warn_missing_base_for_assign_op"));
 }
 
 #[test]

@@ -16345,19 +16345,11 @@ static PTN_UNUSED void ptn_runtime_array_warn_missing_base_for_assign_op(
     }
     PtnValue container;
     if (!ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &container)) {
-        PtnTryFrame warning_frame;
-        ptn_try_frame_push(runtime, &warning_frame);
-        if (setjmp(warning_frame.jump) != 0) {
-            ptn_try_frame_pop(runtime, &warning_frame);
-            return;
-        }
         if (ptn_runtime_is_auto_global_symbol_name(name)) {
             ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
-            ptn_try_frame_pop(runtime, &warning_frame);
             return;
         }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
-        ptn_try_frame_pop(runtime, &warning_frame);
     }
 }
 
