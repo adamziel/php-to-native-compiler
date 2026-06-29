@@ -5453,15 +5453,21 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Sqlite")) {
         if (strcmp(constant, "ATTR_TRANSACTION_MODE") == 0) { *out = ptn_int(1000); return 1; }
+        if (strcmp(constant, "ATTR_EXTENDED_RESULT_CODES") == 0) { *out = ptn_int(1001); return 1; }
         if (strcmp(constant, "TRANSACTION_MODE_DEFERRED") == 0) { *out = ptn_int(0); return 1; }
         if (strcmp(constant, "TRANSACTION_MODE_IMMEDIATE") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "TRANSACTION_MODE_EXCLUSIVE") == 0) { *out = ptn_int(2); return 1; }
         if (strcmp(constant, "DETERMINISTIC") == 0) { *out = ptn_int(0x800); return 1; }
+        if (strcmp(constant, "OK") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "DENY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "IGNORE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SELECT") == 0) { *out = ptn_int(21); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SQLite3")) {
         if (strcmp(constant, "OK") == 0) { *out = ptn_int(0); return 1; }
         if (strcmp(constant, "DENY") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "IGNORE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SELECT") == 0) { *out = ptn_int(21); return 1; }
         if (strcmp(constant, "OPEN_READONLY") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "OPEN_READWRITE") == 0) { *out = ptn_int(2); return 1; }
         if (strcmp(constant, "OPEN_CREATE") == 0) { *out = ptn_int(4); return 1; }
