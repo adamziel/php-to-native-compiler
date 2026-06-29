@@ -28395,9 +28395,18 @@ fn emit_callable_dispatch(
     out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
+    if full_internal_dispatch {
+        out.push_str("    int ptn_call_user_func_previous_strict_types = runtime->strict_types;\n");
+        out.push_str("    if (from_call_user_func && !ptn_user_function_exists(runtime, dynamic_lookup_name) && !ptn_runtime_function_disabled(runtime, dynamic_lookup_name) && ptn_find_internal_function(dynamic_lookup_name) != NULL) {\n");
+        out.push_str("        runtime->strict_types = 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str(
         "    PtnValue result = ptn_call_function(runtime, name, argc, call_args, line);\n",
     );
+    if full_internal_dispatch {
+        out.push_str("    runtime->strict_types = ptn_call_user_func_previous_strict_types;\n");
+    }
     out.push_str("    ptn_dynamic_call_free_prepared_first_array_argument(prepared_args);\n");
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
@@ -56717,6 +56726,8 @@ impl ValueEmitter {
         let previous_call_site_line_temp = self.next_temp();
         let previous_warn_by_ref_temp = self.next_temp();
         let checked_callback_temp = self.next_temp();
+        let trace_frame_temp = self.next_temp();
+        let callback_ok_temp = self.next_temp();
         out.push_str("    size_t ");
         out.push_str(&previous_call_site_line_temp);
         out.push_str(" = runtime.call_site_line;\n");
@@ -56728,21 +56739,50 @@ impl ValueEmitter {
         out.push_str(";\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = 1;\n");
         out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    PtnValue ");
         out.push_str(&checked_callback_temp);
         out.push_str(" = ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
         out.push_str(&callable_temp);
         out.push_str("));\n");
+        out.push_str("    int ");
+        out.push_str(&callback_ok_temp);
+        out.push_str(" = 1;\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
+        out.push_str(&callable_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         if arguments.len() == 1 {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
             }
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_internal_call_user_callback(&runtime, ");
-            out.push_str(&checked_callback_temp);
-            out.push_str(", 0, NULL, ");
+            out.push_str("    PtnTraceFrame ");
+            out.push_str(&trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
             out.push_str(&line.to_string());
+            out.push_str("), ");
+            out.push_str(&line.to_string());
+            out.push_str(", 1, &");
+            out.push_str(&callable_temp);
             out.push_str(");\n");
+            out.push_str(&callback_ok_temp);
+            out.push_str(" = ptn_internal_call_callback_capturing_exception_impl(&runtime, ");
+            out.push_str(&checked_callback_temp);
+            out.push_str(", 0, NULL, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(", 1, 0, &");
+            out.push_str(&result_temp);
+            out.push_str(");\n");
+            out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(");\n");
+            out.push_str("    }\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
             out.push_str(";\n");
@@ -56751,6 +56791,11 @@ impl ValueEmitter {
             out.push_str(";\n");
             emit_value_cleanup(out, "    ", &checked_callback_temp);
             emit_value_cleanup(out, "    ", &callable_temp);
+            out.push_str("    if (!");
+            out.push_str(&callback_ok_temp);
+            out.push_str(") {\n");
+            out.push_str("        ptn_rethrow_exception(&runtime);\n");
+            out.push_str("    }\n");
             return result_temp;
         }
 
@@ -56782,23 +56827,48 @@ impl ValueEmitter {
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
         }
+        let trace_args_temp = self.next_temp();
         out.push_str("    PtnValue ");
-        out.push_str(&result_temp);
-        out.push_str(" = ptn_internal_call_user_callback(&runtime, ");
+        out.push_str(&trace_args_temp);
+        out.push_str("[] = { ");
+        out.push_str(&callable_temp);
+        for index in 0..temps.len() {
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push('[');
+            out.push_str(&index.to_string());
+            out.push(']');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnTraceFrame ");
+        out.push_str(&trace_frame_temp);
+        out.push_str(";\n");
+        out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
+        out.push_str(&line.to_string());
+        out.push_str("), ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&trace_args_temp);
+        out.push_str(");\n");
+        out.push_str(&callback_ok_temp);
+        out.push_str(" = ptn_internal_call_callback_capturing_exception_impl(&runtime, ");
         out.push_str(&checked_callback_temp);
         out.push_str(", ");
         out.push_str(&temps.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
-        out.push_str(", ");
+        out.push_str(", NULL, ");
         out.push_str(&line.to_string());
+        out.push_str(", 1, 0, &");
+        out.push_str(&result_temp);
         out.push_str(");\n");
-        out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
-        out.push_str(&previous_warn_by_ref_temp);
-        out.push_str(";\n");
-        out.push_str("    runtime.call_site_line = ");
-        out.push_str(&previous_call_site_line_temp);
-        out.push_str(";\n");
+        out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(");\n");
         emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -56806,8 +56876,20 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        out.push_str("    }\n");
+        out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
+        out.push_str(&previous_warn_by_ref_temp);
+        out.push_str(";\n");
+        out.push_str("    runtime.call_site_line = ");
+        out.push_str(&previous_call_site_line_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &checked_callback_temp);
         emit_value_cleanup(out, "    ", &callable_temp);
+        out.push_str("    if (!");
+        out.push_str(&callback_ok_temp);
+        out.push_str(") {\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        out.push_str("    }\n");
         result_temp
     }
 

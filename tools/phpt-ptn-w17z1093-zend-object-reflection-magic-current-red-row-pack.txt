@@ -1,0 +1,15 @@
+# ptn-w17z.1093 focused Zend object/reflection/magic current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T014822Z.tsv
+# Exact rows below were FAIL in that full-corpus snapshot and are relative to PHP_SRC_PHPT.
+tests/classes/__set__get_003.phpt
+Zend/tests/magic_methods/bug38146.phpt
+Zend/tests/magic_methods/magic_methods_wakeup.phpt
+tests/classes/destructor_visibility_002.phpt
+tests/classes/type_hinting_005a.phpt
+tests/classes/factory_and_singleton_009.phpt
+Zend/tests/magic_methods/magic_methods_014.phpt
+Zend/tests/magic_methods/magic_methods_004.phpt
+ext/reflection/tests/ReflectionFiber_notrace_2.phpt
+ext/standard/tests/serialize/serialization_objects_012.phpt
+tests/classes/destructor_inheritance.phpt
+ext/reflection/tests/bug74949.phpt

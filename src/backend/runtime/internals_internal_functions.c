@@ -116434,14 +116434,40 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
     }
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_internal_call_user_callback_named(
+    PtnTraceFrame call_user_func_trace_frame;
+    int pushed_call_user_func_trace_frame =
+        runtime->trace_frame == NULL ||
+        runtime->trace_frame->function_name == NULL ||
+        !ptn_ascii_case_equal(runtime->trace_frame->function_name, "call_user_func");
+    if (pushed_call_user_func_trace_frame) {
+        const char *const *previous_trace_arg_names = runtime->next_call_arg_names;
+        runtime->next_call_arg_names = call_arg_names;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &call_user_func_trace_frame,
+            "call_user_func",
+            ptn_runtime_internal_trace_file(runtime, line),
+            line,
+            argc,
+            args
+        );
+        runtime->next_call_arg_names = previous_trace_arg_names;
+    }
+    PtnValue result = ptn_null();
+    int callback_ok = ptn_internal_call_callback_capturing_exception_impl(
         runtime,
         callback,
         target_argc,
         target_args,
         target_arg_names,
-        line
+        line,
+        1,
+        0,
+        &result
     );
+    if (pushed_call_user_func_trace_frame) {
+        ptn_runtime_pop_trace_frame(runtime, &call_user_func_trace_frame);
+    }
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     for (size_t i = 0; i < target_argc; i++) {
         ptn_value_destroy(&target_args[i]);
@@ -116450,6 +116476,9 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
     free(allocated_target_names);
     ptn_value_destroy(&callback);
     runtime->call_site_line = previous_call_site_line;
+    if (!callback_ok) {
+        ptn_rethrow_exception(runtime);
+    }
     return result;
 }
 

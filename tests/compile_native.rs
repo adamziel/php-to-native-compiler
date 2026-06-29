@@ -3288,6 +3288,9 @@ var_dump(basename($wrappedReflection->getExecutingFile()));
 var_dump($wrappedReflection->getExecutingLine());
 $wrappedTrace = $wrappedReflection->getTrace();
 var_dump(count($wrappedTrace));
+var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[0]["type"], isset($wrappedTrace[0]["file"]), isset($wrappedTrace[0]["line"]));
+var_dump($wrappedTrace[1]["function"], basename($wrappedTrace[1]["file"]), $wrappedTrace[1]["line"], $wrappedTrace[1]["args"][0][0], $wrappedTrace[1]["args"][0][1]);
+var_dump(substr($wrappedTrace[2]["function"], 0, 9) === "{closure:", isset($wrappedTrace[2]["file"]), isset($wrappedTrace[2]["line"]));
 "#,
     )
     .unwrap();
@@ -3316,7 +3319,20 @@ var_dump(count($wrappedTrace));
             "}\n",
             "string(34) \"reflection-fiber-suspend-trace.php\"\n",
             "int(10)\n",
-            "int(2)\n",
+            "int(3)\n",
+            "string(7) \"suspend\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(2) \"::\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(14) \"call_user_func\"\n",
+            "string(34) \"reflection-fiber-suspend-trace.php\"\n",
+            "int(10)\n",
+            "string(5) \"Fiber\"\n",
+            "string(7) \"suspend\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -85093,6 +85109,121 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_invalid_callback_message"));
     assert!(c_source.contains("ptn_throw_exception_owned_message_at(runtime, \"TypeError\""));
+}
+
+#[test]
+fn compile_call_user_func_invalid_callback_skips_later_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-callback-argument-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-callback-argument-order.php");
+    let output = root.join("call-user-func-invalid-callback-argument-order-bin");
+    fs::write(
+        &input,
+        "<?php
+function side_effect() {
+    echo \"side effect\\n\";
+    return 1;
+}
+
+try {
+    call_user_func([null, 'missing'], side_effect());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(
+        c_source.contains("ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\"")
+    );
+    assert!(c_source.contains("runtime.exceptions->active_exception == NULL"));
+}
+
+#[test]
+fn compile_call_user_func_by_ref_array_dim_argument_is_read_by_value_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-dim-by-value");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-dim-by-value.php");
+    let output = root.join("call-user-func-array-dim-by-value-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo(&$ref) { $ref = 24; }
+
+$a = [];
+call_user_func('foo', $a[0][0]);
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: Undefined array key 0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Trying to access array offset on null"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: foo(): Argument #1 ($ref) must be passed by reference, value given"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("array(0) {\n}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_disable_by_ref_argument_source"));
+    assert!(c_source.contains("ptn_internal_call_callback_capturing_exception_impl"));
+}
+
+#[test]
+fn compile_call_user_func_internal_callback_uses_weak_arginfo_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-internal-weak-arginfo");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-internal-weak-arginfo.php");
+    let output = root.join("call-user-func-internal-weak-arginfo-bin");
+    fs::write(
+        &input,
+        "<?php
+declare(strict_types=1);
+
+namespace Foo;
+
+var_dump(call_user_func('strlen', false));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_user_func_previous_strict_types"));
+    assert!(c_source.contains("runtime->strict_types = 0"));
 }
 
 #[test]
