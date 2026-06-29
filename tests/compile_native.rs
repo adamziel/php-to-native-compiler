@@ -34043,6 +34043,88 @@ var_dump(iconv_mime_encode('Subject', 'a', ['output-charset' => $encoding]));\n"
 }
 
 #[test]
+fn compile_iconv_stream_filters_and_ob_handler_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-stream-filters-ob-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-stream-filters-ob-handler.php");
+    let output = root.join("iconv-stream-filters-ob-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fh = fopen('php://memory', 'rw');
+fwrite($fh, "abc");
+rewind($fh);
+stream_filter_append($fh, 'convert.iconv.ucs-2/utf8//IGNORE', STREAM_FILTER_READ, []);
+var_dump(stream_get_contents($fh));
+
+$stream = fopen('php://temp', 'w+');
+stream_filter_append($stream, 'convert.iconv.UTF-16BE.UTF-8');
+stream_filter_append($stream, 'convert.iconv.UTF-16BE.UTF-16BE');
+fputs($stream, 'test');
+rewind($stream);
+var_dump(stream_get_contents($stream));
+fclose($stream);
+
+$file = __DIR__ . '/iconv_seek_native.txt';
+$text = 'Hello, this is a test for iconv stream filter seeking functionality.';
+$fp = fopen($file, 'w');
+stream_filter_append($fp, 'convert.iconv.ISO-2022-JP/UTF-8');
+fwrite($fp, $text);
+fclose($fp);
+
+$fp = fopen($file, 'r');
+stream_filter_append($fp, 'convert.iconv.UTF-8/ISO-2022-JP');
+echo 'First=', fread($fp, 20), "\n";
+echo 'Seek0=', fseek($fp, 0, SEEK_SET), "\n";
+echo 'Same=', fread($fp, strlen($text)) === $text ? 'yes' : 'no', "\n";
+$seek50 = fseek($fp, 50, SEEK_SET);
+echo 'Seek50=', $seek50, "\n";
+fclose($fp);
+unlink($file);
+
+ini_set('iconv.output_encoding', str_repeat('a', 100));
+ob_start('ob_iconv_handler');
+print "done-handler\n";
+ob_end_flush();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Warning: stream_get_contents(): iconv stream filter (\"ucs-2\"=>\"utf8//IGNORE\"): invalid multibyte sequence"
+    ));
+    assert!(stdout.contains(
+        "Warning: stream_get_contents(): iconv stream filter (\"UTF-16BE\"=>\"UTF-16BE\"): invalid multibyte sequence"
+    ));
+    assert!(stdout.contains("string(0) \"\"\n"));
+    assert!(stdout.contains("First=Hello, this is a tes\n"));
+    assert!(stdout.contains("Seek0=0\n"));
+    assert!(stdout.contains("Same=yes\n"));
+    assert!(stdout.contains(
+        "Warning: fseek(): Stream filter convert.iconv.* is seekable only to start position"
+    ));
+    assert!(stdout.contains("Seek50=-1\n"));
+    assert!(stdout.ends_with("done-handler\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_ICONV"));
+    assert!(c_source.contains("ptn_stream_apply_iconv_filter_alloc"));
+    assert!(c_source.contains("ptn_internal_ob_iconv_handler"));
+}
+
+#[test]
 fn compile_mbstring_utf8_self_conversion_replaces_invalid_sequences_to_native_binary() {
     let root = temp_dir("ptn-native-mb-utf8-invalid-self-conversion");
     fs::create_dir_all(&root).unwrap();
