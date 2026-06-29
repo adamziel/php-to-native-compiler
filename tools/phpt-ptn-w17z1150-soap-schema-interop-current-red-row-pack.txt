@@ -1,0 +1,12 @@
+ext/soap/tests/schema/schema077.phpt
+ext/soap/tests/schema/schema067.phpt
+ext/soap/tests/schema/schema027.phpt
+ext/soap/tests/schema/schema017.phpt
+ext/soap/tests/schema/schema007.phpt
+ext/soap/tests/bugs/gh18640.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_014w.phpt
+ext/soap/tests/bugs/bug73237.phpt
+ext/soap/tests/interop/Round3/GroupD/r3_groupD_rpcenc_003w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_013w.phpt
+ext/soap/tests/interop/Round3/GroupD/r3_groupD_rpcenc_002w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_020s.phpt

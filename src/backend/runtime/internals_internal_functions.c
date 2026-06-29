@@ -165552,183 +165552,6 @@ static PtnValue ptn_zip_archive_add_from_string(
     return ptn_bool(1);
 }
 
-static int ptn_zip_archive_validate_compression_args(
-    PtnRuntime *runtime,
-    const char *method_name,
-    size_t argc,
-    const PtnValue *args,
-    size_t line,
-    int64_t *method,
-    int64_t *compflags
-) {
-    *method = ptn_internal_expect_integer_arg(runtime, method_name, 2, "method", args[1], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return 0;
-    }
-    if (*method < -1 || *method > INT_MAX) {
-        char message[160];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "%s(): Argument #2 ($method) must be between -1 and %d",
-            method_name,
-            INT_MAX
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ValueError", message);
-        return 0;
-    }
-    *compflags = argc >= 3
-        ? ptn_internal_expect_integer_arg(runtime, method_name, 3, "compflags", args[2], line)
-        : 0;
-    if (runtime->exceptions->active_exception != NULL) {
-        return 0;
-    }
-    if (*compflags < 0 || *compflags > USHRT_MAX) {
-        char message[160];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "%s(): Argument #3 ($compflags) must be between 0 and %u",
-            method_name,
-            (unsigned int)USHRT_MAX
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ValueError", message);
-        return 0;
-    }
-    return 1;
-}
-
-static PtnValue ptn_zip_archive_set_compression_name(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    if (argc < 2 || argc > 3) {
-        char message[128];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            argc < 2
-                ? "ZipArchive::setCompressionName() expects at least 2 arguments, %zu given"
-                : "ZipArchive::setCompressionName() expects at most 3 arguments, %zu given",
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
-    }
-    PtnStringOperand name = ptn_internal_expect_string_arg(
-        runtime,
-        "ZipArchive::setCompressionName",
-        1,
-        "name",
-        args[0],
-        line
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(name);
-        return ptn_null();
-    }
-    if (name.len == 0) {
-        ptn_string_operand_free(name);
-        ptn_throw_exception(runtime, "ValueError", "ZipArchive::setCompressionName(): Argument #1 ($name) must not be empty");
-        return ptn_null();
-    }
-    int64_t method = 0;
-    int64_t compflags = 0;
-    int ok = ptn_zip_archive_validate_compression_args(
-        runtime,
-        "ZipArchive::setCompressionName",
-        argc,
-        args,
-        line,
-        &method,
-        &compflags
-    );
-    (void)method;
-    (void)compflags;
-    ptn_string_operand_free(name);
-    if (!ok) {
-        return ptn_null();
-    }
-    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    if (data == NULL || !data->is_open) {
-        ptn_throw_exception(runtime, "ValueError", "Invalid or uninitialized Zip object");
-        return ptn_null();
-    }
-    return ptn_bool(0);
-}
-
-static PtnValue ptn_zip_archive_set_compression_index(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    if (argc < 2 || argc > 3) {
-        char message[128];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            argc < 2
-                ? "ZipArchive::setCompressionIndex() expects at least 2 arguments, %zu given"
-                : "ZipArchive::setCompressionIndex() expects at most 3 arguments, %zu given",
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
-    }
-    int64_t index = ptn_internal_expect_integer_arg(
-        runtime,
-        "ZipArchive::setCompressionIndex",
-        1,
-        "index",
-        args[0],
-        line
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    if (index < 0) {
-        return ptn_bool(0);
-    }
-    int64_t method = 0;
-    int64_t compflags = 0;
-    if (!ptn_zip_archive_validate_compression_args(
-            runtime,
-            "ZipArchive::setCompressionIndex",
-            argc,
-            args,
-            line,
-            &method,
-            &compflags
-        )) {
-        return ptn_null();
-    }
-    (void)method;
-    (void)compflags;
-    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    if (data == NULL || !data->is_open) {
-        ptn_throw_exception(runtime, "ValueError", "Invalid or uninitialized Zip object");
-        return ptn_null();
-    }
-    return ptn_bool(1);
-}
-
 static PtnValue ptn_zip_archive_close(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -165876,12 +165699,6 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     }
     if (ptn_ascii_case_equal(name, "addFromString")) {
         return ptn_zip_archive_add_from_string(runtime, receiver, argc, args, line);
-    }
-    if (ptn_ascii_case_equal(name, "setCompressionName")) {
-        return ptn_zip_archive_set_compression_name(runtime, receiver, argc, args, line);
-    }
-    if (ptn_ascii_case_equal(name, "setCompressionIndex")) {
-        return ptn_zip_archive_set_compression_index(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "statName")) {
         return ptn_zip_archive_stat_name(runtime, receiver, argc, args, line);
@@ -167878,29 +167695,14 @@ static void ptn_soap_append_any_value(
 }
 
 static const char *ptn_soap_xsd_type_name(const char *type) {
-    if (ptn_soap_type_name_is(type, "int")) {
-        return "int";
+    if (ptn_soap_type_name_is(type, "string") || ptn_soap_type_name_is(type, "str")) {
+        return "string";
+    }
+    if (ptn_soap_type_name_is(type, "boolean")) {
+        return "boolean";
     }
     if (ptn_soap_type_name_is(type, "decimal")) {
         return "decimal";
-    }
-    if (ptn_soap_type_name_is(type, "base64Binary")) {
-        return "base64Binary";
-    }
-    if (ptn_soap_type_name_is(type, "hexBinary")) {
-        return "hexBinary";
-    }
-    if (ptn_soap_type_name_is(type, "any")) {
-        return "any";
-    }
-    if (ptn_soap_type_name_is(type, "integer")) {
-        return "integer";
-    }
-    if (ptn_soap_type_name_is(type, "short")) {
-        return "short";
-    }
-    if (ptn_soap_type_name_is(type, "long")) {
-        return "long";
     }
     if (ptn_soap_type_name_is(type, "float")) {
         return "float";
@@ -167908,8 +167710,98 @@ static const char *ptn_soap_xsd_type_name(const char *type) {
     if (ptn_soap_type_name_is(type, "double")) {
         return "double";
     }
-    if (ptn_soap_type_name_is(type, "boolean")) {
-        return "boolean";
+    if (ptn_soap_type_name_is(type, "duration")) {
+        return "duration";
+    }
+    if (ptn_soap_type_name_is(type, "dateTime")) {
+        return "dateTime";
+    }
+    if (ptn_soap_type_name_is(type, "time")) {
+        return "time";
+    }
+    if (ptn_soap_type_name_is(type, "date")) {
+        return "date";
+    }
+    if (ptn_soap_type_name_is(type, "gYearMonth")) {
+        return "gYearMonth";
+    }
+    if (ptn_soap_type_name_is(type, "gYear")) {
+        return "gYear";
+    }
+    if (ptn_soap_type_name_is(type, "gMonthDay")) {
+        return "gMonthDay";
+    }
+    if (ptn_soap_type_name_is(type, "gDay")) {
+        return "gDay";
+    }
+    if (ptn_soap_type_name_is(type, "gMonth")) {
+        return "gMonth";
+    }
+    if (ptn_soap_type_name_is(type, "hexBinary")) {
+        return "hexBinary";
+    }
+    if (ptn_soap_type_name_is(type, "base64Binary")) {
+        return "base64Binary";
+    }
+    if (ptn_soap_type_name_is(type, "anyURI")) {
+        return "anyURI";
+    }
+    if (ptn_soap_type_name_is(type, "QName")) {
+        return "QName";
+    }
+    if (ptn_soap_type_name_is(type, "NOTATION")) {
+        return "NOTATION";
+    }
+    if (ptn_soap_type_name_is(type, "normalizedString")) {
+        return "normalizedString";
+    }
+    if (ptn_soap_type_name_is(type, "token")) {
+        return "token";
+    }
+    if (ptn_soap_type_name_is(type, "language")) {
+        return "language";
+    }
+    if (ptn_soap_type_name_is(type, "NMTOKEN")) {
+        return "NMTOKEN";
+    }
+    if (ptn_soap_type_name_is(type, "NMTOKENS")) {
+        return "NMTOKENS";
+    }
+    if (ptn_soap_type_name_is(type, "Name")) {
+        return "Name";
+    }
+    if (ptn_soap_type_name_is(type, "NCName")) {
+        return "NCName";
+    }
+    if (ptn_soap_type_name_is(type, "ID")) {
+        return "ID";
+    }
+    if (ptn_soap_type_name_is(type, "IDREF")) {
+        return "IDREF";
+    }
+    if (ptn_soap_type_name_is(type, "IDREFS")) {
+        return "IDREFS";
+    }
+    if (ptn_soap_type_name_is(type, "ENTITY")) {
+        return "ENTITY";
+    }
+    if (ptn_soap_type_name_is(type, "ENTITIES")) {
+        return "ENTITIES";
+    }
+    if (ptn_soap_type_name_is(type, "int")) {
+        return "int";
+    }
+    if (ptn_soap_type_name_is(type, "any")) {
+        return "any";
+    }
+    if (ptn_soap_type_name_is(type, "anyType")) {
+        return "anyType";
+    }
+    if (ptn_soap_type_name_is(type, "integer")) {
+        return "integer";
+    }
+    if (ptn_soap_type_is_integer(type)) {
+        return type;
     }
     return "string";
 }
@@ -167922,8 +167814,24 @@ static int ptn_soap_type_is_builtin_scalar(const char *type) {
         ptn_soap_type_name_is(type, "double") ||
         ptn_soap_type_name_is(type, "decimal") ||
         ptn_soap_type_name_is(type, "boolean") ||
+        ptn_soap_type_name_is(type, "duration") ||
+        ptn_soap_type_name_is(type, "dateTime") ||
+        ptn_soap_type_name_is(type, "time") ||
+        ptn_soap_type_name_is(type, "date") ||
+        ptn_soap_type_name_is(type, "gYearMonth") ||
+        ptn_soap_type_name_is(type, "gYear") ||
+        ptn_soap_type_name_is(type, "gMonthDay") ||
+        ptn_soap_type_name_is(type, "gDay") ||
+        ptn_soap_type_name_is(type, "gMonth") ||
         ptn_soap_type_name_is(type, "base64Binary") ||
         ptn_soap_type_name_is(type, "hexBinary") ||
+        ptn_soap_type_name_is(type, "anyURI") ||
+        ptn_soap_type_name_is(type, "QName") ||
+        ptn_soap_type_name_is(type, "NOTATION") ||
+        ptn_soap_type_name_is(type, "normalizedString") ||
+        ptn_soap_type_name_is(type, "token") ||
+        ptn_soap_type_name_is(type, "language") ||
+        ptn_soap_type_name_is(type, "NMTOKEN") ||
         ptn_soap_type_name_is(type, "any") ||
         ptn_soap_type_name_is(type, "anyType") ||
         ptn_soap_type_name_is(type, "NMTOKENS");
@@ -168310,6 +168218,12 @@ static void ptn_soap_collect_type_element_namespaces(
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
         if (field_type != NULL &&
+            field_type->namespace_uri != NULL &&
+            field_type->namespace_uri[0] != '\0' &&
+            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
+            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
+        }
+        if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
             !field_type->is_array) {
@@ -168346,6 +168260,12 @@ static void ptn_soap_collect_type_value_namespaces(
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
         if (field_type != NULL &&
+            field_type->namespace_uri != NULL &&
+            field_type->namespace_uri[0] != '\0' &&
+            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
+            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
+        }
+        if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
             !field_type->is_array) {
@@ -168369,6 +168289,21 @@ static void ptn_soap_append_namespace_declarations(PtnStringBuffer *buffer, PtnS
         ptn_string_buffer_append_format(buffer, " xmlns:ns%zu=\"", i + 1);
         ptn_xml_append_escaped_ex(buffer, namespaces->uris[i], 1, 0);
         ptn_string_buffer_append(buffer, "\"");
+    }
+}
+
+static void ptn_soap_append_namespace_declarations_with_xsi_after_first(
+    PtnStringBuffer *buffer,
+    PtnSoapNamespaceList *namespaces,
+    int include_xsi
+) {
+    for (size_t i = 0; namespaces != NULL && i < namespaces->count; i++) {
+        ptn_string_buffer_append_format(buffer, " xmlns:ns%zu=\"", i + 1);
+        ptn_xml_append_escaped_ex(buffer, namespaces->uris[i], 1, 0);
+        ptn_string_buffer_append(buffer, "\"");
+        if (include_xsi && i == 0) {
+            ptn_string_buffer_append(buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
     }
 }
 
@@ -169819,6 +169754,48 @@ static char *ptn_soap_first_custom_part_namespace_dup(
     return namespace_uri;
 }
 
+static int ptn_soap_rpc_request_has_array_part(
+    PtnSoapClientData *data,
+    PtnSoapMessagePart *parts,
+    size_t part_count
+) {
+    for (size_t i = 0; i < part_count; i++) {
+        PtnSoapType *type = ptn_soap_type_list_find(data->types, data->type_count, parts[i].type_local);
+        if (type != NULL && type->is_array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_soap_rpc_request_uses_xsi_before_xsd(
+    PtnSoapClientData *data,
+    PtnSoapMessagePart *parts,
+    size_t part_count
+) {
+    for (size_t i = 0; i < part_count; i++) {
+        PtnSoapType *type = ptn_soap_type_list_find(data->types, data->type_count, parts[i].type_local);
+        if (type == NULL) {
+            continue;
+        }
+        if (type->is_simple && (type->is_list || type->is_union)) {
+            return 1;
+        }
+        if (!type->has_simple_content &&
+            !ptn_soap_type_has_element_fields(type) &&
+            ptn_soap_type_has_attribute_fields(type)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_soap_append_ns2_namespace_declaration(PtnStringBuffer *body, const char *namespace_uri) {
+    ptn_string_buffer_append(body, " xmlns:ns2=\"");
+    ptn_xml_append_escaped_ex(body, namespace_uri == NULL ? "" : namespace_uri, 1, 0);
+    ptn_string_buffer_append(body, "\"");
+}
+
 static void ptn_soap_append_rpc_encoded_part(
     PtnRuntime *runtime,
     PtnStringBuffer *body,
@@ -169884,6 +169861,8 @@ static void ptn_soap_append_rpc_encoded_part(
         } else {
             ptn_string_buffer_append_char(body, '>');
         }
+    } else if (type != NULL && type->is_simple) {
+        ptn_string_buffer_append_format(body, " xsi:type=\"%s:%s\">", type_prefix, part_type_local);
     } else {
         ptn_string_buffer_append_format(body, " xsi:type=\"xsd:%s\">", ptn_soap_xsd_type_name(part_type_local));
     }
@@ -170001,33 +169980,47 @@ static int ptn_soap_build_rpc_encoded_request(
     int custom_namespace_first = custom_namespace != NULL &&
         custom_namespace[0] != '\0' &&
         custom_namespace_before_encoding;
-    if (custom_namespace_first) {
-        ptn_string_buffer_append_format(
-            &body,
-            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:ns2=\"",
-            request_namespace
-        );
-        ptn_xml_append_escaped_ex(&body, custom_namespace, 1, 0);
-        ptn_string_buffer_append(&body, "\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+    int has_array_part = ptn_soap_rpc_request_has_array_part(data, parts, part_count);
+    int xsi_before_xsd = ptn_soap_rpc_request_uses_xsi_before_xsd(data, parts, part_count);
+    ptn_string_buffer_append_format(
+        &body,
+        "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\"",
+        request_namespace
+    );
+    if (has_array_part) {
+        ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (part_count != 0) {
             ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
-    } else {
-        ptn_string_buffer_append_format(
-            &body,
-            part_count == 0
-                ? "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
-                : "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"",
-            request_namespace
-        );
-    }
-    if (!custom_namespace_first) {
+        if (custom_namespace != NULL && custom_namespace[0] != '\0') {
+            ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
+        }
+    } else if (custom_namespace_first) {
+        ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (part_count != 0) {
+            ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
+        ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
         ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
-    }
-    if (custom_namespace != NULL && custom_namespace[0] != '\0' && !custom_namespace_first) {
-        ptn_string_buffer_append(&body, " xmlns:ns2=\"");
-        ptn_xml_append_escaped_ex(&body, custom_namespace, 1, 0);
-        ptn_string_buffer_append(&body, "\"");
+    } else if (xsi_before_xsd) {
+        if (part_count != 0) {
+            ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
+        ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        if (custom_namespace != NULL && custom_namespace[0] != '\0') {
+            ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
+        }
+    } else {
+        ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (part_count != 0) {
+            ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        if (custom_namespace != NULL && custom_namespace[0] != '\0') {
+            ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
+        }
     }
     ptn_string_buffer_append(&body, " SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body>");
 
@@ -170244,7 +170237,11 @@ static int ptn_soap_build_request(
             return 0;
         }
         ptn_string_buffer_append(&body, "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"");
-        ptn_soap_append_namespace_declarations(&body, &literal_namespaces);
+        ptn_soap_append_namespace_declarations_with_xsi_after_first(
+            &body,
+            &literal_namespaces,
+            type != NULL && literal_namespaces.count > 1
+        );
         if (type != NULL && type->is_array) {
             ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         }
@@ -172562,16 +172559,72 @@ static const char *ptn_soap_xsd_type_for_encoded_type(PtnValue value) {
             return "float";
         case 105:
             return "double";
+        case 106:
+            return "duration";
+        case 107:
+            return "dateTime";
+        case 108:
+            return "time";
+        case 109:
+            return "date";
+        case 110:
+            return "gYearMonth";
+        case 111:
+            return "gYear";
+        case 112:
+            return "gMonthDay";
+        case 113:
+            return "gDay";
+        case 114:
+            return "gMonth";
         case 115:
             return "hexBinary";
         case 116:
             return "base64Binary";
+        case 117:
+            return "anyURI";
+        case 118:
+            return "QName";
+        case 119:
+            return "NOTATION";
+        case 120:
+            return "normalizedString";
+        case 121:
+            return "token";
+        case 122:
+            return "language";
+        case 123:
+            return "NMTOKEN";
+        case 124:
+            return "Name";
+        case 125:
+            return "NCName";
+        case 126:
+            return "ID";
+        case 127:
+            return "IDREF";
+        case 128:
+            return "IDREFS";
+        case 129:
+            return "ENTITY";
+        case 130:
+            return "ENTITIES";
+        case 131:
+            return "integer";
+        case 132:
+            return "nonPositiveInteger";
+        case 133:
+            return "negativeInteger";
+        case 134:
+            return "long";
         case 135:
             return "int";
         case 136:
             return "short";
         case 137:
             return "byte";
+        case 138:
+            return "nonNegativeInteger";
         case 139:
             return "unsignedLong";
         case 140:
@@ -172580,6 +172633,12 @@ static const char *ptn_soap_xsd_type_for_encoded_type(PtnValue value) {
             return "unsignedShort";
         case 142:
             return "unsignedByte";
+        case 143:
+            return "positiveInteger";
+        case 144:
+            return "NMTOKENS";
+        case 145:
+            return "anyType";
         case 101:
         default:
             return "string";
@@ -183088,8 +183147,6 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "open")
             || ptn_ascii_case_equal(method_name, "registerCancelCallback")
             || ptn_ascii_case_equal(method_name, "addFromString")
-            || ptn_ascii_case_equal(method_name, "setCompressionName")
-            || ptn_ascii_case_equal(method_name, "setCompressionIndex")
             || ptn_ascii_case_equal(method_name, "statName")
             || ptn_ascii_case_equal(method_name, "close");
     }
@@ -184871,8 +184928,6 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "open");
         ptn_append_method_name(result, &index, "registerCancelCallback");
         ptn_append_method_name(result, &index, "addFromString");
-        ptn_append_method_name(result, &index, "setCompressionName");
-        ptn_append_method_name(result, &index, "setCompressionIndex");
         ptn_append_method_name(result, &index, "statName");
         ptn_append_method_name(result, &index, "close");
         return result;
