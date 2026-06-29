@@ -83405,6 +83405,8 @@ function dump_files($files) {\n\
 }\n\
 var_dump(function_exists('get_included_files'));\n\
 dump_files(get_included_files());\n\
+var_dump(function_exists('get_required_files'));\n\
+dump_files(get_required_files());\n\
 include __DIR__ . '/sub/a.php';\n\
 dump_files(get_included_files());\n\
 include_once __DIR__ . '/sub/a.php';\n\
@@ -83420,12 +83422,40 @@ dump_files(get_included_files());\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nmain.php\n--\nfrom-include\nmain.php\na.php\n--\nmain.php\na.php\n--\nfrom-include\nmain.php\na.php\n--\n"
+        "bool(true)\nmain.php\n--\nbool(true)\nmain.php\n--\nfrom-include\nmain.php\na.php\n--\nmain.php\na.php\n--\nfrom-include\nmain.php\na.php\n--\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_note_included_file(&runtime, runtime.source_path);"));
     assert!(c_source.contains("ptn_internal_get_included_files"));
+}
+
+#[test]
+fn compile_runtime_plain_text_require_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-plain-text-require");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-plain-text-require.php");
+    let output = root.join("runtime-plain-text-require-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/plain.txt';\n\
+file_put_contents($path, 'plain output');\n\
+$result = require $path;\n\
+echo \"\\n\";\n\
+var_dump($result);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "plain output\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -90246,6 +90276,29 @@ foreach ([42, []] as $badName) {
     assert!(c_source.contains("ptn_runtime_fetch_dynamic_static_member_class_name(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
     assert!(c_source.contains("ptn_runtime_dynamic_class_constant_name(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_static_property_invalid_class_name_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-property-invalid-class-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-property-invalid-class-name.php");
+    let output = root.join("dynamic-static-property-invalid-class-name-bin");
+    fs::write(&input, "<?php\n(-0)::$prop;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Illegal class name in {} on line 2\n",
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -101571,6 +101624,36 @@ echo \"unreachable\\n\";
 }
 
 #[test]
+fn compile_throwable_direct_implementation_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-throwable-direct-implementation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("throwable-direct-implementation.php");
+    let output = root.join("throwable-direct-implementation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Failure implements Throwable {}\n\
+echo \"unreachable\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let message =
+        "Class Failure cannot implement interface Throwable, extend Exception or Error instead";
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!("Fatal error: {message} in {} on line 2\n", input.display())
+    );
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(message));
+}
+
+#[test]
 fn compile_parent_scoped_instance_calls_dispatch_target_call_magic_to_native_binary() {
     let root = temp_dir("ptn-native-parent-scoped-call-magic");
     fs::create_dir_all(&root).unwrap();
@@ -102803,6 +102886,37 @@ dir,dir5\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_glob_run_brace_pattern"));
     assert!(c_source.contains("ptn_ini_text_is_reserved_false_or_null"));
+}
+
+#[test]
+fn compile_parse_ini_string_unclosed_section_variable_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-parse-ini-unclosed-section-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parse-ini-unclosed-section-variable.php");
+    let output = root.join("parse-ini-unclosed-section-variable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ini = \"[\\${zz:-x\n\
+\n\
+\";\n\
+var_dump(parse_ini_string($ini));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("syntax error, unexpected end of file, expecting '}' in Unknown on line 1\n"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("unexpected end of section"), "{stdout}");
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
