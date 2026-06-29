@@ -1,0 +1,12 @@
+ext/mbstring/tests/zend_multibyte-14.phpt
+ext/mbstring/tests/zend_multibyte-04.phpt
+ext/mbstring/tests/mb_send_mail06.phpt
+ext/mbstring/tests/bug52981.phpt
+ext/mbstring/tests/iso2022jp_ms_encoding.phpt
+ext/mbstring/tests/mb_encode_mimeheader_crash.phpt
+ext/mbstring/tests/qprint_encoding.phpt
+ext/mbstring/tests/mb_str_functions_opt-parameter.phpt
+ext/mbstring/tests/mb_decode_numericentity_large_ints.phpt
+ext/mbstring/tests/sjis2004_encoding.phpt
+ext/mbstring/tests/bug71606.phpt
+ext/mbstring/tests/zend_multibyte-06.phpt

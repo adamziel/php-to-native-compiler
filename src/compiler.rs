@@ -188,12 +188,14 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
         return Ok(decode_php_source_bytes(bytes));
     }
 
-    let source_encoding = options
-        .script_encoding
-        .as_deref()
-        .filter(|encoding| is_usable_source_encoding(encoding))
-        .map(str::to_string)
-        .or_else(|| sniff_declared_source_encoding(bytes))
+    let source_encoding = sniff_declared_source_encoding(bytes)
+        .or_else(|| {
+            options
+                .script_encoding
+                .as_deref()
+                .filter(|encoding| is_usable_source_encoding(encoding))
+                .map(str::to_string)
+        })
         .or_else(|| {
             options
                 .internal_encoding
@@ -201,21 +203,18 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
                 .filter(|encoding| is_usable_source_encoding(encoding))
                 .map(str::to_string)
         });
+    let internal_encoding = options
+        .internal_encoding
+        .as_deref()
+        .filter(|encoding| is_usable_source_encoding(encoding))
+        .map(str::to_string);
 
     let mut decoded_bytes = Cow::Borrowed(bytes);
     let mut decode_encoding = source_encoding.as_deref();
-    if options.encoding_translation {
-        if let (Some(from), Some(to)) = (
-            source_encoding.as_deref(),
-            options
-                .internal_encoding
-                .as_deref()
-                .filter(|encoding| is_usable_source_encoding(encoding)),
-        ) {
-            if !encoding_names_equivalent(from, to) && !source_has_utf16_bom(bytes) {
-                decoded_bytes = Cow::Owned(iconv_convert_bytes(bytes, from, to)?);
-                decode_encoding = Some(to);
-            }
+    if let (Some(from), Some(to)) = (source_encoding.as_deref(), internal_encoding.as_deref()) {
+        if !encoding_names_equivalent(from, to) && !source_has_utf16_bom(bytes) {
+            decoded_bytes = Cow::Owned(iconv_convert_bytes(bytes, from, to)?);
+            decode_encoding = Some(to);
         }
     }
 

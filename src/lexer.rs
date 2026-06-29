@@ -1,6 +1,6 @@
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 
-const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
+pub(crate) const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 
 pub(crate) fn decode_php_source_bytes(bytes: &[u8]) -> String {
     decode_php_source_bytes_with_encoding(bytes, None)
@@ -2371,6 +2371,20 @@ fn push_php_binary_byte_sentinel(value: &mut String, byte: u8) {
         char::from_u32(PHP_BINARY_BYTE_SENTINEL_BASE + byte as u32)
             .expect("PHP binary-byte sentinel must be a Unicode scalar"),
     );
+}
+
+pub(crate) fn php_decoded_source_byte_len(value: &str) -> usize {
+    value
+        .chars()
+        .map(|ch| {
+            let offset = (ch as u32).checked_sub(PHP_BINARY_BYTE_SENTINEL_BASE);
+            if offset.is_some_and(|offset| offset <= 0xff) {
+                1
+            } else {
+                ch.len_utf8()
+            }
+        })
+        .sum()
 }
 
 fn push_php_codepoint_escape(value: &mut String, codepoint: u32) {

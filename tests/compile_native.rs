@@ -34547,6 +34547,73 @@ var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML
 }
 
 #[test]
+fn compile_mbstring_qprint_and_residual_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-qprint-residual-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-qprint-residual-diagnostics.php");
+    let output = root.join("mb-qprint-residual-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+$qprint = mb_convert_encoding(str_repeat('A', 72) . 'B', 'QPrint', '8bit');\n\
+var_dump($qprint === str_repeat('A', 72) . \"=\\r\\nB\");\n\
+var_dump(mb_convert_encoding(\"Line=\\r\\n=E3=81=82\", '8bit', 'QPrint') === \"Lineあ\");\n\
+var_dump(mb_strstr('abc', 'b', null, 'UTF-8'));\n\
+var_dump(mb_strimwidth('abc', 0, 2, null, 'UTF-8'));\n\
+mb_strcut('&amp;', 0, 5, 'HTML-ENTITIES');\n\
+try {\n\
+    mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches(
+                "Deprecated: mb_convert_encoding(): Handling QPrint via mbstring is deprecated"
+            )
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\nbool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Deprecated: mb_strstr(): Passing null to parameter #3 ($before_needle) of type bool is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(2) \"bc\"\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Deprecated: mb_strimwidth(): Passing null to parameter #4 ($trim_marker) of type string is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(2) \"ab\"\n"), "{stdout}");
+    assert!(
+        stdout
+            .contains("Deprecated: mb_strcut(): Handling HTML entities via mbstring is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_parse_str_converts_decoded_query_encoding_to_native_binary() {
     let root = temp_dir("ptn-native-mb-parse-str-query-encoding");
     fs::create_dir_all(&root).unwrap();
@@ -79788,6 +79855,83 @@ fn phpc_zend_multibyte_script_encoding_converts_to_internal_encoding() {
         .unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ドレミファソ");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let cp932_input = root.join("cp932-script-encoding.php");
+    let mut cp932_source = b"<?php\nvar_dump(bin2hex(\"".to_vec();
+    cp932_source.extend_from_slice(&[0x83, 0x65, 0x83, 0x58, 0x83, 0x67]);
+    cp932_source.extend_from_slice(b"\"));\n");
+    fs::write(&cp932_input, cp932_source).unwrap();
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("zend.script_encoding=CP932")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&cp932_input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(18) \"e38386e382b9e38388\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let declared_input = root.join("declared-utf8-internal-cp932.php");
+    fs::write(
+        &declared_input,
+        "<?php\ndeclare(encoding=\"UTF-8\");\nvar_dump(bin2hex(\"テスト\"));\n",
+    )
+    .unwrap();
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("zend.script_encoding=EUC-JP")
+        .arg("-d")
+        .arg("internal_encoding=CP932")
+        .arg("-f")
+        .arg(&declared_input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(12) \"836583588367\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_multibyte_halt_offset_uses_source_bytes() {
+    let root = temp_dir("ptn-phpc-zend-multibyte-halt-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-offset.php");
+    fs::write(
+        &input,
+        "<?php\nvar_dump(substr(file_get_contents(__FILE__), __COMPILER_HALT_OFFSET__));\nvar_dump(bin2hex(\"äëüáéú\"));\n__halt_compiler();test\ntest\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("zend.script_encoding=UTF-8")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(10) \"test\ntest\n\"\nstring(24) \"c3a4c3abc3bcc3a1c3a9c3ba\"\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

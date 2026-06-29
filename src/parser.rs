@@ -18,8 +18,8 @@ use crate::ast::{
 };
 use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
-    lex, StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
-    Token, TokenKind,
+    lex, php_decoded_source_byte_len, StringInterpolationIndex as TokenStringInterpolationIndex,
+    StringPart as TokenStringPart, Token, TokenKind,
 };
 
 const KEYWORD_OR_PRECEDENCE: u8 = 1;
@@ -119,7 +119,7 @@ fn parse_with_options(
     validate_function_names: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
-    let compiler_halt_offset = find_compiler_halt_offset(&tokens);
+    let compiler_halt_offset = find_compiler_halt_offset(source, &tokens);
     let mut parser = Parser {
         source,
         tokens,
@@ -325,7 +325,7 @@ fn cannot_use_import_message(kind: UseDeclarationKind, target: &str, alias: &str
     }
 }
 
-fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
+fn find_compiler_halt_offset(source: &str, tokens: &[Token]) -> Option<i64> {
     tokens.windows(4).find_map(|window| {
         let [name, left, right, semicolon] = window else {
             return None;
@@ -335,7 +335,7 @@ fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
             && matches!(right.kind, TokenKind::RightParen)
             && matches!(semicolon.kind, TokenKind::Semicolon)
         {
-            Some(semicolon.span.byte_end as i64)
+            Some(php_decoded_source_byte_len(&source[..semicolon.span.byte_end]) as i64)
         } else {
             None
         }
