@@ -28782,6 +28782,87 @@ var_dump(json_last_error_msg());
 }
 
 #[test]
+fn compile_json_current_red_row_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-json-current-red-row-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-current-red-row-semantics.php");
+    let output = root.join("json-current-red-row-semantics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class SerializingTest implements JsonSerializable
+{
+    public $a = 1;
+
+    public function __debugInfo()
+    {
+        return [ 'result' => $this->a ];
+    }
+
+    public function jsonSerialize(): mixed
+    {
+        print_r($this);
+        return $this;
+    }
+}
+
+var_dump(json_encode(new SerializingTest()));
+var_dump(json_encode(12.0, JSON_PRESERVE_ZERO_FRACTION));
+echo json_encode([12, 12.0], JSON_PRESERVE_ZERO_FRACTION), "\n";
+
+var_export(json_encode(new stdClass(), 0, 0)); echo "\n";
+$nested = new stdClass();
+$nested->x = new stdClass();
+var_export(json_encode($nested, 0, 1)); echo "\n";
+var_export(json_encode($nested, 0, 2)); echo "\n";
+
+echo bin2hex(json_decode("\"\x61\xf0\x80\x80\x41\"", true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+try {
+    json_decode("{", false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    $trace = $e->getTrace();
+    echo $e->getCode(), " ", $trace[0]["function"], " ", count($trace[0]["args"]), " ", $trace[0]["args"][3], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SerializingTest Object\n",
+            "(\n",
+            "    [result] => 1\n",
+            ")\n",
+            "string(7) \"{\"a\":1}\"\n",
+            "string(4) \"12.0\"\n",
+            "[12,12.0]\n",
+            "false\n",
+            "false\n",
+            "'{\"x\":{}}'\n",
+            "61efbfbdefbfbdefbfbd41\n",
+            "4 json_decode 4 4194304\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_print_r_magic_debug_info"));
+    assert!(c_source.contains("ptn_json_throw_exception"));
+}
+
+#[test]
 fn compile_ctype_extension_to_native_binary() {
     let root = temp_dir("ptn-native-ctype-extension");
     fs::create_dir_all(&root).unwrap();

@@ -10080,6 +10080,29 @@ static void ptn_print_r_object_key(PtnStringBuffer *buffer, PtnObject *object, P
     );
 }
 
+static void ptn_print_r_debug_info_key(PtnStringBuffer *buffer, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)key.as.integer);
+        return;
+    }
+    const char *name = NULL;
+    const char *scope = NULL;
+    size_t name_len = 0;
+    size_t scope_len = 0;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    ptn_debug_info_key_parts(key, &name, &name_len, &scope, &scope_len, &visibility);
+    ptn_string_buffer_append_len(buffer, name, name_len);
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        ptn_string_buffer_append(buffer, ":protected");
+        return;
+    }
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        ptn_string_buffer_append_char(buffer, ':');
+        ptn_string_buffer_append_len(buffer, scope, scope_len);
+        ptn_string_buffer_append(buffer, ":private");
+    }
+}
+
 static void ptn_print_r_array(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
@@ -10108,6 +10131,64 @@ static void ptn_print_r_array(
     ptn_dump_seen_arrays_pop(seen);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, ")\n");
+}
+
+static int ptn_print_r_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
+    if (runtime == NULL || runtime->magic_debug_info == NULL || object == NULL) {
+        return 0;
+    }
+    PtnValue receiver = ptn_object(object);
+    PtnValue debug_info = ptn_null();
+    if (!runtime->magic_debug_info(runtime, receiver, runtime->call_site_line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    PtnArray *properties = NULL;
+    if (debug_value.type == PTN_NULL) {
+        char *message = ptn_magic_debug_info_null_deprecation_message(object->class_name);
+        ptn_emit_deprecation(&runtime->diagnostics, message, runtime->call_site_line);
+        free(message);
+    } else if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        ptn_emit_fatal_error_at(
+            runtime,
+            "__debuginfo() must return an array",
+            runtime->source_path,
+            runtime->call_site_line
+        );
+        return 1;
+    } else {
+        properties = debug_value.as.array;
+    }
+    ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "(\n");
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; properties != NULL && i < properties->len; i++) {
+        ptn_string_buffer_append_indent(buffer, indent + 4);
+        ptn_string_buffer_append_char(buffer, '[');
+        ptn_print_r_debug_info_key(buffer, properties->entries[i].key);
+        ptn_string_buffer_append(buffer, "] => ");
+        PtnValue entry_value = ptn_value_deref(properties->entries[i].value);
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT || entry_value.type == PTN_CLOSURE) {
+            ptn_print_r_value_indented(runtime, buffer, entry_value, indent + 8, seen);
+            ptn_string_buffer_append_char(buffer, '\n');
+        } else {
+            ptn_print_r_value_indented(runtime, buffer, entry_value, indent, seen);
+            ptn_string_buffer_append_char(buffer, '\n');
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, ")\n");
+    ptn_value_destroy(&debug_info);
+    return 1;
 }
 
 static void ptn_print_r_object(
@@ -10228,6 +10309,9 @@ static void ptn_print_r_object(
         return;
     }
 #endif
+    if (ptn_print_r_magic_debug_info(runtime, buffer, object, indent, seen)) {
+        return;
+    }
     ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, "(\n");
@@ -18224,7 +18308,8 @@ static int ptn_json_array_is_list(PtnArray *array) {
 static int ptn_json_encode_append_numeric_string(
     PtnStringBuffer *buffer,
     const unsigned char *data,
-    size_t len
+    size_t len,
+    int64_t flags
 ) {
     if (len == 0 || memchr(data, '\0', len) != NULL) {
         return 0;
@@ -18558,7 +18643,7 @@ static int ptn_json_encode_append_value(
         }
         case PTN_STRING:
             if ((flags & PTN_JSON_NUMERIC_CHECK) != 0 &&
-                ptn_json_encode_append_numeric_string(buffer, value.as.string.data, value.as.string.len)) {
+                ptn_json_encode_append_numeric_string(buffer, value.as.string.data, value.as.string.len, flags)) {
                 return 1;
             }
             if (ptn_json_encode_append_string(
