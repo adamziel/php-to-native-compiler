@@ -192144,6 +192144,15 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
     if (target.type != PTN_OBJECT || target.as.object == NULL) {
         return ptn_null();
     }
+    if (!is_dynamic &&
+        property_owner != NULL &&
+        ptn_internal_class_name_is_xml_reader(property_owner) &&
+        ptn_xml_reader_property_known(property_name)) {
+        PtnValue value = ptn_null();
+        if (ptn_internal_xml_property_read(runtime, target, property_name, line, &value)) {
+            return value;
+        }
+    }
     const PtnObjectPropertyMetadata *metadata = is_dynamic
         ? NULL
         : ptn_reflection_property_object_metadata(target, property_name, property_owner);

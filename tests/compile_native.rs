@@ -53554,6 +53554,54 @@ var_dump($reader->getAttribute('baz'));
 }
 
 #[test]
+fn compile_xmlreader_reflection_virtual_raw_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-reflection-virtual-raw-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlreader-reflection-virtual-raw-properties.php");
+    let output = root.join("xmlreader-reflection-virtual-raw-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$prop = (new ReflectionClass(XMLReader::class))->getProperty("nodeType");
+var_dump($prop->isVirtual());
+var_dump($prop->getSettableType() instanceof ReflectionNamedType);
+var_dump($prop->getHooks());
+var_dump($prop->getRawValue(new XMLReader()));
+var_dump($prop->getValue(new XMLReader()));
+
+$reader = XMLReader::XML("<root>hi</root>");
+var_dump(json_encode($reader));
+var_export($reader);
+echo "\n";
+var_dump(get_object_vars($reader));
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "int(0)\n",
+            "int(0)\n",
+            "string(2) \"{}\"\n",
+            "\\XMLReader::__set_state(array(\n",
+            "))\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_xmlreader_libxml_schema_noent_and_stream_edges_to_native_binary() {
     let root = temp_dir("ptn-native-xmlreader-libxml-schema-noent-stream");
     fs::create_dir_all(&root).unwrap();
