@@ -325,6 +325,8 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#define PTN_STREAM_IS_URL 1
+#define PTN_STREAM_REPORT_ERRORS 8
 #define PTN_DNS_A 1
 #define PTN_DNS_NS 2
 #define PTN_DNS_CNAME 16

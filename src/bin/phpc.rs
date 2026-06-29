@@ -348,6 +348,8 @@ struct RuntimeIni {
     user_agent: Option<String>,
     exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
+    allow_url_fopen: Option<String>,
+    allow_url_include: Option<String>,
     allow_url_include_deprecated: bool,
 }
 
@@ -622,7 +624,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.expose_php = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("user_agent") {
         ini.user_agent = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("allow_url_fopen") {
+        ini.allow_url_fopen = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("allow_url_include") {
+        ini.allow_url_include = Some(normalize_ini_scalar(raw_value));
         ini.allow_url_include_deprecated =
             ini.allow_url_include_deprecated || ini_scalar_truthy(raw_value);
     }
@@ -1146,6 +1151,8 @@ fn compile_and_run(
         user_agent: ini.user_agent.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
+        allow_url_fopen: ini.allow_url_fopen.clone(),
+        allow_url_include: ini.allow_url_include.clone(),
         allow_url_include_deprecated: ini.allow_url_include_deprecated,
     };
     if ini.default_charset.is_none() {
@@ -1423,6 +1430,12 @@ fn compile_and_run(
     }
     if let Some(user_agent) = &ini.user_agent {
         command.env("PTN_USER_AGENT", user_agent);
+    }
+    if let Some(allow_url_fopen) = &ini.allow_url_fopen {
+        command.env("PTN_ALLOW_URL_FOPEN", allow_url_fopen);
+    }
+    if let Some(allow_url_include) = &ini.allow_url_include {
+        command.env("PTN_ALLOW_URL_INCLUDE", allow_url_include);
     }
     if sapi == Sapi::Cgi {
         command.env("PTN_REQUEST_MODE", "cgi");

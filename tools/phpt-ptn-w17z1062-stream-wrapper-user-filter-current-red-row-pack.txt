@@ -1,0 +1,12 @@
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/file/userstreams_002.phpt
+ext/standard/tests/file/userstreams_004.phpt
+ext/standard/tests/file/include_userstream_001.phpt
+ext/standard/tests/file/include_userstream_003.phpt
+ext/standard/tests/file/userstreams_006.phpt
+ext/standard/tests/file/userstreams.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/standard/tests/filters/userfilters.phpt
+ext/standard/tests/filters/user_streams_consumed_bug.phpt
+ext/standard/tests/streams/stream_get_wrappers.phpt

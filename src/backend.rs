@@ -2038,6 +2038,11 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    if ((path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) || (path.len >= 6 && strncmp(path.data, \"php://\", 6) == 0)) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    out.push_str("    for (size_t i = 0; i + 2 < path.len; i++) {\n");
+    out.push_str("        if (path.data[i] == ':' && path.data[i + 1] == '/' && path.data[i + 2] == '/') {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     out.push_str("#if defined(_WIN32)\n");
     out.push_str(
         "    return path.len > 0 && (path.data[0] == '/' || path.data[0] == '\\\\' || (path.len >= 3 && isalpha((unsigned char)path.data[0]) && path.data[1] == ':' && (path.data[2] == '/' || path.data[2] == '\\\\')));\n",
@@ -2186,15 +2191,20 @@ fn emit_include_runtime_helpers(out: &mut String) {
     );
     out.push_str("    const char *display_path = path != NULL ? path : \"\";\n");
     out.push_str("    const char *include_path = runtime != NULL && runtime->include_path != NULL ? runtime->include_path : \".\";\n");
-    out.push_str("    int needed = snprintf(NULL, 0, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
+    out.push_str("    int wrapper_path = strstr(display_path, \"://\") != NULL;\n");
+    out.push_str("    int needed = 0;\n");
+    out.push_str("    char *message = NULL;\n");
+    out.push_str("    int written = 0;\n");
+    out.push_str("    if (!wrapper_path) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("        message = malloc((size_t)needed + 1);\n");
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    int written = snprintf(message, (size_t)needed + 1, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
+    out.push_str("        written = snprintf(message, (size_t)needed + 1, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (written < 0 || written != needed) {\n");
     out.push_str("        free(message);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
@@ -2203,6 +2213,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    free(message);\n");
     out.push_str("    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
     out.push_str("    }\n");
     out.push_str("    if (required) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Failed opening required '%s' (include_path='%s')\", display_path, include_path);\n");

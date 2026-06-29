@@ -3308,6 +3308,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_DNS_ANY);
         return 1;
     }
+    if (strcmp(name, "STREAM_IS_URL") == 0) {
+        *out = ptn_int(PTN_STREAM_IS_URL);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_REPORT_ERRORS") == 0) {
+        *out = ptn_int(PTN_STREAM_REPORT_ERRORS);
+        return 1;
+    }
     if (strcmp(name, "PSFS_ERR_FATAL") == 0) {
         *out = ptn_int(PTN_PSFS_ERR_FATAL);
         return 1;
