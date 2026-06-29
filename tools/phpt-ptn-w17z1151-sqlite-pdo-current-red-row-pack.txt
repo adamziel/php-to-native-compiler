@@ -1,0 +1,12 @@
+ext/pdo_sqlite/tests/subclasses/pdo_sqlite_createaggregate_002.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_005.phpt
+ext/sqlite3/tests/sqlite3_enable_exceptions.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_extendederror_attr.phpt
+ext/pdo_sqlite/tests/pdo_sqlite___construct_uri.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_setauthorizer_trampoline.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_lastinsertid.phpt
+ext/pdo_sqlite/tests/bug78192.phpt
+ext/sqlite3/tests/sqlite3_trampoline_setauthorizer.phpt
+ext/sqlite3/tests/sqlite3_23_escape_string.phpt
+ext/sqlite3/tests/sqlite3_18_changes.phpt
+ext/pdo_sqlite/tests/subclasses/pdo_sqlite_createcollation.phpt
