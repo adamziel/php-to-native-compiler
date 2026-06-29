@@ -167296,15 +167296,18 @@ static void ptn_zip_archive_write_public_property(
     PtnValue value,
     size_t line
 ) {
-    PtnValue written = ptn_object_write_property(
-        runtime,
-        receiver,
-        name,
-        "ZipArchive",
-        value,
-        line
-    );
-    ptn_value_destroy(&written);
+    (void)runtime;
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_OBJECT &&
+        receiver.as.object != NULL &&
+        receiver.as.object->properties != NULL) {
+        ptn_array_set_entry(
+            receiver.as.object->properties,
+            ptn_array_string_key(name),
+            ptn_value_clone_deref(value)
+        );
+    }
     ptn_value_destroy(&value);
 }
 
@@ -195973,7 +195976,15 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         return;
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE"), ptn_int(PTN_ZIP_CREATE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OVERWRITE"), ptn_int(PTN_ZIP_OVERWRITE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("RDONLY"), ptn_int(PTN_ZIP_RDONLY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FL_ENC_RAW"), ptn_int(PTN_ZIP_FL_ENC_RAW));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FL_OVERWRITE"), ptn_int(PTN_ZIP_FL_OVERWRITE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_OK"), ptn_int(PTN_ZIP_ER_OK));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_EXISTS"), ptn_int(PTN_ZIP_ER_EXISTS));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_CANCELLED"), ptn_int(PTN_ZIP_ER_CANCELLED));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("EM_AES_256"), ptn_int(PTN_ZIP_EM_AES_256));
         return;
     }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||

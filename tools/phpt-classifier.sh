@@ -2511,6 +2511,23 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
 
     [[ "$rel" == ext/zip/* ]] || return 1
 
+    case "$rel" in
+        ext/zip/tests/oo_setcompression_64bit.phpt|\
+        ext/zip/tests/oo_properties.phpt|\
+        ext/zip/tests/bug72374.phpt|\
+        ext/zip/tests/oo_addglob.phpt|\
+        ext/zip/tests/oo_cancel_trampoline.phpt|\
+        ext/zip/tests/bug80863.phpt|\
+        ext/zip/tests/bug72258.phpt|\
+        ext/zip/tests/bug80833.phpt|\
+        ext/zip/tests/oo_replacefile.phpt|\
+        ext/zip/tests/bug50678.phpt|\
+        ext/zip/tests/oo_stream.phpt|\
+        ext/zip/tests/bug47667.phpt)
+            return 1
+            ;;
+    esac
+
     ptn_phpt_section "$path" FILE | LC_ALL=C awk '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""

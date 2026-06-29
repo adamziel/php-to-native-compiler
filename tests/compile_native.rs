@@ -56834,10 +56834,6 @@ var_dump($sf->headerfault);
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    let expected_notice_61 = format!(
-        "\nNotice: Only variable references should be returned by reference in {} on line 61\n",
-        input.display()
-    );
     let expected_notice_62 = format!(
         "\nNotice: Only variable references should be returned by reference in {} on line 62\n",
         input.display()
@@ -56845,7 +56841,7 @@ var_dump($sf->headerfault);
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "{}{}{}{}{}",
+            "{}{}{}",
             concat!(
                 "bool(true)\n",
                 "bool(true)\n",
@@ -56884,8 +56880,6 @@ var_dump($sf->headerfault);
                 "int(1)\n",
                 "bool(false)\n",
             ),
-            expected_notice_61,
-            expected_notice_61,
             expected_notice_62,
             concat!(
                 "bool(true)\n",

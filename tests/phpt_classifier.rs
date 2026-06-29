@@ -2589,6 +2589,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{zip_archive_runtime:?}"
     );
 
+    let zip_archive_exact_row = classify_at_relative_path(
+        "--TEST--\nzip archive exact row\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->addFromString('test', 'test');\n$zip->close();\n--EXPECT--\n",
+        "ext/zip/tests/oo_stream.phpt",
+    );
+    assert_eq!(
+        zip_archive_exact_row.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let xmlwriter_extension = classify(
         "--TEST--\nxmlwriter extension\n--EXTENSIONS--\nxmlwriter\n--FILE--\n<?php\n$xw = xmlwriter_open_memory();\nxmlwriter_start_element($xw, 'root');\nxmlwriter_end_element($xw);\necho xmlwriter_flush($xw);\n--EXPECT--\n<root/>\n",
     );
