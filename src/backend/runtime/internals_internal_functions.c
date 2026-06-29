@@ -52722,12 +52722,13 @@ static int ptn_parse_php_temp_max_memory(const char *path, size_t *max_memory) {
     return 1;
 }
 
+static int ptn_fopen_mode_has_char(const char *mode, char needle);
+
 static const char *ptn_php_memory_stream_mode(const char *mode, int *writable, int *append) {
-    *append = mode[0] == 'a' || mode[0] == 'A';
-    if ((mode[0] == 'r' || mode[0] == 'R') &&
-        strchr(mode, '+') == NULL &&
-        strchr(mode, 'w') == NULL &&
-        strchr(mode, 'W') == NULL) {
+    *append = ptn_fopen_mode_has_char(mode, 'a');
+    if (strchr(mode, '+') == NULL &&
+        !ptn_fopen_mode_has_char(mode, 'w') &&
+        !*append) {
         *writable = 0;
         return "rb";
     }
@@ -55238,6 +55239,16 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
+
+    PtnResource *context = ptn_effective_stream_context(argc, args);
+    PtnValue php_stream;
+    if (ptn_try_open_php_memory_stream(path, mode, &php_stream)) {
+        free(uri);
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+
     if (!ptn_fopen_mode_has_valid_primary(mode)) {
         int needed = snprintf(NULL, 0, "Failed to open stream: `%s' is not a valid mode for fopen", mode);
         if (needed < 0) {
@@ -55274,8 +55285,6 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
 
-    PtnResource *context = ptn_effective_stream_context(argc, args);
-    PtnValue php_stream;
     if (ptn_try_open_php_input_stream(runtime, path, &php_stream)) {
         free(uri);
         free(mode);
@@ -55299,12 +55308,6 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
     if (ptn_try_open_php_standard_stream(path, &php_stream)) {
-        free(uri);
-        free(mode);
-        free(path);
-        return php_stream;
-    }
-    if (ptn_try_open_php_memory_stream(path, mode, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
