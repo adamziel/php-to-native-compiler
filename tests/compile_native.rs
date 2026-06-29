@@ -24250,6 +24250,63 @@ try {
 }
 
 #[test]
+fn compile_generator_call_unpack_rethrows_yield_from_delegate_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-call-unpack-yield-from-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-call-unpack-yield-from-exception.php");
+    let output = root.join("generator-call-unpack-yield-from-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function throwException(): iterable {
+    throw new Exception("delegated");
+}
+
+function loop(): iterable {
+    $callbacks = [
+        function () {
+            yield "first";
+        },
+        function () {
+            yield from throwException();
+        },
+    ];
+
+    foreach ($callbacks as $callback) {
+        yield from $callback();
+    }
+}
+
+function collect(string $first, int $second): array {
+    return [];
+}
+
+try {
+    collect(...loop());
+} catch (Throwable $e) {
+    echo get_class($e), "\n";
+    echo $e->getMessage(), "\n";
+    foreach ($e->getTrace() as $frame) {
+        echo $frame["function"] ?? "{main}", "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("Exception\ndelegated\n"), "{stdout}");
+    assert!(stdout.contains("throwException\n"), "{stdout}");
+    assert!(stdout.contains("loop\n"), "{stdout}");
+    assert!(!stdout.contains("Keys must be of type int|string"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     let root = temp_dir("ptn-native-flush-binary-strings");
     fs::create_dir_all(&root).unwrap();
