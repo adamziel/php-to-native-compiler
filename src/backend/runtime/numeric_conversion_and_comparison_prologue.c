@@ -5533,10 +5533,15 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ZipArchive")) {
-        if (strcmp(constant, "CREATE") == 0) {
-            *out = ptn_int(1);
-            return 1;
-        }
+        if (strcmp(constant, "CREATE") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "OVERWRITE") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "RDONLY") == 0) { *out = ptn_int(16); return 1; }
+        if (strcmp(constant, "FL_ENC_RAW") == 0) { *out = ptn_int(64); return 1; }
+        if (strcmp(constant, "FL_OVERWRITE") == 0) { *out = ptn_int(8192); return 1; }
+        if (strcmp(constant, "ER_OK") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "ER_EXISTS") == 0) { *out = ptn_int(10); return 1; }
+        if (strcmp(constant, "ER_CANCELLED") == 0) { *out = ptn_int(32); return 1; }
+        if (strcmp(constant, "EM_AES_256") == 0) { *out = ptn_int(259); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveArrayIterator")) {
         if (strcmp(constant, "CHILD_ARRAYS_ONLY") == 0) {
