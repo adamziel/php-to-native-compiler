@@ -26834,6 +26834,76 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_gettimeofday_basic_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-gettimeofday-basic-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gettimeofday-basic-shape.php");
+    let output = root.join("gettimeofday-basic-shape-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"Asia/Calcutta\");\n\
+$float = gettimeofday(true);\n\
+$parts = gettimeofday();\n\
+$partsFalse = gettimeofday(false);\n\
+var_dump(is_float($float));\n\
+var_dump(array_keys($parts));\n\
+var_dump(is_int($parts[\"sec\"]), is_int($parts[\"usec\"]));\n\
+var_dump($parts[\"minuteswest\"], $parts[\"dsttime\"]);\n\
+var_dump(array_keys($partsFalse));\n\
+var_dump(function_exists(\"gettimeofday\"));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(-330)\n",
+            "int(0)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"sec\"\n",
+            "  [1]=>\n",
+            "  string(4) \"usec\"\n",
+            "  [2]=>\n",
+            "  string(11) \"minuteswest\"\n",
+            "  [3]=>\n",
+            "  string(7) \"dsttime\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_gettimeofday("));
+    assert!(c_source.contains("{ \"gettimeofday\", 0, 1, ptn_internal_gettimeofday }"));
+}
+
+#[test]
 fn compile_strftime_locale_formatting_to_native_binary() {
     let root = temp_dir("ptn-native-strftime-locale-formatting");
     fs::create_dir_all(&root).unwrap();
@@ -27790,6 +27860,220 @@ var_dump(date_create('Invalid'), date_create_immutable('Invalid'));
     assert!(c_source.contains("ptn_internal_date_create_immutable"));
     assert!(c_source.contains("ptn_internal_date_interval_format"));
     assert!(c_source.contains("createFromMutable"));
+}
+
+#[test]
+fn compile_datetime_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-datetime-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-subclass-serialize-order.php");
+    let output = root.join("datetime-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DateTimeImmutable
+{
+    private int $var1 = 1;
+    private $var2 = 0;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct()
+    {
+        parent::__construct('2023-03-03 16:24');
+        $this->var2 = 2;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+        echo $this->format('Y-m-d H:i:s.u T e'), "\n";
+    }
+}
+
+$i = new I;
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+$u = unserialize($s);
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "O:1:\"I\":7:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n\
+int(1)\n\
+int(2)\n\
+int(3)\n\
+int(4)\n\
+2023-03-03 16:24:00.000000 UTC UTC\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
+    assert!(c_source.contains("ptn_datetime_call_method"));
+}
+
+#[test]
+fn compile_date_period_subclass_serializes_internal_state_before_extra_properties() {
+    let root = temp_dir("ptn-native-date-period-subclass-serialize-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-subclass-serialize-order.php");
+    let output = root.join("date-period-subclass-serialize-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+class I extends DatePeriod
+{
+    private int $var1;
+    private $var2 = 2;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct($start, $interval, $end)
+    {
+        parent::__construct($start, $interval, $end);
+        $this->var1 = 1;
+        $this->var4 = 4;
+    }
+
+    public function dumpFields()
+    {
+        var_dump($this->var1, $this->var2, $this->var3, $this->var4);
+    }
+}
+
+$i = new I(new DateTimeImmutable('2023-03-03 16:24'), DateInterval::createFromDateString('+1 hour'), new DateTimeImmutable('2023-03-09 16:24'));
+$s = serialize($i);
+echo str_replace(chr(0), '!', $s), "\n";
+var_dump($i->__serialize()['interval']->__serialize());
+$u = unserialize($s);
+echo implode('|', array_map(fn($key) => str_replace(chr(0), '!', $key), array_keys((array) $u))), "\n";
+$u->dumpFields();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:1:\"I\":11:{s:5:\"start\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-03 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:7:\"current\";N;s:3:\"end\";O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2023-03-09 16:24:00.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}s:8:\"interval\";O:12:\"DateInterval\":10:{s:1:\"y\";i:0;s:1:\"m\";i:0;s:1:\"d\";i:0;s:1:\"h\";i:1;s:1:\"i\";i:0;s:1:\"s\";i:0;s:1:\"f\";d:0;s:6:\"invert\";i:0;s:4:\"days\";b:0;s:11:\"from_string\";b:0;}s:11:\"recurrences\";i:1;s:18:\"include_start_date\";b:1;s:16:\"include_end_date\";b:0;s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n",
+            "array(10) {\n",
+            "  [\"y\"]=>\n",
+            "  int(0)\n",
+            "  [\"m\"]=>\n",
+            "  int(0)\n",
+            "  [\"d\"]=>\n",
+            "  int(0)\n",
+            "  [\"h\"]=>\n",
+            "  int(1)\n",
+            "  [\"i\"]=>\n",
+            "  int(0)\n",
+            "  [\"s\"]=>\n",
+            "  int(0)\n",
+            "  [\"f\"]=>\n",
+            "  float(0)\n",
+            "  [\"invert\"]=>\n",
+            "  int(0)\n",
+            "  [\"days\"]=>\n",
+            "  bool(false)\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+            "!I!var1|!I!var2|!*!var3|!*!var4|start|current|end|interval|recurrences|include_start_date|include_end_date\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_period_public_interval_value"));
+    assert!(c_source.contains("ptn_serialize_append_object_payload_with_extra_properties"));
+}
+
+#[test]
+fn compile_datetime_textual_day_month_year_time_and_offset_abbreviation_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-day-month-year-time-zone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-day-month-year-time-zone.php");
+    let output = root.join("datetime-day-month-year-time-zone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dt = new DateTime('@1200506699', new DateTimeZone('Europe/Berlin'));
+echo $dt->format(DATE_RFC822), "\n";
+echo $dt->format('T e Z'), "\n";
+
+date_default_timezone_set('America/New_York');
+$dt = new DateTime('16 Jan 08 13:04:59');
+echo $dt->format(DATE_RFC822 . " e T O U"), "\n";
+
+$dt = new DateTime('@1200506699');
+echo $dt->format(DATE_RFC822 . " e T O U"), "\n";
+
+$dt->setTimezone(new DateTimeZone('America/New_York'));
+echo $dt->format(DATE_RFC822 . " e T O U"), "\n";
+
+$dt = new DateTime('16 Jan 08 13:04:59 America/Chicago', new DateTimeZone('Europe/Berlin'));
+echo $dt->format(DATE_RFC822 . " e T O U"), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Wed, 16 Jan 08 18:04:59 +0000\n",
+            "GMT+0000 +00:00 0\n",
+            "Wed, 16 Jan 08 13:04:59 -0500 America/New_York EST -0500 1200506699\n",
+            "Wed, 16 Jan 08 18:04:59 +0000 +00:00 GMT+0000 +0000 1200506699\n",
+            "Wed, 16 Jan 08 13:04:59 -0500 America/New_York EST -0500 1200506699\n",
+            "Wed, 16 Jan 08 13:04:59 -0600 America/Chicago CST -0600 1200510299\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_datetime_parse_textual_date_string"));
+    assert!(c_source.contains("ptn_timezone_parse_offset_literal"));
 }
 
 #[test]
