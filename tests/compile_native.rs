@@ -2290,6 +2290,74 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[cfg(unix)]
+#[test]
+fn compile_directory_iterator_get_link_target_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-iterator-link-target");
+    fs::create_dir_all(&root).unwrap();
+    let target = root.join("target.txt");
+    let link = root.join("bug");
+    fs::write(&target, "target\n").unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let input = root.join("directory-iterator-link-target.php");
+    let output = root.join("directory-iterator-link-target-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$link = {};
+$target = {};
+$found = false;
+foreach (new DirectoryIterator(__DIR__) as $entry) {{
+    if ($entry->getFilename() === 'bug') {{
+        $found = true;
+        var_dump($entry->isLink());
+        var_dump($entry->getLinkTarget() === $target);
+        var_dump(method_exists($entry, 'getLinkTarget'));
+    }}
+}}
+var_dump($found);
+$info = new SplFileInfo($link);
+var_dump($info->getLinkTarget() === $target);
+try {{
+    (new SplFileInfo($target))->getLinkTarget();
+}} catch (RuntimeException $e) {{
+    echo $e::class, "\n";
+}}
+"#,
+            php_string_literal(&link),
+            php_string_literal(&target)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("getLinkTarget"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "RuntimeException\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 #[test]
 fn compile_caching_iterator_current_string_and_inner_forwarding_to_native_binary() {
     let root = temp_dir("ptn-native-caching-iterator");
@@ -15354,6 +15422,98 @@ echo str_replace(\"\\n\", \"\", $dump), \"\\n\";\n",
 }
 
 #[test]
+fn compile_zlib_output_handler_negotiates_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-output-handler");
+    fs::create_dir_all(&root).unwrap();
+
+    let plain_input = root.join("ob-gzhandler-plain.php");
+    let plain_output = root.join("ob-gzhandler-plain-bin");
+    fs::write(
+        &plain_input,
+        "<?php\n\
+var_dump(ob_gzhandler(\"Hi\\n\", PHP_OUTPUT_HANDLER_START));\n\
+ob_start('ob_gzhandler');\n\
+echo \"Hi there.\\n\";\n\
+ob_flush();\n\
+flush();\n\
+echo \"This is confusing...\\n\";\n\
+ob_flush();\n\
+flush();\n",
+    )
+    .unwrap();
+
+    let plain_compiled =
+        compile_file(&plain_input, &plain_output, CompileOptions { emit_c: true }).unwrap();
+    let plain_execution = Command::new(&plain_output)
+        .env_remove("HTTP_ACCEPT_ENCODING")
+        .output()
+        .unwrap();
+    assert!(plain_execution.status.success());
+    assert_eq!(
+        String::from_utf8(plain_execution.stdout).unwrap(),
+        "bool(false)\nHi there.\nThis is confusing...\n"
+    );
+    assert_eq!(String::from_utf8(plain_execution.stderr).unwrap(), "");
+    let plain_c_source = fs::read_to_string(plain_compiled.c_source.unwrap()).unwrap();
+    assert!(plain_c_source.contains("ptn_internal_ob_gzhandler"));
+
+    let gzip_input = root.join("ob-gzhandler-gzip.php");
+    let gzip_output = root.join("ob-gzhandler-gzip-bin");
+    fs::write(
+        &gzip_input,
+        "<?php\n\
+var_dump(bin2hex(substr(ob_gzhandler(\"Hi\\n\", PHP_OUTPUT_HANDLER_START), 0, 2)));\n\
+var_dump(zlib_get_coding_type());\n",
+    )
+    .unwrap();
+
+    compile_file(&gzip_input, &gzip_output, CompileOptions { emit_c: false }).unwrap();
+    let gzip_execution = Command::new(&gzip_output)
+        .env("HTTP_ACCEPT_ENCODING", "gzip")
+        .output()
+        .unwrap();
+    assert!(gzip_execution.status.success());
+    assert_eq!(
+        String::from_utf8(gzip_execution.stdout).unwrap(),
+        "string(4) \"1f8b\"\nstring(4) \"gzip\"\n"
+    );
+    assert_eq!(String::from_utf8(gzip_execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zlib_object_options_read_declared_uninitialized_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-object-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-object-options.php");
+    let output = root.join("zlib-object-options-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Options {\n\
+    public int $level;\n\
+}\n\
+\n\
+try {\n\
+    deflate_init(ZLIB_ENCODING_DEFLATE, new Options());\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), PHP_EOL;\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "deflate_init(): Argument #2 ($options) the value for option \"level\" must be of type int, null given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_option"));
+}
+
+#[test]
 fn compile_output_buffer_captures_runtime_warning_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-warning");
     fs::create_dir_all(&root).unwrap();
@@ -27671,6 +27831,24 @@ fn compile_timelib_timestamp_and_negative_year_rows_to_native_binary() {
 date_default_timezone_set('UTC');
 echo date('Y-m-d o-W-N', -62167046400 - (((99 * 365) + 25) * 86400) + (6 * 86400)), "\n";
 
+$wide = new DateTime('-1500-01-01');
+echo $wide->format('r'), "\n";
+$wide->setDate(-2147483648, 1, 1);
+echo $wide->format('r'), "\n";
+echo $wide->format('c'), "\n";
+
+$nulTimezone = "Europe/Zurich" . "\0" . "Foo";
+try {
+    timezone_open($nulTimezone);
+} catch (ValueError $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone($nulTimezone);
+} catch (ValueError $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+
 date_default_timezone_set('Europe/London');
 $empty = new DateTime('');
 echo $empty->getTimezone()->getName(), "\n";
@@ -27700,6 +27878,11 @@ echo $a->format(DateTime::ATOM), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "-0099-01-08 -99-02-2\n\
+Fri, 01 Jan -1500 00:00:00 +0000\n\
+Tue, 01 Jan -2147483648 00:00:00 +0000\n\
+-2147483648-01-01T00:00:00+00:00\n\
+ValueError: timezone_open(): Argument #1 ($timezone) must not contain any null bytes\n\
+ValueError: DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes\n\
 Europe/London\n\
 int(1234567890)\n\
 2009-02-13T23:31:30+00:00\n\
@@ -34303,6 +34486,49 @@ var_dump($converted);\n",
         stdout.ends_with("  [2]=>\n  array(0) {\n  }\n}\n"),
         "{stdout}"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mb_convert_variables_recursive_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-variables-recursive-arrays");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-variables-recursive-arrays.php");
+    let output = root.join("mb-convert-variables-recursive-arrays-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('UTF-8', 'auto', $a));\n\
+unset($a);\n\
+$a = ['hé', ['nested' => '日本語テキスト']];\n\
+var_dump(mb_convert_variables('UTF-8', 'UTF-8', $a), $a);\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('UTF-8', 'UTF-8', $a), $a);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("mb_convert_variables(): Cannot convert recursively referenced values")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("string(5) \"UTF-8\"\n"), "{stdout}");
+    assert!(stdout.contains("string(3) \"hé\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(21) \"日本語テキスト\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("*RECURSION*"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -51155,6 +51381,14 @@ var_dump(function_exists('simplexml_import_dom'));
 dump_map(simplexml_load_string($docXml)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($dom)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
+
+$sxe = simplexml_load_string('<container xmlns="urn:a">foo</container>');
+$element = Dom\import_simplexml($sxe);
+echo $element->ownerDocument->saveXml($element), "\n";
+$element->appendChild($element->ownerDocument->createElementNS('urn:a', 'child'));
+echo $element->ownerDocument->saveXml($element), "\n";
+$sxe->addChild('name', 'value');
+echo $element->ownerDocument->saveXml($element), "\n";
 "#,
     )
     .unwrap();
@@ -51193,6 +51427,9 @@ dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
             "a=urn:a\n",
             "d=urn:d\n",
             "--\n",
+            "<container xmlns=\"urn:a\">foo</container>\n",
+            "<container xmlns=\"urn:a\">foo<child/></container>\n",
+            "<container xmlns=\"urn:a\">foo<child/><name>value</name></container>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

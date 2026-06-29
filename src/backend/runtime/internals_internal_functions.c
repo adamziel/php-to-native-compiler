@@ -56597,8 +56597,17 @@ static int ptn_stream_filter_option(PtnValue options, const char *name, PtnValue
         PtnArrayKey key = ptn_array_string_key(name);
         PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
         ptn_array_key_free(key);
-        *out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
+        if (entry != NULL) {
+            *out = ptn_value_clone_deref(entry->value);
+            return 1;
+        }
+        for (size_t i = 0; i < options.as.object->property_metadata_len; i++) {
+            const PtnObjectPropertyMetadata *metadata = &options.as.object->property_metadata[i];
+            if (strcmp(metadata->display_name, name) == 0) {
+                *out = ptn_null();
+                return 1;
+            }
+        }
     }
     *out = ptn_null();
     return 0;
@@ -92604,6 +92613,27 @@ static int ptn_mb_check_encoding_value(PtnValue value, const char *encoding, Ptn
     return 1;
 }
 
+static int ptn_mb_value_has_circular_array(PtnValue value, PtnMbCheckStack *stack) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArray *array = resolved.as.array;
+    if (ptn_mb_check_stack_contains(stack, array)) {
+        stack->saw_circular = 1;
+        return 1;
+    }
+    ptn_mb_check_stack_push(stack, array);
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_mb_value_has_circular_array(array->entries[i].value, stack)) {
+            stack->len--;
+            return 1;
+        }
+    }
+    stack->len--;
+    return 0;
+}
+
 static size_t ptn_mb_utf8_strlen(const char *data, size_t len) {
     size_t offset = 0;
     size_t count = 0;
@@ -97074,6 +97104,68 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 
+static void ptn_mb_convert_variables_assign_string(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *from_encoding,
+    const char *to_encoding
+) {
+    PtnValue current = ptn_value_deref(*slot);
+    size_t out_len = 0;
+    char *out = ptn_mb_iconv_convert_alloc(
+        (const char *)current.as.string.data,
+        current.as.string.len,
+        from_encoding,
+        to_encoding,
+        &out_len
+    );
+    PtnValue assigned = ptn_owned_string_len(out, out_len);
+    if (slot->type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, slot->as.reference, assigned);
+        ptn_value_destroy(&assigned);
+        return;
+    }
+    ptn_gc_attach_value_runtime(runtime, assigned, 0);
+    ptn_value_destroy(slot);
+    *slot = assigned;
+}
+
+static void ptn_mb_convert_variables_value(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t depth
+) {
+    if (slot == NULL || depth >= 16) {
+        return;
+    }
+    PtnValue current = ptn_value_deref(*slot);
+    if (current.type == PTN_STRING) {
+        ptn_mb_convert_variables_assign_string(runtime, slot, from_encoding, to_encoding);
+        return;
+    }
+    if (current.type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArray *array = current.as.array;
+    PtnValue *array_slot = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (array_slot->type == PTN_ARRAY) {
+        PtnArray *detached = ptn_array_detach_value(array_slot);
+        array = detached == NULL ? array_slot->as.array : detached;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_mb_convert_variables_value(
+            runtime,
+            &array->entries[i].value,
+            from_encoding,
+            to_encoding,
+            depth + 1
+        );
+    }
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *to_encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_variables", 1, "to_encoding", args[0], line, NULL, 0);
     const char *from_encoding = argc >= 2
@@ -97082,19 +97174,24 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
     if (to_encoding == NULL || from_encoding == NULL) {
         return ptn_bool(0);
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     for (size_t i = 2; i < argc; i++) {
         if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        PtnValue current = ptn_value_deref(args[i]);
-        if (current.type != PTN_STRING) {
+        if (ptn_mb_value_has_circular_array(args[i], &stack)) {
+            ptn_emit_warning(&runtime->diagnostics, "mb_convert_variables(): Cannot convert recursively referenced values", line);
+            ptn_mb_check_stack_free(&stack);
+            return ptn_bool(0);
+        }
+    }
+    ptn_mb_check_stack_free(&stack);
+    for (size_t i = 2; i < argc; i++) {
+        if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        size_t out_len = 0;
-        char *out = ptn_mb_iconv_convert_alloc((const char *)current.as.string.data, current.as.string.len, from_encoding, to_encoding, &out_len);
-        PtnValue assigned = ptn_owned_string_len(out, out_len);
-        ptn_reference_assign(runtime, args[i].as.reference, assigned);
-        ptn_value_destroy(&assigned);
+        PtnValue slot = args[i];
+        ptn_mb_convert_variables_value(runtime, &slot, from_encoding, to_encoding, 0);
     }
     return ptn_string(to_encoding);
 }
@@ -120904,6 +121001,16 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     }
     PtnStringOperand timezone = ptn_internal_expect_string_arg(runtime, "DateTimeZone::__construct", 1, "timezone", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone);
+        return ptn_null();
+    }
+    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+        ptn_string_operand_free(timezone);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes"
+        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
@@ -122647,7 +122754,7 @@ static PtnValue ptn_datetime_apply_interval(
     return immutable ? target : ptn_value_clone(target);
 }
 
-static int ptn_datetime_update_wall_date(PtnValue target, int year, int month, int day) {
+static int ptn_datetime_update_wall_date(PtnValue target, int64_t year, int month, int day) {
     PtnDateTimeData *data = ptn_datetime_data_from_value(target);
     if (data == NULL) {
         return 0;
@@ -122661,6 +122768,19 @@ static int ptn_datetime_update_wall_date(PtnValue target, int year, int month, i
     }
     parts_storage = *parts;
     parts = &parts_storage;
+    if (year < (int64_t)INT_MIN + 1900 || year > (int64_t)INT_MAX + 1900) {
+        time_t adjusted_wall = ptn_datetime_utc_timestamp_for_parts(
+            year,
+            month,
+            day,
+            parts->tm_hour,
+            parts->tm_min,
+            parts->tm_sec
+        );
+        int adjusted_offset = ptn_timezone_offset_for_name(data->timezone, adjusted_wall);
+        data->timestamp = adjusted_wall - adjusted_offset;
+        return 1;
+    }
     parts->tm_year = year - 1900;
     parts->tm_mon = month - 1;
     parts->tm_mday = day;
@@ -123261,7 +123381,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
             return ptn_null();
         }
         PtnValue target = immutable ? ptn_datetime_clone(runtime, receiver, line) : receiver;
-        if (!ptn_datetime_update_wall_date(target, (int)year, (int)month, (int)day)) {
+        if (!ptn_datetime_update_wall_date(target, year, (int)month, (int)day)) {
             if (immutable) {
                 ptn_value_destroy(&target);
             }
@@ -126700,6 +126820,16 @@ static PtnValue ptn_internal_timezone_open(PtnRuntime *runtime, size_t argc, con
     (void)argc;
     PtnStringOperand timezone = ptn_internal_expect_string_arg(runtime, "timezone_open", 1, "timezone", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone);
+        return ptn_null();
+    }
+    if (memchr(timezone.data, '\0', timezone.len) != NULL) {
+        ptn_string_operand_free(timezone);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "timezone_open(): Argument #1 ($timezone) must not contain any null bytes"
+        );
         return ptn_null();
     }
     char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
@@ -132302,6 +132432,9 @@ static int ptn_xml_subtree_has_invalid_namespace_serialization(PtnXmlNode *node)
     return 0;
 }
 
+static int ptn_xml_serialize_no_empty_tag = 0;
+static PtnXmlNode *ptn_xml_serialize_standalone_root = NULL;
+
 static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, PtnXmlNode *attr) {
     if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
         return 1;
@@ -132322,6 +132455,15 @@ static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, P
             return 0;
         }
     }
+    if (element != NULL && element->parent != NULL && strcmp(name, "xmlns") == 0 && value[0] != '\0' &&
+        element != ptn_xml_serialize_standalone_root &&
+        !ptn_xml_name_has_prefix(element->name == NULL ? "" : element->name) &&
+        element->namespace_uri != NULL && strcmp(element->namespace_uri, value) == 0) {
+        const char *in_scope = ptn_xml_lookup_namespace_uri(element->parent, "");
+        if (in_scope != NULL && strcmp(in_scope, value) == 0) {
+            return 0;
+        }
+    }
     return 1;
 }
 
@@ -132331,9 +132473,6 @@ static int ptn_dom_prefix_seen(char **prefixes, size_t count, const char *prefix
 static void ptn_dom_prefixes_free(char **prefixes, size_t count);
 static void ptn_dom_prefix_seen_add(char ***prefixes, size_t *count, size_t *capacity, const char *prefix);
 static int ptn_xml_html_void_element_name(const char *name);
-
-static int ptn_xml_serialize_no_empty_tag = 0;
-static PtnXmlNode *ptn_xml_serialize_standalone_root = NULL;
 
 static int ptn_xml_parent_serialized_default_namespace_matches(PtnXmlNode *node, const char *uri) {
     if (node == NULL || node->parent == NULL || uri == NULL || uri[0] == '\0') {
@@ -152356,6 +152495,20 @@ static int ptn_zlib_encoding_is_valid(int64_t encoding) {
         encoding == PTN_ZLIB_ENCODING_DEFLATE;
 }
 
+static int64_t ptn_zlib_output_encoding(void) {
+    const char *accept_encoding = getenv("HTTP_ACCEPT_ENCODING");
+    if (accept_encoding == NULL) {
+        return 0;
+    }
+    if (strstr(accept_encoding, "gzip") != NULL) {
+        return PTN_ZLIB_ENCODING_GZIP;
+    }
+    if (strstr(accept_encoding, "deflate") != NULL) {
+        return PTN_ZLIB_ENCODING_DEFLATE;
+    }
+    return 0;
+}
+
 static void ptn_zlib_throw_encoding_value_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -152396,23 +152549,7 @@ static void ptn_zlib_throw_level_value_error(PtnRuntime *runtime, const char *fu
 }
 
 static int ptn_zlib_option_value(PtnValue options, const char *name, PtnValue *value_out) {
-    options = ptn_value_deref(options);
-    if (options.type == PTN_ARRAY && options.as.array != NULL) {
-        PtnArrayKey key = ptn_array_string_key(name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.array, key);
-        ptn_array_key_free(key);
-        *value_out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
-    }
-    if (options.type == PTN_OBJECT && options.as.object != NULL && options.as.object->properties != NULL) {
-        PtnArrayKey key = ptn_array_string_key(name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
-        ptn_array_key_free(key);
-        *value_out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
-        return entry != NULL;
-    }
-    *value_out = ptn_null();
-    return 0;
+    return ptn_stream_filter_option(options, name, value_out);
 }
 
 static void ptn_zlib_throw_option_range_value_error(
@@ -153794,12 +153931,17 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
         ptn_string_operand_free(data);
         return ptn_null();
     }
+    int64_t encoding = ptn_zlib_output_encoding();
+    if (encoding == 0) {
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
+    }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
         "ob_gzhandler",
         data,
         0,
-        PTN_ZLIB_ENCODING_GZIP,
+        encoding,
         -1,
         0,
         line
@@ -154257,6 +154399,13 @@ static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t ar
     (void)argc;
     (void)args;
     (void)line;
+    int64_t encoding = ptn_zlib_output_encoding();
+    if (encoding == PTN_ZLIB_ENCODING_GZIP) {
+        return ptn_string("gzip");
+    }
+    if (encoding == PTN_ZLIB_ENCODING_DEFLATE) {
+        return ptn_string("deflate");
+    }
     return ptn_bool(0);
 }
 
@@ -182194,6 +182343,7 @@ static int ptn_spl_file_info_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getFilename")
         || ptn_ascii_case_equal(method_name, "getGroup")
         || ptn_ascii_case_equal(method_name, "getInode")
+        || ptn_ascii_case_equal(method_name, "getLinkTarget")
         || ptn_ascii_case_equal(method_name, "getMTime")
         || ptn_ascii_case_equal(method_name, "getOwner")
         || ptn_ascii_case_equal(method_name, "getPath")
@@ -184578,6 +184728,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -184627,6 +184778,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFileInfo",
             "getFilename",
             "getFlags",
+            "getLinkTarget",
             "getMaxLineLen",
             "getPath",
             "getPathname",
@@ -184665,6 +184817,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -212116,6 +212269,68 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_bool(0);
         }
         return ptn_owned_string(ptn_duplicate_string(resolved));
+    }
+    if (ptn_ascii_case_equal(name, "getLinkTarget")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->path == NULL || data->path[0] == '\0') {
+            ptn_throw_exception(runtime, "ValueError", "Filename must not be empty");
+            return ptn_null();
+        }
+#if defined(_WIN32)
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Unable to read link %s, error: %s",
+            data->path,
+            "Invalid argument"
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "RuntimeException", message);
+        return ptn_null();
+#else
+        size_t capacity = 256;
+        char *buffer = NULL;
+        for (;;) {
+            char *next = realloc(buffer, capacity + 1);
+            if (next == NULL) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            buffer = next;
+            ssize_t len = readlink(data->path, buffer, capacity);
+            if (len < 0) {
+                char message[512];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Unable to read link %s, error: %s",
+                    data->path,
+                    strerror(errno)
+                );
+                free(buffer);
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "RuntimeException", message);
+                return ptn_null();
+            }
+            if ((size_t)len < capacity) {
+                buffer[len] = '\0';
+                return ptn_owned_string_len(buffer, (size_t)len);
+            }
+            if (capacity > SIZE_MAX / 2) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            capacity *= 2;
+        }
+#endif
     }
     if (ptn_ascii_case_equal(name, "getType") ||
         ptn_ascii_case_equal(name, "getSize") ||
