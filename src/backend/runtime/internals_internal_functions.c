@@ -56702,6 +56702,26 @@ static int ptn_stream_filter_name_starts_with(PtnStringOperand name, const char 
     return 1;
 }
 
+static int ptn_stream_filter_iconv_split(PtnStringOperand name, PtnStringOperand *from_out, PtnStringOperand *to_out) {
+    const char *prefix = "convert.iconv.";
+    size_t prefix_len = strlen(prefix);
+    if (!ptn_stream_filter_name_starts_with(name, prefix) || name.len <= prefix_len + 1) {
+        return 0;
+    }
+    const char *pair = name.data + prefix_len;
+    size_t pair_len = name.len - prefix_len;
+    const char *delimiter = memchr(pair, '/', pair_len);
+    if (delimiter == NULL) {
+        delimiter = memchr(pair, '.', pair_len);
+    }
+    if (delimiter == NULL || delimiter == pair || delimiter == pair + pair_len - 1) {
+        return 0;
+    }
+    *from_out = ptn_string_operand_borrowed_len(pair, (size_t)(delimiter - pair));
+    *to_out = ptn_string_operand_borrowed_len(delimiter + 1, pair_len - (size_t)(delimiter - pair) - 1);
+    return 1;
+}
+
 static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilterKind *kind) {
     if (ptn_stream_filter_name_equals(name, "string.rot13")) {
         *kind = PTN_STREAM_FILTER_STRING_ROT13;
@@ -56731,9 +56751,18 @@ static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilt
         *kind = PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE;
         return 1;
     }
-    if (ptn_stream_filter_name_starts_with(name, "convert.iconv.")) {
-        *kind = PTN_STREAM_FILTER_CONVERT_ICONV;
-        return 1;
+    PtnStringOperand iconv_from;
+    PtnStringOperand iconv_to;
+    if (ptn_stream_filter_iconv_split(name, &iconv_from, &iconv_to)) {
+        char *from_encoding = ptn_iconv_resolve_encoding_alloc(iconv_from);
+        char *to_encoding = ptn_iconv_resolve_encoding_alloc(iconv_to);
+        int valid = from_encoding != NULL && to_encoding != NULL;
+        free(from_encoding);
+        free(to_encoding);
+        if (valid) {
+            *kind = PTN_STREAM_FILTER_CONVERT_ICONV;
+            return 1;
+        }
     }
     if (ptn_stream_filter_name_equals(name, "dechunk")) {
         *kind = PTN_STREAM_FILTER_DECHUNK;
@@ -57476,6 +57505,15 @@ static int ptn_stream_filter_chain_has_iconv(PtnStreamFilter *filter) {
         }
     }
     return 0;
+}
+
+static const char *ptn_stream_filter_chain_iconv_name(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->kind == PTN_STREAM_FILTER_CONVERT_ICONV) {
+            return filter->name;
+        }
+    }
+    return NULL;
 }
 
 static int ptn_stream_filter_chain_has_zlib_inflate(PtnStreamFilter *filter) {
@@ -58263,6 +58301,43 @@ static char *ptn_stream_apply_dechunk_filter_alloc(
     }
     *out_len = output.len;
     return output.data;
+}
+
+static char *ptn_stream_apply_iconv_filter_alloc(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t *out_len
+) {
+    *out_len = 0;
+    PtnStringOperand name = ptn_string_operand_borrowed(filter == NULL || filter->name == NULL ? "" : filter->name);
+    PtnStringOperand from_operand;
+    PtnStringOperand to_operand;
+    if (!ptn_stream_filter_iconv_split(name, &from_operand, &to_operand)) {
+        *out_len = len;
+        return ptn_duplicate_string_len(data, len);
+    }
+    char *from_encoding = ptn_iconv_resolve_encoding_alloc(from_operand);
+    char *to_encoding = ptn_iconv_resolve_encoding_alloc(to_operand);
+    if (from_encoding == NULL || to_encoding == NULL) {
+        free(from_encoding);
+        free(to_encoding);
+        *out_len = len;
+        return ptn_duplicate_string_len(data, len);
+    }
+    int status = 0;
+    char *converted = ptn_iconv_convert_alloc(data, len, from_encoding, to_encoding, &status, out_len);
+    free(from_encoding);
+    free(to_encoding);
+    if (converted == NULL || status != 0) {
+        free(converted);
+        if (filter != NULL) {
+            filter->iconv_error = 1;
+        }
+        *out_len = 0;
+        return ptn_duplicate_string_len("", 0);
+    }
+    return converted;
 }
 
 static char *ptn_stream_apply_filter_chain_alloc(
@@ -59765,6 +59840,10 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
     if (filter_error) {
         ptn_emit_zlib_data_notice(runtime, "fread", line);
     }
+    PtnStreamFilter *iconv_error = ptn_stream_filter_chain_take_iconv_error(resource->read_filters);
+    if (iconv_error != NULL) {
+        ptn_emit_iconv_stream_filter_invalid_sequence_warning(runtime, "fread", iconv_error, line);
+    }
     return ptn_owned_string_len(filtered, filtered_len);
 }
 
@@ -60869,10 +60948,14 @@ static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const P
                 &filtered_len
             );
             int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
+            PtnStreamFilter *iconv_error = ptn_stream_filter_chain_take_iconv_error(resource->read_filters);
             fwrite(filtered, 1, filtered_len, stdout);
             free(filtered);
             if (filter_error) {
                 ptn_emit_zlib_data_notice(runtime, "fpassthru", line);
+            }
+            if (iconv_error != NULL) {
+                ptn_emit_iconv_stream_filter_invalid_sequence_warning(runtime, "fpassthru", iconv_error, line);
             }
             if (filtered_len > (size_t)(INT64_MAX - total)) {
                 ptn_abort_out_of_memory();
@@ -157211,20 +157294,31 @@ static PtnValue ptn_internal_ob_iconv_handler(PtnRuntime *runtime, size_t argc, 
     }
     const char *from_encoding = ptn_iconv_effective_internal_encoding(runtime);
     const char *to_encoding = ptn_iconv_effective_output_encoding(runtime);
-    if (strlen(from_encoding) > 64 || strlen(to_encoding) > 64) {
+    size_t from_encoding_len = strlen(from_encoding);
+    size_t to_encoding_len = strlen(to_encoding);
+    PtnStringOperand from_operand = ptn_string_operand_borrowed_len(from_encoding, from_encoding_len);
+    PtnStringOperand to_operand = ptn_string_operand_borrowed_len(to_encoding, to_encoding_len);
+    char *resolved_from = from_encoding_len > 64 ? NULL : ptn_iconv_resolve_encoding_alloc(from_operand);
+    char *resolved_to = to_encoding_len > 64 ? NULL : ptn_iconv_resolve_encoding_alloc(to_operand);
+    if (resolved_from == NULL || resolved_to == NULL) {
+        free(resolved_from);
+        free(resolved_to);
+        PtnValue passthrough = ptn_owned_string_len(ptn_duplicate_string_len(data.data, data.len), data.len);
         ptn_string_operand_free(data);
-        return ptn_bool(0);
+        return passthrough;
     }
     size_t output_len = 0;
     int status = PTN_ICONV_CONVERT_OK;
     char *output = ptn_iconv_convert_alloc(
         data.data,
         data.len,
-        from_encoding,
-        to_encoding,
+        resolved_from,
+        resolved_to,
         &status,
         &output_len
     );
+    free(resolved_from);
+    free(resolved_to);
     ptn_string_operand_free(data);
     if (status == PTN_ICONV_CONVERT_ILLEGAL) {
         ptn_iconv_emit_conversion_notice(runtime, "ob_iconv_handler(): Detected an illegal character in input string", line);

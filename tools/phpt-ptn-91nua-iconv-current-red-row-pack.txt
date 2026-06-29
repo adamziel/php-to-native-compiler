@@ -1,0 +1,12 @@
+ext/iconv/tests/gh17399_mime_decode.phpt
+ext/iconv/tests/iconv_mime_decode.phpt
+ext/iconv/tests/iconv_stream_filter.phpt
+ext/iconv/tests/gh17399_substr.phpt
+ext/iconv/tests/gh17047.phpt
+ext/iconv/tests/bug76249.phpt
+ext/iconv/tests/gh17399.phpt
+ext/iconv/tests/iconv_stream_filter_delimiter.phpt
+ext/iconv/tests/ob_iconv_handler-charset-length-cve-2007-4840.phpt
+ext/iconv/tests/iconv_stream_filter_seek.phpt
+ext/iconv/tests/iconv_mime_encode.phpt
+ext/iconv/tests/gh17399_iconv.phpt
