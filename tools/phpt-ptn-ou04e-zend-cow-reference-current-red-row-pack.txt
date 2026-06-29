@@ -1,7 +1,0 @@
-# ptn-ou04e exact Zend COW/reference/function-boundary current-red row pack.
-# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T163012Z.tsv
-Zend/tests/list/list_reference_006.phpt
-Zend/tests/closures/gh12073.phpt
-Zend/tests/function_arguments/sensitive_parameter_eval_call.phpt
-Zend/tests/closures/gh19653_2.phpt
-Zend/tests/fibers/start-arguments.phpt
