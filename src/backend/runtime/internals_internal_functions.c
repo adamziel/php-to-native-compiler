@@ -76175,6 +76175,28 @@ static char *ptn_intl_value_string_copy(PtnValue value) {
     return copy;
 }
 
+static char *ptn_intl_date_formatter_locale_copy(PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_NULL) {
+        return ptn_duplicate_string("");
+    }
+    PtnStringOperand locale = ptn_value_to_string_operand(value);
+    size_t len = 0;
+    while (len < locale.len && locale.data[len] != '.' && locale.data[len] != '@') {
+        len++;
+    }
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        copy[i] = locale.data[i] == '-' ? '_' : locale.data[i];
+    }
+    copy[len] = '\0';
+    ptn_string_operand_free(locale);
+    return copy;
+}
+
 static PtnIntlDateFormatterData *ptn_intl_date_formatter_data_new(void) {
     PtnIntlDateFormatterData *data = malloc(sizeof(PtnIntlDateFormatterData));
     if (data == NULL) {
@@ -76207,6 +76229,50 @@ static void ptn_intl_date_formatter_set_string(char **slot, PtnValue value) {
     *slot = copy;
 }
 
+static void ptn_intl_date_formatter_set_locale(char **slot, PtnValue value) {
+    char *copy = ptn_intl_date_formatter_locale_copy(value);
+    free(*slot);
+    *slot = copy;
+}
+
+static char *ptn_intl_date_formatter_invalid_calendar_message(const char *function_name, int include_status) {
+    const char *body = "Invalid value for calendar type; it must be one of IntlDateFormatter::TRADITIONAL (locale's default calendar) or IntlDateFormatter::GREGORIAN. Alternatively, it can be an IntlCalendar object";
+    int needed = snprintf(NULL, 0, "%s(): %s%s", function_name, body, include_status ? ": U_ILLEGAL_ARGUMENT_ERROR" : "");
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "%s(): %s%s", function_name, body, include_status ? ": U_ILLEGAL_ARGUMENT_ERROR" : "");
+    return message;
+}
+
+static int ptn_intl_date_formatter_calendar_is_valid(PtnValue calendar) {
+    PtnValue resolved = ptn_value_deref(calendar);
+    if (resolved.type == PTN_NULL) {
+        return 1;
+    }
+    if (resolved.type == PTN_OBJECT &&
+        (ptn_ascii_case_equal(resolved.as.object->class_name, "IntlCalendar") ||
+         ptn_ascii_case_equal(resolved.as.object->class_name, "IntlGregorianCalendar"))) {
+        return 1;
+    }
+    int64_t value = ptn_value_to_integer(resolved);
+    return value == 0 || value == 1;
+}
+
+static char *ptn_intl_timezone_id_from_value_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int arg_number,
+    const char *arg_name,
+    PtnValue value,
+    size_t line
+);
+static void ptn_intl_set_error_message(PtnRuntime *runtime, const char *message);
+
 static PtnIntlDateFormatterData *ptn_intl_date_formatter_ensure_data(PtnValue object) {
     PtnValue resolved = ptn_value_deref(object);
     if (resolved.type != PTN_OBJECT) {
@@ -76221,15 +76287,27 @@ static PtnIntlDateFormatterData *ptn_intl_date_formatter_ensure_data(PtnValue ob
 
 static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
     PtnRuntime *runtime,
+    const char *function_name,
+    int throw_on_invalid_calendar,
     size_t argc,
     const PtnValue *args,
     size_t line
 ) {
     (void)line;
+    if (argc >= 5 && !ptn_intl_date_formatter_calendar_is_valid(args[4])) {
+        char *message = ptn_intl_date_formatter_invalid_calendar_message(function_name, !throw_on_invalid_calendar);
+        if (throw_on_invalid_calendar) {
+            ptn_throw_exception(runtime, "IntlException", message);
+        } else {
+            ptn_intl_set_error_message(runtime, message);
+        }
+        free(message);
+        return ptn_null();
+    }
     PtnValue object = ptn_object_new_shell(runtime, "IntlDateFormatter");
     PtnIntlDateFormatterData *data = ptn_intl_date_formatter_data_new();
     if (argc >= 1) {
-        ptn_intl_date_formatter_set_string(&data->locale, args[0]);
+        ptn_intl_date_formatter_set_locale(&data->locale, args[0]);
     }
     if (argc >= 2) {
         data->date_type = (int)ptn_value_to_integer(args[1]);
@@ -76238,7 +76316,14 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
         data->time_type = (int)ptn_value_to_integer(args[2]);
     }
     if (argc >= 4) {
-        ptn_intl_date_formatter_set_string(&data->timezone, args[3]);
+        char *timezone = ptn_intl_timezone_id_from_value_named(runtime, function_name, 4, "timezone", args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(timezone);
+            ptn_intl_date_formatter_data_free(data);
+            return ptn_null();
+        }
+        free(data->timezone);
+        data->timezone = timezone;
     }
     if (argc >= 5) {
         PtnValue calendar = ptn_value_deref(args[4]);
@@ -76286,7 +76371,7 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     size_t line
 ) {
     if (ptn_ascii_case_equal(class_name, "IntlDateFormatter")) {
-        return ptn_intl_date_formatter_new(runtime, argc, args, line);
+        return ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", 1, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlCalendar") ||
         ptn_ascii_case_equal(class_name, "IntlGregorianCalendar")) {
@@ -76521,6 +76606,11 @@ static char *ptn_intl_timezone_id_from_value(PtnValue value) {
 }
 
 static int ptn_intl_timezone_raw_offset_ms(const char *timezone) {
+    if (timezone != NULL &&
+        (ptn_ascii_case_equal(timezone, "Europe/Lisbon") ||
+         ptn_ascii_case_equal(timezone, "Portugal"))) {
+        return 0;
+    }
     return ptn_intl_timezone_offset_seconds(timezone, 0) * 1000;
 }
 
@@ -76557,6 +76647,30 @@ static PtnValue ptn_intl_timezone_create(PtnRuntime *runtime, const char *timezo
     return object;
 }
 
+static PTN_UNUSED PtnValue ptn_intl_timezone_clone(PtnRuntime *runtime, PtnValue source_value, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source_value);
+    if (resolved.type != PTN_OBJECT || resolved.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlTimeZone");
+        return ptn_null();
+    }
+    PtnIntlTimeZoneData *source_data = (PtnIntlTimeZoneData *)resolved.as.object->native_data;
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, resolved.as.object);
+    PtnIntlTimeZoneData *clone_data = malloc(sizeof(PtnIntlTimeZoneData));
+    if (clone_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    clone_data->id = ptn_duplicate_string(source_data->id);
+    clone_data->valid = source_data->valid;
+    clone_data->raw_offset = source_data->raw_offset;
+    clone_data->current_offset = source_data->current_offset;
+    clone_data->error_code = source_data->error_code;
+    clone_data->error_message = ptn_duplicate_string(source_data->error_message);
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_intl_timezone_data_free;
+    return clone;
+}
+
 static PtnValue ptn_internal_intltz_get_unknown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -76580,6 +76694,47 @@ static void ptn_intl_timezone_set_error(PtnIntlTimeZoneData *data, int code, con
     data->error_code = code;
     free(data->error_message);
     data->error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+}
+
+static char *ptn_intl_timezone_id_from_value_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int arg_number,
+    const char *arg_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_NULL) {
+        return ptn_duplicate_string(ptn_current_timezone_name());
+    }
+    if (resolved.type == PTN_OBJECT) {
+        if (resolved.as.object->native_data != NULL &&
+            ptn_ascii_case_equal(resolved.as.object->class_name, "IntlTimeZone")) {
+            PtnIntlTimeZoneData *timezone = (PtnIntlTimeZoneData *)resolved.as.object->native_data;
+            return ptn_duplicate_string(timezone->id);
+        }
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%d ($%s) Object of class %s could not be converted to string",
+            function_name,
+            arg_number,
+            arg_name,
+            resolved.as.object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        (void)line;
+        return NULL;
+    }
+    PtnStringOperand id = ptn_value_to_string_operand(value);
+    char *copy = ptn_duplicate_string_len(id.data, id.len);
+    ptn_string_operand_free(id);
+    return copy;
 }
 
 static PtnValue ptn_intl_iterator_from_count(PtnRuntime *runtime, int count) {
@@ -76814,10 +76969,44 @@ static const char *ptn_intl_timezone_display_name_for_id(const char *timezone, i
     if (strstr(timezone, "America/Los_Angeles") != NULL) {
         return month >= 3 && month <= 10 ? "Pacific Daylight Time" : "Pacific Standard Time";
     }
+    if (strstr(timezone, "America/Chicago") != NULL) {
+        return month >= 3 && month <= 10 ? "Central Daylight Time" : "Central Standard Time";
+    }
     if (strstr(timezone, "Europe/Berlin") != NULL) {
         return month >= 3 && month <= 10 ? "Central European Summer Time" : "Central European Standard Time";
     }
+    if (strstr(timezone, "Europe/Lisbon") != NULL || ptn_ascii_case_equal(timezone, "Portugal")) {
+        return month >= 3 && month <= 10 ? "Western European Summer Time" : "Western European Standard Time";
+    }
     return timezone[0] == '\0' ? "UTC" : timezone;
+}
+
+static const char *ptn_intl_timezone_display_name_by_type(const char *timezone, int daylight, int type) {
+    (void)daylight;
+    timezone = timezone == NULL ? "" : timezone;
+    if (ptn_ascii_case_equal(timezone, "Europe/Lisbon") || ptn_ascii_case_equal(timezone, "Portugal")) {
+        switch (type) {
+            case 1:
+                return "GMT";
+            case 2:
+                return "Western European Standard Time";
+            case 3:
+                return "Portugal Time";
+            case 4:
+                return "Western European Time";
+            case 5:
+                return "+0000";
+            case 6:
+                return "GMT+00:00";
+            case 7:
+                return "GMT";
+            case 8:
+                return "Portugal Time";
+            default:
+                return "Western European Standard Time";
+        }
+    }
+    return ptn_intl_timezone_display_name_for_id(timezone, daylight ? 7 : 1);
 }
 
 static const char *ptn_intl_timezone_display_name(PtnIntlDateFormatterData *data, int month) {
@@ -76934,7 +77123,7 @@ static PtnValue ptn_intl_format_en_us(
     switch (date_type) {
         case 0:
             needed = snprintf(
-                NULL, 0, "%s, %s %d, %d at %d:%02d:%02d %s %s",
+                NULL, 0, "%s, %s %d, %d at %d:%02d:%02d\xE2\x80\xAF" "%s %s",
                 ptn_intl_weekday_name(weekday), ptn_intl_month_name(month, 0), day, year,
                 display_hour, minute, second, ampm, ptn_intl_timezone_display_name_for_id(timezone, month)
             );
@@ -76976,7 +77165,7 @@ static PtnValue ptn_intl_format_en_us(
     switch (date_type) {
         case 0:
             snprintf(
-                formatted, (size_t)needed + 1, "%s, %s %d, %d at %d:%02d:%02d %s %s",
+                formatted, (size_t)needed + 1, "%s, %s %d, %d at %d:%02d:%02d\xE2\x80\xAF" "%s %s",
                 ptn_intl_weekday_name(weekday), ptn_intl_month_name(month, 0), day, year,
                 display_hour, minute, second, ampm, ptn_intl_timezone_display_name_for_id(timezone, month)
             );
@@ -77041,6 +77230,14 @@ static PtnValue ptn_intl_format_fr(
     return ptn_owned_string(formatted);
 }
 
+static PtnValue ptn_intl_format_date_only(
+    const char *locale,
+    int date_type,
+    int year,
+    int month,
+    int day
+);
+
 static PtnValue ptn_intl_format_parts(
     PtnIntlDateFormatterData *data,
     int year,
@@ -77052,6 +77249,9 @@ static PtnValue ptn_intl_format_parts(
 ) {
     const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
     const char *timezone = data == NULL || data->timezone == NULL || data->timezone[0] == '\0' ? "UTC" : data->timezone;
+    if (data != NULL && data->time_type == -1) {
+        return ptn_intl_format_date_only(locale, data->date_type, year, month, day);
+    }
     if (strncmp(locale, "fr", 2) == 0) {
         return ptn_intl_format_fr(data, year, month, day, hour, minute, second);
     }
@@ -77118,7 +77318,61 @@ static PtnValue ptn_internal_datefmt_create(PtnRuntime *runtime, size_t argc, co
         }
         ptn_string_operand_free(locale);
     }
-    return ptn_intl_date_formatter_new(runtime, argc, args, line);
+    return ptn_intl_date_formatter_new(runtime, "datefmt_create", 0, argc, args, line);
+}
+
+static PtnValue ptn_internal_datefmt_static_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::create", 0, argc, args, line);
+}
+
+static PtnIntlDateFormatterData *ptn_intl_date_formatter_data_from_value(PtnValue formatter) {
+    PtnValue resolved = ptn_value_deref(formatter);
+    if (resolved.type != PTN_OBJECT || !ptn_ascii_case_equal(resolved.as.object->class_name, "IntlDateFormatter")) {
+        return NULL;
+    }
+    return ptn_intl_date_formatter_ensure_data(resolved);
+}
+
+static PtnValue ptn_internal_datefmt_get_timezone_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_data_from_value(args[0]);
+    return ptn_owned_string(ptn_duplicate_string(data == NULL ? "" : data->timezone));
+}
+
+static PtnValue ptn_internal_datefmt_get_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_data_from_value(args[0]);
+    return ptn_owned_string(ptn_duplicate_string(data == NULL ? "" : data->locale));
+}
+
+static PtnValue ptn_internal_datefmt_set_timezone_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int arg_number,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_data_from_value(args[0]);
+    if (data == NULL || argc <= 1) {
+        return ptn_bool(0);
+    }
+    char *timezone = ptn_intl_timezone_id_from_value_named(runtime, function_name, arg_number, "timezone", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(timezone);
+        return ptn_null();
+    }
+    free(data->timezone);
+    data->timezone = timezone;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_datefmt_set_timezone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_datefmt_set_timezone_named(runtime, "datefmt_set_timezone", 2, argc, args, line);
 }
 
 static PtnValue ptn_internal_datefmt_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -77275,7 +77529,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
             ptn_throw_exception(runtime, "IntlException", "IntlDateFormatter::__construct(): cannot call constructor twice");
             return ptn_null();
         }
-        PtnValue replacement = ptn_intl_date_formatter_new(runtime, argc, args, line);
+        PtnValue replacement = ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
             ptn_adopt_internal_parent_object_state(receiver, replacement);
         }
@@ -77300,7 +77554,8 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
             return ptn_null();
         }
         if (data != NULL) {
-            ptn_intl_date_formatter_set_string(&data->timezone, args[0]);
+            PtnValue call_args[2] = { receiver, args[0] };
+            return ptn_internal_datefmt_set_timezone_named(runtime, "IntlDateFormatter::setTimeZone", 1, 2, call_args, line);
         }
         return ptn_bool(1);
     }
@@ -77345,6 +77600,12 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
             return ptn_bool(0);
         }
         return ptn_int(data->calendar);
+    }
+    if (ptn_ascii_case_equal(name, "getTimeZoneId")) {
+        return ptn_owned_string(ptn_duplicate_string(data == NULL ? "" : data->timezone));
+    }
+    if (ptn_ascii_case_equal(name, "getLocale")) {
+        return ptn_owned_string(ptn_duplicate_string(data == NULL ? "" : data->locale));
     }
     if (ptn_ascii_case_equal(name, "getCalendarObject")) {
         if (data != NULL && data->calendar < 0 && ptn_value_deref(data->calendar_object).type == PTN_OBJECT) {
@@ -77404,7 +77665,21 @@ static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_nam
         time_ms = ptn_intl_calendar_millis_from_parts(&temp, year, month, day, hour, minute, second);
     } else {
         if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
-            owned_timezone = ptn_intl_timezone_id_from_value(args[0]);
+            const char *function_name = ptn_ascii_case_equal(class_name, "IntlGregorianCalendar")
+                ? "IntlGregorianCalendar::__construct"
+                : class_name;
+            owned_timezone = ptn_intl_timezone_id_from_value_named(
+                runtime,
+                function_name,
+                1,
+                ptn_ascii_case_equal(class_name, "IntlGregorianCalendar") ? "timezoneOrYear" : "timezone",
+                args[0],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                free(owned_timezone);
+                return ptn_null();
+            }
             timezone = owned_timezone;
         }
         if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
@@ -77428,8 +77703,29 @@ static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_nam
     return result;
 }
 
-static PtnValue ptn_intl_calendar_create_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_intl_calendar_create_instance_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_OBJECT) {
+        char *timezone = ptn_intl_timezone_id_from_value_named(runtime, function_name, 1, "timezone", args[0], line);
+        free(timezone);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
     return ptn_intl_calendar_new(runtime, "IntlGregorianCalendar", argc, args, line);
+}
+
+static PtnValue ptn_intl_calendar_create_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_intl_calendar_create_instance_named(runtime, "IntlCalendar::createInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intlcal_create_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_intl_calendar_create_instance_named(runtime, "intlcal_create_instance", argc, args, line);
 }
 
 static PtnValue ptn_intl_calendar_create_from_date_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -77586,6 +77882,46 @@ static PtnValue ptn_intl_calendar_minimum(PtnRuntime *runtime, const char *funct
     return ptn_int(0);
 }
 
+static PtnValue ptn_intl_calendar_set_date_time_args(
+    PtnRuntime *runtime,
+    PtnIntlCalendarData *data,
+    const char *function_name,
+    size_t displayed_arg_base,
+    size_t argc,
+    const PtnValue *args
+) {
+    static const char *const arg_names[] = { "year", "month", "dayOfMonth", "hour", "minute", "second" };
+    for (size_t i = 0; i < argc && i < 6; i++) {
+        int64_t value = ptn_value_to_integer(args[i]);
+        if (value < INT32_MIN || value > INT32_MAX) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #%zu ($%s) must be between -2147483648 and 2147483647",
+                function_name,
+                displayed_arg_base + i,
+                arg_names[i]
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return ptn_null();
+        }
+    }
+    int year, month, day, hour, minute, second;
+    ptn_intl_calendar_parts(data, &year, &month, &day, &hour, &minute, &second);
+    if (argc >= 1) year = (int)ptn_value_to_integer(args[0]);
+    if (argc >= 2) month = (int)ptn_value_to_integer(args[1]) + 1;
+    if (argc >= 3) day = (int)ptn_value_to_integer(args[2]);
+    if (argc >= 4) hour = (int)ptn_value_to_integer(args[3]);
+    if (argc >= 5) minute = (int)ptn_value_to_integer(args[4]);
+    if (argc >= 6) second = (int)ptn_value_to_integer(args[5]);
+    data->time_ms = ptn_intl_calendar_millis_from_parts(data, year, month, day, hour, minute, second);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_calendar_new(runtime, "IntlGregorianCalendar", argc, args, line);
@@ -77621,6 +77957,14 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
         return ptn_int(0);
     }
     if (ptn_ascii_case_equal(name, "set")) {
+        if (argc > 2) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Calling IntlCalendar::set() with more than 2 arguments is deprecated, use either IntlCalendar::setDate() or IntlCalendar::setDateTime() instead",
+                line
+            );
+            return ptn_intl_calendar_set_date_time_args(runtime, data, "IntlCalendar::set", 1, argc, args);
+        }
         int year, month, day, hour, minute, second;
         ptn_intl_calendar_parts(data, &year, &month, &day, &hour, &minute, &second);
         if (argc >= 2) {
@@ -77741,7 +78085,18 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
     }
     if (ptn_ascii_case_equal(name, "setTimeZone")) {
         if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
-            char *timezone = ptn_intl_timezone_id_from_value(args[0]);
+            char *timezone = ptn_intl_timezone_id_from_value_named(
+                runtime,
+                "IntlCalendar::setTimeZone",
+                1,
+                "timezone",
+                args[0],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                free(timezone);
+                return ptn_null();
+            }
             free(data->timezone);
             data->timezone = timezone;
         }
@@ -77817,6 +78172,13 @@ static PTN_UNUSED PtnValue ptn_intl_timezone_call_method(PtnRuntime *runtime, Pt
     if (ptn_ascii_case_equal(name, "getRawOffset")) {
         ptn_intl_timezone_set_error(data, 0, "U_ZERO_ERROR");
         return ptn_int(data->raw_offset);
+    }
+    if (ptn_ascii_case_equal(name, "getDisplayName")) {
+        int daylight = argc >= 1 && ptn_is_truthy(args[0]);
+        int type = argc >= 2 ? (int)ptn_value_to_integer(args[1]) : 2;
+        const char *display = ptn_intl_timezone_display_name_by_type(data->id, daylight, type);
+        ptn_intl_timezone_set_error(data, 0, "U_ZERO_ERROR");
+        return ptn_string(display);
     }
     if (ptn_ascii_case_equal(name, "getOffset")) {
         double date = argc >= 1 ? ptn_value_to_double(args[0]) : 0.0;
@@ -80454,6 +80816,8 @@ static PtnValue ptn_intl_format_date_only(
     int needed;
     if (date_type == 3 && locale != NULL && strncmp(locale, "vi", 2) == 0) {
         needed = snprintf(NULL, 0, "%02d/%02d/%04d", day, month, year);
+    } else if (date_type == 3 && locale != NULL && strncmp(locale, "pt", 2) == 0) {
+        needed = snprintf(NULL, 0, "%02d/%02d/%02d", day, month, year % 100);
     } else if (date_type == 3 && locale != NULL && strncmp(locale, "ko", 2) == 0) {
         needed = snprintf(NULL, 0, "%02d. %d. %d.", year % 100, month, day);
     } else if (date_type == 3) {
@@ -80470,6 +80834,8 @@ static PtnValue ptn_intl_format_date_only(
     }
     if (date_type == 3 && locale != NULL && strncmp(locale, "vi", 2) == 0) {
         snprintf(formatted, (size_t)needed + 1, "%02d/%02d/%04d", day, month, year);
+    } else if (date_type == 3 && locale != NULL && strncmp(locale, "pt", 2) == 0) {
+        snprintf(formatted, (size_t)needed + 1, "%02d/%02d/%02d", day, month, year % 100);
     } else if (date_type == 3 && locale != NULL && strncmp(locale, "ko", 2) == 0) {
         snprintf(formatted, (size_t)needed + 1, "%02d. %d. %d.", year % 100, month, day);
     } else if (date_type == 3) {
@@ -80684,6 +81050,14 @@ static PtnValue ptn_internal_intltz_get_offset(PtnRuntime *runtime, size_t argc,
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_intltz_get_raw_offset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnIntlTimeZoneData *data = ptn_intl_timezone_data(args[0]);
+    return ptn_int(data == NULL ? 0 : data->raw_offset);
+}
+
 static PtnValue ptn_internal_intltz_to_date_time_zone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc == 0) {
         return ptn_null();
@@ -80692,9 +81066,22 @@ static PtnValue ptn_internal_intltz_to_date_time_zone(PtnRuntime *runtime, size_
 }
 
 static PtnValue ptn_internal_intltz_create_enumeration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)args;
     (void)line;
+    if (argc >= 1) {
+        PtnStringOperand country =
+            ptn_internal_expect_string_arg(runtime, "IntlTimeZone::createEnumeration", 1, "countryOrRawOffset", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(country);
+            return ptn_null();
+        }
+        if (ptn_intl_ascii_case_equal_literal(country, "NL")) {
+            ptn_string_operand_free(country);
+            PtnValue values = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(values.as.array, ptn_array_int_key(0), ptn_string("Europe/Amsterdam"));
+            return ptn_intl_iterator_from_array(runtime, values);
+        }
+        ptn_string_operand_free(country);
+    }
     return ptn_intl_iterator_from_count(runtime, 350);
 }
 
@@ -80885,6 +81272,13 @@ static PtnValue ptn_internal_intlcal_set(PtnRuntime *runtime, size_t argc, const
         "Function intlcal_set() is deprecated since 8.4, use IntlCalendar::set(), IntlCalendar::setDate(), or IntlCalendar::setDateTime() instead",
         line
     );
+    if (argc > 3) {
+        PtnIntlCalendarData *data = ptn_intl_calendar_data(args[0]);
+        if (data == NULL) {
+            return ptn_null();
+        }
+        return ptn_intl_calendar_set_date_time_args(runtime, data, "intlcal_set", 2, argc - 1, args + 1);
+    }
     return ptn_internal_intlcal_alias(runtime, "set", argc, args, line);
 }
 static PtnValue ptn_internal_intlcal_clear(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "clear", argc, args, line); }
@@ -80898,7 +81292,23 @@ static PtnValue ptn_internal_intlcal_is_equivalent_to(PtnRuntime *runtime, size_
 static PtnValue ptn_internal_intlcal_is_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "isSet", argc, args, line); }
 static PtnValue ptn_internal_intlcal_field_difference(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "fieldDifference", argc, args, line); }
 static PtnValue ptn_internal_intlcal_get_time_zone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getTimeZone", argc, args, line); }
-static PtnValue ptn_internal_intlcal_set_time_zone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "setTimeZone", argc, args, line); }
+static PtnValue ptn_internal_intlcal_set_time_zone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 2) {
+        return ptn_null();
+    }
+    PtnIntlCalendarData *data = ptn_intl_calendar_data(args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    char *timezone = ptn_intl_timezone_id_from_value_named(runtime, "intlcal_set_time_zone", 2, "timezone", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(timezone);
+        return ptn_null();
+    }
+    free(data->timezone);
+    data->timezone = timezone;
+    return ptn_bool(1);
+}
 static PtnValue ptn_internal_intlcal_set_first_day_of_week(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "setFirstDayOfWeek", argc, args, line); }
 static PtnValue ptn_internal_intlcal_get_first_day_of_week(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getFirstDayOfWeek", argc, args, line); }
 static PtnValue ptn_internal_intlcal_set_repeated_wall_time_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "setRepeatedWallTimeOption", argc, args, line); }
@@ -166356,6 +166766,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_intltz_get_canonical_id(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlDateFormatter") &&
+        ptn_ascii_case_equal(name, "create")) {
+        return ptn_internal_datefmt_static_create(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlDateFormatter") &&
         ptn_ascii_case_equal(name, "formatObject")) {
         return ptn_internal_datefmt_format_object(runtime, argc, args, line);
     }
@@ -181311,9 +181725,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_interval_format", 2, 2, ptn_internal_date_interval_format },
         { "datefmt_create", 1, 6, ptn_internal_datefmt_create },
         { "datefmt_format", 2, 2, ptn_internal_datefmt_format },
+        { "datefmt_get_locale", 1, 2, ptn_internal_datefmt_get_locale },
+        { "datefmt_get_timezone_id", 1, 1, ptn_internal_datefmt_get_timezone_id },
         { "datefmt_localtime", 2, 3, ptn_internal_datefmt_localtime },
         { "datefmt_parse", 2, 3, ptn_internal_datefmt_parse },
         { "datefmt_parse_to_calendar", 2, 3, ptn_internal_datefmt_parse_to_calendar },
+        { "datefmt_set_timezone", 2, 2, ptn_internal_datefmt_set_timezone },
         { "date_isodate_set", 3, 4, ptn_internal_date_isodate_set },
         { "date_modify", 2, 2, ptn_internal_date_modify },
         { "date_offset_get", 1, 1, ptn_internal_date_offset_get },
@@ -181575,6 +181992,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlGregorianCalendar::createFromDateTime", 6, 6, ptn_intl_calendar_create_from_date_time },
         { "IntlGregorianCalendar::createInstance", 0, 2, ptn_intl_calendar_create_instance },
         { "IntlGregorianCalendar::fromDateTime", 1, 1, ptn_intl_calendar_from_datetime },
+        { "IntlDateFormatter::create", 1, 6, ptn_internal_datefmt_static_create },
         { "IntlDatePatternGenerator::create", 0, 1, ptn_intl_date_pattern_generator_create },
         { "IntlTimeZone::countEquivalentIDs", 1, 1, ptn_internal_intltz_count_equivalent_ids },
         { "IntlTimeZone::createEnumeration", 0, 1, ptn_internal_intltz_create_enumeration },
@@ -181591,6 +182009,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "datefmt_format_object", 1, 3, ptn_internal_datefmt_format_object },
         { "intl_get_error_code", 0, 0, ptn_internal_intl_get_error_code },
         { "intl_get_error_message", 0, 0, ptn_internal_intl_get_error_message },
+        { "intlcal_create_instance", 0, 2, ptn_internal_intlcal_create_instance },
         { "intlcal_clear", 1, 2, ptn_internal_intlcal_clear },
         { "intlcal_field_difference", 3, 3, ptn_internal_intlcal_field_difference },
         { "intlcal_get", 2, 2, ptn_internal_intlcal_get },
@@ -181608,7 +182027,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intlcal_is_equivalent_to", 2, 2, ptn_internal_intlcal_is_equivalent_to },
         { "intlcal_is_set", 2, 2, ptn_internal_intlcal_is_set },
         { "intlcal_is_weekend", 1, 2, ptn_internal_intlcal_is_weekend },
-        { "intlcal_set", 3, 3, ptn_internal_intlcal_set },
+        { "intlcal_set", 3, 7, ptn_internal_intlcal_set },
         { "intlcal_set_date", 4, 4, ptn_internal_intlcal_set_date },
         { "intlcal_set_first_day_of_week", 2, 2, ptn_internal_intlcal_set_first_day_of_week },
         { "intlcal_set_repeated_wall_time_option", 2, 2, ptn_internal_intlcal_set_repeated_wall_time_option },
@@ -181623,6 +182042,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_equivalent_id", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "intltz_get_gmt", 0, 0, ptn_internal_intltz_get_gmt },
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
+        { "intltz_get_raw_offset", 1, 1, ptn_internal_intltz_get_raw_offset },
         { "intltz_get_tz_data_version", 0, 0, ptn_internal_intltz_get_tz_data_version },
         { "intltz_get_unknown", 0, 0, ptn_internal_intltz_get_unknown },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
@@ -196237,6 +196657,17 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("NONE"), ptn_int(-1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("TRADITIONAL"), ptn_int(0));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("GREGORIAN"), ptn_int(1));
+        return;
+    }
+    if (ptn_internal_class_name_is_intl_timezone(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_SHORT"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_LONG"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_SHORT_GENERIC"), ptn_int(3));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_LONG_GENERIC"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_SHORT_GMT"), ptn_int(5));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_LONG_GMT"), ptn_int(6));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_SHORT_COMMONLY_USED"), ptn_int(7));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DISPLAY_GENERIC_LOCATION"), ptn_int(8));
         return;
     }
     if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {

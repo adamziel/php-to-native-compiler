@@ -36198,6 +36198,23 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
     if class_name.eq_ignore_ascii_case("Collator") && name.eq_ignore_ascii_case("SORT_REGULAR") {
         return Some("PTN_SORT_REGULAR");
     }
+    if class_name.eq_ignore_ascii_case("IntlTimeZone") {
+        const INTL_TIMEZONE_CONSTANTS: &[(&str, &str)] = &[
+            ("DISPLAY_SHORT", "1"),
+            ("DISPLAY_LONG", "2"),
+            ("DISPLAY_SHORT_GENERIC", "3"),
+            ("DISPLAY_LONG_GENERIC", "4"),
+            ("DISPLAY_SHORT_GMT", "5"),
+            ("DISPLAY_LONG_GMT", "6"),
+            ("DISPLAY_SHORT_COMMONLY_USED", "7"),
+            ("DISPLAY_GENERIC_LOCATION", "8"),
+        ];
+        for (constant, value) in INTL_TIMEZONE_CONSTANTS {
+            if name.eq_ignore_ascii_case(constant) {
+                return Some(value);
+            }
+        }
+    }
     if class_name.eq_ignore_ascii_case("NumberFormatter") {
         const NUMBER_FORMATTER_CONSTANTS: &[(&str, &str)] = &[
             ("PATTERN_DECIMAL", "PTN_NUMBER_FORMATTER_PATTERN_DECIMAL"),
