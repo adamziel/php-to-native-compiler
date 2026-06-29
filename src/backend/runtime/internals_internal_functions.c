@@ -102173,7 +102173,34 @@ static PtnValue ptn_ini_parse_contents(
                 offset++;
             }
             if (offset >= len || data[offset] != ']') {
-                ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, "unexpected end of section");
+                PtnIniText section_text = ptn_ini_text(data + section_start, offset - section_start);
+                const char *detail = "unexpected end of section";
+                for (size_t i = 0; i + 1 < section_text.len; i++) {
+                    if (section_text.data[i] != '$' || section_text.data[i + 1] != '{') {
+                        continue;
+                    }
+                    size_t depth = 1;
+                    i += 2;
+                    while (i < section_text.len && depth > 0) {
+                        if (section_text.data[i] == '$' && i + 1 < section_text.len && section_text.data[i + 1] == '{') {
+                            depth++;
+                            i += 2;
+                            continue;
+                        }
+                        if (section_text.data[i] == '}') {
+                            depth--;
+                            if (depth == 0) {
+                                break;
+                            }
+                        }
+                        i++;
+                    }
+                    if (depth != 0) {
+                        detail = "unexpected end of file, expecting '}'";
+                        break;
+                    }
+                }
+                ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, detail);
                 *ok_out = 0;
                 ptn_value_destroy(&result);
                 return ptn_bool(0);
@@ -181509,6 +181536,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
+        { "get_required_files", 0, 0, ptn_internal_get_included_files },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getlastmod", 0, 0, ptn_internal_getlastmod },
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
@@ -226403,6 +226431,15 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     if (runtime != NULL) {
         runtime->source_path = path;
         ptn_runtime_note_included_file(runtime, path);
+    }
+    if (!ptn_phar_bytes_contain_php_open_tag((const unsigned char *)code, code_len)) {
+        ptn_output_write(runtime, code, code_len);
+        if (runtime != NULL) {
+            runtime->source_path = saved_source_path;
+        }
+        free(code);
+        *result_out = ptn_int(1);
+        return 1;
     }
     PtnValue result = ptn_null();
     int ok = ptn_dynamic_execute_php_source(runtime, code, code_len, &result);

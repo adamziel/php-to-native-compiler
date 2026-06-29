@@ -33752,6 +33752,13 @@ fn collect_class_declaration_fatals(
             uncaught_error: false,
         });
     }
+    if let Some(message) = throwable_class_declaration_fatal_message(class, classes) {
+        fatals.push(DeclarationFatal {
+            message,
+            line: class.line,
+            uncaught_error: false,
+        });
+    }
     for method in &class.methods {
         let Some(function) = functions.get(method.function_index) else {
             continue;
@@ -33911,6 +33918,25 @@ fn enum_class_declaration_fatal_message(
     }
     if !class.properties.is_empty() || !class.static_properties.is_empty() {
         return Some(format!("Enum {} cannot include properties", class.name));
+    }
+    None
+}
+
+fn throwable_class_declaration_fatal_message(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if class.is_interface || class_extends_builtin_throwable(class, classes) {
+        return None;
+    }
+    if class_transitive_interfaces(class, classes)
+        .into_iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Throwable"))
+    {
+        return Some(format!(
+            "Class {} cannot implement interface Throwable, extend Exception or Error instead",
+            class.name
+        ));
     }
     None
 }
