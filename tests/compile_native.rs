@@ -28868,6 +28868,125 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_sqlite_callback_error_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-callback-error-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-callback-error-edges.php");
+    let output = root.join("pdo-sqlite-callback-error-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dsnFile = __DIR__ . '/db.dsn';
+$dbFile = __DIR__ . '/db.sqlite';
+file_put_contents($dsnFile, "sqlite:{$dbFile}");
+var_dump(file_exists($dbFile));
+set_error_handler(function ($errno, $errstr) {
+    echo "uri-handler: {$errstr}\n";
+    return true;
+});
+new PDO("uri:{$dsnFile}");
+restore_error_handler();
+var_dump(file_exists($dbFile));
+unlink($dbFile);
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+try {
+    new PDO("uri:{$dsnFile}");
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+restore_error_handler();
+var_dump(file_exists($dbFile));
+
+try {
+    Pdo\Pgsql::connect('sqlite::memory:');
+} catch (PDOException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$pdo = new Pdo\Sqlite('sqlite::memory:');
+try {
+    $pdo->createAggregate('foo', 'a', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$db = new SQLite3(':memory:');
+var_dump($db->enableExceptions(true));
+try {
+    $db->query('SELECT * FROM missing_table');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$dup = new SQLite3(':memory:');
+$dup->query('CREATE TABLE dog ( id INTEGER PRIMARY KEY, name TEXT )');
+$dup->query("INSERT INTO dog VALUES (1, 'a')");
+set_error_handler(function ($errno, $errstr) {
+    echo "sqlite-warning: {$errstr}\n";
+    return true;
+});
+$dup->query("INSERT INTO dog VALUES (1, 'a')");
+restore_error_handler();
+echo $dup->lastErrorCode(), '/', $dup->lastExtendedErrorCode(), "\n";
+
+class NativeSqliteAuthorizer {
+    public function __call(string $name, array $arguments) {
+        echo "auth {$name}\n";
+        return $arguments[0] == SQLite3::SELECT ? SQLite3::OK : SQLite3::DENY;
+    }
+}
+$auth = new SQLite3(':memory:');
+$auth->enableExceptions(true);
+$auth->setAuthorizer([new NativeSqliteAuthorizer(), 'authorizer']);
+var_dump($auth->querySingle('SELECT 1;'));
+try {
+    $auth->querySingle('CREATE TABLE blocked (id INTEGER);');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$rc = new ReflectionClass(SQLite3::class);
+$bad = $rc->newInstanceWithoutConstructor();
+try {
+    $bad->createfunction('x', 'strlen');
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(false)\nuri-handler: Looking up the DSN from a URI is deprecated")
+    );
+    assert!(
+        stdout.contains("bool(true)\nErrorException: Looking up the DSN from a URI is deprecated")
+    );
+    assert!(stdout.contains(
+        "bool(false)\nPdo\\Pgsql::connect() cannot be used for connecting to the \"sqlite\" driver"
+    ));
+    assert!(stdout
+        .contains("Pdo\\Sqlite::createAggregate(): Argument #2 ($step) must be a valid callback"));
+    assert!(stdout.contains("bool(false)\nno such table: missing_table\n"));
+    assert!(stdout.contains("sqlite-warning: SQLite3::query(): Unable to execute statement: UNIQUE constraint failed: dog.id\n19/1555\n"));
+    assert!(stdout.contains(
+        "auth authorizer\nint(1)\nauth authorizer\nUnable to prepare statement: not authorized\n"
+    ));
+    assert!(stdout.contains(
+        "Error: The SQLite3 object has not been correctly initialised or is already closed\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
