@@ -1187,6 +1187,89 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_constructor_and_autoload_residual_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-constructor-autoload-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let data_path = root.join("rows.txt");
+    fs::write(&data_path, "hello\n").unwrap();
+
+    let caught_input = root.join("spl-constructor-autoload-residuals.php");
+    let caught_output = root.join("spl-constructor-autoload-residuals-bin");
+    fs::write(
+        &caught_input,
+        format!(
+            "<?php\n\
+$path = {};\n\
+$file = new SplFileObject($path);\n\
+try {{ $file->__construct($path); }} catch (Error $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
+try {{ spl_autoload_call([]); }} catch (TypeError $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
+try {{ new SplFileInfo(\"bad\\0good\"); }} catch (ValueError $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n",
+            php_string_literal(&data_path)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(
+        &caught_input,
+        &caught_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let execution = Command::new(&caught_output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Cannot call constructor twice\n",
+            "TypeError: spl_autoload_call(): Argument #1 ($class) must be of type string, array given\n",
+            "ValueError: SplFileInfo::__construct(): Argument #1 ($filename) must not contain any null bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_autoload_call"));
+    assert!(c_source.contains("Cannot call constructor twice"));
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+
+    let uncaught_input = root.join("spl-file-info-null-byte.php");
+    let uncaught_output = root.join("spl-file-info-null-byte-bin");
+    fs::write(&uncaught_input, "<?php\nnew SplFileInfo(\"bad\\0good\");\n").unwrap();
+    compile_file(
+        &uncaught_input,
+        &uncaught_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let execution = Command::new(&uncaught_output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    let fatal_output = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        fatal_output.contains(
+            "Fatal error: Uncaught ValueError: SplFileInfo::__construct(): Argument #1 ($filename) must not contain any null bytes in "
+        ),
+        "{fatal_output}"
+    );
+    assert!(fatal_output.contains("Stack trace:\n#0 "), "{fatal_output}");
+    assert!(
+        fatal_output.contains(": SplFileInfo->__construct("),
+        "{fatal_output}"
+    );
+    assert!(fatal_output.contains("#1 {main}"), "{fatal_output}");
+}
+
+#[test]
 fn compile_spl_dllist_iterator_modes_and_queue_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-spl-dllist-iterator-modes");
     fs::create_dir_all(&root).unwrap();
