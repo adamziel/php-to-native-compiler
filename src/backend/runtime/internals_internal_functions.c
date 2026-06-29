@@ -68562,6 +68562,36 @@ static void ptn_curl_store_option(PtnResource *handle, int64_t option, PtnValue 
     ptn_array_set_entry(handle->curl_options.as.array, ptn_array_int_key(option), value);
 }
 
+static PtnValue *ptn_curl_state_value(PtnResource *handle, const char *key_name) {
+    PtnValue state = ptn_value_deref(handle->curl_options);
+    if (state.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    size_t index = ptn_array_find_key(state.as.array, key);
+    ptn_array_key_free(key);
+    if (index >= state.as.array->len) {
+        return NULL;
+    }
+    return &state.as.array->entries[index].value;
+}
+
+static void ptn_curl_store_state(PtnResource *handle, const char *key_name, PtnValue value) {
+    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
+        ptn_value_destroy(&handle->curl_options);
+        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    }
+    ptn_array_set_entry(handle->curl_options.as.array, ptn_array_string_key(key_name), value);
+}
+
+static void ptn_curl_clear_state(PtnResource *handle, const char *key_name) {
+    PtnValue state = ptn_value_deref(handle->curl_options);
+    if (state.type != PTN_ARRAY) {
+        return;
+    }
+    (void)ptn_array_unset_entry(state.as.array, ptn_array_string_key(key_name));
+}
+
 static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
     PtnValue *url = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
     if (url == NULL) {
@@ -68579,7 +68609,15 @@ static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size
 static PtnValue ptn_curl_options_copy(PtnValue options) {
     PtnValue resolved = ptn_value_deref(options);
     if (resolved.type == PTN_ARRAY) {
-        return ptn_array(ptn_array_clone(resolved.as.array));
+        PtnValue copy = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < resolved.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved.as.array->entries[i];
+            if (entry->key.type != PTN_ARRAY_KEY_INT) {
+                continue;
+            }
+            ptn_array_set_entry(copy.as.array, ptn_array_key_clone(entry->key), ptn_value_clone(entry->value));
+        }
+        return copy;
     }
     return ptn_value_clone(options);
 }
@@ -68787,6 +68825,56 @@ static int ptn_curl_deliver_payload(PtnRuntime *runtime, PtnResource *handle, Pt
     return 1;
 }
 
+static PtnValue ptn_curl_perform_handle(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    ptn_curl_clear_state(handle, "__ptn_curl_last_content");
+    PtnValue *upload = ptn_curl_option_value(handle, PTN_CURLOPT_UPLOAD);
+    if (upload != NULL && ptn_is_truthy(*upload)) {
+        PtnValue payload = ptn_curl_read_upload_payload(runtime, handle, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&payload);
+            return ptn_null();
+        }
+        int uploaded = ptn_curl_write_file_url(runtime, handle, payload, line);
+        ptn_value_destroy(&payload);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            return ptn_null();
+        }
+        return ptn_bool(uploaded);
+    }
+
+    PtnValue payload = ptn_curl_read_url(runtime, handle, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_value_destroy(&payload);
+        return ptn_null();
+    }
+    if (ptn_value_deref(payload).type != PTN_STRING) {
+        return payload;
+    }
+    int delivered_to_sink =
+        ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION) != NULL ||
+        ptn_curl_option_value(handle, PTN_CURLOPT_FILE) != NULL;
+    if (!ptn_curl_deliver_payload(runtime, handle, payload, line)) {
+        ptn_value_destroy(&payload);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
+    if (delivered_to_sink) {
+        ptn_value_destroy(&payload);
+        return ptn_bool(1);
+    }
+    PtnValue *return_transfer = ptn_curl_option_value(handle, PTN_CURLOPT_RETURNTRANSFER);
+    if (return_transfer != NULL && ptn_is_truthy(*return_transfer)) {
+        ptn_curl_store_state(handle, "__ptn_curl_last_content", ptn_value_clone(payload));
+        return payload;
+    }
+    PtnValue payload_value = ptn_value_deref(payload);
+    ptn_output_write(runtime, (const char *)payload_value.as.string.data, payload_value.as.string.len);
+    ptn_value_destroy(&payload);
+    return ptn_bool(1);
+}
+
 static void ptn_curl_getinfo_set_string(PtnValue table, const char *key, const char *value) {
     ptn_array_set_entry(table.as.array, ptn_array_string_key(key), ptn_string(value));
 }
@@ -68983,50 +69071,7 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
     if (handle == NULL) {
         return ptn_null();
     }
-    PtnValue *upload = ptn_curl_option_value(handle, PTN_CURLOPT_UPLOAD);
-    if (upload != NULL && ptn_is_truthy(*upload)) {
-        PtnValue payload = ptn_curl_read_upload_payload(runtime, handle, line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_value_destroy(&payload);
-            return ptn_null();
-        }
-        int uploaded = ptn_curl_write_file_url(runtime, handle, payload, line);
-        ptn_value_destroy(&payload);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            return ptn_null();
-        }
-        return ptn_bool(uploaded);
-    }
-    PtnValue payload = ptn_curl_read_url(runtime, handle, line);
-    if (ptn_curl_runtime_has_active_exception(runtime)) {
-        ptn_value_destroy(&payload);
-        return ptn_null();
-    }
-    if (ptn_value_deref(payload).type != PTN_STRING) {
-        return payload;
-    }
-    int delivered_to_sink =
-        ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION) != NULL ||
-        ptn_curl_option_value(handle, PTN_CURLOPT_FILE) != NULL;
-    if (!ptn_curl_deliver_payload(runtime, handle, payload, line)) {
-        ptn_value_destroy(&payload);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            return ptn_null();
-        }
-        return ptn_bool(0);
-    }
-    if (delivered_to_sink) {
-        ptn_value_destroy(&payload);
-        return ptn_bool(1);
-    }
-    PtnValue *return_transfer = ptn_curl_option_value(handle, PTN_CURLOPT_RETURNTRANSFER);
-    if (return_transfer != NULL && ptn_is_truthy(*return_transfer)) {
-        return payload;
-    }
-    PtnValue payload_value = ptn_value_deref(payload);
-    ptn_output_write(runtime, (const char *)payload_value.as.string.data, payload_value.as.string.len);
-    ptn_value_destroy(&payload);
-    return ptn_bool(1);
+    return ptn_curl_perform_handle(runtime, handle, line);
 }
 
 static PtnValue ptn_internal_curl_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -69135,11 +69180,33 @@ static int ptn_curl_multi_completed_prepared(PtnResource *multi) {
     return prepared != NULL && ptn_is_truthy(*prepared);
 }
 
-static void ptn_curl_multi_prepare_completed(PtnResource *multi) {
+static void ptn_curl_multi_prepare_completed(PtnRuntime *runtime, PtnResource *multi, size_t line) {
     if (ptn_curl_multi_completed_prepared(multi)) {
         return;
     }
-    PtnValue completed = ptn_curl_multi_handles_snapshot(multi);
+    PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
+    PtnValue completed = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < handles->len; i++) {
+        PtnValue handle_value = ptn_value_deref(handles->entries[i].value);
+        if (handle_value.type == PTN_RESOURCE &&
+            ptn_resource_is_open(handle_value.as.resource) &&
+            strcmp(handle_value.as.resource->type_name, "curl") == 0) {
+            PtnValue result = ptn_curl_perform_handle(runtime, handle_value.as.resource, line);
+            ptn_value_destroy(&result);
+            if (ptn_curl_runtime_has_active_exception(runtime)) {
+                ptn_value_destroy(&completed);
+                return;
+            }
+        }
+        if (completed.as.array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            completed.as.array,
+            ptn_array_int_key((int64_t)completed.as.array->len),
+            ptn_value_clone(handles->entries[i].value)
+        );
+    }
     PtnArray *state = ptn_curl_multi_state(multi);
     ptn_array_set_entry(state, ptn_array_string_key("completed"), completed);
     ptn_array_set_entry(state, ptn_array_string_key("completed_prepared"), ptn_bool(1));
@@ -69193,9 +69260,41 @@ static PtnValue ptn_internal_curl_multi_exec(PtnRuntime *runtime, size_t argc, c
         ptn_throw_by_reference_argument_error(runtime, "curl_multi_exec", 2, "still_running", line);
         return ptn_null();
     }
-    ptn_curl_multi_prepare_completed(multi);
+    ptn_curl_multi_prepare_completed(runtime, multi, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        return ptn_null();
+    }
     ptn_reference_assign(runtime, args[1].as.reference, ptn_int(0));
     return ptn_int(PTN_CURLM_OK);
+}
+
+static PtnValue ptn_internal_curl_multi_getcontent(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_multi_getcontent", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnValue *return_transfer = ptn_curl_option_value(handle, PTN_CURLOPT_RETURNTRANSFER);
+    if (return_transfer == NULL || !ptn_is_truthy(*return_transfer)) {
+        return ptn_null();
+    }
+    PtnValue *content = ptn_curl_state_value(handle, "__ptn_curl_last_content");
+    if (content == NULL || ptn_value_deref(*content).type != PTN_STRING) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(*content);
+}
+
+static PtnValue ptn_internal_curl_multi_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_close", 1, "multi_handle", args[0], "curl_multi");
+    if (multi == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_close(multi);
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_curl_multi_select(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -178897,8 +178996,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
+        { "curl_multi_close", 1, 1, ptn_internal_curl_multi_close },
         { "curl_multi_errno", 1, 1, ptn_internal_curl_multi_errno },
         { "curl_multi_exec", 2, 2, ptn_internal_curl_multi_exec },
+        { "curl_multi_getcontent", 1, 1, ptn_internal_curl_multi_getcontent },
         { "curl_multi_get_handles", 1, 1, ptn_internal_curl_multi_get_handles },
         { "curl_multi_info_read", 1, 2, ptn_internal_curl_multi_info_read },
         { "curl_multi_init", 0, 0, ptn_internal_curl_multi_init },
