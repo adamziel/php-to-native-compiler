@@ -1,0 +1,15 @@
+# ptn-w17z.1140 exact PHAR/zlib archive stream current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T163012Z.tsv
+# Scope: PHAR/zlib archive wrapper and stream residuals.
+ext/zlib/tests/bug61820.phpt
+ext/phar/tests/zip/phar_buildfromiterator5.phpt
+ext/zlib/tests/gh22142.phpt
+ext/phar/tests/phar_extract3.phpt
+ext/zlib/tests/bug75273.phpt
+ext/phar/tests/gh20882.phpt
+ext/standard/tests/streams/bug64770.phpt
+ext/phar/tests/bug79503.phpt
+ext/phar/tests/phar_buildfromiterator10.phpt
+ext/phar/tests/cached_manifest_1.phpt
+ext/zlib/tests/zlib_scheme_copy_variation2.phpt
+ext/phar/tests/frontcontroller18.phpt
