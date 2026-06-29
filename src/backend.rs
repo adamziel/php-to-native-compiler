@@ -6978,6 +6978,33 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("stream_socket_server") && argument_index == 2 {
         return Some("error_message");
     }
+    if name.eq_ignore_ascii_case("socket_getsockname") && argument_index == 1 {
+        return Some("address");
+    }
+    if name.eq_ignore_ascii_case("socket_getsockname") && argument_index == 2 {
+        return Some("port");
+    }
+    if name.eq_ignore_ascii_case("socket_recv") && argument_index == 1 {
+        return Some("data");
+    }
+    if name.eq_ignore_ascii_case("socket_recvfrom") && argument_index == 1 {
+        return Some("data");
+    }
+    if name.eq_ignore_ascii_case("socket_recvfrom") && argument_index == 4 {
+        return Some("address");
+    }
+    if name.eq_ignore_ascii_case("socket_recvfrom") && argument_index == 5 {
+        return Some("port");
+    }
+    if name.eq_ignore_ascii_case("socket_select") && argument_index == 0 {
+        return Some("read");
+    }
+    if name.eq_ignore_ascii_case("socket_select") && argument_index == 1 {
+        return Some("write");
+    }
+    if name.eq_ignore_ascii_case("socket_select") && argument_index == 2 {
+        return Some("except");
+    }
     if name.eq_ignore_ascii_case("similar_text") && argument_index == 2 {
         return Some("percent");
     }
