@@ -92227,6 +92227,27 @@ static int ptn_mb_check_encoding_value(PtnValue value, const char *encoding, Ptn
     return 1;
 }
 
+static int ptn_mb_value_has_circular_array(PtnValue value, PtnMbCheckStack *stack) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArray *array = resolved.as.array;
+    if (ptn_mb_check_stack_contains(stack, array)) {
+        stack->saw_circular = 1;
+        return 1;
+    }
+    ptn_mb_check_stack_push(stack, array);
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_mb_value_has_circular_array(array->entries[i].value, stack)) {
+            stack->len--;
+            return 1;
+        }
+    }
+    stack->len--;
+    return 0;
+}
+
 static size_t ptn_mb_utf8_strlen(const char *data, size_t len) {
     size_t offset = 0;
     size_t count = 0;
@@ -96697,6 +96718,68 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 
+static void ptn_mb_convert_variables_assign_string(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *from_encoding,
+    const char *to_encoding
+) {
+    PtnValue current = ptn_value_deref(*slot);
+    size_t out_len = 0;
+    char *out = ptn_mb_iconv_convert_alloc(
+        (const char *)current.as.string.data,
+        current.as.string.len,
+        from_encoding,
+        to_encoding,
+        &out_len
+    );
+    PtnValue assigned = ptn_owned_string_len(out, out_len);
+    if (slot->type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, slot->as.reference, assigned);
+        ptn_value_destroy(&assigned);
+        return;
+    }
+    ptn_gc_attach_value_runtime(runtime, assigned, 0);
+    ptn_value_destroy(slot);
+    *slot = assigned;
+}
+
+static void ptn_mb_convert_variables_value(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t depth
+) {
+    if (slot == NULL || depth >= 16) {
+        return;
+    }
+    PtnValue current = ptn_value_deref(*slot);
+    if (current.type == PTN_STRING) {
+        ptn_mb_convert_variables_assign_string(runtime, slot, from_encoding, to_encoding);
+        return;
+    }
+    if (current.type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArray *array = current.as.array;
+    PtnValue *array_slot = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (array_slot->type == PTN_ARRAY) {
+        PtnArray *detached = ptn_array_detach_value(array_slot);
+        array = detached == NULL ? array_slot->as.array : detached;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_mb_convert_variables_value(
+            runtime,
+            &array->entries[i].value,
+            from_encoding,
+            to_encoding,
+            depth + 1
+        );
+    }
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *to_encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_variables", 1, "to_encoding", args[0], line, NULL, 0);
     const char *from_encoding = argc >= 2
@@ -96705,19 +96788,24 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
     if (to_encoding == NULL || from_encoding == NULL) {
         return ptn_bool(0);
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     for (size_t i = 2; i < argc; i++) {
         if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        PtnValue current = ptn_value_deref(args[i]);
-        if (current.type != PTN_STRING) {
+        if (ptn_mb_value_has_circular_array(args[i], &stack)) {
+            ptn_emit_warning(&runtime->diagnostics, "mb_convert_variables(): Cannot convert recursively referenced values", line);
+            ptn_mb_check_stack_free(&stack);
+            return ptn_bool(0);
+        }
+    }
+    ptn_mb_check_stack_free(&stack);
+    for (size_t i = 2; i < argc; i++) {
+        if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        size_t out_len = 0;
-        char *out = ptn_mb_iconv_convert_alloc((const char *)current.as.string.data, current.as.string.len, from_encoding, to_encoding, &out_len);
-        PtnValue assigned = ptn_owned_string_len(out, out_len);
-        ptn_reference_assign(runtime, args[i].as.reference, assigned);
-        ptn_value_destroy(&assigned);
+        PtnValue slot = args[i];
+        ptn_mb_convert_variables_value(runtime, &slot, from_encoding, to_encoding, 0);
     }
     return ptn_string(to_encoding);
 }
