@@ -1,0 +1,20 @@
+# ptn-lxbff exact SQLite/PDO callback/error current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T191013Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-lxbff-sqlite-pdo-callback-error-current-red-row-pack.txt
+#
+# bucket: ext/sqlite3+pdo_sqlite rows=12
+ext/sqlite3/tests/sqlite3_enable_exceptions.phpt
+ext/sqlite3/tests/sqlite3_trampoline_setauthorizer.phpt
+ext/sqlite3/tests/sqlite3_23_escape_string.phpt
+ext/sqlite3/tests/sqlite3_18_changes.phpt
+ext/sqlite3/tests/sqlite3_trampoline_createfunction_no_leak.phpt
+ext/sqlite3/tests/gh20699.phpt
+ext/sqlite3/tests/sqlite3_38_extended_error.phpt
+ext/sqlite3/tests/sqlite3_bound_value_at_name.phpt
+ext/pdo_sqlite/tests/subclasses/pdo_sqlite_createaggregate_002.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_005.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_extendederror_attr.phpt
+ext/pdo_sqlite/tests/pdo_sqlite___construct_uri.phpt

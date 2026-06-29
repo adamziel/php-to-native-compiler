@@ -6944,6 +6944,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_pkcs12_read") && argument_index == 1 {
         return Some("certificates");
     }
+    if name.eq_ignore_ascii_case("openssl_encrypt") && argument_index == 5 {
+        return Some("tag");
+    }
     if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
         return Some("encrypted_data");
     }
