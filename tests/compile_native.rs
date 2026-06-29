@@ -30200,6 +30200,65 @@ while (!feof($sockets[1])) {
 }
 
 #[test]
+fn compile_nonblocking_stream_get_line_buffers_incomplete_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-nonblocking-stream-get-line-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nonblocking-stream-get-line-buffer.php");
+    let output = root.join("nonblocking-stream-get-line-buffer-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+stream_set_blocking($sockets[1], false);
+$eol = '<EOL>';
+
+fwrite($sockets[0], 'line start');
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+
+fwrite($sockets[0], ', line end, ' . $eol);
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+
+fwrite($sockets[0], 'incomplete line');
+var_dump(stream_get_line($sockets[1], strlen('incomplete line'), $eol));
+
+fwrite($sockets[0], 'hold me');
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+var_dump(fread($sockets[1], strlen('hold me')));
+
+fwrite($sockets[0], 'end of file');
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+fclose($sockets[0]);
+var_dump(stream_get_line($sockets[1], 8192, $eol));
+fclose($sockets[1]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+bool(false)\n\
+string(22) \"line start, line end, \"\n\
+bool(false)\n\
+string(15) \"incomplete line\"\n\
+bool(false)\n\
+string(7) \"hold me\"\n\
+bool(false)\n\
+string(11) \"end of file\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filtered_read_pending_prepend"));
+}
+
+#[test]
 fn compile_file_get_contents_uri_parser_context_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
     fs::create_dir_all(&root).unwrap();

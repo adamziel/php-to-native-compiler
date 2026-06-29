@@ -1,0 +1,16 @@
+# ptn-w17z.974 exact current-red PHAR/zlib/stream line/extract/error row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T232928Z.tsv
+# All rows were FAIL in that artifact.
+ext/standard/tests/streams/stream_get_line_nb.phpt
+ext/phar/tests/bug81211.phpt
+ext/zlib/tests/gzopen_variation9.phpt
+ext/phar/tests/phar_extract.phpt
+ext/standard/tests/streams/bug60817.phpt
+ext/standard/tests/streams/gh15155.phpt
+ext/phar/tests/tar/exists_as_phar.phpt
+ext/zlib/tests/gzinflate_error1.phpt
+ext/phar/tests/tar/bug70417.phpt
+ext/phar/tests/phar_offset_get_error.phpt
+ext/zlib/tests/gzpassthru_basic.phpt
+ext/standard/tests/streams/stream_errors_exception_mode_terminal.phpt

@@ -57575,6 +57575,30 @@ static void ptn_stream_filtered_read_pending_append(PtnResource *resource, const
     resource->filtered_read_buffer_offset = 0;
 }
 
+static void ptn_stream_filtered_read_pending_prepend(PtnResource *resource, const char *data, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    ptn_stream_filtered_read_pending_compact(resource);
+    size_t available = ptn_stream_filtered_read_pending_available(resource);
+    if (len > SIZE_MAX - available - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc(len + available + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(buffer, data, len);
+    if (available != 0) {
+        memcpy(buffer + len, resource->filtered_read_buffer, available);
+    }
+    buffer[len + available] = '\0';
+    free(resource->filtered_read_buffer);
+    resource->filtered_read_buffer = buffer;
+    resource->filtered_read_buffer_len = len + available;
+    resource->filtered_read_buffer_offset = 0;
+}
+
 static void ptn_stream_flush_write_filters(
     PtnRuntime *runtime,
     const char *function_name,
@@ -59907,6 +59931,8 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    int completed = 0;
+    int reached_eof = 0;
     while (length == 0 || buffer.len < (size_t)length) {
         int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
@@ -59918,6 +59944,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
                 }
                 return ptn_bool(0);
             }
+            reached_eof = ptn_stream_eof(resource);
             break;
         }
         ptn_string_buffer_append_char(&buffer, (char)(unsigned char)byte);
@@ -59926,11 +59953,20 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
             if (buffer.data != NULL) {
                 buffer.data[buffer.len] = '\0';
             }
+            completed = 1;
             break;
         }
     }
+    if (!completed && length != 0 && buffer.len >= (size_t)length) {
+        completed = 1;
+    }
     if (argc >= 3) {
         ptn_string_operand_free(delimiter);
+    }
+    if (!completed && !reached_eof) {
+        ptn_stream_filtered_read_pending_prepend(resource, buffer.data, buffer.len);
+        free(buffer.data);
+        return ptn_bool(0);
     }
     if (buffer.len == 0 && ptn_stream_eof(resource)) {
         free(buffer.data);
