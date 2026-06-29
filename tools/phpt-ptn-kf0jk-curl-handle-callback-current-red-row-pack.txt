@@ -1,0 +1,12 @@
+ext/curl/tests/bug79033.phpt
+ext/curl/tests/curl_copy_handle_variation4.phpt
+ext/curl/tests/curl_basic_013.phpt
+ext/curl/tests/curl_basic_023.phpt
+ext/curl/tests/curl_basic_003.phpt
+ext/curl/tests/bug48207.phpt
+ext/curl/tests/curl_handle_clone.phpt
+ext/curl/tests/bug45161.phpt
+ext/curl/tests/bug54798-unix.phpt
+ext/curl/tests/gh21023.phpt
+ext/curl/tests/curl_writeheader_callback.phpt
+ext/curl/tests/bug67643.phpt

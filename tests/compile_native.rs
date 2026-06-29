@@ -56248,10 +56248,18 @@ while (($info = curl_multi_info_read($mh)) !== false) {\n\
     echo $map[$info['handle']], \"\\n\";\n\
     var_dump($info['msg'] === CURLMSG_DONE);\n\
     var_dump($info['result'] === CURLE_OK);\n\
+    var_dump(curl_multi_getcontent($info['handle']));\n\
     curl_multi_remove_handle($mh, $info['handle']);\n\
 }\n\
 var_dump($active);\n\
 var_dump(count(curl_multi_get_handles($mh)));\n\
+$ch2 = curl_init('file://' . $path);\n\
+curl_setopt($ch2, CURLOPT_RETURNTRANSFER, 0);\n\
+curl_multi_add_handle($mh, $ch2);\n\
+curl_multi_exec($mh, $active2);\n\
+var_dump(curl_multi_getcontent($ch2));\n\
+curl_multi_remove_handle($mh, $ch2);\n\
+curl_multi_close($mh);\n\
 class CurlBody { public function __toString() { return 'body'; } }\n\
 var_dump(curl_setopt($ch, CURLOPT_POSTFIELDS, new CurlBody()));\n",
     )
@@ -56272,14 +56280,17 @@ var_dump(curl_setopt($ch, CURLOPT_POSTFIELDS, new CurlBody()));\n",
             "done\n",
             "bool(true)\n",
             "bool(true)\n",
+            "string(6) \"native\"\n",
             "int(0)\n",
             "int(0)\n",
+            "nativeNULL\n",
             "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_curl_exec"));
+    assert!(c_source.contains("ptn_internal_curl_multi_getcontent"));
     assert!(c_source.contains("CURLOPT_RETURNTRANSFER"));
     assert!(c_source.contains("CURLMSG_DONE"));
 }
