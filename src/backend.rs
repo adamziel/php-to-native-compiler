@@ -56700,7 +56700,6 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         let previous_call_site_line_temp = self.next_temp();
         let previous_warn_by_ref_temp = self.next_temp();
-        let previous_strict_types_temp = self.next_temp();
         let checked_callback_temp = self.next_temp();
         out.push_str("    size_t ");
         out.push_str(&previous_call_site_line_temp);
@@ -56708,9 +56707,6 @@ impl ValueEmitter {
         out.push_str("    int ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(" = runtime.warn_by_ref_argument_mismatch;\n");
-        out.push_str("    int ");
-        out.push_str(&previous_strict_types_temp);
-        out.push_str(" = runtime.strict_types;\n");
         out.push_str("    runtime.call_site_line = ");
         out.push_str(&line.to_string());
         out.push_str(";\n");
@@ -56720,23 +56716,19 @@ impl ValueEmitter {
         out.push_str(" = ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
         out.push_str(&callable_temp);
         out.push_str("));\n");
-        out.push_str("    runtime.strict_types = 0;\n");
         if arguments.len() == 1 {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
             }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(" = ptn_internal_call_user_callback(&runtime, ");
             out.push_str(&checked_callback_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
-            out.push_str(", 1);\n");
+            out.push_str(");\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
-            out.push_str(";\n");
-            out.push_str("    runtime.strict_types = ");
-            out.push_str(&previous_strict_types_temp);
             out.push_str(";\n");
             out.push_str("    runtime.call_site_line = ");
             out.push_str(&previous_call_site_line_temp);
@@ -56776,7 +56768,7 @@ impl ValueEmitter {
         }
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_callable(&runtime, ");
+        out.push_str(" = ptn_internal_call_user_callback(&runtime, ");
         out.push_str(&checked_callback_temp);
         out.push_str(", ");
         out.push_str(&temps.len().to_string());
@@ -56784,12 +56776,9 @@ impl ValueEmitter {
         out.push_str(&args_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
-        out.push_str(", 1);\n");
+        out.push_str(");\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
         out.push_str(&previous_warn_by_ref_temp);
-        out.push_str(";\n");
-        out.push_str("    runtime.strict_types = ");
-        out.push_str(&previous_strict_types_temp);
         out.push_str(";\n");
         out.push_str("    runtime.call_site_line = ");
         out.push_str(&previous_call_site_line_temp);

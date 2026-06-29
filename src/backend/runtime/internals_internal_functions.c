@@ -150183,6 +150183,7 @@ static PtnValue ptn_internal_libxml_set_external_entity_loader(PtnRuntime *runti
         1,
         "resolver_function",
         args[0],
+        0,
         1
     );
     if (runtime->exceptions->active_exception != NULL) {

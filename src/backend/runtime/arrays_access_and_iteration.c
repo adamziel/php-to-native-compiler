@@ -12724,6 +12724,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
             if (entry->value.type != PTN_REFERENCE) {
                 PtnValue current = entry->value;
                 entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+                entry->by_ref_argument_eligible = 1;
             }
             ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone(entry->value));
         } else {
@@ -13152,6 +13153,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        entry->by_ref_argument_eligible = 1;
     }
     return ptn_value_clone(entry->value);
 }
@@ -13246,6 +13248,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        entry->by_ref_argument_eligible = 1;
     }
     return ptn_value_clone(entry->value);
 }
@@ -17020,6 +17023,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        entry->by_ref_argument_eligible = 1;
     }
     return ptn_value_clone(entry->value);
 }
@@ -17335,6 +17339,7 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        entry->by_ref_argument_eligible = 1;
     }
     return ptn_value_clone(entry->value);
 }

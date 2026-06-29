@@ -68522,7 +68522,7 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func_array"));
-    assert!(c_source.contains("ptn_internal_call_user_callback(runtime, callback, arguments->len"));
+    assert!(c_source.contains("ptn_internal_call_user_callback_named_hidden_frame"));
 }
 
 #[test]
