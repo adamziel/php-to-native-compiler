@@ -71700,6 +71700,10 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
         ptn_text_operand_ascii_case_equal(algo, "sha512/224") ||
         ptn_text_operand_ascii_case_equal(algo, "sha512/256") ||
         ptn_text_operand_ascii_case_equal(algo, "sha512") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha3-224") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha3-256") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha3-384") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha3-512") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32b") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32c") ||
@@ -71711,6 +71715,10 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
         ptn_text_operand_ascii_case_equal(algo, "ripemd320") ||
         ptn_text_operand_ascii_case_equal(algo, "snefru") ||
         ptn_text_operand_ascii_case_equal(algo, "snefru256") ||
+        ptn_text_operand_ascii_case_equal(algo, "joaat") ||
+        ptn_text_operand_ascii_case_equal(algo, "murmur3a") ||
+        ptn_text_operand_ascii_case_equal(algo, "murmur3c") ||
+        ptn_text_operand_ascii_case_equal(algo, "murmur3f") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh32") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh64") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
@@ -71727,6 +71735,10 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "sha512/224",
     "sha512/256",
     "sha512",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
     "crc32",
     "crc32b",
     "crc32c",
@@ -71738,6 +71750,10 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "ripemd320",
     "snefru",
     "snefru256",
+    "joaat",
+    "murmur3a",
+    "murmur3c",
+    "murmur3f",
     "xxh32",
     "xxh64",
     "xxh3",
@@ -71810,12 +71826,22 @@ static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
         ptn_ascii_case_equal(algo, "sha512/224") ||
         ptn_ascii_case_equal(algo, "sha512/256") ||
         ptn_ascii_case_equal(algo, "sha512") ||
+        ptn_ascii_case_equal(algo, "sha3-224") ||
+        ptn_ascii_case_equal(algo, "sha3-256") ||
+        ptn_ascii_case_equal(algo, "sha3-384") ||
+        ptn_ascii_case_equal(algo, "sha3-512") ||
         ptn_ascii_case_equal(algo, "ripemd128") ||
         ptn_ascii_case_equal(algo, "ripemd160") ||
         ptn_ascii_case_equal(algo, "ripemd256") ||
         ptn_ascii_case_equal(algo, "ripemd320") ||
         ptn_ascii_case_equal(algo, "snefru") ||
         ptn_ascii_case_equal(algo, "snefru256");
+}
+
+static int ptn_hash_algorithm_name_is_murmur3(const char *algo) {
+    return ptn_ascii_case_equal(algo, "murmur3a") ||
+        ptn_ascii_case_equal(algo, "murmur3c") ||
+        ptn_ascii_case_equal(algo, "murmur3f");
 }
 
 static int ptn_hash_algorithm_name_is_xxhash(const char *algo) {
@@ -71947,6 +71973,289 @@ static void ptn_store_u64_be(unsigned char out[8], uint64_t value) {
     out[5] = (unsigned char)((value >> 16) & 0xff);
     out[6] = (unsigned char)((value >> 8) & 0xff);
     out[7] = (unsigned char)(value & 0xff);
+}
+
+static void ptn_store_u32_be(unsigned char out[4], uint32_t value) {
+    out[0] = (unsigned char)((value >> 24) & 0xff);
+    out[1] = (unsigned char)((value >> 16) & 0xff);
+    out[2] = (unsigned char)((value >> 8) & 0xff);
+    out[3] = (unsigned char)(value & 0xff);
+}
+
+static uint32_t ptn_hash_read_u32_le(const unsigned char *data) {
+    return ((uint32_t)data[0]) |
+        ((uint32_t)data[1] << 8) |
+        ((uint32_t)data[2] << 16) |
+        ((uint32_t)data[3] << 24);
+}
+
+static uint64_t ptn_hash_read_u64_le(const unsigned char *data) {
+    return ((uint64_t)data[0]) |
+        ((uint64_t)data[1] << 8) |
+        ((uint64_t)data[2] << 16) |
+        ((uint64_t)data[3] << 24) |
+        ((uint64_t)data[4] << 32) |
+        ((uint64_t)data[5] << 40) |
+        ((uint64_t)data[6] << 48) |
+        ((uint64_t)data[7] << 56);
+}
+
+static uint64_t ptn_hash_rotate_left64(uint64_t value, uint32_t amount) {
+    return (value << amount) | (value >> (64 - amount));
+}
+
+static uint32_t ptn_hash_murmur_fmix32(uint32_t value) {
+    value ^= value >> 16;
+    value *= UINT32_C(0x85ebca6b);
+    value ^= value >> 13;
+    value *= UINT32_C(0xc2b2ae35);
+    value ^= value >> 16;
+    return value;
+}
+
+static uint64_t ptn_hash_murmur_fmix64(uint64_t value) {
+    value ^= value >> 33;
+    value *= UINT64_C(0xff51afd7ed558ccd);
+    value ^= value >> 33;
+    value *= UINT64_C(0xc4ceb9fe1a85ec53);
+    value ^= value >> 33;
+    return value;
+}
+
+static void ptn_hash_joaat_digest_bytes(
+    const unsigned char *input,
+    size_t input_len,
+    unsigned char digest[4]
+) {
+    uint32_t hash = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        hash += input[i];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    ptn_store_u32_be(digest, hash);
+}
+
+static void ptn_hash_murmur3a_digest_bytes(
+    const unsigned char *input,
+    size_t input_len,
+    uint32_t seed,
+    unsigned char digest[4]
+) {
+    const uint32_t c1 = UINT32_C(0xcc9e2d51);
+    const uint32_t c2 = UINT32_C(0x1b873593);
+    uint32_t h1 = seed;
+    size_t blocks = input_len / 4;
+    for (size_t i = 0; i < blocks; i++) {
+        uint32_t k1 = ptn_hash_read_u32_le(input + i * 4);
+        k1 *= c1;
+        k1 = ptn_rotate_left32(k1, 15);
+        k1 *= c2;
+        h1 ^= k1;
+        h1 = ptn_rotate_left32(h1, 13);
+        h1 = h1 * 5 + UINT32_C(0xe6546b64);
+    }
+
+    const unsigned char *tail = input + blocks * 4;
+    uint32_t k1 = 0;
+    switch (input_len & 3) {
+        case 3:
+            k1 ^= (uint32_t)tail[2] << 16;
+            /* fall through */
+        case 2:
+            k1 ^= (uint32_t)tail[1] << 8;
+            /* fall through */
+        case 1:
+            k1 ^= (uint32_t)tail[0];
+            k1 *= c1;
+            k1 = ptn_rotate_left32(k1, 15);
+            k1 *= c2;
+            h1 ^= k1;
+            break;
+        default:
+            break;
+    }
+
+    h1 ^= (uint32_t)input_len;
+    h1 = ptn_hash_murmur_fmix32(h1);
+    ptn_store_u32_be(digest, h1);
+}
+
+static void ptn_hash_murmur3c_digest_bytes(
+    const unsigned char *input,
+    size_t input_len,
+    uint32_t seed,
+    unsigned char digest[16]
+) {
+    const uint32_t c1 = UINT32_C(0x239b961b);
+    const uint32_t c2 = UINT32_C(0xab0e9789);
+    const uint32_t c3 = UINT32_C(0x38b34ae5);
+    const uint32_t c4 = UINT32_C(0xa1e38b93);
+    uint32_t h1 = seed;
+    uint32_t h2 = seed;
+    uint32_t h3 = seed;
+    uint32_t h4 = seed;
+    size_t blocks = input_len / 16;
+    for (size_t i = 0; i < blocks; i++) {
+        const unsigned char *block = input + i * 16;
+        uint32_t k1 = ptn_hash_read_u32_le(block);
+        uint32_t k2 = ptn_hash_read_u32_le(block + 4);
+        uint32_t k3 = ptn_hash_read_u32_le(block + 8);
+        uint32_t k4 = ptn_hash_read_u32_le(block + 12);
+
+        k1 *= c1; k1 = ptn_rotate_left32(k1, 15); k1 *= c2; h1 ^= k1;
+        h1 = ptn_rotate_left32(h1, 19); h1 += h2; h1 = h1 * 5 + UINT32_C(0x561ccd1b);
+
+        k2 *= c2; k2 = ptn_rotate_left32(k2, 16); k2 *= c3; h2 ^= k2;
+        h2 = ptn_rotate_left32(h2, 17); h2 += h3; h2 = h2 * 5 + UINT32_C(0x0bcaa747);
+
+        k3 *= c3; k3 = ptn_rotate_left32(k3, 17); k3 *= c4; h3 ^= k3;
+        h3 = ptn_rotate_left32(h3, 15); h3 += h4; h3 = h3 * 5 + UINT32_C(0x96cd1c35);
+
+        k4 *= c4; k4 = ptn_rotate_left32(k4, 18); k4 *= c1; h4 ^= k4;
+        h4 = ptn_rotate_left32(h4, 13); h4 += h1; h4 = h4 * 5 + UINT32_C(0x32ac3b17);
+    }
+
+    const unsigned char *tail = input + blocks * 16;
+    uint32_t k1 = 0;
+    uint32_t k2 = 0;
+    uint32_t k3 = 0;
+    uint32_t k4 = 0;
+    switch (input_len & 15) {
+        case 15: k4 ^= (uint32_t)tail[14] << 16; /* fall through */
+        case 14: k4 ^= (uint32_t)tail[13] << 8;  /* fall through */
+        case 13:
+            k4 ^= (uint32_t)tail[12];
+            k4 *= c4; k4 = ptn_rotate_left32(k4, 18); k4 *= c1; h4 ^= k4;
+            /* fall through */
+        case 12: k3 ^= (uint32_t)tail[11] << 24; /* fall through */
+        case 11: k3 ^= (uint32_t)tail[10] << 16; /* fall through */
+        case 10: k3 ^= (uint32_t)tail[9] << 8;   /* fall through */
+        case 9:
+            k3 ^= (uint32_t)tail[8];
+            k3 *= c3; k3 = ptn_rotate_left32(k3, 17); k3 *= c4; h3 ^= k3;
+            /* fall through */
+        case 8: k2 ^= (uint32_t)tail[7] << 24;   /* fall through */
+        case 7: k2 ^= (uint32_t)tail[6] << 16;   /* fall through */
+        case 6: k2 ^= (uint32_t)tail[5] << 8;    /* fall through */
+        case 5:
+            k2 ^= (uint32_t)tail[4];
+            k2 *= c2; k2 = ptn_rotate_left32(k2, 16); k2 *= c3; h2 ^= k2;
+            /* fall through */
+        case 4: k1 ^= (uint32_t)tail[3] << 24;   /* fall through */
+        case 3: k1 ^= (uint32_t)tail[2] << 16;   /* fall through */
+        case 2: k1 ^= (uint32_t)tail[1] << 8;    /* fall through */
+        case 1:
+            k1 ^= (uint32_t)tail[0];
+            k1 *= c1; k1 = ptn_rotate_left32(k1, 15); k1 *= c2; h1 ^= k1;
+            break;
+        default:
+            break;
+    }
+
+    uint32_t total_len = (uint32_t)input_len;
+    h1 ^= total_len; h2 ^= total_len; h3 ^= total_len; h4 ^= total_len;
+    h1 += h2; h1 += h3; h1 += h4;
+    h2 += h1; h3 += h1; h4 += h1;
+    h1 = ptn_hash_murmur_fmix32(h1);
+    h2 = ptn_hash_murmur_fmix32(h2);
+    h3 = ptn_hash_murmur_fmix32(h3);
+    h4 = ptn_hash_murmur_fmix32(h4);
+    h1 += h2; h1 += h3; h1 += h4;
+    h2 += h1; h3 += h1; h4 += h1;
+    ptn_store_u32_be(digest, h1);
+    ptn_store_u32_be(digest + 4, h2);
+    ptn_store_u32_be(digest + 8, h3);
+    ptn_store_u32_be(digest + 12, h4);
+}
+
+static void ptn_hash_murmur3f_digest_bytes(
+    const unsigned char *input,
+    size_t input_len,
+    uint64_t seed,
+    unsigned char digest[16]
+) {
+    const uint64_t c1 = UINT64_C(0x87c37b91114253d5);
+    const uint64_t c2 = UINT64_C(0x4cf5ad432745937f);
+    uint64_t h1 = seed;
+    uint64_t h2 = seed;
+    size_t blocks = input_len / 16;
+    for (size_t i = 0; i < blocks; i++) {
+        const unsigned char *block = input + i * 16;
+        uint64_t k1 = ptn_hash_read_u64_le(block);
+        uint64_t k2 = ptn_hash_read_u64_le(block + 8);
+
+        k1 *= c1; k1 = ptn_hash_rotate_left64(k1, 31); k1 *= c2; h1 ^= k1;
+        h1 = ptn_hash_rotate_left64(h1, 27); h1 += h2; h1 = h1 * 5 + UINT64_C(0x52dce729);
+
+        k2 *= c2; k2 = ptn_hash_rotate_left64(k2, 33); k2 *= c1; h2 ^= k2;
+        h2 = ptn_hash_rotate_left64(h2, 31); h2 += h1; h2 = h2 * 5 + UINT64_C(0x38495ab5);
+    }
+
+    const unsigned char *tail = input + blocks * 16;
+    uint64_t k1 = 0;
+    uint64_t k2 = 0;
+    switch (input_len & 15) {
+        case 15: k2 ^= (uint64_t)tail[14] << 48; /* fall through */
+        case 14: k2 ^= (uint64_t)tail[13] << 40; /* fall through */
+        case 13: k2 ^= (uint64_t)tail[12] << 32; /* fall through */
+        case 12: k2 ^= (uint64_t)tail[11] << 24; /* fall through */
+        case 11: k2 ^= (uint64_t)tail[10] << 16; /* fall through */
+        case 10: k2 ^= (uint64_t)tail[9] << 8;   /* fall through */
+        case 9:
+            k2 ^= (uint64_t)tail[8];
+            k2 *= c2; k2 = ptn_hash_rotate_left64(k2, 33); k2 *= c1; h2 ^= k2;
+            /* fall through */
+        case 8: k1 ^= (uint64_t)tail[7] << 56;   /* fall through */
+        case 7: k1 ^= (uint64_t)tail[6] << 48;   /* fall through */
+        case 6: k1 ^= (uint64_t)tail[5] << 40;   /* fall through */
+        case 5: k1 ^= (uint64_t)tail[4] << 32;   /* fall through */
+        case 4: k1 ^= (uint64_t)tail[3] << 24;   /* fall through */
+        case 3: k1 ^= (uint64_t)tail[2] << 16;   /* fall through */
+        case 2: k1 ^= (uint64_t)tail[1] << 8;    /* fall through */
+        case 1:
+            k1 ^= (uint64_t)tail[0];
+            k1 *= c1; k1 = ptn_hash_rotate_left64(k1, 31); k1 *= c2; h1 ^= k1;
+            break;
+        default:
+            break;
+    }
+
+    uint64_t total_len = (uint32_t)input_len;
+    h1 ^= total_len; h2 ^= total_len;
+    h1 += h2;
+    h2 += h1;
+    h1 = ptn_hash_murmur_fmix64(h1);
+    h2 = ptn_hash_murmur_fmix64(h2);
+    h1 += h2;
+    h2 += h1;
+    ptn_store_u64_be(digest, h1);
+    ptn_store_u64_be(digest + 8, h2);
+}
+
+static PtnValue ptn_hash_murmur3_digest_value(
+    const char *algo,
+    const unsigned char *data,
+    size_t data_len,
+    uint64_t seed,
+    int raw_output
+) {
+    if (ptn_ascii_case_equal(algo, "murmur3a")) {
+        unsigned char digest[4];
+        ptn_hash_murmur3a_digest_bytes(data, data_len, (uint32_t)seed, digest);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    if (ptn_ascii_case_equal(algo, "murmur3c")) {
+        unsigned char digest[16];
+        ptn_hash_murmur3c_digest_bytes(data, data_len, (uint32_t)seed, digest);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    unsigned char digest[16];
+    ptn_hash_murmur3f_digest_bytes(data, data_len, seed, digest);
+    return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
 static PtnValue ptn_hash_xxhash_digest_value(
@@ -72456,6 +72765,49 @@ static int ptn_hash_parse_xxhash_options(
     return 1;
 }
 
+static int ptn_hash_parse_murmur3_options(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options_value,
+    size_t line,
+    PtnHashOptions *out
+) {
+    out->has_seed = 0;
+    out->seed = 0;
+    out->secret = NULL;
+    out->secret_len = 0;
+    options_value = ptn_value_deref(options_value);
+    if (options_value.type == PTN_NULL) {
+        return 1;
+    }
+    PtnArray *options = ptn_internal_expect_array_arg(runtime, function_name, 4, "options", options_value);
+    if (options == NULL || runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    PtnArrayEntry *seed_entry = ptn_hash_options_entry(options, "seed");
+    if (seed_entry == NULL) {
+        return 1;
+    }
+    PtnValue seed_value = ptn_value_deref(seed_entry->value);
+    if (seed_value.type != PTN_INT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+        seed_value = ptn_int(0);
+    }
+    out->has_seed = 1;
+    out->seed = (uint64_t)seed_value.as.integer;
+    return 1;
+}
+
 static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_init", 1, "algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -72480,8 +72832,37 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         free(algo_name);
         return ptn_null();
     }
+    if ((flags & PTN_HASH_HMAC) != 0 && !ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "hash_init(): Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested"
+        );
+        free(algo_name);
+        return ptn_null();
+    }
+    if ((flags & PTN_HASH_HMAC) != 0 && key.len == 0) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "hash_init(): Argument #3 ($key) must not be empty when HMAC is requested"
+        );
+        free(algo_name);
+        return ptn_null();
+    }
     PtnHashOptions options = {0};
-    if (argc >= 4 &&
+    if (argc >= 4 && ptn_hash_algorithm_name_is_murmur3(algo_name)) {
+        if (!ptn_hash_parse_murmur3_options(runtime, "hash_init", args[3], line, &options)) {
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            free(algo_name);
+            return ptn_null();
+        }
+    } else if (argc >= 4 &&
         ptn_hash_algorithm_name_is_xxhash(algo_name) &&
         !ptn_hash_parse_xxhash_options(runtime, "hash_init", algo_name, args[3], line, &options)) {
         ptn_string_operand_free(algo);
@@ -72703,6 +73084,18 @@ static int ptn_hash_digest_bytes(
         *digest_len = 64;
         return 1;
     }
+    if (ptn_ascii_case_equal(algo, "sha3-224")) {
+        return ptn_hash_openssl_digest_bytes("sha3-224", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-256")) {
+        return ptn_hash_openssl_digest_bytes("sha3-256", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-384")) {
+        return ptn_hash_openssl_digest_bytes("sha3-384", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-512")) {
+        return ptn_hash_openssl_digest_bytes("sha3-512", input, input_len, digest, digest_len);
+    }
     if (ptn_ascii_case_equal(algo, "crc32b")) {
         uint32_t checksum = ptn_crc32_bytes(input, input_len);
         digest[0] = (unsigned char)((checksum >> 24) & 0xff);
@@ -72773,10 +73166,27 @@ static int ptn_hash_digest_bytes(
         *digest_len = 32;
         return 1;
     }
+    if (ptn_ascii_case_equal(algo, "joaat")) {
+        ptn_hash_joaat_digest_bytes(input, input_len, digest);
+        *digest_len = 4;
+        return 1;
+    }
     return 0;
 }
 
 static size_t ptn_hash_block_size(const char *algo) {
+    if (ptn_ascii_case_equal(algo, "sha3-224")) {
+        return 144;
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-256")) {
+        return 136;
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-384")) {
+        return 104;
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-512")) {
+        return 72;
+    }
     if (ptn_ascii_case_equal(algo, "sha384") ||
         ptn_ascii_case_equal(algo, "sha512/224") ||
         ptn_ascii_case_equal(algo, "sha512/256") ||
@@ -72924,6 +73334,15 @@ static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const 
         return ptn_digest_value(digest, digest_len, raw_output);
     }
     if (!data->hmac) {
+        if (ptn_hash_algorithm_name_is_murmur3(data->algo)) {
+            return ptn_hash_murmur3_digest_value(
+                data->algo,
+                data->data,
+                data->data_len,
+                data->seed,
+                raw_output
+            );
+        }
         if (ptn_hash_algorithm_name_is_xxhash(data->algo)) {
             return ptn_hash_xxhash_digest_value(
                 runtime,
@@ -73072,6 +73491,28 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
     }
     int raw_output = argc >= 3 && ptn_is_truthy(args[2]);
     char *algo_name_for_digest = ptn_duplicate_string_len(algo.data, algo.len);
+    if (ptn_hash_algorithm_name_is_murmur3(algo_name_for_digest)) {
+        PtnHashOptions options = {0};
+        if (argc >= 4 &&
+            !ptn_hash_parse_murmur3_options(runtime, "hash", args[3], line, &options)) {
+            free(algo_name_for_digest);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+        PtnValue result = ptn_hash_murmur3_digest_value(
+            algo_name_for_digest,
+            (const unsigned char *)data.data,
+            data.len,
+            options.has_seed ? options.seed : 0,
+            raw_output
+        );
+        ptn_hash_options_free(&options);
+        free(algo_name_for_digest);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return result;
+    }
     if (ptn_hash_algorithm_name_is_xxhash(algo_name_for_digest)) {
         PtnHashOptions options = {0};
         if (argc >= 4 &&
@@ -73655,6 +74096,181 @@ static PtnValue ptn_internal_hash_pbkdf2(PtnRuntime *runtime, size_t argc, const
     free(algo_name);
     ptn_string_operand_free(algo);
     ptn_string_operand_free(password);
+    ptn_string_operand_free(salt);
+    return result;
+}
+
+static PtnValue ptn_internal_hash_hkdf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 1, "algo", args[0], line);
+    PtnStringOperand key = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 2, "key", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    if (!ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+    if (key.len == 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(runtime, "ValueError", "hash_hkdf(): Argument #2 ($key) must not be empty");
+        return ptn_null();
+    }
+
+    int64_t length = argc >= 3 ? ptn_internal_expect_integer_arg(runtime, "hash_hkdf", 3, "length", args[2], line) : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+    if (length < 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(runtime, "ValueError", "hash_hkdf(): Argument #3 ($length) must be greater than or equal to 0");
+        return ptn_null();
+    }
+
+    PtnStringOperand info = argc >= 4
+        ? ptn_internal_expect_string_arg(runtime, "hash_hkdf", 4, "info", args[3], line)
+        : ptn_string_operand_borrowed("");
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        return ptn_null();
+    }
+    PtnStringOperand salt = argc >= 5
+        ? ptn_internal_expect_string_arg(runtime, "hash_hkdf", 5, "salt", args[4], line)
+        : ptn_string_operand_borrowed("");
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        return ptn_null();
+    }
+
+    unsigned char probe_digest[PTN_HASH_MAX_DIGEST_LEN];
+    size_t digest_len = 0;
+    if (!ptn_hash_digest_bytes(algo_name, (const unsigned char *)"", 0, probe_digest, &digest_len)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+
+    size_t max_len = digest_len * 255;
+    if ((uint64_t)length > (uint64_t)max_len) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "hash_hkdf(): Argument #3 ($length) must be less than or equal to %zu",
+            max_len
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_throw_exception(runtime, "ValueError", message);
+        return ptn_null();
+    }
+
+    int raw_output = argc >= 6 && ptn_is_truthy(args[5]);
+    size_t output_len = length == 0 ? digest_len : (size_t)length;
+    unsigned char prk[PTN_HASH_MAX_DIGEST_LEN];
+    size_t prk_len = 0;
+    if (!ptn_hash_hmac_bytes(
+            algo_name,
+            (const unsigned char *)salt.data,
+            salt.len,
+            (const unsigned char *)key.data,
+            key.len,
+            prk,
+            &prk_len
+        )) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+
+    unsigned char *okm = output_len == 0 ? NULL : malloc(output_len);
+    if (output_len != 0 && okm == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    unsigned char previous[PTN_HASH_MAX_DIGEST_LEN];
+    size_t previous_len = 0;
+    size_t written_len = 0;
+    unsigned int counter = 1;
+    while (written_len < output_len) {
+        if (previous_len > SIZE_MAX - info.len - 1) {
+            ptn_abort_out_of_memory();
+        }
+        size_t message_len = previous_len + info.len + 1;
+        unsigned char *message = malloc(message_len);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (previous_len != 0) {
+            memcpy(message, previous, previous_len);
+        }
+        if (info.len != 0) {
+            memcpy(message + previous_len, info.data, info.len);
+        }
+        message[message_len - 1] = (unsigned char)counter;
+
+        size_t next_len = 0;
+        if (!ptn_hash_hmac_bytes(algo_name, prk, prk_len, message, message_len, previous, &next_len)) {
+            free(message);
+            free(okm);
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+            return ptn_null();
+        }
+        free(message);
+        previous_len = next_len;
+        size_t take = previous_len;
+        if (take > output_len - written_len) {
+            take = output_len - written_len;
+        }
+        memcpy(okm + written_len, previous, take);
+        written_len += take;
+        counter++;
+    }
+
+    PtnValue result = ptn_digest_value(okm == NULL ? (const unsigned char *)"" : okm, output_len, raw_output);
+    free(okm);
+    free(algo_name);
+    ptn_string_operand_free(algo);
+    ptn_string_operand_free(key);
+    ptn_string_operand_free(info);
     ptn_string_operand_free(salt);
     return result;
 }
@@ -179244,6 +179860,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hash_hmac", 3, 4, ptn_internal_hash_hmac },
         { "hash_hmac_algos", 0, 0, ptn_internal_hash_hmac_algos },
         { "hash_hmac_file", 3, 4, ptn_internal_hash_hmac_file },
+        { "hash_hkdf", 2, 6, ptn_internal_hash_hkdf },
         { "hash_init", 1, 4, ptn_internal_hash_init },
         { "hash_pbkdf2", 4, 6, ptn_internal_hash_pbkdf2 },
         { "hash_update", 2, 2, ptn_internal_hash_update },
