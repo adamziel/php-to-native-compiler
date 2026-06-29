@@ -4341,12 +4341,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 ptn_direct_dump_printf(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_value_var_dump_indent(runtime, indent);
@@ -6072,12 +6072,12 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             ptn_direct_var_dump_exception_indented(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 ptn_direct_var_dump_writef(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_var_dump_indent(runtime, indent);
@@ -10179,11 +10179,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_var_dump_indent(indent);
@@ -10415,11 +10415,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *resource_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (resource_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) refcount(%zu){\n",
-                    curl_class_name,
+                    resource_class_name,
                     ptn_resource_object_id(value.as.resource),
                     value.as.resource->refcount
                 );
@@ -53431,6 +53431,13 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
+static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path);
+static void ptn_emit_open_basedir_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line
+);
 static int ptn_try_read_data_url_bytes_with_detail(
     const char *path,
     unsigned char **data_out,
@@ -55929,6 +55936,24 @@ static void ptn_stream_report_resource_error(
     }
 }
 
+static PtnValue ptn_new_user_stream_wrapper_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    int previous_suppress_user_call_frame_location =
+        runtime == NULL ? 0 : runtime->suppress_user_call_frame_location;
+    if (runtime != NULL) {
+        runtime->suppress_user_call_frame_location = 1;
+    }
+    PtnValue object = ptn_new_object(runtime, class_name, 0, NULL, line);
+    if (runtime != NULL) {
+        runtime->suppress_user_call_frame_location =
+            previous_suppress_user_call_frame_location;
+    }
+    return object;
+}
+
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
     const char *function_name,
@@ -55955,7 +55980,7 @@ static int ptn_try_open_user_stream_wrapper(
         return 1;
     }
 
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
@@ -56376,7 +56401,7 @@ static int ptn_try_open_user_directory_wrapper(
         return 0;
     }
 
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
@@ -56462,7 +56487,7 @@ static int ptn_try_user_stream_metadata(
     if (wrapper == NULL) {
         return 0;
     }
-    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
         ptn_value_destroy(&object);
         *out = ptn_null();
@@ -60858,6 +60883,23 @@ static void ptn_emit_open_basedir_warning(
     free(message);
 }
 
+static int ptn_read_file_bytes_with_normalized_probe(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    char *probe_path = ptn_normalize_filesystem_path(path, strlen(path));
+    int result = ptn_read_file_bytes(probe_path, data_out, len_out);
+    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, probe_path, data_out, len_out)) {
+        result = 1;
+    }
+    int saved_errno = errno;
+    free(probe_path);
+    errno = saved_errno;
+    return result;
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *function_name,
@@ -60876,10 +60918,7 @@ static int ptn_read_file_bytes_with_search(
             *opened_path_out = ptn_duplicate_string(path);
             return 0;
         }
-        result = ptn_read_file_bytes(path, data_out, len_out);
-        if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
-            result = 1;
-        }
+        result = ptn_read_file_bytes_with_normalized_probe(runtime, path, data_out, len_out);
         *opened_path_out = ptn_duplicate_string(path);
         return result;
     }
@@ -60899,10 +60938,7 @@ static int ptn_read_file_bytes_with_search(
         char *candidate = ptn_path_join_alloc(directory, path);
         free(directory);
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
-            result = ptn_read_file_bytes(candidate, data_out, len_out);
-            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
-                result = 1;
-            }
+            result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
                 *opened_path_out = candidate;
                 return result;
@@ -60917,10 +60953,7 @@ static int ptn_read_file_bytes_with_search(
         char *candidate = ptn_path_join_alloc(source_dir, path);
         free(source_dir);
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
-            result = ptn_read_file_bytes(candidate, data_out, len_out);
-            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
-                result = 1;
-            }
+            result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
                 *opened_path_out = candidate;
                 return result;
@@ -60935,10 +60968,7 @@ static int ptn_read_file_bytes_with_search(
         *opened_path_out = ptn_duplicate_string(path);
         return 0;
     }
-    result = ptn_read_file_bytes(path, data_out, len_out);
-    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
-        result = 1;
-    }
+    result = ptn_read_file_bytes_with_normalized_probe(runtime, path, data_out, len_out);
     if (result != 0) {
         *opened_path_out = ptn_duplicate_string(path);
         return result;
@@ -65207,7 +65237,10 @@ static void ptn_emit_stat_warning(
         ptn_abort_out_of_memory();
     }
     if (runtime != NULL && ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        ptn_output_write_cstr(runtime, "\n");
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (!runtime->diagnostics.emitted_warning && root != NULL && root->output_has_started) {
+            ptn_output_write_cstr(runtime, "\n");
+        }
     }
     ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
     free(message);
@@ -68504,8 +68537,8 @@ static PtnValue ptn_internal_get_debug_type(PtnRuntime *runtime, size_t argc, co
         case PTN_EXCEPTION:
             return ptn_runtime_debug_class_name_string(value.as.exception->class_name);
         case PTN_RESOURCE:
-            if (ptn_resource_curl_class_name(value.as.resource) != NULL) {
-                return ptn_string(ptn_resource_curl_class_name(value.as.resource));
+            if (ptn_resource_object_class_name(value.as.resource) != NULL) {
+                return ptn_string(ptn_resource_object_class_name(value.as.resource));
             }
             if (ptn_resource_is_open(value.as.resource)) {
                 int needed = snprintf(NULL, 0, "resource (%s)", value.as.resource->type_name);
@@ -69500,10 +69533,21 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_READFUNCTION 20012
 #define PTN_CURLOPT_RETURNTRANSFER 19913
 #define PTN_CURLOPT_HEADERFUNCTION 20079
+#define PTN_CURLOPT_COOKIEFILE 10031
+#define PTN_CURLOPT_FOLLOWLOCATION 52
+#define PTN_CURLOPT_PROTOCOLS 181
+#define PTN_CURLOPT_REDIR_PROTOCOLS 182
+#define PTN_CURLOPT_DNS_USE_GLOBAL_CACHE 91
 #define PTN_CURLINFO_EFFECTIVE_URL 1048577
 #define PTN_CURLM_OK 0
+#define PTN_CURLM_CALL_MULTI_PERFORM -1
 #define PTN_CURLMSG_DONE 1
 #define PTN_CURLE_OK 0
+#define PTN_CURLE_UNSUPPORTED_PROTOCOL 1
+#define PTN_CURLPROTO_FILE 1024
+#define PTN_CURL_LOCK_DATA_COOKIE 2
+#define PTN_CURL_LOCK_DATA_DNS 3
+#define PTN_CURL_LOCK_DATA_CONNECT 5
 
 static int ptn_curl_runtime_has_active_exception(PtnRuntime *runtime) {
     return runtime != NULL &&
@@ -69622,6 +69666,16 @@ static PTN_UNUSED PtnValue ptn_curl_file_new(
     return object;
 }
 
+static PtnArray *ptn_curl_options_ensure(PtnResource *handle) {
+    PtnValue options = ptn_value_deref(handle->curl_options);
+    if (options.type != PTN_ARRAY) {
+        ptn_value_destroy(&handle->curl_options);
+        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+        options = ptn_value_deref(handle->curl_options);
+    }
+    return options.as.array;
+}
+
 static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
     PtnValue options = ptn_value_deref(handle->curl_options);
     if (options.type != PTN_ARRAY) {
@@ -69635,11 +69689,46 @@ static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
 }
 
 static void ptn_curl_store_option(PtnResource *handle, int64_t option, PtnValue value) {
-    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
-        ptn_value_destroy(&handle->curl_options);
-        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *options = ptn_curl_options_ensure(handle);
+    ptn_array_set_entry(options, ptn_array_int_key(option), value);
+}
+
+static PtnValue *ptn_curl_state_value(PtnResource *handle, const char *key_name) {
+    PtnValue options = ptn_value_deref(handle->curl_options);
+    if (options.type != PTN_ARRAY) {
+        return NULL;
     }
-    ptn_array_set_entry(handle->curl_options.as.array, ptn_array_int_key(option), value);
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    size_t index = ptn_array_find_key(options.as.array, key);
+    ptn_array_key_free(key);
+    if (index >= options.as.array->len) {
+        return NULL;
+    }
+    return &options.as.array->entries[index].value;
+}
+
+static void ptn_curl_store_state(PtnResource *handle, const char *key_name, PtnValue value) {
+    PtnArray *options = ptn_curl_options_ensure(handle);
+    ptn_array_set_entry(options, ptn_array_string_key(key_name), value);
+}
+
+static void ptn_curl_set_error(PtnResource *handle, int64_t code, const char *message) {
+    ptn_curl_store_state(handle, "__errno", ptn_int(code));
+    ptn_curl_store_state(handle, "__error", ptn_owned_string(ptn_duplicate_string(message == NULL ? "" : message)));
+}
+
+static int64_t ptn_curl_error_code(PtnResource *handle) {
+    PtnValue *value = ptn_curl_state_value(handle, "__errno");
+    return value == NULL ? 0 : ptn_value_to_integer(*value);
+}
+
+static const char *ptn_curl_error_message(PtnResource *handle) {
+    PtnValue *value = ptn_curl_state_value(handle, "__error");
+    if (value == NULL) {
+        return "";
+    }
+    PtnValue resolved = ptn_value_deref(*value);
+    return resolved.type == PTN_STRING ? (const char *)resolved.as.string.data : "";
 }
 
 static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
@@ -69654,6 +69743,85 @@ static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size
     );
     ptn_string_operand_free(string);
     return result;
+}
+
+static int ptn_curl_open_basedir_is_active(PtnRuntime *runtime) {
+    const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
+    return open_basedir != NULL && open_basedir[0] != '\0';
+}
+
+static int ptn_curl_validate_open_basedir_path(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(path_operand);
+        return 0;
+    }
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "Path must not contain any null bytes");
+        return 0;
+    }
+    if (path[0] != '\0' && !ptn_open_basedir_allows_path(runtime, path)) {
+        ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+        free(path);
+        return 0;
+    }
+    free(path);
+    return 1;
+}
+
+static int ptn_curl_value_enables_file_protocol(PtnValue value) {
+    return (ptn_value_to_integer(value) & PTN_CURLPROTO_FILE) != 0;
+}
+
+static char *ptn_curl_unsupported_protocol_message_alloc(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+    if (url_value == NULL) {
+        return NULL;
+    }
+    PtnStringOperand url = ptn_value_to_string_operand_with_runtime(runtime, *url_value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(url);
+        return NULL;
+    }
+    const char *scheme_end = NULL;
+    for (size_t i = 0; i + 2 < url.len; i++) {
+        if (url.data[i] == ':' && url.data[i + 1] == '/' && url.data[i + 2] == '/') {
+            scheme_end = url.data + i;
+            break;
+        }
+    }
+    char *message = NULL;
+    if (scheme_end != NULL) {
+        size_t scheme_len = (size_t)(scheme_end - url.data);
+        int unsupported =
+            !(scheme_len == 4 && ptn_ascii_case_equal_n(url.data, "file", 4)) &&
+            !(scheme_len == 4 && ptn_ascii_case_equal_n(url.data, "http", 4)) &&
+            !(scheme_len == 5 && ptn_ascii_case_equal_n(url.data, "https", 5));
+        if (unsupported) {
+            char *scheme = ptn_duplicate_string_len(url.data, scheme_len);
+            int needed = snprintf(NULL, 0, "Protocol \"%s\" not supported or disabled in libcurl", scheme);
+            if (needed < 0) {
+                free(scheme);
+                ptn_abort_out_of_memory();
+            }
+            message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(scheme);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, "Protocol \"%s\" not supported or disabled in libcurl", scheme);
+            free(scheme);
+        }
+    }
+    ptn_string_operand_free(url);
+    return message;
 }
 
 static PtnValue ptn_curl_options_copy(PtnValue options) {
@@ -70004,6 +70172,62 @@ static PtnValue ptn_internal_curl_getinfo(PtnRuntime *runtime, size_t argc, cons
     return ptn_null();
 }
 
+static void ptn_curl_emit_file_protocol_open_basedir_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): CURLPROTO_FILE cannot be activated when an open_basedir is set",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
+static int ptn_curl_setopt_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *handle,
+    int64_t option,
+    PtnValue value,
+    size_t line
+) {
+    if (option == PTN_CURLOPT_COOKIEFILE &&
+        !ptn_curl_validate_open_basedir_path(runtime, function_name, value, line)) {
+        return 0;
+    }
+    if ((option == PTN_CURLOPT_PROTOCOLS || option == PTN_CURLOPT_REDIR_PROTOCOLS) &&
+        ptn_curl_open_basedir_is_active(runtime) &&
+        ptn_curl_value_enables_file_protocol(value)) {
+        ptn_curl_emit_file_protocol_open_basedir_warning(runtime, function_name, line);
+        return 0;
+    }
+
+    PtnValue stored = ptn_null();
+    if (option == PTN_CURLOPT_WRITEFUNCTION || option == PTN_CURLOPT_HEADERFUNCTION || option == PTN_CURLOPT_READFUNCTION) {
+        stored = ptn_internal_expect_callback_arg(runtime, function_name, 3, "value", value);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&stored);
+            return 0;
+        }
+    } else if (option == PTN_CURLOPT_POSTFIELDS) {
+        PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(payload);
+            return 0;
+        }
+        stored = ptn_owned_string_len(ptn_duplicate_string_len(payload.data, payload.len), payload.len);
+        ptn_string_operand_free(payload);
+    } else {
+        stored = ptn_value_clone(value);
+    }
+    ptn_curl_store_option(handle, option, stored);
+    ptn_curl_set_error(handle, PTN_CURLE_OK, "");
+    return 1;
+}
+
 static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *handle = ptn_internal_expect_resource_of_type(
@@ -70028,26 +70252,63 @@ static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const
     if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnValue stored = ptn_null();
-    if (option == PTN_CURLOPT_WRITEFUNCTION || option == PTN_CURLOPT_HEADERFUNCTION || option == PTN_CURLOPT_READFUNCTION) {
-        stored = ptn_internal_expect_callback_arg(runtime, "curl_setopt", 3, "value", args[2]);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_value_destroy(&stored);
-            return ptn_null();
-        }
-    } else if (option == PTN_CURLOPT_POSTFIELDS) {
-        PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, args[2], line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_string_operand_free(payload);
-            return ptn_null();
-        }
-        stored = ptn_owned_string_len(ptn_duplicate_string_len(payload.data, payload.len), payload.len);
-        ptn_string_operand_free(payload);
-    } else {
-        stored = ptn_value_clone(args[2]);
+    int ok = ptn_curl_setopt_value(runtime, "curl_setopt", handle, option, args[2], line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        return ptn_null();
     }
-    ptn_curl_store_option(handle, option, stored);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_curl_setopt_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_setopt_array",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnArray *options = ptn_internal_expect_array_arg(runtime, "curl_setopt_array", 2, "options", args[1]);
+    if (ptn_curl_runtime_has_active_exception(runtime) || options == NULL) {
+        return ptn_null();
+    }
+    for (size_t i = 0; i < options->len; i++) {
+        PtnValue option_key = ptn_array_key_value(options->entries[i].key);
+        int64_t option = ptn_value_to_integer(option_key);
+        ptn_value_destroy(&option_key);
+        int ok = ptn_curl_setopt_value(runtime, "curl_setopt_array", handle, option, options->entries[i].value, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            return ptn_null();
+        }
+        if (!ok) {
+            return ptn_bool(0);
+        }
+    }
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_curl_errno(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_errno", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    return ptn_int(ptn_curl_error_code(handle));
+}
+
+static PtnValue ptn_internal_curl_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_error", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    return ptn_string(ptn_curl_error_message(handle));
 }
 
 static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -70062,6 +70323,16 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
     );
     if (handle == NULL) {
         return ptn_null();
+    }
+    char *protocol_error = ptn_curl_unsupported_protocol_message_alloc(runtime, handle, line);
+    if (protocol_error != NULL) {
+        ptn_curl_set_error(
+            handle,
+            PTN_CURLE_UNSUPPORTED_PROTOCOL,
+            protocol_error
+        );
+        free(protocol_error);
+        return ptn_bool(0);
     }
     PtnValue *upload = ptn_curl_option_value(handle, PTN_CURLOPT_UPLOAD);
     if (upload != NULL && ptn_is_truthy(*upload)) {
@@ -70308,9 +70579,27 @@ static PtnValue ptn_internal_curl_multi_info_read(PtnRuntime *runtime, size_t ar
         }
         ptn_reference_assign(runtime, args[1].as.reference, ptn_int((int64_t)completed->len));
     }
+    int64_t result_code = PTN_CURLE_OK;
+    PtnValue resolved_handle = ptn_value_deref(handle);
+    if (resolved_handle.type == PTN_RESOURCE) {
+        char *protocol_error = ptn_curl_unsupported_protocol_message_alloc(runtime, resolved_handle.as.resource, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            free(protocol_error);
+            ptn_value_destroy(&handle);
+            return ptn_null();
+        }
+        if (protocol_error != NULL) {
+            result_code = PTN_CURLE_UNSUPPORTED_PROTOCOL;
+            ptn_curl_set_error(resolved_handle.as.resource, result_code, protocol_error);
+            free(protocol_error);
+        } else {
+            ptn_curl_set_error(resolved_handle.as.resource, PTN_CURLE_OK, "");
+        }
+    }
+
     PtnValue info = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(info.as.array, ptn_array_string_key("msg"), ptn_int(PTN_CURLMSG_DONE));
-    ptn_array_set_entry(info.as.array, ptn_array_string_key("result"), ptn_int(PTN_CURLE_OK));
+    ptn_array_set_entry(info.as.array, ptn_array_string_key("result"), ptn_int(result_code));
     ptn_array_set_entry(info.as.array, ptn_array_string_key("handle"), handle);
     return info;
 }
@@ -70336,6 +70625,15 @@ static PtnValue ptn_internal_curl_multi_errno(PtnRuntime *runtime, size_t argc, 
     return ptn_int(PTN_CURLM_OK);
 }
 
+static PtnValue ptn_internal_curl_multi_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    if (ptn_internal_expect_resource_of_type(runtime, "curl_multi_close", 1, "multi_handle", args[0], "curl_multi") == NULL) {
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     int64_t code = ptn_internal_expect_integer_arg(runtime, "curl_multi_strerror", 1, "error_code", args[0], line);
@@ -70343,6 +70641,53 @@ static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t arg
         return ptn_null();
     }
     return ptn_string(code == PTN_CURLM_OK ? "No error" : "Unknown error");
+}
+
+static int ptn_curl_share_data_option_is_known(int64_t option) {
+    return option == PTN_CURL_LOCK_DATA_COOKIE ||
+        option == PTN_CURL_LOCK_DATA_DNS ||
+        option == PTN_CURL_LOCK_DATA_CONNECT;
+}
+
+static PtnValue ptn_internal_curl_share_init_persistent(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *options = ptn_internal_expect_array_arg(
+        runtime,
+        "curl_share_init_persistent",
+        1,
+        "share_options",
+        args[0]
+    );
+    if (ptn_curl_runtime_has_active_exception(runtime) || options == NULL) {
+        return ptn_null();
+    }
+    if (options->len == 0) {
+        ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must not be empty");
+        return ptn_null();
+    }
+    for (size_t i = 0; i < options->len; i++) {
+        int64_t option = ptn_value_to_integer(options->entries[i].value);
+        if (!ptn_curl_share_data_option_is_known(option)) {
+            ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must contain only CURL_LOCK_DATA_* constants");
+            return ptn_null();
+        }
+        if (option == PTN_CURL_LOCK_DATA_COOKIE) {
+            ptn_throw_exception(runtime, "ValueError", "curl_share_init_persistent(): Argument #1 ($share_options) must not contain CURL_LOCK_DATA_COOKIE because sharing cookies across PHP requests is unsafe");
+            return ptn_null();
+        }
+    }
+    PtnResource *share = ptn_curl_new_resource(runtime, "curl_share");
+    share->persistent = 1;
+    share->curl_options = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < options->len; i++) {
+        ptn_array_set_entry(
+            share->curl_options.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone(options->entries[i].value)
+        );
+    }
+    return ptn_resource(share);
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -115501,10 +115846,21 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_READFUNCTION", PTN_CURLOPT_READFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_RETURNTRANSFER", PTN_CURLOPT_RETURNTRANSFER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", PTN_CURLOPT_HEADERFUNCTION);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_COOKIEFILE", PTN_CURLOPT_COOKIEFILE);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_FOLLOWLOCATION", PTN_CURLOPT_FOLLOWLOCATION);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_PROTOCOLS", PTN_CURLOPT_PROTOCOLS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_REDIR_PROTOCOLS", PTN_CURLOPT_REDIR_PROTOCOLS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_DNS_USE_GLOBAL_CACHE", PTN_CURLOPT_DNS_USE_GLOBAL_CACHE);
     ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
     ptn_get_defined_constants_add_int(table, "CURLM_OK", PTN_CURLM_OK);
+    ptn_get_defined_constants_add_int(table, "CURLM_CALL_MULTI_PERFORM", PTN_CURLM_CALL_MULTI_PERFORM);
     ptn_get_defined_constants_add_int(table, "CURLMSG_DONE", PTN_CURLMSG_DONE);
     ptn_get_defined_constants_add_int(table, "CURLE_OK", PTN_CURLE_OK);
+    ptn_get_defined_constants_add_int(table, "CURLE_UNSUPPORTED_PROTOCOL", PTN_CURLE_UNSUPPORTED_PROTOCOL);
+    ptn_get_defined_constants_add_int(table, "CURLPROTO_FILE", PTN_CURLPROTO_FILE);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_DNS", PTN_CURL_LOCK_DATA_DNS);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_CONNECT", PTN_CURL_LOCK_DATA_CONNECT);
+    ptn_get_defined_constants_add_int(table, "CURL_LOCK_DATA_COOKIE", PTN_CURL_LOCK_DATA_COOKIE);
 }
 
 static PtnValue ptn_defined_constants_curl_table(void) {
@@ -116066,10 +116422,21 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_READFUNCTION",
         "CURLOPT_RETURNTRANSFER",
         "CURLOPT_HEADERFUNCTION",
+        "CURLOPT_COOKIEFILE",
+        "CURLOPT_FOLLOWLOCATION",
+        "CURLOPT_PROTOCOLS",
+        "CURLOPT_REDIR_PROTOCOLS",
+        "CURLOPT_DNS_USE_GLOBAL_CACHE",
         "CURLINFO_EFFECTIVE_URL",
         "CURLM_OK",
+        "CURLM_CALL_MULTI_PERFORM",
         "CURLMSG_DONE",
         "CURLE_OK",
+        "CURLE_UNSUPPORTED_PROTOCOL",
+        "CURLPROTO_FILE",
+        "CURL_LOCK_DATA_DNS",
+        "CURL_LOCK_DATA_CONNECT",
+        "CURL_LOCK_DATA_COOKIE",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -154518,6 +154885,1148 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
     return ptn_string(message == NULL ? "" : message);
 }
 
+typedef struct {
+    int fd;
+    int domain;
+    int type;
+    int protocol;
+    int last_error;
+} PtnSocketData;
+
+static int ptn_socket_last_error_global = 0;
+
+static void ptn_socket_close_hook(PtnResource *resource, void *opaque) {
+    (void)resource;
+#if !defined(_WIN32)
+    PtnSocketData *data = opaque;
+    if (data != NULL && data->fd >= 0) {
+        (void)shutdown(data->fd, SHUT_RDWR);
+        close(data->fd);
+        data->fd = -1;
+    }
+#else
+    (void)opaque;
+#endif
+}
+
+static PtnSocketData *ptn_socket_data(PtnResource *resource) {
+    if (resource == NULL ||
+        !ptn_resource_is_open(resource) ||
+        resource->type_name == NULL ||
+        strcmp(resource->type_name, "Socket") != 0) {
+        return NULL;
+    }
+    return (PtnSocketData *)resource->close_hook_data;
+}
+
+static PtnResource *ptn_socket_new_resource(
+    PtnRuntime *runtime,
+    int fd,
+    int domain,
+    int type,
+    int protocol
+) {
+    PtnSocketData *data = malloc(sizeof(PtnSocketData));
+    if (data == NULL) {
+#if !defined(_WIN32)
+        if (fd >= 0) {
+            close(fd);
+        }
+#endif
+        ptn_abort_out_of_memory();
+    }
+    data->fd = fd;
+    data->domain = domain;
+    data->type = type;
+    data->protocol = protocol;
+    data->last_error = 0;
+
+    PtnResource *resource = ptn_resource_new_named("Socket");
+    ptn_resource_assign_object_id(runtime, resource);
+    resource->close_hook = ptn_socket_close_hook;
+    resource->close_hook_data = data;
+    resource->close_hook_data_free = free;
+    return resource;
+}
+
+static void ptn_socket_set_last_error(PtnSocketData *data, int error_code) {
+    if (data != NULL) {
+        data->last_error = error_code;
+    }
+    ptn_socket_last_error_global = error_code;
+}
+
+static PtnResource *ptn_internal_expect_socket_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || ptn_socket_data(value.as.resource) == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type Socket, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    return value.as.resource;
+}
+
+static void ptn_socket_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
+    if (arg.type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, arg.as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_socket_false_with_error(PtnSocketData *data, int error_code) {
+    ptn_socket_set_last_error(data, error_code);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_socket_false_from_errno(PtnSocketData *data) {
+    return ptn_socket_false_with_error(data, errno);
+}
+
+static char *ptn_socket_sockaddr_un_path(const struct sockaddr_un *addr, socklen_t len) {
+    if (len <= (socklen_t)offsetof(struct sockaddr_un, sun_path)) {
+        return ptn_duplicate_string("");
+    }
+    size_t path_len = (size_t)len - offsetof(struct sockaddr_un, sun_path);
+    if (path_len > sizeof(addr->sun_path)) {
+        path_len = sizeof(addr->sun_path);
+    }
+    if (path_len > 0 && addr->sun_path[0] != '\0') {
+        size_t trimmed = strnlen(addr->sun_path, path_len);
+        path_len = trimmed;
+    }
+    return ptn_duplicate_string_len(addr->sun_path, path_len);
+}
+
+static int ptn_socket_make_unix_addr(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand path,
+    struct sockaddr_un *addr,
+    socklen_t *len_out,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)runtime;
+    (void)function_name;
+    (void)path;
+    (void)addr;
+    (void)len_out;
+    (void)line;
+    return 0;
+#else
+    size_t max_len = sizeof(addr->sun_path);
+    int abstract = path.len > 0 && path.data[0] == '\0';
+    if (!abstract && max_len > 0) {
+        max_len--;
+    }
+    if (path.len > max_len) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): socket path exceeded the maximum allowed length of %zu bytes",
+            function_name,
+            max_len
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+    memset(addr, 0, sizeof(*addr));
+    addr->sun_family = AF_UNIX;
+    memcpy(addr->sun_path, path.data, path.len);
+    *len_out = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + path.len);
+    if (!abstract) {
+        addr->sun_path[path.len] = '\0';
+        (*len_out)++;
+    }
+    return 1;
+#endif
+}
+
+static int ptn_socket_make_inet_addr(
+    PtnStringOperand address,
+    int64_t port,
+    struct sockaddr_in *addr
+) {
+    if (port < 0 || port > 65535) {
+        return 0;
+    }
+    char *address_c = ptn_duplicate_string_len(address.data, address.len);
+    memset(addr, 0, sizeof(*addr));
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons((uint16_t)port);
+    int ok = inet_pton(AF_INET, address_c, &addr->sin_addr) == 1;
+    free(address_c);
+    return ok;
+}
+
+static PtnValue ptn_internal_socket_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t domain = ptn_internal_expect_integer_arg(runtime, "socket_create", 1, "domain", args[0], line);
+    int64_t type = ptn_internal_expect_integer_arg(runtime, "socket_create", 2, "type", args[1], line);
+    int64_t protocol = ptn_internal_expect_integer_arg(runtime, "socket_create", 3, "protocol", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)domain;
+    (void)type;
+    (void)protocol;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int fd = socket((int)domain, (int)type, (int)protocol);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, (int)domain, (int)type, (int)protocol));
+#endif
+}
+
+static PtnValue ptn_internal_socket_create_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t port = ptn_internal_expect_integer_arg(runtime, "socket_create_listen", 1, "port", args[0], line);
+    int64_t backlog = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "socket_create_listen", 2, "backlog", args[1], line)
+        : 128;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (port < 0 || port > 65535) {
+        ptn_socket_set_last_error(NULL, EINVAL);
+        return ptn_bool(0);
+    }
+#if defined(_WIN32)
+    (void)backlog;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
+        listen(fd, backlog < 0 ? 0 : (int)backlog) != 0) {
+        int error_code = errno;
+        close(fd);
+        return ptn_socket_false_with_error(NULL, error_code);
+    }
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, AF_INET, SOCK_STREAM, IPPROTO_TCP));
+#endif
+}
+
+static PtnValue ptn_internal_socket_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_close", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_close(resource);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_socket_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_bind", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_bind", 2, "address", args[1], line);
+    int64_t port = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_bind", 3, "port", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un addr;
+        socklen_t len = 0;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_bind", address, &addr, &len, line)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = bind(data->fd, (struct sockaddr *)&addr, len);
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in addr;
+        if (!ptn_socket_make_inet_addr(address, port, &addr)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = bind(data->fd, (struct sockaddr *)&addr, sizeof(addr));
+    } else {
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_string_operand_free(address);
+    if (result != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_getsockname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_getsockname", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+    if (getsockname(data->fd, (struct sockaddr *)&addr, &len) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    if (addr.ss_family == AF_INET) {
+        char buffer[INET_ADDRSTRLEN];
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&addr;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, buffer, sizeof(buffer));
+        if (formatted == NULL) {
+            return ptn_socket_false_from_errno(data);
+        }
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(formatted));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+        }
+    } else if (addr.ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((struct sockaddr_un *)&addr, len);
+        ptn_socket_assign_reference(runtime, args[1], ptn_owned_string(path));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int(0));
+        }
+    } else {
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_listen", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t backlog = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "socket_listen", 2, "backlog", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    (void)backlog;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    if (listen(data->fd, backlog < 0 ? 0 : (int)backlog) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_connect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_connect", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_connect", 2, "address", args[1], line);
+    int64_t port = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_connect", 3, "port", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un addr;
+        socklen_t len = 0;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_connect", address, &addr, &len, line)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = connect(data->fd, (struct sockaddr *)&addr, len);
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in addr;
+        if (!ptn_socket_make_inet_addr(address, port, &addr)) {
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        result = connect(data->fd, (struct sockaddr *)&addr, sizeof(addr));
+    } else {
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_string_operand_free(address);
+    if (result != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_accept(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_accept", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int fd;
+    do {
+        fd = accept(data->fd, NULL, NULL);
+    } while (fd < 0 && errno == EINTR);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, data->domain, data->type, data->protocol));
+#endif
+}
+
+static int ptn_socket_length_is_usable(int64_t length) {
+    return length > 0 && length <= INT_MAX;
+}
+
+static PtnValue ptn_internal_socket_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_read", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_read", 2, "length", args[1], line);
+    int64_t mode = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_read", 3, "mode", args[2], line)
+        : 2;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)mode;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t used = 0;
+    if (mode == 1) {
+        while (used < (size_t)length) {
+            char byte = '\0';
+            ssize_t received = recv(data->fd, &byte, 1, 0);
+            if (received <= 0) {
+                if (received < 0) {
+                    free(buffer);
+                    return ptn_socket_false_from_errno(data);
+                }
+                break;
+            }
+            buffer[used++] = byte;
+            if (byte == '\n') {
+                break;
+            }
+        }
+    } else {
+        ssize_t received;
+        do {
+            received = recv(data->fd, buffer, (size_t)length, 0);
+        } while (received < 0 && errno == EINTR);
+        if (received < 0) {
+            free(buffer);
+            return ptn_socket_false_from_errno(data);
+        }
+        used = (size_t)received;
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_owned_string_len(buffer, used);
+#endif
+}
+
+static PtnValue ptn_internal_socket_write(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_write", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand buffer = ptn_internal_expect_string_arg(runtime, "socket_write", 2, "data", args[1], line);
+    int64_t length = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_write", 3, "length", args[2], line)
+        : (int64_t)buffer.len;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(buffer);
+        return ptn_null();
+    }
+    if (length < 0) {
+        ptn_string_operand_free(buffer);
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+    size_t write_len = (size_t)length;
+    if (write_len > buffer.len) {
+        write_len = buffer.len;
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(buffer);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    ssize_t sent;
+    do {
+        sent = send(data->fd, buffer.data, write_len, 0);
+    } while (sent < 0 && errno == EINTR);
+    ptn_string_operand_free(buffer);
+    if (sent < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)sent);
+#endif
+}
+
+static PtnValue ptn_internal_socket_recv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_recv", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_recv", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_recv", 4, "flags", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)flags;
+    ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ssize_t received;
+    do {
+        received = recv(data->fd, buffer, (size_t)length, (int)flags);
+    } while (received < 0 && errno == EINTR);
+    if (received < 0) {
+        free(buffer);
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_assign_reference(runtime, args[1], ptn_owned_string_len(buffer, (size_t)received));
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)received);
+#endif
+}
+
+static PtnValue ptn_internal_socket_sendto(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_sendto", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnStringOperand buffer = ptn_internal_expect_string_arg(runtime, "socket_sendto", 2, "data", args[1], line);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_sendto", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_sendto", 4, "flags", args[3], line);
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "socket_sendto", 5, "address", args[4], line);
+    int64_t port = argc >= 6
+        ? ptn_internal_expect_integer_arg(runtime, "socket_sendto", 6, "port", args[5], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+    if (length < 0) {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+    size_t send_len = (size_t)length;
+    if (send_len > buffer.len) {
+        send_len = buffer.len;
+    }
+#if defined(_WIN32)
+    ptn_string_operand_free(buffer);
+    ptn_string_operand_free(address);
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage storage;
+    struct sockaddr *sockaddr_ptr = (struct sockaddr *)&storage;
+    socklen_t sockaddr_len = 0;
+    if (data->domain == AF_UNIX) {
+        struct sockaddr_un *unix_addr = (struct sockaddr_un *)&storage;
+        if (!ptn_socket_make_unix_addr(runtime, "socket_sendto", address, unix_addr, &sockaddr_len, line)) {
+            ptn_string_operand_free(buffer);
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+    } else if (data->domain == AF_INET) {
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&storage;
+        if (!ptn_socket_make_inet_addr(address, port, inet_addr)) {
+            ptn_string_operand_free(buffer);
+            ptn_string_operand_free(address);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        sockaddr_len = sizeof(*inet_addr);
+    } else {
+        ptn_string_operand_free(buffer);
+        ptn_string_operand_free(address);
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ssize_t sent;
+    do {
+        sent = sendto(data->fd, buffer.data, send_len, (int)flags, sockaddr_ptr, sockaddr_len);
+    } while (sent < 0 && errno == EINTR);
+    ptn_string_operand_free(buffer);
+    ptn_string_operand_free(address);
+    if (sent < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)sent);
+#endif
+}
+
+static PtnValue ptn_internal_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_recvfrom", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "socket_recvfrom", 3, "length", args[2], line);
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, "socket_recvfrom", 4, "flags", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_socket_length_is_usable(length)) {
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+#if defined(_WIN32)
+    (void)flags;
+    ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+    ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+    if (argc >= 6) {
+        ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+    }
+    return ptn_socket_false_with_error(data, 0);
+#else
+    char *buffer = malloc((size_t)length);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    struct sockaddr_storage from;
+    socklen_t from_len = sizeof(from);
+    ssize_t received;
+    do {
+        received = recvfrom(data->fd, buffer, (size_t)length, (int)flags, (struct sockaddr *)&from, &from_len);
+    } while (received < 0 && errno == EINTR);
+    if (received < 0) {
+        free(buffer);
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(""));
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_assign_reference(runtime, args[1], ptn_owned_string_len(buffer, (size_t)received));
+    if (from.ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((struct sockaddr_un *)&from, from_len);
+        ptn_socket_assign_reference(runtime, args[4], ptn_owned_string(path));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+    } else if (from.ss_family == AF_INET) {
+        char addr_buffer[INET_ADDRSTRLEN];
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&from;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, addr_buffer, sizeof(addr_buffer));
+        ptn_socket_assign_reference(runtime, args[4], formatted == NULL ? ptn_string("") : ptn_string(formatted));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+        }
+    } else {
+        ptn_socket_assign_reference(runtime, args[4], ptn_string(""));
+        if (argc >= 6) {
+            ptn_socket_assign_reference(runtime, args[5], ptn_int(0));
+        }
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)received);
+#endif
+}
+
+static int ptn_socket_set_blocking(PtnSocketData *data, int enabled) {
+#if defined(_WIN32)
+    (void)data;
+    (void)enabled;
+    return 0;
+#else
+    int flags = fcntl(data->fd, F_GETFL, 0);
+    if (flags < 0) {
+        return 0;
+    }
+    if (enabled) {
+        flags &= ~O_NONBLOCK;
+    } else {
+        flags |= O_NONBLOCK;
+    }
+    return fcntl(data->fd, F_SETFL, flags) == 0;
+#endif
+}
+
+static PtnValue ptn_internal_socket_set_nonblock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_nonblock", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    if (!ptn_socket_set_blocking(data, 0)) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_socket_set_block(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_block", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    if (!ptn_socket_set_blocking(data, 1)) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+}
+
+static void ptn_socket_linger_missing_key(PtnRuntime *runtime, const char *key_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "socket_set_option(): Argument #4 ($value) must have key \"%s\"",
+        key_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_socket_array_integer_value(PtnArray *array, const char *key_name, int *out) {
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 0;
+    }
+    *out = (int)ptn_value_to_integer(entry->value);
+    return 1;
+}
+
+static PtnValue ptn_internal_socket_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_set_option", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t level = ptn_internal_expect_integer_arg(runtime, "socket_set_option", 2, "level", args[1], line);
+    int64_t option = ptn_internal_expect_integer_arg(runtime, "socket_set_option", 3, "option", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)level;
+    (void)option;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int result = -1;
+    if (level == SOL_SOCKET && option == SO_LINGER) {
+        PtnValue option_value = ptn_value_deref(args[3]);
+        if (option_value.type != PTN_ARRAY) {
+            ptn_socket_linger_missing_key(runtime, "l_onoff");
+            return ptn_null();
+        }
+        struct linger linger_value;
+        if (!ptn_socket_array_integer_value(option_value.as.array, "l_onoff", &linger_value.l_onoff)) {
+            ptn_socket_linger_missing_key(runtime, "l_onoff");
+            return ptn_null();
+        }
+        if (!ptn_socket_array_integer_value(option_value.as.array, "l_linger", &linger_value.l_linger)) {
+            ptn_socket_linger_missing_key(runtime, "l_linger");
+            return ptn_null();
+        }
+        result = setsockopt(data->fd, (int)level, (int)option, &linger_value, sizeof(linger_value));
+    } else {
+        int value = (int)ptn_value_to_integer(args[3]);
+        result = setsockopt(data->fd, (int)level, (int)option, &value, sizeof(value));
+    }
+    if (result != 0) {
+        int error_code = errno;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_set_option(): Unable to set socket option [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_socket_false_with_error(data, error_code);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
+static PtnValue ptn_internal_socket_get_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_get_option", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    int64_t level = ptn_internal_expect_integer_arg(runtime, "socket_get_option", 2, "level", args[1], line);
+    int64_t option = ptn_internal_expect_integer_arg(runtime, "socket_get_option", 3, "option", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)level;
+    (void)option;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    if (level == SOL_SOCKET && option == SO_LINGER) {
+        struct linger linger_value;
+        socklen_t len = sizeof(linger_value);
+        if (getsockopt(data->fd, (int)level, (int)option, &linger_value, &len) != 0) {
+            return ptn_socket_false_from_errno(data);
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("l_onoff"), ptn_int(linger_value.l_onoff));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("l_linger"), ptn_int(linger_value.l_linger));
+        ptn_socket_set_last_error(data, 0);
+        return result;
+    }
+    int value = 0;
+    socklen_t len = sizeof(value);
+    if (getsockopt(data->fd, (int)level, (int)option, &value, &len) != 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int(value);
+#endif
+}
+
+static PtnValue ptn_internal_socket_last_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        (void)runtime;
+        return ptn_int(ptn_socket_last_error_global);
+    }
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_last_error", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    return ptn_int(data == NULL ? ptn_socket_last_error_global : data->last_error);
+}
+
+static PtnValue ptn_internal_socket_clear_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        (void)runtime;
+        ptn_socket_last_error_global = 0;
+        return ptn_null();
+    }
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_clear_error", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    ptn_socket_set_last_error(data, 0);
+    return ptn_null();
+}
+
+static int ptn_socket_select_arg_array(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    PtnArray **array_out,
+    int *is_null_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *array_out = NULL;
+        *is_null_out = 1;
+        return 1;
+    }
+    *is_null_out = 0;
+    if (value.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_select(): Argument #%zu ($%s) must be of type ?array, %s given",
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *array_out = value.as.array;
+    return 1;
+}
+
+static int ptn_socket_select_add_array(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t position,
+    const char *argument_name,
+    fd_set *set,
+    int *max_fd
+) {
+    if (array == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnSocketData *data = value.type == PTN_RESOURCE ? ptn_socket_data(value.as.resource) : NULL;
+        if (data == NULL) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "socket_select(): Argument #%zu ($%s) must only have elements of type Socket, %s given",
+                position,
+                argument_name,
+                ptn_offset_container_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        if (data->fd < 0 || data->fd >= FD_SETSIZE) {
+            ptn_throw_exception(runtime, "ValueError", "socket_select(): supplied Socket is not a valid select descriptor");
+            return 0;
+        }
+        FD_SET(data->fd, set);
+        if (data->fd > *max_fd) {
+            *max_fd = data->fd;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_socket_select_selected_array(PtnArray *array, fd_set *set) {
+    PtnValue selected = ptn_array_from_literal_entries(0, NULL);
+    if (array == NULL) {
+        return selected;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnSocketData *data = value.type == PTN_RESOURCE ? ptn_socket_data(value.as.resource) : NULL;
+        if (data != NULL && data->fd >= 0 && data->fd < FD_SETSIZE && FD_ISSET(data->fd, set)) {
+            ptn_array_set_entry(
+                selected.as.array,
+                ptn_array_key_clone(array->entries[i].key),
+                ptn_value_clone_deref(array->entries[i].value)
+            );
+        }
+    }
+    return selected;
+}
+
+static PtnValue ptn_internal_socket_select(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *read_array = NULL;
+    PtnArray *write_array = NULL;
+    PtnArray *except_array = NULL;
+    int read_null = 0;
+    int write_null = 0;
+    int except_null = 0;
+    if (!ptn_socket_select_arg_array(runtime, 1, "read", args[0], &read_array, &read_null) ||
+        !ptn_socket_select_arg_array(runtime, 2, "write", args[1], &write_array, &write_null) ||
+        !ptn_socket_select_arg_array(runtime, 3, "except", args[2], &except_array, &except_null)) {
+        return ptn_null();
+    }
+    if ((read_array == NULL || read_array->len == 0) &&
+        (write_array == NULL || write_array->len == 0) &&
+        (except_array == NULL || except_array->len == 0)) {
+        ptn_throw_exception(runtime, "ValueError", "socket_select(): At least one array argument must be passed");
+        return ptn_null();
+    }
+    int64_t seconds = ptn_value_deref(args[3]).type == PTN_NULL
+        ? -1
+        : ptn_internal_expect_integer_arg(runtime, "socket_select", 4, "seconds", args[3], line);
+    int64_t microseconds = argc >= 5
+        ? ptn_internal_expect_integer_arg(runtime, "socket_select", 5, "microseconds", args[4], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (seconds < -1 || microseconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "socket_select(): timeout must be greater than or equal to 0");
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)read_null;
+    (void)write_null;
+    (void)except_null;
+    return ptn_bool(0);
+#else
+    fd_set read_set;
+    fd_set write_set;
+    fd_set except_set;
+    FD_ZERO(&read_set);
+    FD_ZERO(&write_set);
+    FD_ZERO(&except_set);
+    int max_fd = -1;
+    if (!ptn_socket_select_add_array(runtime, read_array, 1, "read", &read_set, &max_fd) ||
+        !ptn_socket_select_add_array(runtime, write_array, 2, "write", &write_set, &max_fd) ||
+        !ptn_socket_select_add_array(runtime, except_array, 3, "except", &except_set, &max_fd)) {
+        return ptn_null();
+    }
+    struct timeval timeout;
+    struct timeval *timeout_ptr = NULL;
+    if (seconds >= 0) {
+        timeout.tv_sec = (time_t)seconds;
+        timeout.tv_usec = (suseconds_t)microseconds;
+        timeout_ptr = &timeout;
+    }
+    int selected;
+    do {
+        selected = select(
+            max_fd + 1,
+            read_array == NULL ? NULL : &read_set,
+            write_array == NULL ? NULL : &write_set,
+            except_array == NULL ? NULL : &except_set,
+            timeout_ptr
+        );
+    } while (selected < 0 && errno == EINTR);
+    if (selected < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    ptn_socket_assign_reference(runtime, args[0], read_null ? ptn_null() : ptn_socket_select_selected_array(read_array, &read_set));
+    ptn_socket_assign_reference(runtime, args[1], write_null ? ptn_null() : ptn_socket_select_selected_array(write_array, &write_set));
+    ptn_socket_assign_reference(runtime, args[2], except_null ? ptn_null() : ptn_socket_select_selected_array(except_array, &except_set));
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_int(selected);
+#endif
+}
+
+static PtnValue ptn_internal_socket_import_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *stream = ptn_internal_expect_open_stream_arg(runtime, "socket_import_stream", args[0], line);
+    if (stream == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    return ptn_bool(0);
+#else
+    if (stream->stream == NULL) {
+        return ptn_bool(0);
+    }
+    int fd = fileno(stream->stream);
+    if (fd < 0) {
+        return ptn_bool(0);
+    }
+    int dup_fd = dup(fd);
+    if (dup_fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    int domain = AF_UNIX;
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    if (getsockname(dup_fd, (struct sockaddr *)&addr, &addr_len) == 0) {
+        domain = addr.ss_family;
+    }
+    int type = SOCK_STREAM;
+    socklen_t type_len = sizeof(type);
+    (void)getsockopt(dup_fd, SOL_SOCKET, SO_TYPE, &type, &type_len);
+    return ptn_resource(ptn_socket_new_resource(runtime, dup_fd, domain, type, 0));
+#endif
+}
+
 static void ptn_stream_socket_server_assign_error(
     PtnRuntime *runtime,
     size_t argc,
@@ -182156,10 +183665,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "curl_close", 1, 1, ptn_internal_curl_close },
         { "curl_copy_handle", 1, 1, ptn_internal_curl_copy_handle },
+        { "curl_errno", 1, 1, ptn_internal_curl_errno },
+        { "curl_error", 1, 1, ptn_internal_curl_error },
         { "curl_exec", 1, 1, ptn_internal_curl_exec },
         { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
+        { "curl_multi_close", 1, 1, ptn_internal_curl_multi_close },
         { "curl_multi_errno", 1, 1, ptn_internal_curl_multi_errno },
         { "curl_multi_exec", 2, 2, ptn_internal_curl_multi_exec },
         { "curl_multi_get_handles", 1, 1, ptn_internal_curl_multi_get_handles },
@@ -182168,7 +183680,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_multi_remove_handle", 2, 2, ptn_internal_curl_multi_remove_handle },
         { "curl_multi_select", 1, 2, ptn_internal_curl_multi_select },
         { "curl_multi_strerror", 1, 1, ptn_internal_curl_multi_strerror },
+        { "curl_share_init_persistent", 1, 1, ptn_internal_curl_share_init_persistent },
         { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
+        { "curl_setopt_array", 2, 2, ptn_internal_curl_setopt_array },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
         { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
@@ -182905,7 +184419,28 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sleep", 1, 1, ptn_internal_sleep },
+        { "socket_accept", 1, 1, ptn_internal_socket_accept },
+        { "socket_bind", 2, 3, ptn_internal_socket_bind },
+        { "socket_clear_error", 0, 1, ptn_internal_socket_clear_error },
+        { "socket_close", 1, 1, ptn_internal_socket_close },
+        { "socket_connect", 2, 3, ptn_internal_socket_connect },
+        { "socket_create", 3, 3, ptn_internal_socket_create },
+        { "socket_create_listen", 1, 2, ptn_internal_socket_create_listen },
+        { "socket_get_option", 3, 3, ptn_internal_socket_get_option },
+        { "socket_getsockname", 2, 3, ptn_internal_socket_getsockname },
+        { "socket_import_stream", 1, 1, ptn_internal_socket_import_stream },
+        { "socket_last_error", 0, 1, ptn_internal_socket_last_error },
+        { "socket_listen", 1, 2, ptn_internal_socket_listen },
+        { "socket_read", 2, 3, ptn_internal_socket_read },
+        { "socket_recv", 4, 4, ptn_internal_socket_recv },
+        { "socket_recvfrom", 5, 6, ptn_internal_socket_recvfrom },
+        { "socket_select", 4, 5, ptn_internal_socket_select },
+        { "socket_sendto", 5, 6, ptn_internal_socket_sendto },
+        { "socket_set_block", 1, 1, ptn_internal_socket_set_block },
+        { "socket_set_nonblock", 1, 1, ptn_internal_socket_set_nonblock },
+        { "socket_set_option", 4, 4, ptn_internal_socket_set_option },
         { "socket_strerror", 1, 1, ptn_internal_socket_strerror },
+        { "socket_write", 2, 3, ptn_internal_socket_write },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "spl_autoload", 1, 2, ptn_internal_spl_autoload },
