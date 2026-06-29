@@ -28674,6 +28674,32 @@ $sqlite->exec('INSERT INTO s VALUES (42)');
 $result = $sqlite->query('SELECT n FROM s');
 var_dump($result->fetchArray(SQLITE3_NUM));
 var_dump($result->fetchArray(SQLITE3_NUM));
+
+$reuse = new PDO('sqlite::memory:');
+$reuse->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$reuse->query('CREATE TABLE user (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(255) NOT NULL)');
+$stmt = $reuse->prepare('INSERT INTO user (id, name) VALUES(:id, :name)');
+$stmt->execute(['id' => 10, 'name' => 'test']);
+$stmt = $reuse->prepare('SELECT * FROM user WHERE id = :id');
+$stmt->execute(['id' => 10]);
+var_dump($stmt->fetchAll(PDO::FETCH_ASSOC));
+$reuse->query('ALTER TABLE user ADD new_col VARCHAR(255)');
+$stmt->execute(['id' => 10]);
+var_dump($stmt->fetchAll(PDO::FETCH_ASSOC));
+
+$collate = new Pdo\Sqlite('sqlite::memory:');
+$collate->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$collate->query('CREATE TABLE test_pdo_sqlite_createcollation (id INT AUTO INCREMENT, name TEXT)');
+$collate->query("INSERT INTO test_pdo_sqlite_createcollation VALUES (NULL, '1'), (NULL, '2'), (NULL, '10')");
+$collate->createCollation('MYCOLLATE', function($a, $b) { return strnatcmp($a, $b); });
+$result = $collate->query('SELECT name FROM test_pdo_sqlite_createcollation ORDER BY name COLLATE MYCOLLATE');
+foreach ($result as $row) {
+    echo $row['name'] . "\n";
+}
+$result = $collate->query('SELECT name FROM test_pdo_sqlite_createcollation ORDER BY name');
+foreach ($result as $row) {
+    echo $row['name'] . "\n";
+}
 "#,
     )
     .unwrap();
@@ -28685,7 +28711,7 @@ var_dump($result->fetchArray(SQLITE3_NUM));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\nstring(6) \"sqlite\"\nbool(true)\nint(1)\nint(2)\narray(2) {\n  [\"id\"]=>\n  int(2)\n  [\"label\"]=>\n  string(1) \"b\"\n}\nbool(false)\n'a''b'\narray(1) {\n  [0]=>\n  int(42)\n}\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\nstring(6) \"sqlite\"\nbool(true)\nint(1)\nint(2)\narray(2) {\n  [\"id\"]=>\n  int(2)\n  [\"label\"]=>\n  string(1) \"b\"\n}\nbool(false)\n'a''b'\narray(1) {\n  [0]=>\n  int(42)\n}\nbool(false)\narray(1) {\n  [0]=>\n  array(2) {\n    [\"id\"]=>\n    int(10)\n    [\"name\"]=>\n    string(4) \"test\"\n  }\n}\narray(1) {\n  [0]=>\n  array(3) {\n    [\"id\"]=>\n    int(10)\n    [\"name\"]=>\n    string(4) \"test\"\n    [\"new_col\"]=>\n    NULL\n  }\n}\n1\n2\n10\n1\n10\n2\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
