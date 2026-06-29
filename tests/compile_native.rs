@@ -58197,6 +58197,217 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
+fn compile_soap_classmap_inherited_namespaced_round_trip_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-classmap-inherited-namespaced");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-classmap-inherited-namespaced.php");
+    let output = root.join("soap-classmap-inherited-namespaced-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/classmap007.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ab" targetNamespace="urn:ab"
+  xmlns:typens="urn:ab"
+  xmlns:typenst="urn:abt"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <xsd:schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:ab">
+      <xsd:complexType name="A"><xsd:sequence><xsd:element name="x" type="xsd:anyType"/></xsd:sequence></xsd:complexType>
+      <xsd:complexType name="B">
+        <xsd:complexContent>
+          <xsd:extension base="typens:A"><xsd:sequence><xsd:element name="y" type="xsd:anyType"/></xsd:sequence></xsd:extension>
+        </xsd:complexContent>
+      </xsd:complexType>
+    </xsd:schema>
+    <xsd:schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:abt">
+      <xsd:complexType name="At"><xsd:sequence><xsd:element name="x" type="xsd:anyType"/></xsd:sequence></xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="f"><part name="fInput" type="xsd:anyType"/></message>
+  <message name="fResponse"><part name="fReturn" type="typens:A"/></message>
+  <portType name="abServerPortType">
+    <operation name="f"><input message="typens:f"/><output message="typens:fResponse"/></operation>
+  </portType>
+  <binding name="abServerBinding" type="typens:abServerPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="f">
+      <soap:operation soapAction="urn:abServerAction"/>
+      <input><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+</definitions>
+WSDL);
+
+class A {
+    public $x;
+    function __construct($a) { $this->x = $a; }
+}
+class Attest {
+    public $x;
+    function __construct($a) { $this->x = $a; }
+}
+class B extends A {
+    public $y;
+    function __construct($a) { parent::__construct($a); $this->y = $a + 1; }
+}
+
+$lastRequest = '';
+function f($input) { return new B(5); }
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('f');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        $GLOBALS['lastRequest'] = $request;
+        ob_start();
+        $this->server->handle($request);
+        return ob_get_clean();
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['classmap' => ['A' => 'A', '{urn:abt}At' => 'Attest', 'B' => 'B']]);
+echo $GLOBALS['lastRequest'];
+print_r($client->f(new Attest('test')));
+echo $GLOBALS['lastRequest'];
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("xmlns:ns2=\"urn:abt\""), "{stdout}");
+    assert!(
+        stdout.contains("<fInput xsi:type=\"ns2:At\"><x xsi:type=\"xsd:string\">test</x></fInput>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("B Object\n(\n    [x] => 5\n    [y] => 6\n)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_decode_classmap_options"));
+    assert!(c_source.contains("ptn_soap_type_is_or_extends"));
+}
+
+#[test]
+fn compile_soap_schema_referenced_attribute_default_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-schema-referenced-attribute-default");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-schema-referenced-attribute-default.php");
+    let output = root.join("soap-schema-referenced-attribute-default-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$val = null;
+function test($input) {
+    $GLOBALS['val'] = $input;
+}
+
+$wsdl = __DIR__ . '/schema069.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<definitions name="InteropTest"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://test-uri/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/"/>
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/"/>
+      <complexType name="testType">
+        <attribute name="str" type="string"/>
+        <attribute ref="tns:int"/>
+      </complexType>
+      <attribute name="int" type="int" default="5"/>
+    </schema>
+  </types>
+  <message name="testMessage"><part name="testParam" type="tns:testType"/></message>
+  <portType name="testPortType">
+    <operation name="test"><input message="testMessage"/></operation>
+  </portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input><soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding"><soap:address location="test://"/></port>
+  </service>
+</definitions>
+WSDL);
+
+ini_set('soap.wsdl_cache_enabled', 0);
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$server = new SoapServer($wsdl);
+$server->addFunction('test');
+$client->test((object)['str' => 'str']);
+$request = $client->__getLastRequest();
+ob_start();
+$server->handle($request);
+ob_end_clean();
+echo $request;
+var_dump($GLOBALS['val']);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://test-uri/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<testParam str=\"str\" xsi:type=\"ns1:testType\"/>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(stdClass)#")
+            && stdout.contains("[\"str\"]=>\n  string(3) \"str\"")
+            && stdout.contains("[\"int\"]=>\n  int(5)"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_rpc_encoded_parts_prefer_xsi_before_xsd"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();
@@ -58472,6 +58683,187 @@ $server->handle($request);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_append_typemap_xml"));
+}
+
+#[test]
+fn compile_soap_typemap_to_xml_fault_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-typemap-to-xml-fault");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-typemap-to-xml-fault.php");
+    let output = root.join("soap-typemap-to-xml-fault-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/typemap-fault.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<wsdl:definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://schemas.nothing.com"
+  targetNamespace="http://schemas.nothing.com">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://schemas.nothing.com">
+      <xsd:complexType name="book">
+        <xsd:all>
+          <xsd:element name="a" type="xsd:string"/>
+          <xsd:element name="b" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+    </xsd:schema>
+  </wsdl:types>
+  <message name="dotestRequest"><part name="dotestReturn" type="tns:book"/></message>
+  <message name="dotestResponse"><part name="res" type="xsd:string"/></message>
+  <portType name="testPortType">
+    <operation name="dotest"><input message="tns:dotestRequest"/><output message="tns:dotestResponse"/></operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="dotest">
+      <soap:operation soapAction="dotest" style="rpc"/>
+      <input><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" namespace="http://schemas.nothing.com"/></input>
+      <output><soap:body use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" namespace="http://schemas.nothing.com"/></output>
+    </operation>
+  </binding>
+</wsdl:definitions>
+WSDL);
+
+class TestSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): never {
+        echo "transport reached\n";
+        exit;
+    }
+}
+
+class book {
+    public $a = 'a';
+    public $b = 'c';
+}
+
+function book_to_xml($book) {
+    throw new SoapFault('Client', 'Conversion Error');
+}
+
+$client = new TestSoapClient($wsdl, [
+    'actor' => 'http://schemas.nothing.com',
+    'typemap' => [[
+        'type_ns' => 'http://schemas.nothing.com',
+        'type_name' => 'book',
+        'to_xml' => 'book_to_xml',
+    ]],
+]);
+$book = new book();
+$book->a = 'foo';
+$book->b = 'bar';
+try {
+    $ret = $client->dotest($book);
+} catch (SoapFault $e) {
+    $ret = 'SoapFault = ' . $e->faultcode . ' - ' . $e->faultstring;
+}
+var_dump($ret);
+echo "ok\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(37) \"SoapFault = Client - Conversion Error\"\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_typemap_xml"));
+}
+
+#[test]
+fn compile_soap_wsdl_document_anyxml_soapvars_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-document-anyxml-soapvars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-document-anyxml-soapvars.php");
+    let output = root.join("soap-wsdl-document-anyxml-soapvars-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/anyxml.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<wsdl:definitions xmlns:axis2="http://quickstart.samples/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:ns="http://quickstart.samples/xsd"
+  targetNamespace="http://quickstart.samples/">
+  <wsdl:types>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+      elementFormDefault="qualified"
+      targetNamespace="http://quickstart.samples/xsd">
+      <xs:element name="update">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="symbol" nillable="true" type="xs:any"/>
+            <xs:element name="price" nillable="true" type="xs:any"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="updateMessage"><wsdl:part name="part1" element="ns:update"/></wsdl:message>
+  <wsdl:portType name="StockQuoteServicePortType">
+    <wsdl:operation name="update"><wsdl:input message="axis2:updateMessage"/></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="StockQuoteServiceSOAP11Binding" type="axis2:StockQuoteServicePortType">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <wsdl:operation name="update">
+      <soap:operation soapAction="urn:update" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="StockQuoteService">
+    <wsdl:port name="StockQuoteServiceSOAP11port_http" binding="axis2:StockQuoteServiceSOAP11Binding">
+      <soap:address location="test://"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->update([
+    'symbol' => new SoapVar('<symbol>MSFT</symbol>', XSD_ANYXML),
+    'price' => new SoapVar('<price>1000</price>', XSD_ANYXML),
+]);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<ns1:update><symbol>MSFT</symbol><price>1000</price></ns1:update>"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("&lt;symbol&gt;"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_anyxml_soapvar"));
 }
 
 #[test]
