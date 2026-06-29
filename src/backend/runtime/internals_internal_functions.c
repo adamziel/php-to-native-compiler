@@ -70809,6 +70809,9 @@ static const PtnTokenNameEntry PTN_TOKEN_NAMES[] = {
     { "T_NAME_RELATIVE", PTN_T_NAME_RELATIVE },
     { "T_NAME_QUALIFIED", PTN_T_NAME_QUALIFIED },
     { "T_NS_SEPARATOR", PTN_T_NS_SEPARATOR },
+    { "T_TRAIT_C", PTN_T_TRAIT_C },
+    { "T_NULLSAFE_OBJECT_OPERATOR", PTN_T_NULLSAFE_OBJECT_OPERATOR },
+    { "T_BAD_CHARACTER", PTN_T_BAD_CHARACTER },
 };
 
 static const char *ptn_token_name_cstr(int64_t id) {
@@ -70863,43 +70866,6 @@ static void ptn_token_get_all_append_string(
     );
 }
 
-static int64_t ptn_token_keyword_id(const char *text, size_t len) {
-    if (len == 2 && strncmp(text, "if", 2) == 0) {
-        return PTN_T_IF;
-    }
-    if (len == 4 && strncmp(text, "echo", 4) == 0) {
-        return PTN_T_ECHO;
-    }
-    if (len == 4 && strncmp(text, "case", 4) == 0) {
-        return PTN_T_CASE;
-    }
-    if (len == 4 && strncmp(text, "exit", 4) == 0) {
-        return PTN_T_EXIT;
-    }
-    if (len == 5 && strncmp(text, "isset", 5) == 0) {
-        return PTN_T_ISSET;
-    }
-    if (len == 5 && strncmp(text, "print", 5) == 0) {
-        return PTN_T_PRINT;
-    }
-    if (len == 5 && strncmp(text, "endif", 5) == 0) {
-        return PTN_T_ENDIF;
-    }
-    if (len == 5 && strncmp(text, "break", 5) == 0) {
-        return PTN_T_BREAK;
-    }
-    if (len == 5 && strncmp(text, "while", 5) == 0) {
-        return PTN_T_WHILE;
-    }
-    if (len == 6 && strncmp(text, "switch", 6) == 0) {
-        return PTN_T_SWITCH;
-    }
-    if (len == 7 && strncmp(text, "default", 7) == 0) {
-        return PTN_T_DEFAULT;
-    }
-    return PTN_T_STRING;
-}
-
 static int ptn_token_is_ident_start(unsigned char byte) {
     return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte == '_';
 }
@@ -70919,6 +70885,409 @@ static int ptn_token_ascii_ci_equal(const char *text, size_t len, const char *li
         }
     }
     return 1;
+}
+
+static int ptn_token_is_context_ignored(int64_t token_id) {
+    return token_id == PTN_T_WHITESPACE ||
+        token_id == PTN_T_COMMENT ||
+        token_id == PTN_T_DOC_COMMENT ||
+        token_id == PTN_T_OPEN_TAG ||
+        token_id == PTN_T_OPEN_TAG_WITH_ECHO ||
+        token_id == PTN_T_CLOSE_TAG;
+}
+
+static void ptn_token_get_all_append_context_token(
+    PtnValue result,
+    int64_t *next_index,
+    int64_t *last_significant_token,
+    int64_t token_id,
+    const char *text,
+    size_t text_len,
+    int64_t line_no
+) {
+    ptn_token_get_all_append_token(result, next_index, token_id, text, text_len, line_no);
+    if (!ptn_token_is_context_ignored(token_id)) {
+        *last_significant_token = token_id;
+    }
+}
+
+static void ptn_token_get_all_append_context_string(
+    PtnValue result,
+    int64_t *next_index,
+    int64_t *last_significant_token,
+    const char *text,
+    size_t text_len
+) {
+    ptn_token_get_all_append_string(result, next_index, text, text_len);
+    *last_significant_token = 0;
+}
+
+static void ptn_token_count_newlines(const char *text, size_t text_len, int64_t *line_no) {
+    for (size_t i = 0; i < text_len; i++) {
+        if (text[i] == '\n') {
+            (*line_no)++;
+        }
+    }
+}
+
+static int64_t ptn_token_keyword_id(const char *text, size_t len) {
+    if (ptn_token_ascii_ci_equal(text, len, "include")) {
+        return PTN_T_INCLUDE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "include_once")) {
+        return PTN_T_INCLUDE_ONCE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "eval")) {
+        return PTN_T_EVAL;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "require")) {
+        return PTN_T_REQUIRE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "require_once")) {
+        return PTN_T_REQUIRE_ONCE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "or")) {
+        return PTN_T_LOGICAL_OR;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "xor")) {
+        return PTN_T_LOGICAL_XOR;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "and")) {
+        return PTN_T_LOGICAL_AND;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "if")) {
+        return PTN_T_IF;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "else")) {
+        return PTN_T_ELSE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "elseif")) {
+        return PTN_T_ELSEIF;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "endif")) {
+        return PTN_T_ENDIF;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "echo")) {
+        return PTN_T_ECHO;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "exit")) {
+        return PTN_T_EXIT;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "print")) {
+        return PTN_T_PRINT;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "do")) {
+        return PTN_T_DO;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "while")) {
+        return PTN_T_WHILE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "endwhile")) {
+        return PTN_T_ENDWHILE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "for")) {
+        return PTN_T_FOR;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "endfor")) {
+        return PTN_T_ENDFOR;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "foreach")) {
+        return PTN_T_FOREACH;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "endforeach")) {
+        return PTN_T_ENDFOREACH;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "declare")) {
+        return PTN_T_DECLARE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "enddeclare")) {
+        return PTN_T_ENDDECLARE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "as")) {
+        return PTN_T_AS;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "switch")) {
+        return PTN_T_SWITCH;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "endswitch")) {
+        return PTN_T_ENDSWITCH;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "case")) {
+        return PTN_T_CASE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "default")) {
+        return PTN_T_DEFAULT;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "break")) {
+        return PTN_T_BREAK;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "continue")) {
+        return PTN_T_CONTINUE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "function")) {
+        return PTN_T_FUNCTION;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "const")) {
+        return PTN_T_CONST;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "return")) {
+        return PTN_T_RETURN;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "new")) {
+        return PTN_T_NEW;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "use")) {
+        return PTN_T_USE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "global")) {
+        return PTN_T_GLOBAL;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "static")) {
+        return PTN_T_STATIC;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "var")) {
+        return PTN_T_VAR;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "unset")) {
+        return PTN_T_UNSET;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "isset")) {
+        return PTN_T_ISSET;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "empty")) {
+        return PTN_T_EMPTY;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "class")) {
+        return PTN_T_CLASS;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "extends")) {
+        return PTN_T_EXTENDS;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "interface")) {
+        return PTN_T_INTERFACE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "implements")) {
+        return PTN_T_IMPLEMENTS;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "list")) {
+        return PTN_T_LIST;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "array")) {
+        return PTN_T_ARRAY;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "abstract")) {
+        return PTN_T_ABSTRACT;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "catch")) {
+        return PTN_T_CATCH;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "final")) {
+        return PTN_T_FINAL;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "instanceof")) {
+        return PTN_T_INSTANCEOF;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "private")) {
+        return PTN_T_PRIVATE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "protected")) {
+        return PTN_T_PROTECTED;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "public")) {
+        return PTN_T_PUBLIC;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "throw")) {
+        return PTN_T_THROW;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "try")) {
+        return PTN_T_TRY;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "clone")) {
+        return PTN_T_CLONE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__halt_compiler")) {
+        return PTN_T_HALT_COMPILER;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__class__")) {
+        return PTN_T_CLASS_C;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__trait__")) {
+        return PTN_T_TRAIT_C;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__function__")) {
+        return PTN_T_FUNC_C;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__property__")) {
+        return PTN_T_PROPERTY_C;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__method__")) {
+        return PTN_T_METHOD_C;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__line__")) {
+        return PTN_T_LINE;
+    }
+    if (ptn_token_ascii_ci_equal(text, len, "__file__")) {
+        return PTN_T_FILE;
+    }
+    return PTN_T_STRING;
+}
+
+static int ptn_token_is_digit_or_separator(unsigned char byte) {
+    return (byte >= '0' && byte <= '9') || byte == '_';
+}
+
+static int ptn_token_is_hex_digit_or_separator(unsigned char byte) {
+    return (byte >= '0' && byte <= '9') ||
+        (byte >= 'A' && byte <= 'F') ||
+        (byte >= 'a' && byte <= 'f') ||
+        byte == '_';
+}
+
+static size_t ptn_token_scan_number(
+    const char *data,
+    size_t len,
+    size_t offset,
+    int64_t *token_id
+) {
+    size_t i = offset;
+    *token_id = PTN_T_LNUMBER;
+    if (
+        i + 2 < len &&
+        data[i] == '0' &&
+        (data[i + 1] == 'x' || data[i + 1] == 'X') &&
+        ptn_token_is_hex_digit_or_separator((unsigned char)data[i + 2])
+    ) {
+        i += 3;
+        while (i < len && ptn_token_is_hex_digit_or_separator((unsigned char)data[i])) {
+            i++;
+        }
+        return i;
+    }
+    if (
+        i + 2 < len &&
+        data[i] == '0' &&
+        (data[i + 1] == 'b' || data[i + 1] == 'B') &&
+        (data[i + 2] == '0' || data[i + 2] == '1' || data[i + 2] == '_')
+    ) {
+        i += 3;
+        while (i < len && (data[i] == '0' || data[i] == '1' || data[i] == '_')) {
+            i++;
+        }
+        return i;
+    }
+    if (data[i] == '.') {
+        *token_id = PTN_T_DNUMBER;
+        i++;
+    }
+    while (i < len && ptn_token_is_digit_or_separator((unsigned char)data[i])) {
+        i++;
+    }
+    if (i + 1 < len && data[i] == '.' && isdigit((unsigned char)data[i + 1])) {
+        *token_id = PTN_T_DNUMBER;
+        i += 2;
+        while (i < len && ptn_token_is_digit_or_separator((unsigned char)data[i])) {
+            i++;
+        }
+    }
+    if (i + 1 < len && (data[i] == 'e' || data[i] == 'E')) {
+        size_t exponent = i + 1;
+        if (exponent < len && (data[exponent] == '+' || data[exponent] == '-')) {
+            exponent++;
+        }
+        if (exponent < len && isdigit((unsigned char)data[exponent])) {
+            *token_id = PTN_T_DNUMBER;
+            i = exponent + 1;
+            while (i < len && ptn_token_is_digit_or_separator((unsigned char)data[i])) {
+                i++;
+            }
+        }
+    }
+    return i;
+}
+
+static int64_t ptn_token_cast_id(
+    const char *data,
+    size_t len,
+    size_t offset,
+    size_t *cast_len
+) {
+    static const struct {
+        const char *literal;
+        int64_t token_id;
+    } casts[] = {
+        { "(int)", PTN_T_INT_CAST },
+        { "(integer)", PTN_T_INT_CAST },
+        { "(float)", PTN_T_DOUBLE_CAST },
+        { "(double)", PTN_T_DOUBLE_CAST },
+        { "(real)", PTN_T_DOUBLE_CAST },
+        { "(string)", PTN_T_STRING_CAST },
+        { "(array)", PTN_T_ARRAY_CAST },
+        { "(object)", PTN_T_OBJECT_CAST },
+        { "(bool)", PTN_T_BOOL_CAST },
+        { "(boolean)", PTN_T_BOOL_CAST },
+        { "(unset)", PTN_T_UNSET_CAST },
+    };
+    for (size_t i = 0; i < sizeof(casts) / sizeof(casts[0]); i++) {
+        size_t literal_len = strlen(casts[i].literal);
+        if (
+            offset + literal_len <= len &&
+            ptn_token_ascii_ci_equal(data + offset, literal_len, casts[i].literal)
+        ) {
+            *cast_len = literal_len;
+            return casts[i].token_id;
+        }
+    }
+    return 0;
+}
+
+static int ptn_token_operator_at(
+    const char *data,
+    size_t len,
+    size_t offset,
+    int64_t *token_id,
+    size_t *token_len
+) {
+    static const struct {
+        const char *literal;
+        int64_t token_id;
+    } operators[] = {
+        { "?->", PTN_T_NULLSAFE_OBJECT_OPERATOR },
+        { "!==", PTN_T_IS_NOT_IDENTICAL },
+        { "===", PTN_T_IS_IDENTICAL },
+        { "<<=", PTN_T_SL_EQUAL },
+        { ">>=", PTN_T_SR_EQUAL },
+        { "::", PTN_T_DOUBLE_COLON },
+        { "->", PTN_T_OBJECT_OPERATOR },
+        { "=>", PTN_T_DOUBLE_ARROW },
+        { "+=", PTN_T_PLUS_EQUAL },
+        { "-=", PTN_T_MINUS_EQUAL },
+        { "*=", PTN_T_MUL_EQUAL },
+        { "/=", PTN_T_DIV_EQUAL },
+        { ".=", PTN_T_CONCAT_EQUAL },
+        { "%=", PTN_T_MOD_EQUAL },
+        { "&=", PTN_T_AND_EQUAL },
+        { "|=", PTN_T_OR_EQUAL },
+        { "^=", PTN_T_XOR_EQUAL },
+        { "||", PTN_T_BOOLEAN_OR },
+        { "&&", PTN_T_BOOLEAN_AND },
+        { "==", PTN_T_IS_EQUAL },
+        { "!=", PTN_T_IS_NOT_EQUAL },
+        { "<=", PTN_T_IS_SMALLER_OR_EQUAL },
+        { ">=", PTN_T_IS_GREATER_OR_EQUAL },
+        { "<<", PTN_T_SL },
+        { ">>", PTN_T_SR },
+        { "++", PTN_T_INC },
+        { "--", PTN_T_DEC },
+    };
+    for (size_t i = 0; i < sizeof(operators) / sizeof(operators[0]); i++) {
+        size_t literal_len = strlen(operators[i].literal);
+        if (offset + literal_len <= len && memcmp(data + offset, operators[i].literal, literal_len) == 0) {
+            *token_id = operators[i].token_id;
+            *token_len = literal_len;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static size_t ptn_token_scan_name_segments(
@@ -70948,12 +71317,20 @@ static size_t ptn_token_scan_name_segments(
 }
 
 static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "token_get_all", 1, "code", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(input);
         return ptn_null();
     }
+    int64_t flags = 0;
+    if (argc >= 2) {
+        flags = ptn_internal_expect_integer_arg(runtime, "token_get_all", 2, "flags", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(input);
+            return ptn_null();
+        }
+    }
+    int token_parse = (flags & PTN_TOKEN_PARSE) != 0;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     int64_t next_index = 0;
     const char *data = input.data;
@@ -70966,6 +71343,7 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
 
     size_t i = 0;
     int64_t line_no = 1;
+    int64_t last_significant_token = 0;
     while (i < len) {
         int64_t token_line = line_no;
         if (i + 5 <= len && memcmp(data + i, "<?php", 5) == 0) {
@@ -70977,11 +71355,27 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
                 }
                 i++;
             }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_OPEN_TAG, data + start, i - start, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_OPEN_TAG,
+                data + start,
+                i - start,
+                token_line
+            );
             continue;
         }
         if (i + 2 <= len && data[i] == '?' && data[i + 1] == '>') {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_CLOSE_TAG, data + i, 2, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_CLOSE_TAG,
+                data + i,
+                2,
+                token_line
+            );
             i += 2;
             continue;
         }
@@ -70993,10 +71387,18 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
                 }
                 i++;
             }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_WHITESPACE, data + start, i - start, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_WHITESPACE,
+                data + start,
+                i - start,
+                token_line
+            );
             continue;
         }
-        if (i + 4 <= len && data[i] == '/' && data[i + 1] == '*') {
+        if (i + 2 <= len && data[i] == '/' && data[i + 1] == '*') {
             size_t start = i;
             i += 2;
             while (i + 1 < len && !(data[i] == '*' && data[i + 1] == '/')) {
@@ -71008,7 +71410,156 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
             if (i + 1 < len) {
                 i += 2;
             }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_COMMENT, data + start, i - start, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_COMMENT,
+                data + start,
+                i - start,
+                token_line
+            );
+            continue;
+        }
+        if (i + 3 <= len && memcmp(data + i, "<<<", 3) == 0) {
+            size_t start = i;
+            size_t label_start = i + 3;
+            while (label_start < len && (data[label_start] == ' ' || data[label_start] == '\t')) {
+                label_start++;
+            }
+            char quote = '\0';
+            if (label_start < len && (data[label_start] == '\'' || data[label_start] == '"')) {
+                quote = data[label_start++];
+            }
+            size_t label_end = label_start;
+            while (label_end < len && ptn_token_is_ident_part((unsigned char)data[label_end])) {
+                label_end++;
+            }
+            size_t label_len = label_end - label_start;
+            size_t header_end = label_end;
+            if (quote != '\0' && header_end < len && data[header_end] == quote) {
+                header_end++;
+            }
+            while (header_end < len && data[header_end] != '\n') {
+                header_end++;
+            }
+            if (header_end < len) {
+                header_end++;
+            }
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_START_HEREDOC,
+                data + start,
+                header_end - start,
+                token_line
+            );
+            ptn_token_count_newlines(data + start, header_end - start, &line_no);
+            i = header_end;
+            while (i < len) {
+                int at_line_start = i == header_end || data[i - 1] == '\n';
+                if (at_line_start && label_len > 0) {
+                    size_t marker = i;
+                    while (marker < len && (data[marker] == ' ' || data[marker] == '\t')) {
+                        marker++;
+                    }
+                    size_t marker_end = marker + label_len;
+                    if (
+                        marker_end <= len &&
+                        memcmp(data + marker, data + label_start, label_len) == 0 &&
+                        (
+                            marker_end == len ||
+                            data[marker_end] == ';' ||
+                            data[marker_end] == '\n' ||
+                            data[marker_end] == '\r'
+                        )
+                    ) {
+                        ptn_token_get_all_append_context_token(
+                            result,
+                            &next_index,
+                            &last_significant_token,
+                            PTN_T_END_HEREDOC,
+                            data + i,
+                            marker_end - i,
+                            line_no
+                        );
+                        i = marker_end;
+                        break;
+                    }
+                }
+                if (data[i] == '$' && i + 1 < len && ptn_token_is_ident_start((unsigned char)data[i + 1])) {
+                    size_t variable_start = i++;
+                    while (i < len && ptn_token_is_ident_part((unsigned char)data[i])) {
+                        i++;
+                    }
+                    ptn_token_get_all_append_context_token(
+                        result,
+                        &next_index,
+                        &last_significant_token,
+                        PTN_T_VARIABLE,
+                        data + variable_start,
+                        i - variable_start,
+                        line_no
+                    );
+                    continue;
+                }
+                size_t text_start = i;
+                int64_t text_line = line_no;
+                do {
+                    if (data[i] == '\n') {
+                        i++;
+                        break;
+                    }
+                    i++;
+                } while (
+                    i < len &&
+                    !(data[i] == '$' && i + 1 < len && ptn_token_is_ident_start((unsigned char)data[i + 1]))
+                );
+                if (i > text_start) {
+                    ptn_token_get_all_append_context_token(
+                        result,
+                        &next_index,
+                        &last_significant_token,
+                        PTN_T_ENCAPSED_AND_WHITESPACE,
+                        data + text_start,
+                        i - text_start,
+                        text_line
+                    );
+                    ptn_token_count_newlines(data + text_start, i - text_start, &line_no);
+                }
+            }
+            continue;
+        }
+        if (data[i] == '\'' || data[i] == '"') {
+            char quote = data[i];
+            size_t start = i++;
+            int has_interpolation = 0;
+            while (i < len) {
+                if (data[i] == '\\' && i + 1 < len) {
+                    i += 2;
+                    continue;
+                }
+                if (quote == '"' && data[i] == '$') {
+                    has_interpolation = 1;
+                }
+                if (data[i] == quote) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            int64_t token_id = has_interpolation ? PTN_T_ENCAPSED_AND_WHITESPACE : PTN_T_CONSTANT_ENCAPSED_STRING;
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                token_id,
+                data + start,
+                i - start,
+                token_line
+            );
+            ptn_token_count_newlines(data + start, i - start, &line_no);
             continue;
         }
         if (data[i] == '$' && i + 1 < len && ptn_token_is_ident_start((unsigned char)data[i + 1])) {
@@ -71016,25 +71567,59 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
             while (i < len && ptn_token_is_ident_part((unsigned char)data[i])) {
                 i++;
             }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_VARIABLE, data + start, i - start, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_VARIABLE,
+                data + start,
+                i - start,
+                token_line
+            );
             continue;
         }
-        if (isdigit((unsigned char)data[i])) {
-            size_t start = i++;
-            while (i < len && isdigit((unsigned char)data[i])) {
-                i++;
-            }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_LNUMBER, data + start, i - start, token_line);
+        if (
+            isdigit((unsigned char)data[i]) ||
+            (data[i] == '.' && i + 1 < len && isdigit((unsigned char)data[i + 1]))
+        ) {
+            size_t start = i;
+            int64_t token_id = PTN_T_LNUMBER;
+            i = ptn_token_scan_number(data, len, i, &token_id);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                token_id,
+                data + start,
+                i - start,
+                token_line
+            );
             continue;
         }
         if (data[i] == '\\') {
             size_t end = ptn_token_scan_name_segments(data, len, i, 1);
             if (end != i) {
-                ptn_token_get_all_append_token(result, &next_index, PTN_T_NAME_FULLY_QUALIFIED, data + i, end - i, token_line);
+                ptn_token_get_all_append_context_token(
+                    result,
+                    &next_index,
+                    &last_significant_token,
+                    PTN_T_NAME_FULLY_QUALIFIED,
+                    data + i,
+                    end - i,
+                    token_line
+                );
                 i = end;
                 continue;
             }
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_NS_SEPARATOR, data + i, 1, token_line);
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_NS_SEPARATOR,
+                data + i,
+                1,
+                token_line
+            );
             i++;
             continue;
         }
@@ -71048,44 +71633,88 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
                 int64_t token_id = ptn_token_ascii_ci_equal(data + start, i - start, "namespace")
                     ? PTN_T_NAME_RELATIVE
                     : PTN_T_NAME_QUALIFIED;
-                ptn_token_get_all_append_token(result, &next_index, token_id, data + start, end - start, token_line);
+                ptn_token_get_all_append_context_token(
+                    result,
+                    &next_index,
+                    &last_significant_token,
+                    token_id,
+                    data + start,
+                    end - start,
+                    token_line
+                );
                 i = end;
                 continue;
             }
-            ptn_token_get_all_append_token(result, &next_index, ptn_token_keyword_id(data + start, i - start), data + start, i - start, token_line);
+            int64_t token_id = ptn_token_keyword_id(data + start, i - start);
+            if (
+                token_parse &&
+                (
+                    last_significant_token == PTN_T_OBJECT_OPERATOR ||
+                    last_significant_token == PTN_T_DOUBLE_COLON ||
+                    last_significant_token == PTN_T_NULLSAFE_OBJECT_OPERATOR ||
+                    last_significant_token == PTN_T_CONST
+                )
+            ) {
+                token_id = PTN_T_STRING;
+            }
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                token_id,
+                data + start,
+                i - start,
+                token_line
+            );
             continue;
         }
-        if (i + 3 <= len && memcmp(data + i, "===", 3) == 0) {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_IS_IDENTICAL, data + i, 3, token_line);
-            i += 3;
+        if (data[i] == '(') {
+            size_t cast_len = 0;
+            int64_t cast_id = ptn_token_cast_id(data, len, i, &cast_len);
+            if (cast_id != 0) {
+                ptn_token_get_all_append_context_token(
+                    result,
+                    &next_index,
+                    &last_significant_token,
+                    cast_id,
+                    data + i,
+                    cast_len,
+                    token_line
+                );
+                i += cast_len;
+                continue;
+            }
+        }
+        int64_t operator_id = 0;
+        size_t operator_len = 0;
+        if (ptn_token_operator_at(data, len, i, &operator_id, &operator_len)) {
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                operator_id,
+                data + i,
+                operator_len,
+                token_line
+            );
+            i += operator_len;
             continue;
         }
-        if (i + 2 <= len && memcmp(data + i, "==", 2) == 0) {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_IS_EQUAL, data + i, 2, token_line);
-            i += 2;
-            continue;
-        }
-        if (i + 2 <= len && memcmp(data + i, "++", 2) == 0) {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_INC, data + i, 2, token_line);
-            i += 2;
-            continue;
-        }
-        if (i + 2 <= len && memcmp(data + i, "--", 2) == 0) {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_DEC, data + i, 2, token_line);
-            i += 2;
-            continue;
-        }
-        if (i + 2 <= len && memcmp(data + i, "||", 2) == 0) {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_BOOLEAN_OR, data + i, 2, token_line);
-            i += 2;
-            continue;
-        }
-        if (data[i] == '&') {
-            ptn_token_get_all_append_token(result, &next_index, PTN_T_AND_EQUAL, data + i, 1, token_line);
+        unsigned char byte = (unsigned char)data[i];
+        if ((byte < 0x20 && byte != '\t' && byte != '\n' && byte != '\r') || byte == 0x7f) {
+            ptn_token_get_all_append_context_token(
+                result,
+                &next_index,
+                &last_significant_token,
+                PTN_T_BAD_CHARACTER,
+                data + i,
+                1,
+                token_line
+            );
             i++;
             continue;
         }
-        ptn_token_get_all_append_string(result, &next_index, data + i, 1);
+        ptn_token_get_all_append_context_string(result, &next_index, &last_significant_token, data + i, 1);
         i++;
     }
     ptn_string_operand_free(input);

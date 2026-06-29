@@ -34976,6 +34976,103 @@ foreach (PhpToken::tokenize($code) as $token) {
 }
 
 #[test]
+fn compile_token_get_all_current_red_token_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-token-get-all-current-red-token-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("token-get-all-current-red-token-shapes.php");
+    let output = root.join("token-get-all-current-red-token-shapes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_tokens($code, $flags = 0) {
+    foreach (token_get_all($code, $flags) as $token) {
+        if (is_array($token)) {
+            $name = token_name($token[0]);
+            if ($name === 'T_WHITESPACE') {
+                continue;
+            }
+            echo $name, ':', str_replace(["\0", "\n"], ["\\0", "\\n"], $token[1]), "\n";
+        } else {
+            echo $token, "\n";
+        }
+    }
+    echo "--\n";
+}
+
+dump_tokens('<?php $x->class; X::continue; $a?->b();', TOKEN_PARSE);
+dump_tokens('<?php class X { const CONTINUE = 1; }', TOKEN_PARSE);
+dump_tokens('<?php 0_10000000000000000000009; 10.5; 0x3F; (int)$x; (float)$y; $a << 2; $b >> 1;');
+dump_tokens("<?php \0 foo");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "T_OPEN_TAG:<?php \n",
+            "T_VARIABLE:$x\n",
+            "T_OBJECT_OPERATOR:->\n",
+            "T_STRING:class\n",
+            ";\n",
+            "T_STRING:X\n",
+            "T_DOUBLE_COLON:::\n",
+            "T_STRING:continue\n",
+            ";\n",
+            "T_VARIABLE:$a\n",
+            "T_NULLSAFE_OBJECT_OPERATOR:?->\n",
+            "T_STRING:b\n",
+            "(\n",
+            ")\n",
+            ";\n",
+            "--\n",
+            "T_OPEN_TAG:<?php \n",
+            "T_CLASS:class\n",
+            "T_STRING:X\n",
+            "{\n",
+            "T_CONST:const\n",
+            "T_STRING:CONTINUE\n",
+            "=\n",
+            "T_LNUMBER:1\n",
+            ";\n",
+            "}\n",
+            "--\n",
+            "T_OPEN_TAG:<?php \n",
+            "T_LNUMBER:0_10000000000000000000009\n",
+            ";\n",
+            "T_DNUMBER:10.5\n",
+            ";\n",
+            "T_LNUMBER:0x3F\n",
+            ";\n",
+            "T_INT_CAST:(int)\n",
+            "T_VARIABLE:$x\n",
+            ";\n",
+            "T_DOUBLE_CAST:(float)\n",
+            "T_VARIABLE:$y\n",
+            ";\n",
+            "T_VARIABLE:$a\n",
+            "T_SL:<<\n",
+            "T_LNUMBER:2\n",
+            ";\n",
+            "T_VARIABLE:$b\n",
+            "T_SR:>>\n",
+            "T_LNUMBER:1\n",
+            ";\n",
+            "--\n",
+            "T_OPEN_TAG:<?php \n",
+            "T_BAD_CHARACTER:\\0\n",
+            "T_STRING:foo\n",
+            "--\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_non_utf8_source_string_bytes_to_native_binary() {
     let root = temp_dir("ptn-native-non-utf8-source-string-bytes");
     fs::create_dir_all(&root).unwrap();
