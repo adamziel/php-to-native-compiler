@@ -167485,7 +167485,7 @@ static PtnValue ptn_zip_archive_stream_for_entry(
         mode,
         PTN_STREAM_BACKEND_MEMORY,
         SIZE_MAX,
-        0,
+        1,
         0
     );
     if (entry->content_len != 0) {
