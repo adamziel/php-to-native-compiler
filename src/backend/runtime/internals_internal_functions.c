@@ -56119,6 +56119,21 @@ static int ptn_stream_filter_name_equals(PtnStringOperand name, const char *lite
     return 1;
 }
 
+static int ptn_stream_filter_name_starts_with(PtnStringOperand name, const char *prefix) {
+    size_t prefix_len = strlen(prefix);
+    if (name.len < prefix_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix_len; i++) {
+        unsigned char left = (unsigned char)name.data[i];
+        unsigned char right = (unsigned char)prefix[i];
+        if (tolower(left) != tolower(right)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilterKind *kind) {
     if (ptn_stream_filter_name_equals(name, "string.rot13")) {
         *kind = PTN_STREAM_FILTER_STRING_ROT13;
@@ -56146,6 +56161,10 @@ static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilt
     }
     if (ptn_stream_filter_name_equals(name, "convert.quoted-printable-decode")) {
         *kind = PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE;
+        return 1;
+    }
+    if (ptn_stream_filter_name_starts_with(name, "convert.iconv.")) {
+        *kind = PTN_STREAM_FILTER_CONVERT_ICONV;
         return 1;
     }
     if (ptn_stream_filter_name_equals(name, "dechunk")) {
@@ -56303,6 +56322,11 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->filter_line_break_len = 1;
     filter->filter_line_break_configured = 0;
     filter->quoted_printable_invalid_sequence = 0;
+    filter->iconv_from_encoding = NULL;
+    filter->iconv_to_encoding = NULL;
+    filter->iconv_from_display = NULL;
+    filter->iconv_to_display = NULL;
+    filter->iconv_error = 0;
     filter->dechunk_remaining = 0;
     filter->dechunk_size = 0;
     filter->dechunk_size_seen = 0;
@@ -56325,6 +56349,54 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->user_filter_line = 0;
     filter->next = NULL;
     return filter;
+}
+
+static int ptn_stream_filter_parse_iconv_name(
+    PtnStringOperand name,
+    PtnStringOperand *from_out,
+    PtnStringOperand *to_out
+) {
+    const char *prefix = "convert.iconv.";
+    size_t prefix_len = strlen(prefix);
+    if (!ptn_stream_filter_name_starts_with(name, prefix) || name.len <= prefix_len) {
+        return 0;
+    }
+    const char *pair = name.data + prefix_len;
+    size_t pair_len = name.len - prefix_len;
+    const char *slash = memchr(pair, '/', pair_len);
+    const char *delimiter = slash;
+    if (delimiter == NULL) {
+        delimiter = memchr(pair, '.', pair_len);
+    }
+    if (delimiter == NULL || delimiter == pair || delimiter == pair + pair_len - 1) {
+        return 0;
+    }
+    *from_out = ptn_string_operand_borrowed_len(pair, (size_t)(delimiter - pair));
+    *to_out = ptn_string_operand_borrowed_len(
+        delimiter + 1,
+        pair_len - (size_t)(delimiter - pair) - 1
+    );
+    return 1;
+}
+
+static int ptn_stream_filter_configure_iconv(PtnStreamFilter *filter, PtnStringOperand name) {
+    PtnStringOperand from;
+    PtnStringOperand to;
+    if (!ptn_stream_filter_parse_iconv_name(name, &from, &to)) {
+        return 0;
+    }
+    char *from_encoding = ptn_iconv_resolve_encoding_alloc(from);
+    char *to_encoding = ptn_iconv_resolve_encoding_alloc(to);
+    if (from_encoding == NULL || to_encoding == NULL) {
+        free(from_encoding);
+        free(to_encoding);
+        return 0;
+    }
+    filter->iconv_from_encoding = from_encoding;
+    filter->iconv_to_encoding = to_encoding;
+    filter->iconv_from_display = ptn_duplicate_string_len(from.data, from.len);
+    filter->iconv_to_display = ptn_duplicate_string_len(to.data, to.len);
+    return 1;
 }
 
 static void ptn_stream_filter_write_user_object_property(
@@ -56816,12 +56888,22 @@ static int ptn_stream_filter_kind_is_convert(PtnStreamFilterKind kind) {
     return kind == PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE ||
         kind == PTN_STREAM_FILTER_CONVERT_BASE64_DECODE ||
         kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE ||
-        kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE;
+        kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE ||
+        kind == PTN_STREAM_FILTER_CONVERT_ICONV;
 }
 
 static int ptn_stream_filter_chain_has_convert(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         if (ptn_stream_filter_kind_is_convert(filter->kind)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_stream_filter_chain_has_iconv(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->kind == PTN_STREAM_FILTER_CONVERT_ICONV) {
             return 1;
         }
     }
@@ -56859,6 +56941,7 @@ static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
         memset(filter->base64_values, 0, sizeof(filter->base64_values));
+        filter->iconv_error = 0;
         filter->user_filter_closed = 0;
     }
 }
@@ -56877,6 +56960,10 @@ static void ptn_stream_filter_free(PtnStreamFilter *filter) {
     ptn_stream_filter_cleanup_user_object(filter);
     free(filter->name);
     free(filter->filter_line_break);
+    free(filter->iconv_from_encoding);
+    free(filter->iconv_to_encoding);
+    free(filter->iconv_from_display);
+    free(filter->iconv_to_display);
     free(filter);
 }
 
@@ -57004,6 +57091,7 @@ static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
     filter->zlib_error = 0;
+    filter->iconv_error = 0;
     filter->user_filter_closed = 0;
 }
 
@@ -57266,6 +57354,7 @@ static void ptn_stream_apply_filter_in_place(PtnStreamFilterKind kind, unsigned 
             case PTN_STREAM_FILTER_CONVERT_BASE64_DECODE:
             case PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE:
             case PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE:
+            case PTN_STREAM_FILTER_CONVERT_ICONV:
             case PTN_STREAM_FILTER_DECHUNK:
                 break;
             case PTN_STREAM_FILTER_ZLIB_DEFLATE:
@@ -57699,6 +57788,29 @@ static char *ptn_stream_apply_filter_chain_alloc(
             output = transformed;
             continue;
         }
+        if (filter->kind == PTN_STREAM_FILTER_CONVERT_ICONV) {
+            int status = 0;
+            size_t transformed_len = 0;
+            char *transformed = ptn_iconv_convert_alloc(
+                output,
+                output_len,
+                filter->iconv_from_encoding == NULL ? "" : filter->iconv_from_encoding,
+                filter->iconv_to_encoding == NULL ? "" : filter->iconv_to_encoding,
+                &status,
+                &transformed_len
+            );
+            free(output);
+            if (transformed == NULL || status != 0) {
+                free(transformed);
+                filter->iconv_error = status == 0 ? 1 : status;
+                output = ptn_duplicate_string_len("", 0);
+                output_len = 0;
+                break;
+            }
+            output = transformed;
+            output_len = transformed_len;
+            continue;
+        }
         if (filter->kind == PTN_STREAM_FILTER_DECHUNK) {
             char *transformed = ptn_stream_apply_dechunk_filter_alloc(filter, output, output_len, &output_len);
             free(output);
@@ -57756,6 +57868,55 @@ static int ptn_stream_filter_chain_take_zlib_error(PtnStreamFilter *filter) {
         }
     }
     return 0;
+}
+
+static PtnStreamFilter *ptn_stream_filter_chain_take_iconv_error(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->iconv_error) {
+            filter->iconv_error = 0;
+            return filter;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_emit_iconv_stream_filter_invalid_sequence_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStreamFilter *filter,
+    size_t line
+) {
+    const char *from = filter == NULL || filter->iconv_from_display == NULL ? "" : filter->iconv_from_display;
+    const char *to = filter == NULL || filter->iconv_to_display == NULL ? "" : filter->iconv_to_display;
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): iconv stream filter (\"%s\"=>\"%s\"): invalid multibyte sequence",
+        function_name,
+        from,
+        to
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): iconv stream filter (\"%s\"=>\"%s\"): invalid multibyte sequence",
+        function_name,
+        from,
+        to
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static void ptn_emit_zlib_data_notice(PtnRuntime *runtime, const char *function_name, size_t line) {
@@ -58076,6 +58237,11 @@ static char *ptn_stream_read_filtered_bytes(
                 return NULL;
             }
         }
+        PtnStreamFilter *iconv_error = ptn_stream_filter_chain_take_iconv_error(resource->read_filters);
+        if (iconv_error != NULL) {
+            ptn_emit_iconv_stream_filter_invalid_sequence_warning(runtime, function_name, iconv_error, line);
+            break;
+        }
         if (read_len == 0) {
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
@@ -58261,6 +58427,7 @@ static size_t ptn_stream_write_filtered(
     }
     int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->write_filters);
     const char *invalid_filter = ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(resource->write_filters);
+    PtnStreamFilter *iconv_error = ptn_stream_filter_chain_take_iconv_error(resource->write_filters);
     int user_write_failed = 0;
     size_t written = ptn_user_stream_resource_data(resource) != NULL
         ? ptn_user_stream_write_bytes(runtime, resource, output, output_len, line, &user_write_failed)
@@ -58269,7 +58436,10 @@ static size_t ptn_stream_write_filtered(
     if (invalid_filter != NULL) {
         ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, invalid_filter, line);
     }
-    if (filter_error || user_write_failed) {
+    if (iconv_error != NULL) {
+        ptn_emit_iconv_stream_filter_invalid_sequence_warning(runtime, function_name, iconv_error, line);
+    }
+    if (filter_error || iconv_error != NULL || user_write_failed) {
         return 0;
     }
     if (output_len == 0 && len != 0 && ptn_stream_filter_chain_has_user(resource->write_filters)) {
@@ -58401,6 +58571,22 @@ static PtnValue ptn_internal_stream_filter_attach(
         ptn_string_operand_free(name);
         return ptn_bool(0);
     }
+    if (kind == PTN_STREAM_FILTER_CONVERT_ICONV) {
+        PtnStreamFilter *probe = ptn_stream_filter_new(
+            kind,
+            name,
+            zlib_window,
+            zlib_level,
+            PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
+        );
+        int iconv_ok = ptn_stream_filter_configure_iconv(probe, name);
+        ptn_stream_filter_free(probe);
+        if (!iconv_ok) {
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
+    }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filtered_read_pending_clear(stream);
     }
@@ -58419,6 +58605,15 @@ static PtnValue ptn_internal_stream_filter_attach(
             read_filter,
             prepend
         );
+        if (kind == PTN_STREAM_FILTER_CONVERT_ICONV &&
+            !ptn_stream_filter_configure_iconv(read_filter, name)) {
+            if (ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
+                ptn_stream_filter_free(read_filter);
+            }
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
         if (kind == PTN_STREAM_FILTER_USER &&
             !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, stream_object, line)) {
             if (ptn_stream_filter_keep_after_user_init_failure(runtime, read_filter)) {
@@ -58441,6 +58636,19 @@ static PtnValue ptn_internal_stream_filter_attach(
             write_filter,
             prepend
         );
+        if (kind == PTN_STREAM_FILTER_CONVERT_ICONV &&
+            !ptn_stream_filter_configure_iconv(write_filter, name)) {
+            if (ptn_stream_filter_chain_unlink(&stream->write_filters, write_filter)) {
+                ptn_stream_filter_free(write_filter);
+            }
+            if (read_filter != NULL &&
+                ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
+                ptn_stream_filter_free(read_filter);
+            }
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            ptn_string_operand_free(name);
+            return ptn_bool(0);
+        }
         if (kind == PTN_STREAM_FILTER_USER &&
             !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, stream_object, line)) {
             int keep_write_filter = ptn_stream_filter_keep_after_user_init_failure(runtime, write_filter);
@@ -58500,6 +58708,7 @@ static PtnValue ptn_internal_stream_get_filters(PtnRuntime *runtime, size_t argc
         "convert.base64-decode",
         "convert.quoted-printable-encode",
         "convert.quoted-printable-decode",
+        "convert.iconv.*",
         "dechunk",
         "zlib.deflate",
         "zlib.inflate",
@@ -59073,7 +59282,16 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
     if (seek_whence != SEEK_SET && seek_whence != SEEK_CUR && seek_whence != SEEK_END) {
         return ptn_int(-1);
     }
-    if (ptn_stream_filter_chain_has_convert(resource->read_filters)) {
+    if (ptn_stream_filter_chain_has_iconv(resource->read_filters)) {
+        if (offset != 0 || seek_whence != SEEK_SET) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "fseek(): Stream filter convert.iconv.* is seekable only to start position",
+                line
+            );
+            return ptn_int(-1);
+        }
+    } else if (ptn_stream_filter_chain_has_convert(resource->read_filters)) {
         if (offset != 0 || seek_whence != SEEK_SET) {
             ptn_emit_warning(
                 &runtime->diagnostics,
@@ -60182,6 +60400,11 @@ static PtnValue ptn_stream_read_remaining(
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
+        }
+        PtnStreamFilter *iconv_error = ptn_stream_filter_chain_take_iconv_error(resource->read_filters);
+        if (iconv_error != NULL) {
+            ptn_emit_iconv_stream_filter_invalid_sequence_warning(runtime, function_name, iconv_error, line);
+            break;
         }
         if (read_len == 0) {
             if (ptn_stream_error(resource)) {
@@ -62318,6 +62541,11 @@ static int ptn_php_filter_apply_filter_name(
         -1,
         PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
     );
+    if (kind == PTN_STREAM_FILTER_CONVERT_ICONV &&
+        !ptn_stream_filter_configure_iconv(filter, name)) {
+        ptn_stream_filter_free(filter);
+        return 0;
+    }
     size_t output_len = 0;
     char *output = ptn_stream_apply_filter_chain_alloc(
         NULL,
@@ -155778,6 +156006,10 @@ static PtnValue ptn_internal_ob_iconv_handler(PtnRuntime *runtime, size_t argc, 
     }
     const char *from_encoding = ptn_iconv_effective_internal_encoding(runtime);
     const char *to_encoding = ptn_iconv_effective_output_encoding(runtime);
+    if (strlen(from_encoding) > 64 || strlen(to_encoding) > 64) {
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
+    }
     size_t output_len = 0;
     int status = PTN_ICONV_CONVERT_OK;
     char *output = ptn_iconv_convert_alloc(

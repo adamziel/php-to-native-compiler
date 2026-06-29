@@ -784,6 +784,7 @@ typedef enum {
     PTN_STREAM_FILTER_CONVERT_BASE64_DECODE,
     PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE,
     PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE,
+    PTN_STREAM_FILTER_CONVERT_ICONV,
     PTN_STREAM_FILTER_DECHUNK,
     PTN_STREAM_FILTER_ZLIB_DEFLATE,
     PTN_STREAM_FILTER_ZLIB_INFLATE,
@@ -1378,6 +1379,11 @@ struct PtnStreamFilter {
     size_t filter_line_break_len;
     int filter_line_break_configured;
     int quoted_printable_invalid_sequence;
+    char *iconv_from_encoding;
+    char *iconv_to_encoding;
+    char *iconv_from_display;
+    char *iconv_to_display;
+    int iconv_error;
     size_t dechunk_remaining;
     size_t dechunk_size;
     int dechunk_size_seen;
