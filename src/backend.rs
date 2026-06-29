@@ -5122,6 +5122,29 @@ fn emit_declared_class_new_instance_without_constructor(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\")) {\n");
+        if let Some(parent_class_name) =
+            inherited_modeled_internal_class_name(declared_class, classes)
+        {
+            if parent_class_name.eq_ignore_ascii_case("ArrayIterator")
+                || parent_class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+            {
+                out.push_str("        PtnValue result = ptn_object_new_shell(caller_runtime, \"");
+                out.push_str(&c_string(&declared_class.name));
+                out.push_str("\");\n");
+                out.push_str("        PtnValue parent = ptn_new_object(caller_runtime, \"");
+                out.push_str(&c_string(parent_class_name));
+                out.push_str("\", 0, NULL, line);\n");
+                out.push_str("        if (caller_runtime->exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
+                out.push_str(
+                    "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                );
+                out.push_str("        }\n");
+                out.push_str("        ptn_value_destroy(&parent);\n");
+                out.push_str("        return result;\n");
+                out.push_str("    }\n");
+                continue;
+            }
+        }
         out.push_str("        return ptn_object_new_shell(caller_runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\");\n");
@@ -5175,6 +5198,25 @@ fn emit_declared_class_new_instance_without_constructor(
                 declared_class.line,
                 true,
             );
+            if let Some(parent_class_name) =
+                inherited_modeled_internal_class_name(declared_class, classes)
+            {
+                if parent_class_name.eq_ignore_ascii_case("ArrayIterator")
+                    || parent_class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+                {
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        PtnValue parent = ptn_new_object(&runtime, \"");
+                    out.push_str(&c_string(parent_class_name));
+                    out.push_str("\", 0, NULL, line);\n");
+                    out.push_str("        if (runtime.exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
+                    out.push_str(
+                        "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                    );
+                    out.push_str("        }\n");
+                    out.push_str("        ptn_value_destroy(&parent);\n");
+                    out.push_str("    }\n");
+                }
+            }
             if class_extends_builtin_throwable(declared_class, classes) {
                 out.push_str(
                     "    ptn_initialize_declared_exception_object(&runtime, result, 0, NULL, line);\n",
@@ -50424,6 +50466,24 @@ impl ValueEmitter {
         );
         let declared_class_has_constructor =
             class_constructor_method(declared_class, &self.classes).is_some();
+        if declared_class_has_constructor {
+            if let Some(parent_class_name) =
+                inherited_modeled_internal_class_name(declared_class, &self.classes)
+            {
+                if parent_class_name.eq_ignore_ascii_case("ArrayIterator")
+                    || parent_class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+                {
+                    self.emit_declared_internal_parent_constructor(
+                        out,
+                        result_temp,
+                        parent_class_name,
+                        &[],
+                        &[],
+                        line,
+                    );
+                }
+            }
+        }
         if declared_class_has_constructor
             && class_extends_builtin_throwable(declared_class, &self.classes)
         {

@@ -184044,6 +184044,7 @@ static int ptn_spl_file_info_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getFilename")
         || ptn_ascii_case_equal(method_name, "getGroup")
         || ptn_ascii_case_equal(method_name, "getInode")
+        || ptn_ascii_case_equal(method_name, "getLinkTarget")
         || ptn_ascii_case_equal(method_name, "getMTime")
         || ptn_ascii_case_equal(method_name, "getOwner")
         || ptn_ascii_case_equal(method_name, "getPath")
@@ -186426,6 +186427,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -186513,6 +186515,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -213966,6 +213969,44 @@ static PtnValue ptn_spl_file_info_call_method(
         }
         return ptn_owned_string(ptn_duplicate_string(resolved));
     }
+    if (ptn_ascii_case_equal(name, "getLinkTarget")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+#if defined(_WIN32)
+        return ptn_bool(0);
+#else
+        if (data->path == NULL || strncmp(data->path, "phar://", 7) == 0) {
+            return ptn_bool(0);
+        }
+        size_t capacity = 256;
+        for (;;) {
+            if (capacity > (size_t)SSIZE_MAX) {
+                capacity = (size_t)SSIZE_MAX;
+            }
+            char *target = malloc(capacity + 1);
+            if (target == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            ssize_t len = readlink(data->path, target, capacity);
+            if (len < 0) {
+                free(target);
+                return ptn_bool(0);
+            }
+            if ((size_t)len < capacity || capacity == (size_t)SSIZE_MAX) {
+                target[len] = '\0';
+                return ptn_owned_string_len(target, (size_t)len);
+            }
+            free(target);
+            if (capacity > (size_t)SSIZE_MAX / 2) {
+                capacity = (size_t)SSIZE_MAX;
+            } else {
+                capacity *= 2;
+            }
+        }
+#endif
+    }
     if (ptn_ascii_case_equal(name, "getType") ||
         ptn_ascii_case_equal(name, "getSize") ||
         ptn_ascii_case_equal(name, "getPerms") ||
@@ -218237,6 +218278,18 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_bool(0);
         }
         PtnValue current = ptn_value_deref(entry->value);
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (current.type == PTN_OBJECT &&
+            resolved_receiver.type == PTN_OBJECT &&
+            current.as.object != resolved_receiver.as.object &&
+            ptn_value_object_implements_interface(current, "RecursiveIterator") &&
+            runtime->method_dispatch != NULL) {
+            PtnValue delegated =
+                runtime->method_dispatch(runtime, current, "hasChildren", 0, NULL, line);
+            int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(delegated);
+            ptn_value_destroy(&delegated);
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(result);
+        }
         int follows_objects = current.type == PTN_OBJECT &&
             ptn_declared_class_is_same_or_descendant(
                 ptn_value_deref(receiver).as.object->class_name,
@@ -218251,6 +218304,14 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnValue current = ptn_value_deref(entry->value);
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (current.type == PTN_OBJECT &&
+            resolved_receiver.type == PTN_OBJECT &&
+            current.as.object != resolved_receiver.as.object &&
+            ptn_value_object_implements_interface(current, "RecursiveIterator") &&
+            runtime->method_dispatch != NULL) {
+            return ptn_value_clone(current);
+        }
         int follows_object = current.type == PTN_OBJECT &&
             ptn_declared_class_is_same_or_descendant(
                 ptn_value_deref(receiver).as.object->class_name,
@@ -218403,7 +218464,7 @@ static int ptn_array_object_unserialize_legacy_payload(
         goto done;
     }
     parsed_flags = resolved_flags.as.integer;
-    ptn_unserialize_retain_slot_value(state, &flags.value);
+    ptn_unserialize_retain_id_value(state, flags.id, flags.value);
     ptn_value_destroy(&flags.value);
     flags.value = ptn_null();
 
@@ -218452,7 +218513,7 @@ static int ptn_array_object_unserialize_legacy_payload(
             }
         }
     }
-    ptn_unserialize_retain_slot_value(state, &members.value);
+    ptn_unserialize_retain_id_value(state, members.id, members.value);
 
     PtnValue new_storage = ptn_spl_prepare_backing_storage(
         runtime,
