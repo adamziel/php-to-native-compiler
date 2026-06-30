@@ -1,0 +1,2 @@
+ext/random/tests/03_randomizer/engine_unsafe_throws.phpt
+ext/random/tests/01_functions/bug75514.phpt
