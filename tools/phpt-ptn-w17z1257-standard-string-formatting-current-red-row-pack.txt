@@ -1,0 +1,14 @@
+# ptn-w17z.1257 standard string comparison/formatting residual current-red row pack
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T131016Z.tsv
+ext/standard/tests/strings/strncasecmp_variation9.phpt
+ext/standard/tests/strings/sha1_file.phpt
+ext/standard/tests/strings/strncasecmp_variation6.phpt
+ext/standard/tests/strings/wordwrap_memory_limit.phpt
+ext/standard/tests/strings/chunk_split_variation3.phpt
+ext/standard/tests/strings/strncasecmp_variation8.phpt
+ext/standard/tests/strings/strncasecmp_variation3.phpt
+ext/standard/tests/strings/bug26878.phpt
+ext/standard/tests/strings/sprintf_star.phpt
+ext/standard/tests/strings/printf_error.phpt
+ext/standard/tests/strings/bug72663_2.phpt
+ext/standard/tests/strings/strncasecmp_variation7.phpt

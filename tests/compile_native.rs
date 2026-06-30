@@ -27293,6 +27293,49 @@ foreach ([
 }
 
 #[test]
+fn compile_printf_uses_standard_formatter_to_native_binary() {
+    let root = temp_dir("ptn-native-printf-standard-formatter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("printf-standard-formatter.php");
+    let output = root.join("printf-standard-formatter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+printf('Int: %1$d and as string: %1$s', 'some string');\n\
+echo \"\\n\";\n\
+foreach ([\n\
+    fn() => printf(),\n\
+    fn() => printf('%s'),\n\
+    fn() => printf('%s%s', 'one'),\n\
+] as $call) {\n\
+    try {\n\
+        $call();\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Int: 0 and as string: some string\n\
+printf() expects at least 1 argument, 0 given\n\
+2 arguments are required, 1 given\n\
+3 arguments are required, 2 given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_printf("));
+    assert!(!c_source.contains("ptn_compact_intl_call(&runtime, \"printf\""));
+}
+
+#[test]
 fn compile_sprintf_trace_and_variadic_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-sprintf-trace-and-variadic-metadata");
     fs::create_dir_all(&root).unwrap();

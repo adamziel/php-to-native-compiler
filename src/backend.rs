@@ -36714,8 +36714,7 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
         return false;
     }
     let _ = argument_count;
-    name.eq_ignore_ascii_case("printf")
-        || name.eq_ignore_ascii_case("is_null")
+    name.eq_ignore_ascii_case("is_null")
         || name.eq_ignore_ascii_case("msgfmt_create")
         || name.eq_ignore_ascii_case("msgfmt_format")
         || name.eq_ignore_ascii_case("msgfmt_format_message")
