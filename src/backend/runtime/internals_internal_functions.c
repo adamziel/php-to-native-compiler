@@ -53314,6 +53314,12 @@ static int64_t ptn_internal_expect_integer_arg(
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
 static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path);
+static int ptn_open_basedir_check_local_path(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line
+);
 static void ptn_emit_open_basedir_warning(
     PtnRuntime *runtime,
     const char *function_name,
@@ -56414,6 +56420,11 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "opendir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, "opendir", path, line)) {
+        ptn_emit_directory_open_warning(runtime, "opendir", path, strerror(errno), line);
+        free(path);
         return ptn_bool(0);
     }
 
@@ -60645,6 +60656,23 @@ static void ptn_emit_open_basedir_warning(
     free(message);
 }
 
+static int ptn_open_basedir_check_local_path(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line
+) {
+    if (path == NULL || path[0] == '\0' || ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return 1;
+    }
+    if (ptn_open_basedir_allows_path(runtime, path)) {
+        return 1;
+    }
+    ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+    errno = EPERM;
+    return 0;
+}
+
 static int ptn_read_file_bytes_with_normalized_probe(
     PtnRuntime *runtime,
     const char *path,
@@ -64212,6 +64240,10 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_emit_warning(&runtime->diagnostics, "unlink(): Filename contains null byte", line);
         return ptn_bool(0);
     }
+    if (!ptn_open_basedir_check_local_path(runtime, "unlink", path, line)) {
+        free(path);
+        return ptn_bool(0);
+    }
     if (strncmp(path, "phar://", 7) == 0) {
         int removed = ptn_phar_uri_unlink(runtime, path, line);
         if (!removed && errno == ENOENT) {
@@ -64399,6 +64431,32 @@ static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnVal
     if (dest == NULL) {
         free(source);
         return ptn_null();
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, "copy", source, line)) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            free(dest);
+            free(source);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "copy", source, detail, line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, "copy", dest, line)) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            free(dest);
+            free(source);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "copy", dest, detail, line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
     }
     if (ptn_paths_are_same_existing_file(source, dest)) {
         free(dest);
@@ -64927,6 +64985,10 @@ static PtnValue ptn_path_predicate(
     if (path == NULL) {
         return ptn_bool(0);
     }
+    if (!ptn_open_basedir_check_local_path(runtime, function_name, path, line)) {
+        free(path);
+        return ptn_bool(0);
+    }
 
     if (strncmp(path, "phar://", 7) == 0) {
         int result = ptn_phar_uri_predicate_result(function_name, path);
@@ -65224,6 +65286,10 @@ static int ptn_stat_path_from_value(
         return 0;
     }
     if (path[0] == '\0') {
+        free(path);
+        return 0;
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, function_name, path, line)) {
         free(path);
         return 0;
     }
@@ -65971,6 +66037,19 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
         );
         return ptn_null();
     }
+    if (!ptn_open_basedir_check_local_path(runtime, "scandir", path, line)) {
+        int saved_errno = errno;
+        ptn_emit_directory_open_warning(runtime, "scandir", path, strerror(saved_errno), line);
+        char detail[192];
+        int written = snprintf(detail, sizeof(detail), "(errno %d): %s", saved_errno, strerror(saved_errno));
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_function_warning(runtime, "scandir", detail, line);
+        free(path);
+        return ptn_bool(0);
+    }
     PtnResource *context = argc >= 3 ? ptn_fopen_context_arg(args[2]) : NULL;
     PtnValue user_directory;
     if (ptn_try_open_user_directory_wrapper(runtime, path, context, line, &user_directory)) {
@@ -66556,6 +66635,10 @@ static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnVa
                 recursive = ptn_is_truthy(args[i]);
             }
         }
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, "mkdir", path, line)) {
+        free(path);
+        return ptn_bool(0);
     }
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(path, &zlib_path)) {
