@@ -36409,6 +36409,41 @@ foreach (PhpToken::tokenize('<?php $foo = $a?->b();', TOKEN_PARSE) as $token) {
 }
 
 #[test]
+fn compile_token_get_all_token_parse_const_keyword_name_to_native_binary() {
+    let root = temp_dir("ptn-native-token-get-all-token-parse-const-keyword-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("token-get-all-token-parse-const-keyword-name.php");
+    let output = root.join("token-get-all-token-parse-const-keyword-name-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$tokens = token_get_all('<?php class X { const CONTINUE = 1; public $x = self::CONTINUE; }', TOKEN_PARSE);
+foreach ($tokens as $token) {
+    if (is_array($token) && $token[1] === 'CONTINUE') {
+        echo token_name($token[0]), ':', $token[1], "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "T_STRING:CONTINUE\nT_STRING:CONTINUE\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_non_utf8_source_string_bytes_to_native_binary() {
     let root = temp_dir("ptn-native-non-utf8-source-string-bytes");
     fs::create_dir_all(&root).unwrap();
