@@ -1,0 +1,2 @@
+ext/session/tests/session_cookie_lifetime_invalid.phpt
+ext/session/tests/session_set_cookie_params_variation7.phpt
