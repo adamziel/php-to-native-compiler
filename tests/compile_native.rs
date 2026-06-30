@@ -81974,7 +81974,7 @@ fn compile_ini_parse_quantity_and_memory_limit_ini_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-foreach (['-1', '-0x412', '0', '1', '1b', '1k', '1m', '1g', '1gb', '14.2mb', '14.2bm', 'boat'] as $input) {\n\
+foreach (['-1', '-0x412', '0x0b', '0xb', '-0x0B', '-0xB', '0x0beef', '0xbeef', '-0x0BEEF', '-0xBEEF', '0', '1', '1b', '1k', '1m', '1g', '1gb', '14.2mb', '14.2bm', 'boat'] as $input) {\n\
     echo ini_parse_quantity($input), \"\\n\";\n\
 }\n\
 echo ini_get('max_memory_limit'), \"\\n\";\n\
@@ -82000,6 +82000,14 @@ echo ini_get('memory_limit'), \"\\n\";\n",
             "Warning: Failed to set memory_limit to 268435456 bytes. Setting to max_memory_limit instead (currently: 134217728 bytes) in Unknown on line 0\n",
             "-1\n",
             "-1042\n",
+            "11\n",
+            "11\n",
+            "-11\n",
+            "-11\n",
+            "48879\n",
+            "48879\n",
+            "-48879\n",
+            "-48879\n",
             "0\n",
             "1\n",
             "1\n",
@@ -82019,7 +82027,12 @@ echo ini_get('memory_limit'), \"\\n\";\n",
     let warning_input = root.join("ini_parse_quantity_warnings.php");
     fs::write(
         &warning_input,
-        "<?php\nini_parse_quantity('1mb');\nini_parse_quantity('256 then skip a few then g');\n",
+        "<?php\n\
+ini_parse_quantity('1mb');\n\
+ini_parse_quantity('256 then skip a few then g');\n\
+echo ini_parse_quantity('0x0b'), \"\\n\";\n\
+echo ini_parse_quantity('0xbeef'), \"\\n\";\n\
+echo ini_parse_quantity('-0x0BEEF'), \"\\n\";\n",
     )
     .unwrap();
     let warning_execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
@@ -82033,7 +82046,7 @@ echo ini_get('memory_limit'), \"\\n\";\n",
     assert_eq!(
         String::from_utf8(warning_execution.stdout).unwrap(),
         format!(
-            "Warning: Invalid quantity \"1mb\": unknown multiplier \"b\", interpreting as \"1\" for backwards compatibility in {} on line 2\n\nWarning: Invalid quantity \"256 then skip a few then g\", interpreting as \"256 g\" for backwards compatibility in {} on line 3\n",
+            "Warning: Invalid quantity \"1mb\": unknown multiplier \"b\", interpreting as \"1\" for backwards compatibility in {} on line 2\n\nWarning: Invalid quantity \"256 then skip a few then g\", interpreting as \"256 g\" for backwards compatibility in {} on line 3\n11\n48879\n-48879\n",
             warning_input.display(),
             warning_input.display()
         )
@@ -84566,7 +84579,9 @@ function dump_files($files) {\n\
     echo \"--\\n\";\n\
 }\n\
 var_dump(function_exists('get_included_files'));\n\
+var_dump(function_exists('get_required_files'));\n\
 dump_files(get_included_files());\n\
+dump_files(get_required_files());\n\
 include __DIR__ . '/sub/a.php';\n\
 dump_files(get_included_files());\n\
 include_once __DIR__ . '/sub/a.php';\n\
@@ -84582,12 +84597,13 @@ dump_files(get_included_files());\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nmain.php\n--\nfrom-include\nmain.php\na.php\n--\nmain.php\na.php\n--\nfrom-include\nmain.php\na.php\n--\n"
+        "bool(true)\nbool(true)\nmain.php\n--\nmain.php\n--\nfrom-include\nmain.php\na.php\n--\nmain.php\na.php\n--\nfrom-include\nmain.php\na.php\n--\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_note_included_file(&runtime, runtime.source_path);"));
     assert!(c_source.contains("ptn_internal_get_included_files"));
+    assert!(c_source.contains("ptn_internal_get_required_files"));
 }
 
 #[test]
@@ -104045,6 +104061,31 @@ dir,dir5\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_glob_run_brace_pattern"));
     assert!(c_source.contains("ptn_ini_text_is_reserved_false_or_null"));
+}
+
+#[test]
+fn compile_parse_ini_string_reports_unclosed_section_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-parse-ini-unclosed-section-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parse-ini-unclosed-section-interpolation.php");
+    let output = root.join("parse-ini-unclosed-section-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ini = \"[\\${zz:-x\\n\\n\";\n\
+var_dump(parse_ini_string($ini));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: syntax error, unexpected end of file, expecting '}' in Unknown on line 1\n in ptn on line 3\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
