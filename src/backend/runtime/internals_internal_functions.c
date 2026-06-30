@@ -204545,6 +204545,11 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             );
             return ptn_null();
         }
+        if (ptn_internal_class_name_is_sqlite3(class_name) ||
+            ptn_internal_class_name_is_sqlite3_stmt(class_name) ||
+            ptn_internal_class_name_is_sqlite3_result(class_name)) {
+            return ptn_object_new_shell(runtime, class_name);
+        }
         if (ptn_declared_class_exists(class_name) && runtime->new_instance_without_constructor != NULL) {
             PtnValue instance = runtime->new_instance_without_constructor(runtime, class_name, line);
             if (runtime->exceptions->active_exception != NULL || ptn_value_deref(instance).type != PTN_OBJECT) {
@@ -205182,6 +205187,9 @@ typedef struct {
     PtnValue authorizer_callback;
     PtnValue sqlite_functions;
     PtnValue last_error_info;
+    int64_t last_error_code;
+    int64_t last_extended_error_code;
+    char *last_error_message;
     char *statement_class;
     PtnValue statement_ctor_args;
 } PtnDbConnectionData;
@@ -205222,6 +205230,7 @@ typedef struct {
     PtnValue column_tables;
     size_t cursor;
     int finalized;
+    char *fetch_error_message;
 } PtnSqlite3ResultData;
 
 enum {
@@ -205268,11 +205277,13 @@ static void ptn_db_connection_data_clear(PtnDbConnectionData *data) {
     free(data->driver);
     ptn_db_table_free(data->tables);
     ptn_value_destroy(&data->last_error_info);
+    free(data->last_error_message);
     free(data->statement_class);
     ptn_value_destroy(&data->statement_ctor_args);
     data->dsn = NULL;
     data->driver = NULL;
     data->tables = NULL;
+    data->last_error_message = NULL;
     data->statement_class = NULL;
     data->statement_ctor_args = ptn_null();
     ptn_value_destroy(&data->authorizer_callback);
@@ -205334,6 +205345,7 @@ static void ptn_sqlite3_result_data_free(void *data) {
     ptn_value_destroy(&result->rows);
     ptn_value_destroy(&result->columns);
     ptn_value_destroy(&result->column_tables);
+    free(result->fetch_error_message);
     free(result);
 }
 
@@ -205513,15 +205525,30 @@ static void ptn_db_array_append(PtnValue array_value, PtnValue value) {
     ptn_array_set_entry(array.as.array, ptn_array_int_key(array.as.array->next_auto_key), value);
 }
 
-static void ptn_db_set_error_info(PtnDbConnectionData *db, const char *state, int64_t code, const char *message) {
+static void ptn_db_set_error_info_extended(
+    PtnDbConnectionData *db,
+    const char *state,
+    int64_t code,
+    int64_t extended_code,
+    const char *message
+) {
     if (db == NULL) {
         return;
     }
+    db->last_error_code = code;
+    db->last_extended_error_code = extended_code;
+    free(db->last_error_message);
+    db->last_error_message = message == NULL ? NULL : ptn_duplicate_string(message);
     ptn_value_destroy(&db->last_error_info);
     db->last_error_info = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(0), ptn_string(state != NULL ? state : "HY000"));
-    ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(1), code == 0 ? ptn_null() : ptn_int(code));
+    int64_t pdo_code = db->extended_result_codes && extended_code != 0 ? extended_code : code;
+    ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(1), pdo_code == 0 ? ptn_null() : ptn_int(pdo_code));
     ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(2), message == NULL ? ptn_null() : ptn_string(message));
+}
+
+static void ptn_db_set_error_info(PtnDbConnectionData *db, const char *state, int64_t code, const char *message) {
+    ptn_db_set_error_info_extended(db, state, code, code, message);
 }
 
 static char *ptn_db_value_to_owned_string(PtnValue value) {
@@ -206146,7 +206173,6 @@ static int ptn_db_exec_insert(PtnDbConnectionData *db, const char *sql, PtnValue
     char *name = ptn_db_identifier_copy(cursor, &consumed);
     cursor += consumed;
     PtnDbTable *table = ptn_db_ensure_table(db, name);
-    free(name);
     char **columns = NULL;
     size_t column_count = 0;
     while (isspace((unsigned char)*cursor)) {
@@ -206184,6 +206210,7 @@ static int ptn_db_exec_insert(PtnDbConnectionData *db, const char *sql, PtnValue
     }
     if (values == NULL) {
         ptn_db_free_string_list(columns, column_count);
+        free(name);
         return 0;
     }
     int row_count = 0;
@@ -206232,6 +206259,16 @@ static int ptn_db_exec_insert(PtnDbConnectionData *db, const char *sql, PtnValue
         }
         PtnValue row = ptn_db_make_row_from_columns(table, columns, column_count, values_array);
         if (ptn_db_table_row_has_duplicate_primary_key(table, row)) {
+            const char *key_column = table->primary_key_column != NULL ? table->primary_key_column : "rowid";
+            int needed = snprintf(NULL, 0, "UNIQUE constraint failed: %s.%s", table->name, key_column);
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, "UNIQUE constraint failed: %s.%s", table->name, key_column);
             ptn_value_destroy(&row);
             for (size_t i = 0; i < column_count; i++) {
                 ptn_value_destroy(&values_array[i]);
@@ -206239,11 +206276,9 @@ static int ptn_db_exec_insert(PtnDbConnectionData *db, const char *sql, PtnValue
             free(values_array);
             ptn_db_free_string_list(value_tokens, value_count);
             ptn_db_free_string_list(columns, column_count);
-            if (db->extended_result_codes) {
-                ptn_db_set_error_info(db, "HY000", 1555, "constraint failed");
-            } else {
-                ptn_db_set_error_info(db, "23000", 19, "constraint failed");
-            }
+            ptn_db_set_error_info_extended(db, "23000", 19, 1555, message);
+            free(message);
+            free(name);
             return -1;
         }
         ptn_db_array_append(table->rows, row);
@@ -206256,6 +206291,7 @@ static int ptn_db_exec_insert(PtnDbConnectionData *db, const char *sql, PtnValue
         row_count++;
     }
     ptn_db_free_string_list(columns, column_count);
+    free(name);
     return row_count;
 }
 
@@ -206631,6 +206667,7 @@ static int ptn_db_query(
                         ptn_abort_out_of_memory();
                     }
                     snprintf(*error_out, (size_t)needed + 1, "no such table: %s", table_name);
+                    ptn_db_set_error_info(db, "HY000", 1, *error_out);
                 }
                 free(table_name);
                 free(from_copy);
@@ -206653,6 +206690,13 @@ static int ptn_db_query(
         free(select_list);
         free(from_clause);
         free(where_clause);
+    }
+    if (row_count < 0) {
+        if (error_out != NULL && *error_out == NULL && db->last_error_message != NULL) {
+            *error_out = ptn_duplicate_string(db->last_error_message);
+        }
+        free(trimmed);
+        return row_count;
     }
     if (row_count >= 0 && !ptn_db_ascii_case_starts_with(trimmed, "select")) {
         db->last_changes = row_count;
@@ -206702,6 +206746,10 @@ static PtnSqlite3ResultData *ptn_sqlite3_result_data(PtnValue receiver) {
 }
 
 static void ptn_db_set_ok_error_info(PtnDbConnectionData *db) {
+    db->last_error_code = 0;
+    db->last_extended_error_code = 0;
+    free(db->last_error_message);
+    db->last_error_message = NULL;
     ptn_value_destroy(&db->last_error_info);
     db->last_error_info = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(0), ptn_string("00000"));
@@ -207315,7 +207363,13 @@ static PtnValue ptn_pdo_get_attribute(PtnRuntime *runtime, PtnDbConnectionData *
     return ptn_null();
 }
 
-static PtnValue ptn_sqlite3_result_object(PtnRuntime *runtime, PtnValue rows, PtnValue columns, PtnValue column_tables) {
+static PtnValue ptn_sqlite3_result_object_with_fetch_error(
+    PtnRuntime *runtime,
+    PtnValue rows,
+    PtnValue columns,
+    PtnValue column_tables,
+    const char *fetch_error_message
+) {
     PtnValue object = ptn_object_new_shell(runtime, "SQLite3Result");
     PtnSqlite3ResultData *data = calloc(1, sizeof(PtnSqlite3ResultData));
     if (data == NULL) {
@@ -207324,9 +207378,14 @@ static PtnValue ptn_sqlite3_result_object(PtnRuntime *runtime, PtnValue rows, Pt
     data->rows = rows;
     data->columns = columns;
     data->column_tables = column_tables;
+    data->fetch_error_message = fetch_error_message == NULL ? NULL : ptn_duplicate_string(fetch_error_message);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_sqlite3_result_data_free;
     return object;
+}
+
+static PtnValue ptn_sqlite3_result_object(PtnRuntime *runtime, PtnValue rows, PtnValue columns, PtnValue column_tables) {
+    return ptn_sqlite3_result_object_with_fetch_error(runtime, rows, columns, column_tables, NULL);
 }
 
 static PtnValue ptn_sqlite3_stmt_object(PtnRuntime *runtime, PtnValue db, const char *sql) {
@@ -207475,16 +207534,32 @@ static PtnValue ptn_sqlite3_handle_query_error(
         return ptn_bool(0);
     }
     const char *effective = message != NULL ? message : "not an error";
+    char *owned_effective = NULL;
+    if (sqlite != NULL && sqlite->db.last_error_code == 19) {
+        int needed = snprintf(NULL, 0, "Unable to execute statement: %s", effective);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        owned_effective = malloc((size_t)needed + 1);
+        if (owned_effective == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(owned_effective, (size_t)needed + 1, "Unable to execute statement: %s", effective);
+        effective = owned_effective;
+    }
     if (sqlite != NULL && sqlite->exceptions_enabled) {
         if (strcmp(effective, "not authorized") == 0) {
+            free(owned_effective);
             ptn_throw_exception(runtime, "Exception", "Unable to prepare statement: not authorized");
             return ptn_bool(0);
         }
         ptn_throw_exception(runtime, "Exception", effective);
+        free(owned_effective);
         return ptn_bool(0);
     }
     char warning[256];
     int written = snprintf(warning, sizeof(warning), "SQLite3::%s(): %s", method, effective);
+    free(owned_effective);
     if (written < 0 || (size_t)written >= sizeof(warning)) {
         ptn_abort_out_of_memory();
     }
@@ -207900,8 +207975,8 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
     size_t line
 ) {
     PtnSqlite3Data *sqlite = ptn_sqlite3_data(receiver);
-    if (sqlite == NULL) {
-        ptn_throw_exception(runtime, "Error", "Invalid SQLite3 object");
+    if (sqlite == NULL || !sqlite->open) {
+        ptn_throw_exception(runtime, "Error", "The SQLite3 object has not been correctly initialised or is already closed");
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "exec")) {
@@ -208053,11 +208128,54 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
         sqlite->db.has_authorizer = 1;
         return ptn_bool(1);
     }
+    if (ptn_ascii_case_equal(name, "createFunction")) {
+        if (argc < 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SQLite3::createFunction() expects at least 2 arguments");
+            return ptn_null();
+        }
+        PtnStringOperand function_name = ptn_internal_expect_string_arg(runtime, "SQLite3::createFunction", 1, "name", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(function_name);
+            return ptn_null();
+        }
+        PtnValue callback = ptn_internal_expect_callback_arg_autoload(
+            runtime,
+            "SQLite3::createFunction",
+            2,
+            "callback",
+            ptn_value_clone_deref(args[1])
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(function_name);
+            return ptn_null();
+        }
+        if (argc >= 3) {
+            (void)ptn_internal_expect_integer_arg(runtime, "SQLite3::createFunction", 3, "argCount", args[2], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&callback);
+                ptn_string_operand_free(function_name);
+                return ptn_null();
+            }
+        }
+        if (function_name.len == 0) {
+            ptn_value_destroy(&callback);
+            ptn_string_operand_free(function_name);
+            return ptn_bool(0);
+        }
+        char *name_copy = ptn_duplicate_string_len(function_name.data, function_name.len);
+        ptn_string_operand_free(function_name);
+        ptn_db_register_sqlite_function(&sqlite->db, name_copy, callback);
+        free(name_copy);
+        return ptn_bool(1);
+    }
     if (ptn_ascii_case_equal(name, "lastErrorCode")) {
-        return ptn_int(0);
+        return ptn_int(sqlite->db.last_error_code);
+    }
+    if (ptn_ascii_case_equal(name, "lastExtendedErrorCode")) {
+        return ptn_int(sqlite->db.last_extended_error_code);
     }
     if (ptn_ascii_case_equal(name, "lastErrorMsg")) {
-        return ptn_string("not an error");
+        return ptn_string(sqlite->db.last_error_message != NULL ? sqlite->db.last_error_message : "not an error");
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method SQLite3");
     return ptn_null();
@@ -208091,6 +208209,24 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
         if (sqlite == NULL) {
             return ptn_bool(0);
         }
+        char *trimmed = ptn_db_trimmed_copy(statement->sql);
+        size_t trimmed_len = strlen(trimmed);
+        while (trimmed_len > 0 && trimmed[trimmed_len - 1] == ';') {
+            trimmed[--trimmed_len] = '\0';
+        }
+        if (ptn_db_ascii_case_starts_with(trimmed, "begin")) {
+            free(trimmed);
+            sqlite->db.in_transaction = 1;
+            ptn_db_set_error_info(&sqlite->db, "HY000", 1, "cannot start a transaction within a transaction");
+            return ptn_sqlite3_result_object_with_fetch_error(
+                runtime,
+                ptn_array_from_literal_entries(0, NULL),
+                ptn_array_from_literal_entries(0, NULL),
+                ptn_array_from_literal_entries(0, NULL),
+                "Unable to execute statement: cannot start a transaction within a transaction"
+            );
+        }
+        free(trimmed);
         PtnValue rows = ptn_array_from_literal_entries(0, NULL);
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
@@ -208135,6 +208271,19 @@ static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     if (ptn_ascii_case_equal(name, "fetchArray")) {
         int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "SQLite3Result::fetchArray", 1, "mode", args[0], line) : PTN_SQLITE3_BOTH;
         if (result_data->rows.type != PTN_ARRAY || result_data->cursor >= result_data->rows.as.array->len) {
+            if (result_data->fetch_error_message != NULL) {
+                char warning[256];
+                int written = snprintf(
+                    warning,
+                    sizeof(warning),
+                    "SQLite3Result::fetchArray(): %s",
+                    result_data->fetch_error_message
+                );
+                if (written < 0 || (size_t)written >= sizeof(warning)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_spaced_warning(&runtime->diagnostics, warning, line);
+            }
             return ptn_bool(0);
         }
         PtnValue row = ptn_value_deref(result_data->rows.as.array->entries[result_data->cursor++].value);
