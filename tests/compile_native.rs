@@ -22614,6 +22614,89 @@ while ($iterator->valid()) {
 }
 
 #[test]
+fn compile_append_iterator_reports_closed_generator_to_native_binary() {
+    let root = temp_dir("ptn-native-append-iterator-closed-generator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-iterator-closed-generator.php");
+    let output = root.join("append-iterator-closed-generator-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function createGenerator() { yield 1; }
+$generator = createGenerator();
+
+$appendIterator = new AppendIterator();
+$appendIterator->append($generator);
+
+iterator_to_array($appendIterator);
+try {
+    iterator_to_array($appendIterator);
+} catch (Exception $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot traverse an already closed generator"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_iterator_count_generator_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-iterator-count-generator-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterator-count-generator-exception.php");
+    let output = root.join("iterator-count-generator-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function generator() {
+    yield 1;
+    throw new Exception('Iterator failed');
+}
+
+var_dump(iterator_count(generator()));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let path = input.display().to_string();
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: Iterator failed in "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Stack trace:\n#0 [internal function]: generator()"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{path}("))
+            && stdout.contains("): iterator_count(Object(Generator))"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Generator->rewind()"), "{stdout}");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
