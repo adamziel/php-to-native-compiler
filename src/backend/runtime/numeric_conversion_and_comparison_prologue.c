@@ -2746,6 +2746,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
         ? ptn_array_from_literal_entries(0, NULL)
         : ptn_null();
+    exception->soap_fault_code = NULL;
     exception->soap_fault_headerfault = ptn_null();
     return exception;
 }
@@ -3807,6 +3808,31 @@ static PTN_UNUSED void ptn_exception_set_soap_fault_headerfault(
     exception->soap_fault_headerfault = headerfault;
 }
 
+static PTN_UNUSED void ptn_exception_set_soap_fault_code(
+    PtnException *exception,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (exception == NULL || !ptn_exception_is_soap_fault_class(exception->class_name)) {
+        return;
+    }
+    free(exception->soap_fault_code);
+    exception->soap_fault_code = NULL;
+    if (argc == 0) {
+        return;
+    }
+    PtnValue code = ptn_value_deref(args[0]);
+    if (code.type == PTN_ARRAY && code.as.array != NULL && code.as.array->len >= 2) {
+        code = ptn_value_deref(code.as.array->entries[1].value);
+    }
+    if (code.type == PTN_STRING && code.as.string.len > 0) {
+        exception->soap_fault_code = ptn_duplicate_string_len(
+            (const char *)code.as.string.data,
+            code.as.string.len
+        );
+    }
+}
+
 static PTN_UNUSED void ptn_exception_set_soap_fault_property(
     PtnException *exception,
     const char *name,
@@ -3937,6 +3963,7 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     }
     ptn_value_destroy(&exception->previous);
     exception->previous = previous;
+    ptn_exception_set_soap_fault_code(exception, argc, args);
     ptn_exception_set_soap_fault_headerfault(exception, argc, args);
     ptn_exception_set_soap_fault_properties(exception, argc, args);
     return ptn_null();
@@ -4154,6 +4181,33 @@ static PTN_UNUSED PtnValue ptn_throwable_to_string(PtnRuntime *runtime, PtnValue
     return ptn_owned_string(result);
 }
 
+static PTN_UNUSED void ptn_exception_copy_soap_fault_code_from_throwable(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    PtnValue throwable,
+    size_t line
+) {
+    if (exception == NULL || !ptn_exception_is_soap_fault_class(exception->class_name)) {
+        return;
+    }
+    PtnLookupResult lookup = ptn_throwable_object_property(runtime, throwable, "faultcode", line);
+    if (!lookup.exists) {
+        return;
+    }
+    PtnValue code = ptn_value_deref(lookup.value);
+    if (code.type == PTN_ARRAY && code.as.array != NULL && code.as.array->len >= 2) {
+        code = ptn_value_deref(code.as.array->entries[1].value);
+    }
+    if (code.type == PTN_STRING && code.as.string.len > 0) {
+        free(exception->soap_fault_code);
+        exception->soap_fault_code = ptn_duplicate_string_len(
+            (const char *)code.as.string.data,
+            code.as.string.len
+        );
+    }
+    ptn_value_destroy(&lookup.value);
+}
+
 static PTN_UNUSED PtnValue ptn_throw_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -4194,6 +4248,12 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             severity,
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
+        );
+        ptn_exception_copy_soap_fault_code_from_throwable(
+            runtime,
+            runtime->exceptions->active_exception,
+            resolved,
+            line
         );
         if (
             runtime->exceptions->try_frame == NULL &&

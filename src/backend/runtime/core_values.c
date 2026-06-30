@@ -1339,6 +1339,7 @@ struct PtnException {
     int64_t severity;
     PtnValue dynamic_properties;
     PtnValue errors;
+    char *soap_fault_code;
     PtnValue soap_fault_headerfault;
 };
 
