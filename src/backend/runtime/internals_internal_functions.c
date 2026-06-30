@@ -88218,7 +88218,9 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
         return "UTF-8-Mobile#SOFTBANK";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "ASCII") ||
-        ptn_string_operand_ascii_case_equal(encoding, "US-ASCII")) {
+        ptn_string_operand_ascii_case_equal(encoding, "US-ASCII") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ANSI_X3.4-1968") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ANSI_X3.4-1986")) {
         return "ASCII";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "7bit")) {
@@ -88243,6 +88245,8 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "SJIS") ||
         ptn_string_operand_ascii_case_equal(encoding, "Shift_JIS") ||
+        ptn_string_operand_ascii_case_equal(encoding, "MS932") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Windows-31J") ||
         ptn_string_operand_ascii_case_equal(encoding, "CP932") ||
         ptn_string_operand_ascii_case_equal(encoding, "MS_Kanji")) {
         return "SJIS";
@@ -88253,7 +88257,9 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (ptn_string_operand_ascii_case_equal(encoding, "SJIS-2004")) {
         return "SJIS-2004";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "MacJapanese")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "MacJapanese") ||
+        ptn_string_operand_ascii_case_equal(encoding, "SJIS-mac") ||
+        ptn_string_operand_ascii_case_equal(encoding, "x-Mac-Japanese")) {
         return "MacJapanese";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "SJIS-Mobile#DOCOMO")) {
@@ -88277,7 +88283,8 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-2004")) {
         return "ISO-2022-JP-2004";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-KDDI")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-KDDI") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-MOBILE#KDDI")) {
         return "ISO-2022-JP-KDDI";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-KR")) {
@@ -88370,41 +88377,70 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
         ptn_string_operand_ascii_case_equal(encoding, "Latin1")) {
         return "ISO-8859-1";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-2")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-2") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-2") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin2")) {
         return "ISO-8859-2";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-3")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-3") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-3") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin3")) {
         return "ISO-8859-3";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-4")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-4") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-4") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin4")) {
         return "ISO-8859-4";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-5")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-5") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-5") ||
+        ptn_string_operand_ascii_case_equal(encoding, "cyrillic")) {
         return "ISO-8859-5";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-6")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-6") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-6") ||
+        ptn_string_operand_ascii_case_equal(encoding, "arabic")) {
         return "ISO-8859-6";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-7")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-7") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-7") ||
+        ptn_string_operand_ascii_case_equal(encoding, "greek")) {
         return "ISO-8859-7";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-8")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "hebrew")) {
         return "ISO-8859-8";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-9")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-9") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-9") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin5")) {
         return "ISO-8859-9";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-10")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-10") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-10") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin6")) {
         return "ISO-8859-10";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-13")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-13") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-13") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin7")) {
         return "ISO-8859-13";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-14")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-14") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-14") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin8")) {
         return "ISO-8859-14";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-15")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-15") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-15") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin9")) {
         return "ISO-8859-15";
+    }
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-8859-16") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO8859-16") ||
+        ptn_string_operand_ascii_case_equal(encoding, "Latin10")) {
+        return "ISO-8859-16";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "Windows-1251") ||
         ptn_string_operand_ascii_case_equal(encoding, "CP1251")) {
@@ -88425,7 +88461,10 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (ptn_string_operand_ascii_case_equal(encoding, "CP850")) {
         return "CP850";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "CP866")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "CP866") ||
+        ptn_string_operand_ascii_case_equal(encoding, "CP-866") ||
+        ptn_string_operand_ascii_case_equal(encoding, "IBM866") ||
+        ptn_string_operand_ascii_case_equal(encoding, "IBM-866")) {
         return "CP866";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "KOI8-R")) {
@@ -88435,7 +88474,10 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
         return "KOI8-U";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "BIG-5") ||
-        ptn_string_operand_ascii_case_equal(encoding, "BIG5")) {
+        ptn_string_operand_ascii_case_equal(encoding, "BIG5") ||
+        ptn_string_operand_ascii_case_equal(encoding, "BIG-FIVE") ||
+        ptn_string_operand_ascii_case_equal(encoding, "BIGFIVE") ||
+        ptn_string_operand_ascii_case_equal(encoding, "CN-BIG5")) {
         return "BIG-5";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "EUC-KR") ||
@@ -88444,32 +88486,51 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
         ptn_string_operand_ascii_case_equal(encoding, "KSC_5601")) {
         return "EUC-KR";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "UHC")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "UHC") ||
+        ptn_string_operand_ascii_case_equal(encoding, "CP949")) {
         return "UHC";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "GB18030") ||
+        ptn_string_operand_ascii_case_equal(encoding, "GB-18030") ||
+        ptn_string_operand_ascii_case_equal(encoding, "GB-18030-2000") ||
         ptn_string_operand_ascii_case_equal(encoding, "GB18030-2022")) {
         return "GB18030";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "GB2312")) {
         return "GB2312";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "EUC-CN")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "CP51932") ||
+        ptn_string_operand_ascii_case_equal(encoding, "cp51932")) {
+        return "CP51932";
+    }
+    if (ptn_string_operand_ascii_case_equal(encoding, "EUC-CN") ||
+        ptn_string_operand_ascii_case_equal(encoding, "EUC_CN") ||
+        ptn_string_operand_ascii_case_equal(encoding, "eucCN") ||
+        ptn_string_operand_ascii_case_equal(encoding, "CN-GB") ||
+        ptn_string_operand_ascii_case_equal(encoding, "x-euc-cn")) {
         return "EUC-CN";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "CP936")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "CP936") ||
+        ptn_string_operand_ascii_case_equal(encoding, "CP-936") ||
+        ptn_string_operand_ascii_case_equal(encoding, "GBK")) {
         return "CP936";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "CP950")) {
         return "CP950";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "EUC-TW")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "EUC-TW") ||
+        ptn_string_operand_ascii_case_equal(encoding, "EUC_TW") ||
+        ptn_string_operand_ascii_case_equal(encoding, "eucTW") ||
+        ptn_string_operand_ascii_case_equal(encoding, "x-euc-tw")) {
         return "EUC-TW";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "HZ")) {
         return "HZ";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ARMSCII-8")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ARMSCII-8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ArmSCII-8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ArmSCII8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ARMSCII8")) {
         return "ARMSCII-8";
     }
     return NULL;
@@ -88504,6 +88565,9 @@ static const char *ptn_mb_iconv_encoding_name(const char *encoding) {
     }
     if (ptn_ascii_case_equal(encoding, "eucJP-win")) {
         return "EUC-JP-MS";
+    }
+    if (ptn_ascii_case_equal(encoding, "CP51932")) {
+        return "EUC-JP";
     }
     if (ptn_ascii_case_equal(encoding, "JIS") ||
         ptn_ascii_case_equal(encoding, "CP50220") ||
@@ -96190,10 +96254,18 @@ static PtnValue ptn_mb_encoding_list_value(void) {
         "BASE64", "UUENCODE", "HTML-ENTITIES", "Quoted-Printable", "7bit", "8bit",
         "UCS-4", "UCS-4BE", "UCS-4LE", "UCS-2", "UCS-2BE", "UCS-2LE",
         "UTF-32", "UTF-32BE", "UTF-32LE", "UTF-16", "UTF-16BE", "UTF-16LE",
-        "UTF-8", "UTF-7", "ASCII", "EUC-JP", "SJIS", "ISO-2022-JP",
+        "UTF-8", "UTF-7", "ASCII", "EUC-JP", "SJIS", "eucJP-win",
+        "EUC-JP-2004", "SJIS-Mobile#DOCOMO", "SJIS-Mobile#KDDI",
+        "SJIS-Mobile#SOFTBANK", "SJIS-mac", "SJIS-2004", "CP932",
+        "SJIS-win", "CP51932", "ISO-2022-JP",
         "ISO-8859-1", "ISO-8859-15", "Windows-1251", "Windows-1252",
-        "Windows-1254", "KOI8-R", "KOI8-U", "BIG-5", "EUC-KR", "GB18030",
-        "GB2312"
+        "Windows-1254", "ISO-8859-2", "ISO-8859-3", "ISO-8859-4",
+        "ISO-8859-5", "ISO-8859-6", "ISO-8859-7", "ISO-8859-8",
+        "ISO-8859-9", "ISO-8859-10", "ISO-8859-13", "ISO-8859-14",
+        "ISO-8859-16", "KOI8-R", "KOI8-U", "BIG-5", "CP950", "EUC-KR",
+        "UHC", "GB18030", "GB2312", "EUC-CN", "CP936", "EUC-TW", "CP866",
+        "ArmSCII-8", "ISO-2022-JP-MS", "ISO-2022-JP-2004",
+        "ISO-2022-JP-MOBILE#KDDI", "CP50220", "CP50221", "CP50222"
     };
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -97193,20 +97265,49 @@ static PtnValue ptn_internal_mb_check_encoding(PtnRuntime *runtime, size_t argc,
 
 static PtnValue ptn_internal_mb_detect_encoding(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_detect_encoding", 1, "string", args[0], line);
-    const char *candidate = argc >= 2
-        ? ptn_mb_encoding_list_first_from_value(runtime, "mb_detect_encoding", 2, "encodings", args[1], line, ptn_mb_current_internal_encoding(runtime))
-        : ptn_mb_current_internal_encoding(runtime);
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnValue default_list = ptn_null();
+    const PtnValue *list_value = NULL;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        list_value = &args[1];
+    } else {
+        default_list = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order()));
+        list_value = &default_list;
+    }
+    char *detect_list = ptn_mb_encoding_detect_list_from_value_alloc(
+        runtime,
+        "mb_detect_encoding",
+        2,
+        "encodings",
+        *list_value,
+        line,
+        ptn_mb_current_detect_order()
+    );
+    if (list_value == &default_list) {
+        ptn_value_destroy(&default_list);
+    }
+    if (detect_list == NULL) {
+        ptn_string_operand_free(input);
+        return ptn_bool(0);
+    }
+    char *candidate = ptn_mb_detect_list_select_for_string_alloc(
+        detect_list,
+        input,
+        ptn_mb_current_internal_encoding(runtime)
+    );
+    free(detect_list);
     if (candidate == NULL) {
         ptn_string_operand_free(input);
         return ptn_bool(0);
     }
-    if (strict && ptn_mb_encoding_is_utf8(candidate) && !ptn_mb_utf8_is_valid(input.data, input.len)) {
+    if (strict && !ptn_mb_check_encoding_string_bytes(input.data, input.len, candidate)) {
+        free(candidate);
         ptn_string_operand_free(input);
         return ptn_bool(0);
     }
+    PtnValue result = ptn_owned_string(candidate);
     ptn_string_operand_free(input);
-    return ptn_string(candidate);
+    return result;
 }
 
 static PtnValue ptn_internal_mb_str_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
