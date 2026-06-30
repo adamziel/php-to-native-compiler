@@ -34068,6 +34068,58 @@ dump_exception(fn() => mb_detect_order($alias));\n",
 }
 
 #[test]
+fn compile_mbstring_mime_mail_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-mime-mail-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-mime-mail-residuals.php");
+    let output = root.join("mb-mime-mail-residuals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_error(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+function show_header(string $header): void {\n\
+    echo str_replace([\"\\r\", \"\\n\"], [\"\\\\r\", \"\\\\n\"], $header), \"\\n\";\n\
+}\n\
+$s = \"[service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit unterschiedlichen\";\n\
+$p = 'Subject: ';\n\
+show_header($p . mb_encode_mimeheader($s, 'UTF-8', 'Q', \"\\r\\n\", strlen($p)));\n\
+show_header(mb_encode_mimeheader($p . $s, 'UTF-8', 'Q', \"\\r\\n\", 0));\n\
+dump_error(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+dump_error(fn() => mb_send_mail(\"foo\\0bar\", 'x', 'y'));\n\
+dump_error(fn() => mb_send_mail('x', \"foo\\0bar\", 'y'));\n\
+dump_error(fn() => mb_send_mail('x', 'y', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', 'q', \"foo\\0bar\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n",
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #2 ($subject) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #3 ($message) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #4 ($additional_headers) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #5 ($additional_params) must not contain any null bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_detect_order_validation_to_native_binary() {
     let root = temp_dir("ptn-native-mb-detect-order-validation");
     fs::create_dir_all(&root).unwrap();
@@ -106164,6 +106216,99 @@ try {
     assert!(c_source.contains("ptn_random_randomizer_next_float"));
     assert!(c_source.contains("ptn_random_randomizer_pick_array_keys"));
     assert!(c_source.contains("ptn_random_randomizer_shuffle_array"));
+}
+
+#[test]
+fn compile_mt_rand_php_legacy_bounded_scaling_to_native_binary() {
+    let root = temp_dir("ptn-native-mt-rand-php-legacy-bounded-scaling");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mt-rand-php-legacy-bounded-scaling.php");
+    let output = root.join("mt-rand-php-legacy-bounded-scaling-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+mt_srand(0, MT_RAND_PHP);
+var_dump(mt_rand(0, 999999999), mt_rand(0, 999));
+
+mt_srand(0, MT_RAND_PHP);
+var_dump(rand(0, 999999999), rand(0, 999));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(448865905)\n",
+            "int(592)\n",
+            "int(448865905)\n",
+            "int(592)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_mt19937_range_php_legacy"));
+}
+
+#[test]
+fn compile_random_randomizer_engine_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-random-randomizer-engine-exception-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-randomizer-engine-exception-trace.php");
+    let output = root.join("random-randomizer-engine-exception-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Randomizer;
+
+class ThrowingEngine implements Random\Engine
+{
+    public function generate(): string
+    {
+        throw new Exception('Error');
+    }
+}
+
+$randomizer = new Randomizer(new ThrowingEngine());
+$randomizer->getBytes(1);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: Error"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("#0 [internal function]: ThrowingEngine->generate()"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("): Random\\Randomizer->getBytes(1)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#2 {main}"), "{stdout}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_randomizer_instance_trace_name"));
 }
 
 #[test]
