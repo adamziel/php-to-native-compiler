@@ -57968,6 +57968,31 @@ impl ValueEmitter {
         }
         if !has_named_arguments
             && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("__ptn_backtick_exec")
+            && arguments.len() == 1
+        {
+            let argument_temp = self.emit_call_argument(out, name, 0, &arguments[0]);
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ptn_value_share(");
+            out.push_str(&argument_temp);
+            out.push_str(") };\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_internal_backtick_exec(&runtime, 1, ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
+            emit_value_cleanup(out, "    ", &argument_temp);
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("clone")
             && (arguments.len() == 1 || arguments.len() == 2)
         {

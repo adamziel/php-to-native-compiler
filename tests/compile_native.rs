@@ -63409,6 +63409,31 @@ var_dump(function_exists('system'), function_exists('EXEC'), function_exists('pa
 }
 
 #[test]
+fn compile_backtick_operator_emits_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-backtick-operator-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("backtick-operator-deprecation.php");
+    let output = root.join("backtick-operator-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(`printf 'bt\\n'`);\n\
+var_dump(shell_exec(\"printf 'sx\\n'\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: The backtick (`) operator is deprecated, use shell_exec() instead in ptn on line 2\nstring(3) \"bt\n\"\nstring(3) \"sx\n\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_locale_constants_and_setlocale_to_native_binary() {
     let root = temp_dir("ptn-native-locale-constants-setlocale");
     fs::create_dir_all(&root).unwrap();

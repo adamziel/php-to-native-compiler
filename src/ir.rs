@@ -4843,7 +4843,7 @@ impl<'a> LoweringContext<'a> {
                 lower_interpolated_string(parts, span.line, |expr| self.lower_expr(expr))
             }
             Expr::ShellExec { command, span } => ValueExpr::InternalCall {
-                name: "shell_exec".to_string(),
+                name: "__ptn_backtick_exec".to_string(),
                 arguments: vec![ValueExpr::String(command.clone())],
                 argument_names: vec![None],
                 argument_unpacks: vec![false],

@@ -1,0 +1,21 @@
+# Focused PHPT row pack for ptn-w17z.1251.
+#
+# Source artifact:
+#   /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T125010Z.tsv
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1251-zend-generator-fiber-parameter-current-red-row-pack.txt
+#
+# bucket: zend-generator-fiber-parameter-current-red rows=12
+Zend/tests/generators/bug79657.phpt
+Zend/tests/generators/bug66041.phpt
+Zend/tests/bug70782.phpt
+Zend/tests/zend_ini/oss_fuzz_428983568.phpt
+Zend/tests/get_required_files.phpt
+Zend/tests/bug60771.phpt
+Zend/tests/generators/gh15330-005.phpt
+Zend/tests/throwable_003.phpt
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt
+Zend/tests/named_params/missing_param.phpt
+Zend/tests/bug64677.phpt

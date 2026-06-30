@@ -120821,6 +120821,11 @@ static PtnValue ptn_internal_shell_exec(PtnRuntime *runtime, size_t argc, const 
     return ptn_owned_string_len(command_result.output.data, command_result.output.len);
 }
 
+static PtnValue ptn_internal_backtick_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    ptn_emit_deprecation(&runtime->diagnostics, "The backtick (`) operator is deprecated, use shell_exec() instead", line);
+    return ptn_internal_shell_exec(runtime, argc, args, line);
+}
+
 typedef struct {
     pid_t pid;
     char *command;
