@@ -134138,6 +134138,20 @@ static int ptn_astro_rise_set_altitude(
     return 0;
 }
 
+static time_t ptn_astro_solar_transit_timestamp(int year, int month, int day, double longitude) {
+    time_t utc_midnight = ptn_datetime_utc_timestamp_for_parts(year, month, day, 0, 0, 0);
+    double days = ptn_astro_ts_to_j2000(utc_midnight) + 2.0 - longitude / 360.0;
+    double sidtime = ptn_astro_revolution(ptn_astro_gmst0(days) + 180.0 + longitude);
+    double right_ascension = 0.0;
+    double declination = 0.0;
+    double solar_radius = 0.0;
+    ptn_astro_sun_ra_dec(days, &right_ascension, &declination, &solar_radius);
+    (void)declination;
+    (void)solar_radius;
+    double south = 12.0 - ptn_astro_rev180(sidtime - right_ascension) / 15.0;
+    return utc_midnight + (time_t)(south * 3600.0);
+}
+
 static int ptn_date_validate_finite_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -134354,19 +134368,22 @@ static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, con
     }
 
     time_t timestamp_time = (time_t)timestamp;
-    struct tm *parts = gmtime(&timestamp_time);
-    if (parts == NULL) {
-        return ptn_array_from_literal_entries(0, NULL);
-    }
-    int year = parts->tm_year + 1900;
-    int month = parts->tm_mon + 1;
-    int day = parts->tm_mday;
+    int timezone_offset = ptn_timezone_offset_for_name(ptn_current_timezone_name(), timestamp_time);
+    PtnDateTimeCivilParts local_parts;
+    ptn_datetime_break_timestamp(
+        ptn_datetime_clamp_i128_to_i64((__int128)timestamp + (__int128)timezone_offset),
+        &local_parts
+    );
+    int year = (int)local_parts.year;
+    int month = local_parts.month;
+    int day = local_parts.day;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
 
     double hour_rise = 0.0;
     double hour_set = 0.0;
     time_t timestamp_rise = 0;
     time_t timestamp_set = 0;
+    time_t timestamp_transit = ptn_astro_solar_transit_timestamp(year, month, day, longitude);
     int status = ptn_astro_rise_set_altitude(
         year,
         month,
@@ -134386,13 +134403,14 @@ static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, con
         ptn_array_set_entry(
             result.as.array,
             ptn_array_string_key("transit"),
-            ptn_int((int64_t)llround(((double)timestamp_rise + (double)timestamp_set) / 2.0))
+            ptn_int((int64_t)timestamp_transit)
         );
     } else {
         PtnValue polar_value = status < 0 ? ptn_bool(0) : ptn_bool(1);
         ptn_array_set_entry(result.as.array, ptn_array_string_key("sunrise"), ptn_value_clone_deref(polar_value));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("sunset"), ptn_value_clone_deref(polar_value));
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("transit"), polar_value);
+        ptn_value_destroy(&polar_value);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("transit"), ptn_int((int64_t)timestamp_transit));
     }
 
     ptn_date_sun_info_set_pair(

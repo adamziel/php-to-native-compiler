@@ -3171,6 +3171,61 @@ var_dump(date_sunrise(1, SUNFUNCS_RET_STRING, 1, NAN));
 }
 
 #[test]
+fn compile_date_sun_info_polar_transit_to_native_binary() {
+    let root = temp_dir("ptn-native-date-sun-info-polar-transit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-sun-info-polar-transit.php");
+    let output = root.join("date-sun-info-polar-transit-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('America/Sao_Paulo');
+foreach (['2015-01-12 00:00:00 UTC', '2015-09-12 00:00:00 UTC'] as $date) {
+    echo $date, "\n";
+    $sunInfo = date_sun_info(strtotime($date), 89.0, 1.0);
+    foreach (['sunrise', 'sunset', 'transit'] as $key) {
+        $value = $sunInfo[$key];
+        echo $key, ': ', match ($value) {
+            true => 'always',
+            false => 'never',
+            default => date('H:i:s', $value),
+        }, "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2015-01-12 00:00:00 UTC\n",
+            "sunrise: never\n",
+            "sunset: never\n",
+            "transit: 10:03:48\n",
+            "2015-09-12 00:00:00 UTC\n",
+            "sunrise: always\n",
+            "sunset: always\n",
+            "transit: 08:52:44\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_astro_solar_transit_timestamp"));
+    assert!(c_source.contains("static PtnValue ptn_internal_date_sun_info("));
+}
+
+#[test]
 fn compile_fiber_by_ref_callback_return_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-by-ref-callback-return");
     fs::create_dir_all(&root).unwrap();
