@@ -34376,6 +34376,18 @@ try {\n\
 } catch (Error $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
 }\n\
+try {\n\
+    mb_ereg_replace('x', '', '', 'e');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+mb_regex_set_options('e');\n\
+try {\n\
+    mb_ereg('a', 'a');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+mb_regex_set_options('');\n\
 $str = \"\\x80\";\n\
 var_dump(false === mb_eregi('.', $str, $matches));\n\
 var_dump($matches);\n\
@@ -34414,6 +34426,8 @@ var_dump(mb_ereg_search_getregs());\n",
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "No pattern was provided\n",
+            "Option \"e\" is not supported\n",
+            "Option \"e\" is not supported\n",
             "bool(true)\n",
             "array(0) {\n",
             "}\n",
@@ -34475,6 +34489,7 @@ var_dump(mb_ereg_search_getregs());\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_mb_compile_regex_program"));
+    assert!(c_source.contains("ptn_mb_regex_options_reject_unsupported"));
     assert!(c_source.contains("PTN_PCRE2_DUPNAMES"));
 }
 
