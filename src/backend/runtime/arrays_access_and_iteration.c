@@ -20802,6 +20802,18 @@ static uint64_t ptn_mt19937_range64(PtnMt19937State *state, uint64_t upper_inclu
     return result % range;
 }
 
+static PTN_UNUSED uint64_t ptn_mt19937_range_php_legacy(
+    PtnMt19937State *state,
+    uint64_t upper_inclusive
+) {
+    uint64_t result = (uint64_t)(ptn_mt19937_generate(state) >> 1);
+    if (upper_inclusive == 2147483647ULL) {
+        return result;
+    }
+    __uint128_t range = (__uint128_t)upper_inclusive + 1U;
+    return (uint64_t)(((__uint128_t)result * range) / 2147483648ULL);
+}
+
 static PTN_UNUSED size_t ptn_mt19937_bounded_index(PtnMt19937State *state, size_t upper_inclusive) {
     if (upper_inclusive <= (size_t)UINT32_MAX) {
         return (size_t)ptn_mt19937_range32(state, (uint32_t)upper_inclusive);
