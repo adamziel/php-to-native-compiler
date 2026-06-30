@@ -36400,10 +36400,44 @@ var_dump($mismatch);
 
 $parsed = openssl_x509_parse(file_get_contents(__DIR__ . '/cert.pem'));
 var_dump(strlen($parsed['hash']));
+var_dump(isset($parsed['subject']['C']), isset($parsed['issuer']['C']), isset($parsed['purposes'][1]), isset($parsed['extensions']));
+
+var_dump(openssl_cipher_iv_length('AES-128-CBC'));
+$tag = null;
+$gcm = openssl_encrypt('', 'aes-256-gcm', str_repeat('k', 32), OPENSSL_RAW_DATA, str_repeat('i', 16), $tag, str_repeat('a', 32));
+var_dump($gcm);
 
 $ciphertext = openssl_encrypt('secret', 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456');
 var_dump(openssl_decrypt($ciphertext, 'aes-128-cbc', 'password', OPENSSL_RAW_DATA, '1234567890123456'));
 var_dump(openssl_error_string());
+
+$details = [
+    'p' => base64_decode('3Pk6C4g5cuwOGZiaxaLOMQ4dN3F+jZVxu3Yjcxhm5h73Wi4niYsFf5iRwuJ6Y5w/KbYIFFgc07LKOYbSaDcFV31FwuflLcgcehcYduXOp0sUSL/frxiCjv0lGfFOReOCZjSvGUnltTXMgppIO4p2Ij5dSQolfwW9/xby+yLFg6s='),
+    'g' => base64_decode('Ag=='),
+    'priv_key' => base64_decode('jUdcV++P/m7oUodWiqKqKXZVenHRuj92Ig6Fmzs7QlqVdUc5mNBxmEWjug+ObffanPpOeab/LyXwjNMzevtBz3tW4oROau++9EIMJVVQr8fW9zdYBJcYieC5l4t8nRj5/Uu/Z0G2rWVLBleSi28mqqNEvnUs7uxYxrar69lwQYs=')
+];
+$dh = openssl_pkey_new(['dh' => $details]);
+$dhData = openssl_pkey_get_details($dh);
+var_dump(base64_encode($dhData['dh']['pub_key']));
+
+$key = openssl_pkey_new();
+$dn = ['countryName' => 'GB', 'commonName' => 'Demo Cert'];
+$options = ['req_extensions' => 'v3_req', 'x509_extensions' => 'usr_cert'];
+$csr = openssl_csr_new($dn, $key, $options);
+$crt = openssl_csr_sign($csr, null, $key, 1, $options);
+openssl_csr_export($csr, $csrText, false);
+openssl_x509_export($crt, $crtText, false);
+var_dump(strpos($csrText, 'Requested Extensions:') !== false);
+var_dump(strpos($crtText, 'X509v3 extensions:') !== false);
+
+class TestOpenSslPath {
+    public function __toString(): string {
+        return 'file://' . __DIR__ . '/private.key';
+    }
+}
+$badKey = [new TestOpenSslPath(), ''];
+@openssl_pkey_export_to_file($badKey, str_repeat('a', 10000), passphrase: '');
+var_dump($badKey[0] instanceof TestOpenSslPath, $badKey[1]);
 ",
     )
     .unwrap();
@@ -36419,7 +36453,7 @@ var_dump(openssl_error_string());
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(4)\nbool(true)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nstring(6) \"secret\"\nbool(false)\n"
+        "int(4)\nbool(true)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(16)\nstring(0) \"\"\nstring(6) \"secret\"\nbool(false)\nstring(172) \"0DmJUe9dr02pAtVoGyLHdC+rfBU3mDCelKGPXRDFHofx6mFfN2gcZCmp/ab4ezDXfpIBOatpVdbn2fTNUGo64DtKE2WGTsZCl90RgrGUv8XW/4WDPXeE7g5u7KWHBG/LCE5+XsilE5P5/GIyqr9gsiudTmk+H/hiYZl9Smar9k0=\"\nbool(true)\nbool(true)\nbool(true)\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -1,0 +1,12 @@
+ext/openssl/tests/bug48182.phpt
+ext/openssl/tests/bug65538_001.phpt
+ext/openssl/tests/bug47828.phpt
+ext/openssl/tests/openssl_private_decrypt_digest.phpt
+ext/openssl/tests/openssl_decrypt_error.phpt
+ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt
+ext/openssl/tests/bug74099.phpt
+ext/openssl/tests/bug73478.phpt
+ext/openssl/tests/openssl_pkey_export_to_file_object_to_string.phpt
+ext/openssl/tests/bug54992.phpt
+ext/openssl/tests/bug36732.phpt
+ext/openssl/tests/gh13343_openssl33.phpt

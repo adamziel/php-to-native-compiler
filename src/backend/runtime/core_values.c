@@ -61,6 +61,8 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/cms.h>
+#include <openssl/bn.h>
+#include <openssl/dh.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/objects.h>
@@ -70,6 +72,7 @@
 #include <openssl/provider.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #endif
 
 #ifndef PTN_HAVE_ZLIB
