@@ -50565,6 +50565,116 @@ int(14700)\n"
 }
 
 #[test]
+fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-timezone-mutation-display.php");
+    let output = root.join("intl-calendar-timezone-mutation-display-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+$time = strtotime('2012-02-29 00:00:00 +0000');\n\
+$intlcal = IntlCalendar::createInstance('UTC');\n\
+$intlcal->setTime($time * 1000);\n\
+$intlcal->add(IntlCalendar::FIELD_DAY_OF_MONTH, 1);\n\
+$intlcal->add(IntlCalendar::FIELD_HOUR, 5);\n\
+$intlcal->add(IntlCalendar::FIELD_MINUTE, 6);\n\
+intlcal_add($intlcal, IntlCalendar::FIELD_SECOND, 7);\n\
+var_dump($intlcal->getTime());\n\
+\n\
+$intlcal = IntlCalendar::createInstance('UTC');\n\
+$intlcal->clear();\n\
+$intlcal->set(2012, 1, 29, 23, 58);\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+var_dump($intlcal->get(IntlCalendar::FIELD_MINUTE));\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+$intlcal->clear();\n\
+$intlcal->setDateTime(2012, 1, 29, 23, 58);\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+var_dump($intlcal->get(IntlCalendar::FIELD_MINUTE));\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+\n\
+$greg = new IntlGregorianCalendar(2012, 1, 28);\n\
+var_dump($greg->roll(IntlCalendar::FIELD_DAY_OF_MONTH, 2));\n\
+var_dump($greg->get(IntlCalendar::FIELD_MONTH));\n\
+var_dump($greg->get(IntlCalendar::FIELD_DAY_OF_MONTH));\n\
+$greg = new IntlGregorianCalendar(2012, 1, 28);\n\
+var_dump(intlcal_roll($greg, IntlCalendar::FIELD_DAY_OF_MONTH, 2));\n\
+var_dump($greg->get(IntlCalendar::FIELD_MONTH));\n\
+var_dump($greg->get(IntlCalendar::FIELD_DAY_OF_MONTH));\n\
+\n\
+$lsb = IntlTimeZone::createTimeZone('Europe/Lisbon');\n\
+$gmt = IntlTimeZone::getGMT();\n\
+var_dump($lsb->getDSTSavings());\n\
+var_dump(intltz_get_dst_savings($lsb));\n\
+var_dump($lsb->useDaylightTime());\n\
+var_dump($gmt->useDaylightTime());\n\
+var_dump(intltz_use_daylight_time($lsb));\n\
+var_dump(intltz_use_daylight_time($gmt));\n\
+ini_set('intl.default_locale', 'en_US');\n\
+var_dump($lsb->getDisplayName());\n\
+ini_set('intl.default_locale', 'pt_PT');\n\
+var_dump($lsb->getDisplayName());\n\
+ini_set('intl.default_locale', 'en_US');\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_GENERIC));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG_GENERIC));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_GMT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG_GMT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_COMMONLY_USED));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_GENERIC_LOCATION));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_intlcal_add"));
+    assert!(c_source.contains("ptn_internal_intltz_get_dst_savings"));
+    assert!(c_source.contains("ptn_runtime_set_intl_default_locale"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("float(1330578367000)"), "{stdout}");
+    assert!(
+        stdout.contains("Calling IntlCalendar::set() with more than 2 arguments is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nint(58)\nbool(true)\nbool(false)\nint(58)\nbool(true)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.matches("bool(true)\nint(1)\nint(1)").count() >= 2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "int(3600000)\nint(3600000)\nbool(true)\nbool(false)\nbool(true)\nbool(false)"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(30) \"Western European Standard Time\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(32) \"Hora padrão da Europa Ocidental\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(3) \"GMT\""), "{stdout}");
+    assert!(stdout.contains("string(13) \"Portugal Time\""), "{stdout}");
+    assert!(
+        stdout.contains("string(21) \"Western European Time\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"+0000\""), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_dateformatter_time_none_and_grapheme_empty_to_native_binary() {
     let root = temp_dir("ptn-native-intl-dateformatter-time-none-grapheme-empty");
     fs::create_dir_all(&root).unwrap();
