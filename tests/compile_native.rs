@@ -34019,6 +34019,72 @@ foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
 }
 
 #[test]
+fn compile_mbstring_unicode_case_mapping_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-unicode-case-mapping");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-unicode-case-mapping.php");
+    let output = root.join("mb-unicode-case-mapping-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function h(string $s): void { echo bin2hex($s), \"\\n\"; }\n\
+h(mb_strtoupper(hex2bin('f09090b8'), 'UTF-8'));\n\
+h(mb_strtoupper(hex2bin('e2b0b0'), 'UTF-8'));\n\
+h(mb_strtoupper(hex2bin('d4a5'), 'UTF-8'));\n\
+echo mb_convert_case(hex2bin('c39f'), MB_CASE_TITLE, 'UTF-8'), \"\\n\";\n\
+h(mb_convert_case(hex2bin('efac80'), MB_CASE_UPPER, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('efac80'), MB_CASE_TITLE, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('efac80'), MB_CASE_FOLD, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('c4b0'), MB_CASE_LOWER, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('c4b0'), MB_CASE_LOWER_SIMPLE, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('c4b0'), MB_CASE_FOLD, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('c4b0'), MB_CASE_FOLD_SIMPLE, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('ce9fcea3'), MB_CASE_LOWER, 'UTF-8'));\n\
+h(mb_convert_case(hex2bin('ce9fcea3'), MB_CASE_LOWER_SIMPLE, 'UTF-8'));\n\
+mb_internal_encoding('ISO-8859-9');\n\
+h(mb_convert_case(hex2bin('dd'), MB_CASE_LOWER));\n\
+h(mb_convert_case(hex2bin('49'), MB_CASE_LOWER));\n\
+h(mb_convert_case(hex2bin('69'), MB_CASE_UPPER));\n\
+h(mb_convert_case(hex2bin('49'), MB_CASE_FOLD));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "f0909090\n",
+            "e2b080\n",
+            "d4a4\n",
+            "Ss\n",
+            "4646\n",
+            "4666\n",
+            "6666\n",
+            "69cc87\n",
+            "69\n",
+            "69cc87\n",
+            "c4b0\n",
+            "cebfcf82\n",
+            "cebfcf83\n",
+            "69\n",
+            "fd\n",
+            "dd\n",
+            "fd\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_mbstring_residual_state_and_diagnostics_edges() {
     let root = temp_dir("ptn-phpc-mbstring-residual-edges");
     fs::create_dir_all(&root).unwrap();
@@ -34461,7 +34527,10 @@ echo bin2hex(mb_convert_encoding(hex2bin('1b244221a11b2842'), 'UTF-16BE', 'ISO-2
 echo bin2hex(mb_convert_encoding(hex2bin('1b2c'), 'UTF-8', 'JIS')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('e0'), 'UTF-8', 'JIS')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('ff61'), 'JIS', 'UTF-16BE')), \"\\n\";\n\
-echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \"\\n\";\n",
+echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('ceb5cebbcebbceb7cebdceb9cebaceac'), 'HZ', 'UTF-8')), \"\\n\";\n\
+mb_substitute_character('entity');\n\
+echo bin2hex(mb_convert_encoding(hex2bin('ceb5cebbcebbceb7cebdceb9cebaceac'), 'HZ', 'UTF-8')), \"\\n\";\n",
     )
     .unwrap();
 
@@ -34494,6 +34563,8 @@ echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \
             "25\n",
             "1b2849211b2842\n",
             "1b244221311b2842\n",
+            "7e7b2645264b264b2647264d2649264a7e7d25\n",
+            "7e7b2645264b264b2647264d2649264a7e7d2623783341433b\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
