@@ -29306,6 +29306,41 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_sqlite_collation_order_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-collation-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-collation-order.php");
+    let output = root.join("pdo-sqlite-collation-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$db = new Pdo\Sqlite('sqlite::memory:');
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$db->query('CREATE TABLE t (id INT AUTO INCREMENT, name TEXT)');
+$db->query("INSERT INTO t VALUES (NULL, '1'), (NULL, '2'), (NULL, '10')");
+$db->createCollation('NATURAL', fn($a, $b) => strnatcmp($a, $b));
+foreach ($db->query('SELECT name FROM t ORDER BY name COLLATE NATURAL') as $row) {
+    echo $row['name'], "\n";
+}
+foreach ($db->query('SELECT name FROM t ORDER BY name') as $row) {
+    echo $row['name'], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\n2\n10\n1\n10\n2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();

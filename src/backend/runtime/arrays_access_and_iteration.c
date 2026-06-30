@@ -14015,6 +14015,14 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     size_t depth
 );
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_pdo_statement_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnArrayIterator *out
+);
+#endif
+
 static PTN_UNUSED PtnObject *ptn_lazy_object_foreach_effective_object(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -14216,6 +14224,18 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         }
     }
 #endif
+
+    #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "PDOStatement")) {
+        PtnArrayIterator iterator = ptn_array_iterator_empty();
+        if (ptn_pdo_statement_iterator_from_object(runtime, value, &iterator)) {
+            return iterator;
+        }
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return iterator;
+        }
+    }
+    #endif
 
     if (
         ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
