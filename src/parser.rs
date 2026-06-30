@@ -24277,6 +24277,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "get_defined_constants"
             | "get_loaded_extensions"
             | "get_extension_funcs"
+            | "getimagesize"
             | "getimagesizefromstring"
             | "get_html_translation_table"
             | "get_meta_tags"

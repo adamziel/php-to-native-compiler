@@ -7122,6 +7122,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
         return Some("rest_index");
     }
+    if name.eq_ignore_ascii_case("getimagesize") && argument_index == 1 {
+        return Some("image_info");
+    }
     if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
         return Some("next");
     }

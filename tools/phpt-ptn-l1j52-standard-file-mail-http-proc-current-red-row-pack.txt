@@ -1,0 +1,12 @@
+ext/standard/tests/strings/strncasecmp_variation9.phpt
+ext/standard/tests/mail/gh20257.phpt
+ext/standard/tests/gh10885.phpt
+ext/standard/tests/general_functions/proc_open_array.phpt
+ext/standard/tests/mail/gh19188_mixed_mode.phpt
+ext/standard/tests/http/gh11274.phpt
+ext/standard/tests/image/getimagesize_tif_mm.phpt
+ext/standard/tests/file/fileowner_variation3.phpt
+ext/standard/tests/file/file_variation5.phpt
+ext/standard/tests/misc/get_browser_variation3.phpt
+ext/standard/tests/general_functions/url_rewriting_basic3.phpt
+ext/standard/tests/url/get_headers_error_003.phpt

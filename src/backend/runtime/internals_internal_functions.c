@@ -1154,6 +1154,16 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
                 return NULL;
         }
     }
+    if (ptn_ascii_case_equal(name, "getimagesize")) {
+        switch (index) {
+            case 0:
+                return "filename";
+            case 1:
+                return "image_info";
+            default:
+                return NULL;
+        }
+    }
     if (ptn_ascii_case_equal(name, "dns_get_record")) {
         switch (index) {
             case 0:
@@ -9615,6 +9625,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
         return 1;
     }
     if ((index == 0 || index == 1) && ptn_ascii_case_equal(name, "headers_sent")) {
+        return 1;
+    }
+    if (index == 1 && ptn_ascii_case_equal(name, "getimagesize")) {
         return 1;
     }
     if ((index == 1 || index == 2) &&
@@ -143386,6 +143399,14 @@ typedef struct {
     const char *height_unit;
 } PtnSvgImageInfo;
 
+typedef struct {
+    unsigned int width;
+    unsigned int height;
+    int image_type;
+    const char *width_unit;
+    const char *height_unit;
+} PtnImageSizeInfo;
+
 static const char *ptn_image_type_to_extension_string(int64_t image_type) {
     switch (image_type) {
         case PTN_IMAGE_FILETYPE_GIF:
@@ -143583,6 +143604,215 @@ static PtnValue ptn_getimagesize_svg_result(PtnSvgImageInfo *info) {
     ptn_array_set_entry(result.as.array, ptn_array_string_key("mime"), ptn_string("image/svg+xml"));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("width_unit"), ptn_owned_string((char *)info->width_unit));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("height_unit"), ptn_owned_string((char *)info->height_unit));
+    return result;
+}
+
+static PtnValue ptn_getimagesize_result(PtnImageSizeInfo info) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int(info.width));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_int(info.height));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_int(info.image_type));
+    if (strcmp(info.width_unit, "px") == 0 && strcmp(info.height_unit, "px") == 0) {
+        char dimensions[128];
+        int written = snprintf(
+            dimensions,
+            sizeof(dimensions),
+            "width=\"%u\" height=\"%u\"",
+            info.width,
+            info.height
+        );
+        if (written < 0 || (size_t)written >= sizeof(dimensions)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_owned_string(ptn_duplicate_string(dimensions)));
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mime"), ptn_string(ptn_image_type_to_mime_type_string(info.image_type)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("width_unit"), ptn_string(info.width_unit));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("height_unit"), ptn_string(info.height_unit));
+    return result;
+}
+
+static uint16_t ptn_image_read_u16(const unsigned char *data, int big_endian) {
+    return big_endian
+        ? (uint16_t)(((uint16_t)data[0] << 8) | (uint16_t)data[1])
+        : (uint16_t)(((uint16_t)data[1] << 8) | (uint16_t)data[0]);
+}
+
+static uint32_t ptn_image_read_u32(const unsigned char *data, int big_endian) {
+    return big_endian
+        ? ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) | (uint32_t)data[3]
+        : ((uint32_t)data[3] << 24) | ((uint32_t)data[2] << 16) | ((uint32_t)data[1] << 8) | (uint32_t)data[0];
+}
+
+static int ptn_tiff_ifd_entry_uint(
+    const unsigned char *data,
+    size_t len,
+    const unsigned char *entry,
+    int big_endian,
+    uint32_t *out
+) {
+    uint16_t type = ptn_image_read_u16(entry + 2, big_endian);
+    uint32_t count = ptn_image_read_u32(entry + 4, big_endian);
+    if (count == 0) {
+        return 0;
+    }
+    if (type == 3) {
+        if (count == 1) {
+            *out = ptn_image_read_u16(entry + 8, big_endian);
+            return 1;
+        }
+        uint32_t offset = ptn_image_read_u32(entry + 8, big_endian);
+        if ((size_t)offset > len || len - (size_t)offset < 2) {
+            return 0;
+        }
+        *out = ptn_image_read_u16(data + offset, big_endian);
+        return 1;
+    }
+    if (type == 4) {
+        if (count == 1) {
+            *out = ptn_image_read_u32(entry + 8, big_endian);
+            return 1;
+        }
+        uint32_t offset = ptn_image_read_u32(entry + 8, big_endian);
+        if ((size_t)offset > len || len - (size_t)offset < 4) {
+            return 0;
+        }
+        *out = ptn_image_read_u32(data + offset, big_endian);
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_tiff_info(const unsigned char *data, size_t len, PtnImageSizeInfo *info) {
+    if (len < 8) {
+        return 0;
+    }
+    int big_endian = 0;
+    int image_type = PTN_IMAGE_FILETYPE_UNKNOWN;
+    if (data[0] == 'M' && data[1] == 'M') {
+        big_endian = 1;
+        image_type = PTN_IMAGE_FILETYPE_TIFF_MM;
+    } else if (data[0] == 'I' && data[1] == 'I') {
+        big_endian = 0;
+        image_type = PTN_IMAGE_FILETYPE_TIFF_II;
+    } else {
+        return 0;
+    }
+    if (ptn_image_read_u16(data + 2, big_endian) != 42) {
+        return 0;
+    }
+    uint32_t ifd_offset = ptn_image_read_u32(data + 4, big_endian);
+    if ((size_t)ifd_offset > len || len - (size_t)ifd_offset < 2) {
+        return 0;
+    }
+    uint16_t entry_count = ptn_image_read_u16(data + ifd_offset, big_endian);
+    size_t entries_offset = (size_t)ifd_offset + 2;
+    if (entry_count > (len - entries_offset) / 12) {
+        return 0;
+    }
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    int has_width = 0;
+    int has_height = 0;
+    for (uint16_t i = 0; i < entry_count; i++) {
+        const unsigned char *entry = data + entries_offset + (size_t)i * 12;
+        uint16_t tag = ptn_image_read_u16(entry, big_endian);
+        uint32_t value = 0;
+        if (tag == 256 && ptn_tiff_ifd_entry_uint(data, len, entry, big_endian, &value)) {
+            width = value;
+            has_width = 1;
+        } else if (tag == 257 && ptn_tiff_ifd_entry_uint(data, len, entry, big_endian, &value)) {
+            height = value;
+            has_height = 1;
+        }
+    }
+    if (!has_width || !has_height || width > UINT_MAX || height > UINT_MAX) {
+        return 0;
+    }
+    info->width = (unsigned int)width;
+    info->height = (unsigned int)height;
+    info->image_type = image_type;
+    info->width_unit = "px";
+    info->height_unit = "px";
+    return 1;
+}
+
+static void ptn_getimagesize_assign_empty_info(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    if (argc >= 2 && args[1].type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, args[1].as.reference, ptn_array_from_literal_entries(0, NULL));
+    }
+}
+
+static PtnValue ptn_getimagesize_value_from_bytes(const unsigned char *data, size_t len) {
+    PtnImageSizeInfo info;
+    memset(&info, 0, sizeof(info));
+    if (ptn_getimagesize_tiff_info(data, len, &info)) {
+        return ptn_getimagesize_result(info);
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_getimagesize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
+        runtime,
+        "getimagesize",
+        1,
+        "filename",
+        args[0],
+        line
+    );
+    if (path == NULL) {
+        return ptn_null();
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    char *opened_path = NULL;
+    int read_result = ptn_read_file_bytes_with_search(
+        runtime,
+        "getimagesize",
+        path,
+        0,
+        &data,
+        &data_len,
+        &opened_path,
+        line
+    );
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "getimagesize", path, detail, line);
+        free(path);
+        free(opened_path);
+        free(data);
+        return ptn_bool(0);
+    }
+
+    PtnValue result = ptn_getimagesize_value_from_bytes(data, data_len);
+    if (ptn_value_deref(result).type == PTN_BOOL && !ptn_value_deref(result).as.boolean) {
+        PtnStringOperand svg_input = ptn_string_operand_borrowed_len((const char *)data, data_len);
+        PtnSvgImageInfo svg_info;
+        memset(&svg_info, 0, sizeof(svg_info));
+        if (ptn_libxml_svg_image_info_from_string(svg_input, &svg_info)) {
+            result = ptn_getimagesize_svg_result(&svg_info);
+        }
+    }
+    if (ptn_value_deref(result).type != PTN_BOOL || ptn_value_deref(result).as.boolean) {
+        ptn_getimagesize_assign_empty_info(runtime, argc, args);
+    }
+    free(path);
+    free(opened_path);
+    free(data);
     return result;
 }
 
@@ -190866,6 +191096,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_defined_functions", 0, 1, ptn_internal_get_defined_functions },
         { "get_extension_funcs", 1, 1, ptn_internal_get_extension_funcs },
+        { "getimagesize", 1, 2, ptn_internal_getimagesize },
         { "getimagesizefromstring", 1, 1, ptn_internal_getimagesizefromstring },
         { "getopt", 1, 3, ptn_internal_getopt },
         { "get_error_handler", 0, 0, ptn_internal_get_error_handler },

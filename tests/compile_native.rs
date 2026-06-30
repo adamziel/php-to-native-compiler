@@ -31736,6 +31736,63 @@ var_dump(fdatasync($memory));
 }
 
 #[test]
+fn compile_getimagesize_big_endian_tiff_to_native_binary() {
+    let root = temp_dir("ptn-native-getimagesize-tiff-mm");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getimagesize-tiff-mm.php");
+    let output = root.join("getimagesize-tiff-mm-bin");
+    let tiff = root.join("mm.tiff");
+    fs::write(
+        &tiff,
+        [
+            0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x02, 0x01, 0x00, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x01, 0x01, 0x00, 0x04, 0x00, 0x00,
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(getimagesize(__DIR__ . "/mm.tiff", $info));
+var_dump($info);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(8)\n",
+            "  [3]=>\n",
+            "  string(20) \"width=\"2\" height=\"2\"\"\n",
+            "  [\"mime\"]=>\n",
+            "  string(10) \"image/tiff\"\n",
+            "  [\"width_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "  [\"height_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_getimagesize"));
+}
+
+#[test]
 fn compile_php_fd_bad_syntax_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-php-fd-bad-syntax");
     fs::create_dir_all(&root).unwrap();
