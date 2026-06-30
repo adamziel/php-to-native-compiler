@@ -139102,6 +139102,20 @@ static void ptn_dom_element_ensure_prefixed_namespace(PtnRuntime *runtime, PtnXm
     free(xmlns_name);
 }
 
+static void ptn_dom_element_mark_prefixed_namespace_explicit(PtnXmlNode *element, const char *prefix, const char *uri) {
+    if (element == NULL || prefix == NULL || prefix[0] == '\0' || uri == NULL || uri[0] == '\0') {
+        return;
+    }
+    char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
+    PtnXmlNode *attr = ptn_xml_element_find_attribute(element, xmlns_name);
+    if (attr != NULL &&
+        ptn_xml_attribute_is_namespace_declaration(attr) &&
+        strcmp(attr->value == NULL ? "" : attr->value, uri) == 0) {
+        attr->synthetic_namespace_declaration = 0;
+    }
+    free(xmlns_name);
+}
+
 static const char *ptn_xml_lookup_local_namespace_uri(PtnXmlNode *element, const char *prefix) {
     if (prefix != NULL && strcmp(prefix, "xml") == 0) {
         return ptn_dom_xml_namespace_uri();
@@ -145249,6 +145263,14 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
         attr->id_attribute_state = replace->id_attribute_state;
     }
     ptn_dom_element_attach_attribute(runtime, element, attr, replace, 0);
+    if (ns &&
+        attr->namespace_uri != NULL &&
+        attr->namespace_uri[0] != '\0' &&
+        !ptn_xml_attribute_is_namespace_declaration(attr)) {
+        char *prefix = ptn_xml_prefix_dup(attr->name == NULL ? "" : attr->name);
+        ptn_dom_element_mark_prefixed_namespace_explicit(element, prefix, attr->namespace_uri);
+        free(prefix);
+    }
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(name);
     ptn_string_operand_free(value);

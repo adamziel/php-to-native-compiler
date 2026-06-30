@@ -56605,6 +56605,12 @@ foreach (["HTml", "htML", "html", "HTML", "foo:html", "foo:HTML", "bar:HTML", "b
     dumpList($dom->getElementsByTagName($name));
 }
 
+$legacy = new DOMDocument();
+$legacy->loadXML('<?xml version="1.0"?><container/>');
+$legacy->documentElement->setAttributeNS('some:ns', 'foo:bar', 'value');
+$legacy->documentElement->removeAttributeNS('some:ns', 'bar');
+echo $legacy->saveXML();
+
 $empty = Dom\HTMLDocument::createEmpty();
 $html = $empty->appendChild($empty->createElement('html'));
 var_dump($html->baseURI);
@@ -56672,6 +56678,8 @@ try {
             "2:FOO:HTML=6;foo:HTML=7;\n",
             "1:BAR:HTML=9;\n",
             "1:BAR:HTML=9;\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"some:ns\"/>\n",
             "string(11) \"about:blank\"\n",
             "bool(true)\n",
             "string(10) \"empty.html\"\n",
