@@ -203095,7 +203095,7 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
         destructor_target = ptn_value_borrow(object);
     }
     if (destructor_target.as.object != object.as.object) {
-        ptn_lazy_object_reset_property_storage(object.as.object, class_name);
+        ptn_lazy_object_clear_reset_property_storage(object.as.object, class_name);
     }
     if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
         ptn_object_run_destructor(destructor_target.as.object);
