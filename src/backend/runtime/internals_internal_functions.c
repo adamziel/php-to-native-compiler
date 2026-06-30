@@ -200462,6 +200462,7 @@ static char *ptn_db_trimmed_copy(const char *value) {
 }
 
 static char *ptn_db_identifier_copy(const char *start, size_t *consumed_out) {
+    const char *original = start;
     while (*start != '\0' && isspace((unsigned char)*start)) {
         start++;
     }
@@ -200474,7 +200475,7 @@ static char *ptn_db_identifier_copy(const char *start, size_t *consumed_out) {
             cursor++;
         }
         if (consumed_out != NULL) {
-            *consumed_out = (size_t)(cursor - start) + (*cursor == quote ? 1 : 0);
+            *consumed_out = (size_t)(cursor - original) + (*cursor == quote ? 1 : 0);
         }
         return ptn_db_trimmed_copy_len(name_start, (size_t)(cursor - name_start));
     }
@@ -200487,7 +200488,7 @@ static char *ptn_db_identifier_copy(const char *start, size_t *consumed_out) {
         cursor++;
     }
     if (consumed_out != NULL) {
-        *consumed_out = (size_t)(cursor - start);
+        *consumed_out = (size_t)(cursor - original);
     }
     return ptn_db_trimmed_copy_len(start, (size_t)(cursor - start));
 }
@@ -202174,6 +202175,33 @@ static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const
     return ptn_pdo_drivers_value();
 }
 
+static void ptn_pdo_throw_invalid_dsn(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    static const unsigned char pdo_constructor_sensitive_parameters[] = { 0, 0, 1 };
+    ptn_throw_exception_owned_message_at_with_trace_frame_metadata(
+        runtime,
+        "PDOException",
+        ptn_duplicate_string("PDO::__construct(): Argument #1 ($dsn) must be a valid data source name"),
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        "PDO->__construct",
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        argc,
+        args,
+        sizeof(pdo_constructor_sensitive_parameters),
+        pdo_constructor_sensitive_parameters,
+        (size_t)-1,
+        receiver.type == PTN_OBJECT,
+        receiver
+    );
+}
+
 static PtnValue ptn_pdo_initialize_object(
     PtnRuntime *runtime,
     PtnValue object,
@@ -202206,7 +202234,7 @@ static PtnValue ptn_pdo_initialize_object(
     if (ptn_pdo_driver_from_dsn(resolved_dsn) == NULL) {
         free(resolved_dsn);
         free(data);
-        ptn_throw_exception(runtime, "PDOException", "PDO::__construct(): Argument #1 ($dsn) must be a valid data source name");
+        ptn_pdo_throw_invalid_dsn(runtime, object, argc, args, line);
         return ptn_null();
     }
     ptn_db_initialize_connection(data, resolved_dsn);
