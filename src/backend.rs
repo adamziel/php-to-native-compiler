@@ -21833,24 +21833,42 @@ fn builtin_exception_parent_name(name: &str) -> Option<&'static str> {
 }
 
 fn class_extends_builtin_throwable(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    matches!(
+        class_builtin_throwable_parent_status(class, classes),
+        Some(true)
+    )
+}
+
+fn class_builtin_throwable_parent_status(class: &ClassDecl, classes: &[ClassDecl]) -> Option<bool> {
     let mut current = class.parent_name.as_deref();
     let mut seen_classes = HashSet::new();
     while let Some(name) = current {
         if name.eq_ignore_ascii_case("Exception") || name.eq_ignore_ascii_case("Error") {
-            return true;
+            return Some(true);
         }
         if !seen_classes.insert(name.to_ascii_lowercase()) {
-            return false;
+            return Some(false);
         }
         if let Some(parent_name) = builtin_exception_parent_name(name) {
             current = Some(parent_name);
         } else if let Some(parent) = class_by_name(classes, name) {
             current = parent.parent_name.as_deref();
+        } else if known_internal_non_throwable_parent_class_name(name) {
+            return Some(false);
         } else {
-            return false;
+            return None;
         }
     }
-    false
+    Some(false)
+}
+
+fn known_internal_non_throwable_parent_class_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("stdClass")
+        || name.eq_ignore_ascii_case("Generator")
+        || name
+            .trim_start_matches('\\')
+            .eq_ignore_ascii_case("BcMath\\Number")
+        || modeled_internal_class_name(name).is_some()
 }
 
 fn static_method_metadata_for_function(
@@ -33848,6 +33866,14 @@ fn collect_class_declaration_fatals(
             pre_deprecation: None,
         });
     }
+    if let Some(message) = throwable_class_declaration_fatal_message(class, classes) {
+        fatals.push(DeclarationFatal {
+            message,
+            line: class.line,
+            uncaught_error: false,
+            pre_deprecation: None,
+        });
+    }
     if let Some(fatal) = enum_class_declaration_fatal(class, classes) {
         fatals.push(DeclarationFatal {
             message: fatal.message,
@@ -33951,6 +33977,28 @@ fn reserved_declaration_name_segment(name: &str) -> Option<&str> {
             | "void"
     )
     .then_some(segment)
+}
+
+fn throwable_class_declaration_fatal_message(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if class.is_interface || class.is_enum {
+        return None;
+    }
+    if !class_transitive_interfaces(class, classes)
+        .into_iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Throwable"))
+    {
+        return None;
+    }
+    match class_builtin_throwable_parent_status(class, classes) {
+        Some(true) | None => None,
+        Some(false) => Some(format!(
+            "Class {} cannot implement interface Throwable, extend Exception or Error instead",
+            class.name
+        )),
+    }
 }
 
 fn enum_class_declaration_fatal(
