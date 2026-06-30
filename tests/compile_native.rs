@@ -33841,6 +33841,58 @@ dump_exception(fn() => mb_detect_order($alias));\n",
 }
 
 #[test]
+fn compile_mbstring_mime_mail_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-mime-mail-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-mime-mail-residuals.php");
+    let output = root.join("mb-mime-mail-residuals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_error(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+function show_header(string $header): void {\n\
+    echo str_replace([\"\\r\", \"\\n\"], [\"\\\\r\", \"\\\\n\"], $header), \"\\n\";\n\
+}\n\
+$s = \"[service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit unterschiedlichen\";\n\
+$p = 'Subject: ';\n\
+show_header($p . mb_encode_mimeheader($s, 'UTF-8', 'Q', \"\\r\\n\", strlen($p)));\n\
+show_header(mb_encode_mimeheader($p . $s, 'UTF-8', 'Q', \"\\r\\n\", 0));\n\
+dump_error(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+dump_error(fn() => mb_send_mail(\"foo\\0bar\", 'x', 'y'));\n\
+dump_error(fn() => mb_send_mail('x', \"foo\\0bar\", 'y'));\n\
+dump_error(fn() => mb_send_mail('x', 'y', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', 'q', \"foo\\0bar\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n",
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #2 ($subject) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #3 ($message) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #4 ($additional_headers) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #5 ($additional_params) must not contain any null bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_detect_order_validation_to_native_binary() {
     let root = temp_dir("ptn-native-mb-detect-order-validation");
     fs::create_dir_all(&root).unwrap();
