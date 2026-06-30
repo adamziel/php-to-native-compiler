@@ -24027,6 +24027,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "curl_multi_close"
             | "curl_multi_errno"
             | "curl_multi_exec"
+            | "curl_multi_getcontent"
             | "curl_multi_get_handles"
             | "curl_multi_info_read"
             | "curl_multi_init"

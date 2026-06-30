@@ -70794,6 +70794,41 @@ static PtnValue ptn_curl_multi_handles_snapshot(PtnResource *multi) {
     return result;
 }
 
+static int ptn_curl_multi_completed_prepared(PtnResource *multi);
+
+static void ptn_curl_multi_store_handle_content(PtnResource *handle, PtnValue result) {
+    PtnValue resolved = ptn_value_deref(result);
+    if (resolved.type == PTN_STRING) {
+        ptn_curl_store_state(handle, "__multi_content", result);
+        return;
+    }
+    ptn_value_destroy(&result);
+    ptn_curl_store_state(handle, "__multi_content", ptn_null());
+}
+
+static void ptn_curl_multi_perform_attached_handles(PtnRuntime *runtime, PtnResource *multi, size_t line) {
+    if (ptn_curl_multi_completed_prepared(multi)) {
+        return;
+    }
+    PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
+    for (size_t i = 0; i < handles->len; i++) {
+        PtnValue handle_value = ptn_value_deref(handles->entries[i].value);
+        if (handle_value.type != PTN_RESOURCE ||
+            !ptn_resource_is_open(handle_value.as.resource) ||
+            strcmp(handle_value.as.resource->type_name, "curl") != 0) {
+            continue;
+        }
+        PtnValue callback_arg = ptn_resource(handle_value.as.resource);
+        callback_arg.owned = 0;
+        PtnValue result = ptn_internal_curl_exec(runtime, 1, &callback_arg, line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&result);
+            return;
+        }
+        ptn_curl_multi_store_handle_content(handle_value.as.resource, result);
+    }
+}
+
 static void ptn_curl_multi_append_handle(PtnResource *multi, PtnValue handle) {
     PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
     if (handles->len > (size_t)INT64_MAX) {
@@ -70885,6 +70920,20 @@ static PtnValue ptn_internal_curl_multi_get_handles(PtnRuntime *runtime, size_t 
     return ptn_curl_multi_handles_snapshot(multi);
 }
 
+static PtnValue ptn_internal_curl_multi_getcontent(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_multi_getcontent", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnValue *content = ptn_curl_state_value(handle, "__multi_content");
+    if (content == NULL || ptn_value_deref(*content).type != PTN_STRING) {
+        return ptn_null();
+    }
+    return ptn_value_clone(*content);
+}
+
 static PtnValue ptn_internal_curl_multi_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_exec", 1, "multi_handle", args[0], "curl_multi");
@@ -70897,6 +70946,10 @@ static PtnValue ptn_internal_curl_multi_exec(PtnRuntime *runtime, size_t argc, c
             return ptn_int(PTN_CURLM_OK);
         }
         ptn_throw_by_reference_argument_error(runtime, "curl_multi_exec", 2, "still_running", line);
+        return ptn_null();
+    }
+    ptn_curl_multi_perform_attached_handles(runtime, multi, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
         return ptn_null();
     }
     ptn_curl_multi_prepare_completed(multi);
@@ -189796,6 +189849,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_multi_close", 1, 1, ptn_internal_curl_multi_close },
         { "curl_multi_errno", 1, 1, ptn_internal_curl_multi_errno },
         { "curl_multi_exec", 2, 2, ptn_internal_curl_multi_exec },
+        { "curl_multi_getcontent", 1, 1, ptn_internal_curl_multi_getcontent },
         { "curl_multi_get_handles", 1, 1, ptn_internal_curl_multi_get_handles },
         { "curl_multi_info_read", 1, 2, ptn_internal_curl_multi_info_read },
         { "curl_multi_init", 0, 0, ptn_internal_curl_multi_init },
