@@ -59066,6 +59066,103 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
+fn compile_soap_document_literal_any_wildcard_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-any-wildcard-response");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("any-response.wsdl"),
+        r###"<?xml version="1.0" encoding="UTF-8"?>
+<definitions targetNamespace="urn:test.example.org"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:tns="urn:test.example.org"
+             xmlns:ens="urn:object.test.example.org">
+  <types>
+    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:object.test.example.org">
+      <import namespace="urn:test.example.org"/>
+      <complexType name="genericObject">
+        <sequence>
+          <element name="type" type="xsd:string"/>
+          <element name="Id" type="tns:ID" nillable="true"/>
+          <any namespace="##targetNamespace" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+        </sequence>
+      </complexType>
+    </schema>
+    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test.example.org">
+      <import namespace="urn:object.test.example.org"/>
+      <simpleType name="ID"><restriction base="xsd:string"/></simpleType>
+      <element name="query"><complexType><sequence><element name="queryString" type="xsd:string"/></sequence></complexType></element>
+      <element name="queryResponse"><complexType><sequence><element name="result" type="tns:QueryResult"/></sequence></complexType></element>
+    </schema>
+  </types>
+  <message name="queryRequest"><part element="tns:query" name="parameters"/></message>
+  <message name="queryResponse"><part element="tns:queryResponse" name="parameters"/></message>
+  <portType name="Soap"><operation name="query"><input message="tns:queryRequest"/><output message="tns:queryResponse"/></operation></portType>
+  <binding name="SoapBinding" type="tns:Soap">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="query"><soap:operation soapAction=""/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="TestService"><port binding="tns:SoapBinding" name="Soap"><soap:address location="test://"/></port></service>
+</definitions>
+"###,
+    )
+    .unwrap();
+    let input = root.join("soap-document-literal-any-wildcard-response.php");
+    let output = root.join("soap-document-literal-any-wildcard-response-bin");
+    fs::write(
+        &input,
+        r###"<?php
+class LocalSoapClient extends SoapClient {
+  function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+    return '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns="urn:test.example.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:sf="urn:object.test.example.org"><soapenv:Body><queryResponse><result xsi:type="QueryResult"><records xsi:type="sf:genericObject"><sf:type>CampaignMember</sf:type><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:CampaignId>701i0000001lreeAAA</sf:CampaignId><sf:Lead xsi:type="sf:genericObject"><sf:type>Lead</sf:type><sf:Id xsi:nil="true"/><sf:Email>angela.lansbury@cbs.com</sf:Email></sf:Lead></records></result></queryResponse></soapenv:Body></soapenv:Envelope>';
+  }
+}
+$client = new LocalSoapClient(__DIR__ . "/any-response.wsdl");
+$result = $client->query("");
+$records = $result->result->records;
+echo array_key_exists('result', get_object_vars($result)) ? "wrapped\n" : "unwrapped\n";
+echo get_class($records), "\n";
+echo $records->enc_stype, "\n";
+echo $records->enc_ns, "\n";
+echo implode(",", $records->enc_value->Id), "\n";
+echo $records->enc_value->any[0], "\n";
+echo $records->enc_value->any["Lead"]->type, "\n";
+echo $records->enc_value->any["Lead"]->any, "\n";
+"###,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "wrapped\n",
+            "SoapVar\n",
+            "genericObject\n",
+            "urn:object.test.example.org\n",
+            "00vi0000011VMgeAAG,00vi0000011VMgeAAG\n",
+            "<sf:CampaignId>701i0000001lreeAAA</sf:CampaignId>\n",
+            "Lead\n",
+            "<sf:Email>angela.lansbury@cbs.com</sf:Email>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_type_wildcard_element_field"));
+    assert!(c_source.contains("ptn_soap_wsdl_output_part_element_local_dup"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();
