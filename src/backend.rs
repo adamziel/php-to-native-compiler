@@ -127,9 +127,6 @@ pub fn emit_c(module: &Module) -> String {
     if module_uses_callable_type_hint(module) {
         runtime_requirements.internal_function_dispatch = true;
     }
-    if runtime_requirements.pcre_internal_helpers {
-        runtime_requirements.internal_function_dispatch = true;
-    }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
@@ -36433,6 +36430,24 @@ fn collect_call_runtime_requirements(
     }
     if !has_named_arguments
         && argument_unpacks.iter().all(|unpack| !*unpack)
+        && name.eq_ignore_ascii_case("preg_match_all")
+        && (2..=5).contains(&arguments.len())
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.pcre_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && name.eq_ignore_ascii_case("preg_split")
+        && (2..=4).contains(&arguments.len())
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.pcre_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
         && (name.eq_ignore_ascii_case("preg_last_error")
             || name.eq_ignore_ascii_case("preg_last_error_msg"))
         && arguments.is_empty()
@@ -57364,6 +57379,74 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_direct_pcre_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+        by_ref_argument: Option<(usize, &str)>,
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if let Some((by_ref_index, parameter_name)) = by_ref_argument {
+                if argument_index == by_ref_index {
+                    temps.push(self.emit_by_ref_call_argument(
+                        out,
+                        argument,
+                        name,
+                        argument_index,
+                        parameter_name,
+                        line,
+                        true,
+                        true,
+                    ));
+                    continue;
+                }
+            }
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let helper = if name.eq_ignore_ascii_case("preg_match_all") {
+            "ptn_internal_preg_match_all"
+        } else {
+            "ptn_internal_preg_split"
+        };
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(helper);
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_direct_json_call(
         &mut self,
         out: &mut String,
@@ -58187,6 +58270,22 @@ impl ValueEmitter {
             && (2..=5).contains(&arguments.len())
         {
             return self.emit_direct_preg_match_call(out, arguments, line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("preg_match_all")
+            && (2..=5).contains(&arguments.len())
+        {
+            return self.emit_direct_pcre_call(out, name, arguments, Some((2, "matches")), line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("preg_split")
+            && (2..=4).contains(&arguments.len())
+        {
+            return self.emit_direct_pcre_call(out, name, arguments, None, line);
         }
 
         if !has_named_arguments

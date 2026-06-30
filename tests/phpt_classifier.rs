@@ -2818,6 +2818,18 @@ fn phpt_classifier_keeps_pcre_array_pattern_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_pcre_recursion_limit_rows_runnable() {
+    let classification = classify(
+        "--TEST--\npcre recursion limit\n--INI--\npcre.recursion_limit=1\n--FILE--\n<?php\npreg_split('/(\\d*)/', 'ab2c3u');\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_debug_backtrace_runnable() {
     let classification = classify(
         "--TEST--\nbacktrace\n--FILE--\n<?php\nprint_r(debug_backtrace(0, 1));\ndebug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1);\n--EXPECT--\n",

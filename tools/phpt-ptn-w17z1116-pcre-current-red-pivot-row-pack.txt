@@ -1,0 +1,2 @@
+ext/pcre/tests/bug42945.phpt
+ext/pcre/tests/errors01.phpt
