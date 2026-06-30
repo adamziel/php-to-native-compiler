@@ -6573,6 +6573,30 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         return array_object_value;
     }
 #endif
+    PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
+    const char *inaccessible_static_declaring_class = NULL;
+    if (ptn_object_static_property_inaccessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        &static_visibility,
+        &inaccessible_static_declaring_class
+    )) {
+        ptn_throw_property_visibility_error(
+            runtime,
+            static_visibility,
+            ptn_static_property_visibility_error_class(
+                static_visibility,
+                receiver.as.object->class_name,
+                inaccessible_static_declaring_class
+            ),
+            property,
+            line
+        );
+        return ptn_null();
+    }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
     if (blocked_metadata != NULL) {
