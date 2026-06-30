@@ -34297,7 +34297,8 @@ var_dump(PREG_SPLIT_NO_EMPTY, PREG_SPLIT_DELIM_CAPTURE, PREG_SPLIT_OFFSET_CAPTUR
 var_dump(PREG_NO_ERROR, PREG_INTERNAL_ERROR, PREG_BACKTRACK_LIMIT_ERROR, PREG_RECURSION_LIMIT_ERROR, PREG_BAD_UTF8_ERROR, PREG_BAD_UTF8_OFFSET_ERROR, PREG_JIT_STACKLIMIT_ERROR);\n\
 var_dump(defined('PREG_BAD_UTF8_OFFSET_ERROR'), constant('PREG_JIT_STACKLIMIT_ERROR'));\n\
 $constants = get_defined_constants(true);\n\
-var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], get_defined_constants()['PREG_SET_ORDER']);\n",
+var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], get_defined_constants()['PREG_SET_ORDER']);\n\
+var_dump(defined('PCRE_JIT_SUPPORT'), is_bool(PCRE_JIT_SUPPORT), constant('PCRE_JIT_SUPPORT') === PCRE_JIT_SUPPORT, $constants['pcre']['PCRE_JIT_SUPPORT'] === PCRE_JIT_SUPPORT);\n",
     )
     .unwrap();
 
@@ -34328,6 +34329,10 @@ var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], g
             "bool(true)\n",
             "int(256)\n",
             "int(2)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

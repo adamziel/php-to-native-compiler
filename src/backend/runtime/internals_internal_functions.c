@@ -49231,10 +49231,12 @@ static int ptn_preg_compile_pcre2(
         ptn_abort_out_of_memory();
     }
 
+    int recursion_limited_split =
+        strcmp(function_name, "preg_split") == 0 && ptn_preg_runtime_uses_custom_recursion_limit(runtime);
     int jit_enabled = 0;
     if (
         ptn_preg_runtime_jit_enabled(runtime) &&
-        !ptn_preg_runtime_uses_custom_recursion_limit(runtime) &&
+        !recursion_limited_split &&
         api->jit_compile != NULL
     ) {
         jit_enabled = api->jit_compile(code, PTN_PCRE2_JIT_COMPLETE) == 0;
@@ -119677,6 +119679,10 @@ static void ptn_get_defined_constants_add_string(PtnValue table, const char *nam
     ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_string(value));
 }
 
+static void ptn_get_defined_constants_add_bool(PtnValue table, const char *name, int value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_bool(value));
+}
+
 static int ptn_constant_name_matches_any(
     const char *name,
     const char *const *names,
@@ -119946,6 +119952,7 @@ static void ptn_defined_constants_add_pcre(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_ERROR", PTN_PREG_BAD_UTF8_ERROR);
     ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_OFFSET_ERROR", PTN_PREG_BAD_UTF8_OFFSET_ERROR);
     ptn_get_defined_constants_add_int(table, "PREG_JIT_STACKLIMIT_ERROR", PTN_PREG_JIT_STACKLIMIT_ERROR);
+    ptn_get_defined_constants_add_bool(table, "PCRE_JIT_SUPPORT", ptn_pcre2_jit_support());
 }
 
 static PtnValue ptn_defined_constants_pcre_table(void) {
@@ -120477,6 +120484,7 @@ static int ptn_reflection_constant_is_pcre(const char *name) {
         "PREG_BAD_UTF8_ERROR",
         "PREG_BAD_UTF8_OFFSET_ERROR",
         "PREG_JIT_STACKLIMIT_ERROR",
+        "PCRE_JIT_SUPPORT",
         "PCRE_VERSION",
         "PCRE_VERSION_MAJOR",
         "PCRE_VERSION_MINOR",

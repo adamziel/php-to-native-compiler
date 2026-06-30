@@ -1,0 +1,10 @@
+# ptn-w17z.1112 current PCRE pattern/error row pack
+# Original source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260628T043914Z.tsv
+# Revalidated artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T225015Z.tsv
+# Pivot: the originally assigned rows are PASS in current artifacts. The latest
+# artifact has two ext/pcre/tests FAIL rows plus two PCRE_JIT_SUPPORT SKIPIF
+# BORK rows; all four rows are runnable focused evidence for this fix.
+ext/pcre/tests/bug42945.phpt
+ext/pcre/tests/errors01.phpt
+ext/pcre/tests/no_jit_bug70110.phpt
+ext/pcre/tests/grep2.phpt
