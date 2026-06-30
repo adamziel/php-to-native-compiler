@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionFiber_notrace_2.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionFiber_bug_gh11121_1.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionMethod_tentative_return_type.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionObject_export_basic3.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/property_hooks/bug_001.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionProperty_isReadable_lazy_dynamic.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/bug45765.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionEnum_getCase.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/ReflectionFiber_bug_gh11121_2.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/gh8444.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/property_hooks/gh17713.phpt
+/home/claude/php-src-phpt/ext/reflection/tests/closures_bound_getDeclaringFunction.phpt

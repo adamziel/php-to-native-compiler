@@ -202450,6 +202450,20 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
             line
         );
     }
+    if (is_dynamic) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Undefined property: %s::$%s",
+            target.as.object->class_name,
+            property_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
     return ptn_null();
 }
 

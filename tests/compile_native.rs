@@ -95324,6 +95324,46 @@ var_dump($dynamic->isReadable(null, $lazy));
 }
 
 #[test]
+fn compile_reflection_property_dynamic_raw_missing_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-dynamic-raw-missing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-dynamic-raw-missing.php");
+    let output = root.join("reflection-property-dynamic-raw-missing-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class ReflectDynamicRaw { public $a; }
+
+$a = new ReflectDynamicRaw();
+$b = new ReflectDynamicRaw();
+$b->dyn = 1;
+$prop = new ReflectionProperty($b, 'dyn');
+var_dump($prop->getRawValue($a));
+$prop->setRawValue($a, 1);
+var_dump($a->dyn);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Undefined property: ReflectDynamicRaw::$dyn in ptn on line 9\nNULL\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nodiscard_property_hook_to_native_fatal() {
     let root = temp_dir("ptn-native-nodiscard-property-hook-fatal");
     fs::create_dir_all(&root).unwrap();

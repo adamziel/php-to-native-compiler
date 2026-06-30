@@ -21726,8 +21726,10 @@ fn reflection_default_class_name_repr(class_name: &str) -> String {
         || class_name.eq_ignore_ascii_case("static")
     {
         class_name.to_string()
-    } else {
+    } else if class_name.trim_start_matches('\\').contains('\\') {
         format!("\\{}", class_name.trim_start_matches('\\'))
+    } else {
+        class_name.trim_start_matches('\\').to_string()
     }
 }
 
