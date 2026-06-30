@@ -28186,6 +28186,10 @@ echo date('l Y-m-d H:i:s T', strtotime('Monday', $base)), "\n";
 date_default_timezone_set('Asia/Tehran');
 $base = mktime(17, 17, 17, 10, 25, 1977);
 echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
+
+date_default_timezone_set('UTC');
+$base = 1133216119;
+echo date(DateTime::ISO8601, strtotime('+ 1 month', $base)), "\n";
 "#,
     )
     .unwrap();
@@ -28221,6 +28225,7 @@ echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
             "2008-01-01T05:00:00-0700\n",
             "Monday 2004-11-01 00:00:00 CET\n",
             "Tuesday 1977-11-01 00:00:00 +04 0\n",
+            "2005-12-28T22:15:19+0000\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
