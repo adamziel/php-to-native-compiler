@@ -6446,6 +6446,14 @@ static void ptn_phar_object_data_free(void *data);
 static void ptn_phar_file_info_data_free(void *data);
 static void ptn_phar_stream_data_free(void *data);
 static char *ptn_phar_make_sized_default_stub(size_t target_len, size_t *len_out);
+static void ptn_phar_sync_inherited_iterator_properties(PtnRuntime *runtime, PtnValue object, size_t line);
+static PTN_UNUSED PtnValue ptn_spl_file_info_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PtnValue ptn_spl_file_info_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -163411,6 +163419,7 @@ static PTN_UNUSED PtnValue ptn_phar_new(
     PtnValue object = ptn_object_new_shell(runtime, resolved_class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_phar_object_data_free;
+    ptn_phar_sync_inherited_iterator_properties(runtime, object, line);
     return object;
 }
 
@@ -163437,6 +163446,29 @@ static int ptn_phar_expect_no_arguments(
     }
     ptn_throw_exception(runtime, "ArgumentCountError", message);
     return 0;
+}
+
+static PtnValue ptn_phar_archive_spl_file_info_call_method(
+    PtnRuntime *runtime,
+    PtnPharObjectData *data,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    const char *path = data == NULL || data->archive == NULL || data->archive->path == NULL
+        ? ""
+        : data->archive->path;
+    PtnValue path_arg = ptn_owned_string(ptn_duplicate_string(path));
+    PtnValue info = ptn_spl_file_info_new(runtime, "SplFileInfo", 1, &path_arg, line);
+    ptn_value_destroy(&path_arg);
+    if (runtime->exceptions->active_exception != NULL || info.type != PTN_OBJECT) {
+        ptn_value_destroy(&info);
+        return ptn_null();
+    }
+    PtnValue result = ptn_spl_file_info_call_method(runtime, info, name, argc, args, line);
+    ptn_value_destroy(&info);
+    return result;
 }
 
 static char *ptn_phar_string_arg(
@@ -163628,6 +163660,7 @@ static PtnValue ptn_phar_object_from_archive(
     PtnValue object = ptn_object_new_shell(runtime, "Phar");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_phar_object_data_free;
+    ptn_phar_sync_inherited_iterator_properties(runtime, object, 1);
     return object;
 }
 
@@ -164678,6 +164711,9 @@ static PtnValue ptn_phar_call_method(
         ptn_phar_object_ensure_current(data);
         ptn_phar_object_load_next_current(data);
         return ptn_null();
+    }
+    if (ptn_spl_file_info_method_exists(name)) {
+        return ptn_phar_archive_spl_file_info_call_method(runtime, data, name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -188952,7 +188988,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "valid");
     }
     if (ptn_internal_class_name_is_phar_archive(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__construct")
+        return ptn_spl_file_info_method_exists(method_name)
+            || ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "addEmptyDir")
             || ptn_ascii_case_equal(method_name, "addFromString")
             || ptn_ascii_case_equal(method_name, "buildFromDirectory")
@@ -213055,6 +213092,23 @@ static void ptn_spl_file_info_sync_properties(
     ptn_spl_declare_private_value_property(runtime, object, "fileName", declaring_class, filename_value, line);
     ptn_value_destroy(&path_value);
     ptn_value_destroy(&filename_value);
+}
+
+static void ptn_phar_sync_inherited_iterator_properties(PtnRuntime *runtime, PtnValue object, size_t line) {
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", "", line);
+    PtnValue glob = ptn_bool(0);
+    PtnValue sub_path_name = ptn_owned_string(ptn_duplicate_string(""));
+    ptn_spl_declare_private_value_property(runtime, object, "glob", "DirectoryIterator", glob, line);
+    ptn_spl_declare_private_value_property(
+        runtime,
+        object,
+        "subPathName",
+        "RecursiveDirectoryIterator",
+        sub_path_name,
+        line
+    );
+    ptn_value_destroy(&glob);
+    ptn_value_destroy(&sub_path_name);
 }
 
 static void ptn_spl_file_object_sync_properties(

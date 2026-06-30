@@ -59096,6 +59096,88 @@ try {
 }
 
 #[test]
+fn compile_phar_archive_inherited_file_info_shutdown_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-archive-fileinfo-shutdown-storage");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-archive-fileinfo-shutdown-storage.php");
+    let output = root.join("phar-archive-fileinfo-shutdown-storage-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/archive.phar.php';
+$phar = new Phar($fname);
+$phar->addFromString('payload.txt', 'payload');
+
+class HasDestructor
+{
+    public function __destruct()
+    {
+        echo "info-destruct\n";
+    }
+}
+
+$s = new SplObjectStorage();
+$s[$phar] = new HasDestructor();
+register_shutdown_function(function () {
+    global $s, $phar;
+    echo "shutdown-count=", count($s), "\n";
+    var_dump($s->offsetExists($phar));
+    var_dump($s);
+});
+
+var_dump(method_exists('Phar', 'isLink'));
+var_dump($phar->isLink());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(
+            "bool(true)\nbool(false)\nshutdown-count=1\nbool(true)\nobject(SplObjectStorage)#"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"obj\"]=>\n      object(Phar)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"pathName\":\"SplFileInfo\":private]=>\n        string(0) \"\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"fileName\":\"SplFileInfo\":private]=>\n        string(0) \"\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"glob\":\"DirectoryIterator\":private]=>\n        bool(false)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "[\"subPathName\":\"RecursiveDirectoryIterator\":private]=>\n        string(0) \"\""
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("info-destruct\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_spl_file_info_call_method"));
+    assert!(c_source.contains("ptn_spl_object_storage_call_method"));
+}
+
+#[test]
 fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
     fs::create_dir_all(&root).unwrap();
