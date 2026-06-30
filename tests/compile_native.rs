@@ -50598,6 +50598,73 @@ MessageFormatter::format(): Found negative or too large array key\n"
 }
 
 #[test]
+fn compile_intl_message_formatter_error_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-formatter-error-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-formatter-error-semantics.php");
+    let output = root.join("intl-message-formatter-error-semantics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('intl.use_exceptions', '1');\n\
+$mf = new MessageFormatter('en_US', '{foo,number} {foo}');\n\
+try {\n\
+    $mf->format([7]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$mf = new MessageFormatter('en_US', '{foo,date}');\n\
+try {\n\
+    $mf->format(['foo' => new stdClass()]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$mf = new MessageFormatter('en_US', '{foo}');\n\
+$resource = fopen('php://memory', 'r+');\n\
+try {\n\
+    $mf->format(['foo' => 'bar', 7 => $resource]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+ini_set('intl.use_exceptions', '0');\n\
+$bad = '{0,whatever} would not work!';\n\
+var_dump(MessageFormatter::formatMessage('root', $bad, [4560]));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(MessageFormatter::parseMessage('root', $bad, 'x'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$ok = new MessageFormatter('en_US', '{0,number} monkeys on {1,number} trees');\n\
+$broken = '{0,number} trees hosting {1,number monkeys';\n\
+$ok->setPattern($broken);\n\
+echo $ok->getErrorMessage(), \"\\n\";\n\
+msgfmt_set_pattern($ok, $broken);\n\
+echo $ok->getErrorMessage(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "IntlException: MessageFormatter::format(): Inconsistent types declared for an argument\n\
+IntlException: MessageFormatter::format(): The argument for key 'foo' cannot be used as a date or time\n\
+IntlException: MessageFormatter::format(): No strategy to convert the value given for the argument with key '7' is available\n\
+bool(false)\n\
+MessageFormatter::formatMessage(): Creating message formatter failed: U_ZERO_ERROR\n\
+bool(false)\n\
+MessageFormatter::parseMessage(): Creating message formatter failed: U_ILLEGAL_ARGUMENT_ERROR\n\
+MessageFormatter::setPattern(): Error setting symbol value at line 0, offset 26: U_PATTERN_SYNTAX_ERROR\n\
+msgfmt_set_pattern(): Error setting symbol value at line 0, offset 26: U_PATTERN_SYNTAX_ERROR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_message_validate_pattern_arguments"));
+    assert!(c_source.contains("ptn_internal_messageformatter_parse_message"));
+}
+
+#[test]
 fn compile_intl_formatter_clone_pattern_and_error_state_to_native_binary() {
     let root = temp_dir("ptn-native-intl-formatter-clone-error-state");
     fs::create_dir_all(&root).unwrap();
