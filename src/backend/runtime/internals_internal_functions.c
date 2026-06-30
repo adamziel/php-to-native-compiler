@@ -76610,6 +76610,7 @@ typedef struct {
 typedef struct {
     char *locale;
     char *pattern;
+    char *error_message;
 } PtnIntlMessageFormatterData;
 
 typedef struct {
@@ -76699,6 +76700,7 @@ static void ptn_intl_message_formatter_data_free(void *ptr) {
     }
     free(data->locale);
     free(data->pattern);
+    free(data->error_message);
     free(data);
 }
 
@@ -78765,6 +78767,7 @@ static PtnValue ptn_intl_message_formatter_new(
     }
     data->locale = locale;
     data->pattern = pattern;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_intl_message_formatter_data_free;
@@ -78791,7 +78794,70 @@ static PtnIntlMessageFormatterData *ptn_intl_message_formatter_data_clone(PtnInt
     }
     clone->locale = ptn_duplicate_string(source->locale == NULL ? "" : source->locale);
     clone->pattern = ptn_duplicate_string(source->pattern == NULL ? "" : source->pattern);
+    clone->error_message = ptn_duplicate_string(source->error_message == NULL ? "U_ZERO_ERROR" : source->error_message);
     return clone;
+}
+
+static void ptn_intl_message_formatter_set_error(
+    PtnRuntime *runtime,
+    PtnIntlMessageFormatterData *data,
+    const char *message
+) {
+    const char *effective = message == NULL ? "U_ZERO_ERROR" : message;
+    if (data != NULL) {
+        free(data->error_message);
+        data->error_message = ptn_duplicate_string(effective);
+    }
+    ptn_intl_set_error_message(runtime, effective);
+}
+
+static int ptn_intl_message_error_code_from_message(const char *message) {
+    if (message == NULL || strstr(message, "U_ZERO_ERROR") != NULL) {
+        return 0;
+    }
+    if (strstr(message, "U_INVALID_CHAR_FOUND") != NULL) {
+        return 10;
+    }
+    if (strstr(message, "U_PATTERN_SYNTAX_ERROR") != NULL) {
+        return 9;
+    }
+    if (strstr(message, "U_UNMATCHED_BRACES") != NULL) {
+        return 6;
+    }
+    return strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") == NULL ? 0 : 1;
+}
+
+static char *ptn_intl_message_array_key_display(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        int needed = snprintf(NULL, 0, "%lld", (long long)key.as.integer);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *display = malloc((size_t)needed + 1);
+        if (display == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(display, (size_t)needed + 1, "%lld", (long long)key.as.integer);
+        return display;
+    }
+    return ptn_duplicate_string_len(key.as.string, key.string_len);
+}
+
+static int ptn_intl_message_value_has_strategy(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type != PTN_RESOURCE &&
+        value.type != PTN_ARRAY &&
+        value.type != PTN_CLOSURE &&
+        value.type != PTN_EXCEPTION;
+}
+
+static int ptn_intl_message_value_can_be_date_time(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_NULL ||
+        value.type == PTN_BOOL ||
+        value.type == PTN_INT ||
+        value.type == PTN_FLOAT ||
+        value.type == PTN_STRING;
 }
 
 static char *ptn_intl_message_trim_token(char *token) {
@@ -78824,6 +78890,137 @@ static PtnArrayEntry *ptn_intl_message_arg_entry(PtnArray *array, const char *na
         return ptn_array_entry_for_key(array, int_key);
     }
     return NULL;
+}
+
+typedef struct {
+    char *name;
+    int kind;
+} PtnIntlMessageArgumentType;
+
+static void ptn_intl_message_argument_types_free(PtnIntlMessageArgumentType *types, size_t len) {
+    if (types == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        free(types[i].name);
+    }
+    free(types);
+}
+
+static int ptn_intl_message_argument_kind(const char *type) {
+    if (type == NULL || *type == '\0') {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
+        return 2;
+    }
+    return 1;
+}
+
+static int ptn_intl_message_validate_pattern_arguments(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnIntlMessageFormatterData *data,
+    PtnArray *values,
+    size_t line
+) {
+    const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
+    PtnIntlMessageArgumentType *types = NULL;
+    size_t types_len = 0;
+    size_t types_cap = 0;
+    for (const char *cursor = pattern; *cursor != '\0'; cursor++) {
+        if (*cursor != '{') {
+            continue;
+        }
+        const char *close = strchr(cursor + 1, '}');
+        if (close == NULL) {
+            break;
+        }
+        char *placeholder = ptn_duplicate_string_len(cursor + 1, (size_t)(close - cursor - 1));
+        char *type = NULL;
+        char *comma = strchr(placeholder, ',');
+        if (comma != NULL) {
+            *comma = '\0';
+            type = comma + 1;
+            char *second_comma = strchr(type, ',');
+            if (second_comma != NULL) {
+                *second_comma = '\0';
+            }
+        }
+        char *name = ptn_intl_message_trim_token(placeholder);
+        type = type == NULL ? NULL : ptn_intl_message_trim_token(type);
+        int kind = ptn_intl_message_argument_kind(type);
+        for (size_t i = 0; i < types_len; i++) {
+            if (strcmp(types[i].name, name) == 0) {
+                if (types[i].kind != kind) {
+                    char message[160];
+                    int written = snprintf(
+                        message,
+                        sizeof(message),
+                        "%s(): Inconsistent types declared for an argument",
+                        function_name
+                    );
+                    if (written < 0 || (size_t)written >= sizeof(message)) {
+                        ptn_abort_out_of_memory();
+                    }
+                    ptn_intl_message_argument_types_free(types, types_len);
+                    free(placeholder);
+                    ptn_intl_signal_error(runtime, message, line);
+                    return 0;
+                }
+                goto ptn_intl_message_validate_existing_name;
+            }
+        }
+        if (types_len == types_cap) {
+            size_t next_cap = types_cap == 0 ? 4 : types_cap * 2;
+            PtnIntlMessageArgumentType *next = realloc(types, next_cap * sizeof(PtnIntlMessageArgumentType));
+            if (next == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            types = next;
+            types_cap = next_cap;
+        }
+        types[types_len].name = ptn_duplicate_string(name);
+        types[types_len].kind = kind;
+        types_len++;
+
+ptn_intl_message_validate_existing_name:
+        if (kind == 2) {
+            PtnArrayEntry *entry = ptn_intl_message_arg_entry(values, name);
+            if (entry != NULL && !ptn_intl_message_value_can_be_date_time(entry->value)) {
+                int needed = snprintf(
+                    NULL,
+                    0,
+                    "%s(): The argument for key '%s' cannot be used as a date or time",
+                    function_name,
+                    name
+                );
+                if (needed < 0) {
+                    ptn_abort_out_of_memory();
+                }
+                char *message = malloc((size_t)needed + 1);
+                if (message == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                snprintf(
+                    message,
+                    (size_t)needed + 1,
+                    "%s(): The argument for key '%s' cannot be used as a date or time",
+                    function_name,
+                    name
+                );
+                ptn_intl_message_argument_types_free(types, types_len);
+                free(placeholder);
+                ptn_intl_signal_error(runtime, message, line);
+                free(message);
+                return 0;
+            }
+        }
+        free(placeholder);
+        cursor = close;
+    }
+    ptn_intl_message_argument_types_free(types, types_len);
+    return 1;
 }
 
 static double ptn_intl_message_numeric_value(PtnValue value) {
@@ -79141,12 +79338,56 @@ static void ptn_intl_message_append_placeholder(
     }
 }
 
-static int ptn_intl_message_array_keys_are_valid(PtnArray *values) {
+static int ptn_intl_message_validate_array_values(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *values,
+    size_t line
+) {
     if (values == NULL) {
         return 1;
     }
     for (size_t i = 0; i < values->len; i++) {
         if (values->entries[i].key.type == PTN_ARRAY_KEY_INT && values->entries[i].key.as.integer < 0) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Found negative or too large array key",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_intl_signal_error(runtime, message, line);
+            return 0;
+        }
+        if (!ptn_intl_message_value_has_strategy(values->entries[i].value)) {
+            char *key = ptn_intl_message_array_key_display(values->entries[i].key);
+            int needed = snprintf(
+                NULL,
+                0,
+                "%s(): No strategy to convert the value given for the argument with key '%s' is available",
+                function_name,
+                key
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "%s(): No strategy to convert the value given for the argument with key '%s' is available",
+                function_name,
+                key
+            );
+            free(key);
+            ptn_intl_signal_error(runtime, message, line);
+            free(message);
             return 0;
         }
     }
@@ -79160,18 +79401,10 @@ static PtnValue ptn_intl_message_format_array(
     PtnArray *values,
     size_t line
 ) {
-    if (!ptn_intl_message_array_keys_are_valid(values)) {
-        char message[160];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "%s(): Found negative or too large array key",
-            function_name
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_intl_signal_error(runtime, message, line);
+    if (!ptn_intl_message_validate_array_values(runtime, function_name, values, line)) {
+        return ptn_null();
+    }
+    if (!ptn_intl_message_validate_pattern_arguments(runtime, function_name, data, values, line)) {
         return ptn_null();
     }
     PtnStringBuffer output;
@@ -79195,6 +79428,7 @@ static PtnValue ptn_intl_message_format_array(
         free(placeholder);
         i += placeholder_len + 1;
     }
+    ptn_intl_message_formatter_set_error(runtime, data, "U_ZERO_ERROR");
     return ptn_owned_string_len(output.data, output.len);
 }
 
@@ -79242,7 +79476,13 @@ static PtnValue ptn_intl_message_parse(PtnRuntime *runtime, PtnValue input_value
     return result;
 }
 
-static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_msgfmt_set_pattern_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 
 static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_ascii_case_equal(name, "__construct")) {
@@ -79264,13 +79504,21 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
         PtnValue call_args[2];
         call_args[0] = receiver;
         call_args[1] = argc >= 1 ? args[0] : ptn_null();
-        return ptn_internal_msgfmt_set_pattern(runtime, argc + 1, call_args, line);
+        return ptn_internal_msgfmt_set_pattern_impl(
+            runtime,
+            "MessageFormatter::setPattern",
+            argc + 1,
+            call_args,
+            line
+        );
     }
     if (ptn_ascii_case_equal(name, "getErrorCode")) {
-        return ptn_int(0);
+        return ptn_int(data == NULL ? 0 : ptn_intl_message_error_code_from_message(data->error_message));
     }
     if (ptn_ascii_case_equal(name, "getErrorMessage")) {
-        return ptn_string("U_ZERO_ERROR");
+        return data == NULL
+            ? ptn_string("U_ZERO_ERROR")
+            : ptn_owned_string(ptn_duplicate_string(data->error_message == NULL ? "U_ZERO_ERROR" : data->error_message));
     }
     if (ptn_ascii_case_equal(name, "format")) {
         PtnValue values = argc >= 1 ? ptn_value_deref(args[0]) : ptn_null();
@@ -79989,7 +80237,51 @@ static PtnValue ptn_internal_msgfmt_get_pattern(PtnRuntime *runtime, size_t argc
     return data == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(data->pattern));
 }
 
-static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static char *ptn_intl_message_set_pattern_syntax_error(const char *pattern) {
+    if (pattern == NULL) {
+        return NULL;
+    }
+    for (const char *cursor = pattern; *cursor != '\0'; cursor++) {
+        if (*cursor != '{') {
+            continue;
+        }
+        const char *close = strchr(cursor + 1, '}');
+        if (close != NULL) {
+            cursor = close;
+            continue;
+        }
+        size_t offset = (size_t)(cursor - pattern) + 1;
+        int needed = snprintf(
+            NULL,
+            0,
+            "Error setting symbol value at line 0, offset %zu: U_PATTERN_SYNTAX_ERROR",
+            offset
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Error setting symbol value at line 0, offset %zu: U_PATTERN_SYNTAX_ERROR",
+            offset
+        );
+        return message;
+    }
+    return NULL;
+}
+
+static PtnValue ptn_internal_msgfmt_set_pattern_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     if (argc < 2) {
         return ptn_bool(0);
     }
@@ -79999,26 +80291,90 @@ static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc
         return ptn_null();
     }
     PtnStringOperand pattern =
-        ptn_internal_expect_string_arg(runtime, "MessageFormatter::setPattern", 1, "pattern", args[1], line);
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "pattern", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
         return ptn_null();
     }
+    char *pattern_copy = ptn_duplicate_string_len(pattern.data, pattern.len);
+    char *set_pattern_error = ptn_intl_message_set_pattern_syntax_error(pattern_copy);
+    if (set_pattern_error != NULL) {
+        int needed = snprintf(NULL, 0, "%s(): %s", function_name, set_pattern_error);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "%s(): %s", function_name, set_pattern_error);
+        ptn_intl_message_formatter_set_error(runtime, data, message);
+        free(message);
+        free(set_pattern_error);
+        free(pattern_copy);
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
     free(data->pattern);
-    data->pattern = ptn_duplicate_string_len(pattern.data, pattern.len);
+    data->pattern = pattern_copy;
     ptn_string_operand_free(pattern);
-    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    ptn_intl_message_formatter_set_error(runtime, data, "U_ZERO_ERROR");
     return ptn_bool(1);
 }
 
-static PtnValue ptn_internal_msgfmt_format_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_msgfmt_set_pattern_impl(runtime, "msgfmt_set_pattern", argc, args, line);
+}
+
+static void ptn_intl_set_creating_message_formatter_failed(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *icu_code
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Creating message formatter failed: %s",
+        function_name,
+        icu_code
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Creating message formatter failed: %s",
+        function_name,
+        icu_code
+    );
+    ptn_intl_set_error_message(runtime, message);
+    free(message);
+}
+
+static PtnValue ptn_internal_msgfmt_format_message_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     if (argc < 3) {
         return ptn_bool(0);
     }
-    PtnValue formatter = ptn_intl_message_formatter_new(runtime, "MessageFormatter", "msgfmt_format_message", 0, 2, args, line);
+    PtnValue formatter = ptn_intl_message_formatter_new(runtime, "MessageFormatter", function_name, 0, 2, args, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&formatter);
         return ptn_null();
+    }
+    if (ptn_value_deref(formatter).type != PTN_OBJECT) {
+        ptn_intl_set_creating_message_formatter_failed(runtime, function_name, "U_ZERO_ERROR");
+        ptn_value_destroy(&formatter);
+        return ptn_bool(0);
     }
     PtnValue call_args[2];
     call_args[0] = formatter;
@@ -80026,6 +80382,47 @@ static PtnValue ptn_internal_msgfmt_format_message(PtnRuntime *runtime, size_t a
     PtnValue formatted = ptn_internal_msgfmt_format(runtime, 2, call_args, line);
     ptn_value_destroy(&formatter);
     return formatted;
+}
+
+static PtnValue ptn_internal_msgfmt_format_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_msgfmt_format_message_impl(runtime, "msgfmt_format_message", argc, args, line);
+}
+
+static PtnValue ptn_internal_messageformatter_format_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_msgfmt_format_message_impl(runtime, "MessageFormatter::formatMessage", argc, args, line);
+}
+
+static PtnValue ptn_internal_msgfmt_parse_message_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 3) {
+        return ptn_bool(0);
+    }
+    PtnValue formatter = ptn_intl_message_formatter_new(runtime, "MessageFormatter", function_name, 0, 2, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&formatter);
+        return ptn_null();
+    }
+    if (ptn_value_deref(formatter).type != PTN_OBJECT) {
+        ptn_intl_set_creating_message_formatter_failed(runtime, function_name, "U_ILLEGAL_ARGUMENT_ERROR");
+        ptn_value_destroy(&formatter);
+        return ptn_bool(0);
+    }
+    PtnValue parsed = ptn_intl_message_formatter_call_method(runtime, formatter, "parse", 1, args + 2, line);
+    ptn_value_destroy(&formatter);
+    return parsed;
+}
+
+static PtnValue ptn_internal_msgfmt_parse_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_msgfmt_parse_message_impl(runtime, "msgfmt_parse_message", argc, args, line);
+}
+
+static PtnValue ptn_internal_messageformatter_parse_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_msgfmt_parse_message_impl(runtime, "MessageFormatter::parseMessage", argc, args, line);
 }
 
 typedef struct {
@@ -168192,7 +168589,11 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     }
     if (ptn_ascii_case_equal(class_name, "MessageFormatter") &&
         ptn_ascii_case_equal(name, "formatMessage")) {
-        return ptn_internal_msgfmt_format_message(runtime, argc, args, line);
+        return ptn_internal_messageformatter_format_message(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "MessageFormatter") &&
+        ptn_ascii_case_equal(name, "parseMessage")) {
+        return ptn_internal_messageformatter_parse_message(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "Transliterator") &&
         ptn_ascii_case_equal(name, "create")) {
@@ -183669,13 +184070,15 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "MessageFormatter::create", 2, 2, ptn_internal_messageformatter_create },
-        { "MessageFormatter::formatMessage", 3, 3, ptn_internal_msgfmt_format_message },
+        { "MessageFormatter::formatMessage", 3, 3, ptn_internal_messageformatter_format_message },
+        { "MessageFormatter::parseMessage", 3, 3, ptn_internal_messageformatter_parse_message },
         { "msgfmt_get_locale", 1, 1, ptn_internal_msgfmt_get_locale },
         { "msgfmt_get_pattern", 1, 1, ptn_internal_msgfmt_get_pattern },
         { "msgfmt_set_pattern", 2, 2, ptn_internal_msgfmt_set_pattern },
         { "msgfmt_create", 2, 2, ptn_internal_msgfmt_create },
         { "msgfmt_format", 2, 2, ptn_internal_msgfmt_format },
         { "msgfmt_format_message", 3, 3, ptn_internal_msgfmt_format_message },
+        { "msgfmt_parse_message", 3, 3, ptn_internal_msgfmt_parse_message },
         { "mktime", 1, 6, ptn_internal_mktime },
         { "mt_getrandmax", 0, 0, ptn_internal_getrandmax },
         { "mt_rand", 0, 2, ptn_internal_mt_rand },
