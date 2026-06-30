@@ -2872,6 +2872,9 @@ var_dump(timezone_name_from_abbr('CET'));
 
 var_dump(in_array('Europe/London', timezone_identifiers_list()));
 var_dump(in_array('UTC', DateTimeZone::listIdentifiers(DateTimeZone::EUROPE | DateTimeZone::UTC)));
+$azores = new DateTime('2011-10-30 00:30:00', new DateTimeZone('Atlantic/Azores'));
+echo $azores->format('P e'), "\n";
+var_dump(in_array('Atlantic/Azores', timezone_identifiers_list(DateTimeZone::ATLANTIC)));
 
 $dto = new DateTime();
 $old = $dto->getTimezone();
@@ -2946,6 +2949,8 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "string(13) \"Etc/Universal\"\n",
             "string(13) \"Europe/Berlin\"\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "+00:00 Atlantic/Azores\n",
             "bool(true)\n",
             "string(10) \"US/Eastern\"\n",
             "string(3) \"UTC\"\n",
@@ -28342,6 +28347,9 @@ $dt = new DateTimeImmutable('2016-10-03 12:47:18.081921');\n\
 echo $dt->modify('yesterday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 echo $dt->modify('noon')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 echo $dt->modify('10 weekday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+$ms = new DateTime('2023-06-04 01:01:01.000001');\n\
+$ms->modify('-100 ms');\n\
+echo $ms->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 $actual = new DateTimeImmutable('2022-07-21 15:00:10');\n\
 $delta = new DateInterval('PT0S');\n\
 $delta->f = -0.9;\n\
@@ -28369,6 +28377,7 @@ var_dump($actual < $lower, $actual > $upper);\n",
             "2016-10-02 00:00:00.000000\n",
             "2016-10-03 12:00:00.000000\n",
             "2016-10-17 12:47:18.081921\n",
+            "2023-06-04 01:01:00.900001\n",
             "15:00:10.900000 1658415610\n",
             "15:00:09.100000 1658415609\n",
             "bool(true)\n",
@@ -28376,6 +28385,50 @@ var_dump($actual < $lower, $actual > $upper);\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_datetime_modify_malformed_string_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-modify-malformed-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-modify-malformed-string.php");
+    let output = root.join("datetime-modify-malformed-string-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+$datetime = new DateTime('2020-01-01');
+var_dump(date_modify($datetime, ''));
+try {
+    var_dump($datetime->modify(''));
+} catch (DateMalformedStringException $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: date_modify(): Failed to parse time string () at position 0 ( ): Empty string"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nDateMalformedStringException: DateTime::modify(): Failed to parse time string () at position 0 ( ): Empty string\n"),
+        "{stdout}"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(stderr, "");
+    assert!(!stderr.contains("Fatal error"), "{stderr}");
 }
 
 #[test]
