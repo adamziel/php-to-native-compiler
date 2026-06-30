@@ -1927,6 +1927,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         ptn_throw_exception(runtime, "Error", message);
         return ptn_null();
     }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "DirectoryIterator")) {
+        return ptn_directory_iterator_clone(runtime, resolved, line);
+    }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileInfo")) {
         return ptn_spl_file_info_clone(runtime, resolved, line);
     }

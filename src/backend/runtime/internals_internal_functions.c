@@ -226388,6 +226388,71 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new(
     return ptn_directory_iterator_new_for_class(runtime, "DirectoryIterator", argc, args, line);
 }
 
+static PTN_UNUSED PtnValue ptn_directory_iterator_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnDirectoryIteratorData *source_data = ptn_directory_iterator_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved_source = ptn_value_deref(source);
+    if (resolved_source.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    int accepts_flags =
+        ptn_declared_class_is_same_or_descendant(resolved_source.as.object->class_name, "FilesystemIterator") ||
+        ptn_declared_class_is_same_or_descendant(resolved_source.as.object->class_name, "GlobIterator") ||
+        ptn_declared_class_is_same_or_descendant(resolved_source.as.object->class_name, "RecursiveDirectoryIterator");
+    int64_t flags = source_data->current_mode |
+        (source_data->skip_dots ? PTN_FILESYSTEM_ITERATOR_SKIP_DOTS : 0);
+    PtnValue clone_args[2] = {
+        ptn_owned_string(ptn_duplicate_string(source_data->directory_path == NULL ? "" : source_data->directory_path)),
+        ptn_int(flags),
+    };
+    PtnValue clone = ptn_directory_iterator_new_for_class(
+        runtime,
+        resolved_source.as.object->class_name,
+        accepts_flags ? 2 : 1,
+        clone_args,
+        line
+    );
+    ptn_value_destroy(&clone_args[0]);
+    ptn_value_destroy(&clone_args[1]);
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        ptn_value_destroy(&clone);
+        return ptn_null();
+    }
+    PtnDirectoryIteratorData *clone_data = ptn_directory_iterator_data(runtime, clone);
+    if (clone_data == NULL) {
+        ptn_value_destroy(&clone);
+        return ptn_null();
+    }
+    if (source_data->valid) {
+        while (
+            runtime->exceptions->active_exception == NULL &&
+            clone_data->valid &&
+            clone_data->key < source_data->key
+        ) {
+            PtnValue next_result =
+                ptn_directory_iterator_call_method(runtime, clone, "next", 0, NULL, line);
+            ptn_value_destroy(&next_result);
+        }
+    } else {
+        while (runtime->exceptions->active_exception == NULL && clone_data->valid) {
+            PtnValue next_result =
+                ptn_directory_iterator_call_method(runtime, clone, "next", 0, NULL, line);
+            ptn_value_destroy(&next_result);
+        }
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&clone);
+        return ptn_null();
+    }
+    return clone;
+}
+
 static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

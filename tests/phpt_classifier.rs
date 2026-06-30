@@ -2360,6 +2360,10 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\nrecursive directory current mode\n--FILE--\n<?php\nnew RecursiveDirectoryIterator(__DIR__, FileSystemIterator::CURRENT_AS_PATHNAME);\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/dit_004.phpt",
+            "--TEST--\ndirectory iterator clone\n--FILE--\n<?php\n$a = new DirectoryIterator(__DIR__);\n$b = clone $a;\nvar_dump($a->key(), $b->key());\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/iterator_028.phpt",
             "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
         ),

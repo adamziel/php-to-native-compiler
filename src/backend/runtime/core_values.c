@@ -3147,6 +3147,11 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_directory_iterator_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

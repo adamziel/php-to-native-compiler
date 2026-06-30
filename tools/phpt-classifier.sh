@@ -1478,6 +1478,10 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ &&
                 line ~ /(^|[^[:alnum:]_$\\])(filesystemiterator|recursivedirectoryiterator)([^[:alnum:]_]|$)/
         }
+        function ptn_supported_directory_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/dit_004[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])directoryiterator([^[:alnum:]_]|$)/
+        }
         function ptn_supported_spl_autoload_register_validation_row() {
             return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_throw_with_spl_autoloader_call_as_autoloader[.]phpt$/
         }
@@ -1653,6 +1657,7 @@ ptn_phpt_first_unsupported_language_surface() {
                     !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
                     !ptn_supported_append_iterator_surface_line(line) &&
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
+                    !ptn_supported_directory_iterator_surface_line(line) &&
                     !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
                 (ptn_has_unmodeled_spl_function(line) &&
                     !ptn_supported_spl_helper_function_line(line))) {

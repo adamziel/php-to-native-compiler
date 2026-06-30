@@ -2480,6 +2480,53 @@ try {
 }
 
 #[test]
+fn compile_directory_iterator_clone_cursor_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-iterator-clone-cursor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-iterator-clone-cursor.php");
+    let output = root.join("directory-iterator-clone-cursor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+@mkdir($dir = __DIR__ . '/dit_clone');
+touch($dir . '/file1');
+touch($dir . '/file2');
+touch($dir . '/file3');
+
+$a = new DirectoryIterator($dir);
+$b = clone $a;
+var_dump((string)$b == (string)$a);
+var_dump($a->key(), $b->key());
+$a->next();
+$a->next();
+$a->next();
+$c = clone $a;
+var_dump((string)$c == (string)$a);
+var_dump($a->key(), $c->key());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_directory_iterator_clone"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(0)\nint(0)\nbool(true)\nint(3)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_caching_iterator_current_string_and_inner_forwarding_to_native_binary() {
     let root = temp_dir("ptn-native-caching-iterator");
     fs::create_dir_all(&root).unwrap();
