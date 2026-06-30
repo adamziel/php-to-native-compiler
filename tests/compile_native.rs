@@ -33226,6 +33226,60 @@ D\"\n"
 }
 
 #[test]
+fn compile_quoted_printable_read_stream_filter_options_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-read-stream-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-read-stream-filter.php");
+    let output = root.join("quoted-printable-read-stream-filter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_qp_read_filter($data) {\n\
+    $fd = fopen('php://temp', 'w+');\n\
+    fwrite($fd, $data);\n\
+    rewind($fd);\n\
+    $filter = stream_filter_append($fd, 'convert.quoted-printable-encode', STREAM_FILTER_READ, [\n\
+        'line-break-chars' => \"\\n\",\n\
+        'line-length' => 74,\n\
+    ]);\n\
+    var_dump(stream_get_contents($fd, -1, 0));\n\
+    stream_filter_remove($filter);\n\
+    rewind($fd);\n\
+    stream_filter_append($fd, 'convert.quoted-printable-encode', STREAM_FILTER_READ, [\n\
+        'line-break-chars' => \"\\n\",\n\
+        'line-length' => 6,\n\
+    ]);\n\
+    var_dump(stream_get_contents($fd, -1, 0));\n\
+}\n\
+dump_qp_read_filter(\"FIRST \\nSECOND\");\n\
+dump_qp_read_filter(\"FIRST  \\nSECOND\");\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(15) \"FIRST=20\n\
+SECOND\"\n\
+string(19) \"FIRST=\n\
+=20\n\
+SECON=\n\
+D\"\n\
+string(18) \"FIRST=20=20\n\
+SECOND\"\n\
+string(24) \"FIRST=\n\
+=20=\n\
+=20\n\
+SECON=\n\
+D\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_isatty_handles_filtered_streams_to_native_binary() {
     let root = temp_dir("ptn-native-stream-isatty-filtered");
     fs::create_dir_all(&root).unwrap();
@@ -47342,6 +47396,42 @@ new C();
         "{stderr}"
     );
     assert!(stderr.contains("[constant expression]()"), "{stderr}");
+}
+
+#[test]
+fn compile_property_default_missing_self_constant_keeps_lexical_message_to_native_binary() {
+    let root = temp_dir("ptn-native-property-default-missing-self-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-default-missing-self-constant.php");
+    let output = root.join("property-default-missing-self-constant-bin");
+    fs::write(
+        &input,
+        "<?php
+class ErrorWrapper {
+    public $context;
+    public $var = self::INVALID;
+}
+stream_wrapper_register('error', ErrorWrapper::class);
+file_get_contents('error://test');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Fatal error: Uncaught Error: Undefined constant self::INVALID"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Undefined constant ErrorWrapper::INVALID"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[constant expression]()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

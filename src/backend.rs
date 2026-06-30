@@ -24887,6 +24887,7 @@ fn class_property_initialization_chain(
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct PropertyDefaultClassConstantRead {
     class_name: String,
+    message_class_name: Option<String>,
     constant_name: String,
     line: usize,
 }
@@ -24935,9 +24936,18 @@ fn collect_property_default_class_constant_reads(
                 declaring_class_name,
                 classes,
             ) {
+                let message_class_name = if class_name.eq_ignore_ascii_case("self")
+                    || class_name.eq_ignore_ascii_case("static")
+                    || class_name.eq_ignore_ascii_case("parent")
+                {
+                    Some(class_name.to_string())
+                } else {
+                    None
+                };
                 if seen.insert((resolved_class_name.to_string(), name.clone(), *line)) {
                     reads.push(PropertyDefaultClassConstantRead {
                         class_name: resolved_class_name.to_string(),
+                        message_class_name,
                         constant_name: name.clone(),
                         line: *line,
                     });
@@ -50987,11 +50997,27 @@ impl ValueEmitter {
             out.push_str(", 0, NULL);\n");
             out.push_str("        PtnValue ");
             out.push_str(&temp);
-            out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(&runtime, \"");
-            out.push_str(&c_string(&read.class_name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&read.constant_name));
-            out.push_str("\", ");
+            if let Some(message_class_name) = &read.message_class_name {
+                out.push_str(
+                    " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
+                );
+                out.push_str(&c_string(&read.class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.constant_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(message_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&declared_class.name));
+                out.push_str("\", ");
+            } else {
+                out.push_str(
+                    " = ptn_runtime_read_class_constant_suppress_deprecation(&runtime, \"",
+                );
+                out.push_str(&c_string(&read.class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.constant_name));
+                out.push_str("\", ");
+            }
             out.push_str(&read.line.to_string());
             out.push_str(");\n");
             out.push_str("        ptn_runtime_pop_trace_frame(&runtime, &");

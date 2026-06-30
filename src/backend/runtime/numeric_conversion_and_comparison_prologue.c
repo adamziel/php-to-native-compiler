@@ -6916,10 +6916,7 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
         written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
     } else {
         const char *display_class_name =
-            message_class_name == NULL ||
-                ptn_ascii_case_equal(message_class_name, "self") ||
-                ptn_ascii_case_equal(message_class_name, "static") ||
-                ptn_ascii_case_equal(message_class_name, "parent")
+            message_class_name == NULL
                 ? lookup_class_name
                 : message_class_name;
         written = snprintf(
