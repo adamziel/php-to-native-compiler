@@ -1516,7 +1516,7 @@ static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
         ptn_array_set_entry(
             result.as.array,
             ptn_array_string_key(slot->name),
-            ptn_value_clone(ptn_reference_value(slot->reference))
+            ptn_value_clone_deref(ptn_reference_value(slot->reference))
         );
     }
     return result;
