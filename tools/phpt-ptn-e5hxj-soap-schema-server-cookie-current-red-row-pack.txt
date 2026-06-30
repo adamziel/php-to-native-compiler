@@ -1,0 +1,15 @@
+ext/soap/tests/schema/schema082.phpt
+ext/soap/tests/schema/schema062.phpt
+ext/soap/tests/schema/schema072.phpt
+ext/soap/tests/server031.phpt
+ext/soap/tests/bugs/bug69085.phpt
+ext/soap/tests/typemap009.phpt
+ext/soap/tests/bugs/bug34643.phpt
+ext/soap/tests/schema/schema022.phpt
+ext/soap/tests/schema/schema002.phpt
+ext/soap/tests/schema/schema012.phpt
+ext/soap/tests/bugs/cookie_parse_options_offset.phpt
+ext/soap/tests/bugs/bug55639.phpt
+ext/soap/tests/server008.phpt
+ext/soap/tests/server018.phpt
+ext/soap/tests/soap_set_cookie.phpt

@@ -60439,7 +60439,7 @@ fn compile_soap_server_handle_soapfault_responses_to_native_binary() {
         &input,
         r#"<?php
 function test1() {
-  throw new SoapFault("Server", "test1");
+  throw new SoapFault("MyFault", "test1");
 }
 function test2() {
   return new SoapFault("Server", "test2");
@@ -60495,7 +60495,7 @@ echo "ok\n";
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>test1</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>MyFault</faultcode><faultstring>test1</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
             "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>test2</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
             "ok\n",
@@ -60709,6 +60709,11 @@ var_dump(function_exists('is_soap_fault'));
 var_dump(is_soap_fault(null));
 var_dump(is_soap_fault(new SoapFault('code', 'message')));
 var_dump(method_exists('SoapClient', '__setLocation'));
+var_dump(method_exists('SoapClient', '__setCookie'), method_exists('SoapClient', '__getCookies'));
+$client->__setCookie("123", "456");
+var_dump($client->__getCookies());
+$client->__setCookie("123", null);
+var_dump($client->__getCookies());
 
 class EmptySoapClient extends SoapClient {
     public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
@@ -60746,7 +60751,7 @@ $empty->call(1.1);
         "{stdout}"
     );
     assert!(
-        stdout.contains("bool(true)\nbool(false)\nbool(true)\nbool(true)\n"),
+        stdout.contains("bool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\narray(1) {\n  [123]=>\n  array(1) {\n    [0]=>\n    string(3) \"456\"\n  }\n}\narray(0) {\n}\n"),
         "{stdout}"
     );
     assert!(
@@ -60757,6 +60762,7 @@ $empty->call(1.1);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_set_location"));
+    assert!(c_source.contains("ptn_soap_client_set_cookie"));
     assert!(c_source.contains("ptn_internal_is_soap_fault"));
     assert!(c_source.contains("ptn_soap_client_effective_location_dup"));
 }
@@ -61287,9 +61293,11 @@ var_dump(method_exists($server, 'getFunctions'), method_exists($server, 'fault')
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "array(1) {\n",
+            "array(2) {\n",
             "  [0]=>\n",
             "  string(5) \"hello\"\n",
+            "  [1]=>\n",
+            "  string(11) \"__construct\"\n",
             "}\n",
             "bool(true)\n",
             "bool(true)\n",
