@@ -62110,6 +62110,140 @@ var_dump(SOAP_USE_XSI_ARRAY_TYPE);
 }
 
 #[test]
+fn compile_soap_wsdl_inline_simple_type_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-inline-simple-type-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-inline-simple-type-encoding.php");
+    let output = root.join("soap-wsdl-inline-simple-type-encoding-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$seen = [];
+function test($input) {
+    global $seen;
+    $seen[] = $input;
+}
+
+function run_schema_case($path, $schema, $message_part, $value) {
+    global $seen;
+    $wsdl = <<<WSDL
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+$schema
+    </schema>
+  </types>
+  <message name="testMessage">
+    $message_part
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="tns:testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL;
+    file_put_contents($path, $wsdl);
+    $client = new SoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+    $server = new SoapServer($path);
+    $server->addFunction('test');
+    $client->test($value);
+    $request = $client->__getLastRequest();
+    echo $request;
+    ob_start();
+    $server->handle($request);
+    ob_end_clean();
+    var_dump($seen[count($seen) - 1]);
+}
+
+$schema = <<<'SCHEMA'
+      <element name="testElement">
+        <simpleType>
+          <restriction>
+            <simpleType name="testType2">
+              <restriction base="xsd:int"/>
+            </simpleType>
+          </restriction>
+        </simpleType>
+      </element>
+SCHEMA;
+run_schema_case(
+    __DIR__ . '/inline-element.wsdl',
+    $schema,
+    '<part name="testParam" element="tns:testElement"/>',
+    123.5
+);
+
+$schema = <<<'SCHEMA'
+      <simpleType name="testType">
+        <list>
+          <simpleType>
+            <restriction base="int"/>
+          </simpleType>
+        </list>
+      </simpleType>
+SCHEMA;
+run_schema_case(
+    __DIR__ . '/inline-list.wsdl',
+    $schema,
+    '<part name="testParam" type="tns:testType"/>',
+    '123 456.7'
+);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testElement\">123</testParam>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(123)"), "{stdout}");
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testType\">123 456</testParam>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(7) \"123 456\""), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_parse_simple_type_in_range"));
+    assert!(c_source.contains("ptn_soap_append_schema_scalar_value"));
+}
+
+#[test]
 fn compile_soap_wsdl_backed_enum_field_encoding_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-backed-enum-field-encoding");
     fs::create_dir_all(&root).unwrap();
