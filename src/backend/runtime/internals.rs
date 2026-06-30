@@ -5,6 +5,7 @@ pub(super) const SYMBOLS_C: &str = include_str!("internals_symbols.c");
 pub(super) const INTERNAL_FUNCTIONS_C: &str = include_str!("internals_internal_functions.c");
 pub(super) const CRYPT_PORT_C: &str = include_str!("crypt_port.c");
 pub(super) const HASH_SNEFRU_TABLES_C: &str = include_str!("hash_snefru_tables.c");
+pub(super) const HASH_LEGACY_EXTRA_C: &str = include_str!("hash_legacy_extra.c");
 pub(super) const HASH_EXTRA_C: &str = include_str!("hash_extra.c");
 pub(super) const BCMATH_CALENDAR_C: &str = include_str!("bcmath_calendar.c");
 
@@ -29,6 +30,7 @@ pub(super) fn internal_functions_c() -> String {
         INTERNAL_FUNCTIONS_C.len()
             + CRYPT_PORT_C.len()
             + HASH_SNEFRU_TABLES_C.len()
+            + HASH_LEGACY_EXTRA_C.len()
             + HASH_EXTRA_C.len()
             + BCMATH_CALENDAR_C.len()
             + super::csv::C.len()
@@ -40,6 +42,8 @@ pub(super) fn internal_functions_c() -> String {
     source.push_str(CRYPT_PORT_C);
     source.push('\n');
     source.push_str(HASH_SNEFRU_TABLES_C);
+    source.push('\n');
+    source.push_str(HASH_LEGACY_EXTRA_C);
     source.push('\n');
     source.push_str(HASH_EXTRA_C);
     source.push('\n');

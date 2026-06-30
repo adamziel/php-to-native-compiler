@@ -73388,36 +73388,10 @@ static void ptn_hash_context_append(PtnHashContextData *data, const unsigned cha
     data->data_len = required;
 }
 
-static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
-    return ptn_text_operand_ascii_case_equal(algo, "md5") ||
-        ptn_text_operand_ascii_case_equal(algo, "md4") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha1") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha224") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha256") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha384") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha512/224") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha512/256") ||
-        ptn_text_operand_ascii_case_equal(algo, "sha512") ||
-        ptn_text_operand_ascii_case_equal(algo, "crc32") ||
-        ptn_text_operand_ascii_case_equal(algo, "crc32b") ||
-        ptn_text_operand_ascii_case_equal(algo, "crc32c") ||
-        ptn_text_operand_ascii_case_equal(algo, "adler32") ||
-        ptn_text_operand_ascii_case_equal(algo, "fnv1a64") ||
-        ptn_text_operand_ascii_case_equal(algo, "ripemd128") ||
-        ptn_text_operand_ascii_case_equal(algo, "ripemd160") ||
-        ptn_text_operand_ascii_case_equal(algo, "ripemd256") ||
-        ptn_text_operand_ascii_case_equal(algo, "ripemd320") ||
-        ptn_text_operand_ascii_case_equal(algo, "snefru") ||
-        ptn_text_operand_ascii_case_equal(algo, "snefru256") ||
-        ptn_text_operand_ascii_case_equal(algo, "xxh32") ||
-        ptn_text_operand_ascii_case_equal(algo, "xxh64") ||
-        ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
-        ptn_text_operand_ascii_case_equal(algo, "xxh128");
-}
-
 static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
-    "md5",
+    "md2",
     "md4",
+    "md5",
     "sha1",
     "sha224",
     "sha256",
@@ -73425,21 +73399,56 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "sha512/224",
     "sha512/256",
     "sha512",
-    "crc32",
-    "crc32b",
-    "crc32c",
-    "adler32",
-    "fnv1a64",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
     "ripemd128",
     "ripemd160",
     "ripemd256",
     "ripemd320",
+    "whirlpool",
+    "tiger128,3",
+    "tiger160,3",
+    "tiger192,3",
+    "tiger128,4",
+    "tiger160,4",
+    "tiger192,4",
     "snefru",
     "snefru256",
+    "gost",
+    "gost-crypto",
+    "adler32",
+    "crc32",
+    "crc32b",
+    "crc32c",
+    "fnv132",
+    "fnv1a32",
+    "fnv164",
+    "fnv1a64",
+    "joaat",
+    "murmur3a",
+    "murmur3c",
+    "murmur3f",
     "xxh32",
     "xxh64",
     "xxh3",
     "xxh128",
+    "haval128,3",
+    "haval160,3",
+    "haval192,3",
+    "haval224,3",
+    "haval256,3",
+    "haval128,4",
+    "haval160,4",
+    "haval192,4",
+    "haval224,4",
+    "haval256,4",
+    "haval128,5",
+    "haval160,5",
+    "haval192,5",
+    "haval224,5",
+    "haval256,5",
 };
 
 static const char *const PTN_HASH_HMAC_ALGOS[] = {
@@ -73498,22 +73507,20 @@ static int ptn_hash_algorithm_name_is_supported(const char *algo) {
     return 0;
 }
 
+static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    int supported = ptn_hash_algorithm_name_is_supported(algo_name);
+    free(algo_name);
+    return supported;
+}
+
 static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
-    return ptn_ascii_case_equal(algo, "md5") ||
-        ptn_ascii_case_equal(algo, "md4") ||
-        ptn_ascii_case_equal(algo, "sha1") ||
-        ptn_ascii_case_equal(algo, "sha224") ||
-        ptn_ascii_case_equal(algo, "sha256") ||
-        ptn_ascii_case_equal(algo, "sha384") ||
-        ptn_ascii_case_equal(algo, "sha512/224") ||
-        ptn_ascii_case_equal(algo, "sha512/256") ||
-        ptn_ascii_case_equal(algo, "sha512") ||
-        ptn_ascii_case_equal(algo, "ripemd128") ||
-        ptn_ascii_case_equal(algo, "ripemd160") ||
-        ptn_ascii_case_equal(algo, "ripemd256") ||
-        ptn_ascii_case_equal(algo, "ripemd320") ||
-        ptn_ascii_case_equal(algo, "snefru") ||
-        ptn_ascii_case_equal(algo, "snefru256");
+    for (size_t i = 0; i < sizeof(PTN_HASH_HMAC_ALGOS) / sizeof(PTN_HASH_HMAC_ALGOS[0]); i++) {
+        if (ptn_ascii_case_equal(algo, PTN_HASH_HMAC_ALGOS[i])) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int ptn_hash_algorithm_name_is_xxhash(const char *algo) {
@@ -73521,6 +73528,30 @@ static int ptn_hash_algorithm_name_is_xxhash(const char *algo) {
         ptn_ascii_case_equal(algo, "xxh64") ||
         ptn_ascii_case_equal(algo, "xxh3") ||
         ptn_ascii_case_equal(algo, "xxh128");
+}
+
+static int ptn_hash_algorithm_name_is_murmur(const char *algo) {
+    return ptn_ascii_case_equal(algo, "murmur3a") ||
+        ptn_ascii_case_equal(algo, "murmur3c") ||
+        ptn_ascii_case_equal(algo, "murmur3f");
+}
+
+static int ptn_hash_algorithm_name_is_haval(const char *algo) {
+    return ptn_ascii_case_equal(algo, "haval128,3") ||
+        ptn_ascii_case_equal(algo, "haval160,3") ||
+        ptn_ascii_case_equal(algo, "haval192,3") ||
+        ptn_ascii_case_equal(algo, "haval224,3") ||
+        ptn_ascii_case_equal(algo, "haval256,3") ||
+        ptn_ascii_case_equal(algo, "haval128,4") ||
+        ptn_ascii_case_equal(algo, "haval160,4") ||
+        ptn_ascii_case_equal(algo, "haval192,4") ||
+        ptn_ascii_case_equal(algo, "haval224,4") ||
+        ptn_ascii_case_equal(algo, "haval256,4") ||
+        ptn_ascii_case_equal(algo, "haval128,5") ||
+        ptn_ascii_case_equal(algo, "haval160,5") ||
+        ptn_ascii_case_equal(algo, "haval192,5") ||
+        ptn_ascii_case_equal(algo, "haval224,5") ||
+        ptn_ascii_case_equal(algo, "haval256,5");
 }
 
 typedef struct {
@@ -73692,6 +73723,28 @@ static PtnValue ptn_hash_xxhash_digest_value(
     unsigned char digest[16];
     ptn_store_u64_be(digest, hash.high64);
     ptn_store_u64_be(digest + 8, hash.low64);
+    return ptn_digest_value(digest, sizeof(digest), raw_output);
+}
+
+static PtnValue ptn_hash_murmur_digest_value(
+    const char *algo,
+    const unsigned char *data,
+    size_t data_len,
+    uint64_t seed,
+    int raw_output
+) {
+    if (ptn_ascii_case_equal(algo, "murmur3a")) {
+        unsigned char digest[4];
+        ptn_hash_extra_murmur3a_digest_bytes(data, data_len, (uint32_t)seed, digest);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    if (ptn_ascii_case_equal(algo, "murmur3c")) {
+        unsigned char digest[16];
+        ptn_hash_extra_murmur3c_digest_bytes(data, data_len, (uint32_t)seed, digest);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    unsigned char digest[16];
+    ptn_hash_extra_murmur3f_digest_bytes(data, data_len, seed, digest);
     return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
@@ -73908,12 +73961,6 @@ static int ptn_hash_context_unserialize_payload(
         free(algo);
         return 0;
     }
-    if (ptn_ascii_case_equal(algo, "xxh32") || ptn_ascii_case_equal(algo, "xxh64")) {
-        ptn_hash_context_throw_ill_formed_code(runtime, algo, -2000);
-        free(algo);
-        return 0;
-    }
-
     PtnStringOperand marker = { 0 };
     if (!ptn_hash_context_payload_string(state.as.array, 0, &marker) ||
         marker.len != 3 ||
@@ -74154,6 +74201,50 @@ static int ptn_hash_parse_xxhash_options(
     return 1;
 }
 
+static int ptn_hash_parse_seed_options(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options_value,
+    size_t line,
+    PtnHashOptions *out
+) {
+    out->has_seed = 0;
+    out->seed = 0;
+    out->secret = NULL;
+    out->secret_len = 0;
+    options_value = ptn_value_deref(options_value);
+    if (options_value.type == PTN_NULL) {
+        return 1;
+    }
+    PtnArray *options = ptn_internal_expect_array_arg(runtime, function_name, 4, "options", options_value);
+    if (options == NULL || runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+
+    PtnArrayEntry *seed_entry = ptn_hash_options_entry(options, "seed");
+    if (seed_entry == NULL) {
+        return 1;
+    }
+    PtnValue seed_value = ptn_value_deref(seed_entry->value);
+    if (seed_value.type != PTN_INT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+        seed_value = ptn_int(0);
+    }
+    out->has_seed = 1;
+    out->seed = (uint64_t)seed_value.as.integer;
+    return 1;
+}
+
 static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_init", 1, "algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -74179,13 +74270,22 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         return ptn_null();
     }
     PtnHashOptions options = {0};
-    if (argc >= 4 &&
-        ptn_hash_algorithm_name_is_xxhash(algo_name) &&
-        !ptn_hash_parse_xxhash_options(runtime, "hash_init", algo_name, args[3], line, &options)) {
-        ptn_string_operand_free(algo);
-        ptn_string_operand_free(key);
-        free(algo_name);
-        return ptn_null();
+    if (argc >= 4) {
+        if (ptn_hash_algorithm_name_is_xxhash(algo_name)) {
+            if (!ptn_hash_parse_xxhash_options(runtime, "hash_init", algo_name, args[3], line, &options)) {
+                ptn_string_operand_free(algo);
+                ptn_string_operand_free(key);
+                free(algo_name);
+                return ptn_null();
+            }
+        } else if (ptn_hash_algorithm_name_is_murmur(algo_name)) {
+            if (!ptn_hash_parse_seed_options(runtime, "hash_init", args[3], line, &options)) {
+                ptn_string_operand_free(algo);
+                ptn_string_operand_free(key);
+                free(algo_name);
+                return ptn_null();
+            }
+        }
     }
     PtnValue result = ptn_hash_context_object(
         runtime,
@@ -74321,9 +74421,20 @@ static int ptn_hash_openssl_digest_bytes(
     size_t *digest_len
 ) {
 #if PTN_HAVE_OPENSSL
+    static int providers_loaded = 0;
+    if (!providers_loaded) {
+        OSSL_PROVIDER_load(NULL, "default");
+        OSSL_PROVIDER_load(NULL, "legacy");
+        providers_loaded = 1;
+    }
     const EVP_MD *md = EVP_get_digestbyname(algo);
+    EVP_MD *fetched_md = NULL;
     if (md == NULL) {
-        return 0;
+        fetched_md = EVP_MD_fetch(NULL, algo, NULL);
+        md = fetched_md;
+        if (md == NULL) {
+            return 0;
+        }
     }
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (ctx == NULL) {
@@ -74334,6 +74445,7 @@ static int ptn_hash_openssl_digest_bytes(
         EVP_DigestUpdate(ctx, input, input_len) == 1 &&
         EVP_DigestFinal_ex(ctx, digest, &out_len) == 1;
     EVP_MD_CTX_free(ctx);
+    EVP_MD_free(fetched_md);
     if (!ok || out_len > PTN_HASH_MAX_DIGEST_LEN) {
         return 0;
     }
@@ -74356,6 +74468,11 @@ static int ptn_hash_digest_bytes(
     unsigned char digest[PTN_HASH_MAX_DIGEST_LEN],
     size_t *digest_len
 ) {
+    if (ptn_ascii_case_equal(algo, "md2")) {
+        ptn_hash_extra_md2_digest_bytes(input, input_len, digest);
+        *digest_len = 16;
+        return 1;
+    }
     if (ptn_ascii_case_equal(algo, "md5")) {
         ptn_md5_digest_bytes(input, input_len, digest);
         *digest_len = 16;
@@ -74401,6 +74518,18 @@ static int ptn_hash_digest_bytes(
         *digest_len = 64;
         return 1;
     }
+    if (ptn_ascii_case_equal(algo, "sha3-224")) {
+        return ptn_hash_openssl_digest_bytes("sha3-224", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-256")) {
+        return ptn_hash_openssl_digest_bytes("sha3-256", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-384")) {
+        return ptn_hash_openssl_digest_bytes("sha3-384", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "sha3-512")) {
+        return ptn_hash_openssl_digest_bytes("sha3-512", input, input_len, digest, digest_len);
+    }
     if (ptn_ascii_case_equal(algo, "crc32b")) {
         uint32_t checksum = ptn_crc32_bytes(input, input_len);
         digest[0] = (unsigned char)((checksum >> 24) & 0xff);
@@ -74443,9 +74572,44 @@ static int ptn_hash_digest_bytes(
         *digest_len = 4;
         return 1;
     }
+    if (ptn_ascii_case_equal(algo, "fnv132")) {
+        ptn_hash_extra_fnv132_digest_bytes(input, input_len, digest);
+        *digest_len = 4;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "fnv1a32")) {
+        ptn_hash_extra_fnv1a32_digest_bytes(input, input_len, digest);
+        *digest_len = 4;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "fnv164")) {
+        ptn_hash_extra_fnv164_digest_bytes(input, input_len, digest);
+        *digest_len = 8;
+        return 1;
+    }
     if (ptn_ascii_case_equal(algo, "fnv1a64")) {
         ptn_hash_extra_fnv1a64_digest_bytes(input, input_len, digest);
         *digest_len = 8;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "joaat")) {
+        ptn_hash_extra_joaat_digest_bytes(input, input_len, digest);
+        *digest_len = 4;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "murmur3a")) {
+        ptn_hash_extra_murmur3a_digest_bytes(input, input_len, 0, digest);
+        *digest_len = 4;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "murmur3c")) {
+        ptn_hash_extra_murmur3c_digest_bytes(input, input_len, 0, digest);
+        *digest_len = 16;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(algo, "murmur3f")) {
+        ptn_hash_extra_murmur3f_digest_bytes(input, input_len, 0, digest);
+        *digest_len = 16;
         return 1;
     }
     if (ptn_ascii_case_equal(algo, "ripemd128")) {
@@ -74471,14 +74635,38 @@ static int ptn_hash_digest_bytes(
         *digest_len = 32;
         return 1;
     }
+    if (ptn_ascii_case_equal(algo, "whirlpool")) {
+        return ptn_hash_openssl_digest_bytes("whirlpool", input, input_len, digest, digest_len);
+    }
+    if (ptn_ascii_case_equal(algo, "gost") || ptn_ascii_case_equal(algo, "gost-crypto")) {
+        ptn_hash_extra_gost_digest_bytes(input, input_len, ptn_ascii_case_equal(algo, "gost-crypto"), digest);
+        *digest_len = 32;
+        return 1;
+    }
+    if (ptn_hash_extra_haval_digest_bytes(algo, input, input_len, digest, digest_len)) {
+        return 1;
+    }
+    if (ptn_hash_extra_tiger_digest_bytes(algo, input, input_len, digest, digest_len)) {
+        return 1;
+    }
     return 0;
 }
 
 static size_t ptn_hash_block_size(const char *algo) {
+    if (ptn_ascii_case_equal(algo, "md2")) {
+        return 16;
+    }
+    if (ptn_ascii_case_equal(algo, "gost") ||
+        ptn_ascii_case_equal(algo, "gost-crypto") ||
+        ptn_ascii_case_equal(algo, "snefru") ||
+        ptn_ascii_case_equal(algo, "snefru256")) {
+        return 32;
+    }
     if (ptn_ascii_case_equal(algo, "sha384") ||
         ptn_ascii_case_equal(algo, "sha512/224") ||
         ptn_ascii_case_equal(algo, "sha512/256") ||
-        ptn_ascii_case_equal(algo, "sha512")) {
+        ptn_ascii_case_equal(algo, "sha512") ||
+        ptn_hash_algorithm_name_is_haval(algo)) {
         return 128;
     }
     return 64;
@@ -74631,6 +74819,15 @@ static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const 
                 data->seed,
                 data->secret,
                 data->secret_len,
+                raw_output
+            );
+        }
+        if (ptn_hash_algorithm_name_is_murmur(data->algo)) {
+            return ptn_hash_murmur_digest_value(
+                data->algo,
+                data->data,
+                data->data_len,
+                data->seed,
                 raw_output
             );
         }
@@ -74788,6 +74985,29 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
             options.has_seed ? options.seed : 0,
             options.secret,
             options.secret_len,
+            raw_output
+        );
+        ptn_hash_options_free(&options);
+        free(algo_name_for_digest);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return result;
+    }
+    if (ptn_hash_algorithm_name_is_murmur(algo_name_for_digest)) {
+        PtnHashOptions options = {0};
+        if (argc >= 4 &&
+            !ptn_hash_parse_seed_options(runtime, "hash", args[3], line, &options)) {
+            ptn_hash_options_free(&options);
+            free(algo_name_for_digest);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+        PtnValue result = ptn_hash_murmur_digest_value(
+            algo_name_for_digest,
+            (const unsigned char *)data.data,
+            data.len,
+            options.has_seed ? options.seed : 0,
             raw_output
         );
         ptn_hash_options_free(&options);

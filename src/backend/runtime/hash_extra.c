@@ -13,6 +13,10 @@ static uint32_t ptn_hash_extra_rotl32(uint32_t value, uint32_t amount) {
     return (value << amount) | (value >> (32U - amount));
 }
 
+static uint64_t ptn_hash_extra_rotl64(uint64_t value, uint32_t amount) {
+    return (value << amount) | (value >> (64U - amount));
+}
+
 static void ptn_hash_extra_store_le32(unsigned char *out, const uint32_t *input, size_t words) {
     for (size_t i = 0; i < words; i++) {
         out[i * 4] = (unsigned char)(input[i] & 0xff);
@@ -27,6 +31,30 @@ static uint32_t ptn_hash_extra_load_le32(const unsigned char *input) {
         | ((uint32_t)input[1] << 8)
         | ((uint32_t)input[2] << 16)
         | ((uint32_t)input[3] << 24);
+}
+
+static uint64_t ptn_hash_extra_load_le64(const unsigned char *input) {
+    return (uint64_t)input[0]
+        | ((uint64_t)input[1] << 8)
+        | ((uint64_t)input[2] << 16)
+        | ((uint64_t)input[3] << 24)
+        | ((uint64_t)input[4] << 32)
+        | ((uint64_t)input[5] << 40)
+        | ((uint64_t)input[6] << 48)
+        | ((uint64_t)input[7] << 56);
+}
+
+static void ptn_hash_extra_store_be32(unsigned char digest[4], uint32_t value) {
+    digest[0] = (unsigned char)((value >> 24) & 0xff);
+    digest[1] = (unsigned char)((value >> 16) & 0xff);
+    digest[2] = (unsigned char)((value >> 8) & 0xff);
+    digest[3] = (unsigned char)(value & 0xff);
+}
+
+static void ptn_hash_extra_store_be64(unsigned char digest[8], uint64_t value) {
+    for (size_t i = 0; i < 8; i++) {
+        digest[i] = (unsigned char)(value >> (56 - i * 8));
+    }
 }
 
 static void ptn_hash_extra_md4_transform(uint32_t state[4], const unsigned char block[64]) {
@@ -157,6 +185,213 @@ static void ptn_hash_extra_fnv1a64_digest_bytes(const unsigned char *input, size
     for (size_t i = 0; i < 8; i++) {
         digest[i] = (unsigned char)(hash >> (56 - i * 8));
     }
+}
+
+static void ptn_hash_extra_fnv132_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[4]) {
+    uint32_t hash = UINT32_C(0x811c9dc5);
+    for (size_t i = 0; i < input_len; i++) {
+        hash *= UINT32_C(0x01000193);
+        hash ^= (uint32_t)input[i];
+    }
+    digest[0] = (unsigned char)((hash >> 24) & 0xff);
+    digest[1] = (unsigned char)((hash >> 16) & 0xff);
+    digest[2] = (unsigned char)((hash >> 8) & 0xff);
+    digest[3] = (unsigned char)(hash & 0xff);
+}
+
+static void ptn_hash_extra_fnv1a32_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[4]) {
+    uint32_t hash = UINT32_C(0x811c9dc5);
+    for (size_t i = 0; i < input_len; i++) {
+        hash ^= (uint32_t)input[i];
+        hash *= UINT32_C(0x01000193);
+    }
+    digest[0] = (unsigned char)((hash >> 24) & 0xff);
+    digest[1] = (unsigned char)((hash >> 16) & 0xff);
+    digest[2] = (unsigned char)((hash >> 8) & 0xff);
+    digest[3] = (unsigned char)(hash & 0xff);
+}
+
+static void ptn_hash_extra_fnv164_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[8]) {
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+    for (size_t i = 0; i < input_len; i++) {
+        hash *= UINT64_C(0x100000001b3);
+        hash ^= (uint64_t)input[i];
+    }
+    for (size_t i = 0; i < 8; i++) {
+        digest[i] = (unsigned char)(hash >> (56 - i * 8));
+    }
+}
+
+static void ptn_hash_extra_joaat_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[4]) {
+    uint32_t hash = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        hash += input[i];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    ptn_hash_extra_store_be32(digest, hash);
+}
+
+static uint32_t ptn_hash_extra_murmur3_fmix32(uint32_t h) {
+    h ^= h >> 16;
+    h *= UINT32_C(0x85ebca6b);
+    h ^= h >> 13;
+    h *= UINT32_C(0xc2b2ae35);
+    h ^= h >> 16;
+    return h;
+}
+
+static uint64_t ptn_hash_extra_murmur3_fmix64(uint64_t k) {
+    k ^= k >> 33;
+    k *= UINT64_C(0xff51afd7ed558ccd);
+    k ^= k >> 33;
+    k *= UINT64_C(0xc4ceb9fe1a85ec53);
+    k ^= k >> 33;
+    return k;
+}
+
+static void ptn_hash_extra_murmur3a_digest_bytes(const unsigned char *input, size_t input_len, uint32_t seed, unsigned char digest[4]) {
+    uint32_t h1 = seed;
+    const uint32_t c1 = UINT32_C(0xcc9e2d51);
+    const uint32_t c2 = UINT32_C(0x1b873593);
+    size_t blocks = input_len / 4;
+    for (size_t i = 0; i < blocks; i++) {
+        uint32_t k1 = ptn_hash_extra_load_le32(input + i * 4);
+        k1 *= c1;
+        k1 = ptn_hash_extra_rotl32(k1, 15);
+        k1 *= c2;
+        h1 ^= k1;
+        h1 = ptn_hash_extra_rotl32(h1, 13);
+        h1 = h1 * 5 + UINT32_C(0xe6546b64);
+    }
+    const unsigned char *tail = input + blocks * 4;
+    uint32_t k1 = 0;
+    switch (input_len & 3U) {
+        case 3:
+            k1 ^= (uint32_t)tail[2] << 16;
+            /* fall through */
+        case 2:
+            k1 ^= (uint32_t)tail[1] << 8;
+            /* fall through */
+        case 1:
+            k1 ^= (uint32_t)tail[0];
+            k1 *= c1;
+            k1 = ptn_hash_extra_rotl32(k1, 15);
+            k1 *= c2;
+            h1 ^= k1;
+            break;
+    }
+    h1 ^= (uint32_t)input_len;
+    h1 = ptn_hash_extra_murmur3_fmix32(h1);
+    ptn_hash_extra_store_be32(digest, h1);
+}
+
+static void ptn_hash_extra_murmur3c_digest_bytes(const unsigned char *input, size_t input_len, uint32_t seed, unsigned char digest[16]) {
+    uint32_t h1 = seed, h2 = seed, h3 = seed, h4 = seed;
+    const uint32_t c1 = UINT32_C(0x239b961b);
+    const uint32_t c2 = UINT32_C(0xab0e9789);
+    const uint32_t c3 = UINT32_C(0x38b34ae5);
+    const uint32_t c4 = UINT32_C(0xa1e38b93);
+    size_t blocks = input_len / 16;
+    for (size_t i = 0; i < blocks; i++) {
+        const unsigned char *block = input + i * 16;
+        uint32_t k1 = ptn_hash_extra_load_le32(block);
+        uint32_t k2 = ptn_hash_extra_load_le32(block + 4);
+        uint32_t k3 = ptn_hash_extra_load_le32(block + 8);
+        uint32_t k4 = ptn_hash_extra_load_le32(block + 12);
+        k1 *= c1; k1 = ptn_hash_extra_rotl32(k1, 15); k1 *= c2; h1 ^= k1;
+        h1 = ptn_hash_extra_rotl32(h1, 19); h1 += h2; h1 = h1 * 5 + UINT32_C(0x561ccd1b);
+        k2 *= c2; k2 = ptn_hash_extra_rotl32(k2, 16); k2 *= c3; h2 ^= k2;
+        h2 = ptn_hash_extra_rotl32(h2, 17); h2 += h3; h2 = h2 * 5 + UINT32_C(0x0bcaa747);
+        k3 *= c3; k3 = ptn_hash_extra_rotl32(k3, 17); k3 *= c4; h3 ^= k3;
+        h3 = ptn_hash_extra_rotl32(h3, 15); h3 += h4; h3 = h3 * 5 + UINT32_C(0x96cd1c35);
+        k4 *= c4; k4 = ptn_hash_extra_rotl32(k4, 18); k4 *= c1; h4 ^= k4;
+        h4 = ptn_hash_extra_rotl32(h4, 13); h4 += h1; h4 = h4 * 5 + UINT32_C(0x32ac3b17);
+    }
+    const unsigned char *tail = input + blocks * 16;
+    uint32_t k1 = 0, k2 = 0, k3 = 0, k4 = 0;
+    switch (input_len & 15U) {
+        case 15: k4 ^= (uint32_t)tail[14] << 16; /* fall through */
+        case 14: k4 ^= (uint32_t)tail[13] << 8; /* fall through */
+        case 13: k4 ^= (uint32_t)tail[12]; k4 *= c4; k4 = ptn_hash_extra_rotl32(k4, 18); k4 *= c1; h4 ^= k4; /* fall through */
+        case 12: k3 ^= (uint32_t)tail[11] << 24; /* fall through */
+        case 11: k3 ^= (uint32_t)tail[10] << 16; /* fall through */
+        case 10: k3 ^= (uint32_t)tail[9] << 8; /* fall through */
+        case 9:  k3 ^= (uint32_t)tail[8]; k3 *= c3; k3 = ptn_hash_extra_rotl32(k3, 17); k3 *= c4; h3 ^= k3; /* fall through */
+        case 8:  k2 ^= (uint32_t)tail[7] << 24; /* fall through */
+        case 7:  k2 ^= (uint32_t)tail[6] << 16; /* fall through */
+        case 6:  k2 ^= (uint32_t)tail[5] << 8; /* fall through */
+        case 5:  k2 ^= (uint32_t)tail[4]; k2 *= c2; k2 = ptn_hash_extra_rotl32(k2, 16); k2 *= c3; h2 ^= k2; /* fall through */
+        case 4:  k1 ^= (uint32_t)tail[3] << 24; /* fall through */
+        case 3:  k1 ^= (uint32_t)tail[2] << 16; /* fall through */
+        case 2:  k1 ^= (uint32_t)tail[1] << 8; /* fall through */
+        case 1:  k1 ^= (uint32_t)tail[0]; k1 *= c1; k1 = ptn_hash_extra_rotl32(k1, 15); k1 *= c2; h1 ^= k1; break;
+    }
+    h1 ^= (uint32_t)input_len; h2 ^= (uint32_t)input_len; h3 ^= (uint32_t)input_len; h4 ^= (uint32_t)input_len;
+    h1 += h2 + h3 + h4;
+    h2 += h1;
+    h3 += h1;
+    h4 += h1;
+    h1 = ptn_hash_extra_murmur3_fmix32(h1);
+    h2 = ptn_hash_extra_murmur3_fmix32(h2);
+    h3 = ptn_hash_extra_murmur3_fmix32(h3);
+    h4 = ptn_hash_extra_murmur3_fmix32(h4);
+    h1 += h2 + h3 + h4;
+    h2 += h1;
+    h3 += h1;
+    h4 += h1;
+    ptn_hash_extra_store_be32(digest, h1);
+    ptn_hash_extra_store_be32(digest + 4, h2);
+    ptn_hash_extra_store_be32(digest + 8, h3);
+    ptn_hash_extra_store_be32(digest + 12, h4);
+}
+
+static void ptn_hash_extra_murmur3f_digest_bytes(const unsigned char *input, size_t input_len, uint64_t seed, unsigned char digest[16]) {
+    uint64_t h1 = seed, h2 = seed;
+    const uint64_t c1 = UINT64_C(0x87c37b91114253d5);
+    const uint64_t c2 = UINT64_C(0x4cf5ad432745937f);
+    size_t blocks = input_len / 16;
+    for (size_t i = 0; i < blocks; i++) {
+        const unsigned char *block = input + i * 16;
+        uint64_t k1 = ptn_hash_extra_load_le64(block);
+        uint64_t k2 = ptn_hash_extra_load_le64(block + 8);
+        k1 *= c1; k1 = ptn_hash_extra_rotl64(k1, 31); k1 *= c2; h1 ^= k1;
+        h1 = ptn_hash_extra_rotl64(h1, 27); h1 += h2; h1 = h1 * 5 + UINT64_C(0x52dce729);
+        k2 *= c2; k2 = ptn_hash_extra_rotl64(k2, 33); k2 *= c1; h2 ^= k2;
+        h2 = ptn_hash_extra_rotl64(h2, 31); h2 += h1; h2 = h2 * 5 + UINT64_C(0x38495ab5);
+    }
+    const unsigned char *tail = input + blocks * 16;
+    uint64_t k1 = 0, k2 = 0;
+    switch (input_len & 15U) {
+        case 15: k2 ^= (uint64_t)tail[14] << 48; /* fall through */
+        case 14: k2 ^= (uint64_t)tail[13] << 40; /* fall through */
+        case 13: k2 ^= (uint64_t)tail[12] << 32; /* fall through */
+        case 12: k2 ^= (uint64_t)tail[11] << 24; /* fall through */
+        case 11: k2 ^= (uint64_t)tail[10] << 16; /* fall through */
+        case 10: k2 ^= (uint64_t)tail[9] << 8; /* fall through */
+        case 9:  k2 ^= (uint64_t)tail[8]; k2 *= c2; k2 = ptn_hash_extra_rotl64(k2, 33); k2 *= c1; h2 ^= k2; /* fall through */
+        case 8:  k1 ^= (uint64_t)tail[7] << 56; /* fall through */
+        case 7:  k1 ^= (uint64_t)tail[6] << 48; /* fall through */
+        case 6:  k1 ^= (uint64_t)tail[5] << 40; /* fall through */
+        case 5:  k1 ^= (uint64_t)tail[4] << 32; /* fall through */
+        case 4:  k1 ^= (uint64_t)tail[3] << 24; /* fall through */
+        case 3:  k1 ^= (uint64_t)tail[2] << 16; /* fall through */
+        case 2:  k1 ^= (uint64_t)tail[1] << 8; /* fall through */
+        case 1:  k1 ^= (uint64_t)tail[0]; k1 *= c1; k1 = ptn_hash_extra_rotl64(k1, 31); k1 *= c2; h1 ^= k1; break;
+    }
+    h1 ^= (uint64_t)input_len;
+    h2 ^= (uint64_t)input_len;
+    h1 += h2;
+    h2 += h1;
+    h1 = ptn_hash_extra_murmur3_fmix64(h1);
+    h2 = ptn_hash_extra_murmur3_fmix64(h2);
+    h1 += h2;
+    h2 += h1;
+    ptn_hash_extra_store_be64(digest, h1);
+    ptn_hash_extra_store_be64(digest + 8, h2);
 }
 
 static void ptn_hash_extra_sha512_256_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[32]) {

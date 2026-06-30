@@ -67,6 +67,7 @@
 #include <openssl/opensslv.h>
 #include <openssl/pkcs12.h>
 #include <openssl/pem.h>
+#include <openssl/provider.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 #endif
