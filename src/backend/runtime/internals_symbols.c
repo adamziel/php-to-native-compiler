@@ -883,7 +883,7 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runti
     size_t previous_call_site_line = root->call_site_line;
     PtnTraceFrame *previous_trace_frame = root->trace_frame;
     root->destructor_access_scope = runtime->current_class_name;
-    if (runtime != root && runtime->trace_frame != NULL) {
+    if (runtime != root && runtime->trace_frame != NULL && line != 0) {
         root->trace_frame = runtime->trace_frame;
     }
     if (line != 0) {

@@ -209750,7 +209750,7 @@ static PtnValue ptn_reflection_parameter_declaring_function(
                 data->metadata,
                 data->closure_function_index,
                 data->closure_scope_class_name,
-                0
+                1
             );
         }
         return ptn_reflection_method_object_from_name(
