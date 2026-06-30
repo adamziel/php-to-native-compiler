@@ -36275,6 +36275,37 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
     if class_name.eq_ignore_ascii_case("Collator") && name.eq_ignore_ascii_case("SORT_REGULAR") {
         return Some("PTN_SORT_REGULAR");
     }
+    if class_name.eq_ignore_ascii_case("Pdo\\Sqlite") {
+        if name.eq_ignore_ascii_case("ATTR_EXTENDED_RESULT_CODES") {
+            return Some("1001");
+        }
+        if name.eq_ignore_ascii_case("OK") {
+            return Some("0");
+        }
+        if name.eq_ignore_ascii_case("DENY") {
+            return Some("1");
+        }
+        if name.eq_ignore_ascii_case("IGNORE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("SELECT") {
+            return Some("21");
+        }
+    }
+    if class_name.eq_ignore_ascii_case("SQLite3") {
+        if name.eq_ignore_ascii_case("OK") {
+            return Some("0");
+        }
+        if name.eq_ignore_ascii_case("DENY") {
+            return Some("1");
+        }
+        if name.eq_ignore_ascii_case("IGNORE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("SELECT") {
+            return Some("21");
+        }
+    }
     if class_name.eq_ignore_ascii_case("NumberFormatter") {
         const NUMBER_FORMATTER_CONSTANTS: &[(&str, &str)] = &[
             ("PATTERN_DECIMAL", "PTN_NUMBER_FORMATTER_PATTERN_DECIMAL"),

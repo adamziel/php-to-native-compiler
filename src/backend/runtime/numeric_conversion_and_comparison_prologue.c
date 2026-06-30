@@ -3525,6 +3525,53 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame_metadata(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line,
+    const char *function_name,
+    const char *frame_file,
+    size_t frame_line,
+    size_t argc,
+    const PtnValue *args,
+    size_t sensitive_parameter_count,
+    const unsigned char *sensitive_parameters,
+    size_t sensitive_variadic_position,
+    int has_receiver,
+    PtnValue receiver
+) {
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(runtime, &trace_frame, function_name, frame_file, frame_line, argc, args);
+    trace_frame.sensitive_parameter_count = sensitive_parameter_count;
+    trace_frame.sensitive_parameters = sensitive_parameters;
+    trace_frame.sensitive_variadic_position = sensitive_variadic_position;
+    trace_frame.has_receiver = has_receiver;
+    trace_frame.receiver = receiver;
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
     PtnRuntime *runtime,
     const char *class_name
@@ -5461,11 +5508,16 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "TRANSACTION_MODE_IMMEDIATE") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "TRANSACTION_MODE_EXCLUSIVE") == 0) { *out = ptn_int(2); return 1; }
         if (strcmp(constant, "DETERMINISTIC") == 0) { *out = ptn_int(0x800); return 1; }
+        if (strcmp(constant, "OK") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "DENY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "IGNORE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SELECT") == 0) { *out = ptn_int(21); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SQLite3")) {
         if (strcmp(constant, "OK") == 0) { *out = ptn_int(0); return 1; }
         if (strcmp(constant, "DENY") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "IGNORE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SELECT") == 0) { *out = ptn_int(21); return 1; }
         if (strcmp(constant, "OPEN_READONLY") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "OPEN_READWRITE") == 0) { *out = ptn_int(2); return 1; }
         if (strcmp(constant, "OPEN_CREATE") == 0) { *out = ptn_int(4); return 1; }
