@@ -30511,6 +30511,15 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 static const char *ptn_internal_string_arg_type_name(PtnValue value);
 static double ptn_value_to_double(PtnValue value);
+static PtnNumber ptn_internal_expect_number_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *expected_type,
+    PtnValue value,
+    size_t line
+);
 static double ptn_internal_expect_numeric_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -45522,6 +45531,107 @@ static char *ptn_number_format_fixed_abs(double number, int precision, size_t *l
     return formatted;
 }
 
+static char *ptn_number_format_integer_digits_abs(int64_t integer, size_t *len_out) {
+    uint64_t magnitude = integer < 0
+        ? (uint64_t)(-(integer + 1)) + 1ULL
+        : (uint64_t)integer;
+    int needed = snprintf(NULL, 0, "%llu", (unsigned long long)magnitude);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *digits = malloc((size_t)needed + 1);
+    if (digits == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(digits, (size_t)needed + 1, "%llu", (unsigned long long)magnitude);
+    if (written < 0 || written != needed) {
+        free(digits);
+        ptn_abort_out_of_memory();
+    }
+    *len_out = (size_t)written;
+    return digits;
+}
+
+static char *ptn_number_format_duplicate_digits(const char *digits, size_t len, size_t *len_out) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(copy, digits, len);
+    copy[len] = '\0';
+    *len_out = len;
+    return copy;
+}
+
+static char *ptn_number_format_zero_digits(size_t *len_out) {
+    char *zero = malloc(2);
+    if (zero == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    zero[0] = '0';
+    zero[1] = '\0';
+    *len_out = 1;
+    return zero;
+}
+
+static char *ptn_number_format_round_integer_digits(
+    const char *digits,
+    size_t len,
+    int round_decimals,
+    size_t *len_out
+) {
+    if (round_decimals >= 0) {
+        return ptn_number_format_duplicate_digits(digits, len, len_out);
+    }
+
+    size_t places = (size_t)(-(int64_t)round_decimals);
+    if (places > len) {
+        return ptn_number_format_zero_digits(len_out);
+    }
+
+    size_t keep_len = len - places;
+    int round_up = digits[keep_len] >= '5';
+    if (keep_len == 0) {
+        if (!round_up) {
+            return ptn_number_format_zero_digits(len_out);
+        }
+        char *rounded = malloc(places + 2);
+        if (rounded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        rounded[0] = '1';
+        memset(rounded + 1, '0', places);
+        rounded[places + 1] = '\0';
+        *len_out = places + 1;
+        return rounded;
+    }
+
+    char *rounded = malloc(len + 2);
+    if (rounded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(rounded, digits, keep_len);
+    size_t prefix_len = keep_len;
+    if (round_up) {
+        size_t cursor = keep_len;
+        while (cursor > 0 && rounded[cursor - 1] == '9') {
+            rounded[cursor - 1] = '0';
+            cursor--;
+        }
+        if (cursor == 0) {
+            memmove(rounded + 1, rounded, keep_len);
+            rounded[0] = '1';
+            prefix_len++;
+        } else {
+            rounded[cursor - 1]++;
+        }
+    }
+    memset(rounded + prefix_len, '0', places);
+    rounded[prefix_len + places] = '\0';
+    *len_out = prefix_len + places;
+    return rounded;
+}
+
 static int ptn_number_format_digits_have_nonzero(const char *digits, size_t len) {
     for (size_t i = 0; i < len; i++) {
         if (digits[i] >= '1' && digits[i] <= '9') {
@@ -45529,6 +45639,54 @@ static int ptn_number_format_digits_have_nonzero(const char *digits, size_t len)
         }
     }
     return 0;
+}
+
+static PtnValue ptn_number_format_digits_value(
+    char *digits,
+    size_t digits_len,
+    int is_negative,
+    int decimals,
+    PtnStringOperand decimal_separator,
+    PtnStringOperand thousands_separator
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (is_negative && ptn_number_format_digits_have_nonzero(digits, digits_len)) {
+        ptn_string_buffer_append_char(&output, '-');
+    }
+    ptn_number_format_append_grouped_integer_len(&output, digits, digits_len, thousands_separator);
+    if (decimals > 0) {
+        ptn_string_buffer_append_len(&output, decimal_separator.data, decimal_separator.len);
+        ptn_sprintf_append_repeated(&output, '0', (size_t)decimals);
+    }
+    free(digits);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_number_format_integer_value(
+    int64_t integer,
+    int round_decimals,
+    int decimals,
+    PtnStringOperand decimal_separator,
+    PtnStringOperand thousands_separator
+) {
+    size_t digits_len = 0;
+    char *digits = ptn_number_format_integer_digits_abs(integer, &digits_len);
+    size_t rounded_len = 0;
+    char *rounded = ptn_number_format_round_integer_digits(digits, digits_len, round_decimals, &rounded_len);
+    free(digits);
+    return ptn_number_format_digits_value(
+        rounded,
+        rounded_len,
+        integer < 0,
+        decimals,
+        decimal_separator,
+        thousands_separator
+    );
+}
+
+static int ptn_number_format_double_fits_int64(double number) {
+    return number >= -9223372036854775808.0 && number < 9223372036854775808.0;
 }
 
 static PtnValue ptn_number_format_high_precision(
@@ -45566,7 +45724,15 @@ static PtnValue ptn_number_format_high_precision(
 static double ptn_math_round(double value, int places, int mode);
 
 static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    double number = ptn_internal_expect_numeric_arg(runtime, "number_format", 1, "num", args[0], line);
+    PtnNumber number = ptn_internal_expect_number_arg(
+        runtime,
+        "number_format",
+        1,
+        "num",
+        "int|float",
+        args[0],
+        line
+    );
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -45602,8 +45768,35 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
         return ptn_null();
     }
 
-    int is_negative = number < 0.0;
-    double rounded_abs = ptn_math_round(fabs(number), round_decimals, PTN_PHP_ROUND_HALF_UP);
+    if (number.type == PTN_NUMBER_INT) {
+        PtnValue result = ptn_number_format_integer_value(
+            number.integer,
+            round_decimals,
+            decimals,
+            decimal_separator,
+            thousands_separator
+        );
+        ptn_string_operand_free(decimal_separator);
+        ptn_string_operand_free(thousands_separator);
+        return result;
+    }
+
+    if ((number.floating >= 4503599627370496.0 || number.floating <= -4503599627370496.0) &&
+        ptn_number_format_double_fits_int64(number.floating)) {
+        PtnValue result = ptn_number_format_integer_value(
+            (int64_t)number.floating,
+            round_decimals,
+            decimals,
+            decimal_separator,
+            thousands_separator
+        );
+        ptn_string_operand_free(decimal_separator);
+        ptn_string_operand_free(thousands_separator);
+        return result;
+    }
+
+    int is_negative = number.floating < 0.0;
+    double rounded_abs = ptn_math_round(fabs(number.floating), round_decimals, PTN_PHP_ROUND_HALF_UP);
     if (is_negative && rounded_abs != 0.0) {
         rounded_abs = -rounded_abs;
     }
