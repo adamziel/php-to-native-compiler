@@ -1921,6 +1921,7 @@ struct PtnRuntime {
     int pcre_utf8_cache_valid;
     int intl_error_level;
     int intl_use_exceptions;
+    char *intl_default_locale;
     char *intl_last_error_message;
 };
 

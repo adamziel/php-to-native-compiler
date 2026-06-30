@@ -356,6 +356,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->pcre_utf8_cache_valid = 0;
     runtime->intl_error_level = caller_runtime->intl_error_level;
     runtime->intl_use_exceptions = caller_runtime->intl_use_exceptions;
+    runtime->intl_default_locale = NULL;
     runtime->intl_last_error_message = NULL;
 }
 
@@ -1264,6 +1265,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->strtok_len = 0;
         runtime->strtok_offset = 0;
         runtime->strtok_has_state = 0;
+        free(runtime->intl_default_locale);
+        runtime->intl_default_locale = NULL;
         free(runtime->intl_last_error_message);
         runtime->intl_last_error_message = NULL;
     }
