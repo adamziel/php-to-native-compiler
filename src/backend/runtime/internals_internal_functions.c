@@ -104283,9 +104283,13 @@ static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnVal
         }
     }
     uint64_t upper = (uint64_t)max - (uint64_t)min;
-    uint64_t offset = upper > UINT32_MAX
-        ? ptn_mt19937_range64(&ptn_global_mt19937_state, upper)
-        : (uint64_t)ptn_mt19937_range32(&ptn_global_mt19937_state, (uint32_t)upper);
+    uint64_t offset = ptn_global_mt19937_state.mode == PTN_MT_RAND_PHP
+        ? ptn_mt19937_range_php_legacy(&ptn_global_mt19937_state, upper)
+        : (
+            upper > UINT32_MAX
+                ? ptn_mt19937_range64(&ptn_global_mt19937_state, upper)
+                : (uint64_t)ptn_mt19937_range32(&ptn_global_mt19937_state, (uint32_t)upper)
+        );
     int64_t value = (int64_t)((uint64_t)min + offset);
     return ptn_int(value);
 }
@@ -104311,9 +104315,13 @@ static PtnValue ptn_internal_mt_rand(PtnRuntime *runtime, size_t argc, const Ptn
         }
     }
     uint64_t upper = (uint64_t)max - (uint64_t)min;
-    uint64_t offset = upper > UINT32_MAX
-        ? ptn_mt19937_range64(&ptn_global_mt19937_state, upper)
-        : (uint64_t)ptn_mt19937_range32(&ptn_global_mt19937_state, (uint32_t)upper);
+    uint64_t offset = ptn_global_mt19937_state.mode == PTN_MT_RAND_PHP
+        ? ptn_mt19937_range_php_legacy(&ptn_global_mt19937_state, upper)
+        : (
+            upper > UINT32_MAX
+                ? ptn_mt19937_range64(&ptn_global_mt19937_state, upper)
+                : (uint64_t)ptn_mt19937_range32(&ptn_global_mt19937_state, (uint32_t)upper)
+        );
     int64_t value = (int64_t)((uint64_t)min + offset);
     return ptn_int(value);
 }
@@ -107372,6 +107380,36 @@ static PtnValue ptn_random_randomizer_unserialize(
     return ptn_null();
 }
 
+static const char *ptn_random_randomizer_instance_trace_name(
+    const char *function_name,
+    char *buffer,
+    size_t buffer_len
+) {
+    const char *separator = strstr(function_name, "::");
+    if (
+        separator == NULL ||
+        separator == function_name ||
+        separator[2] == '\0' ||
+        buffer == NULL ||
+        buffer_len == 0
+    ) {
+        return function_name;
+    }
+
+    size_t class_len = (size_t)(separator - function_name);
+    const char *method_name = separator + 2;
+    size_t method_len = strlen(method_name);
+    if (class_len + 2 + method_len + 1 > buffer_len) {
+        return function_name;
+    }
+
+    memcpy(buffer, function_name, class_len);
+    buffer[class_len] = '-';
+    buffer[class_len + 1] = '>';
+    memcpy(buffer + class_len + 2, method_name, method_len + 1);
+    return buffer;
+}
+
 static int ptn_random_randomizer_fill_bytes(
     PtnRuntime *runtime,
     PtnRandomRandomizerData *data,
@@ -107407,6 +107445,52 @@ static int ptn_random_randomizer_fill_bytes(
     size_t offset = 0;
     while (offset < requested) {
         PtnValue engine_receiver = ptn_value_clone_deref(data->engine);
+        char trace_name_buffer[128];
+        const char *trace_name = ptn_random_randomizer_instance_trace_name(
+            function_name,
+            trace_name_buffer,
+            sizeof(trace_name_buffer)
+        );
+        PtnValue trace_args[1];
+        size_t trace_argc = 0;
+        if (ptn_ascii_case_equal(function_name, "Random\\Randomizer::getBytes")) {
+            trace_args[0] = ptn_int((int64_t)requested);
+            trace_argc = 1;
+        }
+
+        PtnTraceFrame trace_frame;
+        PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+        PtnTryFrame dispatch_frame;
+        const char *const *previous_next_call_arg_names = runtime->next_call_arg_names;
+        int previous_suppress_user_call_frame_location =
+            runtime->suppress_user_call_frame_location;
+        int previous_suppress_user_argument_count_location =
+            runtime->suppress_user_argument_count_location;
+        runtime->next_call_arg_names = NULL;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &trace_frame,
+            trace_name,
+            runtime->source_path,
+            line,
+            trace_argc,
+            trace_args
+        );
+        ptn_try_frame_push(runtime, &dispatch_frame);
+        if (setjmp(dispatch_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &dispatch_frame);
+            runtime->trace_frame = saved_trace_frame;
+            runtime->next_call_arg_names = previous_next_call_arg_names;
+            runtime->suppress_user_call_frame_location =
+                previous_suppress_user_call_frame_location;
+            runtime->suppress_user_argument_count_location =
+                previous_suppress_user_argument_count_location;
+            ptn_value_destroy(&engine_receiver);
+            ptn_rethrow_exception(runtime);
+            return 0;
+        }
+        runtime->suppress_user_call_frame_location = 1;
+        runtime->suppress_user_argument_count_location = 1;
         PtnValue generated = runtime->method_dispatch(
             runtime,
             engine_receiver,
@@ -107415,6 +107499,13 @@ static int ptn_random_randomizer_fill_bytes(
             NULL,
             line
         );
+        ptn_try_frame_pop(runtime, &dispatch_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->next_call_arg_names = previous_next_call_arg_names;
+        runtime->suppress_user_call_frame_location =
+            previous_suppress_user_call_frame_location;
+        runtime->suppress_user_argument_count_location =
+            previous_suppress_user_argument_count_location;
         ptn_value_destroy(&engine_receiver);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&generated);

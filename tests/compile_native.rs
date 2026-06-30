@@ -105511,6 +105511,99 @@ try {
 }
 
 #[test]
+fn compile_mt_rand_php_legacy_bounded_scaling_to_native_binary() {
+    let root = temp_dir("ptn-native-mt-rand-php-legacy-bounded-scaling");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mt-rand-php-legacy-bounded-scaling.php");
+    let output = root.join("mt-rand-php-legacy-bounded-scaling-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+mt_srand(0, MT_RAND_PHP);
+var_dump(mt_rand(0, 999999999), mt_rand(0, 999));
+
+mt_srand(0, MT_RAND_PHP);
+var_dump(rand(0, 999999999), rand(0, 999));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(448865905)\n",
+            "int(592)\n",
+            "int(448865905)\n",
+            "int(592)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_mt19937_range_php_legacy"));
+}
+
+#[test]
+fn compile_random_randomizer_engine_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-random-randomizer-engine-exception-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-randomizer-engine-exception-trace.php");
+    let output = root.join("random-randomizer-engine-exception-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Randomizer;
+
+class ThrowingEngine implements Random\Engine
+{
+    public function generate(): string
+    {
+        throw new Exception('Error');
+    }
+}
+
+$randomizer = new Randomizer(new ThrowingEngine());
+$randomizer->getBytes(1);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: Error"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("#0 [internal function]: ThrowingEngine->generate()"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("): Random\\Randomizer->getBytes(1)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#2 {main}"), "{stdout}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_randomizer_instance_trace_name"));
+}
+
+#[test]
 fn compile_random_engine_serialization_and_validation_to_native_binary() {
     let root = temp_dir("ptn-native-random-engine-serialization-validation");
     fs::create_dir_all(&root).unwrap();
