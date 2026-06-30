@@ -51489,6 +51489,35 @@ int(14700)\n"
 }
 
 #[test]
+fn compile_intl_timezone_raw_offset_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-raw-offset-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-raw-offset-alias.php");
+    let output = root.join("intl-timezone-raw-offset-alias-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ams = IntlTimeZone::createTimeZone('Europe/Amsterdam');\n\
+var_dump($ams->getRawOffset());\n\
+var_dump(intltz_get_raw_offset($ams));\n\
+$lsb = IntlTimeZone::createTimeZone('Europe/Lisbon');\n\
+var_dump($lsb->getRawOffset());\n\
+var_dump(intltz_get_raw_offset($lsb));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3600000)\nint(3600000)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
     fs::create_dir_all(&root).unwrap();
