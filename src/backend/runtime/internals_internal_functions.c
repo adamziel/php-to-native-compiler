@@ -115660,7 +115660,11 @@ static PtnValue ptn_internal_opcache_invalidate(PtnRuntime *runtime, size_t argc
 static PtnValue ptn_internal_opcache_compile_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_compile_file", 1, "filename", args[0], line);
-    int ok = ptn_opcache_enabled(runtime) && ptn_opcache_path_exists(path);
+    int enabled = ptn_opcache_enabled(runtime);
+    if (!enabled) {
+        ptn_emit_notice(&runtime->diagnostics, "Zend OPcache has not been properly started, can't compile file", line);
+    }
+    int ok = enabled && ptn_opcache_path_exists(path);
     ptn_string_operand_free(path);
     return ptn_bool(ok);
 }
