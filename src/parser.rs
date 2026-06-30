@@ -24288,6 +24288,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "gethostname"
             | "header"
             | "inflate_add"
+            | "inflate_get_read_len"
             | "inflate_get_status"
             | "inflate_init"
             | "getprotobyname"

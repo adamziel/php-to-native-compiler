@@ -1,0 +1,10 @@
+ext/zlib/tests/bug61820.phpt
+ext/zlib/tests/gh22142.phpt
+ext/zlib/tests/zlib_scheme_file_basic.phpt
+ext/zlib/tests/zlib_scheme_copy_basic.phpt
+ext/zlib/tests/zlib_scheme_copy_variation2.phpt
+ext/zlib/tests/zlib_filter_write_seek_modes.phpt
+ext/zlib/tests/inflate_add_basic.phpt
+ext/zlib/tests/inflate_get_read_len.phpt
+ext/zlib/tests/deflate_add_basic.phpt
+ext/zlib/tests/dictionary_usage.phpt
