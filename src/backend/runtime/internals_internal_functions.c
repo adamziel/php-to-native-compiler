@@ -7081,6 +7081,11 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     if (ptn_callable_is_valid_ex(runtime, checked, 0, autoload)) {
         return checked;
     }
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&checked);
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
     char *message = ptn_invalid_callback_message(
         runtime,
         function_name,
@@ -7199,6 +7204,24 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
         parameter_name,
         callback,
         0,
+        1
+    );
+}
+
+static PtnValue ptn_internal_expect_nullable_callback_arg_autoload(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg_impl(
+        runtime,
+        function_name,
+        position,
+        parameter_name,
+        callback,
+        1,
         1
     );
 }
@@ -27617,8 +27640,12 @@ static PtnValue ptn_array_map_null_callback_row(PtnArray **arrays, size_t array_
 static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int has_callback = ptn_value_deref(args[0]).type != PTN_NULL;
     PtnValue callback = has_callback
-        ? ptn_internal_expect_nullable_callback_arg(runtime, "array_map", 1, "callback", args[0])
+        ? ptn_internal_expect_nullable_callback_arg_autoload(runtime, "array_map", 1, "callback", args[0])
         : ptn_null();
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
     size_t max_len = 0;
     PtnArray **arrays = ptn_array_map_arrays(runtime, argc, args, &max_len);
     size_t array_count = argc - 1;

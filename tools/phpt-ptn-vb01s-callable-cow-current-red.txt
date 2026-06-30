@@ -1,0 +1,15 @@
+# ptn-vb01s: current-red callable/COW-reference rows.
+#
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T181015Z.tsv
+#
+# Rows remain FAIL in the artifact and cluster around callback validation,
+# function-boundary reference handling, and callable diagnostics.
+Zend/tests/call_user_functions/call_user_func_001.phpt
+Zend/tests/call_user_functions/call_user_func_002.phpt
+Zend/tests/call_user_functions/call_user_func_007.phpt
+Zend/tests/call_user_functions/call_user_func_strict_arginfo_check.phpt
+Zend/tests/callable_param_exception_leak.phpt
+Zend/tests/callable_self_parent_static_deprecation.phpt
+ext/standard/tests/general_functions/call_user_func_array_variation_001.phpt
+ext/standard/tests/general_functions/callbacks_002.phpt

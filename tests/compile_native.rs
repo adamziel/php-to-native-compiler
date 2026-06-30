@@ -74250,7 +74250,7 @@ fn compile_array_callback_validation_to_native_binary() {
 function report($callback) {
     try {
         $callback();
-    } catch (TypeError $e) {
+    } catch (Throwable $e) {
         echo $e->getMessage(), \"\\n\";
     }
 }
@@ -74283,6 +74283,12 @@ report(fn() => array_uintersect_uassoc([1], [2], \"strcmp\", \"missing_key2\"));
 report(fn() => array_map(123, [1]));
 report(fn() => array_map([1, \"method\"], [1]));
 report(fn() => array_map([\"CallbackTarget\", []], [1]));
+spl_autoload_register(function ($class) {
+    if ($class === \"AutoloadedCallbackTarget\") {
+        throw new Exception(\"autoload failed\");
+    }
+});
+report(fn() => array_map(\"AutoloadedCallbackTarget::ok\", []));
 echo \"done\\n\";
 ",
     )
@@ -74314,6 +74320,7 @@ echo \"done\\n\";
             "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, second array member is not a valid method\n",
+            "autoload failed\n",
             "done\n",
         )
     );
@@ -74321,6 +74328,7 @@ echo \"done\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_expect_nullable_callback_arg"));
+    assert!(c_source.contains("ptn_internal_expect_nullable_callback_arg_autoload"));
     assert!(c_source.contains("ptn_internal_expect_callback_arg"));
 }
 
