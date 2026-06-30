@@ -30286,7 +30286,10 @@ var_dump(file_exists(__DIR__ . "/someFile"));
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(stdout.contains("Warning: gzopen(): gzopen failed"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: gzopen(): gzopen failed"),
+        "{stdout}"
+    );
     assert!(!stdout.contains("Failed to open stream"), "{stdout}");
     let stdout_without_warnings = stdout
         .lines()
@@ -31996,6 +31999,45 @@ ABC\n"
     assert!(c_source.contains("ptn_internal_stream_filter_register"));
     assert!(c_source.contains("ptn_internal_stream_bucket_make_writeable"));
     assert!(c_source.contains("PTN_PSFS_PASS_ON"));
+}
+
+#[test]
+fn compile_user_filter_include_tagless_stream_to_native_binary() {
+    let root = temp_dir("ptn-native-user-filter-include-tagless-stream");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-filter-include-tagless-stream.php");
+    let output = root.join("user-filter-include-tagless-stream-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class PassFilter extends php_user_filter {\n\
+    public function filter($in, $out, &$consumed, $closing): int {\n\
+        while ($bucket = stream_bucket_make_writeable($in)) {\n\
+            $consumed += $bucket->datalen;\n\
+            stream_bucket_append($out, $bucket);\n\
+        }\n\
+        return PSFS_PASS_ON;\n\
+    }\n\
+}\n\
+stream_filter_register('test.pass', PassFilter::class);\n\
+file_put_contents(__DIR__ . '/payload.php', \"plain\\ntext\");\n\
+include 'php://filter/read=test.pass/resource=' . __DIR__ . '/payload.php';\n\
+echo \"\\n--done--\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "plain\ntext\n--done--\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_include_php_file"));
 }
 
 #[test]
