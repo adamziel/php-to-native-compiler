@@ -1,0 +1,31 @@
+# ptn-w17z.1181 focused XMLReader/libxml current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T072026Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: xmlreader-libxml-current-red rows=27
+ext/xmlreader/tests/fromString_custom_constructor_error.phpt
+ext/xmlreader/tests/bug64230.phpt
+ext/xmlreader/tests/cache_slot.phpt
+ext/xmlreader/tests/015.phpt
+ext/xmlreader/tests/bug74457.phpt
+ext/xmlreader/tests/bug71805.phpt
+ext/xmlreader/tests/bug70309.phpt
+ext/xmlreader/tests/bug73246.phpt
+ext/xmlreader/tests/015-move-errors.phpt
+ext/xmlreader/tests/bug51936.phpt
+ext/xmlreader/tests/bug81521.phpt
+ext/xmlreader/tests/virtual_properties.phpt
+ext/xmlreader/tests/expand.phpt
+ext/xmlreader/tests/bug36743.phpt
+ext/xmlreader/tests/fromUri_custom_constructor.phpt
+ext/xmlreader/tests/fromStream_custom_constructor_error.phpt
+ext/libxml/tests/libxml_get_external_entity_loader_error_callback_name.phpt
+ext/xmlreader/tests/bug42139.phpt
+ext/libxml/tests/bug61367-read_2.phpt
+ext/libxml/tests/bug61367-write.phpt
+ext/xmlreader/tests/fromStream_broken_stream.phpt
+ext/xmlreader/tests/fromStream_custom_constructor.phpt
+ext/xmlreader/tests/bug73053.phpt
+ext/xmlreader/tests/fromString_custom_constructor.phpt
+ext/xmlreader/tests/expand_error.phpt
+ext/xmlreader/tests/fromStream_legit_usage.phpt
+ext/xmlreader/tests/gh19098.phpt

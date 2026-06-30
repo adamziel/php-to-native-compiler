@@ -1619,6 +1619,13 @@ static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int
     return 1;
 }
 
+static PTN_UNUSED PtnValue ptn_integer_power_float_fallback(int64_t base, int64_t exponent) {
+    if (base < 0 && (exponent & 1) != 0) {
+        return ptn_float(-pow(fabs((double)base), (double)exponent));
+    }
+    return ptn_float(pow((double)base, (double)exponent));
+}
+
 static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -1643,7 +1650,7 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
         if (ptn_integer_power_fits(left_integer, right_integer, &integer_result)) {
             return ptn_int(integer_result);
         }
-        return ptn_float(pow((double)left_integer, (double)right_integer));
+        return ptn_integer_power_float_fallback(left_integer, right_integer);
     }
 
     double left_fast_number = 0.0;
@@ -1674,6 +1681,7 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
         if (ptn_integer_power_fits(left_number.integer, right_number.integer, &integer_result)) {
             return ptn_int(integer_result);
         }
+        return ptn_integer_power_float_fallback(left_number.integer, right_number.integer);
     }
     return ptn_float(pow(left_number.floating, right_number.floating));
 }

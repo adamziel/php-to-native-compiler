@@ -3083,6 +3083,47 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
 }
 
 #[test]
+fn compile_date_sun_nonfinite_args_to_native_binary() {
+    let root = temp_dir("ptn-native-date-sun-nonfinite-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-sun-nonfinite-args.php");
+    let output = root.join("date-sun-nonfinite-args-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+foreach ([[NAN, 1], [-INF, 1], [1, NAN], [1, INF]] as $args) {
+    try {
+        date_sun_info(1, $args[0], $args[1]);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+var_dump(date_sunset(1, SUNFUNCS_RET_STRING, NAN, 1));
+var_dump(date_sunrise(1, SUNFUNCS_RET_STRING, 1, NAN));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "date_sun_info(): Argument #2 ($latitude) must be finite\n",
+            "date_sun_info(): Argument #2 ($latitude) must be finite\n",
+            "date_sun_info(): Argument #3 ($longitude) must be finite\n",
+            "date_sun_info(): Argument #3 ($longitude) must be finite\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_by_ref_callback_return_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-by-ref-callback-return");
     fs::create_dir_all(&root).unwrap();
@@ -29370,6 +29411,80 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_sqlite_callbacks_and_lazy_row_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-callbacks-lazy");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-callbacks-lazy.php");
+    let output = root.join("pdo-sqlite-callbacks-lazy-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyPDO extends PDO {}
+
+$db = new PDO('sqlite::memory:');
+$db->sqliteCreateFunction('testing', function($v) { return strtolower($v); });
+$db->query('CREATE TABLE t (name TEXT)');
+$db->query("INSERT INTO t VALUES ('PHP'), ('PHP6')");
+foreach ($db->query('SELECT testing(name) FROM t') as $row) {
+    echo $row['testing(name)'], "\n";
+}
+
+try {
+    $db->sqliteCreateAggregate('foo', 'a', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $db->sqliteCreateAggregate('foo', 'strlen', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$statement = $db->prepare('SELECT 1;');
+var_dump($statement->getAttribute(Pdo\Sqlite::ATTR_READONLY_STATEMENT));
+$statement = $db->prepare('CREATE TABLE pdo_sqlite_attr_probe (a TEXT);');
+var_dump($statement->getAttribute(Pdo\Sqlite::ATTR_READONLY_STATEMENT));
+
+$lazy = $db->query('select 1 as queryStringxx')->fetch(PDO::FETCH_LAZY);
+var_dump($lazy->queryStringzz, $lazy[5], $lazy->{3});
+
+try {
+    MyPDO::connect('sqlite::memory:');
+} catch (PDOException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Method PDO::sqliteCreateFunction() is deprecated"));
+    assert!(stdout.contains("\nphp\nphp6\n"));
+    assert!(stdout.contains(
+        "PDO::sqliteCreateAggregate(): Argument #2 ($step) must be a valid callback, function \"a\" not found or invalid function name\n"
+    ));
+    assert!(stdout.contains(
+        "PDO::sqliteCreateAggregate(): Argument #3 ($finalize) must be a valid callback, function \"\" not found or invalid function name\n"
+    ));
+    assert!(stdout.contains("bool(true)\nbool(false)\nNULL\nNULL\nNULL\n"));
+    assert!(stdout.contains(
+        "MyPDO::connect() cannot be used for connecting to the \"sqlite\" driver, either call Pdo\\Sqlite::connect() or PDO::connect() instead\n"
+    ));
+    assert!(!stdout.contains("Undefined property"));
+    assert!(!stdout.contains("Cannot use object of type PDORow as array"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_pdo_register_sqlite_scalar_function"));
+    assert!(c_source.contains("ptn_pdo_statement_sql_is_readonly"));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
@@ -30144,6 +30259,44 @@ bool(false)\n\
 bool(true)\n\
 bool(false)\n\
 bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gzopen_invalid_mode_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-gzopen-invalid-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gzopen-invalid-mode.php");
+    let output = root.join("gzopen-invalid-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+@unlink(__DIR__ . "/someFile");
+var_dump(gzopen(__DIR__ . "/someFile", "c"));
+var_dump(file_exists(__DIR__ . "/someFile"));
+@unlink(__DIR__ . "/someFile");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: gzopen(): gzopen failed"), "{stdout}");
+    assert!(!stdout.contains("Failed to open stream"), "{stdout}");
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "bool(false)\n\
 bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -33331,6 +33484,11 @@ fn compile_math_wrapper_and_base_output_internals_to_native_binary() {
 var_dump(function_exists(\"acos\"), function_exists(\"DECOCT\"), function_exists(\"fpow\"), function_exists(\"base_convert\"));\n\
 printf(\"%.3f\\n\", rad2deg(acos(0.5)));\n\
 printf(\"%.3f\\n\", deg2rad(180));\n\
+var_dump(deg2rad(23));\n\
+var_dump(deg2rad(1000));\n\
+var_dump(deg2rad(9223372034707292160));\n\
+var_dump(rad2deg(9223372034707292160));\n\
+var_dump(rad2deg(-2147483649));\n\
 printf(\"%.3f\\n\", atan2(1, 1));\n\
 printf(\"%.3f\\n\", log(8, 2));\n\
 var_dump(is_nan(acos(2)));\n\
@@ -33347,7 +33505,7 @@ try { base_convert(\"10\", 1, 10); } catch (\\ValueError $e) { echo $e->getMessa
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n60.000\n3.142\n0.785\n3.000\nbool(true)\nbool(true)\nstring(2) \"ff\"\nstring(3) \"100\"\nstring(4) \"1010\"\nstring(3) \"255\"\nstring(2) \"10\"\nstring(18) \"3fffffffffffffffff\"\nfloat(1.5)\nfloat(5)\nlog(): Argument #2 ($base) must be greater than 0\nbase_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n60.000\n3.142\nfloat(0.40142572795869574)\nfloat(17.453292519943293)\nfloat(1.6097821014201098E+17)\nfloat(5.284602904677184E+20)\nfloat(-123041749661.05348)\n0.785\n3.000\nbool(true)\nbool(true)\nstring(2) \"ff\"\nstring(3) \"100\"\nstring(4) \"1010\"\nstring(3) \"255\"\nstring(2) \"10\"\nstring(18) \"3fffffffffffffffff\"\nfloat(1.5)\nfloat(5)\nlog(): Argument #2 ($base) must be greater than 0\nbase_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -36828,6 +36986,8 @@ echo bin2hex(hash_hkdf(
     hex2bin('f0f1f2f3f4f5f6f7f8f9'),
     hex2bin('000102030405060708090a0b0c')
 )), \"\\n\";
+echo bin2hex(hash_hkdf('ripemd256', 'input key material')), \"\\n\";
+echo bin2hex(hash_hkdf('ripemd320', 'input key material')), \"\\n\";
 try {
     hash_hkdf('joaat', 'input key material');
 } catch (Throwable $e) {
@@ -36918,6 +37078,16 @@ try {
         "{stdout}"
     );
     assert!(
+        stdout.contains("f2e96b292935e2395b59833ed89d928ac1197ff62c8031ebc06a3f5bad19513f\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "a13a682072525ceb4c4a5fef59096e682096e1096e6e7e238c7bd48a6f6c6a9ba3d7d9fbee6b68c4\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains(
             "hash_hkdf(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n"
         ),
@@ -36962,6 +37132,16 @@ hash_update($ctx, ' sit amet,');
 hash_update($ctx, ' consectetur adipiscing elit.');
 echo hash_final($ctx), \"\\n\";
 echo hash('xxh128', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', options: ['secret' => $secret]), \"\\n\";
+$seedData = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
+foreach (['xxh32', 'xxh64', 'xxh3', 'xxh128'] as $algo) {
+    $ctx = hash_init($algo, options: ['seed' => 42]);
+    hash_update($ctx, 'Lorem');
+    hash_update($ctx, ' ipsum dolor');
+    hash_update($ctx, ' sit amet,');
+    hash_update($ctx, ' consectetur adipiscing elit.');
+    echo hash_final($ctx), \"\\n\";
+    echo hash($algo, $seedData, options: ['seed' => 42]), \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -36987,7 +37167,15 @@ afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65\n\
 22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8\n\
 8617f366566a011837f4fb4ba5bedea2b892f3ed8b894023d16ae344b2be5881\n\
 8028aa834c03557a\n\
-54279097795e7218093a05d4d781cbb9\n"
+54279097795e7218093a05d4d781cbb9\n\
+3d0cc7e5\n\
+3d0cc7e5\n\
+9c9aa071b5d22a15\n\
+9c9aa071b5d22a15\n\
+366409913c16b70d\n\
+366409913c16b70d\n\
+f87856a7589354e92aeca886c71ed7fb\n\
+f87856a7589354e92aeca886c71ed7fb\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
@@ -50664,6 +50852,8 @@ fn compile_pow_function_to_native_binary() {
 var_dump(pow(2, 10));\n\
 var_dump(pow(\"2\", \"3\"));\n\
 var_dump(pow(9, 0.5));\n\
+var_dump(pow(-2, 9223372036854775807));\n\
+var_dump((-2) ** 9223372036854775807);\n\
 var_dump(function_exists(\"pow\"), function_exists(\"POW\"));",
     )
     .unwrap();
@@ -50674,7 +50864,7 @@ var_dump(function_exists(\"pow\"), function_exists(\"POW\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(1024)\nint(8)\nfloat(3)\nbool(true)\nbool(true)\n"
+        "int(1024)\nint(8)\nfloat(3)\nfloat(-INF)\nfloat(-INF)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -51202,6 +51392,47 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
         "TypeError\nTypeError\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_uconverter_transcode_substitution_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-uconverter-transcode-substitution-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-uconverter-transcode-substitution-errors.php");
+    let output = root.join("intl-uconverter-transcode-substitution-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$subst = str_repeat('?', 129);\n\
+foreach ([['from_subst' => $subst], ['to_subst' => $subst]] as $options) {\n\
+    var_dump(UConverter::transcode('abc', 'UTF-8', 'UTF-8', $options));\n\
+    echo intl_get_error_message(), \"\\n\";\n\
+}\n\
+ini_set('intl.use_exceptions', '1');\n\
+try {\n\
+    UConverter::transcode('abc', 'UTF-8', 'UTF-8', ['to_subst' => $subst]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n\
+bool(false)\n\
+UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n\
+IntlException: UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_uconverter_signal_returned_error"));
 }
 
 #[test]
@@ -54960,6 +55191,37 @@ var_dump($streamReader->depth);
     assert!(stdout.contains("Warning: XMLReader::read(): Element 'foo':"));
     assert!(stdout.contains("bool(true)\nElement: root\nbool(true)\nComment: my comment\nint(1)\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_xmlreader_virtual_property_raw_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-virtual-property-raw-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlreader-virtual-property-raw-reflection.php");
+    let output = root.join("xmlreader-virtual-property-raw-reflection-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$property = (new ReflectionClass(XMLReader::class))->getProperty('nodeType');
+var_dump($property->isVirtual());
+var_dump($property->getRawValue(new XMLReader()));
+var_dump($property->getValue(new XMLReader()));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_get_raw_object_value"));
 }
 
 #[test]
