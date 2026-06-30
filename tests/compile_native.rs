@@ -34017,6 +34017,58 @@ dump_exception(fn() => mb_detect_order($alias));\n",
 }
 
 #[test]
+fn compile_mbstring_mime_mail_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-mime-mail-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-mime-mail-residuals.php");
+    let output = root.join("mb-mime-mail-residuals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_error(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+function show_header(string $header): void {\n\
+    echo str_replace([\"\\r\", \"\\n\"], [\"\\\\r\", \"\\\\n\"], $header), \"\\n\";\n\
+}\n\
+$s = \"[service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit unterschiedlichen\";\n\
+$p = 'Subject: ';\n\
+show_header($p . mb_encode_mimeheader($s, 'UTF-8', 'Q', \"\\r\\n\", strlen($p)));\n\
+show_header(mb_encode_mimeheader($p . $s, 'UTF-8', 'Q', \"\\r\\n\", 0));\n\
+dump_error(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+dump_error(fn() => mb_send_mail(\"foo\\0bar\", 'x', 'y'));\n\
+dump_error(fn() => mb_send_mail('x', \"foo\\0bar\", 'y'));\n\
+dump_error(fn() => mb_send_mail('x', 'y', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', \"foo\\0bar\"));\n\
+dump_error(fn() => mb_send_mail('x', 'y', 'z', 'q', \"foo\\0bar\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "Subject: [service-Aufgaben S&W-Team][#19415] VM''s aufsetzen mit\\r\\n unterschiedlichen\n",
+            "ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n",
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #2 ($subject) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #3 ($message) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #4 ($additional_headers) must not contain any null bytes\n",
+            "ValueError: mb_send_mail(): Argument #5 ($additional_params) must not contain any null bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_detect_order_validation_to_native_binary() {
     let root = temp_dir("ptn-native-mb-detect-order-validation");
     fs::create_dir_all(&root).unwrap();
@@ -56969,6 +57021,168 @@ echo $html->saveXml();
 }
 
 #[test]
+fn compile_dom_document_namespace_current_red_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-document-namespace-current-red-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-document-namespace-current-red-semantics.php");
+    let output = root.join("dom-document-namespace-current-red-semantics-bin");
+    fs::write(
+        root.join("empty.html"),
+        "<!doctype html><html><body></body></html>",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+class X extends DOMDocument {
+    public function __clone() {
+        var_dump($this->registerNodeClass('DOMDocument', 'X'));
+    }
+}
+clone (new X());
+
+function createElement($doc, $name, ?string $value = null) {
+    $element = $doc->createElement($name);
+    if ($value) $element->textContent = $value;
+    return $element;
+}
+
+function createElementNS($doc, $ns, $name, ?string $value = null) {
+    $element = $doc->createElementNS($ns, $name);
+    if ($value) $element->textContent = $value;
+    return $element;
+}
+
+function dumpList($list) {
+    echo $list->length, ":";
+    foreach ($list as $node) {
+        echo $node->nodeName, "=", $node->textContent, ";";
+    }
+    echo "\n";
+}
+
+$dom = Dom\HTMLDocument::createEmpty();
+$container = $dom->appendChild(createElement($dom, "container"));
+$container->appendChild(createElement($dom, "HTML", "1"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "html", "2"));
+$container->appendChild(createElementNS($dom, NULL, "html", "3"));
+$container->appendChild(createElementNS($dom, NULL, "HTML", "4"));
+$container->appendChild(createElementNS($dom, "urn:foo", "htML", "5"));
+$container->appendChild(createElement($dom, "foo:HTML", "6"));
+$container->appendChild(createElementNS($dom, "urn:a", "foo:HTML", "7"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "bar:HTML", "8"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "bar:html", "9"));
+foreach (["HTml", "htML", "html", "HTML", "foo:html", "foo:HTML", "bar:HTML", "bar:html"] as $name) {
+    dumpList($dom->getElementsByTagName($name));
+}
+
+$legacy = new DOMDocument();
+$legacy->loadXML('<?xml version="1.0"?><container/>');
+$legacy->documentElement->setAttributeNS('some:ns', 'foo:bar', 'value');
+$legacy->documentElement->removeAttributeNS('some:ns', 'bar');
+echo $legacy->saveXML();
+
+$empty = Dom\HTMLDocument::createEmpty();
+$html = $empty->appendChild($empty->createElement('html'));
+var_dump($html->baseURI);
+$loaded = Dom\HTMLDocument::createFromFile(__DIR__ . "/empty.html", LIBXML_NOERROR);
+$base = $loaded->documentElement->baseURI;
+var_dump(str_starts_with($base, 'file://'), substr($base, -10));
+$withBase = Dom\HTMLDocument::createFromString("<!DOCTYPE html><html><head><base href=\"http://example.com/\"></head></html>");
+var_dump($withBase->documentElement->baseURI);
+
+$xml = DOM\XMLDocument::createFromString('<root class="A B C D"/>');
+$list = $xml->documentElement->classList;
+$counter = 0;
+foreach ($list as $key => $token) {
+    echo $key, "=", $token, "\n";
+    if (++$counter === 2) {
+        $list->value = 'E F G';
+    }
+}
+$iterator = $list->getIterator();
+$iterator->next();
+$list->value = 'X Y Z';
+var_dump($iterator->key(), $iterator->current());
+$iterator->rewind();
+var_dump($iterator->key(), $iterator->current());
+$list->value = '';
+var_dump($iterator->key(), $iterator->current(), $iterator->valid());
+
+$xdoc = Dom\XMLDocument::createFromString('<?xml version="1.0"?><root><p>hi</p><element xmlns="urn:e" xmlns:a="urn:a"><?target data?><!-- comment --></element></root>');
+$xpath = new Dom\XPath($xdoc);
+$result = $xpath->evaluate("//p");
+echo get_class($result), ":", $result->length, ":", $result->item(0)->textContent, "\n";
+var_dump($xpath->evaluate("string(//p)"));
+var_dump($xpath->evaluate("string-length(//p)"));
+var_dump($xpath->evaluate("boolean(//p)"));
+foreach ($xpath->query("//*/comment()|//*/processing-instruction()") as $item) {
+    echo get_class($item), ":", $item->textContent, "\n";
+}
+try {
+    $xpath->evaluate("//*/namespace::*");
+} catch (DOMException $e) {
+    echo $e->getCode(), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "2:HTML=1;HTML=2;\n",
+            "3:HTML=1;HTML=2;htML=5;\n",
+            "3:HTML=1;HTML=2;html=3;\n",
+            "3:HTML=1;HTML=2;HTML=4;\n",
+            "1:FOO:HTML=6;\n",
+            "2:FOO:HTML=6;foo:HTML=7;\n",
+            "1:BAR:HTML=9;\n",
+            "1:BAR:HTML=9;\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"some:ns\"/>\n",
+            "string(11) \"about:blank\"\n",
+            "bool(true)\n",
+            "string(10) \"empty.html\"\n",
+            "string(19) \"http://example.com/\"\n",
+            "0=A\n",
+            "1=B\n",
+            "2=G\n",
+            "int(1)\n",
+            "string(1) \"Y\"\n",
+            "int(0)\n",
+            "string(1) \"X\"\n",
+            "int(0)\n",
+            "NULL\n",
+            "bool(false)\n",
+            "Dom\\NodeList:1:hi\n",
+            "string(2) \"hi\"\n",
+            "float(2)\n",
+            "bool(true)\n",
+            "Dom\\ProcessingInstruction:data\n",
+            "Dom\\Comment: comment \n",
+            "9:The namespace axis is not well-defined in the living DOM specification. Use Dom\\Element::getInScopeNamespaces() or Dom\\Element::getDescendantNamespaces() instead.\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_modern_base_uri_value"));
+    assert!(c_source.contains("ptn_dom_xpath_simple_path_list_value"));
+    assert!(c_source.contains("ptn_object_invoke_clone_magic"));
+}
+
+#[test]
 fn compile_dom_namespace_lookup_and_xmlns_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-dom-namespace-lookup-xmlns-serialization");
     fs::create_dir_all(&root).unwrap();
@@ -59564,6 +59778,103 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_type_is_or_extends"));
+}
+
+#[test]
+fn compile_soap_document_literal_any_wildcard_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-any-wildcard-response");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("any-response.wsdl"),
+        r###"<?xml version="1.0" encoding="UTF-8"?>
+<definitions targetNamespace="urn:test.example.org"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:tns="urn:test.example.org"
+             xmlns:ens="urn:object.test.example.org">
+  <types>
+    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:object.test.example.org">
+      <import namespace="urn:test.example.org"/>
+      <complexType name="genericObject">
+        <sequence>
+          <element name="type" type="xsd:string"/>
+          <element name="Id" type="tns:ID" nillable="true"/>
+          <any namespace="##targetNamespace" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+        </sequence>
+      </complexType>
+    </schema>
+    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test.example.org">
+      <import namespace="urn:object.test.example.org"/>
+      <simpleType name="ID"><restriction base="xsd:string"/></simpleType>
+      <element name="query"><complexType><sequence><element name="queryString" type="xsd:string"/></sequence></complexType></element>
+      <element name="queryResponse"><complexType><sequence><element name="result" type="tns:QueryResult"/></sequence></complexType></element>
+    </schema>
+  </types>
+  <message name="queryRequest"><part element="tns:query" name="parameters"/></message>
+  <message name="queryResponse"><part element="tns:queryResponse" name="parameters"/></message>
+  <portType name="Soap"><operation name="query"><input message="tns:queryRequest"/><output message="tns:queryResponse"/></operation></portType>
+  <binding name="SoapBinding" type="tns:Soap">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="query"><soap:operation soapAction=""/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="TestService"><port binding="tns:SoapBinding" name="Soap"><soap:address location="test://"/></port></service>
+</definitions>
+"###,
+    )
+    .unwrap();
+    let input = root.join("soap-document-literal-any-wildcard-response.php");
+    let output = root.join("soap-document-literal-any-wildcard-response-bin");
+    fs::write(
+        &input,
+        r###"<?php
+class LocalSoapClient extends SoapClient {
+  function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+    return '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns="urn:test.example.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:sf="urn:object.test.example.org"><soapenv:Body><queryResponse><result xsi:type="QueryResult"><records xsi:type="sf:genericObject"><sf:type>CampaignMember</sf:type><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:CampaignId>701i0000001lreeAAA</sf:CampaignId><sf:Lead xsi:type="sf:genericObject"><sf:type>Lead</sf:type><sf:Id xsi:nil="true"/><sf:Email>angela.lansbury@cbs.com</sf:Email></sf:Lead></records></result></queryResponse></soapenv:Body></soapenv:Envelope>';
+  }
+}
+$client = new LocalSoapClient(__DIR__ . "/any-response.wsdl");
+$result = $client->query("");
+$records = $result->result->records;
+echo array_key_exists('result', get_object_vars($result)) ? "wrapped\n" : "unwrapped\n";
+echo get_class($records), "\n";
+echo $records->enc_stype, "\n";
+echo $records->enc_ns, "\n";
+echo implode(",", $records->enc_value->Id), "\n";
+echo $records->enc_value->any[0], "\n";
+echo $records->enc_value->any["Lead"]->type, "\n";
+echo $records->enc_value->any["Lead"]->any, "\n";
+"###,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "wrapped\n",
+            "SoapVar\n",
+            "genericObject\n",
+            "urn:object.test.example.org\n",
+            "00vi0000011VMgeAAG,00vi0000011VMgeAAG\n",
+            "<sf:CampaignId>701i0000001lreeAAA</sf:CampaignId>\n",
+            "Lead\n",
+            "<sf:Email>angela.lansbury@cbs.com</sf:Email>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_type_wildcard_element_field"));
+    assert!(c_source.contains("ptn_soap_wsdl_output_part_element_local_dup"));
 }
 
 #[test]
