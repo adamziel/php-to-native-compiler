@@ -5593,6 +5593,54 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(1);
             return 1;
         }
+        if (strcmp(constant, "EXCL") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "CHECKCONS") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "OVERWRITE") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+        if (strcmp(constant, "RDONLY") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "FL_OVERWRITE") == 0) {
+            *out = ptn_int(8192);
+            return 1;
+        }
+        if (strcmp(constant, "FL_ENC_RAW") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "ER_OK") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "ER_EXISTS") == 0) {
+            *out = ptn_int(10);
+            return 1;
+        }
+        if (strcmp(constant, "ER_CANCELLED") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "CM_DEFAULT") == 0) {
+            *out = ptn_int(-1);
+            return 1;
+        }
+        if (strcmp(constant, "CM_STORE") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "CM_DEFLATE") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveArrayIterator")) {
         if (strcmp(constant, "CHILD_ARRAYS_ONLY") == 0) {

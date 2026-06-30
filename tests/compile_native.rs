@@ -25384,6 +25384,12 @@ try { var_dump(round(1.5, mode: 1234)); } catch (ValueError $e) { echo $e->getMe
 var_dump(clamp(0, 1, 3), clamp(\"d\", \"c\", \"g\"), is_nan(clamp(NAN, 4, 6)));\n\
 try { var_dump(clamp(4, NAN, 6)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 echo number_format(1515.1, -3), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, 0), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -1), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -5), \"\\n\";\n\
+echo number_format(PHP_INT_MIN, -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX - 1024), -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX + 1), -1), \"\\n\";\n\
 echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
 echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
     )
@@ -25402,6 +25408,12 @@ round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)\n\
 int(1)\nstring(1) \"d\"\nbool(true)\n\
 clamp(): Argument #2 ($min) must not be NAN\n\
 2,000\n\
+9,223,372,036,854,775,807\n\
+9,223,372,036,854,775,810\n\
+9,223,372,036,854,800,000\n\
+-9,223,372,036,854,775,810\n\
+9,223,372,036,854,774,780\n\
+9,223,372,036,854,775,808\n\
 2T020.14\n\
 2,020F14\n"
     );
@@ -29812,6 +29824,79 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_zlib_wrapper_metadata_lock_and_unsupported_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-wrapper-metadata-lock");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-wrapper-metadata-lock.php");
+    let output = root.join("zlib-wrapper-metadata-lock-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/zlib-wrapper-meta.gz";
+$renamed = __DIR__ . "/zlib-wrapper-renamed.gz";
+@unlink($path);
+@unlink($renamed);
+
+$h = gzopen($path, "w");
+gzwrite($h, "payload");
+gzclose($h);
+
+$h = gzopen($path, "r");
+$meta = stream_get_meta_data($h);
+var_dump($meta["stream_type"], array_key_exists("wrapper_type", $meta), array_key_exists("uri", $meta));
+var_dump(flock($h, LOCK_EX), flock($h, LOCK_UN));
+gzclose($h);
+
+$wrapped = "compress.zlib://$path";
+$h = fopen($wrapped, "r");
+$meta = stream_get_meta_data($h);
+var_dump($meta["wrapper_type"], $meta["stream_type"], $meta["uri"] === $wrapped);
+fclose($h);
+
+var_dump(rename($wrapped, $renamed));
+var_dump(file_exists($path), file_exists($renamed));
+var_dump(unlink($wrapped));
+var_dump(file_exists($path));
+
+@unlink($path);
+@unlink($renamed);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: rename(): ZLIB wrapper does not support renaming"));
+    assert!(stdout.contains("Warning: unlink(): ZLIB does not allow unlinking"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "string(4) \"ZLIB\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+string(4) \"ZLIB\"\n\
+string(4) \"ZLIB\"\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zlib_functions_filters_and_constants_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-functions-filters");
     fs::create_dir_all(&root).unwrap();
@@ -31156,6 +31241,97 @@ var_dump(file_get_contents("/some/path/outside/open/basedir"));
         "{stdout}"
     );
     assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_open_basedir_blocks_local_filesystem_operations_to_native_binary() {
+    let root = temp_dir("ptn-native-open-basedir-filesystem-ops");
+    let base = root.join("base");
+    let outside = root.join("outside");
+    fs::create_dir_all(&base).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(base.join("ok.txt"), "ok").unwrap();
+    fs::write(outside.join("bad.txt"), "bad").unwrap();
+    let input = base.join("open-basedir-filesystem-ops.php");
+    let output = root.join("open-basedir-filesystem-ops-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ini_set("open_basedir", getcwd());
+$outsideFile = "../outside/bad.txt";
+$outsideDir = "../outside";
+var_dump(filemtime($outsideFile));
+var_dump(filetype($outsideFile));
+var_dump(fileinode($outsideFile));
+var_dump(fileowner($outsideFile));
+var_dump(filesize($outsideFile));
+var_dump(fileatime($outsideFile));
+var_dump(is_file($outsideFile));
+var_dump(scandir($outsideDir));
+var_dump(opendir($outsideDir));
+var_dump(mkdir("../outside/new"));
+var_dump(unlink($outsideFile));
+var_dump(copy("ok.txt", "../outside/copy.txt"));
+var_dump(file_get_contents("ok.txt"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).current_dir(&base).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    for function_name in [
+        "filemtime",
+        "filetype",
+        "fileinode",
+        "fileowner",
+        "filesize",
+        "fileatime",
+        "is_file",
+        "scandir",
+        "opendir",
+        "mkdir",
+        "unlink",
+        "copy",
+    ] {
+        assert!(
+            stdout.contains(&format!(
+                "{function_name}(): open_basedir restriction in effect."
+            )),
+            "{stdout}"
+        );
+    }
+    assert!(
+        stdout.contains("File(../outside/bad.txt) is not within the allowed path(s):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("scandir(../outside): Failed to open directory: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("scandir(): (errno 1): Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("opendir(../outside): Failed to open directory: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("copy(../outside/copy.txt): Failed to open stream: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("string(2) \"ok\"\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
