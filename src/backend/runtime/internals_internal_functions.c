@@ -64172,6 +64172,10 @@ static PtnValue ptn_internal_get_included_files(PtnRuntime *runtime, size_t argc
     return result;
 }
 
+static PtnValue ptn_internal_get_required_files(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_get_included_files(runtime, argc, args, line);
+}
+
 static int ptn_data_url_ascii_ci_equal(const char *data, size_t len, const char *literal) {
     size_t literal_len = strlen(literal);
     if (len != literal_len) {
@@ -104755,6 +104759,34 @@ static const char *ptn_ini_syntax_detail_for_failed_value(PtnIniText text) {
     return "unexpected end of file";
 }
 
+static const char *ptn_ini_syntax_detail_for_failed_section(PtnIniText text) {
+    for (size_t i = 0; i + 1 < text.len; i++) {
+        if (text.data[i] != '$' || text.data[i + 1] != '{') {
+            continue;
+        }
+        size_t depth = 1;
+        i += 2;
+        while (i < text.len && depth > 0) {
+            if (text.data[i] == '$' && i + 1 < text.len && text.data[i + 1] == '{') {
+                depth++;
+                i += 2;
+                continue;
+            }
+            if (text.data[i] == '}') {
+                depth--;
+                if (depth == 0) {
+                    break;
+                }
+            }
+            i++;
+        }
+        if (depth != 0) {
+            return "unexpected end of file, expecting '}'";
+        }
+    }
+    return "unexpected end of section";
+}
+
 static PtnValue ptn_ini_parse_contents(
     PtnRuntime *runtime,
     const char *data,
@@ -104794,33 +104826,13 @@ static PtnValue ptn_ini_parse_contents(
             }
             if (offset >= len || data[offset] != ']') {
                 PtnIniText section_text = ptn_ini_text(data + section_start, offset - section_start);
-                const char *detail = "unexpected end of section";
-                for (size_t i = 0; i + 1 < section_text.len; i++) {
-                    if (section_text.data[i] != '$' || section_text.data[i + 1] != '{') {
-                        continue;
-                    }
-                    size_t depth = 1;
-                    i += 2;
-                    while (i < section_text.len && depth > 0) {
-                        if (section_text.data[i] == '$' && i + 1 < section_text.len && section_text.data[i + 1] == '{') {
-                            depth++;
-                            i += 2;
-                            continue;
-                        }
-                        if (section_text.data[i] == '}') {
-                            depth--;
-                            if (depth == 0) {
-                                break;
-                            }
-                        }
-                        i++;
-                    }
-                    if (depth != 0) {
-                        detail = "unexpected end of file, expecting '}'";
-                        break;
-                    }
-                }
-                ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, detail);
+                ptn_ini_emit_syntax_warning(
+                    runtime,
+                    source_name,
+                    statement_line,
+                    call_line,
+                    ptn_ini_syntax_detail_for_failed_section(section_text)
+                );
                 *ok_out = 0;
                 ptn_value_destroy(&result);
                 return ptn_bool(0);
@@ -111167,7 +111179,7 @@ static int64_t ptn_parse_ini_quantity_operand(
     int has_suffix = 0;
     int valid_suffix = 0;
     char suffix = '\0';
-    if (last > start && isalpha((unsigned char)last[-1])) {
+    if (last > numeric_end && isalpha((unsigned char)last[-1])) {
         suffix = last[-1];
         has_suffix = 1;
         valid_suffix = ptn_ini_quantity_suffix_multiplier(suffix, &multiplier);
@@ -188296,7 +188308,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
-        { "get_required_files", 0, 0, ptn_internal_get_included_files },
+        { "get_required_files", 0, 0, ptn_internal_get_required_files },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getlastmod", 0, 0, ptn_internal_getlastmod },
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
@@ -189348,6 +189360,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "get_defined_vars") ||
         ptn_ascii_case_equal(name, "get_extension_funcs") ||
         ptn_ascii_case_equal(name, "get_include_path") ||
+        ptn_ascii_case_equal(name, "get_required_files") ||
         ptn_ascii_case_equal(name, "get_loaded_extensions") ||
         ptn_ascii_case_equal(name, "get_parent_class") ||
         ptn_ascii_case_equal(name, "ini_get") ||
