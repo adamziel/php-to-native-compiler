@@ -236233,6 +236233,15 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
         runtime->source_path = path;
         ptn_runtime_note_included_file(runtime, path);
     }
+    if (!ptn_phar_bytes_contain_php_open_tag((const unsigned char *)code, code_len)) {
+        ptn_output_write(runtime, code, code_len);
+        if (runtime != NULL) {
+            runtime->source_path = saved_source_path;
+        }
+        free(code);
+        *result_out = ptn_int(1);
+        return 1;
+    }
     PtnValue result = ptn_null();
     int ok = ptn_dynamic_execute_php_source(runtime, code, code_len, &result);
     if (runtime != NULL) {

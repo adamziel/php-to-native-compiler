@@ -713,6 +713,7 @@ fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
         "opcache.opt_debug_level" => Some("opcache.opt_debug_level"),
         "opcache.preload" => Some("opcache.preload"),
         "opcache.preload_user" => Some("opcache.preload_user"),
+        "opcache.revalidate_path" => Some("opcache.revalidate_path"),
         "opcache.save_comments" => Some("opcache.save_comments"),
         "opcache.validate_timestamps" => Some("opcache.validate_timestamps"),
         _ => None,
