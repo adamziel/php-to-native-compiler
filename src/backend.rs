@@ -504,6 +504,15 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
+    out.push_str("    const char *ptn_opcache_interned_strings_buffer = getenv(\"PTN_OPCACHE_INTERNED_STRINGS_BUFFER\");\n");
+    out.push_str("    if (ptn_opcache_interned_strings_buffer != NULL && ptn_opcache_interned_strings_buffer[0] != '\\0') {\n");
+    out.push_str("        errno = 0;\n");
+    out.push_str("        char *ptn_opcache_interned_end = NULL;\n");
+    out.push_str("        long long ptn_opcache_interned_mb = strtoll(ptn_opcache_interned_strings_buffer, &ptn_opcache_interned_end, 0);\n");
+    out.push_str("        if (runtime.diagnostics.display_errors && ptn_opcache_interned_end != ptn_opcache_interned_strings_buffer && errno != ERANGE && ptn_opcache_interned_mb > 32767) {\n");
+    out.push_str("            ptn_diagnostic_printf(&runtime.diagnostics, \"PTN: Warning opcache.interned_strings_buffer must be less than or equal to 32767, %lld given.\\n\\n\", ptn_opcache_interned_mb);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     if runtime_requirements.internal_function_dispatch {
         out.push_str("    ptn_runtime_auto_start_session(&runtime);\n");
     }
@@ -48579,9 +48588,22 @@ impl ValueEmitter {
         out.push_str(&operand_temp);
         out.push_str(");\n");
         let result_temp = self.next_temp();
+        let enabled_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&enabled_temp);
+        out.push_str(" = ptn_opcache_enabled(&runtime);\n");
+        out.push_str("    if (!");
+        out.push_str(&enabled_temp);
+        out.push_str(") {\n");
+        out.push_str("        ptn_emit_notice(&runtime.diagnostics, \"Zend OPcache has not been properly started, can't compile file\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(ptn_opcache_enabled(&runtime) && ptn_opcache_path_exists(");
+        out.push_str(" = ptn_bool(");
+        out.push_str(&enabled_temp);
+        out.push_str(" && ptn_opcache_path_exists(");
         out.push_str(&operand_temp);
         out.push_str("));\n");
         out.push_str("    if (runtime.in_preload && ptn_is_truthy(");

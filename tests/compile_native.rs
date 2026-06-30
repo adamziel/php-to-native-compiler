@@ -80789,6 +80789,58 @@ string(1) \"0\"\n",
 }
 
 #[test]
+fn phpc_opcache_compile_file_disabled_emits_notice() {
+    let root = temp_dir("ptn-phpc-opcache-compile-disabled");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-compile-disabled.php");
+    fs::write(&input, "<?php\nvar_dump(opcache_compile_file(__FILE__));\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable_cli=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Notice: Zend OPcache has not been properly started, can't compile file in {} on line 2\n\
+bool(false)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_interned_strings_buffer_upper_bound_warns() {
+    let root = temp_dir("ptn-phpc-opcache-interned-upper-bound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-interned-upper-bound.php");
+    fs::write(&input, "<?php\necho \"OK\\n\";\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.interned_strings_buffer=131072")
+        .arg("-d")
+        .arg("opcache.log_verbosity_level=2")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "PTN: Warning opcache.interned_strings_buffer must be less than or equal to 32767, 131072 given.\n\nOK\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_version_compare_rejects_invalid_operator_to_native_binary() {
     let root = temp_dir("ptn-native-version-compare-invalid-operator");
     fs::create_dir_all(&root).unwrap();
