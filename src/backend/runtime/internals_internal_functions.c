@@ -16180,7 +16180,7 @@ static int ptn_unserialize_store_entry(
     if (existing_index < array->len) {
         ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
         ptn_array_set_entry(array, key, parsed.value);
-        ptn_unserialize_invalidate_id(state, parsed.id);
+        ptn_unserialize_update_entry_slot(state, parsed.id, &array->entries[existing_index].value);
         return 1;
     }
 

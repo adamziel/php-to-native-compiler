@@ -19626,6 +19626,8 @@ $_SESSION['blah'] = &$array;
 var_dump(session_encode());
 var_dump(session_decode('foo|a:3:{{i:0;i:1;i:1;i:2;i:2;i:3;}}guff|R:1;blah|R:1;'));
 var_dump($_SESSION);
+var_dump(session_decode('foo|a:3:{{i:0;i:1;i:1;i:2;i:2;i:3;}}guff|R:1;blah|R:1;'));
+var_dump($_SESSION);
 var_dump(session_destroy());
 "#,
             root.display()
@@ -19656,7 +19658,15 @@ var_dump(session_destroy());
         stdout.contains("string(52) \"foo|a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}guff|R:1;blah|R:1;\""),
         "{stdout}"
     );
-    assert!(stdout.contains("bool(true)\narray(3) {\n"), "{stdout}");
+    assert_eq!(
+        stdout.matches("bool(true)\narray(3) {\n").count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("session_decode(): Failed to decode session object"),
+        "{stdout}"
+    );
     assert!(stdout.contains("  [\"foo\"]=>\n  &array(3) {"), "{stdout}");
     assert!(stdout.contains("  [\"guff\"]=>\n  &array(3) {"), "{stdout}");
     assert!(stdout.contains("  [\"blah\"]=>\n  &array(3) {"), "{stdout}");

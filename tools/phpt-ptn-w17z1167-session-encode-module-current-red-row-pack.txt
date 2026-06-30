@@ -1,0 +1,16 @@
+# Focused current-red PHPT row pack for ptn-w17z.1167.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T053017Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+
+ext/session/tests/015.phpt
+ext/session/tests/session_encode_serialize.phpt
+ext/session/tests/bug42596.phpt
+ext/session/tests/020.phpt
+ext/session/tests/session_ini_set.phpt
+ext/session/tests/user_session_module/bug60634_error_4.phpt
+ext/session/tests/session_module_name_errors.phpt
+ext/session/tests/bug41600.phpt
+ext/session/tests/bug73100.phpt
+ext/session/tests/session_basic4.phpt
+ext/session/tests/session_decode_variation1.phpt
+ext/session/tests/bug51338.phpt
