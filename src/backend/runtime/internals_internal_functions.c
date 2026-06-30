@@ -88282,7 +88282,8 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-2004")) {
         return "ISO-2022-JP-2004";
     }
-    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-KDDI")) {
+    if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-KDDI") ||
+        ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-JP-MOBILE#KDDI")) {
         return "ISO-2022-JP-KDDI";
     }
     if (ptn_string_operand_ascii_case_equal(encoding, "ISO-2022-KR")) {
@@ -92595,6 +92596,7 @@ static char *ptn_mb_iconv_convert_alloc_options(
     size_t *output_len
 );
 static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding, size_t *replacement_len);
+static char *ptn_mb_gb2312_to_hz_alloc(const char *input, size_t input_len, size_t *output_len);
 
 static uint16_t ptn_mb_code16_table_read(const unsigned char *table, size_t offset) {
     return (uint16_t)(((uint16_t)table[offset] << 8) | (uint16_t)table[offset + 1]);
@@ -93888,6 +93890,29 @@ static char *ptn_mb_iconv_convert_alloc_options(
             output_len
         );
     }
+    if (ptn_ascii_case_equal(to_encoding, "HZ")) {
+        if (ptn_ascii_case_equal(from_encoding, "HZ")) {
+            *output_len = input_len;
+            return ptn_duplicate_string_len(input, input_len);
+        }
+        size_t gb_replacement_len = 0;
+        char *gb_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("GB2312", &gb_replacement_len);
+        size_t gb_len = 0;
+        char *gb = ptn_mb_iconv_convert_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            "GB2312",
+            gb_replacement,
+            gb_replacement_len,
+            illegal_chars,
+            &gb_len
+        );
+        free(gb_replacement);
+        char *hz = ptn_mb_gb2312_to_hz_alloc(gb, gb_len, output_len);
+        free(gb);
+        return hz;
+    }
     if (from_iconv == NULL || to_iconv == NULL || ptn_ascii_case_equal(from_iconv, to_iconv)) {
         *output_len = input_len;
         return ptn_duplicate_string_len(input, input_len);
@@ -94505,6 +94530,49 @@ static char *ptn_mb_hz_to_utf8_alloc(const char *input, size_t input_len, size_t
         ptn_string_buffer_append_len(&output, chunk, chunk_len);
         free(chunk);
         i += 2;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static char *ptn_mb_gb2312_to_hz_alloc(const char *input, size_t input_len, size_t *output_len) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    int gb_mode = 0;
+    for (size_t i = 0; i < input_len;) {
+        unsigned char byte = (unsigned char)input[i];
+        if (byte < 0x80) {
+            if (gb_mode) {
+                ptn_string_buffer_append(&output, "~}");
+                gb_mode = 0;
+            }
+            if (byte == '~') {
+                ptn_string_buffer_append(&output, "~~");
+            } else {
+                ptn_string_buffer_append_char(&output, (char)byte);
+            }
+            i++;
+            continue;
+        }
+        if (i + 1 >= input_len || (unsigned char)input[i + 1] < 0x80) {
+            if (gb_mode) {
+                ptn_string_buffer_append(&output, "~}");
+                gb_mode = 0;
+            }
+            ptn_string_buffer_append_char(&output, '?');
+            i++;
+            continue;
+        }
+        if (!gb_mode) {
+            ptn_string_buffer_append(&output, "~{");
+            gb_mode = 1;
+        }
+        ptn_string_buffer_append_char(&output, (char)(byte & 0x7f));
+        ptn_string_buffer_append_char(&output, (char)((unsigned char)input[i + 1] & 0x7f));
+        i += 2;
+    }
+    if (gb_mode) {
+        ptn_string_buffer_append(&output, "~}");
     }
     *output_len = output.len;
     return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
@@ -95989,6 +96057,9 @@ static char *ptn_mb_operand_to_utf8(PtnStringOperand input, const char *encoding
         *utf8_len = input.len;
         return ptn_duplicate_string_len(input.data, input.len);
     }
+    if (ptn_ascii_case_equal(encoding, "HZ")) {
+        return ptn_mb_hz_to_utf8_alloc(input.data, input.len, utf8_len);
+    }
     if (ptn_ascii_case_equal(encoding, "JIS") &&
         memchr(input.data, 0x1b, input.len) == NULL &&
         ptn_mb_jis_no_escape_fast_path_safe(input)) {
@@ -96033,8 +96104,21 @@ static PtnValue ptn_mb_string_from_utf8(char *utf8, size_t utf8_len, const char 
     return ptn_owned_string_len(output, output_len);
 }
 
-static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
+static int ptn_mb_encoding_uses_turkish_case(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "ISO-8859-9") ||
+         ptn_ascii_case_equal(encoding, "Windows-1254") ||
+         ptn_ascii_case_equal(encoding, "CP1254"));
+}
+
+static uint32_t ptn_mb_case_map_codepoint_for_encoding(uint32_t cp, int uppercase, int turkish_case) {
     if (uppercase) {
+        if (turkish_case && cp == 'i') {
+            return 0x0130;
+        }
+        if (turkish_case && cp == 0x0131) {
+            return 'I';
+        }
         if (cp >= 'a' && cp <= 'z') {
             return cp - 32;
         }
@@ -96047,13 +96131,31 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if (cp >= 0x03c3 && cp <= 0x03cb) {
             return cp - 32;
         }
+        if (cp == 0x03c2) {
+            return 0x03a3;
+        }
         if (cp >= 0x0430 && cp <= 0x044f) {
             return cp - 32;
+        }
+        if (cp >= 0x0501 && cp <= 0x052f && (cp & 1u) == 1u) {
+            return cp - 1;
+        }
+        if (cp >= 0x2c30 && cp <= 0x2c5f) {
+            return cp - 0x30;
+        }
+        if (cp >= 0x10428 && cp <= 0x1044f) {
+            return cp - 0x28;
         }
         if (cp >= 0xff41 && cp <= 0xff5a) {
             return cp - 32;
         }
     } else {
+        if (turkish_case && cp == 'I') {
+            return 0x0131;
+        }
+        if (cp == 0x0130) {
+            return 'i';
+        }
         if (cp >= 'A' && cp <= 'Z') {
             return cp + 32;
         }
@@ -96072,11 +96174,24 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if (cp >= 0x0410 && cp <= 0x042f) {
             return cp + 32;
         }
+        if (cp >= 0x0500 && cp <= 0x052e && (cp & 1u) == 0u) {
+            return cp + 1;
+        }
+        if (cp >= 0x2c00 && cp <= 0x2c2f) {
+            return cp + 0x30;
+        }
+        if (cp >= 0x10400 && cp <= 0x10427) {
+            return cp + 0x28;
+        }
         if (cp >= 0xff21 && cp <= 0xff3a) {
             return cp + 32;
         }
     }
     return cp;
+}
+
+static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
+    return ptn_mb_case_map_codepoint_for_encoding(cp, uppercase, 0);
 }
 
 static int ptn_mb_codepoint_is_case_ignorable(uint32_t cp) {
@@ -96092,7 +96207,10 @@ static int ptn_mb_codepoint_is_cased(uint32_t cp) {
     return (cp >= 'A' && cp <= 'Z') ||
         (cp >= 'a' && cp <= 'z') ||
         cp == 0x00df ||
+        cp == 0x0130 ||
+        cp == 0x0131 ||
         cp == 0x0149 ||
+        cp == 0xfb00 ||
         (cp >= 0x00c0 && cp <= 0x00d6) ||
         (cp >= 0x00d8 && cp <= 0x00f6) ||
         (cp >= 0x00f8 && cp <= 0x00ff) ||
@@ -96102,6 +96220,9 @@ static int ptn_mb_codepoint_is_cased(uint32_t cp) {
         (cp >= 0x03b1 && cp <= 0x03c1) ||
         cp == 0x03c2 ||
         (cp >= 0x0410 && cp <= 0x044f) ||
+        (cp >= 0x0500 && cp <= 0x052f) ||
+        (cp >= 0x2c00 && cp <= 0x2c5f) ||
+        (cp >= 0x10400 && cp <= 0x1044f) ||
         (cp >= 0xff21 && cp <= 0xff3a) ||
         (cp >= 0xff41 && cp <= 0xff5a);
 }
@@ -96124,13 +96245,21 @@ static int ptn_mb_has_cased_codepoint_after_ignorable(
     return 0;
 }
 
-static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mode, size_t *output_len) {
+static void ptn_mb_utf8_append_i_dot(PtnStringBuffer *output, int turkish_case) {
+    ptn_mb_utf8_append_codepoint(output, 'i');
+    if (!turkish_case) {
+        ptn_mb_utf8_append_codepoint(output, 0x0307);
+    }
+}
+
+static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mode, const char *encoding, size_t *output_len) {
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t offset = 0;
     int title_next = 1;
     int previous_cased = 0;
     size_t ignorable_since_cased = 0;
+    int turkish_case = ptn_mb_encoding_uses_turkish_case(encoding);
     while (offset < input_len) {
         uint32_t cp = 0;
         ptn_mb_utf8_decode_one(input, input_len, &offset, &cp);
@@ -96145,25 +96274,60 @@ static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mod
                 ptn_string_buffer_append(&output, "SS");
                 goto update_case_state;
             }
-            cp = ptn_mb_case_map_codepoint(cp, 1);
+            if (mode == PTN_MB_CASE_UPPER && cp == 0xfb00) {
+                ptn_string_buffer_append(&output, "FF");
+                goto update_case_state;
+            }
+            cp = ptn_mb_case_map_codepoint_for_encoding(cp, 1, turkish_case);
         } else if (mode == PTN_MB_CASE_FOLD || mode == PTN_MB_CASE_FOLD_SIMPLE) {
             if (mode == PTN_MB_CASE_FOLD && cp == 0x00df) {
                 ptn_string_buffer_append(&output, "ss");
                 goto update_case_state;
             }
-            cp = final_sigma_context ? 0x03c2 : ptn_mb_case_map_codepoint(cp, 0);
+            if (mode == PTN_MB_CASE_FOLD && cp == 0xfb00) {
+                ptn_string_buffer_append(&output, "ff");
+                goto update_case_state;
+            }
+            if ((mode == PTN_MB_CASE_FOLD || turkish_case) && cp == 0x0130) {
+                ptn_mb_utf8_append_i_dot(&output, turkish_case);
+                goto update_case_state;
+            }
+            if (mode == PTN_MB_CASE_FOLD_SIMPLE && cp == 0x0130) {
+                ptn_mb_utf8_append_codepoint(&output, cp);
+                goto update_case_state;
+            }
+            cp = (mode == PTN_MB_CASE_FOLD && final_sigma_context)
+                ? 0x03c2
+                : ptn_mb_case_map_codepoint_for_encoding(cp, 0, turkish_case);
         } else if (mode == PTN_MB_CASE_TITLE || mode == PTN_MB_CASE_TITLE_SIMPLE) {
             if (mode == PTN_MB_CASE_TITLE && title_next && cp == 0x0149) {
                 ptn_mb_utf8_append_codepoint(&output, 0x02bc);
                 ptn_mb_utf8_append_codepoint(&output, 'N');
                 goto update_case_state;
+            } else if (mode == PTN_MB_CASE_TITLE && title_next && cp == 0x00df) {
+                ptn_string_buffer_append(&output, "Ss");
+                goto update_case_state;
+            } else if (mode == PTN_MB_CASE_TITLE && title_next && cp == 0xfb00) {
+                ptn_string_buffer_append(&output, "Ff");
+                goto update_case_state;
+            } else if (mode == PTN_MB_CASE_TITLE && !title_next && cp == 0x0130) {
+                ptn_mb_utf8_append_i_dot(&output, turkish_case);
+                goto update_case_state;
             } else if (title_next) {
-                cp = ptn_mb_case_map_codepoint(cp, 1);
+                cp = ptn_mb_case_map_codepoint_for_encoding(cp, 1, turkish_case);
             } else {
-                cp = final_sigma_context ? 0x03c2 : ptn_mb_case_map_codepoint(cp, 0);
+                cp = (mode == PTN_MB_CASE_TITLE && final_sigma_context)
+                    ? 0x03c2
+                    : ptn_mb_case_map_codepoint_for_encoding(cp, 0, turkish_case);
             }
         } else {
-            cp = final_sigma_context ? 0x03c2 : ptn_mb_case_map_codepoint(cp, 0);
+            if (mode == PTN_MB_CASE_LOWER && cp == 0x0130) {
+                ptn_mb_utf8_append_i_dot(&output, turkish_case);
+                goto update_case_state;
+            }
+            cp = (mode == PTN_MB_CASE_LOWER && final_sigma_context)
+                ? 0x03c2
+                : ptn_mb_case_map_codepoint_for_encoding(cp, 0, turkish_case);
         }
         ptn_mb_utf8_append_codepoint(&output, cp);
 update_case_state:
@@ -96825,8 +96989,8 @@ static PtnValue ptn_internal_mb_strpos_named(PtnRuntime *runtime, const char *fu
     size_t search_hay_len = hay_utf8_len;
     size_t search_needle_len = needle_utf8_len;
     if (case_insensitive) {
-        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_utf8_len, PTN_MB_CASE_LOWER, &search_hay_len);
-        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_utf8_len, PTN_MB_CASE_LOWER, &search_needle_len);
+        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_utf8_len, PTN_MB_CASE_LOWER, encoding, &search_hay_len);
+        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_utf8_len, PTN_MB_CASE_LOWER, encoding, &search_needle_len);
     }
     size_t reverse_start = 0;
     size_t reverse_max_start = search_hay_len;
@@ -96893,8 +97057,8 @@ static PtnValue ptn_internal_mb_strstr_named(PtnRuntime *runtime, const char *fu
     size_t search_hay_len = hay_len;
     size_t search_needle_len = needle_len;
     if (case_insensitive) {
-        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_len, PTN_MB_CASE_LOWER, &search_hay_len);
-        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_len, PTN_MB_CASE_LOWER, &search_needle_len);
+        search_hay = ptn_mb_utf8_case_alloc(hay_utf8, hay_len, PTN_MB_CASE_LOWER, encoding, &search_hay_len);
+        search_needle = ptn_mb_utf8_case_alloc(needle_utf8, needle_len, PTN_MB_CASE_LOWER, encoding, &search_needle_len);
     }
     size_t match = reverse
         ? ptn_rfind_bytes_between(search_hay, search_hay_len, search_needle, search_needle_len, 0, search_hay_len, 0)
@@ -96970,7 +97134,7 @@ static PtnValue ptn_internal_mb_convert_case(PtnRuntime *runtime, size_t argc, c
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
     size_t mapped_len = 0;
-    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, (int)mode, &mapped_len);
+    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, (int)mode, encoding, &mapped_len);
     free(utf8);
     ptn_string_operand_free(input);
     return ptn_mb_string_from_utf8(mapped, mapped_len, encoding);
@@ -96988,7 +97152,7 @@ static PtnValue ptn_internal_mb_convert_simple_case(PtnRuntime *runtime, const c
     size_t utf8_len = 0;
     char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
     size_t mapped_len = 0;
-    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, mode, &mapped_len);
+    char *mapped = ptn_mb_utf8_case_alloc(utf8, utf8_len, mode, encoding, &mapped_len);
     free(utf8);
     ptn_string_operand_free(input);
     return ptn_mb_string_from_utf8(mapped, mapped_len, encoding);
