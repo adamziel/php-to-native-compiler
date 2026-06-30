@@ -24076,6 +24076,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "hash_update_stream"
             | "md5"
             | "md5_file"
+            | "openssl_cipher_iv_length"
             | "openssl_cipher_key_length"
             | "openssl_cms_decrypt"
             | "openssl_cms_encrypt"

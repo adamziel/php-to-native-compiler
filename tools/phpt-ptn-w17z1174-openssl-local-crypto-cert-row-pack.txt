@@ -1,0 +1,19 @@
+# ptn-w17z.1174 exact OpenSSL local crypto/certificate current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T063017Z.tsv
+# Source commit: 5fbf9ffdfcd8
+# Command:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1174-openssl-local-crypto-cert-row-pack.txt
+#
+# bucket: openssl-local-crypto-cert-current-red rows=12
+ext/openssl/tests/openssl_private_decrypt_digest.phpt
+ext/openssl/tests/openssl_decrypt_error.phpt
+ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt
+ext/openssl/tests/openssl_pkey_export_to_file_object_to_string.phpt
+ext/openssl/tests/bug36732.phpt
+ext/openssl/tests/gh13343_openssl33.phpt
+ext/openssl/tests/bug68879.phpt
+ext/openssl/tests/cve-2013-6420.phpt
+ext/openssl/tests/gh12489.phpt
+ext/openssl/tests/openssl_cms_verify_der.phpt
+ext/openssl/tests/openssl_cms_sign_verify_nodetached_pem.phpt
+ext/openssl/tests/openssl_dh_compute_key.phpt

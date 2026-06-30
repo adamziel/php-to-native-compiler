@@ -105873,6 +105873,15 @@ static const EVP_CIPHER *ptn_openssl_cipher_from_operand(PtnStringOperand name) 
     return cipher;
 }
 
+static void ptn_openssl_emit_unknown_cipher_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(message, sizeof(message), "%s(): Unknown cipher algorithm", function_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static const EVP_MD *ptn_openssl_digest_from_algorithm(int64_t algorithm) {
     switch (algorithm) {
         case 1:
@@ -106209,9 +106218,26 @@ static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size
     ptn_string_operand_free(cipher_name);
     if (cipher == NULL) {
         ERR_clear_error();
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_cipher_key_length", line);
         return ptn_bool(0);
     }
     return ptn_int(EVP_CIPHER_get_key_length(cipher));
+}
+
+static PtnValue ptn_internal_openssl_cipher_iv_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand cipher_name = ptn_internal_expect_string_arg(runtime, "openssl_cipher_iv_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    const EVP_CIPHER *cipher = ptn_openssl_cipher_from_operand(cipher_name);
+    ptn_string_operand_free(cipher_name);
+    if (cipher == NULL) {
+        ERR_clear_error();
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_cipher_iv_length", line);
+        return ptn_bool(0);
+    }
+    return ptn_int(EVP_CIPHER_get_iv_length(cipher));
 }
 
 static void ptn_openssl_emit_iv_warning(
@@ -106243,6 +106269,20 @@ static void ptn_openssl_emit_iv_warning(
             expected_len
         );
     }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_openssl_emit_empty_iv_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Using an empty Initialization Vector (iv) is potentially insecure and not recommended",
+        function_name
+    );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
@@ -106289,6 +106329,7 @@ static PtnValue ptn_internal_openssl_encrypt(PtnRuntime *runtime, size_t argc, c
         ptn_string_operand_free(data_arg);
         ptn_string_operand_free(passphrase);
         ptn_string_operand_free(iv_arg);
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_encrypt", line);
         return ptn_bool(0);
     }
 
@@ -106310,7 +106351,9 @@ static PtnValue ptn_internal_openssl_encrypt(PtnRuntime *runtime, size_t argc, c
         if (iv_copy_len != 0) {
             memcpy(iv, iv_arg.data, iv_copy_len);
         }
-        if (iv_arg.len < (size_t)iv_len) {
+        if (iv_arg.len == 0) {
+            ptn_openssl_emit_empty_iv_warning(runtime, "openssl_encrypt", line);
+        } else if (iv_arg.len < (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_encrypt", iv_arg.len, iv_len, 1, line);
         } else if (iv_arg.len > (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_encrypt", iv_arg.len, iv_len, 0, line);
@@ -106409,6 +106452,7 @@ static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, c
         ptn_string_operand_free(data_arg);
         ptn_string_operand_free(passphrase);
         ptn_string_operand_free(iv_arg);
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_decrypt", line);
         return ptn_bool(0);
     }
 
@@ -106450,7 +106494,7 @@ static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, c
         if (iv_copy_len != 0) {
             memcpy(iv, iv_arg.data, iv_copy_len);
         }
-        if (iv_arg.len < (size_t)iv_len) {
+        if (iv_arg.len != 0 && iv_arg.len < (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_decrypt", iv_arg.len, iv_len, 1, line);
         } else if (iv_arg.len > (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_decrypt", iv_arg.len, iv_len, 0, line);
@@ -107244,6 +107288,15 @@ static PtnValue ptn_internal_openssl_get_cipher_methods(PtnRuntime *runtime, siz
 static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_string_arg(runtime, "openssl_cipher_key_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_cipher_iv_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cipher_iv_length", 1, "cipher_algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -188107,6 +188160,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openssl_cipher_iv_length", 1, 1, ptn_internal_openssl_cipher_iv_length },
         { "openssl_cipher_key_length", 1, 1, ptn_internal_openssl_cipher_key_length },
         { "openssl_cms_decrypt", 2, 5, ptn_internal_openssl_cms_decrypt },
         { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },

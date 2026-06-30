@@ -36610,6 +36610,9 @@ $data = 'row-pack';
 
 var_dump(OPENSSL_PKCS1_OAEP_PADDING);
 var_dump(in_array('sha1', openssl_get_md_methods(), true));
+var_dump(openssl_cipher_iv_length('aes-128-cbc'));
+var_dump(openssl_cipher_iv_length('aes-128-ecb'));
+var_dump(openssl_cipher_key_length('aes-128-cbc'));
 var_dump(openssl_public_encrypt($data, $encrypted, $pub, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
 var_dump(openssl_private_decrypt($encrypted, $out, $priv, OPENSSL_PKCS1_OAEP_PADDING, 'sha256'));
 var_dump($out);
@@ -36637,7 +36640,7 @@ var_dump(openssl_error_string());
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(4)\nbool(true)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nstring(6) \"secret\"\nbool(false)\n"
+        "int(4)\nbool(true)\nint(16)\nint(0)\nint(16)\nbool(true)\nbool(true)\nstring(8) \"row-pack\"\nbool(false)\nNULL\nint(8)\nstring(6) \"secret\"\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
