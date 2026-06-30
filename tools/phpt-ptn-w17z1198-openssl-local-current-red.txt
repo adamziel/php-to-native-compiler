@@ -1,0 +1,12 @@
+ext/openssl/tests/openssl_private_decrypt_digest.phpt
+ext/openssl/tests/openssl_decrypt_error.phpt
+ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt
+ext/openssl/tests/openssl_pkey_export_to_file_object_to_string.phpt
+ext/openssl/tests/openssl_cipher_iv_length_error.phpt
+ext/openssl/tests/openssl_decrypt_basic.phpt
+ext/openssl/tests/openssl_digest_basic.phpt
+ext/openssl/tests/openssl_open_basic.phpt
+ext/openssl/tests/openssl_cms_decrypt_error.phpt
+ext/openssl/tests/openssl_cms_verify_basic.phpt
+ext/openssl/tests/openssl_cms_sign_verify_basic.phpt
+ext/openssl/tests/openssl_csr_sign_with_serial_hex.phpt

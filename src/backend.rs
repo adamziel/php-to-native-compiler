@@ -6960,6 +6960,21 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_private_decrypt") && argument_index == 1 {
         return Some("decrypted_data");
     }
+    if name.eq_ignore_ascii_case("openssl_encrypt") && argument_index == 5 {
+        return Some("tag");
+    }
+    if name.eq_ignore_ascii_case("openssl_open") && argument_index == 1 {
+        return Some("output");
+    }
+    if name.eq_ignore_ascii_case("openssl_seal") && argument_index == 1 {
+        return Some("sealed_data");
+    }
+    if name.eq_ignore_ascii_case("openssl_seal") && argument_index == 2 {
+        return Some("encrypted_keys");
+    }
+    if name.eq_ignore_ascii_case("openssl_seal") && argument_index == 5 {
+        return Some("iv");
+    }
     if name.eq_ignore_ascii_case("curl_multi_exec") && argument_index == 1 {
         return Some("still_running");
     }
@@ -25060,14 +25075,11 @@ fn class_constructor_method<'a>(
     }
 
     let class_short_name = class.name.rsplit('\\').next().unwrap_or(&class.name);
-    methods
-        .iter()
-        .copied()
-        .find(|method| {
-            !method.is_static &&
-                method.declaring_class.eq_ignore_ascii_case(&class.name) &&
-                method.name.eq_ignore_ascii_case(class_short_name)
-        })
+    methods.iter().copied().find(|method| {
+        !method.is_static
+            && method.declaring_class.eq_ignore_ascii_case(&class.name)
+            && method.name.eq_ignore_ascii_case(class_short_name)
+    })
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
@@ -37904,6 +37916,128 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String("")),
         },
     ];
+    static OPENSSL_OPEN_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "encrypted_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "cipher_algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "iv",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
+    static OPENSSL_SEAL_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "sealed_data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "encrypted_keys",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "public_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "cipher_algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "iv",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static OPENSSL_PKEY_NEW_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "options",
+        default: Some(InternalParameterDefault::Null),
+    }];
+    static OPENSSL_PKEY_EXPORT_TO_FILE_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static OPENSSL_CSR_NEW_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "distinguished_names",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "extra_attributes",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static OPENSSL_CSR_SIGN_PARAMETERS: [InternalParameterSpec; 7] = [
+        InternalParameterSpec {
+            name: "csr",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "ca_certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "days",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "serial",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "serial_hex",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static OPENSSL_PKCS12_READ_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "pkcs12",
@@ -38360,6 +38494,18 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         || name.eq_ignore_ascii_case("openssl_decrypt")
     {
         Some(&OPENSSL_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_open") {
+        Some(&OPENSSL_OPEN_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_seal") {
+        Some(&OPENSSL_SEAL_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkey_new") {
+        Some(&OPENSSL_PKEY_NEW_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkey_export_to_file") {
+        Some(&OPENSSL_PKEY_EXPORT_TO_FILE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_csr_new") {
+        Some(&OPENSSL_CSR_NEW_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_csr_sign") {
+        Some(&OPENSSL_CSR_SIGN_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkcs12_read") {
         Some(&OPENSSL_PKCS12_READ_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_public_encrypt") {

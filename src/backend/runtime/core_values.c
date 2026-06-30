@@ -70,6 +70,7 @@
 #include <openssl/provider.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #endif
 
 #ifndef PTN_HAVE_ZLIB
@@ -4341,6 +4342,16 @@ static PTN_UNUSED const char *ptn_resource_object_class_name(PtnResource *resour
     }
     if (strcmp(resource->type_name, "Socket") == 0) {
         return "Socket";
+    }
+    if (strcmp(resource->type_name, "OpenSSL key") == 0) {
+        return "OpenSSLAsymmetricKey";
+    }
+    if (strcmp(resource->type_name, "OpenSSL X.509") == 0 ||
+        strcmp(resource->type_name, "OpenSSLCertificate") == 0) {
+        return "OpenSSLCertificate";
+    }
+    if (strcmp(resource->type_name, "OpenSSL CSR") == 0) {
+        return "OpenSSLCertificateSigningRequest";
     }
     return NULL;
 }

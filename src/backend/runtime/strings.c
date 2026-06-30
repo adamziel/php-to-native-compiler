@@ -1727,6 +1727,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(2);
         return 1;
     }
+    if (strcmp(name, "OPENSSL_DONT_ZERO_PAD_KEY") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_KEYTYPE_DSA") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_CMS_NOVERIFY") == 0) {
+        *out = ptn_int(32);
+        return 1;
+    }
     if (strcmp(name, "LIBXML_DOTTED_VERSION") == 0) {
         *out = ptn_string(ptn_libxml_version_info_load()->dotted);
         return 1;
