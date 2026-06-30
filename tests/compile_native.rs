@@ -30851,6 +30851,115 @@ SILENT mode AUTO: has error\n"
 }
 
 #[test]
+fn compile_php_filter_resource_preserves_user_stream_context_to_native_binary() {
+    let root = temp_dir("ptn-native-php-filter-resource-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-filter-resource-context.php");
+    let output = root.join("php-filter-resource-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class DummyWrapper
+{
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$opened_path): bool
+    {
+        $options = stream_context_get_options($this->context);
+        var_dump($options['dummy']['foo']);
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+
+    public function stream_stat(): array
+    {
+        return [];
+    }
+}
+
+$context = stream_context_create(['dummy' => ['foo' => 'bar']]);
+stream_wrapper_register('dummy', DummyWrapper::class);
+file_get_contents('dummy://foo', false, $context);
+file_get_contents('php://filter/resource=dummy://foo', false, $context);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"bar\"\nstring(3) \"bar\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_read_php_filter_url_bytes"));
+    assert!(c_source.contains("ptn_try_read_user_stream_wrapper_bytes"));
+}
+
+#[test]
+fn compile_stream_exception_get_errors_for_terminal_open_failure_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-exception-get-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-exception-get-errors.php");
+    let output = root.join("stream-exception-get-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$context = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Exception,
+    ],
+]);
+
+try {
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (StreamException $e) {
+    echo "Caught: " . $e->getMessage() . "\n";
+    echo "Code: " . $e->getCode() . "\n";
+    var_dump(method_exists($e, 'getErrors'));
+    $errors = $e->getErrors();
+    echo "Errors: " . count($errors) . "\n";
+    echo "Wrapper: " . $errors[0]->wrapperName . "\n";
+    echo "Error code name: " . $errors[0]->code->name . "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Caught: Failed to open stream: operation failed\n\
+Code: 20\n\
+bool(true)\n\
+Errors: 1\n\
+Wrapper: PHP\n\
+Error code name: OpenFailed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_stream_exception_at"));
+    assert!(c_source.contains("getErrors"));
+}
+
+#[test]
 fn compile_stream_context_set_option_and_socket_shutdown_modes_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-set-option-shutdown-modes");
     fs::create_dir_all(&root).unwrap();

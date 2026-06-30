@@ -2746,7 +2746,8 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
     exception->dynamic_properties = ptn_array_from_literal_entries(0, NULL);
-    exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
+    exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
+            ptn_ascii_case_equal(class_name, "StreamException")
         ? ptn_array_from_literal_entries(0, NULL)
         : ptn_null();
     exception->soap_fault_code = NULL;
@@ -8849,6 +8850,8 @@ static PTN_UNUSED PtnValue ptn_call_method(
     if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "__construct")) {
         return ptn_exception_reconstruct(runtime, receiver, argc, args, line);
     }
+    int is_stream_exception_receiver = receiver.type == PTN_EXCEPTION &&
+        ptn_exception_type_matches_name(receiver.as.exception->class_name, "StreamException");
     if (is_throwable_receiver && (
         ptn_exception_name_equal(name, "getMessage") ||
         ptn_exception_name_equal(name, "getCode") ||
@@ -8857,6 +8860,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
         ptn_exception_name_equal(name, "getPrevious") ||
         ptn_exception_name_equal(name, "getTrace") ||
         ptn_exception_name_equal(name, "getTraceAsString") ||
+        (is_stream_exception_receiver && ptn_exception_name_equal(name, "getErrors")) ||
         ptn_exception_name_equal(name, "getSeverity") ||
         ptn_exception_name_equal(name, "__toString")
     )) {
@@ -8897,6 +8901,9 @@ static PTN_UNUSED PtnValue ptn_call_method(
         }
         if (ptn_exception_name_equal(name, "getTraceAsString")) {
             return ptn_throwable_trace_string(runtime, receiver, line);
+        }
+        if (ptn_exception_name_equal(name, "getErrors")) {
+            return ptn_value_clone_deref(receiver.as.exception->errors);
         }
         if (ptn_exception_name_equal(name, "getSeverity")) {
             return ptn_int(ptn_throwable_int_property(runtime, receiver, "severity", PTN_E_ERROR, line));
