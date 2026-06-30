@@ -36834,6 +36834,8 @@ echo bin2hex(hash_hkdf(
     hex2bin('f0f1f2f3f4f5f6f7f8f9'),
     hex2bin('000102030405060708090a0b0c')
 )), \"\\n\";
+echo bin2hex(hash_hkdf('ripemd256', 'input key material')), \"\\n\";
+echo bin2hex(hash_hkdf('ripemd320', 'input key material')), \"\\n\";
 try {
     hash_hkdf('joaat', 'input key material');
 } catch (Throwable $e) {
@@ -36924,6 +36926,16 @@ try {
         "{stdout}"
     );
     assert!(
+        stdout.contains("f2e96b292935e2395b59833ed89d928ac1197ff62c8031ebc06a3f5bad19513f\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "a13a682072525ceb4c4a5fef59096e682096e1096e6e7e238c7bd48a6f6c6a9ba3d7d9fbee6b68c4\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains(
             "hash_hkdf(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n"
         ),
@@ -36968,6 +36980,16 @@ hash_update($ctx, ' sit amet,');
 hash_update($ctx, ' consectetur adipiscing elit.');
 echo hash_final($ctx), \"\\n\";
 echo hash('xxh128', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', options: ['secret' => $secret]), \"\\n\";
+$seedData = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
+foreach (['xxh32', 'xxh64', 'xxh3', 'xxh128'] as $algo) {
+    $ctx = hash_init($algo, options: ['seed' => 42]);
+    hash_update($ctx, 'Lorem');
+    hash_update($ctx, ' ipsum dolor');
+    hash_update($ctx, ' sit amet,');
+    hash_update($ctx, ' consectetur adipiscing elit.');
+    echo hash_final($ctx), \"\\n\";
+    echo hash($algo, $seedData, options: ['seed' => 42]), \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -36993,7 +37015,15 @@ afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65\n\
 22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8\n\
 8617f366566a011837f4fb4ba5bedea2b892f3ed8b894023d16ae344b2be5881\n\
 8028aa834c03557a\n\
-54279097795e7218093a05d4d781cbb9\n"
+54279097795e7218093a05d4d781cbb9\n\
+3d0cc7e5\n\
+3d0cc7e5\n\
+9c9aa071b5d22a15\n\
+9c9aa071b5d22a15\n\
+366409913c16b70d\n\
+366409913c16b70d\n\
+f87856a7589354e92aeca886c71ed7fb\n\
+f87856a7589354e92aeca886c71ed7fb\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();

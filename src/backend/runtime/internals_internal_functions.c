@@ -73342,8 +73342,10 @@ typedef struct {
     uint32_t (*xxh32)(const void *, size_t, uint32_t);
     uint64_t (*xxh64)(const void *, size_t, uint64_t);
     uint64_t (*xxh3_64bits)(const void *, size_t);
+    uint64_t (*xxh3_64bits_with_seed)(const void *, size_t, uint64_t);
     uint64_t (*xxh3_64bits_with_secret)(const void *, size_t, const void *, size_t);
     PtnXxhash128 (*xxh3_128bits)(const void *, size_t);
+    PtnXxhash128 (*xxh3_128bits_with_seed)(const void *, size_t, uint64_t);
     PtnXxhash128 (*xxh3_128bits_with_secret)(const void *, size_t, const void *, size_t);
 } PtnXxhashApi;
 
@@ -73432,8 +73434,10 @@ static PtnXxhashApi *ptn_xxhash_api_get(void) {
     PTN_XXHASH_LOAD(xxh32, "XXH32");
     PTN_XXHASH_LOAD(xxh64, "XXH64");
     PTN_XXHASH_LOAD(xxh3_64bits, "XXH3_64bits");
+    PTN_XXHASH_LOAD(xxh3_64bits_with_seed, "XXH3_64bits_withSeed");
     PTN_XXHASH_LOAD(xxh3_64bits_with_secret, "XXH3_64bits_withSecret");
     PTN_XXHASH_LOAD(xxh3_128bits, "XXH3_128bits");
+    PTN_XXHASH_LOAD(xxh3_128bits_with_seed, "XXH3_128bits_withSeed");
     PTN_XXHASH_LOAD(xxh3_128bits_with_secret, "XXH3_128bits_withSecret");
 #undef PTN_XXHASH_LOAD
 
@@ -73486,16 +73490,26 @@ static PtnValue ptn_hash_xxhash_digest_value(
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
     if (ptn_ascii_case_equal(algo, "xxh3")) {
-        uint64_t hash = secret_len == 0
-            ? api->xxh3_64bits(data, data_len)
-            : api->xxh3_64bits_with_secret(data, data_len, secret, secret_len);
+        uint64_t hash;
+        if (secret_len != 0) {
+            hash = api->xxh3_64bits_with_secret(data, data_len, secret, secret_len);
+        } else if (seed != 0) {
+            hash = api->xxh3_64bits_with_seed(data, data_len, seed);
+        } else {
+            hash = api->xxh3_64bits(data, data_len);
+        }
         unsigned char digest[8];
         ptn_store_u64_be(digest, hash);
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
-    PtnXxhash128 hash = secret_len == 0
-        ? api->xxh3_128bits(data, data_len)
-        : api->xxh3_128bits_with_secret(data, data_len, secret, secret_len);
+    PtnXxhash128 hash;
+    if (secret_len != 0) {
+        hash = api->xxh3_128bits_with_secret(data, data_len, secret, secret_len);
+    } else if (seed != 0) {
+        hash = api->xxh3_128bits_with_seed(data, data_len, seed);
+    } else {
+        hash = api->xxh3_128bits(data, data_len);
+    }
     unsigned char digest[16];
     ptn_store_u64_be(digest, hash.high64);
     ptn_store_u64_be(digest + 8, hash.low64);
@@ -75323,7 +75337,15 @@ static PtnValue ptn_internal_hash_hkdf(PtnRuntime *runtime, size_t argc, const P
     }
 
     size_t output_len = length == 0 ? digest_len : (size_t)length;
-    unsigned char *okm = malloc(output_len);
+    if (output_len == SIZE_MAX) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_abort_out_of_memory();
+    }
+    unsigned char *okm = malloc(output_len + 1);
     if (okm == NULL) {
         free(algo_name);
         ptn_string_operand_free(algo);
@@ -75385,6 +75407,7 @@ static PtnValue ptn_internal_hash_hkdf(PtnRuntime *runtime, size_t argc, const P
         written_len += take;
         block_index++;
     }
+    okm[output_len] = '\0';
 
     PtnValue result = ptn_owned_string_len((char *)okm, output_len);
     free(algo_name);
