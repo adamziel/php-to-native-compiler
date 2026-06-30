@@ -58203,8 +58203,6 @@ static char *ptn_stream_apply_user_filter_alloc(
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     } else if (status != PTN_PSFS_PASS_ON && status != PTN_PSFS_FEED_ME && !(closing && len == 0)) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
-    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && len != 0) {
-        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
     ptn_value_destroy(&args[0]);
