@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/simplexml/tests/gh15837.phpt
+/home/claude/php-src-phpt/ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+/home/claude/php-src-phpt/ext/dom/tests/modern/xml/simplexml_interop.phpt
+/home/claude/php-src-phpt/ext/xmlwriter/tests/xmlwriter_write_dtd_basic_001.phpt
+/home/claude/php-src-phpt/ext/xmlwriter/tests/xmlwriter_toMemory_normal_usage.phpt
+/home/claude/php-src-phpt/ext/xmlreader/tests/fromString_custom_constructor_error.phpt
+/home/claude/php-src-phpt/ext/simplexml/tests/bug76712.phpt
+/home/claude/php-src-phpt/ext/xmlreader/tests/bug64230.phpt
+/home/claude/php-src-phpt/ext/dom/tests/modern/spec/Document_getElementsByTagNameNS.phpt
+/home/claude/php-src-phpt/ext/dom/tests/delayed_freeing/namespace_xmlns_declaration_attribute_variation.phpt
+/home/claude/php-src-phpt/ext/xmlreader/tests/cache_slot.phpt
+/home/claude/php-src-phpt/ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_ns_imported_02.phpt

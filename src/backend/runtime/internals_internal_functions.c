@@ -140496,6 +140496,8 @@ static int ptn_xml_subtree_has_invalid_namespace_serialization(PtnXmlNode *node)
     return 0;
 }
 
+static int ptn_xml_parent_serialized_default_namespace_matches(PtnXmlNode *node, const char *uri);
+
 static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, PtnXmlNode *attr) {
     if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
         return 1;
@@ -140503,6 +140505,16 @@ static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, P
     const char *name = attr->name == NULL ? "" : attr->name;
     const char *value = attr->value == NULL ? "" : attr->value;
     if (strcmp(name, "xmlns:xml") == 0 && strcmp(value, ptn_dom_xml_namespace_uri()) == 0) {
+        return 0;
+    }
+    if (element != NULL &&
+        element->parent != NULL &&
+        attr->synthetic_namespace_declaration &&
+        strcmp(name, "xmlns") == 0 &&
+        value[0] != '\0' &&
+        element->namespace_uri != NULL &&
+        strcmp(element->namespace_uri, value) == 0 &&
+        ptn_xml_parent_serialized_default_namespace_matches(element, value)) {
         return 0;
     }
     if (element != NULL && element->parent != NULL && strncmp(name, "xmlns:", 6) == 0) {
@@ -145720,8 +145732,23 @@ static void ptn_dom_html_normalize_body_misnested_wrappers(PtnXmlNode *node) {
 }
 
 static void ptn_dom_html_preserve_modern_body_closing_whitespace(PtnXmlNode *body) {
-    /* Serialization preserves the visual body close spacing; parsed textContent must remain source-derived. */
-    (void)body;
+    PtnXmlNode *document = ptn_xml_document_for_node(body);
+    if (body == NULL ||
+        document == NULL ||
+        !document->modern_dom ||
+        !document->html_document ||
+        body->child_count == 0) {
+        return;
+    }
+    PtnXmlNode *last = body->children[body->child_count - 1];
+    if (!ptn_xml_node_is_document_whitespace(last)) {
+        return;
+    }
+    const char *value = last->value == NULL ? "" : last->value;
+    if (memchr(value, '\n', last->value_len) == NULL) {
+        return;
+    }
+    ptn_xml_append_text_span(NULL, body, "\n", 1);
 }
 
 static int ptn_xml_html_void_element_name(const char *name) {
