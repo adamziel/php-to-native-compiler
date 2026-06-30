@@ -34800,6 +34800,42 @@ dump_order();\n",
 }
 
 #[test]
+fn compile_mb_regex_replace_options_and_convert_variables_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-regex-options-convert-vars-arrays");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-regex-options-convert-vars-arrays.php");
+    let output = root.join("mb-regex-options-convert-vars-arrays-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+try {\n\
+    mb_ereg_replace('', '', '', 'e');\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$a = [];\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('UTF-8', 'UTF-8', $a));\n\
+$b = ['x' => \"\\xe9\", ['y' => \"\\xe9\"]];\n\
+var_dump(mb_convert_variables('UTF-8', 'ISO-8859-1', $b), $b);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Option \"e\" is not supported\n"));
+    assert!(stdout.contains("Warning: mb_convert_variables(): Cannot handle recursive references"));
+    assert!(stdout.contains("bool(false)\nstring(5) \"UTF-8\"\n"));
+    assert!(stdout.contains("[\"x\"]=>\n  string(2) \"é\""));
+    assert!(stdout.contains("[\"y\"]=>\n    string(2) \"é\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_detection_alias_residuals_to_native_binary() {
     let root = temp_dir("ptn-native-mb-detection-alias-residuals");
     fs::create_dir_all(&root).unwrap();

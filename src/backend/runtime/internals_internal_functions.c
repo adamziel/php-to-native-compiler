@@ -96792,6 +96792,27 @@ static int ptn_mb_check_encoding_value(PtnValue value, const char *encoding, Ptn
     return 1;
 }
 
+static int ptn_mb_convert_variables_has_recursive_array(PtnValue value, PtnMbCheckStack *stack) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArray *array = resolved.as.array;
+    if (ptn_mb_check_stack_contains(stack, array)) {
+        stack->saw_circular = 1;
+        return 1;
+    }
+    ptn_mb_check_stack_push(stack, array);
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_mb_convert_variables_has_recursive_array(array->entries[i].value, stack)) {
+            stack->len--;
+            return 1;
+        }
+    }
+    stack->len--;
+    return 0;
+}
+
 static size_t ptn_mb_utf8_strlen(const char *data, size_t len) {
     size_t offset = 0;
     size_t count = 0;
@@ -99032,6 +99053,24 @@ static int ptn_mb_regex_options_apply(uint32_t *options, const char *extra_optio
     return 1;
 }
 
+static int ptn_mb_regex_replacement_options_are_supported(
+    PtnRuntime *runtime,
+    const char *options_name,
+    size_t line
+) {
+    if (options_name == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; options_name[i] != '\0'; i++) {
+        if (options_name[i] == 'e') {
+            ptn_throw_exception(runtime, "ValueError", "Option \"e\" is not supported");
+            return 0;
+        }
+    }
+    (void)line;
+    return 1;
+}
+
 static int ptn_mb_compile_regex_program(
     PtnRuntime *runtime,
     const char *function_name,
@@ -99702,6 +99741,14 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
         extra_options_copy = ptn_duplicate_string_len(options.data, options.len);
         ptn_string_operand_free(options);
         extra_options = extra_options_copy;
+    }
+    if (!ptn_mb_regex_replacement_options_are_supported(runtime, ptn_mb_regex_options_name, line) ||
+        !ptn_mb_regex_replacement_options_are_supported(runtime, extra_options, line)) {
+        free(extra_options_copy);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(replacement);
+        ptn_string_operand_free(subject);
+        return ptn_null();
     }
     PtnValue result = ptn_mb_ereg_replace_impl(
         runtime,
@@ -101614,6 +101661,75 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 
+static PtnValue ptn_mb_convert_variables_converted_string(
+    PtnValue value,
+    const char *from_encoding,
+    const char *to_encoding
+) {
+    PtnValue current = ptn_value_deref(value);
+    size_t out_len = 0;
+    char *out = ptn_mb_iconv_convert_alloc(
+        (const char *)current.as.string.data,
+        current.as.string.len,
+        from_encoding,
+        to_encoding,
+        &out_len
+    );
+    return ptn_owned_string_len(out, out_len);
+}
+
+static void ptn_mb_convert_variables_convert_array(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t line
+);
+
+static void ptn_mb_convert_variables_convert_slot(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t line
+) {
+    PtnValue current = ptn_value_deref(value);
+    if (current.type == PTN_STRING) {
+        if (value.type != PTN_REFERENCE) {
+            return;
+        }
+        PtnValue assigned = ptn_mb_convert_variables_converted_string(current, from_encoding, to_encoding);
+        ptn_reference_assign(runtime, value.as.reference, assigned);
+        ptn_value_destroy(&assigned);
+        return;
+    }
+    if (current.type == PTN_ARRAY) {
+        ptn_mb_convert_variables_convert_array(runtime, current.as.array, from_encoding, to_encoding, line);
+    }
+}
+
+static void ptn_mb_convert_variables_convert_array(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t line
+) {
+    (void)line;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        PtnValue current = ptn_value_deref(entry->value);
+        if (current.type == PTN_STRING) {
+            PtnValue assigned = ptn_mb_convert_variables_converted_string(current, from_encoding, to_encoding);
+            ptn_array_write_entry(runtime, array, ptn_array_key_clone(entry->key), assigned);
+            continue;
+        }
+        if (current.type == PTN_ARRAY) {
+            ptn_mb_convert_variables_convert_array(runtime, current.as.array, from_encoding, to_encoding, line);
+        }
+    }
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *to_encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_variables", 1, "to_encoding", args[0], line, NULL, 0);
     const char *from_encoding = argc >= 2
@@ -101622,19 +101738,17 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
     if (to_encoding == NULL || from_encoding == NULL) {
         return ptn_bool(0);
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     for (size_t i = 2; i < argc; i++) {
-        if (args[i].type != PTN_REFERENCE) {
-            continue;
+        if (ptn_mb_convert_variables_has_recursive_array(args[i], &stack)) {
+            ptn_mb_check_stack_free(&stack);
+            ptn_emit_warning(&runtime->diagnostics, "mb_convert_variables(): Cannot handle recursive references", line);
+            return ptn_bool(0);
         }
-        PtnValue current = ptn_value_deref(args[i]);
-        if (current.type != PTN_STRING) {
-            continue;
-        }
-        size_t out_len = 0;
-        char *out = ptn_mb_iconv_convert_alloc((const char *)current.as.string.data, current.as.string.len, from_encoding, to_encoding, &out_len);
-        PtnValue assigned = ptn_owned_string_len(out, out_len);
-        ptn_reference_assign(runtime, args[i].as.reference, assigned);
-        ptn_value_destroy(&assigned);
+    }
+    ptn_mb_check_stack_free(&stack);
+    for (size_t i = 2; i < argc; i++) {
+        ptn_mb_convert_variables_convert_slot(runtime, args[i], from_encoding, to_encoding, line);
     }
     return ptn_string(to_encoding);
 }
