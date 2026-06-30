@@ -1,0 +1,12 @@
+ext/random/tests/03_randomizer/methods/getBytesFromString.phpt
+ext/random/tests/03_randomizer/gh_19765_unserialize.phpt
+ext/random/tests/03_randomizer/methods/getBytes_expansion.phpt
+ext/random/tests/03_randomizer/engine_unsafe_biased.phpt
+ext/random/tests/03_randomizer/engine_unsafe_empty_string.phpt
+ext/random/tests/01_functions/lcg_value_deprecation.phpt
+ext/random/tests/02_engine/mt19937_error.phpt
+ext/random/tests/03_randomizer/readonly.phpt
+ext/random/tests/02_engine/pcgoneseq128xslrr64_seed.phpt
+ext/random/tests/03_randomizer/methods/getBytesFromString_fast_path.phpt
+ext/random/tests/02_engine/xoshiro256starstar_seed.phpt
+ext/random/tests/03_randomizer/construct_twice.phpt
