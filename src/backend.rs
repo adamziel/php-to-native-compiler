@@ -26348,7 +26348,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\") || ptn_exception_name_equal(method_name, \"getCode\") || ptn_exception_name_equal(method_name, \"getFile\") || ptn_exception_name_equal(method_name, \"getLine\") || ptn_exception_name_equal(method_name, \"getPrevious\") || ptn_exception_name_equal(method_name, \"getTrace\") || ptn_exception_name_equal(method_name, \"getTraceAsString\") || ptn_exception_name_equal(method_name, \"getSeverity\") || ptn_exception_name_equal(method_name, \"__toString\");\n");
+    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\") || ptn_exception_name_equal(method_name, \"getCode\") || ptn_exception_name_equal(method_name, \"getFile\") || ptn_exception_name_equal(method_name, \"getLine\") || ptn_exception_name_equal(method_name, \"getPrevious\") || ptn_exception_name_equal(method_name, \"getTrace\") || ptn_exception_name_equal(method_name, \"getTraceAsString\") || (ptn_exception_type_matches_name(scope.as.exception->class_name, \"StreamException\") && ptn_exception_name_equal(method_name, \"getErrors\")) || ptn_exception_name_equal(method_name, \"getSeverity\") || ptn_exception_name_equal(method_name, \"__toString\");\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");

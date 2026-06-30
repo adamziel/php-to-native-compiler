@@ -1,0 +1,4 @@
+# ptn-w17z.1157 exact residual PHAR/zlib stream repair row pack.
+# Baseline source: bead ptn-w17z.1157 after ptn-wisp-8v9 consolidation.
+ext/standard/tests/streams/gh15155.phpt
+ext/standard/tests/streams/stream_errors_exception_mode_terminal.phpt
