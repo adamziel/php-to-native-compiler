@@ -532,6 +532,9 @@ static PTN_UNUSED void ptn_runtime_register_shutdown_function(
     if (root == NULL) {
         root = runtime;
     }
+    if (root == NULL || root->header_callback_running) {
+        return;
+    }
     if (root->shutdown_functions_len == root->shutdown_functions_capacity) {
         size_t new_capacity = root->shutdown_functions_capacity == 0
             ? 4
@@ -5578,6 +5581,8 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "OPEN_READONLY") == 0) { *out = ptn_int(1); return 1; }
         if (strcmp(constant, "OPEN_READWRITE") == 0) { *out = ptn_int(2); return 1; }
         if (strcmp(constant, "OPEN_CREATE") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "CREATE_TABLE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SELECT") == 0) { *out = ptn_int(21); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Phar")) {
         if (strcmp(constant, "PHP") == 0) {
@@ -7452,10 +7457,9 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
         return ptn_owned_string(ptn_duplicate_string(class_name));
     }
 
-    ptn_throw_exception_at(
+    ptn_emit_fatal_error_at(
         runtime,
-        "Error",
-        "Class name must be a valid object or a string",
+        "Illegal class name",
         runtime != NULL ? runtime->source_path : NULL,
         line
     );

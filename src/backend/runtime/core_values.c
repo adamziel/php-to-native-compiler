@@ -745,7 +745,11 @@ typedef struct {
 #define PTN_T_NAME_QUALIFIED 1119
 #define PTN_T_NS_SEPARATOR 1120
 #define PTN_T_NULLSAFE_OBJECT_OPERATOR 1121
-#define PTN_T_BAD_CHARACTER 1122
+#define PTN_T_ATTRIBUTE 1122
+#define PTN_T_BAD_CHARACTER 1123
+#define PTN_T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG 1124
+#define PTN_T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG 1125
+#define PTN_TOKEN_PARSE 1
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
@@ -1388,6 +1392,10 @@ struct PtnStreamFilter {
     size_t filter_line_break_len;
     int filter_line_break_configured;
     int quoted_printable_invalid_sequence;
+    char *iconv_from_encoding;
+    char *iconv_to_encoding;
+    char *iconv_from_display;
+    char *iconv_to_display;
     int iconv_error;
     size_t dechunk_remaining;
     size_t dechunk_size;
@@ -1987,6 +1995,7 @@ static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
+static PTN_UNUSED PtnValue ptn_declared_class_new_instance_without_constructor(PtnRuntime *caller_runtime, const char *class_name, size_t line);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
