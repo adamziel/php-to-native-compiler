@@ -33831,6 +33831,7 @@ fn collect_class_declaration_fatals(
             message,
             line: class.line,
             uncaught_error: false,
+            pre_deprecation: None,
         });
     }
     for method in &class.methods {
