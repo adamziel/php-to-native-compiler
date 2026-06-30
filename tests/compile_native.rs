@@ -32305,6 +32305,71 @@ bool(true)\n\nWarning: stream_filter_append(): User-filter \"missing.filter\" re
 }
 
 #[test]
+fn compile_user_stream_filter_empty_output_consumed_buckets_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-empty-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-empty-output.php");
+    let output = root.join("stream-user-filter-empty-output-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EmptyAppendFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $bucket->data = "";
+            $consumed += strlen($bucket->data);
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+class DropConsumedFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("empty.append", EmptyAppendFilter::class);
+stream_filter_register("drop.consumed", DropConsumedFilter::class);
+
+$append = fopen("php://memory", "w+");
+fwrite($append, "Hello");
+rewind($append);
+stream_filter_append($append, "empty.append", STREAM_FILTER_READ);
+while (($chunk = fgets($append)) !== false) {
+    var_dump($chunk);
+}
+echo "append done\n";
+
+$drop = fopen("php://memory", "w+");
+fwrite($drop, "Hello");
+rewind($drop);
+stream_filter_append($drop, "drop.consumed", STREAM_FILTER_READ);
+while (($chunk = fgets($drop)) !== false) {
+    var_dump($chunk);
+}
+echo "drop done\n";
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "append done\n\
+drop done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_stream_filter_shutdown_flush_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-shutdown");
     fs::create_dir_all(&root).unwrap();
