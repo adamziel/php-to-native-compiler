@@ -86064,6 +86064,7 @@ typedef struct {
 static PtnIcuApi ptn_icu_api = {0};
 
 #define PTN_ICU_ZERO_ERROR 0
+#define PTN_ICU_ILLEGAL_ARGUMENT_ERROR 1
 #define PTN_ICU_BUFFER_OVERFLOW_ERROR 15
 #define PTN_ICU_ACTUAL_LOCALE 0
 #define PTN_ICU_VALID_LOCALE 1
@@ -87821,12 +87822,8 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     return ptn_null();
 }
 
-static int ptn_intl_options_to_subst_is_invalid(PtnValue options_value) {
-    options_value = ptn_value_deref(options_value);
-    if (options_value.type != PTN_ARRAY) {
-        return 0;
-    }
-    PtnArrayEntry *entry = ptn_intl_array_entry(options_value.as.array, "to_subst");
+static int ptn_intl_option_subst_is_invalid(PtnArray *options, const char *key_name) {
+    PtnArrayEntry *entry = ptn_intl_array_entry(options, key_name);
     if (entry == NULL) {
         return 0;
     }
@@ -87834,6 +87831,15 @@ static int ptn_intl_options_to_subst_is_invalid(PtnValue options_value) {
     int invalid = subst.len > 1;
     ptn_string_operand_free(subst);
     return invalid;
+}
+
+static int ptn_intl_options_subst_is_invalid(PtnValue options_value) {
+    options_value = ptn_value_deref(options_value);
+    if (options_value.type != PTN_ARRAY) {
+        return 0;
+    }
+    return ptn_intl_option_subst_is_invalid(options_value.as.array, "to_subst") ||
+        ptn_intl_option_subst_is_invalid(options_value.as.array, "from_subst");
 }
 
 typedef struct {
@@ -88148,6 +88154,55 @@ static char *ptn_intl_uconverter_encoding_error_message(const char *function_nam
     return message;
 }
 
+static const char *ptn_intl_uconverter_error_name(int32_t status) {
+    return status == PTN_ICU_ILLEGAL_ARGUMENT_ERROR ? "U_ILLEGAL_ARGUMENT_ERROR" : ptn_icu_error_name(status);
+}
+
+static char *ptn_intl_uconverter_returned_error_message(const char *function_name, int32_t status) {
+    const char *status_name = ptn_intl_uconverter_error_name(status);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): returned error %d: %s: %s",
+        function_name,
+        (int)status,
+        status_name,
+        status_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): returned error %d: %s: %s",
+        function_name,
+        (int)status,
+        status_name,
+        status_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static void ptn_intl_uconverter_signal_returned_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int32_t status,
+    size_t line
+) {
+    char *message = ptn_intl_uconverter_returned_error_message(function_name, status);
+    ptn_intl_signal_error(runtime, message, line);
+    free(message);
+}
+
 static void ptn_intl_uconverter_signal_transcode_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -88181,7 +88236,13 @@ static PtnValue ptn_internal_uconverter_transcode(PtnRuntime *runtime, size_t ar
         ptn_string_operand_free(from_encoding);
         return ptn_null();
     }
-    if (argc >= 4 && ptn_intl_options_to_subst_is_invalid(args[3])) {
+    if (argc >= 4 && ptn_intl_options_subst_is_invalid(args[3])) {
+        ptn_intl_uconverter_signal_returned_error(
+            runtime,
+            "UConverter::transcode",
+            PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+            line
+        );
         ptn_string_operand_free(source);
         ptn_string_operand_free(to_encoding);
         ptn_string_operand_free(from_encoding);

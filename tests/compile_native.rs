@@ -51241,6 +51241,47 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_uconverter_transcode_substitution_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-uconverter-transcode-substitution-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-uconverter-transcode-substitution-errors.php");
+    let output = root.join("intl-uconverter-transcode-substitution-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$subst = str_repeat('?', 129);\n\
+foreach ([['from_subst' => $subst], ['to_subst' => $subst]] as $options) {\n\
+    var_dump(UConverter::transcode('abc', 'UTF-8', 'UTF-8', $options));\n\
+    echo intl_get_error_message(), \"\\n\";\n\
+}\n\
+ini_set('intl.use_exceptions', '1');\n\
+try {\n\
+    UConverter::transcode('abc', 'UTF-8', 'UTF-8', ['to_subst' => $subst]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n\
+bool(false)\n\
+UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n\
+IntlException: UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERROR: U_ILLEGAL_ARGUMENT_ERROR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_uconverter_signal_returned_error"));
+}
+
+#[test]
 fn compile_intl_timezone_identity_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-intl-timezone-identity-offsets");
     fs::create_dir_all(&root).unwrap();
