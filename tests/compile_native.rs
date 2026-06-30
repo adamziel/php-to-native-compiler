@@ -53520,6 +53520,60 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
 }
 
 #[test]
+fn compile_xml_parser_declared_legacy_encoding_chunks_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-declared-legacy-encoding-chunks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-declared-legacy-encoding-chunks.php");
+    let output = root.join("xml-parser-declared-legacy-encoding-chunks-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LegacyXmlRecorder {
+    public $tags = [];
+
+    public function start($parser, $name, $attrs) {
+        $this->tags[] = bin2hex($name) . ':' . bin2hex($attrs["テスト"] ?? "");
+    }
+
+    public function finish($parser, $name) {}
+}
+
+$xml = "<?xml version=\"1.0\" encoding=\"EUC-JP\" ?>\n<テスト テスト=\"テスト\"><子/></テスト>";
+$data = iconv("UTF-8", "EUC-JP", $xml);
+$parser = xml_parser_create(NULL);
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+$recorder = new LegacyXmlRecorder();
+xml_set_element_handler($parser, "start", "finish");
+xml_set_object($parser, $recorder);
+for ($i = 0; $i < strlen($data); $i++) {
+    if (!xml_parse($parser, $data[$i], false)) {
+        echo "failed: ", xml_error_string(xml_get_error_code($parser)), "\n";
+        break;
+    }
+}
+xml_parse($parser, "", true);
+foreach ($recorder->tags as $tag) {
+    echo $tag, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("e38386e382b9e38388:e38386e382b9e38388\n"));
+    assert!(stdout.contains("e5ad90:\n"));
+    assert!(!stdout.contains("failed:"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_parser_prepare_input_alloc"));
+}
+
+#[test]
 fn compile_simplexml_dom_backed_basics_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-dom-backed-basics");
     fs::create_dir_all(&root).unwrap();
