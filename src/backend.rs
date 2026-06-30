@@ -57084,11 +57084,6 @@ impl ValueEmitter {
         out.push_str(&callback_ok_temp);
         out.push_str(" = 1;\n");
         out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
-        out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
-        out.push_str(&callable_temp);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
         if arguments.len() == 1 {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);

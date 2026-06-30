@@ -229227,10 +229227,11 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
                 lookup_name + i + 2,
                 lookup_len - i - 2
             );
-            PtnValue value = ptn_runtime_read_class_constant(
+            PtnValue value = ptn_runtime_read_class_constant_with_scope(
                 runtime,
                 class_name,
                 constant_name,
+                runtime == NULL ? NULL : runtime->current_class_name,
                 line
             );
             free(class_name);
