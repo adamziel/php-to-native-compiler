@@ -30286,7 +30286,10 @@ var_dump(file_exists(__DIR__ . "/someFile"));
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(stdout.contains("Warning: gzopen(): gzopen failed"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: gzopen(): gzopen failed"),
+        "{stdout}"
+    );
     assert!(!stdout.contains("Failed to open stream"), "{stdout}");
     let stdout_without_warnings = stdout
         .lines()
