@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::fs;
 use std::os::raw::{c_char, c_int, c_void};
@@ -402,6 +402,7 @@ struct IncludeCollector {
     by_source: HashMap<IncludeSourceKey, usize>,
     resolutions: IncludeResolutionMap,
     path_env: IncludePathEnv,
+    mutated_include_paths: HashSet<PathBuf>,
     include_effect_stack: Vec<usize>,
     runtime_class_aliases: HashMap<String, String>,
     root_classes: Vec<ClassDecl>,
@@ -421,6 +422,7 @@ impl IncludeCollector {
             by_source: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
             path_env: IncludePathEnv::new(),
+            mutated_include_paths: HashSet::new(),
             include_effect_stack: Vec::new(),
             runtime_class_aliases: HashMap::new(),
             root_classes,
@@ -522,8 +524,10 @@ impl IncludeCollector {
         F: FnOnce(&mut Self) -> Result<()>,
     {
         let saved_env = std::mem::take(&mut self.path_env);
+        let saved_mutated_include_paths = std::mem::take(&mut self.mutated_include_paths);
         let result = f(self);
         self.path_env = saved_env;
+        self.mutated_include_paths = saved_mutated_include_paths;
         result
     }
 
@@ -666,7 +670,26 @@ impl IncludeCollector {
             | Statement::Echo {
                 expressions: arguments,
                 ..
-            } => self.collect_exprs(arguments, source_file, source_dir),
+            } => {
+                if let Statement::Call {
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    ..
+                } = statement
+                {
+                    self.note_include_path_mutation_call(
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        source_file,
+                        source_dir,
+                    );
+                }
+                self.collect_exprs(arguments, source_file, source_dir)
+            }
             Statement::Expression { expression, .. } => {
                 self.collect_expr(expression, source_file, source_dir)
             }
@@ -1163,6 +1186,23 @@ impl IncludeCollector {
             Expr::Call { arguments, .. }
             | Expr::ParentPropertyHookCall { arguments, .. }
             | Expr::NewObject { arguments, .. } => {
+                if let Expr::Call {
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    ..
+                } = expr
+                {
+                    self.note_include_path_mutation_call(
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        source_file,
+                        source_dir,
+                    );
+                }
                 self.collect_exprs(arguments, source_file, source_dir)
             }
             Expr::DynamicNewObject {
@@ -1537,10 +1577,16 @@ impl IncludeCollector {
         source_dir: &str,
     ) -> Result<Option<usize>> {
         let resolved = resolve_include_candidate_path(include_path, source_dir);
+        if self.mutated_include_paths.contains(&resolved.resource_path) {
+            return Ok(None);
+        }
         let canonical_path = match fs::canonicalize(&resolved.resource_path) {
             Ok(path) => path,
             Err(_) => return Ok(None),
         };
+        if self.mutated_include_paths.contains(&canonical_path) {
+            return Ok(None);
+        }
         let path_aliases = if resolved.transform.is_none() {
             include_path_aliases(&resolved.resource_path, &canonical_path)
         } else {
@@ -1595,6 +1641,42 @@ impl IncludeCollector {
         self.source_transforms.push(resolved.transform);
         self.collect_program(&program, &source_file, &source_dir)?;
         Ok(Some(index))
+    }
+
+    fn note_include_path_mutation_call(
+        &mut self,
+        name: &str,
+        arguments: &[Expr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        source_file: &str,
+        source_dir: &str,
+    ) {
+        if !name.eq_ignore_ascii_case("file_put_contents")
+            && !name.eq_ignore_ascii_case("unlink")
+            && !name.eq_ignore_ascii_case("opcache_invalidate")
+        {
+            return;
+        }
+        if arguments.is_empty()
+            || argument_names.first().is_some_and(Option::is_some)
+            || argument_unpacks.first().copied().unwrap_or(false)
+        {
+            return;
+        }
+        let Some(paths) =
+            bounded_include_paths(&arguments[0], source_file, source_dir, &self.path_env)
+        else {
+            return;
+        };
+        for path in paths {
+            let resolved = resolve_include_candidate_path(&path, source_dir);
+            self.mutated_include_paths
+                .insert(resolved.resource_path.clone());
+            if let Ok(canonical_path) = fs::canonicalize(&resolved.resource_path) {
+                self.mutated_include_paths.insert(canonical_path);
+            }
+        }
     }
 
     fn finalize_sources(&mut self) -> Result<()> {

@@ -1,0 +1,12 @@
+ext/opcache/tests/bug78185.phpt
+ext/opcache/tests/bug78175.phpt
+ext/opcache/tests/bug74596.phpt
+ext/opcache/tests/preload_error_handler.phpt
+ext/opcache/tests/issue0149.phpt
+ext/opcache/tests/opt/type_inference_class_consts3.phpt
+ext/opcache/tests/opt/sccp_008.phpt
+ext/opcache/tests/bug65915.phpt
+ext/opcache/tests/optimize_static_002.phpt
+ext/opcache/tests/opcache_enable_noop_001.phpt
+ext/opcache/tests/gh8063-002.phpt
+ext/opcache/tests/opt/dce_005.phpt

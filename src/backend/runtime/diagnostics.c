@@ -387,6 +387,25 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
     if (source->origin_method_name != NULL) {
         copy.as.closure->origin_method_name = ptn_duplicate_string(source->origin_method_name);
     }
+    copy.as.closure->has_dynamic_body = source->has_dynamic_body;
+    if (source->dynamic_body != NULL) {
+        copy.as.closure->dynamic_body =
+            ptn_duplicate_string_len(source->dynamic_body, source->dynamic_body_len);
+        copy.as.closure->dynamic_body_len = source->dynamic_body_len;
+        copy.as.closure->dynamic_body_base_line = source->dynamic_body_base_line;
+    }
+    if (source->dynamic_parameter_count != 0) {
+        copy.as.closure->dynamic_parameter_names =
+            calloc(source->dynamic_parameter_count, sizeof(char *));
+        if (copy.as.closure->dynamic_parameter_names == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        copy.as.closure->dynamic_parameter_count = source->dynamic_parameter_count;
+        for (size_t i = 0; i < source->dynamic_parameter_count; i++) {
+            copy.as.closure->dynamic_parameter_names[i] =
+                ptn_duplicate_string(source->dynamic_parameter_names[i]);
+        }
+    }
     return copy;
 }
 

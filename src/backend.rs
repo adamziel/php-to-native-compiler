@@ -28474,6 +28474,13 @@ fn emit_callable_dispatch(
     out.push_str("            runtime->current_class_name = previous_class_name;\n");
     out.push_str("            return result;\n");
     out.push_str("        }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        if (resolved.as.closure->has_dynamic_body) {\n");
+    out.push_str(
+        "            return ptn_dynamic_closure_call(runtime, resolved, argc, args, line);\n",
+    );
+    out.push_str("        }\n");
+    out.push_str("#endif\n");
     out.push_str("        const char *previous_class_name = runtime->current_class_name;\n");
     out.push_str("        if (resolved.as.closure->bound_scope_name != NULL) {\n");
     out.push_str(

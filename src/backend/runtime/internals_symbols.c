@@ -788,6 +788,13 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->has_wrapped_callable) {
         ptn_value_destroy(&closure->wrapped_callable);
     }
+    free(closure->dynamic_body);
+    if (closure->dynamic_parameter_names != NULL) {
+        for (size_t i = 0; i < closure->dynamic_parameter_count; i++) {
+            free(closure->dynamic_parameter_names[i]);
+        }
+        free(closure->dynamic_parameter_names);
+    }
     free(closure->bound_scope_name);
     free(closure->origin_class_name);
     free(closure->origin_method_name);

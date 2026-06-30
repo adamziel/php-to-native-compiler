@@ -81390,6 +81390,45 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
 }
 
 #[test]
+fn phpc_opcache_invalidated_runtime_rewrite_uses_current_include_source() {
+    let root = temp_dir("ptn-phpc-opcache-invalidated-runtime-rewrite");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-invalidated-runtime-rewrite.php");
+    let included = root.join("opcache-invalidated-runtime-rewrite.inc.php");
+    fs::write(&included, "<?php return function(){ return \"stale\";};").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$tmp = __DIR__ . '/opcache-invalidated-runtime-rewrite.inc.php';\n\
+file_put_contents($tmp, '<?php return function(){ return \"a\";};');\n\
+$f = require $tmp;\n\
+var_dump($f());\n\
+var_dump(opcache_invalidate($tmp, true));\n\
+file_put_contents($tmp, '<?php return function(){ return \"b\";};');\n\
+$f = require $tmp;\n\
+var_dump($f());\n\
+@unlink($tmp);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\nbool(true)\nstring(1) \"b\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_enable_cannot_be_reenabled_after_runtime_disable() {
     let root = temp_dir("ptn-phpc-opcache-enable-noop");
     fs::create_dir_all(&root).unwrap();

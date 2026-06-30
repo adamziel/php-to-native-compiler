@@ -229528,6 +229528,33 @@ static size_t ptn_eval_find_matching_brace(const char *code, size_t len, size_t 
     return len;
 }
 
+static size_t ptn_eval_find_matching_delimiter(
+    const char *code,
+    size_t len,
+    size_t open_pos,
+    char open_ch,
+    char close_ch
+) {
+    size_t depth = 1;
+    size_t pos = open_pos + 1;
+    while (pos < len) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            continue;
+        }
+        if (code[pos] == open_ch) {
+            depth++;
+        } else if (code[pos] == close_ch) {
+            depth--;
+            if (depth == 0) {
+                return pos;
+            }
+        }
+        pos++;
+    }
+    return len;
+}
+
 static void ptn_eval_scan_magic_visibility(
     PtnRuntime *runtime,
     const char *code,
@@ -231289,6 +231316,275 @@ static int ptn_eval_parse_function_call_expression(
     return 1;
 }
 
+static void ptn_eval_free_dynamic_parameter_names(char **names, size_t count) {
+    if (names == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free(names[i]);
+    }
+    free(names);
+}
+
+static int ptn_eval_dynamic_parameter_names_append(
+    char ***names_io,
+    size_t *count_io,
+    size_t *capacity_io,
+    const char *name,
+    size_t name_len
+) {
+    if (*count_io == *capacity_io) {
+        size_t new_capacity = *capacity_io == 0 ? 2 : *capacity_io * 2;
+        if (new_capacity < *capacity_io) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_names = realloc(*names_io, new_capacity * sizeof(char *));
+        if (new_names == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *names_io = new_names;
+        *capacity_io = new_capacity;
+    }
+    (*names_io)[*count_io] = ptn_duplicate_string_len(name, name_len);
+    (*count_io)++;
+    return 1;
+}
+
+static int ptn_eval_parse_dynamic_parameter_names(
+    const char *code,
+    size_t start,
+    size_t end,
+    char ***names_out,
+    size_t *count_out
+) {
+    char **names = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    size_t segment_start = start;
+    size_t cursor = start;
+    size_t depth = 0;
+    while (cursor <= end) {
+        int at_separator = cursor == end || (depth == 0 && code[cursor] == ',');
+        if (!at_separator) {
+            if (code[cursor] == '\'' || code[cursor] == '"') {
+                cursor = ptn_eval_skip_quoted_string(code, end, cursor);
+                continue;
+            }
+            if (code[cursor] == '(' || code[cursor] == '[' || code[cursor] == '{') {
+                depth++;
+            } else if ((code[cursor] == ')' || code[cursor] == ']' || code[cursor] == '}') && depth != 0) {
+                depth--;
+            }
+            cursor++;
+            continue;
+        }
+
+        size_t scan = segment_start;
+        while (scan < cursor) {
+            if (code[scan] == '\'' || code[scan] == '"') {
+                scan = ptn_eval_skip_quoted_string(code, cursor, scan);
+                continue;
+            }
+            if (code[scan] == '$' &&
+                scan + 1 < cursor &&
+                ptn_eval_variable_identifier_start((unsigned char)code[scan + 1])) {
+                size_t name_start = scan + 1;
+                size_t name_end = name_start;
+                while (name_end < cursor &&
+                    ptn_eval_variable_identifier_part((unsigned char)code[name_end])) {
+                    name_end++;
+                }
+                ptn_eval_dynamic_parameter_names_append(
+                    &names,
+                    &count,
+                    &capacity,
+                    code + name_start,
+                    name_end - name_start
+                );
+                break;
+            }
+            scan++;
+        }
+        segment_start = cursor + 1;
+        cursor++;
+    }
+
+    *names_out = names;
+    *count_out = count;
+    return 1;
+}
+
+static void ptn_eval_dynamic_closure_bind_captures(
+    PtnRuntime *runtime,
+    PtnValue closure,
+    const char *code,
+    size_t start,
+    size_t end
+) {
+    size_t cursor = start;
+    while (cursor < end) {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, end, cursor);
+            continue;
+        }
+        if (code[cursor] != '$' ||
+            cursor + 1 >= end ||
+            !ptn_eval_variable_identifier_start((unsigned char)code[cursor + 1])) {
+            cursor++;
+            continue;
+        }
+        size_t name_start = cursor + 1;
+        size_t name_end = name_start;
+        while (name_end < end &&
+            ptn_eval_variable_identifier_part((unsigned char)code[name_end])) {
+            name_end++;
+        }
+        char *name = ptn_duplicate_string_len(code + name_start, name_end - name_start);
+        PtnValue capture;
+        if (runtime != NULL && ptn_symbols_get(&runtime->symbols, name, &capture)) {
+            ptn_closure_set_capture(closure, name, capture);
+        }
+        free(name);
+        cursor = name_end;
+    }
+}
+
+static int ptn_eval_parse_anonymous_function_expression(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    int is_static = 0;
+    if (ptn_eval_keyword_at(code, len, cursor, "static")) {
+        size_t after_static = ptn_eval_skip_ws(code, len, cursor + strlen("static"));
+        if (!ptn_eval_keyword_at(code, len, after_static, "function")) {
+            return 0;
+        }
+        is_static = 1;
+        cursor = after_static;
+    }
+    if (!ptn_eval_keyword_at(code, len, cursor, "function")) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor + strlen("function"));
+    if (cursor < len && code[cursor] == '&') {
+        cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+    }
+    if (cursor >= len || code[cursor] != '(') {
+        return 0;
+    }
+    size_t parameters_open = cursor;
+    size_t parameters_close =
+        ptn_eval_find_matching_delimiter(code, len, parameters_open, '(', ')');
+    if (parameters_close >= len) {
+        return 0;
+    }
+    char **parameter_names = NULL;
+    size_t parameter_count = 0;
+    if (!ptn_eval_parse_dynamic_parameter_names(
+            code,
+            parameters_open + 1,
+            parameters_close,
+            &parameter_names,
+            &parameter_count
+        )) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, parameters_close + 1);
+
+    size_t captures_start = 0;
+    size_t captures_end = 0;
+    int has_captures = 0;
+    if (ptn_eval_keyword_at(code, len, cursor, "use")) {
+        cursor = ptn_eval_skip_ws(code, len, cursor + strlen("use"));
+        if (cursor >= len || code[cursor] != '(') {
+            ptn_eval_free_dynamic_parameter_names(parameter_names, parameter_count);
+            return 0;
+        }
+        size_t captures_open = cursor;
+        size_t captures_close =
+            ptn_eval_find_matching_delimiter(code, len, captures_open, '(', ')');
+        if (captures_close >= len) {
+            ptn_eval_free_dynamic_parameter_names(parameter_names, parameter_count);
+            return 0;
+        }
+        captures_start = captures_open + 1;
+        captures_end = captures_close;
+        has_captures = 1;
+        cursor = ptn_eval_skip_ws(code, len, captures_close + 1);
+    }
+
+    if (cursor < len && code[cursor] == ':') {
+        cursor++;
+        while (cursor < len && code[cursor] != '{') {
+            if (code[cursor] == '\'' || code[cursor] == '"') {
+                cursor = ptn_eval_skip_quoted_string(code, len, cursor);
+                continue;
+            }
+            cursor++;
+        }
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len || code[cursor] != '{') {
+        ptn_eval_free_dynamic_parameter_names(parameter_names, parameter_count);
+        return 0;
+    }
+    size_t body_open = cursor;
+    size_t body_close = ptn_eval_find_matching_brace(code, len, body_open);
+    if (body_close >= len) {
+        ptn_eval_free_dynamic_parameter_names(parameter_names, parameter_count);
+        return 0;
+    }
+    size_t body_start = body_open + 1;
+    size_t body_len = body_close - body_start;
+    size_t body_line = ptn_eval_line_for_pos(code, body_start, line);
+
+    PtnFunctionMetadata metadata = ptn_function_metadata_with_source(
+        ptn_function_metadata_found(
+            "{closure}",
+            0,
+            parameter_count,
+            parameter_count,
+            0,
+            NULL,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        ),
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        ptn_eval_line_for_pos(code, body_close, line),
+        NULL,
+        NULL
+    );
+    PtnValue closure = ptn_closure(runtime, (size_t)-1, "{closure}", metadata, is_static, 0);
+    closure.as.closure->has_dynamic_body = 1;
+    closure.as.closure->dynamic_body = ptn_duplicate_string_len(code + body_start, body_len);
+    closure.as.closure->dynamic_body_len = body_len;
+    closure.as.closure->dynamic_body_base_line = body_line;
+    closure.as.closure->dynamic_parameter_names = parameter_names;
+    closure.as.closure->dynamic_parameter_count = parameter_count;
+    if (has_captures) {
+        ptn_eval_dynamic_closure_bind_captures(
+            runtime,
+            closure,
+            code,
+            captures_start,
+            captures_end
+        );
+    }
+
+    *out = closure;
+    *pos = body_close + 1;
+    return 1;
+}
+
 static int ptn_eval_parse_primary_expression(
     PtnRuntime *runtime,
     const char *code,
@@ -231314,6 +231610,9 @@ static int ptn_eval_parse_primary_expression(
         return 1;
     }
     if (ptn_eval_parse_new_expression(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
+    if (ptn_eval_parse_anonymous_function_expression(runtime, code, len, pos, line, out)) {
         return 1;
     }
     if (code[cursor] == '!') {
@@ -232861,6 +233160,93 @@ static int ptn_dynamic_execute_statements_range(
         return 0;
     }
     return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_dynamic_closure_call(
+    PtnRuntime *caller_runtime,
+    PtnValue closure_value,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(closure_value);
+    if (resolved.type != PTN_CLOSURE ||
+        !resolved.as.closure->has_dynamic_body ||
+        resolved.as.closure->dynamic_body == NULL) {
+        return ptn_null();
+    }
+    PtnClosure *closure = resolved.as.closure;
+    PtnRuntime runtime;
+    ptn_runtime_init_function_frame(&runtime, caller_runtime);
+    runtime.current_function_name = closure->display_name != NULL
+        ? closure->display_name
+        : "{closure}";
+    runtime.current_class_name = closure->scope_class_name;
+    runtime.current_called_class_name =
+        caller_runtime != NULL && caller_runtime->called_class_name_override != NULL
+            ? caller_runtime->called_class_name_override
+            : closure->called_class_name;
+    runtime.call_site_line = line;
+    const char *const *call_arg_names =
+        caller_runtime != NULL ? caller_runtime->next_call_arg_names : NULL;
+    if (caller_runtime != NULL) {
+        caller_runtime->next_call_arg_names = NULL;
+    }
+    ptn_runtime_set_call_frame(
+        &runtime,
+        argc,
+        args,
+        call_arg_names,
+        closure->dynamic_parameter_count,
+        (const char *const *)closure->dynamic_parameter_names,
+        closure->dynamic_parameter_count,
+        NULL,
+        (size_t)-1
+    );
+    runtime.owned_call_frame.has_current_closure = 1;
+    runtime.owned_call_frame.current_closure = closure_value;
+    ptn_runtime_import_closure_captures(&runtime, closure_value);
+    for (size_t i = 0; i < closure->dynamic_parameter_count; i++) {
+        PtnValue parameter_value = i < argc && !ptn_value_is_missing(args[i])
+            ? args[i]
+            : ptn_null();
+        ptn_runtime_write_variable(
+            &runtime,
+            closure->dynamic_parameter_names[i],
+            parameter_value
+        );
+    }
+
+    size_t pos = 0;
+    PtnValue result = ptn_null();
+    int returned = 0;
+    if (!ptn_dynamic_execute_statements_range(
+            &runtime,
+            closure->dynamic_body,
+            closure->dynamic_body_len,
+            &pos,
+            closure->dynamic_body_len,
+            closure->dynamic_body_base_line,
+            &result,
+            &returned
+        )) {
+        ptn_value_destroy(&result);
+        ptn_throw_exception_at(
+            caller_runtime,
+            "Error",
+            "Unsupported dynamic closure body",
+            caller_runtime != NULL ? caller_runtime->source_path : NULL,
+            line
+        );
+        result = ptn_null();
+    }
+    if (!returned && !ptn_runtime_has_active_exception(&runtime)) {
+        ptn_value_destroy(&result);
+        result = ptn_null();
+    }
+    ptn_runtime_drop_call_frame_arguments(&runtime);
+    ptn_runtime_free(&runtime);
+    return result;
 }
 
 static int ptn_dynamic_execute_php_source(

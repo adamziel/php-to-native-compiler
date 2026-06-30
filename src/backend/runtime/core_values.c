@@ -947,6 +947,12 @@ struct PtnClosure {
     int origin_kind;
     char *origin_class_name;
     char *origin_method_name;
+    int has_dynamic_body;
+    char *dynamic_body;
+    size_t dynamic_body_len;
+    size_t dynamic_body_base_line;
+    char **dynamic_parameter_names;
+    size_t dynamic_parameter_count;
 };
 
 typedef enum {
@@ -4178,6 +4184,12 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->origin_kind = PTN_CLOSURE_ORIGIN_ANONYMOUS;
     closure->origin_class_name = NULL;
     closure->origin_method_name = NULL;
+    closure->has_dynamic_body = 0;
+    closure->dynamic_body = NULL;
+    closure->dynamic_body_len = 0;
+    closure->dynamic_body_base_line = 0;
+    closure->dynamic_parameter_names = NULL;
+    closure->dynamic_parameter_count = 0;
     ptn_runtime_register_closure(runtime, closure);
     PtnValue value;
     value.type = PTN_CLOSURE;
