@@ -200128,6 +200128,11 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
         return ptn_null();
     }
     if (object.as.object->lazy_initializing) {
+        if (object.as.object->lazy_initializer_refcount_guards == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_object_retain(object.as.object);
+        object.as.object->lazy_initializer_refcount_guards++;
         ptn_throw_exception(
             runtime,
             "Error",
@@ -200171,8 +200176,7 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     }
     const PtnObjectPropertyMetadata *display_metadata =
         ptn_object_metadata_for_display_name(object, entry->key.as.string);
-    if (display_metadata != NULL &&
-        display_metadata->read_visibility != PTN_PROPERTY_PRIVATE) {
+    if (display_metadata != NULL) {
         return 0;
     }
     return 1;

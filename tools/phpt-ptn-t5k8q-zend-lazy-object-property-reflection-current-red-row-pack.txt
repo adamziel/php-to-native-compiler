@@ -1,0 +1,12 @@
+Zend/tests/property_hooks/magic_interaction.phpt
+Zend/tests/lazy_objects/isset_hooked_may_not_initialize.phpt
+Zend/tests/lazy_objects/setRawValueWithoutLazyInitialization_exception_001.phpt
+Zend/tests/lazy_objects/init_fatal.phpt
+ext/reflection/tests/ReflectionMethod_tentative_return_type.phpt
+Zend/tests/property_hooks/parameter_attributes.phpt
+Zend/tests/traits/bug62907.phpt
+Zend/tests/lazy_objects/reset_as_lazy_while_init_exception.phpt
+Zend/tests/property_hooks/traits.phpt
+Zend/tests/property_hooks/unserialize.phpt
+ext/reflection/tests/ReflectionObject_export_basic3.phpt
+Zend/tests/lazy_objects/realize_proxy_overridden.phpt
