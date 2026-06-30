@@ -35318,6 +35318,52 @@ foreach (PhpToken::tokenize($code) as $token) {
 }
 
 #[test]
+fn compile_php_token_tokenize_token_parse_nullsafe_to_native_binary() {
+    let root = temp_dir("ptn-native-php-token-token-parse-nullsafe");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-token-token-parse-nullsafe.php");
+    let output = root.join("php-token-token-parse-nullsafe-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(TOKEN_PARSE);
+foreach (PhpToken::tokenize('<?php $foo = $a?->b();', TOKEN_PARSE) as $token) {
+    echo $token->getTokenName(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "T_OPEN_TAG\n",
+            "T_VARIABLE\n",
+            "T_WHITESPACE\n",
+            "=\n",
+            "T_WHITESPACE\n",
+            "T_VARIABLE\n",
+            "T_NULLSAFE_OBJECT_OPERATOR\n",
+            "T_STRING\n",
+            "(\n",
+            ")\n",
+            ";\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_non_utf8_source_string_bytes_to_native_binary() {
     let root = temp_dir("ptn-native-non-utf8-source-string-bytes");
     fs::create_dir_all(&root).unwrap();

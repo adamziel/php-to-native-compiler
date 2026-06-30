@@ -1,0 +1,2 @@
+/home/claude/php-src-phpt/ext/tokenizer/tests/bad_character.phpt
+/home/claude/php-src-phpt/ext/tokenizer/tests/bug80462.phpt
