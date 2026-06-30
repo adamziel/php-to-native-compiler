@@ -10585,7 +10585,7 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
     if full_internal_dispatch {
-        out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+        out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"PDO\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
         out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
         out.push_str("            free(ptn_static_call_class);\n");
         out.push_str("            return ptn_static_call_result;\n");
@@ -23716,6 +23716,7 @@ fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) 
                 | "bindvalue"
                 | "rowcount"
                 | "columncount"
+                | "getattribute"
                 | "fetch"
                 | "fetchall"
                 | "fetchcolumn"
@@ -26436,7 +26437,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            ptn_abort_out_of_memory();\n");
     out.push_str("        }\n");
     out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
-    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(resolved_class_name, method_name, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, method_name)) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(resolved_class_name, method_name, access_scope) || ((ptn_internal_class_exists_name(resolved_class_name) || ptn_declared_class_is_same_or_descendant(resolved_class_name, \"PDO\")) && ptn_internal_class_static_method_exists(resolved_class_name, method_name)) || ptn_find_internal_function(function_name) != NULL;\n");
     out.push_str("        if (!valid && runtime != NULL && runtime->has_current_receiver) {\n");
     out.push_str(
         "            PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n",
@@ -27515,7 +27516,7 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLWriter\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
+    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"PDO\") || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLWriter\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
     out.push_str("        *result_out = ptn_internal_class_static_call_method(runtime, target_class_name, method_name, argc, args, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -36354,6 +36355,9 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         }
     }
     if class_name.eq_ignore_ascii_case("Pdo\\Sqlite") {
+        if name.eq_ignore_ascii_case("ATTR_READONLY_STATEMENT") {
+            return Some("1001");
+        }
         if name.eq_ignore_ascii_case("ATTR_EXTENDED_RESULT_CODES") {
             return Some("1001");
         }

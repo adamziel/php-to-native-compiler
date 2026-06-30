@@ -6785,6 +6785,11 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
                 line
             );
         }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (ptn_internal_class_name_is_pdo_row(receiver.as.object->class_name)) {
+            return ptn_null();
+        }
+#endif
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
         if (runtime != NULL &&
             runtime->exceptions != NULL &&
@@ -12450,6 +12455,11 @@ static PTN_UNUSED int ptn_internal_array_iterator_current_reference(
     size_t line,
     PtnValue *out
 );
+static PTN_UNUSED PtnArrayIterator ptn_pdo_statement_array_iterator(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
 #endif
 
 static PTN_UNUSED int ptn_value_is_unpack_traversable(PtnValue value) {
@@ -14215,6 +14225,10 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
             return iterator;
         }
     }
+
+    if (ptn_object_is_internal_or_descendant(value, "PDOStatement")) {
+        return ptn_pdo_statement_array_iterator(runtime, value, line);
+    }
 #endif
 
     if (
@@ -14302,6 +14316,19 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_traversable_ob
     if (ptn_object_is_generator(value.as.object)) {
         return ptn_array_iterator_from_generator(runtime, value.as.object, 1, path, line);
     }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_object_is_internal_or_descendant(value, "PDOStatement")) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "An iterator cannot be used with foreach by reference",
+            path,
+            line
+        );
+        return ptn_array_iterator_empty();
+    }
+#endif
 
     if (
         ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
@@ -16207,6 +16234,11 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (ptn_internal_class_name_is_pdo_row(container.as.object->class_name)) {
+            goto done;
+        }
+#endif
         ptn_throw_cannot_use_object_as_array(runtime, container, line);
         goto done;
     }

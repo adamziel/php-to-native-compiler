@@ -1,0 +1,15 @@
+# ptn-w17z.1177 exact PDO SQLite callback/aggregate current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T063017Z.tsv
+# Rows were FAIL in the source artifact; paths are relative to PHP_SRC_PHPT.
+ext/pdo_sqlite/tests/subclasses/pdo_sqlite_createaggregate_002.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_005.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_extendederror_attr.phpt
+ext/pdo_sqlite/tests/pdo_sqlite___construct_uri.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_setauthorizer_trampoline.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_lastinsertid.phpt
+ext/pdo_sqlite/tests/bug78192.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_statement_getattribute.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_createfunction.phpt
+ext/pdo_sqlite/tests/pdo_sqlite_createaggregate_002.phpt
+ext/pdo_sqlite/tests/bug44327_3.phpt
+ext/pdo_sqlite/tests/subclasses/pdosqlite_007.phpt

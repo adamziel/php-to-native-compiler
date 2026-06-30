@@ -29370,6 +29370,80 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_sqlite_callbacks_and_lazy_row_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-callbacks-lazy");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-callbacks-lazy.php");
+    let output = root.join("pdo-sqlite-callbacks-lazy-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyPDO extends PDO {}
+
+$db = new PDO('sqlite::memory:');
+$db->sqliteCreateFunction('testing', function($v) { return strtolower($v); });
+$db->query('CREATE TABLE t (name TEXT)');
+$db->query("INSERT INTO t VALUES ('PHP'), ('PHP6')");
+foreach ($db->query('SELECT testing(name) FROM t') as $row) {
+    echo $row['testing(name)'], "\n";
+}
+
+try {
+    $db->sqliteCreateAggregate('foo', 'a', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $db->sqliteCreateAggregate('foo', 'strlen', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$statement = $db->prepare('SELECT 1;');
+var_dump($statement->getAttribute(Pdo\Sqlite::ATTR_READONLY_STATEMENT));
+$statement = $db->prepare('CREATE TABLE pdo_sqlite_attr_probe (a TEXT);');
+var_dump($statement->getAttribute(Pdo\Sqlite::ATTR_READONLY_STATEMENT));
+
+$lazy = $db->query('select 1 as queryStringxx')->fetch(PDO::FETCH_LAZY);
+var_dump($lazy->queryStringzz, $lazy[5], $lazy->{3});
+
+try {
+    MyPDO::connect('sqlite::memory:');
+} catch (PDOException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Method PDO::sqliteCreateFunction() is deprecated"));
+    assert!(stdout.contains("\nphp\nphp6\n"));
+    assert!(stdout.contains(
+        "PDO::sqliteCreateAggregate(): Argument #2 ($step) must be a valid callback, function \"a\" not found or invalid function name\n"
+    ));
+    assert!(stdout.contains(
+        "PDO::sqliteCreateAggregate(): Argument #3 ($finalize) must be a valid callback, function \"\" not found or invalid function name\n"
+    ));
+    assert!(stdout.contains("bool(true)\nbool(false)\nNULL\nNULL\nNULL\n"));
+    assert!(stdout.contains(
+        "MyPDO::connect() cannot be used for connecting to the \"sqlite\" driver, either call Pdo\\Sqlite::connect() or PDO::connect() instead\n"
+    ));
+    assert!(!stdout.contains("Undefined property"));
+    assert!(!stdout.contains("Cannot use object of type PDORow as array"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_pdo_register_sqlite_scalar_function"));
+    assert!(c_source.contains("ptn_pdo_statement_sql_is_readonly"));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();

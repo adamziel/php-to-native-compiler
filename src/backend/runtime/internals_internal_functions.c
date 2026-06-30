@@ -170854,7 +170854,8 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_uri_whatwg_url_static_parse(runtime, argc, args, line);
         }
     }
-    if (ptn_internal_class_name_is_pdo(class_name)) {
+    if (ptn_internal_class_name_is_pdo(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "PDO")) {
         if (ptn_ascii_case_equal(name, "getAvailableDrivers")) {
             if (argc != 0) {
                 ptn_throw_exception(runtime, "ArgumentCountError", "PDO::getAvailableDrivers() expects exactly 0 arguments");
@@ -170877,7 +170878,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                     : (ptn_ascii_case_equal(class_name, "Pdo\\Mysql")
                         ? "mysql"
                         : (ptn_ascii_case_equal(class_name, "Pdo\\Pgsql") ? "pgsql" : NULL));
-                if (dsn_driver != NULL && class_driver != NULL && !ptn_ascii_case_equal(dsn_driver, class_driver)) {
+                if (dsn_driver != NULL && (class_driver == NULL || !ptn_ascii_case_equal(dsn_driver, class_driver))) {
                     const char *driver_class = ptn_pdo_driver_class_name(dsn_driver);
                     int needed = snprintf(
                         NULL,
@@ -192966,6 +192967,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "bindValue")
             || ptn_ascii_case_equal(method_name, "rowCount")
             || ptn_ascii_case_equal(method_name, "columnCount")
+            || ptn_ascii_case_equal(method_name, "getAttribute")
             || ptn_ascii_case_equal(method_name, "fetch")
             || ptn_ascii_case_equal(method_name, "fetchAll")
             || ptn_ascii_case_equal(method_name, "fetchColumn")
@@ -193191,7 +193193,8 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
         return ptn_ascii_case_equal(method_name, "parse");
     }
-    if (ptn_internal_class_name_is_pdo(class_name)) {
+    if (ptn_internal_class_name_is_pdo(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "PDO")) {
         return ptn_ascii_case_equal(method_name, "connect")
             || ptn_ascii_case_equal(method_name, "getAvailableDrivers");
     }
@@ -194871,6 +194874,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "bindValue",
             "rowCount",
             "columnCount",
+            "getAttribute",
             "fetch",
             "fetchAll",
             "fetchColumn",
@@ -204988,6 +204992,7 @@ typedef struct {
     int extended_result_codes;
     int has_authorizer;
     PtnValue authorizer_callback;
+    PtnValue sqlite_functions;
     PtnValue last_error_info;
     char *statement_class;
     PtnValue statement_ctor_args;
@@ -205046,6 +205051,7 @@ enum {
     PTN_PDO_FETCH_CLASS = 8,
     PTN_PDO_FETCH_INTO = 9,
     PTN_PDO_FETCH_PROPS_LATE = 1048576,
+    PTN_PDO_SQLITE_ATTR_READONLY_STATEMENT = 1001,
     PTN_SQLITE3_ASSOC = 1,
     PTN_SQLITE3_NUM = 2,
     PTN_SQLITE3_BOTH = 3
@@ -205083,6 +205089,8 @@ static void ptn_db_connection_data_clear(PtnDbConnectionData *data) {
     data->statement_ctor_args = ptn_null();
     ptn_value_destroy(&data->authorizer_callback);
     data->authorizer_callback = ptn_null();
+    ptn_value_destroy(&data->sqlite_functions);
+    data->sqlite_functions = ptn_null();
     data->has_authorizer = 0;
 }
 
@@ -205408,6 +205416,40 @@ static void ptn_db_free_string_list(char **items, size_t count) {
     free(items);
 }
 
+static char *ptn_db_lower_key_copy(const char *value) {
+    char *copy = ptn_db_trimmed_copy(value != NULL ? value : "");
+    for (char *cursor = copy; *cursor != '\0'; cursor++) {
+        *cursor = (char)tolower((unsigned char)*cursor);
+    }
+    return copy;
+}
+
+static void ptn_db_register_sqlite_function(PtnDbConnectionData *db, const char *name, PtnValue callback) {
+    if (db == NULL) {
+        ptn_value_destroy(&callback);
+        return;
+    }
+    if (db->sqlite_functions.type != PTN_ARRAY) {
+        ptn_value_destroy(&db->sqlite_functions);
+        db->sqlite_functions = ptn_array_from_literal_entries(0, NULL);
+    }
+    char *key = ptn_db_lower_key_copy(name);
+    ptn_array_set_entry(db->sqlite_functions.as.array, ptn_array_string_key(key), callback);
+    free(key);
+}
+
+static PtnArrayEntry *ptn_db_sqlite_function_entry(PtnDbConnectionData *db, const char *name) {
+    if (db == NULL || db->sqlite_functions.type != PTN_ARRAY || name == NULL) {
+        return NULL;
+    }
+    char *key = ptn_db_lower_key_copy(name);
+    PtnArrayKey array_key = ptn_array_string_key(key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(db->sqlite_functions.as.array, array_key);
+    ptn_array_key_free(array_key);
+    free(key);
+    return entry;
+}
+
 static PtnValue ptn_db_bound_value_for_token(PtnValue bound_values, const char *token, size_t *position_inout) {
     PtnValue values = ptn_value_deref(bound_values);
     if (values.type != PTN_ARRAY) {
@@ -205486,12 +205528,72 @@ static PtnValue ptn_db_row_column_value(PtnValue row_value, const char *column) 
     return ptn_value_clone_deref(entry->value);
 }
 
-static PtnValue ptn_db_eval_select_expr(PtnValue bound_values, PtnValue row, const char *expr, size_t *position_inout) {
+static int ptn_db_select_expr_function_call_parts(
+    const char *trimmed,
+    char **function_name_out,
+    char ***args_out,
+    size_t *arg_count_out
+) {
+    *function_name_out = NULL;
+    *args_out = NULL;
+    *arg_count_out = 0;
+    size_t len = strlen(trimmed);
+    if (len < 3 || trimmed[len - 1] != ')') {
+        return 0;
+    }
+    const char *open = NULL;
+    int quote = 0;
+    for (const char *cursor = trimmed; *cursor != '\0'; cursor++) {
+        if (quote != 0) {
+            if (*cursor == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        if (*cursor == '\'' || *cursor == '"') {
+            quote = *cursor;
+            continue;
+        }
+        if (*cursor == '(') {
+            open = cursor;
+            break;
+        }
+    }
+    if (open == NULL || open == trimmed) {
+        return 0;
+    }
+    char *function_name = ptn_db_trimmed_copy_len(trimmed, (size_t)(open - trimmed));
+    if (function_name[0] == '\0' || strchr(function_name, ' ') != NULL || strchr(function_name, '\t') != NULL) {
+        free(function_name);
+        return 0;
+    }
+    const char *args_start = open + 1;
+    size_t args_len = (size_t)((trimmed + len - 1) - args_start);
+    char **args = NULL;
+    size_t arg_count = 0;
+    if (args_len > 0) {
+        ptn_db_split_csv(args_start, args_len, &args, &arg_count);
+    }
+    *function_name_out = function_name;
+    *args_out = args;
+    *arg_count_out = arg_count;
+    return 1;
+}
+
+static PtnValue ptn_db_eval_select_expr(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    PtnValue bound_values,
+    PtnValue row,
+    const char *expr,
+    size_t *position_inout,
+    size_t line
+) {
     char *trimmed = ptn_db_trimmed_copy(expr);
     size_t len = strlen(trimmed);
     if (ptn_db_ascii_case_starts_with(trimmed, "upper(") && len > 7 && trimmed[len - 1] == ')') {
         char *inner = ptn_db_trimmed_copy_len(trimmed + 6, len - 7);
-        PtnValue value = ptn_db_eval_select_expr(bound_values, row, inner, position_inout);
+        PtnValue value = ptn_db_eval_select_expr(runtime, db, bound_values, row, inner, position_inout, line);
         free(inner);
         char *string = ptn_db_value_to_owned_string(value);
         for (char *cursor = string; *cursor != '\0'; cursor++) {
@@ -205500,6 +205602,52 @@ static PtnValue ptn_db_eval_select_expr(PtnValue bound_values, PtnValue row, con
         ptn_value_destroy(&value);
         free(trimmed);
         return ptn_owned_string(string);
+    }
+    char *function_name = NULL;
+    char **function_args = NULL;
+    size_t function_arg_count = 0;
+    if (ptn_db_select_expr_function_call_parts(trimmed, &function_name, &function_args, &function_arg_count)) {
+        PtnArrayEntry *function_entry = ptn_db_sqlite_function_entry(db, function_name);
+        if (function_entry != NULL) {
+            PtnValue *call_args = calloc(function_arg_count == 0 ? 1 : function_arg_count, sizeof(PtnValue));
+            if (call_args == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < function_arg_count; i++) {
+                call_args[i] = ptn_db_eval_select_expr(
+                    runtime,
+                    db,
+                    bound_values,
+                    row,
+                    function_args[i],
+                    position_inout,
+                    line
+                );
+                if (runtime->exceptions->active_exception != NULL) {
+                    for (size_t j = 0; j <= i; j++) {
+                        ptn_value_destroy(&call_args[j]);
+                    }
+                    free(call_args);
+                    ptn_db_free_string_list(function_args, function_arg_count);
+                    free(function_name);
+                    free(trimmed);
+                    return ptn_null();
+                }
+            }
+            PtnValue callback = ptn_value_clone_deref(function_entry->value);
+            PtnValue result = ptn_internal_call_callback_impl(runtime, callback, function_arg_count, call_args, line, 0);
+            ptn_value_destroy(&callback);
+            for (size_t i = 0; i < function_arg_count; i++) {
+                ptn_value_destroy(&call_args[i]);
+            }
+            free(call_args);
+            ptn_db_free_string_list(function_args, function_arg_count);
+            free(function_name);
+            free(trimmed);
+            return result;
+        }
+        ptn_db_free_string_list(function_args, function_arg_count);
+        free(function_name);
     }
     if (row.type == PTN_ARRAY) {
         PtnValue column = ptn_db_row_column_value(row, trimmed);
@@ -205976,7 +206124,14 @@ static int ptn_db_exec_update(PtnDbConnectionData *db, const char *sql, PtnValue
     return row_count;
 }
 
-static int ptn_db_select_where_matches(PtnValue row, const char *where_clause, PtnValue bound_values) {
+static int ptn_db_select_where_matches(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    PtnValue row,
+    const char *where_clause,
+    PtnValue bound_values,
+    size_t line
+) {
     if (where_clause == NULL || *where_clause == '\0') {
         return 1;
     }
@@ -205999,7 +206154,7 @@ static int ptn_db_select_where_matches(PtnValue row, const char *where_clause, P
     char *expr = ptn_db_trimmed_copy(equals + 1);
     size_t position = 1;
     PtnValue left = ptn_db_row_column_value(row, column);
-    PtnValue right = ptn_db_eval_select_expr(bound_values, row, expr, &position);
+    PtnValue right = ptn_db_eval_select_expr(runtime, db, bound_values, row, expr, &position, line);
     int matches = ptn_db_value_numeric_equal(left, right);
     ptn_value_destroy(&left);
     ptn_value_destroy(&right);
@@ -206010,12 +206165,15 @@ static int ptn_db_select_where_matches(PtnValue row, const char *where_clause, P
 }
 
 static void ptn_db_select_no_table(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
     const char *select_list,
     const char *where_clause,
     PtnValue bound_values,
     PtnValue *rows_out,
     PtnValue *columns_out,
-    PtnValue *column_tables_out
+    PtnValue *column_tables_out,
+    size_t line
 ) {
     char **exprs = NULL;
     size_t expr_count = 0;
@@ -206030,7 +206188,7 @@ static void ptn_db_select_no_table(
         char *expr_copy = ptn_duplicate_string(exprs[i]);
         columns[i] = ptn_db_select_expr_name(expr_copy);
         char *value_expr = ptn_db_select_expr_value_copy(exprs[i]);
-        PtnValue value = ptn_db_eval_select_expr(bound_values, ptn_null(), value_expr, &position);
+        PtnValue value = ptn_db_eval_select_expr(runtime, db, bound_values, ptn_null(), value_expr, &position, line);
         free(value_expr);
         ptn_array_set_entry(row.as.array, ptn_array_string_key(columns[i]), value);
     }
@@ -206050,6 +206208,7 @@ static void ptn_db_select_no_table(
 }
 
 static void ptn_db_select_from_table(
+    PtnRuntime *runtime,
     PtnDbConnectionData *db,
     const char *select_list,
     const char *from_clause,
@@ -206057,7 +206216,8 @@ static void ptn_db_select_from_table(
     PtnValue bound_values,
     PtnValue *rows_out,
     PtnValue *columns_out,
-    PtnValue *column_tables_out
+    PtnValue *column_tables_out,
+    size_t line
 ) {
     char *from_copy = ptn_db_trimmed_copy(from_clause);
     size_t consumed = 0;
@@ -206104,7 +206264,8 @@ static void ptn_db_select_from_table(
 
     for (size_t i = 0; i < table->rows.as.array->len; i++) {
         PtnValue source_row = ptn_value_deref(table->rows.as.array->entries[i].value);
-        if (source_row.type != PTN_ARRAY || !ptn_db_select_where_matches(source_row, where_clause, bound_values)) {
+        if (source_row.type != PTN_ARRAY ||
+            !ptn_db_select_where_matches(runtime, db, source_row, where_clause, bound_values, line)) {
             continue;
         }
         PtnValue row = ptn_array_from_literal_entries(0, NULL);
@@ -206118,7 +206279,7 @@ static void ptn_db_select_from_table(
                 if (ptn_db_array_entry_string(source_row, value_expr) != NULL) {
                     value = ptn_db_row_column_value(source_row, value_expr);
                 } else {
-                    value = ptn_db_eval_select_expr(bound_values, source_row, value_expr, &position);
+                    value = ptn_db_eval_select_expr(runtime, db, bound_values, source_row, value_expr, &position, line);
                 }
                 free(value_expr);
             }
@@ -206296,9 +206457,9 @@ static int ptn_db_query(
             }
             free(table_name);
             free(from_copy);
-            ptn_db_select_from_table(db, select_list, from_clause, where_clause, bound_values, rows_out, columns_out, column_tables_out);
+            ptn_db_select_from_table(runtime, db, select_list, from_clause, where_clause, bound_values, rows_out, columns_out, column_tables_out, line);
         } else {
-            ptn_db_select_no_table(select_list, where_clause, bound_values, rows_out, columns_out, column_tables_out);
+            ptn_db_select_no_table(runtime, db, select_list, where_clause, bound_values, rows_out, columns_out, column_tables_out, line);
         }
         row_count = (int)(*rows_out).as.array->len;
         free(select_list);
@@ -206496,6 +206657,50 @@ static PtnValue ptn_pdo_fetch_all(PtnRuntime *runtime, PtnValue statement, int m
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_pdo_statement_foreach_row_value(PtnValue row_value) {
+    row_value = ptn_value_deref(row_value);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (row_value.type != PTN_ARRAY) {
+        return result;
+    }
+    int64_t numeric_index = 0;
+    for (size_t i = 0; i < row_value.as.array->len; i++) {
+        PtnArrayEntry *entry = &row_value.as.array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
+                ptn_value_clone_deref(entry->value)
+            );
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(numeric_index++), ptn_value_clone_deref(entry->value));
+    }
+    return result;
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_pdo_statement_array_iterator(PtnRuntime *runtime, PtnValue value, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    PtnPdoStatementData *statement = ptn_pdo_statement_data(value);
+    if (statement == NULL || statement->rows.type != PTN_ARRAY) {
+        return iterator;
+    }
+    PtnValue rows = ptn_array_from_literal_entries(0, NULL);
+    int64_t iterator_index = 0;
+    for (size_t i = statement->cursor; i < statement->rows.as.array->len; i++) {
+        PtnValue row = ptn_pdo_statement_foreach_row_value(statement->rows.as.array->entries[i].value);
+        ptn_array_set_entry(rows.as.array, ptn_array_int_key(iterator_index++), row);
+    }
+    statement->cursor = statement->rows.as.array->len;
+    iterator.array = rows.as.array;
+    ptn_array_iterator_retain(iterator.array);
+    iterator.length = iterator.array->len;
+    iterator.valid = iterator.length != 0;
+    ptn_array_iterator_remember_current_key(&iterator);
+    return iterator;
+}
+
 static void ptn_pdo_handle_query_error(PtnRuntime *runtime, PtnDbConnectionData *db, const char *message) {
     if (runtime->exceptions->active_exception != NULL) {
         return;
@@ -206540,6 +206745,19 @@ static PtnValue ptn_pdo_column_meta(PtnPdoStatementData *statement, int64_t inde
     }
     free(name);
     return result;
+}
+
+static int ptn_pdo_statement_sql_is_readonly(const char *sql) {
+    char *trimmed = ptn_db_trimmed_copy(sql != NULL ? sql : "");
+    size_t len = strlen(trimmed);
+    while (len > 0 && trimmed[len - 1] == ';') {
+        trimmed[--len] = '\0';
+    }
+    int readonly = ptn_db_ascii_case_starts_with(trimmed, "select") ||
+        ptn_db_ascii_case_starts_with(trimmed, "with") ||
+        ptn_db_ascii_case_starts_with(trimmed, "pragma");
+    free(trimmed);
+    return readonly;
 }
 
 static void ptn_pdo_apply_execute_params(PtnPdoStatementData *statement, PtnValue params) {
@@ -206626,6 +206844,74 @@ static void ptn_pdo_emit_sqlite_deprecation(PtnRuntime *runtime, const char *met
         ptn_abort_out_of_memory();
     }
     ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_pdo_register_sqlite_scalar_function(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    const char *method,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s() expects at least 2 arguments", method);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, method, 1, "function_name", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    PtnValue callback = ptn_internal_expect_callback_arg_autoload(
+        runtime,
+        method,
+        2,
+        "callback",
+        ptn_value_clone_deref(args[1])
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *name_copy = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    ptn_db_register_sqlite_function(db, name_copy, callback);
+    free(name_copy);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_pdo_validate_sqlite_aggregate(
+    PtnRuntime *runtime,
+    const char *method,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc < 3) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s() expects at least 3 arguments", method);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue step = ptn_internal_expect_callback_arg_autoload(runtime, method, 2, "step", ptn_value_clone_deref(args[1]));
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_value_destroy(&step);
+    PtnValue finalize = ptn_internal_expect_callback_arg_autoload(runtime, method, 3, "finalize", ptn_value_clone_deref(args[2]));
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_value_destroy(&finalize);
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_pdo_quote(PtnRuntime *runtime, PtnDbConnectionData *db, PtnValue value, size_t line) {
@@ -206753,6 +207039,7 @@ static void ptn_db_initialize_connection(PtnDbConnectionData *data, const char *
     data->extended_result_codes = 0;
     data->has_authorizer = 0;
     data->authorizer_callback = ptn_null();
+    data->sqlite_functions = ptn_array_from_literal_entries(0, NULL);
     data->last_error_info = ptn_array_from_literal_entries(0, NULL);
     data->statement_ctor_args = ptn_array_from_literal_entries(0, NULL);
     ptn_db_set_ok_error_info(data);
@@ -207187,32 +207474,18 @@ static PTN_UNUSED PtnValue ptn_pdo_call_method(
     }
     if (ptn_ascii_case_equal(name, "sqliteCreateFunction")) {
         ptn_pdo_emit_sqlite_deprecation(runtime, "sqliteCreateFunction", "createFunction", line);
-        return ptn_bool(1);
+        return ptn_pdo_register_sqlite_scalar_function(runtime, db, "PDO::sqliteCreateFunction", argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "sqliteCreateAggregate")) {
         ptn_pdo_emit_sqlite_deprecation(runtime, "sqliteCreateAggregate", "createAggregate", line);
-        return ptn_bool(1);
+        return ptn_pdo_validate_sqlite_aggregate(runtime, "PDO::sqliteCreateAggregate", argc, args);
     }
     if (ptn_ascii_case_equal(name, "sqliteCreateCollation")) {
         ptn_pdo_emit_sqlite_deprecation(runtime, "sqliteCreateCollation", "createCollation", line);
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "createAggregate")) {
-        if (argc < 3) {
-            ptn_throw_exception(runtime, "ArgumentCountError", "Pdo\\Sqlite::createAggregate() expects at least 3 arguments");
-            return ptn_null();
-        }
-        PtnValue step = ptn_internal_expect_callback_arg_autoload(runtime, "Pdo\\Sqlite::createAggregate", 2, "step", ptn_value_clone_deref(args[1]));
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
-        }
-        ptn_value_destroy(&step);
-        PtnValue finalize = ptn_internal_expect_callback_arg_autoload(runtime, "Pdo\\Sqlite::createAggregate", 3, "finalize", ptn_value_clone_deref(args[2]));
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
-        }
-        ptn_value_destroy(&finalize);
-        return ptn_bool(1);
+        return ptn_pdo_validate_sqlite_aggregate(runtime, "Pdo\\Sqlite::createAggregate", argc, args);
     }
     if (ptn_ascii_case_equal(name, "setAuthorizer")) {
         if (argc != 1) {
@@ -207239,8 +207512,10 @@ static PTN_UNUSED PtnValue ptn_pdo_call_method(
         db->has_authorizer = 1;
         return ptn_bool(1);
     }
-    if (ptn_ascii_case_equal(name, "createFunction") ||
-        ptn_ascii_case_equal(name, "createCollation")) {
+    if (ptn_ascii_case_equal(name, "createFunction")) {
+        return ptn_pdo_register_sqlite_scalar_function(runtime, db, "Pdo\\Sqlite::createFunction", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "createCollation")) {
         return ptn_bool(1);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method PDO");
@@ -207295,6 +207570,20 @@ static PTN_UNUSED PtnValue ptn_pdo_statement_call_method(
     }
     if (ptn_ascii_case_equal(name, "columnCount")) {
         return ptn_int(statement->columns.type == PTN_ARRAY ? (int64_t)statement->columns.as.array->len : 0);
+    }
+    if (ptn_ascii_case_equal(name, "getAttribute")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "PDOStatement::getAttribute() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t attr = ptn_db_int_arg(runtime, "PDOStatement::getAttribute", 1, "attribute", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (attr == PTN_PDO_SQLITE_ATTR_READONLY_STATEMENT) {
+            return ptn_bool(ptn_pdo_statement_sql_is_readonly(statement->sql));
+        }
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "fetch")) {
         int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "PDOStatement::fetch", 1, "mode", args[0], line) : statement->fetch_mode;
