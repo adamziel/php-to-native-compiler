@@ -179294,18 +179294,18 @@ static void ptn_soap_append_schema_scalar_value(
     char *local = ptn_soap_local_name_dup(type_name == NULL ? "string" : type_name);
     PtnSoapType *schema_type = ptn_soap_type_list_find(types, type_count, local);
     if (schema_type != NULL && schema_type->is_list) {
+        char *item_type = ptn_soap_resolved_scalar_type_dup(
+            types,
+            type_count,
+            schema_type->base_type,
+            0
+        );
         value = ptn_value_deref(value);
         if (value.type == PTN_ARRAY && value.as.array != NULL) {
             for (size_t i = 0; i < value.as.array->len; i++) {
                 if (i != 0) {
                     ptn_string_buffer_append_char(buffer, ' ');
                 }
-                char *item_type = ptn_soap_resolved_scalar_type_dup(
-                    types,
-                    type_count,
-                    schema_type->base_type,
-                    0
-                );
                 ptn_soap_append_scalar_value(
                     runtime,
                     buffer,
@@ -179313,15 +179313,56 @@ static void ptn_soap_append_schema_scalar_value(
                     item_type,
                     line
                 );
-                free(item_type);
                 if (runtime->exceptions->active_exception != NULL) {
+                    free(item_type);
                     free(local);
                     return;
                 }
             }
+            free(item_type);
             free(local);
             return;
         }
+        PtnStringOperand input = ptn_soap_scalar_string_operand(runtime, value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(input);
+            free(item_type);
+            free(local);
+            return;
+        }
+        size_t token_count = 0;
+        size_t offset = 0;
+        while (offset < input.len) {
+            while (offset < input.len && isspace((unsigned char)input.data[offset])) {
+                offset++;
+            }
+            size_t token_start = offset;
+            while (offset < input.len && !isspace((unsigned char)input.data[offset])) {
+                offset++;
+            }
+            if (offset == token_start) {
+                break;
+            }
+            if (token_count++ != 0) {
+                ptn_string_buffer_append_char(buffer, ' ');
+            }
+            PtnValue token = ptn_owned_string_len(
+                ptn_soap_duplicate_len(input.data + token_start, offset - token_start),
+                offset - token_start
+            );
+            ptn_soap_append_scalar_value(runtime, buffer, token, item_type, line);
+            ptn_value_destroy(&token);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(input);
+                free(item_type);
+                free(local);
+                return;
+            }
+        }
+        ptn_string_operand_free(input);
+        free(item_type);
+        free(local);
+        return;
     }
     if (schema_type != NULL && schema_type->is_union) {
         ptn_soap_append_scalar_value(runtime, buffer, value, "string", line);
@@ -180080,6 +180121,10 @@ static char *ptn_soap_schema_element_type_dup(PtnSoapClientData *data, const cha
                     ? NULL
                     : ptn_soap_find_closing_tag(tag_end, end, "element");
                 const char *scan_end = close == NULL ? tag_end : close;
+                if (ptn_soap_range_has_tag(tag_end, scan_end, "complexType") ||
+                    ptn_soap_range_has_tag(tag_end, scan_end, "simpleType")) {
+                    return ptn_duplicate_string(element_name);
+                }
                 char *complex_name = ptn_soap_first_attr_in_range(tag_end, scan_end, "complexType", "name");
                 if (complex_name != NULL) {
                     return complex_name;
@@ -180087,10 +180132,6 @@ static char *ptn_soap_schema_element_type_dup(PtnSoapClientData *data, const cha
                 char *simple_name = ptn_soap_first_attr_in_range(tag_end, scan_end, "simpleType", "name");
                 if (simple_name != NULL) {
                     return simple_name;
-                }
-                if (ptn_soap_range_has_tag(tag_end, scan_end, "complexType") ||
-                    ptn_soap_range_has_tag(tag_end, scan_end, "simpleType")) {
-                    return ptn_duplicate_string(element_name);
                 }
             }
         }
