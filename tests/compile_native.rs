@@ -81848,6 +81848,60 @@ var_dump(ini_get('opcache.preload'));\n",
 }
 
 #[test]
+fn phpc_opcache_preload_static_property_metadata_is_available_during_preload() {
+    let root = temp_dir("ptn-phpc-opcache-preload-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+class Loader {\n\
+    private static $loader;\n\
+\n\
+    static function getLoader() {\n\
+        if (null !== self::$loader) {\n\
+            return self::$loader;\n\
+        }\n\
+        return self::$loader = new Loader();\n\
+    }\n\
+\n\
+    static function getCounter() {\n\
+        static $counter = 0;\n\
+        return $counter++;\n\
+    }\n\
+}\n\
+\n\
+Loader::getLoader();\n\
+Loader::getCounter();\n\
+Loader::getCounter();\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(get_class(Loader::getLoader()));\n\
+var_dump(Loader::getCounter());\n\
+echo \"OK\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(6) \"Loader\"\nint(0)\nOK\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_preload_shutdown_functions_run_before_root_script() {
     let root = temp_dir("ptn-phpc-opcache-preload-shutdown-before-root");
     fs::create_dir_all(&root).unwrap();
