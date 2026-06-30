@@ -254,6 +254,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_dir,
         runtime_requirements.internal_function_dispatch,
     );
+    emit_preload_static_local_reset_helper(&mut out, &module.functions);
     if runtime_requirements.internal_function_dispatch || needs_callable_dispatch {
         emit_user_function_dispatch(
             &mut out,
@@ -516,6 +517,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         out.push_str("    ptn_runtime_auto_start_session(&runtime);\n");
     }
+    emit_static_property_declarations(&mut out, &module.classes, &module.traits);
     if let Some(opcache_before_dfa_dump) = &opcache_before_dfa_dump {
         out.push_str("    if (ptn_opcache_debug_level_enabled(0x200000ULL)) {\n");
         out.push_str("        fputs(\"");
@@ -553,6 +555,15 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str(" != NULL ? ptn_preload_root_");
         out.push_str(&preload_index.to_string());
         out.push_str("->shutdown_functions_len : 0;\n");
+        if module_has_function_static_locals(&module.functions) {
+            out.push_str("    size_t ptn_preload_static_local_len_");
+            out.push_str(&preload_index.to_string());
+            out.push_str(" = ptn_preload_root_");
+            out.push_str(&preload_index.to_string());
+            out.push_str(" != NULL ? ptn_preload_root_");
+            out.push_str(&preload_index.to_string());
+            out.push_str("->static_local_slots_len : 0;\n");
+        }
         out.push_str("    int ptn_previous_in_preload_");
         out.push_str(&preload_index.to_string());
         out.push_str(" = runtime.in_preload;\n");
@@ -568,6 +579,13 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("    ptn_value_destroy(&ptn_preload_result_");
         out.push_str(&preload_index.to_string());
         out.push_str(");\n");
+        if module_has_function_static_locals(&module.functions) {
+            out.push_str(
+                "    ptn_reset_preload_static_locals_from(&runtime, ptn_preload_static_local_len_",
+            );
+            out.push_str(&preload_index.to_string());
+            out.push_str(");\n");
+        }
         out.push_str("    if (ptn_preload_root_");
         out.push_str(&preload_index.to_string());
         out.push_str(" != NULL) {\n");
@@ -647,7 +665,6 @@ pub fn emit_c(module: &Module) -> String {
         !module.compile_warnings.is_empty() || !magic_visibility_warnings.is_empty(),
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
-    emit_static_property_declarations(&mut out, &module.classes, &module.traits);
     let mut control_targets = Vec::new();
     let mut finally_stack = Vec::new();
     let return_label = values.next_label("ptn_main_return");
@@ -9714,6 +9731,12 @@ fn function_static_variables_provider_name(function_index: usize) -> String {
     format!("ptn_function_{function_index}_static_variables")
 }
 
+fn module_has_function_static_locals(functions: &[FunctionDecl]) -> bool {
+    functions
+        .iter()
+        .any(|function| !function_static_local_bindings(function).is_empty())
+}
+
 fn emit_function_static_variable_provider_prototypes(out: &mut String, functions: &[FunctionDecl]) {
     for (function_index, function) in functions.iter().enumerate() {
         if function_static_local_bindings(function).is_empty() {
@@ -9871,6 +9894,58 @@ fn emit_function_static_variable_providers(
         out.push_str("    return result;\n");
         out.push_str("}\n");
     }
+}
+
+fn emit_preload_static_local_reset_helper(out: &mut String, functions: &[FunctionDecl]) {
+    if !module_has_function_static_locals(functions) {
+        return;
+    }
+
+    out.push_str(
+        "\nstatic void ptn_reset_preload_static_locals_from(PtnRuntime *runtime, size_t start) {\n",
+    );
+    out.push_str("    PtnRuntime *root = ptn_runtime_root(runtime);\n");
+    out.push_str("    if (root == NULL || root->static_local_slots == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    for (size_t i = start; i < root->static_local_slots_len; i++) {\n");
+    out.push_str("        PtnStaticLocalSlot *slot = &root->static_local_slots[i];\n");
+    out.push_str("        if (slot->reference == NULL || slot->name == NULL) {\n");
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str("        PtnValue initial = ptn_null();\n");
+    out.push_str("        int found = 0;\n");
+    for (function_index, function) in functions.iter().enumerate() {
+        if function_static_local_bindings(function).is_empty() {
+            continue;
+        }
+        out.push_str("        if (!found && slot->function_index == ");
+        out.push_str(&function_index.to_string());
+        out.push_str(") {\n");
+        out.push_str("            PtnValue defaults = ");
+        out.push_str(&function_static_variables_provider_name(function_index));
+        out.push_str("(runtime);\n");
+        out.push_str("            PtnArrayKey key = ptn_array_string_key(slot->name);\n");
+        out.push_str(
+            "            PtnArrayEntry *entry = ptn_array_entry_for_key(defaults.as.array, key);\n",
+        );
+        out.push_str("            ptn_array_key_free(key);\n");
+        out.push_str("            if (entry != NULL) {\n");
+        out.push_str("                ptn_value_destroy(&initial);\n");
+        out.push_str("                initial = ptn_value_clone_deref(entry->value);\n");
+        out.push_str("                found = 1;\n");
+        out.push_str("            }\n");
+        out.push_str("            ptn_value_destroy(&defaults);\n");
+        out.push_str("        }\n");
+    }
+    out.push_str("        if (found) {\n");
+    out.push_str("            ptn_value_destroy(&slot->reference->value);\n");
+    out.push_str("            slot->reference->value = initial;\n");
+    out.push_str("        } else {\n");
+    out.push_str("            ptn_value_destroy(&initial);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
 }
 
 fn function_parameter_default_provider_name(
