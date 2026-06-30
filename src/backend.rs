@@ -25036,10 +25036,23 @@ fn class_constructor_method<'a>(
     classes: &'a [ClassDecl],
 ) -> Option<ClassMethodLookupEntry<'a>> {
     let methods = class_method_lookup_chain(class, classes);
-    methods
+    if let Some(constructor) = methods
         .iter()
         .copied()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+    {
+        return Some(constructor);
+    }
+
+    let class_short_name = class.name.rsplit('\\').next().unwrap_or(&class.name);
+    methods
+        .iter()
+        .copied()
+        .find(|method| {
+            !method.is_static &&
+                method.declaring_class.eq_ignore_ascii_case(&class.name) &&
+                method.name.eq_ignore_ascii_case(class_short_name)
+        })
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
@@ -38002,6 +38015,28 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static SIMPLEXML_LOAD_STRING_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "class_name",
+            default: Some(InternalParameterDefault::String("SimpleXMLElement")),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "namespace_or_prefix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "is_prefix",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     if name.eq_ignore_ascii_case("clone") {
         Some(&CLONE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_filter") {
@@ -38263,6 +38298,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("createFromString"))
     {
         Some(&DOM_CREATE_FROM_STRING_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("simplexml_load_string") {
+        Some(&SIMPLEXML_LOAD_STRING_PARAMETERS)
     } else {
         None
     }

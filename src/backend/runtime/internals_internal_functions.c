@@ -142009,6 +142009,15 @@ static int ptn_xml_parse_attributes(
             return well_formed;
         }
         char *name = ptn_xml_read_name(data, len, pos);
+        if (name[0] == '\0') {
+            free(name);
+            well_formed = 0;
+            if (html_mode) {
+                (*pos)++;
+                continue;
+            }
+            return 0;
+        }
         ptn_xml_skip_ws(data, len, pos);
         char *value = ptn_duplicate_string("");
         char *serialized_value = NULL;
@@ -143427,7 +143436,7 @@ static int ptn_xml_parse_document_into_mode_with_recover(
             ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, element);
         }
     }
-    int complete = (html_mode ? 1 : (recover ? stack_len >= 1 : stack_len <= 1)) && well_formed;
+    int complete = html_mode ? 1 : ((recover ? stack_len >= 1 : stack_len <= 1) && well_formed);
     if (html_mode) {
         ptn_dom_html_normalize_root_whitespace(document);
         ptn_dom_html_normalize_body_misnested_wrappers(document);
@@ -147826,6 +147835,10 @@ static int ptn_dom_libxml_accepts_document_source(
     capture.suppress_external_entity_resolution_warnings =
         ptn_libxml_external_entity_loader_is_configured &&
         ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
+    capture.parser_context_warnings = source != NULL;
+    capture.source_data = source;
+    capture.source_len = source_len;
+    capture.display_uri = url;
     if (api->xmlSetGenericErrorFunc != NULL) {
         api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
     }
@@ -153791,11 +153804,14 @@ static PtnValue ptn_internal_xml_parser_create(PtnRuntime *runtime, size_t argc,
     const char *encoding = "UTF-8";
     PtnStringOperand operand = ptn_string_operand_borrowed("");
     if (argc >= 1) {
-        operand = ptn_internal_expect_string_arg(runtime, "xml_parser_create", 1, "encoding", args[0], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
+        PtnValue raw_encoding = ptn_value_deref(args[0]);
+        if (raw_encoding.type != PTN_NULL) {
+            operand = ptn_internal_expect_string_arg(runtime, "xml_parser_create", 1, "encoding", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            encoding = operand.data;
         }
-        encoding = operand.data;
     }
     PtnValue parser = ptn_xml_parser_new_with_encoding(runtime, encoding, line);
     ptn_string_operand_free(operand);
@@ -153806,11 +153822,14 @@ static PtnValue ptn_internal_xml_parser_create_ns(PtnRuntime *runtime, size_t ar
     const char *encoding = "UTF-8";
     PtnStringOperand encoding_operand = ptn_string_operand_borrowed("");
     if (argc >= 1) {
-        encoding_operand = ptn_internal_expect_string_arg(runtime, "xml_parser_create_ns", 1, "encoding", args[0], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
+        PtnValue raw_encoding = ptn_value_deref(args[0]);
+        if (raw_encoding.type != PTN_NULL) {
+            encoding_operand = ptn_internal_expect_string_arg(runtime, "xml_parser_create_ns", 1, "encoding", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            encoding = encoding_operand.data;
         }
-        encoding = encoding_operand.data;
     }
     PtnValue parser = ptn_xml_parser_new_with_encoding(runtime, encoding, line);
     ptn_string_operand_free(encoding_operand);
@@ -153932,6 +153951,17 @@ static int ptn_xml_parser_object_string_handler_is_valid(PtnRuntime *runtime, Pt
     return ptn_xml_parser_object_string_handler_is_valid_for_object(runtime, data->callback_object, handler);
 }
 
+static int ptn_xml_parser_current_receiver_string_handler_is_valid(PtnRuntime *runtime, PtnValue handler) {
+    if (runtime == NULL || !runtime->has_current_receiver) {
+        return 0;
+    }
+    PtnValue receiver = ptn_value_deref(runtime->current_receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    return ptn_xml_parser_object_string_handler_is_valid_for_object(runtime, receiver, handler);
+}
+
 static int ptn_xml_parser_validate_handler(
     PtnRuntime *runtime,
     PtnXmlParserData *data,
@@ -153961,6 +153991,10 @@ static int ptn_xml_parser_validate_handler(
         }
         if (runtime->exceptions->active_exception != NULL) {
             return 0;
+        }
+        if (!data->has_callback_object &&
+            ptn_xml_parser_current_receiver_string_handler_is_valid(runtime, deref)) {
+            return 1;
         }
         if (non_callable_string_deprecation_emitted == NULL || !*non_callable_string_deprecation_emitted) {
             ptn_xml_parser_emit_non_callable_string_deprecation(runtime, function_name, line);
@@ -213618,14 +213652,14 @@ static PtnValue ptn_simplexml_debug_child_value(
     PtnXmlNode *node,
     size_t group_count
 ) {
-    int leaf_text =
+    int grouped_direct_text =
+        group_count > 1 &&
         node != NULL &&
         node->type == PTN_XML_NODE_ELEMENT &&
-        ptn_xml_visible_attribute_count(node) == 0 &&
         ptn_simplexml_visible_child_count(node) == 0 &&
         ptn_simplexml_debug_visible_child_count(node) == 0 &&
         ptn_simplexml_node_has_direct_text(node);
-    if ((group_count > 1 && leaf_text) ||
+    if (grouped_direct_text ||
         (node != NULL &&
          (node->type == PTN_XML_NODE_ENTITY_REFERENCE || node->type == PTN_XML_NODE_ENTITY) &&
          ptn_simplexml_node_has_immediate_text(node))) {
@@ -213853,6 +213887,27 @@ static PTN_UNUSED int ptn_simplexml_debug_properties(
                 }
             }
             ptn_array_set_entry(result.as.array, ptn_array_string_key(name), group);
+        }
+        *properties_out = result;
+        return 1;
+    }
+
+    if (data->property_view && data->item_count > 1) {
+        ptn_simplexml_debug_attributes(result, data->items[0]);
+        for (size_t i = 0; i < data->item_count; i++) {
+            PtnXmlNode *item = data->items[i];
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_simplexml_debug_scalar_or_object(
+                    runtime,
+                    ptn_simplexml_data_class_name(data),
+                    item,
+                    data->item_count,
+                    data->property_namespace_active,
+                    data->property_namespace_uri
+                )
+            );
         }
         *properties_out = result;
         return 1;
@@ -214119,7 +214174,14 @@ static PtnValue ptn_simplexml_from_bytes(
     PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
     document->parser_substitute_entities =
         !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
-    int ok = ptn_xml_parse_document_into(runtime, document, data, len);
+    int ok = ptn_xml_parse_document_into_mode_with_recover(
+        runtime,
+        document,
+        data,
+        len,
+        0,
+        (options & PTN_LIBXML_RECOVER) != 0
+    );
     if (!ok) {
         if ((options & PTN_LIBXML_RECOVER) != 0) {
             return ptn_simplexml_object_from_node_as(runtime, class_name, NULL, 0, 0);
