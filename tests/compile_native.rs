@@ -95516,6 +95516,86 @@ $obj = null;
 }
 
 #[test]
+fn compile_reset_lazy_object_while_initializing_reports_catchable_error_to_native_binary() {
+    let root = temp_dir("ptn-native-reset-lazy-while-initializing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reset-lazy-while-initializing.php");
+    let output = root.join("reset-lazy-while-initializing-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetInitializingBox {
+    public int $a;
+}
+
+$reflector = new ReflectionClass(LazyResetInitializingBox::class);
+
+echo \"# Ghost\\n\";
+$obj = new LazyResetInitializingBox();
+$reflector->resetAsLazyGhost($obj, function ($obj) use ($reflector) {
+    try {
+        $reflector->resetAsLazyGhost($obj, function () {});
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    }
+    try {
+        $reflector->resetAsLazyProxy($obj, function () {});
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    }
+});
+$reflector->initializeLazyObject($obj);
+
+echo \"# Proxy\\n\";
+$obj = new LazyResetInitializingBox();
+$reflector->resetAsLazyProxy($obj, function ($obj) use ($reflector) {
+    try {
+        $reflector->resetAsLazyProxy($obj, function () {});
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    }
+    try {
+        $reflector->resetAsLazyGhost($obj, function () {});
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    }
+    return new LazyResetInitializingBox();
+});
+$reflector->initializeLazyObject($obj);
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "# Ghost\n",
+            "Error: Can not reset an object while it is being initialized\n",
+            "Error: Can not reset an object while it is being initialized\n",
+            "# Proxy\n",
+            "Error: Can not reset an object while it is being initialized\n",
+            "Error: Can not reset an object while it is being initialized\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("lazy_initializer_refcount_guards"));
+    assert!(c_source.contains("Can not reset an object while it is being initialized"));
+}
+
+#[test]
 fn compile_reset_lazy_object_restores_readonly_and_default_slots_to_native_binary() {
     let root = temp_dir("ptn-native-reset-lazy-readonly-default-slots");
     fs::create_dir_all(&root).unwrap();
