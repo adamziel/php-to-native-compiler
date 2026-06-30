@@ -123057,6 +123057,35 @@ static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const P
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static PtnValue ptn_internal_gettimeofday(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    struct timeval now;
+    if (gettimeofday(&now, NULL) != 0) {
+        return ptn_bool(0);
+    }
+
+    if (argc >= 1 && ptn_is_truthy(args[0])) {
+        double seconds = (double)now.tv_sec + ((double)now.tv_usec / 1000000.0);
+        return ptn_float(seconds);
+    }
+
+    time_t seconds = (time_t)now.tv_sec;
+    int offset = ptn_timezone_offset_for_name(ptn_current_timezone_name(), seconds);
+    int dsttime = 0;
+    struct tm *local_parts = localtime(&seconds);
+    if (local_parts != NULL && local_parts->tm_isdst > 0) {
+        dsttime = 1;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("sec"), ptn_int((int64_t)now.tv_sec));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("usec"), ptn_int((int64_t)now.tv_usec));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("minuteswest"), ptn_int((int64_t)(-offset / 60)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("dsttime"), ptn_int(dsttime));
+    return result;
+}
+
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -187012,6 +187041,7 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gettimeofday(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -187674,6 +187704,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getprotobynumber", 1, 1, ptn_internal_getprotobynumber },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
+        { "gettimeofday", 0, 1, ptn_internal_gettimeofday },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmygid", 0, 0, ptn_internal_getmygid },
         { "getmyinode", 0, 0, ptn_internal_getmyinode },
@@ -188675,6 +188706,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "gmdate") ||
         ptn_ascii_case_equal(name, "gmmktime") ||
         ptn_ascii_case_equal(name, "getdate") ||
+        ptn_ascii_case_equal(name, "gettimeofday") ||
         ptn_ascii_case_equal(name, "idate") ||
         ptn_ascii_case_equal(name, "localtime") ||
         ptn_ascii_case_equal(name, "microtime") ||

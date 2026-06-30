@@ -27350,6 +27350,60 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_gettimeofday_to_native_binary() {
+    let root = temp_dir("ptn-native-gettimeofday");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gettimeofday.php");
+    let output = root.join("gettimeofday-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"Asia/Calcutta\");\n\
+$float = gettimeofday(true);\n\
+$first = gettimeofday();\n\
+$second = gettimeofday(false);\n\
+var_dump(is_float($float), $float > 0.0);\n\
+echo implode(\",\", array_keys($first)), \"\\n\";\n\
+var_dump(\n\
+    is_int($first[\"sec\"]),\n\
+    is_int($first[\"usec\"]),\n\
+    $first[\"usec\"] >= 0,\n\
+    $first[\"usec\"] < 1000000\n\
+);\n\
+var_dump($first[\"minuteswest\"], $first[\"dsttime\"]);\n\
+echo implode(\",\", array_keys($second)), \"\\n\";\n\
+var_dump($second[\"minuteswest\"], $second[\"dsttime\"], function_exists(\"gettimeofday\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+sec,usec,minuteswest,dsttime\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(-330)\n\
+int(0)\n\
+sec,usec,minuteswest,dsttime\n\
+int(-330)\n\
+int(0)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_gettimeofday("));
+    assert!(c_source.contains("{ \"gettimeofday\", 0, 1, ptn_internal_gettimeofday }"));
+}
+
+#[test]
 fn compile_strftime_locale_formatting_to_native_binary() {
     let root = temp_dir("ptn-native-strftime-locale-formatting");
     fs::create_dir_all(&root).unwrap();
