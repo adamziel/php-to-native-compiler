@@ -1,0 +1,12 @@
+ext/hash/tests/hash_serialize_002.phpt
+ext/hash/tests/hash_file_basic1.phpt
+ext/hash/tests/hash_copy_001.phpt
+ext/hash/tests/bug73127.phpt
+ext/hash/tests/hash_hmac_basic.phpt
+ext/hash/tests/hash_serialize_001.phpt
+ext/hash/tests/fnv132.phpt
+ext/hash/tests/whirlpool.phpt
+ext/hash/tests/hash_hmac_file_basic.phpt
+ext/hash/tests/hash_serialize_003.phpt
+ext/hash/tests/fnv164.phpt
+ext/hash/tests/haval.phpt
