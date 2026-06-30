@@ -3892,15 +3892,43 @@ static PTN_UNUSED void ptn_format_runtime_serialize_float(
     );
 }
 
+static PTN_UNUSED int ptn_format_var_export_integral_fixed(double value, char *buffer, size_t buffer_size) {
+    double integral = 0.0;
+    char candidate[64];
+    char *end = NULL;
+    double reparsed;
+
+    if (fabs(value) >= 1e17 || modf(value, &integral) != 0.0) {
+        return 0;
+    }
+
+    snprintf(candidate, sizeof(candidate), "%.0f", value);
+    errno = 0;
+    reparsed = strtod(candidate, &end);
+    if (errno != 0 || end == NULL || *end != '\0' || !ptn_same_scalar_double(reparsed, value)) {
+        return 0;
+    }
+
+    int written = snprintf(buffer, buffer_size, "%s.0", candidate);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        ptn_abort_out_of_memory();
+    }
+    return 1;
+}
+
 static PTN_UNUSED void ptn_format_runtime_var_export_float(
     PtnRuntime *runtime,
     double value,
     char *buffer,
     size_t buffer_size
 ) {
+    int precision = ptn_runtime_serialize_precision(runtime);
+    if (precision < 0 && ptn_format_var_export_integral_fixed(value, buffer, buffer_size)) {
+        return;
+    }
     ptn_format_scalar_float_with_precision(
         value,
-        ptn_runtime_serialize_precision(runtime),
+        precision,
         buffer,
         buffer_size
     );
