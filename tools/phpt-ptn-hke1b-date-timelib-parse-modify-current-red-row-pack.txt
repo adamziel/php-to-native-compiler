@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/date/tests/bug20382-1.phpt
+/home/claude/php-src-phpt/ext/date/tests/date_modify-2.phpt
+/home/claude/php-src-phpt/ext/date/tests/gh9700.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug49585.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug70277.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug45543.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug54597.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug29150.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug62852_var2.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug75851.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug41964.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug35456.phpt

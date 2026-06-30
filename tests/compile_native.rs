@@ -20139,6 +20139,102 @@ ob_end_flush();
 }
 
 #[test]
+fn compile_session_user_save_handler_error_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-session-user-save-handler-error-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-user-save-handler-error-paths.php");
+    let output = root.join("session-user-save-handler-error-paths-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+ob_start();
+
+$native = new SessionHandler();
+foreach ([
+    'read' => fn() => $native->read('id'),
+    'write' => fn() => $native->write('id', 'data'),
+] as $label => $call) {{
+    try {{
+        $call();
+    }} catch (Error $e) {{
+        echo "$label:", $e->getMessage(), "\n";
+    }}
+}}
+try {{
+    $native->close(false);
+}} catch (ArgumentCountError $e) {{
+    echo "close:", $e->getMessage(), "\n";
+}}
+
+class Handler implements SessionHandlerInterface, SessionIdInterface, SessionUpdateTimestampHandlerInterface {{
+    public function open($path, $name): bool {{ return true; }}
+    public function close(): bool {{ return true; }}
+    public function read($id): string|false {{ return ''; }}
+    public function write($id, $data): bool {{ return false; }}
+    public function destroy($id): bool {{ return true; }}
+    public function gc($max_lifetime): int|false {{ return true; }}
+    public function create_sid(): string {{ return 'candidate'; }}
+    public function validateId($id): bool {{ return true; }}
+    public function updateTimestamp($id, $data): bool {{ return false; }}
+}}
+
+session_set_save_handler(new Handler());
+session_start();
+$_SESSION['value'] = 'changed';
+session_write_close();
+
+session_start();
+var_dump(session_create_id());
+session_write_close();
+ob_end_flush();
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(stdout.contains("read:Session is not active\n"), "{stdout}");
+    assert!(stdout.contains("write:Session is not active\n"), "{stdout}");
+    assert!(
+        stdout.contains("close:SessionHandler::close() expects exactly 0 arguments, 1 given\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::write"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::updateTimestamp"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("session_create_id(): Failed to create new ID"),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_session_id_interface_save_handler_to_native_binary() {
     let root = temp_dir("ptn-native-session-id-interface-save-handler");
     fs::create_dir_all(&root).unwrap();
@@ -28186,6 +28282,10 @@ echo date('l Y-m-d H:i:s T', strtotime('Monday', $base)), "\n";
 date_default_timezone_set('Asia/Tehran');
 $base = mktime(17, 17, 17, 10, 25, 1977);
 echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
+
+date_default_timezone_set('UTC');
+$base = 1133216119;
+echo date(DateTime::ISO8601, strtotime('+ 1 month', $base)), "\n";
 "#,
     )
     .unwrap();
@@ -28221,6 +28321,7 @@ echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
             "2008-01-01T05:00:00-0700\n",
             "Monday 2004-11-01 00:00:00 CET\n",
             "Tuesday 1977-11-01 00:00:00 +04 0\n",
+            "2005-12-28T22:15:19+0000\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
