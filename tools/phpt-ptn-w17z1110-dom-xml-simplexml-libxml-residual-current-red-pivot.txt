@@ -1,12 +1,12 @@
+ext/simplexml/tests/gh15837.phpt
+ext/xmlwriter/tests/bug79029.phpt
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
 ext/simplexml/tests/bug76712.phpt
 ext/xml/tests/bug32001b.phpt
+ext/xmlwriter/tests/bug79344.phpt
 ext/xmlwriter/tests/bug39504.phpt
-ext/dom/tests/modern/html/encoding/HTMLDocument_encoding_edge_case_05.phpt
-ext/dom/tests/modern/spec/XMLDocument_version.phpt
 ext/dom/tests/DOMDocument_loadXML_variation4.phpt
-ext/dom/tests/modern/html/encoding/HTMLDocument_UTF16BE_BOM.phpt
 ext/simplexml/tests/bug51615.phpt
 ext/simplexml/tests/xml_parsing_LIBXML_RECOVER.phpt
 ext/xmlwriter/tests/bug71536.phpt
 ext/simplexml/tests/sxe_004.phpt
-ext/dom/tests/xml_parsing_LIBXML_RECOVER.phpt
