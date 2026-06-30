@@ -54612,6 +54612,8 @@ static int ptn_try_open_phar_stream(PtnRuntime *runtime, const char *path, const
     return 1;
 }
 
+static int ptn_try_open_zip_stream(PtnRuntime *runtime, const char *path, const char *mode, PtnValue *out);
+
 static char *ptn_duplicate_open_stream_detail(const char *detail) {
     int needed = snprintf(NULL, 0, "Failed to open stream: %s", detail);
     if (needed < 0) {
@@ -56092,6 +56094,12 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return php_stream;
     }
     if (ptn_try_open_phar_stream(runtime, path, mode, &php_stream)) {
+        free(uri);
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (ptn_try_open_zip_stream(runtime, path, mode, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -170996,7 +171004,34 @@ typedef struct PtnZipArchiveData {
     int has_cancel_callback;
     PtnValue cancel_callback;
     char *filename;
+    char *comment;
+    int64_t status;
+    int dirty;
+    struct PtnZipArchiveEntry *entries;
+    size_t entry_count;
+    size_t entry_capacity;
 } PtnZipArchiveData;
+
+typedef struct PtnZipArchiveEntry {
+    char *name;
+    unsigned char *content;
+    size_t content_len;
+    uint16_t method;
+    uint16_t dos_time;
+    uint16_t dos_date;
+    int64_t timestamp;
+    int is_dir;
+} PtnZipArchiveEntry;
+
+#define PTN_ZIP_CREATE 1
+#define PTN_ZIP_OVERWRITE 8
+#define PTN_ZIP_FL_OVERWRITE 8192
+#define PTN_ZIP_ER_OK 0
+#define PTN_ZIP_ER_EXISTS 10
+#define PTN_ZIP_ER_CANCELLED 32
+
+static uint16_t ptn_zip_read_u16le(const unsigned char *data);
+static uint32_t ptn_zip_read_u32le(const unsigned char *data);
 
 static PtnZipArchiveData *ptn_zip_archive_data_new(void) {
     PtnZipArchiveData *data = malloc(sizeof(PtnZipArchiveData));
@@ -171007,7 +171042,37 @@ static PtnZipArchiveData *ptn_zip_archive_data_new(void) {
     data->has_cancel_callback = 0;
     data->cancel_callback = ptn_null();
     data->filename = NULL;
+    data->comment = ptn_duplicate_string("");
+    data->status = PTN_ZIP_ER_OK;
+    data->dirty = 0;
+    data->entries = NULL;
+    data->entry_count = 0;
+    data->entry_capacity = 0;
     return data;
+}
+
+static void ptn_zip_archive_entry_destroy(PtnZipArchiveEntry *entry) {
+    if (entry == NULL) {
+        return;
+    }
+    free(entry->name);
+    free(entry->content);
+    entry->name = NULL;
+    entry->content = NULL;
+    entry->content_len = 0;
+}
+
+static void ptn_zip_archive_clear_entries(PtnZipArchiveData *data) {
+    if (data == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < data->entry_count; i++) {
+        ptn_zip_archive_entry_destroy(&data->entries[i]);
+    }
+    free(data->entries);
+    data->entries = NULL;
+    data->entry_count = 0;
+    data->entry_capacity = 0;
 }
 
 static void ptn_zip_archive_data_free(void *data_ptr) {
@@ -171017,6 +171082,8 @@ static void ptn_zip_archive_data_free(void *data_ptr) {
     }
     ptn_value_destroy(&data->cancel_callback);
     free(data->filename);
+    free(data->comment);
+    ptn_zip_archive_clear_entries(data);
     free(data);
 }
 
@@ -171033,16 +171100,691 @@ static PtnZipArchiveData *ptn_zip_archive_data(PtnValue receiver) {
     return (PtnZipArchiveData *)receiver.as.object->native_data;
 }
 
-static void ptn_zip_archive_poll_cancel_callback(
+static void ptn_zip_archive_write_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    (void)runtime;
+    (void)line;
+    PtnValue target = ptn_value_deref(receiver);
+    if (target.type != PTN_OBJECT || target.as.object == NULL || target.as.object->properties == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+    PtnObjectPropertyMetadata *metadata =
+        (PtnObjectPropertyMetadata *)ptn_object_property_metadata(target.as.object, name);
+    if (metadata != NULL) {
+        metadata->is_unset = 0;
+    }
+    ptn_array_set_entry(target.as.object->properties, ptn_array_string_key(name), value);
+}
+
+static void ptn_zip_archive_sync_properties(
     PtnRuntime *runtime,
     PtnZipArchiveData *data,
+    PtnValue receiver,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    ptn_zip_archive_write_property(runtime, receiver, "status", ptn_int(data->status), line);
+    ptn_zip_archive_write_property(runtime, receiver, "statusSys", ptn_int(0), line);
+    ptn_zip_archive_write_property(
+        runtime,
+        receiver,
+        "numFiles",
+        ptn_int(data->entry_count > (size_t)INT64_MAX ? INT64_MAX : (int64_t)data->entry_count),
+        line
+    );
+    ptn_zip_archive_write_property(
+        runtime,
+        receiver,
+        "lastId",
+        ptn_int(data->entry_count == 0 ? -1 : (int64_t)(data->entry_count - 1)),
+        line
+    );
+    ptn_zip_archive_write_property(
+        runtime,
+        receiver,
+        "filename",
+        ptn_owned_string(ptn_duplicate_string(data->filename == NULL ? "" : data->filename)),
+        line
+    );
+    ptn_zip_archive_write_property(
+        runtime,
+        receiver,
+        "comment",
+        ptn_owned_string(ptn_duplicate_string(data->comment == NULL ? "" : data->comment)),
+        line
+    );
+}
+
+static void ptn_zip_archive_set_status(
+    PtnRuntime *runtime,
+    PtnZipArchiveData *data,
+    PtnValue receiver,
+    int64_t status,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    data->status = status;
+    ptn_zip_archive_write_property(runtime, receiver, "status", ptn_int(status), line);
+}
+
+static const char *ptn_zip_archive_status_string(int64_t status) {
+    switch (status) {
+        case PTN_ZIP_ER_OK:
+            return "No error";
+        case PTN_ZIP_ER_EXISTS:
+            return "File already exists";
+        case PTN_ZIP_ER_CANCELLED:
+            return "Operation cancelled";
+        default:
+            return "Unknown error";
+    }
+}
+
+static int64_t ptn_zip_archive_dos_to_timestamp(uint16_t date, uint16_t time_value) {
+    if (date == 0) {
+        return (int64_t)time(NULL);
+    }
+    struct tm parts;
+    memset(&parts, 0, sizeof(parts));
+    parts.tm_year = (int)(((date >> 9) & 0x7f) + 80);
+    parts.tm_mon = (int)(((date >> 5) & 0x0f) - 1);
+    parts.tm_mday = (int)(date & 0x1f);
+    parts.tm_hour = (int)((time_value >> 11) & 0x1f);
+    parts.tm_min = (int)((time_value >> 5) & 0x3f);
+    parts.tm_sec = (int)((time_value & 0x1f) * 2);
+    parts.tm_isdst = -1;
+    time_t timestamp = mktime(&parts);
+    return timestamp == (time_t)-1 ? (int64_t)time(NULL) : (int64_t)timestamp;
+}
+
+static void ptn_zip_archive_timestamp_to_dos(int64_t timestamp, uint16_t *date_out, uint16_t *time_out) {
+    time_t native = (time_t)timestamp;
+    struct tm *parts = localtime(&native);
+    if (parts == NULL) {
+        *date_out = (uint16_t)((46u << 9) | (1u << 5) | 1u);
+        *time_out = 0;
+        return;
+    }
+    int year = parts->tm_year + 1900;
+    if (year < 1980) {
+        year = 1980;
+    } else if (year > 2107) {
+        year = 2107;
+    }
+    *date_out = (uint16_t)(((year - 1980) << 9) | ((parts->tm_mon + 1) << 5) | parts->tm_mday);
+    *time_out = (uint16_t)((parts->tm_hour << 11) | (parts->tm_min << 5) | (parts->tm_sec / 2));
+}
+
+static int ptn_zip_archive_reserve_entries(PtnZipArchiveData *data, size_t required) {
+    if (required <= data->entry_capacity) {
+        return 1;
+    }
+    size_t new_capacity = data->entry_capacity == 0 ? 8 : data->entry_capacity;
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    if (new_capacity > SIZE_MAX / sizeof(PtnZipArchiveEntry)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnZipArchiveEntry *entries = realloc(data->entries, new_capacity * sizeof(PtnZipArchiveEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memset(entries + data->entry_capacity, 0, (new_capacity - data->entry_capacity) * sizeof(PtnZipArchiveEntry));
+    data->entries = entries;
+    data->entry_capacity = new_capacity;
+    return 1;
+}
+
+static ssize_t ptn_zip_archive_find_entry(PtnZipArchiveData *data, const char *name) {
+    if (data == NULL || name == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < data->entry_count; i++) {
+        if (data->entries[i].name != NULL && strcmp(data->entries[i].name, name) == 0) {
+            return (ssize_t)i;
+        }
+    }
+    return -1;
+}
+
+static int ptn_zip_archive_store_entry(
+    PtnZipArchiveData *data,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    int64_t timestamp,
+    int is_dir,
+    int overwrite
+) {
+    ssize_t existing = ptn_zip_archive_find_entry(data, name);
+    if (existing >= 0 && !overwrite) {
+        return 0;
+    }
+    PtnZipArchiveEntry *entry = NULL;
+    if (existing >= 0) {
+        entry = &data->entries[(size_t)existing];
+        ptn_zip_archive_entry_destroy(entry);
+    } else {
+        ptn_zip_archive_reserve_entries(data, data->entry_count + 1);
+        entry = &data->entries[data->entry_count++];
+        memset(entry, 0, sizeof(*entry));
+    }
+    entry->name = ptn_duplicate_string(name == NULL ? "" : name);
+    entry->content = malloc(content_len == 0 ? 1 : content_len);
+    if (entry->content == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (content_len != 0) {
+        memcpy(entry->content, content, content_len);
+    }
+    entry->content_len = content_len;
+    entry->method = 0;
+    entry->timestamp = timestamp == 0 ? (int64_t)time(NULL) : timestamp;
+    ptn_zip_archive_timestamp_to_dos(entry->timestamp, &entry->dos_date, &entry->dos_time);
+    entry->is_dir = is_dir;
+    data->dirty = 1;
+    return 1;
+}
+
+static int ptn_zip_archive_store_file_entry(
+    PtnZipArchiveData *data,
+    const char *archive_name,
+    const char *path,
+    size_t start,
+    size_t length,
+    int has_length,
+    int overwrite
+) {
+    unsigned char *bytes = NULL;
+    size_t bytes_len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &bytes_len);
+    if (read_result <= 0) {
+        free(bytes);
+        return 0;
+    }
+    if (start > bytes_len) {
+        start = bytes_len;
+    }
+    size_t available = bytes_len - start;
+    if (!has_length || length > available) {
+        length = available;
+    }
+    struct stat info;
+    int64_t timestamp = stat(path, &info) == 0 ? (int64_t)info.st_mtime : (int64_t)time(NULL);
+    int ok = ptn_zip_archive_store_entry(data, archive_name, bytes + start, length, timestamp, 0, overwrite);
+    free(bytes);
+    return ok;
+}
+
+static int ptn_zip_archive_read_entry_content(
+    const unsigned char *zip_bytes,
+    size_t zip_len,
+    size_t local_offset,
+    uint16_t method,
+    uint32_t compressed_size,
+    unsigned char **content_out,
+    size_t *content_len_out
+) {
+    *content_out = NULL;
+    *content_len_out = 0;
+    if (local_offset + 30 > zip_len || ptn_zip_read_u32le(zip_bytes + local_offset) != 0x04034b50u) {
+        return 0;
+    }
+    uint16_t local_name_len = ptn_zip_read_u16le(zip_bytes + local_offset + 26);
+    uint16_t local_extra_len = ptn_zip_read_u16le(zip_bytes + local_offset + 28);
+    size_t content_offset = local_offset + 30u + (size_t)local_name_len + (size_t)local_extra_len;
+    if (content_offset > zip_len || (size_t)compressed_size > zip_len - content_offset) {
+        return 0;
+    }
+    const unsigned char *compressed = zip_bytes + content_offset;
+    if (method == 0) {
+        unsigned char *copy = malloc(compressed_size == 0 ? 1 : (size_t)compressed_size);
+        if (copy == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (compressed_size != 0) {
+            memcpy(copy, compressed, (size_t)compressed_size);
+        }
+        *content_out = copy;
+        *content_len_out = (size_t)compressed_size;
+        return 1;
+    }
+    if (method == 8) {
+        return ptn_zlib_transform_bytes_no_dictionary(
+            compressed,
+            (size_t)compressed_size,
+            1,
+            PTN_ZLIB_ENCODING_RAW,
+            -1,
+            0,
+            content_out,
+            content_len_out
+        ) > 0;
+    }
+    return 0;
+}
+
+static int ptn_zip_archive_load_from_bytes(PtnZipArchiveData *data, const unsigned char *bytes, size_t len) {
+    if (data == NULL || bytes == NULL || len < 22) {
+        return 0;
+    }
+    size_t max_comment = len < 0xffff + 22 ? len - 22 : 0xffff;
+    size_t eocd_offset = SIZE_MAX;
+    for (size_t back = 0; back <= max_comment; back++) {
+        size_t offset = len - 22 - back;
+        if (ptn_zip_read_u32le(bytes + offset) == 0x06054b50u) {
+            eocd_offset = offset;
+            break;
+        }
+    }
+    if (eocd_offset == SIZE_MAX || eocd_offset + 22 > len) {
+        return 0;
+    }
+    uint16_t disk_number = ptn_zip_read_u16le(bytes + eocd_offset + 4);
+    uint16_t central_directory_disk = ptn_zip_read_u16le(bytes + eocd_offset + 6);
+    uint16_t disk_entries = ptn_zip_read_u16le(bytes + eocd_offset + 8);
+    uint16_t total_entries = ptn_zip_read_u16le(bytes + eocd_offset + 10);
+    uint32_t central_directory_size = ptn_zip_read_u32le(bytes + eocd_offset + 12);
+    uint32_t central_directory_offset = ptn_zip_read_u32le(bytes + eocd_offset + 16);
+    uint16_t comment_len = ptn_zip_read_u16le(bytes + eocd_offset + 20);
+    if (disk_number != 0 ||
+        central_directory_disk != 0 ||
+        disk_entries != total_entries ||
+        eocd_offset + 22 + (size_t)comment_len > len ||
+        (size_t)central_directory_offset > len ||
+        (size_t)central_directory_size > len - (size_t)central_directory_offset) {
+        return 0;
+    }
+    ptn_zip_archive_clear_entries(data);
+    free(data->comment);
+    data->comment = ptn_duplicate_string_len((const char *)bytes + eocd_offset + 22, comment_len);
+    ptn_zip_archive_reserve_entries(data, (size_t)total_entries);
+    size_t cursor = (size_t)central_directory_offset;
+    size_t central_directory_end = cursor + (size_t)central_directory_size;
+    while (data->entry_count < (size_t)total_entries) {
+        if (cursor + 46 > central_directory_end || ptn_zip_read_u32le(bytes + cursor) != 0x02014b50u) {
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        uint16_t method = ptn_zip_read_u16le(bytes + cursor + 10);
+        uint16_t dos_time = ptn_zip_read_u16le(bytes + cursor + 12);
+        uint16_t dos_date = ptn_zip_read_u16le(bytes + cursor + 14);
+        uint32_t compressed_size = ptn_zip_read_u32le(bytes + cursor + 20);
+        uint16_t name_len = ptn_zip_read_u16le(bytes + cursor + 28);
+        uint16_t extra_len = ptn_zip_read_u16le(bytes + cursor + 30);
+        uint16_t entry_comment_len = ptn_zip_read_u16le(bytes + cursor + 32);
+        uint32_t local_offset = ptn_zip_read_u32le(bytes + cursor + 42);
+        size_t record_len = 46u + (size_t)name_len + (size_t)extra_len + (size_t)entry_comment_len;
+        if (record_len > central_directory_end - cursor) {
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        char *name = ptn_duplicate_string_len((const char *)bytes + cursor + 46, name_len);
+        unsigned char *content = NULL;
+        size_t content_len = 0;
+        int is_dir = name_len != 0 && name[name_len - 1] == '/';
+        if (!is_dir &&
+            !ptn_zip_archive_read_entry_content(bytes, len, (size_t)local_offset, method, compressed_size, &content, &content_len)) {
+            free(name);
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        PtnZipArchiveEntry *entry = &data->entries[data->entry_count++];
+        memset(entry, 0, sizeof(*entry));
+        entry->name = name;
+        entry->content = content == NULL ? (unsigned char *)ptn_duplicate_string_len("", 0) : content;
+        entry->content_len = content_len;
+        entry->method = method;
+        entry->dos_time = dos_time;
+        entry->dos_date = dos_date;
+        entry->timestamp = ptn_zip_archive_dos_to_timestamp(dos_date, dos_time);
+        entry->is_dir = is_dir;
+        cursor += record_len;
+    }
+    data->dirty = 0;
+    return 1;
+}
+
+static int ptn_zip_archive_store_phar_entry(
+    PtnZipArchiveData *data,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    int64_t timestamp
+) {
+    if (data == NULL || name == NULL) {
+        return 0;
+    }
+    size_t name_len = strlen(name);
+    int is_dir = name_len != 0 && (name[name_len - 1] == '/' || name[name_len - 1] == '\\');
+    return ptn_zip_archive_store_entry(
+        data,
+        name,
+        content == NULL ? (const unsigned char *)"" : content,
+        content_len,
+        timestamp,
+        is_dir,
+        1
+    );
+}
+
+static int ptn_zip_archive_load_from_phar_state(PtnZipArchiveData *data, const char *path) {
+    PtnPharArchiveState *archive = ptn_phar_archive_for_path(path);
+    if (archive == NULL || archive->format != PTN_PHAR_FORMAT_ZIP) {
+        return 0;
+    }
+    if (archive->entry_count == 0) {
+        return 0;
+    }
+    ptn_zip_archive_clear_entries(data);
+    ptn_zip_archive_reserve_entries(data, archive->entry_count);
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        PtnPharArchiveEntry *entry = &archive->entries[i];
+        if (entry->name == NULL) {
+            continue;
+        }
+        if (!ptn_zip_archive_store_phar_entry(
+                data,
+                entry->name,
+                entry->content,
+                entry->content_len,
+                entry->timestamp
+            )) {
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+    }
+    data->dirty = 0;
+    return 1;
+}
+
+static int ptn_zip_archive_parse_decimal(const unsigned char **cursor, const unsigned char *end, size_t *out) {
+    if (*cursor >= end || !isdigit((unsigned char)**cursor)) {
+        return 0;
+    }
+    size_t value = 0;
+    while (*cursor < end && isdigit((unsigned char)**cursor)) {
+        unsigned int digit = (unsigned int)(**cursor - '0');
+        if (value > (SIZE_MAX - digit) / 10u) {
+            return 0;
+        }
+        value = value * 10u + digit;
+        (*cursor)++;
+    }
+    *out = value;
+    return 1;
+}
+
+static int ptn_zip_archive_expect_bytes(const unsigned char **cursor, const unsigned char *end, const char *expected) {
+    size_t len = strlen(expected);
+    if ((size_t)(end - *cursor) < len || memcmp(*cursor, expected, len) != 0) {
+        return 0;
+    }
+    *cursor += len;
+    return 1;
+}
+
+static int ptn_zip_archive_skip_sized_line(const unsigned char **cursor, const unsigned char *end, const char *prefix) {
+    size_t len = 0;
+    if (!ptn_zip_archive_expect_bytes(cursor, end, prefix) ||
+        !ptn_zip_archive_parse_decimal(cursor, end, &len) ||
+        !ptn_zip_archive_expect_bytes(cursor, end, "\n") ||
+        (size_t)(end - *cursor) < len + 1u ||
+        (*cursor)[len] != '\n') {
+        return 0;
+    }
+    *cursor += len + 1u;
+    return 1;
+}
+
+static int ptn_zip_archive_load_from_phar_placeholder(
+    PtnZipArchiveData *data,
+    const unsigned char *bytes,
+    size_t len
+) {
+    static const char prefix[] = "PTN-PHAR format=";
+    if (data == NULL || bytes == NULL || len < sizeof(prefix) - 1 ||
+        memcmp(bytes, prefix, sizeof(prefix) - 1) != 0) {
+        return 0;
+    }
+    const unsigned char *cursor = bytes + sizeof(prefix) - 1;
+    const unsigned char *end = bytes + len;
+    size_t format = 0;
+    size_t modified = 0;
+    size_t entry_count = 0;
+    if (!ptn_zip_archive_parse_decimal(&cursor, end, &format) ||
+        format != PTN_PHAR_FORMAT_ZIP ||
+        !ptn_zip_archive_expect_bytes(&cursor, end, " modified=") ||
+        !ptn_zip_archive_parse_decimal(&cursor, end, &modified) ||
+        !ptn_zip_archive_expect_bytes(&cursor, end, " entries=") ||
+        !ptn_zip_archive_parse_decimal(&cursor, end, &entry_count) ||
+        !ptn_zip_archive_expect_bytes(&cursor, end, "\n")) {
+        return 0;
+    }
+    (void)modified;
+    if ((size_t)(end - cursor) >= 6 && memcmp(cursor, "alias=", 6) == 0) {
+        if (!ptn_zip_archive_skip_sized_line(&cursor, end, "alias=")) {
+            return 0;
+        }
+    }
+    if (!ptn_zip_archive_skip_sized_line(&cursor, end, "stub=")) {
+        return 0;
+    }
+
+    ptn_zip_archive_clear_entries(data);
+    ptn_zip_archive_reserve_entries(data, entry_count);
+    int64_t timestamp = (int64_t)time(NULL);
+    for (size_t i = 0; i < entry_count; i++) {
+        size_t name_len = 0;
+        size_t flags = 0;
+        size_t content_len = 0;
+        if (!ptn_zip_archive_expect_bytes(&cursor, end, "entry=") ||
+            !ptn_zip_archive_parse_decimal(&cursor, end, &name_len) ||
+            !ptn_zip_archive_expect_bytes(&cursor, end, " flags=") ||
+            !ptn_zip_archive_parse_decimal(&cursor, end, &flags) ||
+            !ptn_zip_archive_expect_bytes(&cursor, end, " size=") ||
+            !ptn_zip_archive_parse_decimal(&cursor, end, &content_len) ||
+            !ptn_zip_archive_expect_bytes(&cursor, end, "\n") ||
+            (size_t)(end - cursor) < name_len + 1u ||
+            cursor[name_len] != '\n') {
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        (void)flags;
+        char *name = ptn_duplicate_string_len((const char *)cursor, name_len);
+        cursor += name_len + 1u;
+        if ((size_t)(end - cursor) < content_len + 1u || cursor[content_len] != '\n') {
+            free(name);
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        int ok = ptn_zip_archive_store_phar_entry(data, name, cursor, content_len, timestamp);
+        free(name);
+        if (!ok) {
+            ptn_zip_archive_clear_entries(data);
+            return 0;
+        }
+        cursor += content_len + 1u;
+    }
+    data->dirty = 0;
+    return 1;
+}
+
+static int ptn_zip_archive_load_from_path(PtnZipArchiveData *data, const char *path) {
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    if (read_result <= 0) {
+        free(bytes);
+        return 0;
+    }
+    int ok = ptn_zip_archive_load_from_bytes(data, bytes, len);
+    if (!ok) {
+        ok = ptn_zip_archive_load_from_phar_state(data, path);
+    }
+    if (!ok) {
+        ok = ptn_zip_archive_load_from_phar_placeholder(data, bytes, len);
+    }
+    free(bytes);
+    return ok;
+}
+
+static int ptn_zip_write_u16le(FILE *file, uint16_t value) {
+    unsigned char data[2];
+    data[0] = (unsigned char)(value & 0xffu);
+    data[1] = (unsigned char)((value >> 8) & 0xffu);
+    return fwrite(data, 1, sizeof(data), file) == sizeof(data);
+}
+
+static int ptn_zip_write_u32le(FILE *file, uint32_t value) {
+    unsigned char data[4];
+    data[0] = (unsigned char)(value & 0xffu);
+    data[1] = (unsigned char)((value >> 8) & 0xffu);
+    data[2] = (unsigned char)((value >> 16) & 0xffu);
+    data[3] = (unsigned char)((value >> 24) & 0xffu);
+    return fwrite(data, 1, sizeof(data), file) == sizeof(data);
+}
+
+static int ptn_zip_archive_write_to_path(PtnZipArchiveData *data) {
+    if (data == NULL || data->filename == NULL) {
+        return 0;
+    }
+    FILE *file = fopen(data->filename, "wb");
+    if (file == NULL) {
+        return 0;
+    }
+    uint32_t *offsets = data->entry_count == 0 ? NULL : calloc(data->entry_count, sizeof(uint32_t));
+    if (data->entry_count != 0 && offsets == NULL) {
+        fclose(file);
+        ptn_abort_out_of_memory();
+    }
+    int ok = 1;
+    for (size_t i = 0; ok && i < data->entry_count; i++) {
+        PtnZipArchiveEntry *entry = &data->entries[i];
+        long offset = ftell(file);
+        if (offset < 0 || offset > (long)UINT32_MAX) {
+            ok = 0;
+            break;
+        }
+        offsets[i] = (uint32_t)offset;
+        size_t name_len = strlen(entry->name == NULL ? "" : entry->name);
+        uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
+        ok = ptn_zip_write_u32le(file, 0x04034b50u) &&
+            ptn_zip_write_u16le(file, 20) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, entry->dos_time) &&
+            ptn_zip_write_u16le(file, entry->dos_date) &&
+            ptn_zip_write_u32le(file, crc) &&
+            ptn_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_zip_write_u16le(file, (uint16_t)name_len) &&
+            ptn_zip_write_u16le(file, 0) &&
+            fwrite(entry->name, 1, name_len, file) == name_len &&
+            fwrite(entry->content, 1, entry->content_len, file) == entry->content_len;
+    }
+    long central_offset_long = ok ? ftell(file) : -1;
+    if (central_offset_long < 0 || central_offset_long > (long)UINT32_MAX) {
+        ok = 0;
+    }
+    uint32_t central_offset = ok ? (uint32_t)central_offset_long : 0;
+    for (size_t i = 0; ok && i < data->entry_count; i++) {
+        PtnZipArchiveEntry *entry = &data->entries[i];
+        size_t name_len = strlen(entry->name == NULL ? "" : entry->name);
+        uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
+        ok = ptn_zip_write_u32le(file, 0x02014b50u) &&
+            ptn_zip_write_u16le(file, 20) &&
+            ptn_zip_write_u16le(file, 20) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, entry->dos_time) &&
+            ptn_zip_write_u16le(file, entry->dos_date) &&
+            ptn_zip_write_u32le(file, crc) &&
+            ptn_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_zip_write_u16le(file, (uint16_t)name_len) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u32le(file, entry->is_dir ? 0x10u : 0u) &&
+            ptn_zip_write_u32le(file, offsets[i]) &&
+            fwrite(entry->name, 1, name_len, file) == name_len;
+    }
+    long central_end_long = ok ? ftell(file) : -1;
+    if (central_end_long < 0 || central_end_long > (long)UINT32_MAX) {
+        ok = 0;
+    }
+    uint32_t central_size = ok ? (uint32_t)central_end_long - central_offset : 0;
+    size_t comment_len = data->comment == NULL ? 0 : strlen(data->comment);
+    if (comment_len > UINT16_MAX || data->entry_count > UINT16_MAX) {
+        ok = 0;
+    }
+    if (ok) {
+        ok = ptn_zip_write_u32le(file, 0x06054b50u) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, 0) &&
+            ptn_zip_write_u16le(file, (uint16_t)data->entry_count) &&
+            ptn_zip_write_u16le(file, (uint16_t)data->entry_count) &&
+            ptn_zip_write_u32le(file, central_size) &&
+            ptn_zip_write_u32le(file, central_offset) &&
+            ptn_zip_write_u16le(file, (uint16_t)comment_len) &&
+            fwrite(data->comment == NULL ? "" : data->comment, 1, comment_len, file) == comment_len;
+    }
+    free(offsets);
+    if (fclose(file) != 0) {
+        ok = 0;
+    }
+    if (ok) {
+        data->dirty = 0;
+    }
+    return ok;
+}
+
+static int ptn_zip_archive_poll_cancel_callback(
+    PtnRuntime *runtime,
+    PtnZipArchiveData *data,
+    PtnValue receiver,
     size_t line
 ) {
     if (data == NULL || !data->has_cancel_callback) {
-        return;
+        return 0;
     }
-    PtnValue result = ptn_call_callable(runtime, data->cancel_callback, 0, NULL, line, 0);
+    PtnValue result = ptn_null();
+    PtnTryFrame cancel_frame;
+    ptn_try_frame_push(runtime, &cancel_frame);
+    if (setjmp(cancel_frame.jump) == 0) {
+        result = ptn_call_callable(runtime, data->cancel_callback, 0, NULL, line, 0);
+        ptn_try_frame_pop(runtime, &cancel_frame);
+    } else {
+        ptn_try_frame_pop(runtime, &cancel_frame);
+        ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_CANCELLED, line);
+        ptn_emit_warning(&runtime->diagnostics, "ZipArchive::close(): Operation cancelled", line);
+        return 1;
+    }
+    int has_exception = runtime->exceptions->active_exception != NULL;
+    int cancelled = has_exception || ptn_value_to_integer(result) < 0;
     ptn_value_destroy(&result);
+    if (cancelled) {
+        ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_CANCELLED, line);
+        ptn_emit_warning(&runtime->diagnostics, "ZipArchive::close(): Operation cancelled", line);
+        return 1;
+    }
+    return 0;
 }
 
 static PtnValue ptn_zip_archive_open(
@@ -171083,11 +171825,26 @@ static PtnValue ptn_zip_archive_open(
     if (argc >= 2) {
         (void)ptn_value_to_integer(args[1]);
     }
+    int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
     if (data != NULL) {
         free(data->filename);
         data->filename = path;
+        free(data->comment);
+        data->comment = ptn_duplicate_string("");
+        ptn_zip_archive_clear_entries(data);
+        data->status = PTN_ZIP_ER_OK;
+        data->dirty = 0;
+        if ((flags & PTN_ZIP_OVERWRITE) != 0) {
+            data->dirty = 1;
+        } else {
+            (void)ptn_zip_archive_load_from_path(data, path);
+            if (data->entry_count == 0 && (flags & PTN_ZIP_CREATE) != 0) {
+                data->dirty = 1;
+            }
+        }
         data->is_open = 1;
+        ptn_zip_archive_sync_properties(runtime, data, receiver, line);
     } else {
         free(path);
     }
@@ -171117,8 +171874,8 @@ static PtnValue ptn_zip_archive_register_cancel_callback(
         return ptn_null();
     }
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    if (data == NULL) {
-        ptn_throw_exception(runtime, "Error", "Invalid ZipArchive object");
+    if (data == NULL || !data->is_open) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid or uninitialized Zip object");
         return ptn_null();
     }
     ptn_value_destroy(&data->cancel_callback);
@@ -171159,16 +171916,60 @@ static PtnValue ptn_zip_archive_add_from_string(
         ptn_string_operand_free(contents);
         return ptn_null();
     }
+    char *entry_name = ptn_duplicate_string_len(name.data, name.len);
+    unsigned char *entry_contents = (unsigned char *)ptn_duplicate_string_len(contents.data, contents.len);
+    size_t entry_contents_len = contents.len;
     ptn_string_operand_free(name);
     ptn_string_operand_free(contents);
 
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
-    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
-    if (runtime->exceptions->active_exception != NULL) {
+    if (data == NULL || !data->is_open) {
+        free(entry_name);
+        free(entry_contents);
+        return ptn_bool(0);
+    }
+    ptn_zip_archive_store_entry(data, entry_name, entry_contents, entry_contents_len, (int64_t)time(NULL), 0, 1);
+    free(entry_name);
+    free(entry_contents);
+    ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_OK, line);
+    ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_add_empty_dir(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::addEmptyDir() expects exactly 1 argument");
         return ptn_null();
     }
-    return ptn_bool(1);
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    PtnStringBuffer archive_name;
+    ptn_string_buffer_init(&archive_name);
+    ptn_string_buffer_append_len(&archive_name, name.data, name.len);
+    if (archive_name.len == 0 || archive_name.data[archive_name.len - 1] != '/') {
+        ptn_string_buffer_append_char(&archive_name, '/');
+    }
+    ptn_string_operand_free(name);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || !data->is_open) {
+        free(archive_name.data);
+        return ptn_bool(0);
+    }
+    static const unsigned char empty[] = "";
+    int ok = ptn_zip_archive_store_entry(data, archive_name.data, empty, 0, (int64_t)time(NULL), 1, 1);
+    free(archive_name.data);
+    ptn_zip_archive_set_status(runtime, data, receiver, ok ? PTN_ZIP_ER_OK : PTN_ZIP_ER_EXISTS, line);
+    ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    return ptn_bool(ok);
 }
 
 static PtnValue ptn_zip_archive_close(
@@ -171194,11 +171995,47 @@ static PtnValue ptn_zip_archive_close(
         return ptn_null();
     }
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    int cancelled = ptn_zip_archive_poll_cancel_callback(runtime, data, receiver, line);
     if (data != NULL) {
+        if (!cancelled && data->dirty) {
+            (void)ptn_zip_archive_write_to_path(data);
+        }
         data->is_open = 0;
     }
-    return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(1);
+    if (cancelled && runtime->exceptions->active_exception == NULL) {
+        return ptn_bool(0);
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_stat_entry(PtnZipArchiveEntry *entry, size_t index) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("name"), ptn_owned_string(ptn_duplicate_string(entry->name == NULL ? "" : entry->name)));
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("index"),
+        ptn_int(index > (size_t)INT64_MAX ? INT64_MAX : (int64_t)index)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("size"),
+        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("comp_size"),
+        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mtime"), ptn_int(entry->timestamp));
+    uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("crc"), ptn_int((int64_t)crc));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("comp_method"), ptn_int(entry->method));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("encryption_method"), ptn_int(0));
+    return result;
 }
 
 static PtnValue ptn_zip_archive_stat_name(
@@ -171235,42 +172072,541 @@ static PtnValue ptn_zip_archive_stat_name(
         (void)ptn_value_to_integer(args[1]);
     }
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    if (data == NULL || data->filename == NULL) {
+    if (data == NULL) {
         free(entry_name);
         return ptn_bool(0);
     }
-    PtnPharArchiveState *archive = ptn_phar_archive_for_path(data->filename);
-    size_t index = 0;
-    if (archive == NULL || !ptn_phar_archive_find_entry_index(archive, entry_name, &index)) {
+    ssize_t index = ptn_zip_archive_find_entry(data, entry_name);
+    if (index < 0) {
         free(entry_name);
         return ptn_bool(0);
     }
-    PtnPharArchiveEntry *entry = &archive->entries[index];
-    int64_t mtime = entry->timestamp != 0 ? entry->timestamp : (int64_t)time(NULL);
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("name"), ptn_string(entry_name));
-    ptn_array_set_entry(
-        result.as.array,
-        ptn_array_string_key("index"),
-        ptn_int(index > (size_t)INT64_MAX ? INT64_MAX : (int64_t)index)
-    );
-    ptn_array_set_entry(
-        result.as.array,
-        ptn_array_string_key("size"),
-        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
-    );
-    ptn_array_set_entry(
-        result.as.array,
-        ptn_array_string_key("comp_size"),
-        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
-    );
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("mtime"), ptn_int(mtime));
-    uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("crc"), ptn_int((int64_t)crc));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("comp_method"), ptn_int(0));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("encryption_method"), ptn_int(0));
     free(entry_name);
+    return ptn_zip_archive_stat_entry(&data->entries[(size_t)index], (size_t)index);
+}
+
+static PtnValue ptn_zip_archive_stat_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc < 1 || argc > 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::statIndex() expects 1 or 2 arguments");
+        return ptn_null();
+    }
+    int64_t index = ptn_value_to_integer(args[0]);
+    if (argc >= 2) {
+        (void)ptn_value_to_integer(args[1]);
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || index < 0 || (size_t)index >= data->entry_count) {
+        return ptn_bool(0);
+    }
+    return ptn_zip_archive_stat_entry(&data->entries[(size_t)index], (size_t)index);
+}
+
+static PtnValue ptn_zip_archive_get_name_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc < 1 || argc > 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::getNameIndex() expects 1 or 2 arguments");
+        return ptn_null();
+    }
+    int64_t index = ptn_value_to_integer(args[0]);
+    if (argc >= 2) {
+        (void)ptn_value_to_integer(args[1]);
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || index < 0 || (size_t)index >= data->entry_count) {
+        return ptn_bool(0);
+    }
+    const char *name = data->entries[(size_t)index].name == NULL ? "" : data->entries[(size_t)index].name;
+    return ptn_owned_string_len(ptn_duplicate_string_len(name, strlen(name)), strlen(name));
+}
+
+static PtnValue ptn_zip_archive_get_from_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 3) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::getFromName() expects between 1 and 3 arguments");
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *entry_name = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    ssize_t index = ptn_zip_archive_find_entry(data, entry_name);
+    free(entry_name);
+    if (data == NULL || index < 0) {
+        return ptn_bool(0);
+    }
+    PtnZipArchiveEntry *entry = &data->entries[(size_t)index];
+    return ptn_owned_string_len(ptn_duplicate_string_len((const char *)entry->content, entry->content_len), entry->content_len);
+}
+
+static char *ptn_zip_archive_join_path(const char *dir, const char *name) {
+    size_t dir_len = strlen(dir == NULL ? "" : dir);
+    size_t name_len = strlen(name == NULL ? "" : name);
+    int needs_sep = dir_len != 0 && !ptn_path_is_separator(dir[dir_len - 1]);
+    size_t total = dir_len + (needs_sep ? 1 : 0) + name_len;
+    char *path = malloc(total + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, dir, dir_len);
+    size_t pos = dir_len;
+    if (needs_sep) {
+        path[pos++] = '/';
+    }
+    memcpy(path + pos, name, name_len);
+    path[total] = '\0';
+    return path;
+}
+
+static int ptn_zip_archive_mkdir_parent(const char *path) {
+    char *parent = ptn_duplicate_string(path);
+    char *slash = strrchr(parent, '/');
+#if defined(_WIN32)
+    char *backslash = strrchr(parent, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) {
+        slash = backslash;
+    }
+#endif
+    if (slash == NULL || slash == parent) {
+        free(parent);
+        return 1;
+    }
+    *slash = '\0';
+    int ok = ptn_mkdir_recursive(parent, 0777) || errno == EEXIST;
+    free(parent);
+    return ok;
+}
+
+static int ptn_zip_archive_extract_entry(PtnZipArchiveEntry *entry, const char *target_dir) {
+    char *path = ptn_zip_archive_join_path(target_dir, entry->name == NULL ? "" : entry->name);
+    int ok = 1;
+    if (entry->is_dir) {
+        ok = ptn_mkdir_recursive(path, 0777) || errno == EEXIST;
+    } else {
+        ok = ptn_zip_archive_mkdir_parent(path);
+        FILE *file = ok ? fopen(path, "wb") : NULL;
+        if (file == NULL) {
+            ok = 0;
+        } else {
+            ok = fwrite(entry->content, 1, entry->content_len, file) == entry->content_len;
+            if (fclose(file) != 0) {
+                ok = 0;
+            }
+            if (ok) {
+                (void)ptn_platform_touch_times(path, entry->timestamp, entry->timestamp);
+            }
+        }
+    }
+    free(path);
+    return ok;
+}
+
+static int ptn_zip_archive_extract_selected_name(PtnValue names, const char *entry_name) {
+    names = ptn_value_deref(names);
+    if (names.type == PTN_NULL) {
+        return 1;
+    }
+    if (names.type == PTN_STRING) {
+        return names.as.string.len == strlen(entry_name) &&
+            memcmp(names.as.string.data, entry_name, names.as.string.len) == 0;
+    }
+    if (names.type != PTN_ARRAY || names.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < names.as.array->len; i++) {
+        PtnValue value = ptn_value_deref(names.as.array->entries[i].value);
+        if (value.type == PTN_STRING &&
+            value.as.string.len == strlen(entry_name) &&
+            memcmp(value.as.string.data, entry_name, value.as.string.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_zip_archive_extract_to(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::extractTo() expects 1 or 2 arguments");
+        return ptn_null();
+    }
+    PtnStringOperand dir_operand = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(dir_operand);
+        return ptn_null();
+    }
+    char *target_dir = ptn_path_operand_to_c_string(dir_operand);
+    ptn_string_operand_free(dir_operand);
+    if (target_dir == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "ZipArchive::extractTo(): Argument #1 ($pathto) must not contain any null bytes");
+        return ptn_null();
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    int ok = 1;
+    for (size_t i = 0; data != NULL && i < data->entry_count; i++) {
+        const char *name = data->entries[i].name == NULL ? "" : data->entries[i].name;
+        if (argc >= 2 && !ptn_zip_archive_extract_selected_name(args[1], name)) {
+            continue;
+        }
+        if (!ptn_zip_archive_extract_entry(&data->entries[i], target_dir)) {
+            ok = 0;
+            break;
+        }
+    }
+    free(target_dir);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_zip_archive_get_stream(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::getStream() expects exactly 1 argument");
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *entry_name = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    ssize_t index = ptn_zip_archive_find_entry(data, entry_name);
+    free(entry_name);
+    if (data == NULL || index < 0) {
+        return ptn_bool(0);
+    }
+    PtnZipArchiveEntry *entry = &data->entries[(size_t)index];
+    PtnResource *resource = ptn_resource_new_memory_stream(entry->name, "rb", PTN_STREAM_BACKEND_MEMORY, SIZE_MAX, 1, 0);
+    size_t written = ptn_stream_write_bytes(resource, entry->content, entry->content_len);
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    if (resource->memory_stream != NULL) {
+        resource->memory_stream->writable = 0;
+    }
+    if (written != entry->content_len) {
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        return ptn_bool(0);
+    }
+    return ptn_resource(resource);
+}
+
+static PtnValue *ptn_zip_archive_option(PtnValue options, const char *name) {
+    options = ptn_value_deref(options);
+    if (options.type != PTN_ARRAY || options.as.array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.array, key);
+    ptn_array_key_free(key);
+    return entry == NULL ? NULL : &entry->value;
+}
+
+static char *ptn_zip_archive_option_string(PtnRuntime *runtime, PtnValue options, const char *name, size_t line) {
+    PtnValue *value = ptn_zip_archive_option(options, name);
+    if (value == NULL) {
+        return NULL;
+    }
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, *value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    char *result = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
     return result;
+}
+
+static int64_t ptn_zip_archive_option_int(PtnValue options, const char *name, int64_t fallback) {
+    PtnValue *value = ptn_zip_archive_option(options, name);
+    return value == NULL ? fallback : ptn_value_to_integer(*value);
+}
+
+static int ptn_zip_archive_option_bool(PtnValue options, const char *name) {
+    PtnValue *value = ptn_zip_archive_option(options, name);
+    return value != NULL && ptn_is_truthy(*value);
+}
+
+static char *ptn_zip_archive_basename(const char *path) {
+    const char *base = strrchr(path, '/');
+#if defined(_WIN32)
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (base == NULL || backslash > base)) {
+        base = backslash;
+    }
+#endif
+    return ptn_duplicate_string(base == NULL ? path : base + 1);
+}
+
+static char *ptn_zip_archive_addglob_name(PtnRuntime *runtime, const char *path, PtnValue options, size_t line) {
+    char *add_path = ptn_zip_archive_option_string(runtime, options, "add_path", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(add_path);
+        return NULL;
+    }
+    char *remove_path = ptn_zip_archive_option_string(runtime, options, "remove_path", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(add_path);
+        free(remove_path);
+        return NULL;
+    }
+    char *name = NULL;
+    if (ptn_zip_archive_option_bool(options, "remove_all_path")) {
+        name = ptn_zip_archive_basename(path);
+    } else if (remove_path != NULL && strncmp(path, remove_path, strlen(remove_path)) == 0) {
+        const char *start = path + strlen(remove_path);
+        while (*start == '/' || *start == '\\') {
+            start++;
+        }
+        name = ptn_duplicate_string(start);
+    } else {
+        name = ptn_duplicate_string(path);
+    }
+    size_t add_len = add_path == NULL ? 0 : strlen(add_path);
+    if (add_len != 0) {
+        size_t name_len = strlen(name);
+        char *combined = malloc(add_len + name_len + 1);
+        if (combined == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(combined, add_path, add_len);
+        memcpy(combined + add_len, name, name_len + 1);
+        free(name);
+        name = combined;
+    }
+    free(add_path);
+    free(remove_path);
+    return name;
+}
+
+static PtnValue ptn_zip_archive_add_glob(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 3) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::addGlob() expects between 1 and 3 arguments");
+        return ptn_null();
+    }
+    PtnStringOperand pattern_operand = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern_operand);
+        return ptn_null();
+    }
+    char *pattern = ptn_duplicate_string_len(pattern_operand.data, pattern_operand.len);
+    ptn_string_operand_free(pattern_operand);
+    int64_t glob_flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    PtnValue options = argc >= 3 ? args[2] : ptn_null();
+    int64_t zip_flags = ptn_zip_archive_option_int(options, "flags", PTN_ZIP_FL_OVERWRITE);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    int ok = data != NULL && data->is_open;
+#if defined(_WIN32)
+    free(pattern);
+    return ptn_bool(0);
+#else
+    PtnGlobPatternList patterns;
+    ptn_glob_pattern_list_init(&patterns);
+    if ((glob_flags & PTN_GLOB_BRACE) != 0) {
+        ptn_glob_expand_braces_into(&patterns, pattern);
+    } else {
+        ptn_glob_pattern_list_append_owned(&patterns, ptn_duplicate_string(pattern));
+    }
+    free(pattern);
+    for (size_t pattern_index = 0; ok && pattern_index < patterns.len; pattern_index++) {
+        glob_t matches;
+        memset(&matches, 0, sizeof(matches));
+        int status = glob(patterns.items[pattern_index], ptn_glob_flags(glob_flags & ~PTN_GLOB_BRACE), NULL, &matches);
+        if (status != 0 && status != GLOB_NOMATCH) {
+            ok = 0;
+        }
+        for (size_t i = 0; ok && i < matches.gl_pathc; i++) {
+            char *archive_name = ptn_zip_archive_addglob_name(runtime, matches.gl_pathv[i], options, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                free(archive_name);
+                globfree(&matches);
+                ptn_glob_pattern_list_free(&patterns);
+                return ptn_null();
+            }
+            int overwrite = (zip_flags & PTN_ZIP_FL_OVERWRITE) != 0;
+            ok = ptn_zip_archive_store_file_entry(data, archive_name, matches.gl_pathv[i], 0, 0, 0, overwrite);
+            free(archive_name);
+            if (!ok) {
+                ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_EXISTS, line);
+            }
+        }
+        globfree(&matches);
+    }
+    ptn_glob_pattern_list_free(&patterns);
+    if (ok) {
+        ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_OK, line);
+        ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    }
+    return ptn_bool(ok);
+#endif
+}
+
+static PtnValue ptn_zip_archive_replace_file(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 5) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::replaceFile() expects between 2 and 5 arguments");
+        return ptn_null();
+    }
+    PtnStringOperand path_operand = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(path_operand);
+        return ptn_null();
+    }
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "ZipArchive::replaceFile(): Argument #1 ($filepath) must not contain any null bytes");
+        return ptn_null();
+    }
+    int64_t index = ptn_value_to_integer(args[1]);
+    size_t start = argc >= 3 ? (size_t)ptn_value_to_integer(args[2]) : 0;
+    size_t length = argc >= 4 ? (size_t)ptn_value_to_integer(args[3]) : 0;
+    int has_length = argc >= 4;
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || index < 0 || (size_t)index >= data->entry_count) {
+        free(path);
+        return ptn_bool(0);
+    }
+    char *archive_name = ptn_duplicate_string(data->entries[(size_t)index].name);
+    int ok = ptn_zip_archive_store_file_entry(data, archive_name, path, start, length, has_length, 1);
+    free(archive_name);
+    free(path);
+    ptn_zip_archive_set_status(runtime, data, receiver, ok ? PTN_ZIP_ER_OK : data->status, line);
+    ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    return ptn_bool(ok);
+}
+
+static void ptn_zip_archive_compression_range_error(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t position,
+    const char *argument_name,
+    int64_t min,
+    int64_t max
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ZipArchive::%s(): Argument #%zu ($%s) must be between %lld and %lld",
+        method_name,
+        position,
+        argument_name,
+        (long long)min,
+        (long long)max
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_zip_archive_set_compression(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc < 2 || argc > 3) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::setCompression*() expects 2 or 3 arguments");
+        return ptn_null();
+    }
+    int64_t method = ptn_value_to_integer(args[1]);
+    if (method < -1 || method > INT32_MAX) {
+        ptn_zip_archive_compression_range_error(runtime, method_name, 2, "method", -1, INT32_MAX);
+        return ptn_null();
+    }
+    if (argc >= 3) {
+        int64_t flags = ptn_value_to_integer(args[2]);
+        if (flags < 0 || flags > UINT16_MAX) {
+            ptn_zip_archive_compression_range_error(runtime, method_name, 3, "compflags", 0, UINT16_MAX);
+            return ptn_null();
+        }
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_set_compression_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)receiver;
+    (void)line;
+    return ptn_zip_archive_set_compression(runtime, "setCompressionName", argc, args);
+}
+
+static PtnValue ptn_zip_archive_set_compression_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)receiver;
+    (void)line;
+    return ptn_zip_archive_set_compression(runtime, "setCompressionIndex", argc, args);
+}
+
+static PtnValue ptn_zip_archive_get_status_string(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::getStatusString() expects exactly 0 arguments");
+        return ptn_null();
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    return ptn_string(ptn_zip_archive_status_string(data == NULL ? PTN_ZIP_ER_OK : data->status));
 }
 
 static PTN_UNUSED void ptn_zip_archive_run_destructor(
@@ -171282,7 +172618,9 @@ static PTN_UNUSED void ptn_zip_archive_run_destructor(
     if (data == NULL || !data->is_open) {
         return;
     }
-    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    if (data->dirty) {
+        (void)ptn_zip_archive_write_to_path(data);
+    }
     data->is_open = 0;
 }
 
@@ -171319,14 +172657,107 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     if (ptn_ascii_case_equal(name, "addFromString")) {
         return ptn_zip_archive_add_from_string(runtime, receiver, argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "addEmptyDir")) {
+        return ptn_zip_archive_add_empty_dir(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "addGlob")) {
+        return ptn_zip_archive_add_glob(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "replaceFile")) {
+        return ptn_zip_archive_replace_file(runtime, receiver, argc, args, line);
+    }
     if (ptn_ascii_case_equal(name, "statName")) {
         return ptn_zip_archive_stat_name(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "statIndex")) {
+        return ptn_zip_archive_stat_index(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getNameIndex")) {
+        return ptn_zip_archive_get_name_index(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getFromName")) {
+        return ptn_zip_archive_get_from_name(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "extractTo")) {
+        return ptn_zip_archive_extract_to(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getStream")) {
+        return ptn_zip_archive_get_stream(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getStatusString")) {
+        return ptn_zip_archive_get_status_string(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "setCompressionName")) {
+        return ptn_zip_archive_set_compression_name(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "setCompressionIndex")) {
+        return ptn_zip_archive_set_compression_index(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "close")) {
         return ptn_zip_archive_close(runtime, receiver, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
+}
+
+static int ptn_zip_uri_archive_and_entry(const char *uri, char **archive_out, char **entry_out) {
+    const char *prefix = "zip://";
+    size_t prefix_len = strlen(prefix);
+    if (uri == NULL || strncmp(uri, prefix, prefix_len) != 0) {
+        return 0;
+    }
+    const char *body = uri + prefix_len;
+    const char *separator = strchr(body, '#');
+    if (separator == NULL || separator == body || separator[1] == '\0') {
+        return 0;
+    }
+    *archive_out = ptn_duplicate_string_len(body, (size_t)(separator - body));
+    *entry_out = ptn_duplicate_string(separator + 1);
+    return 1;
+}
+
+static int ptn_try_open_zip_stream(PtnRuntime *runtime, const char *path, const char *mode, PtnValue *out) {
+    (void)runtime;
+    if (path == NULL || strncmp(path, "zip://", 6) != 0) {
+        return 0;
+    }
+    if (!ptn_fopen_mode_is_read_only(mode)) {
+        errno = EROFS;
+        return 0;
+    }
+    char *archive_path = NULL;
+    char *entry_name = NULL;
+    if (!ptn_zip_uri_archive_and_entry(path, &archive_path, &entry_name)) {
+        errno = ENOENT;
+        return 0;
+    }
+    PtnZipArchiveData *archive = ptn_zip_archive_data_new();
+    int ok = ptn_zip_archive_load_from_path(archive, archive_path);
+    ssize_t index = ok ? ptn_zip_archive_find_entry(archive, entry_name) : -1;
+    free(archive_path);
+    free(entry_name);
+    if (!ok || index < 0) {
+        ptn_zip_archive_data_free(archive);
+        errno = ENOENT;
+        return 0;
+    }
+    PtnZipArchiveEntry *entry = &archive->entries[(size_t)index];
+    PtnResource *resource = ptn_resource_new_memory_stream(path, mode, PTN_STREAM_BACKEND_MEMORY, SIZE_MAX, 1, 0);
+    size_t content_len = entry->content_len;
+    size_t written = ptn_stream_write_bytes(resource, entry->content, entry->content_len);
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    if (resource->memory_stream != NULL) {
+        resource->memory_stream->writable = 0;
+    }
+    ptn_zip_archive_data_free(archive);
+    if (written != content_len) {
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        errno = EIO;
+        return 0;
+    }
+    *out = ptn_resource(resource);
+    return 1;
 }
 
 typedef struct PtnZipProceduralEntry {
@@ -189053,7 +190484,18 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "open")
             || ptn_ascii_case_equal(method_name, "registerCancelCallback")
             || ptn_ascii_case_equal(method_name, "addFromString")
+            || ptn_ascii_case_equal(method_name, "addEmptyDir")
+            || ptn_ascii_case_equal(method_name, "addGlob")
+            || ptn_ascii_case_equal(method_name, "replaceFile")
             || ptn_ascii_case_equal(method_name, "statName")
+            || ptn_ascii_case_equal(method_name, "statIndex")
+            || ptn_ascii_case_equal(method_name, "getNameIndex")
+            || ptn_ascii_case_equal(method_name, "getFromName")
+            || ptn_ascii_case_equal(method_name, "extractTo")
+            || ptn_ascii_case_equal(method_name, "getStream")
+            || ptn_ascii_case_equal(method_name, "getStatusString")
+            || ptn_ascii_case_equal(method_name, "setCompressionName")
+            || ptn_ascii_case_equal(method_name, "setCompressionIndex")
             || ptn_ascii_case_equal(method_name, "close");
     }
     if (ptn_internal_class_name_is_soap_client(class_name)) {
@@ -190846,7 +192288,18 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "open");
         ptn_append_method_name(result, &index, "registerCancelCallback");
         ptn_append_method_name(result, &index, "addFromString");
+        ptn_append_method_name(result, &index, "addEmptyDir");
+        ptn_append_method_name(result, &index, "addGlob");
+        ptn_append_method_name(result, &index, "replaceFile");
         ptn_append_method_name(result, &index, "statName");
+        ptn_append_method_name(result, &index, "statIndex");
+        ptn_append_method_name(result, &index, "getNameIndex");
+        ptn_append_method_name(result, &index, "getFromName");
+        ptn_append_method_name(result, &index, "extractTo");
+        ptn_append_method_name(result, &index, "getStream");
+        ptn_append_method_name(result, &index, "getStatusString");
+        ptn_append_method_name(result, &index, "setCompressionName");
+        ptn_append_method_name(result, &index, "setCompressionIndex");
         ptn_append_method_name(result, &index, "close");
         return result;
     }
@@ -198716,6 +200169,18 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("EXCL"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CHECKCONS"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OVERWRITE"), ptn_int(8));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("RDONLY"), ptn_int(16));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FL_OVERWRITE"), ptn_int(8192));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FL_ENC_RAW"), ptn_int(64));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_OK"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_EXISTS"), ptn_int(10));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ER_CANCELLED"), ptn_int(32));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CM_DEFAULT"), ptn_int(-1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CM_STORE"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CM_DEFLATE"), ptn_int(8));
         return;
     }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
