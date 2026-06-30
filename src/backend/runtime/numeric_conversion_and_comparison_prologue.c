@@ -7345,10 +7345,9 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
         return ptn_owned_string(ptn_duplicate_string(class_name));
     }
 
-    ptn_throw_exception_at(
+    ptn_emit_fatal_error_at(
         runtime,
-        "Error",
-        "Class name must be a valid object or a string",
+        "Illegal class name",
         runtime != NULL ? runtime->source_path : NULL,
         line
     );

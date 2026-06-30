@@ -1,0 +1,20 @@
+# ptn-g9wa5 exact tokenizer PhpToken residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260629T220020Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-g9wa5-tokenizer-phptoken-current-red-row-pack.txt
+#
+# bucket: ext/tokenizer rows=12
+ext/tokenizer/tests/bad_character.phpt
+ext/tokenizer/tests/token_get_all_variation3.phpt
+ext/tokenizer/tests/PhpToken_tokenize.phpt
+ext/tokenizer/tests/token_get_all_TOKEN_PARSE_000.phpt
+ext/tokenizer/tests/token_get_all_basic.phpt
+ext/tokenizer/tests/PhpToken_extension.phpt
+ext/tokenizer/tests/token_get_all_variation5.phpt
+ext/tokenizer/tests/PhpToken_extension_errors.phpt
+ext/tokenizer/tests/token_get_all_variation16.phpt
+ext/tokenizer/tests/attributes.phpt
+ext/tokenizer/tests/003.phpt
+ext/tokenizer/tests/bug81342.phpt
