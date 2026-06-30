@@ -37833,6 +37833,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: None,
         },
     ];
+    static OPENSSL_CIPHER_ALGO_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "cipher_algo",
+        default: None,
+    }];
     static OPENSSL_CMS_ENCRYPT_PARAMETERS: [InternalParameterSpec; 7] = [
         InternalParameterSpec {
             name: "input_filename",
@@ -38339,6 +38343,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&HASH_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("crypt") {
         Some(&CRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_cipher_iv_length")
+        || name.eq_ignore_ascii_case("openssl_cipher_key_length")
+    {
+        Some(&OPENSSL_CIPHER_ALGO_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_cms_encrypt") {
         Some(&OPENSSL_CMS_ENCRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_encrypt")

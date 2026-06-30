@@ -106076,6 +106076,15 @@ static const EVP_CIPHER *ptn_openssl_cipher_from_operand(PtnStringOperand name) 
     return cipher;
 }
 
+static void ptn_openssl_emit_unknown_cipher_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(message, sizeof(message), "%s(): Unknown cipher algorithm", function_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static const EVP_MD *ptn_openssl_digest_from_algorithm(int64_t algorithm) {
     switch (algorithm) {
         case 1:
@@ -106412,9 +106421,26 @@ static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size
     ptn_string_operand_free(cipher_name);
     if (cipher == NULL) {
         ERR_clear_error();
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_cipher_key_length", line);
         return ptn_bool(0);
     }
     return ptn_int(EVP_CIPHER_get_key_length(cipher));
+}
+
+static PtnValue ptn_internal_openssl_cipher_iv_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand cipher_name = ptn_internal_expect_string_arg(runtime, "openssl_cipher_iv_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    const EVP_CIPHER *cipher = ptn_openssl_cipher_from_operand(cipher_name);
+    ptn_string_operand_free(cipher_name);
+    if (cipher == NULL) {
+        ERR_clear_error();
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_cipher_iv_length", line);
+        return ptn_bool(0);
+    }
+    return ptn_int(EVP_CIPHER_get_iv_length(cipher));
 }
 
 static void ptn_openssl_emit_iv_warning(
@@ -106446,6 +106472,20 @@ static void ptn_openssl_emit_iv_warning(
             expected_len
         );
     }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_openssl_emit_empty_iv_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Using an empty Initialization Vector (iv) is potentially insecure and not recommended",
+        function_name
+    );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
@@ -106492,6 +106532,7 @@ static PtnValue ptn_internal_openssl_encrypt(PtnRuntime *runtime, size_t argc, c
         ptn_string_operand_free(data_arg);
         ptn_string_operand_free(passphrase);
         ptn_string_operand_free(iv_arg);
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_encrypt", line);
         return ptn_bool(0);
     }
 
@@ -106513,7 +106554,9 @@ static PtnValue ptn_internal_openssl_encrypt(PtnRuntime *runtime, size_t argc, c
         if (iv_copy_len != 0) {
             memcpy(iv, iv_arg.data, iv_copy_len);
         }
-        if (iv_arg.len < (size_t)iv_len) {
+        if (iv_arg.len == 0) {
+            ptn_openssl_emit_empty_iv_warning(runtime, "openssl_encrypt", line);
+        } else if (iv_arg.len < (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_encrypt", iv_arg.len, iv_len, 1, line);
         } else if (iv_arg.len > (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_encrypt", iv_arg.len, iv_len, 0, line);
@@ -106612,6 +106655,7 @@ static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, c
         ptn_string_operand_free(data_arg);
         ptn_string_operand_free(passphrase);
         ptn_string_operand_free(iv_arg);
+        ptn_openssl_emit_unknown_cipher_warning(runtime, "openssl_decrypt", line);
         return ptn_bool(0);
     }
 
@@ -106653,7 +106697,7 @@ static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, c
         if (iv_copy_len != 0) {
             memcpy(iv, iv_arg.data, iv_copy_len);
         }
-        if (iv_arg.len < (size_t)iv_len) {
+        if (iv_arg.len != 0 && iv_arg.len < (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_decrypt", iv_arg.len, iv_len, 1, line);
         } else if (iv_arg.len > (size_t)iv_len) {
             ptn_openssl_emit_iv_warning(runtime, "openssl_decrypt", iv_arg.len, iv_len, 0, line);
@@ -107447,6 +107491,15 @@ static PtnValue ptn_internal_openssl_get_cipher_methods(PtnRuntime *runtime, siz
 static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_string_arg(runtime, "openssl_cipher_key_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_cipher_iv_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cipher_iv_length", 1, "cipher_algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -123258,6 +123311,35 @@ static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const P
         ptn_abort_out_of_memory();
     }
     return ptn_owned_string(ptn_duplicate_string(buffer));
+}
+
+static PtnValue ptn_internal_gettimeofday(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    struct timeval now;
+    if (gettimeofday(&now, NULL) != 0) {
+        return ptn_bool(0);
+    }
+
+    if (argc >= 1 && ptn_is_truthy(args[0])) {
+        double seconds = (double)now.tv_sec + ((double)now.tv_usec / 1000000.0);
+        return ptn_float(seconds);
+    }
+
+    time_t seconds = (time_t)now.tv_sec;
+    int offset = ptn_timezone_offset_for_name(ptn_current_timezone_name(), seconds);
+    int dsttime = 0;
+    struct tm *local_parts = localtime(&seconds);
+    if (local_parts != NULL && local_parts->tm_isdst > 0) {
+        dsttime = 1;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("sec"), ptn_int((int64_t)now.tv_sec));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("usec"), ptn_int((int64_t)now.tv_usec));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("minuteswest"), ptn_int((int64_t)(-offset / 60)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("dsttime"), ptn_int(dsttime));
+    return result;
 }
 
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -187256,6 +187338,7 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gettimeofday(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -187918,6 +188001,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getprotobynumber", 1, 1, ptn_internal_getprotobynumber },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
+        { "gettimeofday", 0, 1, ptn_internal_gettimeofday },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmygid", 0, 0, ptn_internal_getmygid },
         { "getmyinode", 0, 0, ptn_internal_getmyinode },
@@ -188320,6 +188404,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openssl_cipher_iv_length", 1, 1, ptn_internal_openssl_cipher_iv_length },
         { "openssl_cipher_key_length", 1, 1, ptn_internal_openssl_cipher_key_length },
         { "openssl_cms_decrypt", 2, 5, ptn_internal_openssl_cms_decrypt },
         { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },
@@ -188919,6 +189004,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "gmdate") ||
         ptn_ascii_case_equal(name, "gmmktime") ||
         ptn_ascii_case_equal(name, "getdate") ||
+        ptn_ascii_case_equal(name, "gettimeofday") ||
         ptn_ascii_case_equal(name, "idate") ||
         ptn_ascii_case_equal(name, "localtime") ||
         ptn_ascii_case_equal(name, "microtime") ||
