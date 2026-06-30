@@ -1644,6 +1644,27 @@ static int ptn_bcmath_number_expect_scale(
     return 1;
 }
 
+static void ptn_bc_throw_precision_range_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($precision) must be between %d and %d",
+        function_name,
+        position,
+        INT_MIN,
+        INT_MAX
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
 static int ptn_bcmath_number_default_scale_binary(const char *operator, const PtnBcNumber *left, const PtnBcNumber *right) {
     if (strcmp(operator, "+") == 0 || strcmp(operator, "-") == 0) {
         return (int)(left->scale > right->scale ? left->scale : right->scale);
@@ -1982,12 +2003,14 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
             return ptn_null();
         }
         int scale = 0;
-        int explicit_scale = argc >= 2;
-        if (explicit_scale &&
-            !ptn_bcmath_number_expect_scale(runtime, function_name, 2, args[1], line, 0, &scale)) {
-            ptn_bc_number_free(&left);
-            ptn_bc_number_free(&right);
-            return ptn_null();
+        int explicit_scale = 0;
+        if (argc >= 2) {
+            explicit_scale = ptn_value_deref(args[1]).type != PTN_NULL;
+            if (!ptn_bcmath_number_expect_scale(runtime, function_name, 2, args[1], line, 0, &scale)) {
+                ptn_bc_number_free(&left);
+                ptn_bc_number_free(&right);
+                return ptn_null();
+            }
         }
         const char *operator = ptn_ascii_case_equal(name, "add") ? "+"
             : (ptn_ascii_case_equal(name, "sub") ? "-"
@@ -2115,7 +2138,7 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
             }
             if (precision_value < INT_MIN || precision_value > INT_MAX) {
                 ptn_bc_number_free(&left);
-                ptn_throw_exception(runtime, "ValueError", "BcMath\\Number::round(): Argument #1 ($precision) is out of range");
+                ptn_bc_throw_precision_range_error(runtime, "BcMath\\Number::round", 1);
                 return ptn_null();
             }
         }
@@ -2547,7 +2570,7 @@ static PtnValue ptn_internal_bcround(PtnRuntime *runtime, size_t argc, const Ptn
         }
         if (precision_value < INT_MIN || precision_value > INT_MAX) {
             ptn_bc_number_free(&number);
-            ptn_throw_exception(runtime, "ValueError", "bcround(): Argument #2 ($precision) is out of range");
+            ptn_bc_throw_precision_range_error(runtime, "bcround", 2);
             return ptn_null();
         }
     }
