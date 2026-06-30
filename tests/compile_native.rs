@@ -20217,16 +20217,21 @@ ob_end_flush();
     );
     assert!(stdout.contains("bool(false)\n"), "{stdout}");
     assert!(
-        combined.contains("session_write_close(): Failed to write session data using user defined save handler.")
-            && combined.contains("handler: Handler::write"),
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::write"),
         "{combined}"
     );
     assert!(
-        combined.contains("session_write_close(): Failed to write session data using user defined save handler.")
-            && combined.contains("handler: Handler::updateTimestamp"),
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::updateTimestamp"),
         "{combined}"
     );
-    assert!(combined.contains("session_create_id(): Failed to create new ID"), "{combined}");
+    assert!(
+        combined.contains("session_create_id(): Failed to create new ID"),
+        "{combined}"
+    );
 }
 
 #[test]
