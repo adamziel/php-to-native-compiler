@@ -80464,6 +80464,11 @@ var_dump(filter_var('127.255.255.255', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FI
 var_dump(filter_var('100.64.0.0', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
 var_dump(filter_var('::ffff:192.168.1.1', FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE));\n\
 var_dump(filter_var('0:0:0:0:0:0:0:1', FILTER_VALIDATE_IP, FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('FC00::1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE));\n\
+var_dump(filter_var('fe80:5:6::1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('2001:0db8::1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('2001:0010::1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('::ffff:0:1', FILTER_VALIDATE_IP, FILTER_FLAG_NO_RES_RANGE));\n\
 var_dump(filter_var('foo@bar.com', FILTER_VALIDATE_DOMAIN));\n\
 var_dump(filter_var('01-23-45-67-89-ab', FILTER_VALIDATE_MAC, ['options' => ['separator' => '.']]));\n\
 var_dump(filter_var('0123.4567.89ab', FILTER_VALIDATE_MAC));\n\
@@ -80502,6 +80507,11 @@ bool(false)\n\
 bool(false)\n\
 string(10) \"100.64.0.0\"\n\
 string(18) \"::ffff:192.168.1.1\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+string(12) \"2001:0db8::1\"\n\
+string(12) \"2001:0010::1\"\n\
 bool(false)\n\
 string(11) \"foo@bar.com\"\n\
 bool(false)\n\

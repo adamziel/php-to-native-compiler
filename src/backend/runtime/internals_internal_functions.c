@@ -21715,6 +21715,21 @@ static int ptn_filter_ipv6_is_loopback(const unsigned char *address) {
     return memcmp(address, loopback, sizeof(loopback)) == 0;
 }
 
+static int ptn_filter_ipv6_mapped_ipv4_address(const unsigned char *address, uint32_t *ipv4_out) {
+    static const unsigned char ipv4_mapped[12] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
+    };
+    if (memcmp(address, ipv4_mapped, sizeof(ipv4_mapped)) != 0) {
+        return 0;
+    }
+    *ipv4_out =
+        ((uint32_t)address[12] << 24) |
+        ((uint32_t)address[13] << 16) |
+        ((uint32_t)address[14] << 8) |
+        (uint32_t)address[15];
+    return 1;
+}
+
 static int ptn_filter_ipv6_is_non_global(const unsigned char *address) {
     static const unsigned char unspecified[16] = {0};
     static const unsigned char loopback[16] = {
@@ -21766,14 +21781,18 @@ static int ptn_filter_validate_ipv6_operand_with_flags(PtnStringOperand input, i
         }
     }
     if ((flags & PTN_FILTER_FLAG_NO_RES_RANGE) != 0) {
-        static const unsigned char documentation[16] = {0x20, 0x01, 0x0d, 0xb8};
         static const unsigned char link_local[16] = {0xfe, 0x80};
         static const unsigned char multicast[16] = {0xff};
+        uint32_t mapped_ipv4 = 0;
         if (ptn_filter_ipv6_is_unspecified(bytes) ||
             ptn_filter_ipv6_is_loopback(bytes) ||
-            ptn_filter_ipv6_prefix_matches(bytes, documentation, 32) ||
             ptn_filter_ipv6_prefix_matches(bytes, link_local, 10) ||
-            ptn_filter_ipv6_prefix_matches(bytes, multicast, 8)) {
+            ptn_filter_ipv6_prefix_matches(bytes, multicast, 8) ||
+            (ptn_filter_ipv6_mapped_ipv4_address(bytes, &mapped_ipv4) &&
+             (ptn_filter_ipv4_in_cidr(mapped_ipv4, ptn_filter_ipv4_address(0, 0, 0, 0), 8) ||
+              ptn_filter_ipv4_in_cidr(mapped_ipv4, ptn_filter_ipv4_address(127, 0, 0, 0), 8) ||
+              ptn_filter_ipv4_in_cidr(mapped_ipv4, ptn_filter_ipv4_address(169, 254, 0, 0), 16) ||
+              mapped_ipv4 == ptn_filter_ipv4_address(255, 255, 255, 255)))) {
             return 0;
         }
     }

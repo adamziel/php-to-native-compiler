@@ -1,0 +1,12 @@
+ext/calendar/tests/jdtojewish_hebrew.phpt
+ext/bcmath/tests/gh16262.phpt
+ext/bcmath/tests/bcmul_check_overflow.phpt
+ext/pcre/tests/bug42945.phpt
+ext/bcmath/tests/bcround_precision_bounds.phpt
+ext/calendar/tests/jdtojewish.phpt
+ext/bcmath/tests/gh17398.phpt
+ext/pcre/tests/errors01.phpt
+ext/calendar/tests/gh16234_2_64.phpt
+ext/filter/tests/bug47435.phpt
+ext/filter/tests/gh16944.phpt
+ext/calendar/tests/gh19371.phpt
