@@ -36249,6 +36249,27 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
     if class_name.eq_ignore_ascii_case("Collator") && name.eq_ignore_ascii_case("SORT_REGULAR") {
         return Some("PTN_SORT_REGULAR");
     }
+    if class_name.eq_ignore_ascii_case("IntlTimeZone") {
+        const INTL_TIMEZONE_CONSTANTS: &[(&str, &str)] = &[
+            ("TYPE_ANY", "0"),
+            ("TYPE_CANONICAL", "1"),
+            ("TYPE_CANONICAL_LOCATION", "2"),
+            ("DISPLAY_SHORT", "1"),
+            ("DISPLAY_LONG", "2"),
+            ("DISPLAY_SHORT_GENERIC", "3"),
+            ("DISPLAY_LONG_GENERIC", "4"),
+            ("DISPLAY_SHORT_GMT", "5"),
+            ("DISPLAY_LONG_GMT", "6"),
+            ("DISPLAY_SHORT_COMMONLY_USED", "7"),
+            ("DISPLAY_GENERIC_LOCATION", "8"),
+        ];
+        if let Some((_, value)) = INTL_TIMEZONE_CONSTANTS
+            .iter()
+            .find(|(constant_name, _)| name.eq_ignore_ascii_case(constant_name))
+        {
+            return Some(value);
+        }
+    }
     if class_name.eq_ignore_ascii_case("Pdo\\Sqlite") {
         if name.eq_ignore_ascii_case("ATTR_EXTENDED_RESULT_CODES") {
             return Some("1001");

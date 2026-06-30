@@ -1,0 +1,6 @@
+ext/intl/tests/calendar_add_basic.phpt
+ext/intl/tests/calendar_roll_basic.phpt
+ext/intl/tests/calendar_isSet_empty_time.phpt
+ext/intl/tests/timezone_getDisplayName_basic.phpt
+ext/intl/tests/timezone_getDSTSavings_basic.phpt
+ext/intl/tests/timezone_useDaylightTime_basic.phpt

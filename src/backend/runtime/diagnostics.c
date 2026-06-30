@@ -3183,5 +3183,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         ptn_parse_bool_env("PTN_INTL_USE_EXCEPTIONS", &configured_intl_use_exceptions)
             ? configured_intl_use_exceptions
             : 0;
+    const char *configured_intl_default_locale = getenv("PTN_INTL_DEFAULT_LOCALE");
+    runtime->intl_default_locale = ptn_duplicate_string(
+        configured_intl_default_locale == NULL ? "" : configured_intl_default_locale
+    );
     runtime->intl_last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
 }
