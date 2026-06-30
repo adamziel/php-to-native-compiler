@@ -8787,6 +8787,9 @@ impl Parser<'_> {
                             }
                         };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                        if dynamic_static_property_fetch_has_illegal_literal_receiver(&expr) {
+                            return Err(Diagnostic::new("Illegal class name", Some(start_span)));
+                        }
                         if direct_variable_member {
                             if let Some(Expr::Variable(property_name, property_span)) =
                                 dynamic_name.as_ref()
@@ -27990,6 +27993,52 @@ fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
         Expr::String(_, _)
         | Expr::ShellExec { .. }
         | Expr::Array { .. }
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_) => true,
+        _ => false,
+    }
+}
+
+fn dynamic_static_property_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
+    match expr {
+        Expr::Grouped { expr, .. } => {
+            dynamic_static_property_fetch_has_illegal_literal_receiver(expr)
+        }
+        Expr::Array { .. }
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_) => true,
+        Expr::Unary { op, expr, .. } => match op {
+            UnaryOp::Positive | UnaryOp::Negate | UnaryOp::BitwiseNot => {
+                dynamic_static_property_fetch_has_numeric_literal_receiver(expr)
+            }
+            UnaryOp::Not => dynamic_static_property_fetch_has_scalar_literal_receiver(expr),
+            UnaryOp::ErrorSuppress => false,
+        },
+        _ => false,
+    }
+}
+
+fn dynamic_static_property_fetch_has_numeric_literal_receiver(expr: &Expr) -> bool {
+    match expr {
+        Expr::Grouped { expr, .. } => {
+            dynamic_static_property_fetch_has_numeric_literal_receiver(expr)
+        }
+        Expr::Int(_, _) | Expr::Float(_, _) | Expr::Bool(_, _) | Expr::Null(_) => true,
+        _ => false,
+    }
+}
+
+fn dynamic_static_property_fetch_has_scalar_literal_receiver(expr: &Expr) -> bool {
+    match expr {
+        Expr::Grouped { expr, .. } => {
+            dynamic_static_property_fetch_has_scalar_literal_receiver(expr)
+        }
+        Expr::String(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)

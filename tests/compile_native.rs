@@ -29433,6 +29433,16 @@ foreach ($db->query('SELECT testing(name) FROM t') as $row) {
     echo $row['testing(name)'], "\n";
 }
 
+$db->createCollation('NATURAL', function($a, $b) { return strnatcmp($a, $b); });
+$db->query('CREATE TABLE c (name TEXT)');
+$db->query("INSERT INTO c VALUES ('2'), ('10'), ('1')");
+foreach ($db->query('SELECT name FROM c ORDER BY name COLLATE NATURAL') as $row) {
+    echo 'C', $row['name'], "\n";
+}
+foreach ($db->query('SELECT name FROM c ORDER BY name') as $row) {
+    echo 'D', $row['name'], "\n";
+}
+
 try {
     $db->sqliteCreateAggregate('foo', 'a', '');
 } catch (TypeError $e) {
@@ -29469,6 +29479,7 @@ try {
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("Method PDO::sqliteCreateFunction() is deprecated"));
     assert!(stdout.contains("\nphp\nphp6\n"));
+    assert!(stdout.contains("\nC1\nC2\nC10\nD1\nD10\nD2\n"));
     assert!(stdout.contains(
         "PDO::sqliteCreateAggregate(): Argument #2 ($step) must be a valid callback, function \"a\" not found or invalid function name\n"
     ));
@@ -41223,6 +41234,12 @@ fn parser_reports_late_static_class_name_row_diagnostics() {
     let invalid_class = parser::parse("<?php []::X::X;").unwrap_err();
     assert_eq!(invalid_class.message, "Illegal class name");
     assert_eq!(invalid_class.kind, DiagnosticKind::Fatal);
+
+    let invalid_static_property = parser::parse("<?php (-0)::$prop;").unwrap_err();
+    assert_eq!(invalid_static_property.message, "Illegal class name");
+    assert_eq!(invalid_static_property.kind, DiagnosticKind::Fatal);
+
+    parser::parse("<?php class A { public static $prop = 1; } ('A')::$prop;").unwrap();
 }
 
 #[test]
@@ -103700,6 +103717,80 @@ echo \"unreachable\\n\";
         let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
         assert!(c_source.contains(message), "{name}");
     }
+}
+
+#[test]
+fn compile_throwable_interface_declaration_fatals_to_native_binary() {
+    let fatal_cases = [
+        (
+            "class-implements-throwable",
+            "<?php
+class Failure implements Throwable {}
+echo \"unreachable\\n\";
+",
+            2,
+        ),
+        (
+            "class-implements-interface-extending-throwable",
+            "<?php
+interface I extends Throwable {}
+class Failure implements I {}
+echo \"unreachable\\n\";
+",
+            3,
+        ),
+    ];
+
+    for (name, source, line) in fatal_cases {
+        let root_name = format!("ptn-native-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: Class Failure cannot implement interface Throwable, extend Exception or Error instead in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+
+        let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+        assert!(
+            c_source.contains(
+                "Class Failure cannot implement interface Throwable, extend Exception or Error instead"
+            ),
+            "{name}"
+        );
+    }
+
+    let root = temp_dir("ptn-native-exception-subclass-implements-throwable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-subclass-implements-throwable.php");
+    let output = root.join("exception-subclass-implements-throwable-bin");
+    fs::write(
+        &input,
+        "<?php
+class Failure extends Exception implements Throwable {}
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

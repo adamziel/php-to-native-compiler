@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/Zend/tests/generators/bug79657.phpt
+/home/claude/php-src-phpt/Zend/tests/namespaces/ns_007.phpt
+/home/claude/php-src-phpt/Zend/tests/list/list_reference_006.phpt
+/home/claude/php-src-phpt/Zend/tests/generators/bug66041.phpt
+/home/claude/php-src-phpt/Zend/tests/bug70782.phpt
+/home/claude/php-src-phpt/Zend/tests/zend_ini/oss_fuzz_428983568.phpt
+/home/claude/php-src-phpt/Zend/tests/get_required_files.phpt
+/home/claude/php-src-phpt/Zend/tests/bug60771.phpt
+/home/claude/php-src-phpt/tests/lang/short_tags.004.phpt
+/home/claude/php-src-phpt/Zend/tests/generators/gh15330-005.phpt
+/home/claude/php-src-phpt/Zend/tests/throwable_003.phpt
+/home/claude/php-src-phpt/Zend/tests/fibers/destructors_005.phpt
