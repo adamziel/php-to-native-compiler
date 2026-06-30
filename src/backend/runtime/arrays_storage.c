@@ -2597,6 +2597,48 @@ static PTN_UNUSED void ptn_lazy_object_reset_property_storage(
     }
 }
 
+static PTN_UNUSED void ptn_lazy_object_clear_reset_property_storage(
+    PtnObject *object,
+    const char *class_name
+) {
+    if (object == NULL || object->properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (ptn_lazy_object_reset_should_preserve_readonly_property(object, metadata, class_name)) {
+            metadata->lazy_skip = 1;
+            metadata->readonly_clone_reinitialized = 0;
+        } else if (ptn_lazy_object_reset_should_remove_property(metadata, class_name)) {
+            ptn_lazy_object_mark_property_uninitialized(metadata);
+        } else {
+            metadata->lazy_skip = 1;
+        }
+    }
+    for (size_t i = 0; i < object->properties->len;) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            i++;
+            continue;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
+        if (!ptn_lazy_object_reset_should_remove_property(metadata, class_name)) {
+            i++;
+            continue;
+        }
+        if (ptn_lazy_object_reset_should_preserve_readonly_property(object, metadata, class_name)) {
+            i++;
+            continue;
+        }
+        if (entry->value.type == PTN_REFERENCE) {
+            ptn_reference_forget_property_type(entry->value.as.reference, metadata);
+        }
+        PtnArrayKey key = ptn_array_string_key_len(entry->key.as.string, entry->key.string_len);
+        ptn_array_unset_entry(object->properties, key);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_lazy_object_detach_initialized_proxy_for_reset(
     PtnObject *object
 ) {
