@@ -218030,18 +218030,6 @@ static PtnValue ptn_simplexml_offset_value(
     }
     int64_t index = 0;
     if (!ptn_simplexml_offset_index(key, &index) || (size_t)index >= data->item_count) {
-        if (index >= 0 &&
-            (size_t)index == data->item_count &&
-            data->property_view &&
-            data->pending_property != NULL) {
-            return ptn_simplexml_object_from_pending_property_as(
-                runtime,
-                ptn_simplexml_data_class_name(data),
-                data->pending_parents,
-                data->pending_parent_count,
-                data->pending_property
-            );
-        }
         return ptn_null();
     }
     if (exists_out != NULL) {
