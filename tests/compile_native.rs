@@ -57869,6 +57869,56 @@ echo \"ok\\n\";\n",
 }
 
 #[test]
+fn compile_curl_escape_and_multi_strerror_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-escape-multi-strerror");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-escape-multi-strerror.php");
+    let output = root.join("curl-escape-multi-strerror-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$handle = curl_init();\n\
+$escaped = curl_escape($handle, 'http://www.php.net/ ?!');\n\
+var_dump($escaped);\n\
+$decoded = curl_unescape($handle, $escaped);\n\
+var_dump($decoded === 'http://www.php.net/ ?!');\n\
+$nul = curl_unescape($handle, 'a%00b');\n\
+var_dump(strlen($nul), $nul === \"a\\0b\");\n\
+var_dump(strtolower(curl_multi_strerror(CURLM_BAD_HANDLE)));\n\
+var_dump(function_exists('curl_escape'), function_exists('curl_unescape'));\n\
+$constants = get_defined_constants(true);\n\
+var_dump($constants['curl']['CURLM_BAD_HANDLE']);\n\
+$extension = new ReflectionExtension('curl');\n\
+var_dump($extension->getConstants()['CURLM_BAD_HANDLE']);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(36) \"http%3A%2F%2Fwww.php.net%2F%20%3F%21\"\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "string(20) \"invalid multi handle\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_curl_escape"));
+    assert!(c_source.contains("ptn_internal_curl_unescape"));
+    assert!(c_source.contains("CURLM_BAD_HANDLE"));
+}
+
+#[test]
 fn compile_curl_copy_handle_getinfo_options_to_native_binary() {
     let root = temp_dir("ptn-native-curl-copy-handle-getinfo");
     fs::create_dir_all(&root).unwrap();
