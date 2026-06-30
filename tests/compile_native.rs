@@ -51576,6 +51576,132 @@ var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_GENERIC_LOCATION));\n
 }
 
 #[test]
+fn compile_intl_calendar_set_out_of_bounds_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-set-out-of-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-set-out-of-bounds.php");
+    let output = root.join("intl-calendar-set-out-of-bounds-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$cal = IntlCalendar::createInstance();\n\
+\n\
+try { $cal->set(99999999999, 1, 1); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { intlcal_set($cal, 1, 99999999999, 1); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $cal->set(1, 1, 1, 99999999999, 1); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $cal->set(1, 1, 1, 1, 99999999999, 1); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { intlcal_set($cal, 1, 1, 1, 1, 1, 99999999999); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Calling IntlCalendar::set() with more than 2 arguments is deprecated")
+            .count(),
+        3,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("Function intlcal_set() is deprecated since 8.4")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "IntlCalendar::set(): Argument #1 ($year) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "intlcal_set(): Argument #3 ($month) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "IntlCalendar::set(): Argument #4 ($hour) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "IntlCalendar::set(): Argument #5 ($minute) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "intlcal_set(): Argument #7 ($second) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("expects exactly 3 arguments"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_timezone_argument_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-argument-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-argument-type-errors.php");
+    let output = root.join("intl-timezone-argument-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_exception(callable $cb): void {\n\
+    try {\n\
+        $cb();\n\
+    } catch (Throwable $e) {\n\
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+\n\
+$std = new stdClass();\n\
+$calendar = IntlCalendar::createInstance();\n\
+$formatter = new IntlDateFormatter(null, IntlDateFormatter::NONE, IntlDateFormatter::NONE);\n\
+\n\
+dump_exception(fn() => intlcal_create_instance($std));\n\
+dump_exception(fn() => IntlCalendar::createInstance($std));\n\
+dump_exception(fn() => intlcal_set_time_zone($calendar, $std));\n\
+dump_exception(fn() => $calendar->setTimeZone($std));\n\
+dump_exception(fn() => new IntlGregorianCalendar($std));\n\
+dump_exception(fn() => datefmt_create(null, IntlDateFormatter::NONE, IntlDateFormatter::NONE, $std));\n\
+dump_exception(fn() => IntlDateFormatter::create(null, IntlDateFormatter::NONE, IntlDateFormatter::NONE, $std));\n\
+dump_exception(fn() => new IntlDateFormatter(null, IntlDateFormatter::NONE, IntlDateFormatter::NONE, $std));\n\
+dump_exception(fn() => datefmt_set_timezone($formatter, $std));\n\
+dump_exception(fn() => $formatter->setTimeZone($std));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TypeError: intlcal_create_instance(): Argument #1 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlCalendar::createInstance(): Argument #1 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: intlcal_set_time_zone(): Argument #2 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlCalendar::setTimeZone(): Argument #1 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlGregorianCalendar::__construct(): Argument #1 ($timezoneOrYear) Object of class stdClass could not be converted to string\n\
+TypeError: datefmt_create(): Argument #4 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlDateFormatter::create(): Argument #4 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlDateFormatter::__construct(): Argument #4 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: datefmt_set_timezone(): Argument #2 ($timezone) Object of class stdClass could not be converted to string\n\
+TypeError: IntlDateFormatter::setTimeZone(): Argument #1 ($timezone) Object of class stdClass could not be converted to string\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_dateformatter_time_none_and_grapheme_empty_to_native_binary() {
     let root = temp_dir("ptn-native-intl-dateformatter-time-none-grapheme-empty");
     fs::create_dir_all(&root).unwrap();

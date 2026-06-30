@@ -1,0 +1,12 @@
+ext/intl/tests/msgfmt_format_error1.phpt
+ext/intl/tests/msgfmt_fail2.phpt
+ext/intl/tests/calendar_getWeekendTransition_basic.phpt
+ext/intl/tests/timezone_getRegion_error.phpt
+ext/intl/tests/calendar_set_basic.phpt
+ext/intl/tests/timezone_getTZData_basic.phpt
+ext/intl/tests/locale_parse_locale2.phpt
+ext/intl/tests/calendar_clear_basic.phpt
+ext/intl/tests/calendar_createInstance_basic.phpt
+ext/intl/tests/timezone_getDisplayName_variant4.phpt
+ext/intl/tests/calendar_set_out_of_bounds.phpt
+ext/intl/tests/timezone_argument_type_errors.phpt
