@@ -30531,6 +30531,12 @@ for ($i = 0; inflate_get_status($ctx) === ZLIB_OK; $i++) {
 echo "inflate:", $inflated, ":", inflate_get_status($ctx), "\n";
 inflate_add($ctx, substr($encoded, 0, 4));
 echo "reset-status:", inflate_get_status($ctx), "\n";
+$encoded_with_junk = zlib_encode("Hello world.", ZLIB_ENCODING_DEFLATE);
+$encoded_with_junk_len = strlen($encoded_with_junk);
+$read_ctx = inflate_init(ZLIB_ENCODING_DEFLATE);
+echo "read-len:", inflate_add($read_ctx, $encoded_with_junk . str_repeat("qebsouesl", 2)), ":", inflate_get_read_len($read_ctx), ":", $encoded_with_junk_len, "\n";
+inflate_add($read_ctx, substr($encoded_with_junk, 0, 4));
+echo "read-len-reset:", inflate_get_read_len($read_ctx), "\n";
 
 try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
 try { inflate_init(ZLIB_ENCODING_DEFLATE, ["window" => []]); } catch (TypeError $e) { echo "window-option\n"; }
@@ -30610,6 +30616,8 @@ string(32) \"The quick brown fox jumps over t\"\n\
 bool(false)\n\
 inflate:Hello world.:1\n\
 reset-status:0\n\
+read-len:Hello world.:20:20\n\
+read-len-reset:4\n\
 inflate-error\n\
 window-option\n\
 level-error\n\
@@ -30629,6 +30637,7 @@ option-error\n"
     assert!(c_source.contains("ptn_internal_deflate_add"));
     assert!(c_source.contains("ptn_internal_gzseek"));
     assert!(c_source.contains("ptn_internal_zlib_encode"));
+    assert!(c_source.contains("ptn_internal_inflate_get_read_len"));
     assert!(c_source.contains("ptn_internal_inflate_get_status"));
     assert!(c_source.contains("ptn_internal_stream_filter_remove"));
     assert!(c_source.contains("ptn_defined_constants_zlib_table"));

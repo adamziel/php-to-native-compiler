@@ -163376,6 +163376,7 @@ typedef struct {
     size_t input_capacity;
     unsigned char *output;
     size_t output_len;
+    uint64_t read_len;
     int64_t status;
     pid_t worker_pid;
     int worker_input_fd;
@@ -163432,6 +163433,7 @@ static void ptn_zlib_context_reset_stream(PtnZlibContext *context) {
     }
     context->input_len = 0;
     context->output_len = 0;
+    context->read_len = 0;
     context->status = PTN_ZLIB_OK;
 }
 
@@ -163483,6 +163485,7 @@ static PtnValue ptn_zlib_context_resource(
     context->input_capacity = 0;
     context->output = NULL;
     context->output_len = 0;
+    context->read_len = 0;
     context->status = PTN_ZLIB_OK;
     context->worker_pid = -1;
     context->worker_input_fd = -1;
@@ -163771,10 +163774,12 @@ static int ptn_zlib_context_start_inflate_worker(PtnZlibContext *context) {
         "        break\n"
         "    try:\n"
         "        payload=d.decompress(data)\n"
+        "        consumed=len(data)-len(d.unused_data)\n"
         "        if finish:\n"
         "            payload += d.flush()\n"
         "            d=make_obj()\n"
         "        outp.write(len(payload).to_bytes(8, 'big'))\n"
+        "        outp.write(consumed.to_bytes(8, 'big'))\n"
         "        outp.write(payload)\n"
         "        outp.flush()\n"
         "    except Exception:\n"
@@ -163868,6 +163873,13 @@ static int ptn_zlib_context_inflate_with_worker(
         ptn_zlib_context_close_worker(context);
         return 0;
     }
+    unsigned char read_len_header[8];
+    if (!ptn_zlib_read_exact_fd(context->worker_output_fd, read_len_header, sizeof(read_len_header))) {
+        context->worker_failed = 1;
+        ptn_zlib_context_close_worker(context);
+        return 0;
+    }
+    uint64_t consumed_len = ptn_zlib_u64_from_be(read_len_header);
     unsigned char *payload = NULL;
     if (payload_len == 0) {
         payload = (unsigned char *)ptn_duplicate_string_len("", 0);
@@ -163882,6 +163894,11 @@ static int ptn_zlib_context_inflate_with_worker(
             ptn_zlib_context_close_worker(context);
             return 0;
         }
+    }
+    if (UINT64_MAX - context->read_len < consumed_len) {
+        context->read_len = UINT64_MAX;
+    } else {
+        context->read_len += consumed_len;
     }
     *data_out = payload;
     *len_out = (size_t)payload_len;
@@ -163937,11 +163954,13 @@ static int ptn_zlib_context_inflate_with_zlib(
     if (context->native_stream_ended) {
         if (data.len == 0 && flush_mode == PTN_ZLIB_FINISH) {
             context->native_stream_ended = 0;
+            context->read_len = 0;
             *data_out = (unsigned char *)ptn_duplicate_string_len("", 0);
             *len_out = 0;
             return 1;
         }
         context->native_stream_ended = 0;
+        context->read_len = 0;
     }
     int start_status = ptn_zlib_context_start_native_inflate(context);
     if (start_status <= 0) {
@@ -163955,6 +163974,7 @@ static int ptn_zlib_context_inflate_with_zlib(
     z_stream *stream = &context->native_stream;
     stream->next_in = (Bytef *)(const unsigned char *)data.data;
     stream->avail_in = (uInt)data.len;
+    size_t input_len = data.len;
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
@@ -163998,6 +164018,13 @@ static int ptn_zlib_context_inflate_with_zlib(
             status = Z_OK;
         }
     } while (stream->avail_out == 0 || stream->avail_in > 0);
+
+    size_t consumed_len = input_len - (size_t)stream->avail_in;
+    if (UINT64_MAX - context->read_len < consumed_len) {
+        context->read_len = UINT64_MAX;
+    } else {
+        context->read_len += consumed_len;
+    }
 
     if (saw_stream_end) {
         ptn_zlib_context_end_native(context);
@@ -164456,6 +164483,33 @@ static PtnValue ptn_internal_inflate_get_status(PtnRuntime *runtime, size_t argc
     }
     PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
     return ptn_int(context->status);
+}
+
+static PtnValue ptn_internal_inflate_get_read_len(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue context_value = ptn_value_deref(args[0]);
+    if (context_value.type != PTN_RESOURCE ||
+        context_value.as.resource == NULL ||
+        strcmp(context_value.as.resource->type_name, "zlib inflate") != 0 ||
+        context_value.as.resource->close_hook_data == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "inflate_get_read_len(): Argument #1 ($context) must be of type InflateContext, %s given",
+            ptn_offset_container_type_name(context_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
+    if (context->read_len > (uint64_t)INT64_MAX) {
+        return ptn_int(INT64_MAX);
+    }
+    return ptn_int((int64_t)context->read_len);
 }
 
 static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -190569,6 +190623,7 @@ static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_inflate_get_read_len(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_ob_iconv_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -191191,6 +191246,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "inflate_add", 2, 3, ptn_internal_inflate_add },
+        { "inflate_get_read_len", 1, 1, ptn_internal_inflate_get_read_len },
         { "inflate_get_status", 1, 1, ptn_internal_inflate_get_status },
         { "inflate_init", 1, 2, ptn_internal_inflate_init },
         { "hash", 2, 4, ptn_internal_hash },
