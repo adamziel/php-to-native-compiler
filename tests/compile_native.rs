@@ -53337,7 +53337,7 @@ echo append_nodes($legacy), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "0a2020202048656c6c6f20576f726c640a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
+            "0a2020202048656c6c6f20576f726c640a0a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
             "0a2020202048656c6c6f20576f726c640a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
         )
     );
@@ -54340,6 +54340,16 @@ echo $doc->saveXML();
 $house = $root->appendChild($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'house'));
 $house->after($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'street'));
 echo $doc->saveXML();
+
+$doc = new DOMDocument('1.0');
+$doc->loadXML('<container xmlns=\"http://php.net\"/>');
+$doc->documentElement->appendChild($doc->createElementNS('http://php.net', 'example'));
+echo $doc->saveXML();
+
+$doc = new DOMDocument('1.0');
+$doc->loadXML('<container xmlns=\"http://symfony.com/schema/dic/services\"><child/></container>');
+$doc->documentElement->removeAttributeNS('http://symfony.com/schema/dic/services', '');
+echo $doc->saveXML();
 ",
     )
     .unwrap();
@@ -54369,6 +54379,10 @@ echo $doc->saveXML();
             "  <g:item_type>house</g:item_type>\n",
             "  <g:item_type>street</g:item_type>\n",
             "</element>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns=\"http://php.net\"><example/></container>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container><child/></container>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -54414,6 +54428,14 @@ echo $html->saveHtml($container), "\n";
 $roundtrip = Dom\HTMLDocument::createFromString('<!DOCTYPE HTML><container><example:foo></example:foo>
 <example:foo example2:bar="baz1"></example:foo></container>');
 echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n";
+
+$xml = Dom\XMLDocument::createFromString('<container xmlns="some:ns"><x><foo xmlns="some:ns"/></x></container>');
+$xml->documentElement->appendChild($xml->createElementNS('some:ns2', 'child'));
+$htmlImport = Dom\HTMLDocument::createFromString('<p>foo</p>', LIBXML_NOERROR);
+$p = $htmlImport->documentElement->firstChild->nextSibling->firstChild;
+$p->appendChild($htmlImport->importNode($xml->documentElement, true));
+echo $htmlImport->saveXML(), "\n";
+echo $htmlImport->saveHtml(), "\n";
 "#,
     )
     .unwrap();
@@ -54437,6 +54459,9 @@ echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n
             "<container><foo id=\"x\"></foo><x:node y:attr=\"v\"></x:node><br><svg></svg><math></math></container>\n",
             "<container><example:foo></example:foo>\n",
             "<example:foo example2:bar=\"baz1\"></example:foo></container>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head></head><body><p>foo<container xmlns=\"some:ns\"><x><foo xmlns=\"some:ns\"/></x><child xmlns=\"some:ns2\"/></container></p></body></html>\n",
+            "<html><head></head><body><p>foo<container xmlns=\"some:ns\"><x><foo xmlns=\"some:ns\"></foo></x><child></child></container></p></body></html>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
