@@ -173080,6 +173080,23 @@ static ssize_t ptn_zip_archive_find_entry(PtnZipArchiveData *data, const char *n
     return -1;
 }
 
+static int ptn_zip_archive_rename_entry(PtnZipArchiveData *data, size_t index, const char *new_name) {
+    if (data == NULL || new_name == NULL || index >= data->entry_count) {
+        return 0;
+    }
+    ssize_t existing = ptn_zip_archive_find_entry(data, new_name);
+    if (existing >= 0 && (size_t)existing != index) {
+        return 0;
+    }
+    char *name = ptn_duplicate_string(new_name);
+    free(data->entries[index].name);
+    data->entries[index].name = name;
+    size_t name_len = strlen(name);
+    data->entries[index].is_dir = name_len != 0 && name[name_len - 1] == '/';
+    data->dirty = 1;
+    return 1;
+}
+
 static int ptn_zip_archive_store_entry(
     PtnZipArchiveData *data,
     const char *name,
@@ -174337,6 +174354,70 @@ static PtnValue ptn_zip_archive_replace_file(
     return ptn_bool(ok);
 }
 
+static PtnValue ptn_zip_archive_rename_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::renameIndex() expects exactly 2 arguments");
+        return ptn_null();
+    }
+    int64_t index = ptn_value_to_integer(args[0]);
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *new_name = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    int ok = data != NULL && data->is_open && index >= 0 &&
+        ptn_zip_archive_rename_entry(data, (size_t)index, new_name);
+    free(new_name);
+    ptn_zip_archive_set_status(runtime, data, receiver, ok ? PTN_ZIP_ER_OK : data == NULL ? PTN_ZIP_ER_OK : data->status, line);
+    ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_zip_archive_rename_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "ZipArchive::renameName() expects exactly 2 arguments");
+        return ptn_null();
+    }
+    PtnStringOperand old_operand = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(old_operand);
+        return ptn_null();
+    }
+    PtnStringOperand new_operand = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(old_operand);
+        ptn_string_operand_free(new_operand);
+        return ptn_null();
+    }
+    char *old_name = ptn_duplicate_string_len(old_operand.data, old_operand.len);
+    char *new_name = ptn_duplicate_string_len(new_operand.data, new_operand.len);
+    ptn_string_operand_free(old_operand);
+    ptn_string_operand_free(new_operand);
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    ssize_t index = data == NULL || !data->is_open ? -1 : ptn_zip_archive_find_entry(data, old_name);
+    int ok = index >= 0 && ptn_zip_archive_rename_entry(data, (size_t)index, new_name);
+    free(old_name);
+    free(new_name);
+    ptn_zip_archive_set_status(runtime, data, receiver, ok ? PTN_ZIP_ER_OK : data == NULL ? PTN_ZIP_ER_OK : data->status, line);
+    ptn_zip_archive_sync_properties(runtime, data, receiver, line);
+    return ptn_bool(ok);
+}
+
 static void ptn_zip_archive_compression_range_error(
     PtnRuntime *runtime,
     const char *method_name,
@@ -174484,6 +174565,12 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     }
     if (ptn_ascii_case_equal(name, "replaceFile")) {
         return ptn_zip_archive_replace_file(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "renameIndex")) {
+        return ptn_zip_archive_rename_index(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "renameName")) {
+        return ptn_zip_archive_rename_name(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "statName")) {
         return ptn_zip_archive_stat_name(runtime, receiver, argc, args, line);
@@ -192698,6 +192785,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "addEmptyDir")
             || ptn_ascii_case_equal(method_name, "addGlob")
             || ptn_ascii_case_equal(method_name, "replaceFile")
+            || ptn_ascii_case_equal(method_name, "renameIndex")
+            || ptn_ascii_case_equal(method_name, "renameName")
             || ptn_ascii_case_equal(method_name, "statName")
             || ptn_ascii_case_equal(method_name, "statIndex")
             || ptn_ascii_case_equal(method_name, "getNameIndex")
@@ -194504,6 +194593,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "addEmptyDir");
         ptn_append_method_name(result, &index, "addGlob");
         ptn_append_method_name(result, &index, "replaceFile");
+        ptn_append_method_name(result, &index, "renameIndex");
+        ptn_append_method_name(result, &index, "renameName");
         ptn_append_method_name(result, &index, "statName");
         ptn_append_method_name(result, &index, "statIndex");
         ptn_append_method_name(result, &index, "getNameIndex");

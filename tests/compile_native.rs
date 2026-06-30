@@ -58283,6 +58283,76 @@ try {
 }
 
 #[test]
+fn compile_ziparchive_rename_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-rename-entries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-rename-entries.php");
+    let output = root.join("ziparchive-rename-entries-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$file = __DIR__ . '/rename.zip';
+$zip = new ZipArchive();
+var_dump(
+    method_exists('ZipArchive', 'renameIndex'),
+    method_exists($zip, 'renameName'),
+    $zip->open($file, ZipArchive::CREATE)
+);
+$zip->addFromString('entry1.txt', 'entry #1');
+$zip->addFromString('entry2.txt', 'entry #2');
+$zip->addFromString('dir/entry2.txt', 'entry #2');
+var_dump(
+    $zip->renameIndex(0, 'ren_entry1.txt'),
+    $zip->renameName('dir/entry2.txt', 'dir3/ren_entry2.txt'),
+    $zip->getNameIndex(0),
+    $zip->getNameIndex(2)
+);
+$zip->close();
+
+$reader = new ZipArchive();
+$reader->open($file);
+var_dump(
+    $reader->getNameIndex(0),
+    $reader->getNameIndex(1),
+    $reader->getNameIndex(2)
+);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(14) \"ren_entry1.txt\"\n",
+            "string(19) \"dir3/ren_entry2.txt\"\n",
+            "string(14) \"ren_entry1.txt\"\n",
+            "string(10) \"entry2.txt\"\n",
+            "string(19) \"dir3/ren_entry2.txt\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_rename_index"));
+    assert!(c_source.contains("ptn_zip_archive_rename_name"));
+}
+
+#[test]
 fn compile_zip_name_metadata_edges_to_native_binary() {
     let root = temp_dir("ptn-native-zip-name-metadata-edges");
     fs::create_dir_all(&root).unwrap();
