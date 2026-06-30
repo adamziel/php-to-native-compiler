@@ -31071,6 +31071,115 @@ SILENT mode AUTO: has error\n"
 }
 
 #[test]
+fn compile_php_filter_resource_preserves_user_stream_context_to_native_binary() {
+    let root = temp_dir("ptn-native-php-filter-resource-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-filter-resource-context.php");
+    let output = root.join("php-filter-resource-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class DummyWrapper
+{
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$opened_path): bool
+    {
+        $options = stream_context_get_options($this->context);
+        var_dump($options['dummy']['foo']);
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+
+    public function stream_stat(): array
+    {
+        return [];
+    }
+}
+
+$context = stream_context_create(['dummy' => ['foo' => 'bar']]);
+stream_wrapper_register('dummy', DummyWrapper::class);
+file_get_contents('dummy://foo', false, $context);
+file_get_contents('php://filter/resource=dummy://foo', false, $context);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"bar\"\nstring(3) \"bar\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_read_php_filter_url_bytes"));
+    assert!(c_source.contains("ptn_try_read_user_stream_wrapper_bytes"));
+}
+
+#[test]
+fn compile_stream_exception_get_errors_for_terminal_open_failure_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-exception-get-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-exception-get-errors.php");
+    let output = root.join("stream-exception-get-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$context = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Exception,
+    ],
+]);
+
+try {
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (StreamException $e) {
+    echo "Caught: " . $e->getMessage() . "\n";
+    echo "Code: " . $e->getCode() . "\n";
+    var_dump(method_exists($e, 'getErrors'));
+    $errors = $e->getErrors();
+    echo "Errors: " . count($errors) . "\n";
+    echo "Wrapper: " . $errors[0]->wrapperName . "\n";
+    echo "Error code name: " . $errors[0]->code->name . "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Caught: Failed to open stream: operation failed\n\
+Code: 20\n\
+bool(true)\n\
+Errors: 1\n\
+Wrapper: PHP\n\
+Error code name: OpenFailed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_stream_exception_at"));
+    assert!(c_source.contains("getErrors"));
+}
+
+#[test]
 fn compile_stream_context_set_option_and_socket_shutdown_modes_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-set-option-shutdown-modes");
     fs::create_dir_all(&root).unwrap();
@@ -62716,6 +62825,140 @@ var_dump(SOAP_USE_XSI_ARRAY_TYPE);
     assert!(c_source.contains("ptn_soap_cache_wsdl_file"));
     assert!(c_source.contains("ptn_soap_parse_wsdl_types_from_source"));
     assert!(c_source.contains("ptn_soap_wsdl_input_part_type_dup"));
+}
+
+#[test]
+fn compile_soap_wsdl_inline_simple_type_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-inline-simple-type-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-inline-simple-type-encoding.php");
+    let output = root.join("soap-wsdl-inline-simple-type-encoding-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$seen = [];
+function test($input) {
+    global $seen;
+    $seen[] = $input;
+}
+
+function run_schema_case($path, $schema, $message_part, $value) {
+    global $seen;
+    $wsdl = <<<WSDL
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+$schema
+    </schema>
+  </types>
+  <message name="testMessage">
+    $message_part
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="tns:testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL;
+    file_put_contents($path, $wsdl);
+    $client = new SoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+    $server = new SoapServer($path);
+    $server->addFunction('test');
+    $client->test($value);
+    $request = $client->__getLastRequest();
+    echo $request;
+    ob_start();
+    $server->handle($request);
+    ob_end_clean();
+    var_dump($seen[count($seen) - 1]);
+}
+
+$schema = <<<'SCHEMA'
+      <element name="testElement">
+        <simpleType>
+          <restriction>
+            <simpleType name="testType2">
+              <restriction base="xsd:int"/>
+            </simpleType>
+          </restriction>
+        </simpleType>
+      </element>
+SCHEMA;
+run_schema_case(
+    __DIR__ . '/inline-element.wsdl',
+    $schema,
+    '<part name="testParam" element="tns:testElement"/>',
+    123.5
+);
+
+$schema = <<<'SCHEMA'
+      <simpleType name="testType">
+        <list>
+          <simpleType>
+            <restriction base="int"/>
+          </simpleType>
+        </list>
+      </simpleType>
+SCHEMA;
+run_schema_case(
+    __DIR__ . '/inline-list.wsdl',
+    $schema,
+    '<part name="testParam" type="tns:testType"/>',
+    '123 456.7'
+);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testElement\">123</testParam>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(123)"), "{stdout}");
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testType\">123 456</testParam>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(7) \"123 456\""), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_parse_simple_type_in_range"));
+    assert!(c_source.contains("ptn_soap_append_schema_scalar_value"));
 }
 
 #[test]
