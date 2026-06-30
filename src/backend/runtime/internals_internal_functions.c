@@ -105211,7 +105211,7 @@ static PtnValue ptn_internal_cosh(PtnRuntime *runtime, size_t argc, const PtnVal
 static PtnValue ptn_internal_deg2rad(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     double value = ptn_internal_expect_float_arg(runtime, "deg2rad", 1, "num", args[0], line);
-    return ptn_float(value * (3.14159265358979323846264338327950288 / 180.0));
+    return ptn_float(value / 180.0 * 3.14159265358979323846264338327950288);
 }
 
 static PtnValue ptn_internal_exp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -105269,7 +105269,7 @@ static PtnValue ptn_internal_log1p(PtnRuntime *runtime, size_t argc, const PtnVa
 static PtnValue ptn_internal_rad2deg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     double value = ptn_internal_expect_float_arg(runtime, "rad2deg", 1, "num", args[0], line);
-    return ptn_float(value * (180.0 / 3.14159265358979323846264338327950288));
+    return ptn_float(value / 3.14159265358979323846264338327950288 * 180.0);
 }
 
 static double ptn_round_intpow10(int power) {

@@ -33337,6 +33337,11 @@ fn compile_math_wrapper_and_base_output_internals_to_native_binary() {
 var_dump(function_exists(\"acos\"), function_exists(\"DECOCT\"), function_exists(\"fpow\"), function_exists(\"base_convert\"));\n\
 printf(\"%.3f\\n\", rad2deg(acos(0.5)));\n\
 printf(\"%.3f\\n\", deg2rad(180));\n\
+var_dump(deg2rad(23));\n\
+var_dump(deg2rad(1000));\n\
+var_dump(deg2rad(9223372034707292160));\n\
+var_dump(rad2deg(9223372034707292160));\n\
+var_dump(rad2deg(-2147483649));\n\
 printf(\"%.3f\\n\", atan2(1, 1));\n\
 printf(\"%.3f\\n\", log(8, 2));\n\
 var_dump(is_nan(acos(2)));\n\
@@ -33353,7 +33358,7 @@ try { base_convert(\"10\", 1, 10); } catch (\\ValueError $e) { echo $e->getMessa
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n60.000\n3.142\n0.785\n3.000\nbool(true)\nbool(true)\nstring(2) \"ff\"\nstring(3) \"100\"\nstring(4) \"1010\"\nstring(3) \"255\"\nstring(2) \"10\"\nstring(18) \"3fffffffffffffffff\"\nfloat(1.5)\nfloat(5)\nlog(): Argument #2 ($base) must be greater than 0\nbase_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n60.000\n3.142\nfloat(0.40142572795869574)\nfloat(17.453292519943293)\nfloat(1.6097821014201098E+17)\nfloat(5.284602904677184E+20)\nfloat(-123041749661.05348)\n0.785\n3.000\nbool(true)\nbool(true)\nstring(2) \"ff\"\nstring(3) \"100\"\nstring(4) \"1010\"\nstring(3) \"255\"\nstring(2) \"10\"\nstring(18) \"3fffffffffffffffff\"\nfloat(1.5)\nfloat(5)\nlog(): Argument #2 ($base) must be greater than 0\nbase_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -50700,6 +50705,8 @@ fn compile_pow_function_to_native_binary() {
 var_dump(pow(2, 10));\n\
 var_dump(pow(\"2\", \"3\"));\n\
 var_dump(pow(9, 0.5));\n\
+var_dump(pow(-2, 9223372036854775807));\n\
+var_dump((-2) ** 9223372036854775807);\n\
 var_dump(function_exists(\"pow\"), function_exists(\"POW\"));",
     )
     .unwrap();
@@ -50710,7 +50717,7 @@ var_dump(function_exists(\"pow\"), function_exists(\"POW\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(1024)\nint(8)\nfloat(3)\nbool(true)\nbool(true)\n"
+        "int(1024)\nint(8)\nfloat(3)\nfloat(-INF)\nfloat(-INF)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
