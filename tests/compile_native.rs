@@ -1540,6 +1540,112 @@ echo $method->getParameters()[0]->getClass()->getName(), \"\\n\";
 }
 
 #[test]
+fn compile_zend_object_reflection_current_red_regressions_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-object-reflection-current-red-regressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-object-reflection-current-red-regressions.php");
+    let output = root.join("zend-object-reflection-current-red-regressions-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    protected const P = "p";
+    private const Q = "q";
+}
+class B extends A {
+    public function missingConst() {
+        return self::Z;
+    }
+}
+class C {
+    protected static $y = 1;
+}
+
+foreach (["A::P", "A::Q"] as $name) {
+    try {
+        var_dump(constant($name));
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+try {
+    (new B())->missingConst();
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump((new C())->y);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+class RBase {}
+class R extends RBase {}
+$closureLine = __LINE__ + 1;
+$closure = function($op1, $op2 = 0): self {};
+$fn = $closure->bindTo(new R(), R::class);
+$rClosure = new ReflectionFunction($fn);
+$params = $rClosure->getParameters();
+unset($rClosure);
+$declaring = $params[0]->getDeclaringFunction();
+echo $declaring::class, "\n";
+echo $declaring->name === "{closure:" . __FILE__ . ":" . $closureLine . "}"
+    ? "closure-name-ok\n"
+    : "closure-name-bad:" . $declaring->name . "\n";
+
+class D {
+    public function __destruct() {
+        try {
+            throw new Exception("d");
+        } catch (Exception $e) {
+            echo $e;
+        }
+    }
+}
+function thrower() {
+    $d = new D();
+    throw new Exception("outer");
+}
+try {
+    thrower();
+} catch (Exception $e) {
+    echo "outer caught\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Cannot access protected constant A::P\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot access private constant A::Q\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Undefined constant B::Z\n"), "{stdout}");
+    assert!(
+        stdout.contains("Cannot access protected property C::$y\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("ReflectionMethod\nclosure-name-ok\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Exception: d in "), "{stdout}");
+    assert!(stdout.contains("D->__destruct()"), "{stdout}");
+    assert!(stdout.contains("#1 {main}"), "{stdout}");
+    assert!(!stdout.contains(": thrower()\n"), "{stdout}");
+    assert!(stdout.ends_with("outer caught\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_default_properties_skip_uninitialized_typed_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-default-typed-properties");
     fs::create_dir_all(&root).unwrap();

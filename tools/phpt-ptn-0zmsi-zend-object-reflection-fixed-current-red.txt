@@ -1,0 +1,12 @@
+# ptn-0zmsi focused Zend object/class/reflection current-red rows fixed here.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T045014Z.tsv
+# Rows are relative to PHP_SRC_PHPT.
+Zend/tests/enum/no-implement-serializable.phpt
+Zend/tests/magic_methods/bug45186.phpt
+Zend/tests/magic_methods/bug45186_2.phpt
+Zend/tests/magic_methods/bug52361.phpt
+ext/reflection/tests/closures_bound_getDeclaringFunction.phpt
+tests/classes/constants_visibility_002.phpt
+tests/classes/constants_visibility_003.phpt
+tests/classes/constants_visibility_004.phpt
+tests/classes/static_properties_003_error2.phpt

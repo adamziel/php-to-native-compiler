@@ -8117,6 +8117,13 @@ struct DeclarationFatal {
     message: String,
     line: usize,
     uncaught_error: bool,
+    pre_deprecation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EnumClassDeclarationFatal {
+    message: String,
+    pre_deprecation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8340,12 +8347,19 @@ fn emit_declaration_fatals(
     let Some(fatal) = fatals.first() else {
         return;
     };
+    if let Some(pre_deprecation) = &fatal.pre_deprecation {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(pre_deprecation));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
+        out.push_str(");\n");
+    }
     out.push_str("    fflush(stdout);\n");
     out.push_str("    if (runtime.diagnostics.display_errors) {\n");
     out.push_str(
         "        FILE *ptn_declaration_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
     );
-    if needs_separator {
+    if needs_separator || fatal.pre_deprecation.is_some() {
         out.push_str("        fputc('\\n', ptn_declaration_fatal_stream);\n");
     }
     out.push_str("        fputs(\"Fatal error: ");
@@ -33717,6 +33731,7 @@ fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<Declaration
                 message,
                 line: trait_decl.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         collect_property_hook_attribute_declaration_fatals(&mut fatals, &trait_decl.properties);
@@ -33738,6 +33753,13 @@ fn emit_class_declaration_fatals(
         return;
     };
     if fatal.uncaught_error {
+        if let Some(pre_deprecation) = &fatal.pre_deprecation {
+            out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+            out.push_str(&c_string(pre_deprecation));
+            out.push_str("\", ");
+            out.push_str(&fatal.line.to_string());
+            out.push_str(");\n");
+        }
         out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
         out.push_str(&c_string(&fatal.message));
         out.push_str("\", \"");
@@ -33747,6 +33769,13 @@ fn emit_class_declaration_fatals(
         out.push_str(");\n");
         out.push_str("        ptn_rethrow_exception(&runtime);\n");
         return;
+    }
+    if let Some(pre_deprecation) = &fatal.pre_deprecation {
+        out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(pre_deprecation));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
+        out.push_str(");\n");
     }
     out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
     out.push_str(&c_string(&fatal.message));
@@ -33771,6 +33800,7 @@ fn collect_class_declaration_fatals(
                 message: fatal.message.clone(),
                 line: fatal.line,
                 uncaught_error: class_declaration_fatal_is_uncaught_error(&fatal.message),
+                pre_deprecation: None,
             }),
     );
     if let Some(message) = reserved_declaration_name_fatal_message(
@@ -33785,13 +33815,15 @@ fn collect_class_declaration_fatals(
             message,
             line: class.line,
             uncaught_error: false,
+            pre_deprecation: None,
         });
     }
-    if let Some(message) = enum_class_declaration_fatal_message(class, classes) {
+    if let Some(fatal) = enum_class_declaration_fatal(class, classes) {
         fatals.push(DeclarationFatal {
-            message,
+            message: fatal.message,
             line: class.line,
             uncaught_error: false,
+            pre_deprecation: fatal.pre_deprecation,
         });
     }
     if let Some(message) = throwable_class_declaration_fatal_message(class, classes) {
@@ -33810,6 +33842,7 @@ fn collect_class_declaration_fatals(
                 message,
                 line: method.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         if let Some(message) = magic_declaration_fatal_message(class, method, function) {
@@ -33817,6 +33850,7 @@ fn collect_class_declaration_fatals(
                 message,
                 line: method.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
     }
@@ -33843,6 +33877,7 @@ fn collect_property_hook_attribute_declaration_fatals(
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_get_line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         if property.hook_set_attributes.no_discard_count > 0
@@ -33852,6 +33887,7 @@ fn collect_property_hook_attribute_declaration_fatals(
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_set_line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
     }
@@ -33894,10 +33930,10 @@ fn reserved_declaration_name_segment(name: &str) -> Option<&str> {
     .then_some(segment)
 }
 
-fn enum_class_declaration_fatal_message(
+fn enum_class_declaration_fatal(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Option<String> {
+) -> Option<EnumClassDeclarationFatal> {
     if class.is_interface {
         return None;
     }
@@ -33906,20 +33942,23 @@ fn enum_class_declaration_fatal_message(
             .into_iter()
             .any(is_builtin_enum_interface_name)
         {
-            return Some(format!(
-                "Non-enum class {} cannot implement interface UnitEnum",
-                class.name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!(
+                    "Non-enum class {} cannot implement interface UnitEnum",
+                    class.name
+                ),
+                pre_deprecation: None,
+            });
         }
         if class.parent_name.as_deref().is_some_and(|parent_name| {
             is_builtin_enum_class_name(parent_name)
                 || class_by_name(classes, parent_name).is_some_and(|parent| parent.is_enum)
         }) {
             let parent_name = class.parent_name.as_deref().unwrap_or_default();
-            return Some(format!(
-                "Class {} cannot extend enum {}",
-                class.name, parent_name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!("Class {} cannot extend enum {}", class.name, parent_name),
+                pre_deprecation: None,
+            });
         }
         return None;
     }
@@ -33928,10 +33967,13 @@ fn enum_class_declaration_fatal_message(
         .iter()
         .any(|interface| interface.eq_ignore_ascii_case("UnitEnum"))
     {
-        return Some(format!(
-            "Enum {} cannot implement previously implemented interface UnitEnum",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Enum {} cannot implement previously implemented interface UnitEnum",
+                class.name
+            ),
+            pre_deprecation: None,
+        });
     }
     if class
         .interfaces
@@ -33939,27 +33981,39 @@ fn enum_class_declaration_fatal_message(
         .any(|interface| interface.eq_ignore_ascii_case("BackedEnum"))
     {
         if class.enum_backing_type.is_some() {
-            return Some(format!(
-                "Enum {} cannot implement previously implemented interface BackedEnum",
-                class.name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!(
+                    "Enum {} cannot implement previously implemented interface BackedEnum",
+                    class.name
+                ),
+                pre_deprecation: None,
+            });
         }
-        return Some(format!(
-            "Non-backed enum {} cannot implement interface BackedEnum",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Non-backed enum {} cannot implement interface BackedEnum",
+                class.name
+            ),
+            pre_deprecation: None,
+        });
     }
     if class_transitive_interfaces(class, classes)
         .into_iter()
         .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
     {
-        return Some(format!(
-            "Enum {} cannot implement the Serializable interface",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Enum {} cannot implement the Serializable interface",
+                class.name
+            ),
+            pre_deprecation: Some(format!("{}{}", class.name, SERIALIZABLE_DEPRECATION_SUFFIX)),
+        });
     }
     if !class.properties.is_empty() || !class.static_properties.is_empty() {
-        return Some(format!("Enum {} cannot include properties", class.name));
+        return Some(EnumClassDeclarationFatal {
+            message: format!("Enum {} cannot include properties", class.name),
+            pre_deprecation: None,
+        });
     }
     None
 }
@@ -57113,11 +57167,6 @@ impl ValueEmitter {
         out.push_str(&callback_ok_temp);
         out.push_str(" = 1;\n");
         out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
-        out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
-        out.push_str(&callable_temp);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
         if arguments.len() == 1 {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &checked_callback_temp, line);
