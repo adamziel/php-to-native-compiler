@@ -31999,6 +31999,48 @@ ABC\n"
 }
 
 #[test]
+fn compile_user_stream_filter_zero_length_bucket_passes_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-zero-length-bucket");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-zero-length-bucket.php");
+    let output = root.join("stream-user-filter-zero-length-bucket-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class EmptyBucketFilter extends php_user_filter {\n\
+    public function filter($in, $out, &$consumed, $closing): int {\n\
+        while ($bucket = stream_bucket_make_writeable($in)) {\n\
+            $bucket->data = '';\n\
+            $consumed += strlen($bucket->data);\n\
+            stream_bucket_append($out, $bucket);\n\
+        }\n\
+        return PSFS_PASS_ON;\n\
+    }\n\
+}\n\
+stream_filter_register('empty.bucket', EmptyBucketFilter::class);\n\
+$fp = fopen('php://memory', 'w+');\n\
+fwrite($fp, 'Hello There!');\n\
+rewind($fp);\n\
+stream_filter_append($fp, 'empty.bucket', STREAM_FILTER_READ);\n\
+while ($x = fgets($fp)) {\n\
+    var_dump($x);\n\
+}\n\
+echo \"Done\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("output_bucket_count"));
+}
+
+#[test]
 fn compile_user_stream_filter_lifecycle_edges_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-lifecycle");
     fs::create_dir_all(&root).unwrap();

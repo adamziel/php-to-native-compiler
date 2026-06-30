@@ -1,0 +1,12 @@
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/streams/bug64770.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_filtername_prop_type.phpt
+ext/standard/tests/streams/bug60602.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_is_private.phpt
+ext/standard/tests/filters/gh17650.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_variation2.phpt
+ext/standard/tests/streams/bug68948.phpt
+ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt
+ext/standard/tests/streams/ghsa-3cr5-j632-f35r.phpt
+ext/standard/tests/streams/gh15980.phpt
