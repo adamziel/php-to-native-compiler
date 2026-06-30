@@ -34268,6 +34268,54 @@ dump_order();\n",
 }
 
 #[test]
+fn compile_mbstring_detection_alias_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-detection-alias-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-detection-alias-residuals.php");
+    let output = root.join("mb-detection-alias-residuals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_language('Japanese');\n\
+mb_detect_order('auto');\n\
+var_dump(mb_detect_encoding(''));\n\
+var_dump(mb_detect_encoding(\"\\xDD\\x92\", ['ASCII', 'UTF-8'], true));\n\
+var_dump(mb_detect_encoding(hex2bin('C6FCCBDCB8EC'), 'UTF-8,EUC-JP,JIS', true));\n\
+var_dump(mb_detect_encoding(\"\\xC5\", 'US-ASCII, LATIN4'));\n\
+var_dump(mb_detect_encoding(\"\\xC5\", 'US-ASCII, cyrillic'));\n\
+var_dump(mb_detect_encoding('abc', 'ANSI_X3.4-1968, ISO-8859-1'));\n\
+var_dump(bin2hex(mb_convert_encoding(hex2bin('c3dcc2ebd3c3'), 'UTF-8', 'GB-18030')));\n\
+var_dump(mb_check_encoding('abc', 'ISO-8859-16'));\n\
+var_dump(in_array('ISO-8859-16', mb_list_encodings(), true));\n\
+var_dump(in_array('CP51932', mb_list_encodings(), true));\n\
+var_dump(mb_convert_encoding('abc', 'UTF-8', 'CP51932'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"ASCII\"\n",
+            "string(5) \"UTF-8\"\n",
+            "string(6) \"EUC-JP\"\n",
+            "string(10) \"ISO-8859-4\"\n",
+            "string(10) \"ISO-8859-5\"\n",
+            "string(5) \"ASCII\"\n",
+            "string(18) \"e5af86e7a081e794a8\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(3) \"abc\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_conversion_case_and_regex_residual_edges_to_native_binary() {
     let root = temp_dir("ptn-native-mb-conversion-case-regex-residual");
     fs::create_dir_all(&root).unwrap();
