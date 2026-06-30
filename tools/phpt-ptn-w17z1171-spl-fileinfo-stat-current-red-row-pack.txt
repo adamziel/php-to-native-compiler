@@ -1,0 +1,8 @@
+# ptn-w17z.1171 pivot SPL FileInfo stat-error current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T062016Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: spl-fileinfo-stat-error-current-red rows=4
+ext/spl/tests/SplFileInfo_getGroup_error.phpt
+ext/spl/tests/SplFileInfo_getOwner_error.phpt
+ext/spl/tests/SplFileInfo_getInode_error.phpt
+ext/spl/tests/SplFileInfo_getPerms_error.phpt

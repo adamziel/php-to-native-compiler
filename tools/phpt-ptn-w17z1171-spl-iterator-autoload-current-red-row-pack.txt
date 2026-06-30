@@ -1,0 +1,16 @@
+# ptn-w17z.1171 focused SPL iterator/autoload residual current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T062016Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: spl-iterator-autoload-residual-current-red rows=12
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/bug41828.phpt
+ext/spl/tests/dit_004.phpt
+ext/spl/tests/bug81587.phpt
+ext/spl/tests/recursive_tree_iterator_004.phpt
+ext/spl/tests/bug65328.phpt
+ext/spl/tests/iterator_023.phpt
+ext/spl/tests/iterator_033.phpt
+ext/spl/tests/bug68825.phpt
+ext/spl/tests/bug70166.phpt

@@ -32143,6 +32143,71 @@ bool(true)\n\nWarning: stream_filter_append(): User-filter \"missing.filter\" re
 }
 
 #[test]
+fn compile_user_stream_filter_empty_output_consumed_buckets_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-empty-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-empty-output.php");
+    let output = root.join("stream-user-filter-empty-output-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EmptyAppendFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $bucket->data = "";
+            $consumed += strlen($bucket->data);
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+class DropConsumedFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("empty.append", EmptyAppendFilter::class);
+stream_filter_register("drop.consumed", DropConsumedFilter::class);
+
+$append = fopen("php://memory", "w+");
+fwrite($append, "Hello");
+rewind($append);
+stream_filter_append($append, "empty.append", STREAM_FILTER_READ);
+while (($chunk = fgets($append)) !== false) {
+    var_dump($chunk);
+}
+echo "append done\n";
+
+$drop = fopen("php://memory", "w+");
+fwrite($drop, "Hello");
+rewind($drop);
+stream_filter_append($drop, "drop.consumed", STREAM_FILTER_READ);
+while (($chunk = fgets($drop)) !== false) {
+    var_dump($chunk);
+}
+echo "drop done\n";
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "append done\n\
+drop done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_stream_filter_shutdown_flush_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-shutdown");
     fs::create_dir_all(&root).unwrap();
@@ -34711,6 +34776,9 @@ echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_UPPER_SIMPLE, 'UTF-8')
 echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_FOLD, 'UTF-8')), \"\\n\";\n\
 echo bin2hex(mb_convert_case(\"\\xce\\x9f\\xce\\xa3\\xce\\x9f\\xce\\xa3\", MB_CASE_LOWER, 'UTF-8')), \"\\n\";\n\
 echo bin2hex(mb_convert_case(\"\\xc5\\x89\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xf0\\x90\\x90\\xb8\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xe2\\xb0\\xb0\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xd4\\xa5\", 'UTF-8')), \"\\n\";\n\
 mb_regex_encoding('UTF-8');\n\
 var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n\
 foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
@@ -34740,11 +34808,68 @@ foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
             "73747261737365\n",
             "cebfcf83cebfcf82\n",
             "cabc4e\n",
+            "f0909090\n",
+            "e2b080\n",
+            "d4a4\n",
             "bool(false)\n",
             "2:3132\n",
             "3:33f092\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mbstring_convert_variables_recursive_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-variables-recursive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-variables-recursive.php");
+    let output = root.join("mb-convert-variables-recursive-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('utf-8', 'auto', $a));\n\
+unset($a);\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+var_dump(mb_convert_variables('utf-8', 'utf-8', $a), $a);\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('utf-8', 'utf-8', $a), $a);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches(
+                "Warning: mb_convert_variables(): Cannot convert recursively referenced values"
+            )
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nstring(5) \"UTF-8\"\narray(4) {"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[3]=>\n  string(21) \"日本語テキスト\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[4]=>\n  *RECURSION*"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -51466,6 +51591,35 @@ int(14700)\n"
 }
 
 #[test]
+fn compile_intl_timezone_raw_offset_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-raw-offset-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-raw-offset-alias.php");
+    let output = root.join("intl-timezone-raw-offset-alias-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ams = IntlTimeZone::createTimeZone('Europe/Amsterdam');\n\
+var_dump($ams->getRawOffset());\n\
+var_dump(intltz_get_raw_offset($ams));\n\
+$lsb = IntlTimeZone::createTimeZone('Europe/Lisbon');\n\
+var_dump($lsb->getRawOffset());\n\
+var_dump(intltz_get_raw_offset($lsb));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3600000)\nint(3600000)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
     fs::create_dir_all(&root).unwrap();
@@ -58227,6 +58381,56 @@ echo \"ok\\n\";\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_curl_setopt"));
     assert!(c_source.contains("CURLOPT_HEADERFUNCTION"));
+}
+
+#[test]
+fn compile_curl_escape_and_multi_strerror_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-escape-multi-strerror");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-escape-multi-strerror.php");
+    let output = root.join("curl-escape-multi-strerror-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$handle = curl_init();\n\
+$escaped = curl_escape($handle, 'http://www.php.net/ ?!');\n\
+var_dump($escaped);\n\
+$decoded = curl_unescape($handle, $escaped);\n\
+var_dump($decoded === 'http://www.php.net/ ?!');\n\
+$nul = curl_unescape($handle, 'a%00b');\n\
+var_dump(strlen($nul), $nul === \"a\\0b\");\n\
+var_dump(strtolower(curl_multi_strerror(CURLM_BAD_HANDLE)));\n\
+var_dump(function_exists('curl_escape'), function_exists('curl_unescape'));\n\
+$constants = get_defined_constants(true);\n\
+var_dump($constants['curl']['CURLM_BAD_HANDLE']);\n\
+$extension = new ReflectionExtension('curl');\n\
+var_dump($extension->getConstants()['CURLM_BAD_HANDLE']);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(36) \"http%3A%2F%2Fwww.php.net%2F%20%3F%21\"\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "string(20) \"invalid multi handle\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_curl_escape"));
+    assert!(c_source.contains("ptn_internal_curl_unescape"));
+    assert!(c_source.contains("CURLM_BAD_HANDLE"));
 }
 
 #[test]
@@ -76644,6 +76848,50 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
 }
 
 #[test]
+fn compile_var_export_integral_float_formatting_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-integral-float-formatting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-integral-float-formatting.php");
+    let output = root.join("var-export-integral-float-formatting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([1.0, 123.0, -1.0, -123.0, 0.0, -0.0, 10000000000000000.0, -10000000000000000.0, 100000000000000000.0] as $value) {\n\
+    echo var_export($value, true), \"\\n\";\n\
+}\n\
+ini_set('serialize_precision', '0');\n\
+foreach ([10000000000000000.0, -10000000000000000.0, 100000000000000000.0] as $value) {\n\
+    echo var_export($value, true), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1.0\n\
+123.0\n\
+-1.0\n\
+-123.0\n\
+0.0\n\
+-0.0\n\
+10000000000000000.0\n\
+-10000000000000000.0\n\
+1.0E+17\n\
+1.0E+16\n\
+-1.0E+16\n\
+1.0E+17\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_format_var_export_integral_fixed"));
+}
+
+#[test]
 fn compile_array_set_operation_type_errors_are_catchable_to_native_binary() {
     let root = temp_dir("ptn-native-array-set-operation-type-errors");
     fs::create_dir_all(&root).unwrap();
@@ -82073,6 +82321,60 @@ var_dump(ini_get('opcache.preload'));\n",
             preload.display().to_string().len(),
             preload.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_preload_static_property_metadata_is_available_during_preload() {
+    let root = temp_dir("ptn-phpc-opcache-preload-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+class Loader {\n\
+    private static $loader;\n\
+\n\
+    static function getLoader() {\n\
+        if (null !== self::$loader) {\n\
+            return self::$loader;\n\
+        }\n\
+        return self::$loader = new Loader();\n\
+    }\n\
+\n\
+    static function getCounter() {\n\
+        static $counter = 0;\n\
+        return $counter++;\n\
+    }\n\
+}\n\
+\n\
+Loader::getLoader();\n\
+Loader::getCounter();\n\
+Loader::getCounter();\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(get_class(Loader::getLoader()));\n\
+var_dump(Loader::getCounter());\n\
+echo \"OK\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(6) \"Loader\"\nint(0)\nOK\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -96858,6 +97160,8 @@ class LazyResetProxyEdge {
         $dump = ob_get_clean();
         echo strpos($dump, 'lazy proxy object') === false ? \"plain-proxy\\n\" : \"lazy-proxy\\n\";
         echo strpos($dump, '[\"instance\"]=>') === false ? \"no-instance\\n\" : \"has-instance\\n\";
+        echo strpos($dump, '[\"a\"]=>') === false ? \"no-a-slot\\n\" : \"has-a-slot\\n\";
+        echo strpos($dump, '[\"proxy\"]=>') === false ? \"no-proxy-slot\\n\" : \"has-proxy-slot\\n\";
     }
 }
 
@@ -96908,7 +97212,7 @@ var_dump($real->a);
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "plain-proxy\nno-instance\nctor\nstring(1) \"a\"\n"
+        "plain-proxy\nno-instance\nno-a-slot\nno-proxy-slot\nctor\nstring(1) \"a\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
