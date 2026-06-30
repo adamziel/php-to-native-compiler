@@ -39716,6 +39716,23 @@ fn emit_method_receiver_cleanup(out: &mut String, indent: &str, value: &str) {
     emit_value_cleanup(out, indent, value);
 }
 
+fn emit_push_owned_temporary_root(out: &mut String, indent: &str, value: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_runtime_push_owned_temporary_root(&runtime, &");
+    out.push_str(value);
+    out.push_str(");\n");
+}
+
+fn emit_rooted_method_receiver_cleanup(out: &mut String, indent: &str, value: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_generator_flush_pending_output_before_value_drop(&runtime, ");
+    out.push_str(value);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_runtime_pop_temporary_root(&runtime);\n");
+    emit_value_cleanup(out, indent, value);
+}
+
 fn emit_push_owned_call_argument_roots(
     out: &mut String,
     indent: &str,
@@ -61101,6 +61118,7 @@ impl ValueEmitter {
                     line,
                 );
             }
+            emit_push_owned_temporary_root(out, "    ", &receiver_temp);
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -61110,7 +61128,7 @@ impl ValueEmitter {
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
+            emit_rooted_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
 
@@ -61170,6 +61188,7 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        emit_push_owned_temporary_root(out, "    ", &receiver_temp);
         emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if let Some(value) = no_discard_value.as_ref() {
             let method_name_expr = format!("\"{}\"", c_string(name));
@@ -61204,7 +61223,7 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
-        emit_method_receiver_cleanup(out, "    ", &receiver_temp);
+        emit_rooted_method_receiver_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 

@@ -22050,6 +22050,44 @@ $items->uasort(fn($left, $right) => $left <=> $right);
 }
 
 #[test]
+fn compile_caught_internal_method_exception_releases_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-method-exception-releases-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-method-exception-releases-receiver.php");
+    let output = root.join("internal-method-exception-releases-receiver-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$arrayObject = new ArrayObject([]);
+try {
+    $arrayObject->exchangeArray();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+unset($arrayObject);
+$object = new stdClass;
+var_dump($object);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ArrayObject::exchangeArray() expects exactly 1 argument, 0 given\nobject(stdClass)#1 (0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_declared_offsets_for_array_as_props_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-declared-offsets-array-as-props");
     fs::create_dir_all(&root).unwrap();
