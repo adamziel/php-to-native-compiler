@@ -18004,6 +18004,101 @@ var_dump(unserialize('O:8:"TestSelf":2:{s:4:"prop";N;s:4:"prop";O:8:"TestSelf":1
 }
 
 #[test]
+fn compile_unserialize_object_root_references_publish_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-object-root-reference-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-object-root-reference-properties.php");
+    let output = root.join("unserialize-object-root-reference-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function show_slot($label, $value) {
+    echo $label, '=', get_debug_type($value);
+    if (is_string($value) || is_int($value)) {
+        echo ':', $value;
+    } elseif (is_object($value)) {
+        echo ':', get_class($value);
+    }
+    echo "\n";
+}
+
+$obj = new stdClass;
+$obj->a =& $obj;
+$obj->b =& $obj;
+$obj->c = 1;
+$ser = serialize($obj);
+echo "ser-one=", $ser, "\n";
+$uobj = unserialize($ser);
+$uobj->a = "a";
+show_slot('one-a-after-a', $uobj->a);
+show_slot('one-b-after-a', $uobj->b);
+show_slot('one-c-after-a', $uobj->c);
+$uobj->b = "b";
+show_slot('one-a-after-b', $uobj->a);
+show_slot('one-b-after-b', $uobj->b);
+show_slot('one-c-after-b', $uobj->c);
+
+$obj = new stdClass;
+$obj->a =& $obj;
+$obj->b =& $obj;
+$obj->c =& $obj;
+$ser = serialize($obj);
+echo "ser-all=", $ser, "\n";
+$uobj = unserialize($ser);
+$uobj->a = "a";
+show_slot('all-a-after-a', $uobj->a);
+show_slot('all-b-after-a', $uobj->b);
+show_slot('all-c-after-a', $uobj->c);
+$uobj->c = "c";
+show_slot('all-a-after-c', $uobj->a);
+show_slot('all-b-after-c', $uobj->b);
+show_slot('all-c-after-c', $uobj->c);
+
+$plain = unserialize('O:8:"stdClass":2:{s:1:"x";O:8:"stdClass":0:{}s:1:"y";r:2;}');
+echo "plain-identity=", $plain->x === $plain->y ? 'yes' : 'no', "\n";
+$plain->x = "x";
+show_slot('plain-x-after-write', $plain->x);
+show_slot('plain-y-after-write', $plain->y);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ser-one=O:8:\"stdClass\":3:{s:1:\"a\";R:1;s:1:\"b\";R:1;s:1:\"c\";i:1;}\n",
+            "one-a-after-a=string:a\n",
+            "one-b-after-a=string:a\n",
+            "one-c-after-a=int:1\n",
+            "one-a-after-b=string:b\n",
+            "one-b-after-b=string:b\n",
+            "one-c-after-b=int:1\n",
+            "ser-all=O:8:\"stdClass\":3:{s:1:\"a\";R:1;s:1:\"b\";R:1;s:1:\"c\";R:1;}\n",
+            "all-a-after-a=string:a\n",
+            "all-b-after-a=string:a\n",
+            "all-c-after-a=string:a\n",
+            "all-a-after-c=string:c\n",
+            "all-b-after-c=string:c\n",
+            "all-c-after-c=string:c\n",
+            "plain-identity=yes\n",
+            "plain-x-after-write=string:x\n",
+            "plain-y-after-write=stdClass:stdClass\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_interval_unserialize_overwrites_internal_properties_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-unserialize-properties");
     fs::create_dir_all(&root).unwrap();

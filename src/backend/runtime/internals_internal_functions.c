@@ -13080,6 +13080,7 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
 typedef struct {
     PtnValue *slot;
     PtnReference *reference;
+    int owns_reference;
     PtnObject *retained_object;
     PtnValue retained_value;
     int has_retained_value;
@@ -13128,6 +13129,7 @@ typedef struct {
     size_t max_depth;
     size_t current_depth;
     int max_depth_exceeded;
+    size_t direct_object_id;
 } PtnUnserializeState;
 
 typedef struct {
@@ -13159,7 +13161,17 @@ static void ptn_unserialize_id_entry_set_object(
     }
 }
 
+static void ptn_unserialize_id_entry_release_owned_reference(
+    PtnUnserializeIdEntry *entry
+) {
+    if (entry->owns_reference && entry->reference != NULL) {
+        ptn_reference_release(entry->reference);
+    }
+    entry->owns_reference = 0;
+}
+
 static void ptn_unserialize_id_entry_clear(PtnUnserializeIdEntry *entry) {
+    ptn_unserialize_id_entry_release_owned_reference(entry);
     if (entry->retained_object != NULL) {
         ptn_object_release(entry->retained_object);
         entry->retained_object = NULL;
@@ -13174,6 +13186,7 @@ static void ptn_unserialize_id_entry_clear(PtnUnserializeIdEntry *entry) {
     }
     entry->slot = NULL;
     entry->reference = NULL;
+    entry->owns_reference = 0;
     entry->slot_is_container_entry = 0;
     entry->property_metadata = NULL;
     entry->object_reference_only = 0;
@@ -13183,6 +13196,7 @@ static void ptn_unserialize_id_entry_retain_value(
     PtnUnserializeIdEntry *entry,
     PtnValue value
 ) {
+    ptn_unserialize_id_entry_release_owned_reference(entry);
     if (entry->has_retained_value) {
         if (entry->retained_value.type == PTN_ARRAY) {
             ptn_value_debug_unhide_ref(entry->retained_value);
@@ -13200,6 +13214,7 @@ static void ptn_unserialize_id_entry_retain_value(
     entry->reference = entry->retained_value.type == PTN_REFERENCE
         ? entry->retained_value.as.reference
         : NULL;
+    entry->owns_reference = 0;
     entry->object_reference_only = 0;
     ptn_unserialize_id_entry_set_object(
         entry,
@@ -13253,6 +13268,7 @@ static void ptn_unserialize_state_init(
     state->max_depth = PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH;
     state->current_depth = 0;
     state->max_depth_exceeded = 0;
+    state->direct_object_id = 0;
 }
 
 static void ptn_unserialize_pending_callback_clear(PtnUnserializePendingCallback *callback) {
@@ -13457,6 +13473,7 @@ static size_t ptn_unserialize_add_slot(PtnUnserializeState *state, PtnValue *slo
     state->ids[state->id_len].reference = slot != NULL && slot->type == PTN_REFERENCE
         ? slot->as.reference
         : NULL;
+    state->ids[state->id_len].owns_reference = 0;
     state->ids[state->id_len].retained_object = NULL;
     state->ids[state->id_len].retained_value = ptn_null();
     state->ids[state->id_len].has_retained_value = 0;
@@ -13495,7 +13512,9 @@ static void ptn_unserialize_update_slot_ex(
     entry->property_metadata = property_metadata;
     entry->object_reference_only = 0;
     if (slot != NULL && slot->type == PTN_REFERENCE) {
+        ptn_unserialize_id_entry_release_owned_reference(entry);
         entry->reference = slot->as.reference;
+        entry->owns_reference = 0;
         ptn_reference_adopt_property_type(entry->reference, property_metadata);
     }
     ptn_unserialize_id_entry_set_object(entry, ptn_unserialize_slot_object(slot));
@@ -13530,6 +13549,7 @@ static void ptn_unserialize_mark_object_reference_only(PtnUnserializeState *stat
         return;
     }
     ptn_unserialize_id_entry_set_object(entry, object);
+    ptn_unserialize_id_entry_release_owned_reference(entry);
     entry->reference = NULL;
     entry->object_reference_only = 1;
 }
@@ -13888,8 +13908,16 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         return ptn_value_clone(*entry->slot);
     }
     PtnValue resolved = ptn_value_deref(*entry->slot);
-    if (resolved.type == PTN_OBJECT && !entry->slot_is_container_entry) {
-        return ptn_value_clone(resolved);
+    if (resolved.type == PTN_OBJECT &&
+        !entry->slot_is_container_entry &&
+        id == state->direct_object_id) {
+        PtnReference *reference =
+            ptn_unserialize_reference_new_owned(ptn_value_clone(resolved));
+        ptn_reference_adopt_property_type(reference, entry->property_metadata);
+        entry->reference = reference;
+        entry->owns_reference = 1;
+        reference->refcount++;
+        return ptn_reference_value(reference);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
@@ -13936,6 +13964,18 @@ static PtnArray *ptn_unserialize_new_array_with_capacity(size_t capacity) {
 }
 
 static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *state, PtnRuntime *runtime);
+
+static PtnUnserializeValue ptn_unserialize_parse_direct_object_property_value(
+    PtnUnserializeState *state,
+    PtnRuntime *runtime,
+    size_t object_id
+) {
+    size_t previous_direct_object_id = state->direct_object_id;
+    state->direct_object_id = object_id;
+    PtnUnserializeValue value = ptn_unserialize_parse_value(state, runtime);
+    state->direct_object_id = previous_direct_object_id;
+    return value;
+}
 
 static void ptn_unserialize_emit_error_warning(
     PtnRuntime *runtime,
@@ -16351,6 +16391,51 @@ static int ptn_unserialize_key_is_date_internal_property(PtnObject *object, PtnA
     return 0;
 }
 
+static int ptn_unserialize_value_reaches_reference(
+    PtnValue value,
+    PtnReference *reference,
+    size_t depth
+) {
+    if (reference == NULL || depth > 64) {
+        return 0;
+    }
+    if (value.type == PTN_REFERENCE) {
+        if (value.as.reference == reference) {
+            return 1;
+        }
+        return ptn_unserialize_value_reaches_reference(
+            value.as.reference->value,
+            reference,
+            depth + 1
+        );
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            if (ptn_unserialize_value_reaches_reference(
+                    value.as.array->entries[i].value,
+                    reference,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
+    } else if (value.type == PTN_OBJECT &&
+               value.as.object != NULL &&
+               value.as.object->properties != NULL) {
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            if (ptn_unserialize_value_reaches_reference(
+                    value.as.object->properties->entries[i].value,
+                    reference,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int ptn_unserialize_store_object_property_entry(
     PtnRuntime *runtime,
     PtnUnserializeState *state,
@@ -16399,26 +16484,34 @@ static int ptn_unserialize_store_object_property_entry(
     if (existing_index < properties->len &&
         properties->entries[existing_index].value.type == PTN_REFERENCE) {
         PtnReference *reference = properties->entries[existing_index].value.as.reference;
-        ptn_reference_adopt_property_type(reference, metadata);
-        if (!ptn_reference_assign_publish_first(runtime, reference, parsed.value)) {
+        if (ptn_unserialize_value_reaches_reference(parsed.value, reference, 0)) {
+            ptn_reference_adopt_property_type(reference, metadata);
+            if (!ptn_reference_assign_publish_first(runtime, reference, parsed.value)) {
+                ptn_array_key_free(property_key);
+                ptn_array_key_free(lookup);
+                ptn_value_destroy(&parsed.value);
+                return 0;
+            }
+            ptn_value_destroy(&parsed.value);
             ptn_array_key_free(property_key);
             ptn_array_key_free(lookup);
-            ptn_value_destroy(&parsed.value);
-            return 0;
+            ptn_unserialize_update_slot_ex(state, parsed.id, &reference->value, 1, metadata);
+            PtnObjectPropertyMetadata *mutable_metadata =
+                properties->entries[existing_index].key.type == PTN_ARRAY_KEY_STRING
+                    ? ptn_object_mutable_property_metadata(
+                        object,
+                        properties->entries[existing_index].key.as.string
+                    )
+                    : NULL;
+            if (mutable_metadata != NULL) {
+                mutable_metadata->is_unset = 0;
+                ptn_object_metadata_remember_value_type(
+                    mutable_metadata,
+                    properties->entries[existing_index].value
+                );
+            }
+            return 1;
         }
-        ptn_value_destroy(&parsed.value);
-        ptn_array_key_free(property_key);
-        ptn_array_key_free(lookup);
-        ptn_unserialize_update_slot_ex(state, parsed.id, &reference->value, 1, metadata);
-        PtnObjectPropertyMetadata *mutable_metadata =
-            properties->entries[existing_index].key.type == PTN_ARRAY_KEY_STRING
-                ? ptn_object_mutable_property_metadata(object, properties->entries[existing_index].key.as.string)
-                : NULL;
-        if (mutable_metadata != NULL) {
-            mutable_metadata->is_unset = 0;
-            ptn_object_metadata_remember_value_type(mutable_metadata, properties->entries[existing_index].value);
-        }
-        return 1;
     }
     if (existing_index < properties->len) {
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
@@ -16780,7 +16873,12 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                         ptn_value_destroy(&payload);
                         return result;
                     }
-                    PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
+                    PtnUnserializeValue parsed =
+                        ptn_unserialize_parse_direct_object_property_value(
+                            state,
+                            runtime,
+                            result.id
+                        );
                     if (state->failed ||
                         !ptn_unserialize_store_entry(runtime, state, payload.as.array, key, parsed)) {
                         ptn_value_destroy(&payload);
@@ -16814,7 +16912,12 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                     if (!ptn_unserialize_parse_key(state, &key)) {
                         return result;
                     }
-                    PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
+                    PtnUnserializeValue parsed =
+                        ptn_unserialize_parse_direct_object_property_value(
+                            state,
+                            runtime,
+                            result.id
+                        );
                     if (state->failed ||
                         !ptn_unserialize_store_object_property_entry(
                             runtime,
