@@ -34334,6 +34334,64 @@ var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], g
 }
 
 #[test]
+fn compile_preg_word_boundary_retry_and_recursion_limit_to_native_binary() {
+    let Some(pcre2_library) = discover_pcre2_library() else {
+        eprintln!("skipping PCRE2 split recursion-limit test: libpcre2-8 was not found");
+        return;
+    };
+
+    let root = temp_dir("ptn-native-preg-word-boundary-retry-recursion-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-word-boundary-retry-recursion-limit.php");
+    let output = root.join("preg-word-boundary-retry-recursion-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(preg_match_all('/\\\\b/', \"a'\", $m, PREG_OFFSET_CAPTURE));\n\
+var_dump($m[0][0][1], $m[0][1][1]);\n\
+var_dump(preg_split('/\\\\b/', \"a'\"));\n\
+var_dump(preg_last_error_msg() === 'No error');\n\
+preg_split('/(\\\\d*)/', 'ab2c3u');\n\
+var_dump(preg_last_error_msg());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PCRE2_LIBRARY", &pcre2_library)
+        .env("PTN_PCRE_RECURSION_LIMIT", "1")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(1) \"a\"\n",
+            "  [2]=>\n",
+            "  string(1) \"'\"\n",
+            "}\n",
+            "bool(true)\n",
+            "string(25) \"Recursion limit exhausted\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_match_all_named_and_split_to_native_binary() {
     let root = temp_dir("ptn-native-preg-match-all-named-and-split");
     fs::create_dir_all(&root).unwrap();

@@ -48958,6 +48958,14 @@ static unsigned long ptn_preg_runtime_recursion_limit(PtnRuntime *runtime) {
     return parsed;
 }
 
+static int ptn_preg_runtime_uses_custom_recursion_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->pcre_recursion_limit == NULL) {
+        return 0;
+    }
+    return ptn_preg_runtime_recursion_limit(runtime) != 100000;
+}
+
 static int ptn_preg_runtime_jit_enabled(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     const char *raw = root == NULL || root->pcre_jit == NULL ? "1" : root->pcre_jit;
@@ -49224,7 +49232,11 @@ static int ptn_preg_compile_pcre2(
     }
 
     int jit_enabled = 0;
-    if (ptn_preg_runtime_jit_enabled(runtime) && api->jit_compile != NULL) {
+    if (
+        ptn_preg_runtime_jit_enabled(runtime) &&
+        !ptn_preg_runtime_uses_custom_recursion_limit(runtime) &&
+        api->jit_compile != NULL
+    ) {
         jit_enabled = api->jit_compile(code, PTN_PCRE2_JIT_COMPLETE) == 0;
     }
     void *jit_stack = NULL;
@@ -49788,6 +49800,7 @@ static int ptn_preg_match_word_boundary(
     PtnStringOperand subject,
     size_t start_offset,
     int utf_mode,
+    uint32_t match_options,
     PtnPregMatch *match
 ) {
     ptn_preg_matches_clear(match, 1);
@@ -49820,8 +49833,8 @@ static int ptn_preg_match_word_boundary(
             &next_offset
         );
         int left_word = 0;
-        if (offset > start_offset) {
-            size_t previous = ptn_preg_previous_codepoint_offset(subject.data, start_offset, offset, utf_mode);
+        if (offset > 0) {
+            size_t previous = ptn_preg_previous_codepoint_offset(subject.data, 0, offset, utf_mode);
             size_t ignored_next = previous;
             left_word = ptn_preg_word_codepoint_at(
                 subject.data,
@@ -49832,11 +49845,18 @@ static int ptn_preg_match_word_boundary(
             );
         }
         if (left_word != right_word) {
+            if ((match_options & PTN_PCRE2_NOTEMPTY_ATSTART) != 0 && offset == start_offset) {
+                ptn_preg_set_last_error(runtime, PTN_PREG_NO_ERROR);
+                return 0;
+            }
             match[0].matched = 1;
             match[0].start = offset;
             match[0].end = offset;
             ptn_preg_set_last_error(runtime, PTN_PREG_NO_ERROR);
             return 1;
+        }
+        if ((match_options & PTN_PCRE2_ANCHORED) != 0) {
+            break;
         }
         if (offset >= subject.len) {
             break;
@@ -49893,6 +49913,7 @@ static int ptn_preg_program_match_simple(
                 subject_operand,
                 start_offset,
                 program->utf_mode,
+                match_options,
                 matches
             );
         }
@@ -50246,7 +50267,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
 
         PtnPregMatch match[1] = {0};
         int simple_result = simple_kind == PTN_PREG_SIMPLE_WORD_BOUNDARY
-            ? ptn_preg_match_word_boundary(runtime, subject, start_offset, simple_utf_mode, match)
+            ? ptn_preg_match_word_boundary(runtime, subject, start_offset, simple_utf_mode, 0, match)
             : ptn_preg_match_contiguous_word_byte(
                 runtime,
                 subject,

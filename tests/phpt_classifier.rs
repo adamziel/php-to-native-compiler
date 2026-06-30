@@ -2514,7 +2514,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     let residual_extension_ini = classify(
-        "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
+        "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\npcre.recursion_limit=1\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('pcre.recursion_limit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
     );
     assert_eq!(
         residual_extension_ini.trim_end(),
