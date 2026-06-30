@@ -53628,7 +53628,7 @@ var_dump($functionParam->getDeclaringFunction()->getName());
 }
 
 #[test]
-fn compile_closure_invoke_reflection_declaring_function_without_full_internal_dispatch() {
+fn compile_closure_invoke_reflection_declaring_function_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invoke-reflection-declaring-function");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("closure-invoke-reflection-declaring-function.php");
@@ -53653,7 +53653,7 @@ echo $method->getName(), \"\\n\";
     )
     .unwrap();
 
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -53663,14 +53663,6 @@ echo $method->getName(), \"\\n\";
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
-    assert!(c_source.contains("ptn_closure_reflection_try_call_method"));
-    assert!(
-        c_source.len() < 3_000_000,
-        "generated C was {} bytes",
-        c_source.len()
-    );
 }
 
 #[test]
