@@ -98434,6 +98434,19 @@ static void ptn_mb_regex_translate_matches_to_source(
     }
 }
 
+static int ptn_mb_regex_options_reject_unsupported(PtnRuntime *runtime, const char *options_name) {
+    if (options_name == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; options_name[i] != '\0'; i++) {
+        if (options_name[i] == 'e') {
+            ptn_throw_exception(runtime, "ValueError", "Option \"e\" is not supported");
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void ptn_mb_regex_options_apply_from(uint32_t *options, const char *options_name) {
     if (options_name == NULL) {
         return;
@@ -98503,6 +98516,11 @@ static int ptn_mb_compile_regex_program(
     }
     if (case_insensitive) {
         options |= PTN_PCRE2_CASELESS;
+    }
+    if (!ptn_mb_regex_options_reject_unsupported(runtime, ptn_mb_regex_options_name) ||
+        !ptn_mb_regex_options_reject_unsupported(runtime, extra_options)) {
+        free(converted_pattern);
+        return 0;
     }
     (void)ptn_mb_regex_options_apply(&options, extra_options);
 
@@ -98965,6 +98983,9 @@ static PtnValue ptn_internal_mb_ereg_named(PtnRuntime *runtime, const char *func
     if (!ptn_mb_compile_regex_program(runtime, function_name, pattern, case_insensitive, NULL, &program, line)) {
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
         if (argc >= 3) {
             ptn_mb_assign_empty_regs(runtime, args[2]);
         }
@@ -99034,6 +99055,9 @@ static PtnValue ptn_mb_ereg_replace_impl(
 ) {
     PtnPregProgram program;
     if (!ptn_mb_compile_regex_program(runtime, function_name, pattern, case_insensitive, extra_options, &program, line)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
         char *copy = ptn_duplicate_string_len(subject.data, subject.len);
         size_t copy_len = subject.len;
         return ptn_owned_string_len(copy, copy_len);
