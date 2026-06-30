@@ -24516,6 +24516,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "msgfmt_format_message"
             | "msgfmt_get_locale"
             | "msgfmt_get_pattern"
+            | "msgfmt_parse_message"
             | "numfmt_create"
             | "numfmt_format"
             | "numfmt_format_currency"

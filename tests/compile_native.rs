@@ -20166,6 +20166,102 @@ ob_end_flush();
 }
 
 #[test]
+fn compile_session_user_save_handler_error_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-session-user-save-handler-error-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-user-save-handler-error-paths.php");
+    let output = root.join("session-user-save-handler-error-paths-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+ob_start();
+
+$native = new SessionHandler();
+foreach ([
+    'read' => fn() => $native->read('id'),
+    'write' => fn() => $native->write('id', 'data'),
+] as $label => $call) {{
+    try {{
+        $call();
+    }} catch (Error $e) {{
+        echo "$label:", $e->getMessage(), "\n";
+    }}
+}}
+try {{
+    $native->close(false);
+}} catch (ArgumentCountError $e) {{
+    echo "close:", $e->getMessage(), "\n";
+}}
+
+class Handler implements SessionHandlerInterface, SessionIdInterface, SessionUpdateTimestampHandlerInterface {{
+    public function open($path, $name): bool {{ return true; }}
+    public function close(): bool {{ return true; }}
+    public function read($id): string|false {{ return ''; }}
+    public function write($id, $data): bool {{ return false; }}
+    public function destroy($id): bool {{ return true; }}
+    public function gc($max_lifetime): int|false {{ return true; }}
+    public function create_sid(): string {{ return 'candidate'; }}
+    public function validateId($id): bool {{ return true; }}
+    public function updateTimestamp($id, $data): bool {{ return false; }}
+}}
+
+session_set_save_handler(new Handler());
+session_start();
+$_SESSION['value'] = 'changed';
+session_write_close();
+
+session_start();
+var_dump(session_create_id());
+session_write_close();
+ob_end_flush();
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(stdout.contains("read:Session is not active\n"), "{stdout}");
+    assert!(stdout.contains("write:Session is not active\n"), "{stdout}");
+    assert!(
+        stdout.contains("close:SessionHandler::close() expects exactly 0 arguments, 1 given\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::write"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(
+            "session_write_close(): Failed to write session data using user defined save handler."
+        ) && combined.contains("handler: Handler::updateTimestamp"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("session_create_id(): Failed to create new ID"),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_session_id_interface_save_handler_to_native_binary() {
     let root = temp_dir("ptn-native-session-id-interface-save-handler");
     fs::create_dir_all(&root).unwrap();
@@ -28213,6 +28309,10 @@ echo date('l Y-m-d H:i:s T', strtotime('Monday', $base)), "\n";
 date_default_timezone_set('Asia/Tehran');
 $base = mktime(17, 17, 17, 10, 25, 1977);
 echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
+
+date_default_timezone_set('UTC');
+$base = 1133216119;
+echo date(DateTime::ISO8601, strtotime('+ 1 month', $base)), "\n";
 "#,
     )
     .unwrap();
@@ -28248,6 +28348,7 @@ echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
             "2008-01-01T05:00:00-0700\n",
             "Monday 2004-11-01 00:00:00 CET\n",
             "Tuesday 1977-11-01 00:00:00 +04 0\n",
+            "2005-12-28T22:15:19+0000\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -50822,6 +50923,73 @@ MessageFormatter::format(): Found negative or too large array key\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_compact_intl_signal_error"));
     assert!(c_source.contains("MessageFormatter::format(): Found negative or too large array key"));
+}
+
+#[test]
+fn compile_intl_message_formatter_error_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-formatter-error-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-formatter-error-semantics.php");
+    let output = root.join("intl-message-formatter-error-semantics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('intl.use_exceptions', '1');\n\
+$mf = new MessageFormatter('en_US', '{foo,number} {foo}');\n\
+try {\n\
+    $mf->format([7]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$mf = new MessageFormatter('en_US', '{foo,date}');\n\
+try {\n\
+    $mf->format(['foo' => new stdClass()]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$mf = new MessageFormatter('en_US', '{foo}');\n\
+$resource = fopen('php://memory', 'r+');\n\
+try {\n\
+    $mf->format(['foo' => 'bar', 7 => $resource]);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+ini_set('intl.use_exceptions', '0');\n\
+$bad = '{0,whatever} would not work!';\n\
+var_dump(MessageFormatter::formatMessage('root', $bad, [4560]));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+var_dump(MessageFormatter::parseMessage('root', $bad, 'x'));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+$ok = new MessageFormatter('en_US', '{0,number} monkeys on {1,number} trees');\n\
+$broken = '{0,number} trees hosting {1,number monkeys';\n\
+$ok->setPattern($broken);\n\
+echo $ok->getErrorMessage(), \"\\n\";\n\
+msgfmt_set_pattern($ok, $broken);\n\
+echo $ok->getErrorMessage(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "IntlException: MessageFormatter::format(): Inconsistent types declared for an argument\n\
+IntlException: MessageFormatter::format(): The argument for key 'foo' cannot be used as a date or time\n\
+IntlException: MessageFormatter::format(): No strategy to convert the value given for the argument with key '7' is available\n\
+bool(false)\n\
+MessageFormatter::formatMessage(): Creating message formatter failed: U_ZERO_ERROR\n\
+bool(false)\n\
+MessageFormatter::parseMessage(): Creating message formatter failed: U_ILLEGAL_ARGUMENT_ERROR\n\
+MessageFormatter::setPattern(): Error setting symbol value at line 0, offset 26: U_PATTERN_SYNTAX_ERROR\n\
+msgfmt_set_pattern(): Error setting symbol value at line 0, offset 26: U_PATTERN_SYNTAX_ERROR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_message_validate_pattern_arguments"));
+    assert!(c_source.contains("ptn_internal_messageformatter_parse_message"));
 }
 
 #[test]
