@@ -25059,14 +25059,11 @@ fn class_constructor_method<'a>(
     }
 
     let class_short_name = class.name.rsplit('\\').next().unwrap_or(&class.name);
-    methods
-        .iter()
-        .copied()
-        .find(|method| {
-            !method.is_static &&
-                method.declaring_class.eq_ignore_ascii_case(&class.name) &&
-                method.name.eq_ignore_ascii_case(class_short_name)
-        })
+    methods.iter().copied().find(|method| {
+        !method.is_static
+            && method.declaring_class.eq_ignore_ascii_case(&class.name)
+            && method.name.eq_ignore_ascii_case(class_short_name)
+    })
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
