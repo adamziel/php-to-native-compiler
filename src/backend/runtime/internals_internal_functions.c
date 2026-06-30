@@ -58414,6 +58414,7 @@ static char *ptn_stream_apply_user_filter_alloc(
     PtnStreamBucketBrigade *output_brigade = (PtnStreamBucketBrigade *)output_resource->close_hook_data;
     size_t output_len = output_brigade == NULL ? 0 : output_brigade->output.len;
     size_t output_bucket_count = output_brigade == NULL ? 0 : output_brigade->output_bucket_count;
+    int64_t consumed_len = ptn_value_to_integer(ptn_value_deref(consumed));
     if (status == PTN_PSFS_FEED_ME) {
         output_len = 0;
     }
@@ -58426,7 +58427,7 @@ static char *ptn_stream_apply_user_filter_alloc(
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     } else if (status != PTN_PSFS_PASS_ON && status != PTN_PSFS_FEED_ME && !(closing && len == 0)) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
-    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && output_bucket_count == 0 && len != 0) {
+    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && output_bucket_count == 0 && len != 0 && consumed_len <= 0) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
@@ -69896,6 +69897,7 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLINFO_EFFECTIVE_URL 1048577
 #define PTN_CURLM_OK 0
 #define PTN_CURLM_CALL_MULTI_PERFORM -1
+#define PTN_CURLM_BAD_HANDLE 1
 #define PTN_CURLMSG_DONE 1
 #define PTN_CURLE_OK 0
 #define PTN_CURLE_UNSUPPORTED_PROTOCOL 1
@@ -70471,6 +70473,70 @@ static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const P
     return ptn_resource(handle);
 }
 
+static int ptn_curl_escape_byte_is_unreserved(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') ||
+        (byte >= 'a' && byte <= 'z') ||
+        (byte >= '0' && byte <= '9') ||
+        byte == '-' ||
+        byte == '_' ||
+        byte == '.' ||
+        byte == '~';
+}
+
+static PtnValue ptn_internal_curl_escape(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_escape", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "curl_escape", 2, "string", args[1], line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    if (input.len > (SIZE_MAX - 1) / 3) {
+        ptn_string_operand_free(input);
+        ptn_abort_out_of_memory();
+    }
+    char *escaped = malloc(input.len * 3 + 1);
+    if (escaped == NULL) {
+        ptn_string_operand_free(input);
+        ptn_abort_out_of_memory();
+    }
+    static const char hex[] = "0123456789ABCDEF";
+    size_t write = 0;
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (ptn_curl_escape_byte_is_unreserved(byte)) {
+            escaped[write++] = (char)byte;
+        } else {
+            escaped[write++] = '%';
+            escaped[write++] = hex[byte >> 4];
+            escaped[write++] = hex[byte & 0x0f];
+        }
+    }
+    escaped[write] = '\0';
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(escaped, write);
+}
+
+static PtnValue ptn_internal_curl_unescape(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_unescape", 1, "handle", args[0], "curl");
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "curl_unescape", 2, "string", args[1], line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    size_t decoded_len = 0;
+    char *decoded = ptn_url_decode_bytes(input.data, input.len, 0, &decoded_len);
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(decoded, decoded_len);
+}
+
 static PtnValue ptn_internal_curl_copy_handle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     if (argc != 1) {
@@ -70995,7 +71061,13 @@ static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t arg
     if (ptn_curl_runtime_has_active_exception(runtime)) {
         return ptn_null();
     }
-    return ptn_string(code == PTN_CURLM_OK ? "No error" : "Unknown error");
+    if (code == PTN_CURLM_OK) {
+        return ptn_string("No error");
+    }
+    if (code == PTN_CURLM_BAD_HANDLE) {
+        return ptn_string("Invalid multi handle");
+    }
+    return ptn_string("Unknown error");
 }
 
 static int ptn_curl_share_data_option_is_known(int64_t option) {
@@ -78127,7 +78199,14 @@ static char *ptn_intl_timezone_id_from_value(PtnValue value) {
 }
 
 static int ptn_intl_timezone_raw_offset_ms(const char *timezone) {
-    return ptn_intl_timezone_offset_seconds(timezone, 0) * 1000;
+    if (timezone == NULL || timezone[0] == '\0') {
+        timezone = ptn_current_timezone_name();
+    }
+    time_t january = ptn_datetime_utc_timestamp_for_parts(2012, 1, 1, 0, 0, 0);
+    time_t july = ptn_datetime_utc_timestamp_for_parts(2012, 7, 1, 0, 0, 0);
+    int january_offset = ptn_intl_timezone_offset_seconds(timezone, january);
+    int july_offset = ptn_intl_timezone_offset_seconds(timezone, july);
+    return (january_offset < july_offset ? january_offset : july_offset) * 1000;
 }
 
 static void ptn_intl_timezone_offsets_ms(const char *timezone, time_t timestamp, int *raw_offset_out, int *dst_offset_out) {
@@ -83034,6 +83113,13 @@ static PtnValue ptn_internal_intltz_to_date_time_zone(PtnRuntime *runtime, size_
         return ptn_null();
     }
     return ptn_intl_timezone_call_method(runtime, args[0], "toDateTimeZone", 0, NULL, line);
+}
+
+static PtnValue ptn_internal_intltz_get_raw_offset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        return ptn_null();
+    }
+    return ptn_intl_timezone_call_method(runtime, args[0], "getRawOffset", 0, NULL, line);
 }
 
 static PtnValue ptn_internal_intltz_get_dst_savings(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -96954,6 +97040,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if (cp >= 0x0430 && cp <= 0x044f) {
             return cp - 32;
         }
+        if (cp >= 0x0501 && cp <= 0x052f && (cp & 1u)) {
+            return cp - 1;
+        }
+        if (cp >= 0x2c30 && cp <= 0x2c5e) {
+            return cp - 0x30;
+        }
+        if (cp >= 0x10428 && cp <= 0x1044f) {
+            return cp - 0x28;
+        }
         if (cp >= 0xff41 && cp <= 0xff5a) {
             return cp - 32;
         }
@@ -96975,6 +97070,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         }
         if (cp >= 0x0410 && cp <= 0x042f) {
             return cp + 32;
+        }
+        if (cp >= 0x0500 && cp <= 0x052e && !(cp & 1u)) {
+            return cp + 1;
+        }
+        if (cp >= 0x2c00 && cp <= 0x2c2e) {
+            return cp + 0x30;
+        }
+        if (cp >= 0x10400 && cp <= 0x10427) {
+            return cp + 0x28;
         }
         if (cp >= 0xff21 && cp <= 0xff3a) {
             return cp + 32;
@@ -97006,6 +97110,9 @@ static int ptn_mb_codepoint_is_cased(uint32_t cp) {
         (cp >= 0x03b1 && cp <= 0x03c1) ||
         cp == 0x03c2 ||
         (cp >= 0x0410 && cp <= 0x044f) ||
+        (cp >= 0x0500 && cp <= 0x052f) ||
+        (cp >= 0x2c00 && cp <= 0x2c5e) ||
+        (cp >= 0x10400 && cp <= 0x1044f) ||
         (cp >= 0xff21 && cp <= 0xff3a) ||
         (cp >= 0xff41 && cp <= 0xff5a);
 }
@@ -101561,6 +101668,67 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 
+static int ptn_mb_convert_variables_value(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *to_encoding,
+    const char *from_encoding,
+    size_t line,
+    PtnMbCheckStack *stack
+) {
+    if (slot->type == PTN_REFERENCE) {
+        return ptn_mb_convert_variables_value(
+            runtime,
+            &slot->as.reference->value,
+            to_encoding,
+            from_encoding,
+            line,
+            stack
+        );
+    }
+
+    if (slot->type == PTN_ARRAY) {
+        PtnArray *array = ptn_array_detach_value(slot);
+        if (ptn_mb_check_stack_contains(stack, array)) {
+            stack->saw_circular = 1;
+            return 0;
+        }
+        ptn_mb_check_stack_push(stack, array);
+        for (size_t i = 0; i < array->len; i++) {
+            if (!ptn_mb_convert_variables_value(
+                    runtime,
+                    &array->entries[i].value,
+                    to_encoding,
+                    from_encoding,
+                    line,
+                    stack
+                )) {
+                stack->len--;
+                return 0;
+            }
+        }
+        stack->len--;
+        return 1;
+    }
+
+    if (slot->type != PTN_STRING) {
+        return 1;
+    }
+
+    size_t out_len = 0;
+    char *out = ptn_mb_iconv_convert_alloc(
+        (const char *)slot->as.string.data,
+        slot->as.string.len,
+        from_encoding,
+        to_encoding,
+        &out_len
+    );
+    PtnValue assigned = ptn_owned_string_len(out, out_len);
+    ptn_value_destroy(slot);
+    *slot = assigned;
+    return 1;
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *to_encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_variables", 1, "to_encoding", args[0], line, NULL, 0);
     const char *from_encoding = argc >= 2
@@ -101569,20 +101737,25 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
     if (to_encoding == NULL || from_encoding == NULL) {
         return ptn_bool(0);
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     for (size_t i = 2; i < argc; i++) {
         if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        PtnValue current = ptn_value_deref(args[i]);
-        if (current.type != PTN_STRING) {
-            continue;
+        if (!ptn_mb_convert_variables_value(
+                runtime,
+                &args[i].as.reference->value,
+                to_encoding,
+                from_encoding,
+                line,
+                &stack
+            )) {
+            ptn_mb_check_stack_free(&stack);
+            ptn_emit_warning(&runtime->diagnostics, "mb_convert_variables(): Cannot convert recursively referenced values", line);
+            return ptn_bool(0);
         }
-        size_t out_len = 0;
-        char *out = ptn_mb_iconv_convert_alloc((const char *)current.as.string.data, current.as.string.len, from_encoding, to_encoding, &out_len);
-        PtnValue assigned = ptn_owned_string_len(out, out_len);
-        ptn_reference_assign(runtime, args[i].as.reference, assigned);
-        ptn_value_destroy(&assigned);
     }
+    ptn_mb_check_stack_free(&stack);
     return ptn_string(to_encoding);
 }
 
@@ -119543,6 +119716,7 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
     ptn_get_defined_constants_add_int(table, "CURLM_OK", PTN_CURLM_OK);
     ptn_get_defined_constants_add_int(table, "CURLM_CALL_MULTI_PERFORM", PTN_CURLM_CALL_MULTI_PERFORM);
+    ptn_get_defined_constants_add_int(table, "CURLM_BAD_HANDLE", PTN_CURLM_BAD_HANDLE);
     ptn_get_defined_constants_add_int(table, "CURLMSG_DONE", PTN_CURLMSG_DONE);
     ptn_get_defined_constants_add_int(table, "CURLE_OK", PTN_CURLE_OK);
     ptn_get_defined_constants_add_int(table, "CURLE_UNSUPPORTED_PROTOCOL", PTN_CURLE_UNSUPPORTED_PROTOCOL);
@@ -120119,6 +120293,7 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLINFO_EFFECTIVE_URL",
         "CURLM_OK",
         "CURLM_CALL_MULTI_PERFORM",
+        "CURLM_BAD_HANDLE",
         "CURLMSG_DONE",
         "CURLE_OK",
         "CURLE_UNSUPPORTED_PROTOCOL",
@@ -189830,6 +190005,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_copy_handle", 1, 1, ptn_internal_curl_copy_handle },
         { "curl_errno", 1, 1, ptn_internal_curl_errno },
         { "curl_error", 1, 1, ptn_internal_curl_error },
+        { "curl_escape", 2, 2, ptn_internal_curl_escape },
         { "curl_exec", 1, 1, ptn_internal_curl_exec },
         { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
@@ -189846,6 +190022,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_share_init_persistent", 1, 1, ptn_internal_curl_share_init_persistent },
         { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
         { "curl_setopt_array", 2, 2, ptn_internal_curl_setopt_array },
+        { "curl_unescape", 2, 2, ptn_internal_curl_unescape },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
         { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
@@ -190193,6 +190370,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_equivalent_id", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "intltz_get_gmt", 0, 0, ptn_internal_intltz_get_gmt },
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
+        { "intltz_get_raw_offset", 1, 1, ptn_internal_intltz_get_raw_offset },
         { "intltz_get_tz_data_version", 0, 0, ptn_internal_intltz_get_tz_data_version },
         { "intltz_get_unknown", 0, 0, ptn_internal_intltz_get_unknown },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
@@ -205389,7 +205567,7 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
         destructor_target = ptn_value_borrow(object);
     }
     if (destructor_target.as.object != object.as.object) {
-        ptn_lazy_object_reset_property_storage(object.as.object, class_name);
+        ptn_lazy_object_clear_reset_property_storage(object.as.object, class_name);
     }
     if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
         ptn_object_run_destructor(destructor_target.as.object);
@@ -220103,11 +220281,22 @@ static int ptn_spl_file_info_stat(
     PtnSplFileInfoData *data,
     const char *method_name,
     int use_lstat,
-    struct stat *info
+    struct stat *info,
+    size_t line
 ) {
     if (data == NULL || data->path == NULL || data->path[0] == '\0') {
         ptn_throw_exception(runtime, "RuntimeException", "SplFileInfo object is uninitialized");
         return 0;
+    }
+    char frame_name[128];
+    int frame_written = snprintf(
+        frame_name,
+        sizeof(frame_name),
+        "SplFileInfo->%s",
+        method_name
+    );
+    if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+        ptn_abort_out_of_memory();
     }
     if (strncmp(data->path, "phar://", 7) == 0) {
         int ok = ptn_phar_uri_stat(data->path, info);
@@ -220116,14 +220305,25 @@ static int ptn_spl_file_info_stat(
             int written = snprintf(
                 message,
                 sizeof(message),
-                "%s(): stat failed for %s",
+                "SplFileInfo::%s(): stat failed for %s",
                 method_name,
                 data->path
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "RuntimeException", message);
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "RuntimeException",
+                ptn_duplicate_string(message),
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                frame_name,
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                0,
+                NULL
+            );
             return 0;
         }
         return 1;
@@ -220134,14 +220334,25 @@ static int ptn_spl_file_info_stat(
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): stat failed for %s",
+            "SplFileInfo::%s(): stat failed for %s",
             method_name,
             data->path
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "RuntimeException", message);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "RuntimeException",
+            ptn_duplicate_string(message),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            frame_name,
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            0,
+            NULL
+        );
         return 0;
     }
     return 1;
@@ -225422,7 +225633,7 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_null();
         }
         struct stat info;
-        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info)) {
+        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info, line)) {
             return ptn_null();
         }
         if (ptn_ascii_case_equal(name, "getType")) {

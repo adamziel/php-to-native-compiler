@@ -1,0 +1,12 @@
+ext/standard/tests/file/lstat_stat_error.phpt
+ext/standard/tests/general_functions/proc_open_sockets2.phpt
+ext/standard/tests/general_functions/bug60723.phpt
+ext/standard/tests/strings/strncmp_variation1.phpt
+ext/standard/tests/math/cosh_basic.phpt
+ext/standard/tests/math/number_format_basiclong_64bit.phpt
+ext/standard/tests/general_functions/var_export_basic5.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_is_private.phpt
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/filters/gh17650.phpt
+ext/standard/tests/strings/strncmp_basic.phpt
+ext/standard/tests/strings/strncmp_variation8.phpt
