@@ -1,0 +1,12 @@
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/bug41828.phpt
+ext/spl/tests/dit_004.phpt
+ext/spl/tests/bug81587.phpt
+ext/spl/tests/recursive_tree_iterator_004.phpt
+ext/spl/tests/iterator_023.phpt
+ext/spl/tests/iterator_033.phpt
+ext/spl/tests/gh16604_2.phpt
+ext/spl/tests/gh16588.phpt
+ext/spl/tests/autoloading/spl_autoload_bug48541.phpt
