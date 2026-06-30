@@ -54391,12 +54391,17 @@ static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data
 typedef struct {
     char *path;
     int64_t level;
+    int writeback;
+    FILE *lock_stream;
 } PtnZlibStreamData;
 
 static void ptn_zlib_stream_data_free(void *data) {
     PtnZlibStreamData *stream_data = (PtnZlibStreamData *)data;
     if (stream_data == NULL) {
         return;
+    }
+    if (stream_data->lock_stream != NULL) {
+        fclose(stream_data->lock_stream);
     }
     free(stream_data->path);
     free(stream_data);
@@ -54408,6 +54413,7 @@ static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
         resource->memory_stream == NULL ||
         stream_data == NULL ||
         stream_data->path == NULL ||
+        !stream_data->writeback ||
         !resource->memory_stream->writable) {
         return;
     }
@@ -54468,19 +54474,19 @@ static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, cons
     }
     resource->memory_stream->writable = can_write;
     resource->memory_stream->append = append;
-    if (can_write) {
-        PtnZlibStreamData *stream_data = malloc(sizeof(PtnZlibStreamData));
-        if (stream_data == NULL) {
-            ptn_resource_close(resource);
-            ptn_resource_release(resource);
-            ptn_abort_out_of_memory();
-        }
-        stream_data->path = ptn_duplicate_string(path);
-        stream_data->level = level;
-        resource->close_hook = ptn_zlib_stream_close_hook;
-        resource->close_hook_data = stream_data;
-        resource->close_hook_data_free = ptn_zlib_stream_data_free;
+    PtnZlibStreamData *stream_data = malloc(sizeof(PtnZlibStreamData));
+    if (stream_data == NULL) {
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        ptn_abort_out_of_memory();
     }
+    stream_data->path = ptn_duplicate_string(path);
+    stream_data->level = level;
+    stream_data->writeback = can_write;
+    stream_data->lock_stream = NULL;
+    resource->close_hook = ptn_zlib_stream_close_hook;
+    resource->close_hook_data = stream_data;
+    resource->close_hook_data_free = ptn_zlib_stream_data_free;
     *out = ptn_resource(resource);
     return 1;
 }
@@ -54491,6 +54497,26 @@ static int ptn_try_open_compress_zlib_stream(const char *uri, const char *mode, 
         return 0;
     }
     return ptn_try_open_zlib_path_stream(uri, path, mode, level, out);
+}
+
+static PtnZlibStreamData *ptn_zlib_resource_data(PtnResource *resource) {
+    if (resource == NULL ||
+        resource->stream_backend != PTN_STREAM_BACKEND_ZLIB ||
+        resource->close_hook_data == NULL) {
+        return NULL;
+    }
+    return (PtnZlibStreamData *)resource->close_hook_data;
+}
+
+static FILE *ptn_zlib_resource_lock_stream(PtnResource *resource) {
+    PtnZlibStreamData *stream_data = ptn_zlib_resource_data(resource);
+    if (stream_data == NULL || stream_data->path == NULL) {
+        return NULL;
+    }
+    if (stream_data->lock_stream == NULL) {
+        stream_data->lock_stream = fopen(stream_data->path, "rb");
+    }
+    return stream_data->lock_stream;
 }
 
 static void ptn_phar_stream_close_hook(PtnResource *resource, void *data) {
@@ -60158,7 +60184,15 @@ static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnVa
         ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
         return ptn_bool(1);
     }
-    if (resource->stream == NULL) {
+    FILE *lock_stream = resource->stream;
+    if (lock_stream == NULL && resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+        lock_stream = ptn_zlib_resource_lock_stream(resource);
+        if (lock_stream == NULL) {
+            ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
+            return ptn_bool(0);
+        }
+    }
+    if (lock_stream == NULL) {
         ptn_throw_exception(
             runtime,
             "TypeError",
@@ -60171,7 +60205,7 @@ static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnVa
     ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
     return ptn_bool(0);
 #else
-    int descriptor = ptn_stream_file_descriptor(resource->stream);
+    int descriptor = ptn_stream_file_descriptor(lock_stream);
     if (descriptor < 0) {
         ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
         return ptn_bool(0);
@@ -62242,6 +62276,32 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         return ptn_data_url_stream_metadata(resource);
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+        const char *wrapped_path = NULL;
+        int has_zlib_wrapper = ptn_zlib_uri_path(resource->stream_uri, &wrapped_path);
+        ptn_stream_meta_set(result.as.array, "timed_out", ptn_bool(0));
+        ptn_stream_meta_set(result.as.array, "blocked", ptn_bool(1));
+        ptn_stream_meta_set(result.as.array, "eof", ptn_bool(ptn_stream_eof(resource)));
+        if (has_zlib_wrapper) {
+            ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("ZLIB"));
+        }
+        ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("ZLIB"));
+        ptn_stream_meta_set(
+            result.as.array,
+            "mode",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+        );
+        ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+        ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
+        if (has_zlib_wrapper) {
+            ptn_stream_meta_set(
+                result.as.array,
+                "uri",
+                ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+            );
+        }
+        return result;
+    }
     if (resource->memory_stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_TEMP) {
         ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("PHP"));
         ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("TEMP"));
@@ -64204,6 +64264,12 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_emit_warning(&runtime->diagnostics, "unlink(): Filename contains null byte", line);
         return ptn_bool(0);
     }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        ptn_emit_warning(&runtime->diagnostics, "unlink(): ZLIB does not allow unlinking", line);
+        free(path);
+        return ptn_bool(0);
+    }
     if (strncmp(path, "phar://", 7) == 0) {
         int removed = ptn_phar_uri_unlink(runtime, path, line);
         if (!removed && errno == ENOENT) {
@@ -64523,6 +64589,13 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
     if (dest == NULL) {
         free(source);
         return ptn_null();
+    }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(source, &zlib_path) || ptn_zlib_uri_path(dest, &zlib_path)) {
+        ptn_emit_warning(&runtime->diagnostics, "rename(): ZLIB wrapper does not support renaming", line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
     }
     if (strncmp(source, "phar://", 7) == 0 && strncmp(dest, "phar://", 7) == 0) {
         int renamed = ptn_phar_uri_rename_entry(source, dest);
