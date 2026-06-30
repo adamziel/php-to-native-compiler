@@ -138417,6 +138417,8 @@ static int ptn_xml_subtree_has_invalid_namespace_serialization(PtnXmlNode *node)
     return 0;
 }
 
+static int ptn_xml_parent_serialized_default_namespace_matches(PtnXmlNode *node, const char *uri);
+
 static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, PtnXmlNode *attr) {
     if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
         return 1;
@@ -138425,6 +138427,18 @@ static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, P
     const char *value = attr->value == NULL ? "" : attr->value;
     if (strcmp(name, "xmlns:xml") == 0 && strcmp(value, ptn_dom_xml_namespace_uri()) == 0) {
         return 0;
+    }
+    if (element != NULL &&
+        element->parent != NULL &&
+        attr->synthetic_namespace_declaration &&
+        strcmp(name, "xmlns") == 0) {
+        const char *element_uri = element->namespace_uri == NULL ? "" : element->namespace_uri;
+        if (element_uri[0] != '\0' &&
+            strcmp(element_uri, value) == 0 &&
+            !ptn_xml_name_has_prefix(element->name == NULL ? "" : element->name) &&
+            ptn_xml_parent_serialized_default_namespace_matches(element, value)) {
+            return 0;
+        }
     }
     if (element != NULL && element->parent != NULL && strncmp(name, "xmlns:", 6) == 0) {
         const char *prefix = name + 6;
@@ -141604,6 +141618,52 @@ static int ptn_xml_element_remove_unused_synthetic_namespaces(PtnXmlNode *elemen
     return changed;
 }
 
+static int ptn_xml_element_has_removed_default_namespace_binding(PtnXmlNode *element, const char *uri) {
+    PtnXmlNode *attr = ptn_xml_element_find_attribute(element, "xmlns");
+    if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
+        return 0;
+    }
+    const char *value = attr->value == NULL ? "" : attr->value;
+    return uri == NULL || strcmp(value, uri) == 0;
+}
+
+static void ptn_xml_element_clear_removed_default_namespace(PtnXmlNode *element, const char *uri) {
+    if (element == NULL || uri == NULL || uri[0] == '\0') {
+        return;
+    }
+    if (element->type == PTN_XML_NODE_ELEMENT &&
+        !ptn_xml_name_has_prefix(element->name == NULL ? "" : element->name) &&
+        element->namespace_uri != NULL &&
+        strcmp(element->namespace_uri, uri) == 0 &&
+        !ptn_xml_element_has_removed_default_namespace_binding(element, uri)) {
+        free(element->namespace_uri);
+        element->namespace_uri = NULL;
+        free(element->serialized_name);
+        element->serialized_name = NULL;
+    }
+    for (size_t i = 0; i < element->child_count; i++) {
+        PtnXmlNode *child = element->children[i];
+        if (child == NULL || child->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        if (ptn_xml_element_has_removed_default_namespace_binding(child, NULL)) {
+            continue;
+        }
+        ptn_xml_element_clear_removed_default_namespace(child, uri);
+    }
+}
+
+static void ptn_xml_element_note_removed_namespace_declaration(PtnXmlNode *element, PtnXmlNode *attr) {
+    if (element == NULL || !ptn_xml_attribute_is_namespace_declaration(attr)) {
+        return;
+    }
+    const char *name = attr->name == NULL ? "" : attr->name;
+    if (strcmp(name, "xmlns") != 0) {
+        return;
+    }
+    ptn_xml_element_clear_removed_default_namespace(element, attr->value == NULL ? "" : attr->value);
+}
+
 static int ptn_xml_element_clear_resolved_serialized_prefixes(PtnXmlNode *element) {
     int changed = 0;
     for (size_t i = 0; element != NULL && i < element->attribute_count; i++) {
@@ -141650,6 +141710,7 @@ static int ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *nam
             }
             element->attribute_count--;
             attr->parent = NULL;
+            ptn_xml_element_note_removed_namespace_declaration(element, attr);
             ptn_xml_element_reconcile_synthetic_namespaces(element);
             return 1;
         }
@@ -141668,6 +141729,7 @@ static void ptn_xml_element_remove_attribute_node(PtnXmlNode *element, PtnXmlNod
             }
             element->attribute_count--;
             attr->parent = NULL;
+            ptn_xml_element_note_removed_namespace_declaration(element, attr);
             ptn_xml_element_reconcile_synthetic_namespaces(element);
             return;
         }
@@ -147498,6 +147560,13 @@ static PtnXmlNode *ptn_dom_find_attribute_ns(PtnXmlNode *element, const char *na
         PtnXmlNode *attr = ptn_xml_element_find_attribute(element, qualified);
         free(qualified);
         return ptn_xml_attribute_is_namespace_declaration(attr) ? attr : NULL;
+    }
+    if (local_name[0] == '\0' && namespace_uri[0] != '\0') {
+        PtnXmlNode *attr = ptn_xml_element_find_attribute(element, "xmlns");
+        if (ptn_xml_attribute_is_namespace_declaration(attr) &&
+            strcmp(attr->value == NULL ? "" : attr->value, namespace_uri) == 0) {
+            return attr;
+        }
     }
     for (size_t i = 0; i < element->attribute_count; i++) {
         PtnXmlNode *attr = element->attributes[i];
