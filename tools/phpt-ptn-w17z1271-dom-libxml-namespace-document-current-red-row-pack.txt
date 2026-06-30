@@ -1,0 +1,12 @@
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+ext/dom/tests/modern/xml/simplexml_interop.phpt
+ext/dom/tests/modern/spec/Document_getElementsByTagNameNS.phpt
+ext/dom/tests/delayed_freeing/namespace_xmlns_declaration_attribute_variation.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_ns_imported_02.phpt
+ext/dom/tests/modern/extensions/node_renaming.phpt
+ext/dom/tests/modern/token_list/iterator_modification_invalidation.phpt
+ext/dom/tests/gh12616_1.phpt
+ext/dom/tests/DOMElement_prefix_empty.phpt
+ext/dom/tests/DOMDocument_loadXML_variation4.phpt
+ext/dom/tests/modern/spec/Node_baseURI.phpt
+ext/dom/tests/import_attribute_namespace.phpt

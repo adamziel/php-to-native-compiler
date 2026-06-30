@@ -58363,6 +58363,19 @@ $legacy->documentElement->setAttributeNS('some:ns', 'foo:bar', 'value');
 $legacy->documentElement->removeAttributeNS('some:ns', 'bar');
 echo $legacy->saveXML();
 
+$defaultNs = new DOMDocument();
+$defaultNs->loadXML('<container xmlns="http://symfony.com/schema/dic/services"><child/></container>');
+$defaultNs->documentElement->removeAttributeNS('http://symfony.com/schema/dic/services', '');
+echo $defaultNs->saveXML();
+$importedDefaultNs = new DOMDocument();
+$importedDefaultNs->append($importedDefaultNs->importNode($defaultNs->documentElement, true));
+echo $importedDefaultNs->saveXML();
+
+$prefixedNs = new DOMDocument();
+$prefixedNs->loadXML('<container xmlns:symfony="http://symfony.com/schema/dic/services"><symfony:services><symfony:service symfony:id="x"/></symfony:services></container>');
+$prefixedNs->documentElement->removeAttributeNS('http://symfony.com/schema/dic/services', 'symfony');
+echo $prefixedNs->saveXML();
+
 $empty = Dom\HTMLDocument::createEmpty();
 $html = $empty->appendChild($empty->createElement('html'));
 var_dump($html->baseURI);
@@ -58432,6 +58445,12 @@ try {
             "1:BAR:HTML=9;\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"some:ns\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container><child/></container>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container><child/></container>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container><services><service id=\"x\"/></services></container>\n",
             "string(11) \"about:blank\"\n",
             "bool(true)\n",
             "string(10) \"empty.html\"\n",
