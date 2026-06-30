@@ -58413,6 +58413,8 @@ static char *ptn_stream_apply_user_filter_alloc(
         !input_brigade->input_consumed;
     PtnStreamBucketBrigade *output_brigade = (PtnStreamBucketBrigade *)output_resource->close_hook_data;
     size_t output_len = output_brigade == NULL ? 0 : output_brigade->output.len;
+    size_t output_bucket_count = output_brigade == NULL ? 0 : output_brigade->output_bucket_count;
+    int64_t consumed_len = ptn_value_to_integer(ptn_value_deref(consumed));
     if (status == PTN_PSFS_FEED_ME) {
         output_len = 0;
     }
@@ -58424,6 +58426,8 @@ static char *ptn_stream_apply_user_filter_alloc(
     if (input_unprocessed && len != 0) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     } else if (status != PTN_PSFS_PASS_ON && status != PTN_PSFS_FEED_ME && !(closing && len == 0)) {
+        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+    } else if (status == PTN_PSFS_PASS_ON && output_len == 0 && output_bucket_count == 0 && len != 0 && consumed_len <= 0) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
     }
 
