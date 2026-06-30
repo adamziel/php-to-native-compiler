@@ -35148,6 +35148,63 @@ foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
 }
 
 #[test]
+fn compile_mbstring_strcut_encoded_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-strcut-encoded-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-strcut-encoded-boundaries.php");
+    let output = root.join("mb-strcut-encoded-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$utf16 = mb_convert_encoding('あaいb', 'UTF-16BE', 'UTF-8');\n\
+echo bin2hex(mb_strcut($utf16, 0, 5, 'UTF-16BE')), \"\\n\";\n\
+echo mb_convert_encoding(mb_strcut($utf16, 0, 5, 'UTF-16BE'), 'UTF-8', 'UTF-16BE'), \"\\n\";\n\
+$sjis = mb_convert_encoding('星のように', 'SJIS', 'UTF-8');\n\
+echo mb_convert_encoding(mb_strcut($sjis, 0, 5, 'SJIS'), 'UTF-8', 'SJIS'), \"\\n\";\n\
+$gb = mb_convert_encoding('宛如繁星', 'GB18030', 'UTF-8');\n\
+echo mb_convert_encoding(mb_strcut($gb, 0, 6, 'GB18030'), 'UTF-8', 'GB18030'), \"\\n\";\n\
+$hz = mb_convert_encoding('あaいb', 'HZ', 'UTF-8');\n\
+echo bin2hex($hz), \"\\n\";\n\
+echo mb_convert_encoding(mb_strcut($hz, 0, 10, 'HZ'), 'UTF-8', 'HZ'), \"\\n\";\n\
+$utf16Generic = mb_convert_encoding('AAAAAA', 'UTF-16', 'UTF-8');\n\
+echo mb_convert_encoding(mb_strcut($utf16Generic, 0, 10, 'UTF-16'), 'UTF-8', 'UTF-16'), \"\\n\";\n\
+echo bin2hex(mb_strcut('???', 0, 2, 'ISO-2022-KR')), \"\\n\";\n\
+echo bin2hex(mb_strcut('???', 0, 2, 'UTF-16')), \"\\n\";\n\
+echo bin2hex(mb_strcut('abcdef', 1, 3, '8bit')), \"\\n\";\n\
+echo mb_strcut('あい', 1, 3, 'UTF-8'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "30420061\n",
+            "あa\n",
+            "星の\n",
+            "宛如繁\n",
+            "7e7b24227e7d617e7b24247e7d62\n",
+            "あa\n",
+            "AAAAA\n",
+            "\n",
+            "3f3f\n",
+            "626364\n",
+            "あ\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_convert_variables_recursive_arrays_to_native_binary() {
     let root = temp_dir("ptn-native-mb-convert-variables-recursive");
     fs::create_dir_all(&root).unwrap();
