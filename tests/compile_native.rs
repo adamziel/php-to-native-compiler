@@ -97566,6 +97566,8 @@ class LazyResetProxyEdge {
         $dump = ob_get_clean();
         echo strpos($dump, 'lazy proxy object') === false ? \"plain-proxy\\n\" : \"lazy-proxy\\n\";
         echo strpos($dump, '[\"instance\"]=>') === false ? \"no-instance\\n\" : \"has-instance\\n\";
+        echo strpos($dump, '[\"a\"]=>') === false ? \"no-a-slot\\n\" : \"has-a-slot\\n\";
+        echo strpos($dump, '[\"proxy\"]=>') === false ? \"no-proxy-slot\\n\" : \"has-proxy-slot\\n\";
     }
 }
 
@@ -97616,7 +97618,7 @@ var_dump($real->a);
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "plain-proxy\nno-instance\nctor\nstring(1) \"a\"\n"
+        "plain-proxy\nno-instance\nno-a-slot\nno-proxy-slot\nctor\nstring(1) \"a\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
