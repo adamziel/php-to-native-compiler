@@ -1,0 +1,12 @@
+# ptn-w17z.1178 focused Zend lazy-object/property/reflection current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T065017Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: zend-lazy-object-property-reflection-current-red rows=8
+Zend/tests/lazy_objects/isset_hooked_may_not_initialize.phpt
+Zend/tests/lazy_objects/setRawValueWithoutLazyInitialization_exception_001.phpt
+Zend/tests/lazy_objects/init_fatal.phpt
+Zend/tests/lazy_objects/reset_as_lazy_while_init_exception.phpt
+Zend/tests/lazy_objects/realize_proxy_overridden.phpt
+Zend/tests/lazy_objects/serialize___serialize_may_not_initialize.phpt
+Zend/tests/lazy_objects/gh17998.phpt
+Zend/tests/lazy_objects/reset_as_lazy_can_reset_initialized_proxies.phpt
