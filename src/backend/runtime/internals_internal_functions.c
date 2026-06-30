@@ -161456,6 +161456,10 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         free(path);
         return ptn_bool(0);
     }
+    int invalid_zlib_create_mode =
+        !ptn_zlib_stream_mode_can_read(mode) &&
+        !ptn_zlib_stream_mode_can_write(mode) &&
+        (mode[0] == 'c' || mode[0] == 'C' || mode[0] == 'x' || mode[0] == 'X');
     if (argc >= 3 && ptn_is_truthy(args[2]) && !ptn_zlib_stream_mode_can_write(mode)) {
         char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
         if (resolved_path != NULL) {
@@ -161503,6 +161507,16 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         free(mode);
         free(path);
         return stream;
+    }
+    if (opened == 0 && invalid_zlib_create_mode) {
+        FILE *side_effect_stream = ptn_fopen_php_mode(path, mode);
+        if (side_effect_stream != NULL) {
+            fclose(side_effect_stream);
+            ptn_emit_warning(&runtime->diagnostics, "gzopen(): gzopen failed", line);
+            free(mode);
+            free(path);
+            return ptn_bool(0);
+        }
     }
     char detail[192];
     int needed = snprintf(

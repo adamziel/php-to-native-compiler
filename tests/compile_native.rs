@@ -30265,6 +30265,44 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_gzopen_invalid_mode_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-gzopen-invalid-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gzopen-invalid-mode.php");
+    let output = root.join("gzopen-invalid-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+@unlink(__DIR__ . "/someFile");
+var_dump(gzopen(__DIR__ . "/someFile", "c"));
+var_dump(file_exists(__DIR__ . "/someFile"));
+@unlink(__DIR__ . "/someFile");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: gzopen(): gzopen failed"), "{stdout}");
+    assert!(!stdout.contains("Failed to open stream"), "{stdout}");
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zlib_functions_filters_and_constants_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-functions-filters");
     fs::create_dir_all(&root).unwrap();
