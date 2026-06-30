@@ -55827,6 +55827,195 @@ static void ptn_stream_append_last_error(
     stored->terminating = terminating;
 }
 
+static int64_t ptn_stream_error_code_value(const char *code_name) {
+    static const char *const names[] = {
+        "None",
+        "Generic",
+        "ReadFailed",
+        "WriteFailed",
+        "SeekFailed",
+        "SeekNotSupported",
+        "FlushFailed",
+        "TruncateFailed",
+        "ConnectFailed",
+        "BindFailed",
+        "ListenFailed",
+        "NotWritable",
+        "NotReadable",
+        "Disabled",
+        "NotFound",
+        "PermissionDenied",
+        "AlreadyExists",
+        "InvalidPath",
+        "PathTooLong",
+        "OpenFailed",
+        "CreateFailed",
+        "DupFailed",
+        "UnlinkFailed",
+        "RenameFailed",
+        "MkdirFailed",
+        "RmdirFailed",
+        "StatFailed",
+        "MetaFailed",
+        "ChmodFailed",
+        "ChownFailed",
+        "CopyFailed",
+        "TouchFailed",
+        "InvalidMode",
+        "InvalidMeta",
+        "ModeNotSupported",
+        "Readonly",
+        "RecursionDetected",
+        "NotImplemented",
+        "NoOpener",
+        "PersistentNotSupported",
+        "WrapperNotFound",
+        "WrapperDisabled",
+        "ProtocolUnsupported",
+        "WrapperRegistrationFailed",
+        "WrapperUnregistrationFailed",
+        "WrapperRestorationFailed",
+        "FilterNotFound",
+        "FilterFailed",
+        "CastFailed",
+        "CastNotSupported",
+        "MakeSeekableFailed",
+        "BufferedDataLost",
+        "NetworkSendFailed",
+        "NetworkRecvFailed",
+        "SslNotSupported",
+        "ResumptionFailed",
+        "SocketPathTooLong",
+        "OobNotSupported",
+        "ProtocolError",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(code_name == NULL ? "Generic" : code_name, names[i]) == 0) {
+            return (int64_t)i + 1;
+        }
+    }
+    return 2;
+}
+
+static PtnValue ptn_stream_error_value(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    const char *resolved_code_name = ptn_stream_error_code_case_name(code_name == NULL ? "Generic" : code_name);
+    if (resolved_code_name == NULL) {
+        resolved_code_name = "Generic";
+    }
+    PtnValue error = ptn_object_new_shell(runtime, "StreamError");
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("code"),
+        ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", resolved_code_name)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("message"),
+        ptn_owned_string(ptn_duplicate_string(message == NULL ? "" : message))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("wrapperName"),
+        ptn_owned_string(ptn_duplicate_string(wrapper_name == NULL ? "stream" : wrapper_name))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("severity"),
+        ptn_int((int64_t)severity)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("terminating"),
+        ptn_bool(terminating)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("param"),
+        param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(param))
+    );
+    return error;
+}
+
+static PtnValue ptn_stream_error_array_value(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key(0),
+        ptn_stream_error_value(runtime, message, wrapper_name, code_name, param, severity, terminating)
+    );
+    return result;
+}
+
+static PtnValue ptn_stream_last_errors_array_value(PtnRuntime *runtime) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
+        PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_stream_error_value(
+                runtime,
+                stored->message,
+                stored->wrapper_name,
+                stored->code_name,
+                stored->param,
+                stored->severity,
+                stored->terminating
+            )
+        );
+    }
+    return result;
+}
+
+static void ptn_throw_stream_exception_at(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *code_name,
+    PtnValue errors,
+    const char *path,
+    size_t line
+) {
+    const char *resolved_message = message == NULL ? "" : message;
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "StreamException",
+        ptn_duplicate_string(resolved_message),
+        strlen(resolved_message),
+        ptn_stream_error_code_value(code_name),
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_value_destroy(&exception->errors);
+    exception->errors = errors;
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static const char *ptn_stream_context_enum_case_name(PtnValue value, const char *class_name) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT ||
@@ -55970,10 +56159,19 @@ static PtnValue ptn_stream_open_failure_result(
         ptn_stream_clear_last_errors();
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
-        ptn_throw_exception_at(
+        ptn_throw_stream_exception_at(
             runtime,
-            "StreamException",
             detail,
+            code_name,
+            ptn_stream_error_array_value(
+                runtime,
+                detail,
+                wrapper_name,
+                code_name,
+                path,
+                PTN_E_WARNING,
+                terminating
+            ),
             runtime == NULL ? NULL : runtime->source_path,
             line
         );
@@ -56050,10 +56248,19 @@ static void ptn_stream_report_resource_error(
         );
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
-        ptn_throw_exception_at(
+        ptn_throw_stream_exception_at(
             runtime,
-            "StreamException",
             message == NULL ? "" : message,
+            code_name,
+            ptn_stream_error_array_value(
+                runtime,
+                message,
+                wrapper_name,
+                code_name,
+                NULL,
+                PTN_E_WARNING,
+                terminating
+            ),
             runtime == NULL ? NULL : runtime->source_path,
             line
         );
@@ -62122,51 +62329,7 @@ static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc
     (void)argc;
     (void)args;
     (void)line;
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
-        PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
-        const char *code_name = ptn_stream_error_code_case_name(stored->code_name == NULL ? "Generic" : stored->code_name);
-        if (code_name == NULL) {
-            code_name = "Generic";
-        }
-        PtnValue error = ptn_object_new_shell(runtime, "StreamError");
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("code"),
-            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", code_name)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("message"),
-            ptn_owned_string(ptn_duplicate_string(stored->message == NULL ? "" : stored->message))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("wrapperName"),
-            ptn_owned_string(ptn_duplicate_string(stored->wrapper_name == NULL ? "stream" : stored->wrapper_name))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("severity"),
-            ptn_int((int64_t)stored->severity)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("terminating"),
-            ptn_bool(stored->terminating)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("param"),
-            stored->param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(stored->param))
-        );
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_int_key((int64_t)i),
-            error
-        );
-    }
-    return result;
+    return ptn_stream_last_errors_array_value(runtime);
 }
 
 static PtnValue ptn_internal_stream_clear_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -63265,10 +63428,21 @@ static int ptn_file_get_contents_validate_uri_parser_context(
     return 1;
 }
 
+static int ptn_try_read_user_stream_wrapper_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    size_t line,
+    unsigned char **data_out,
+    size_t *len_out
+);
+
 static int ptn_file_get_contents_read_non_filter_source_bytes(
     PtnRuntime *runtime,
     const char *path,
     int use_include_path,
+    PtnResource *context,
     unsigned char **data_out,
     size_t *len_out,
     char **opened_path_out,
@@ -63285,6 +63459,19 @@ static int ptn_file_get_contents_read_non_filter_source_bytes(
     );
     if (data_url_result != 0) {
         return data_url_result;
+    }
+
+    int user_stream_result = ptn_try_read_user_stream_wrapper_bytes(
+        runtime,
+        "file_get_contents",
+        path,
+        context,
+        line,
+        data_out,
+        len_out
+    );
+    if (user_stream_result != 0) {
+        return user_stream_result;
     }
 
     const char *zlib_path = NULL;
@@ -63321,6 +63508,12 @@ static int ptn_php_filter_ascii_case_starts_with(const char *value, const char *
 }
 
 static const char *ptn_php_filter_find_resource_segment(const char *spec) {
+    const char *leading_needle = "resource=";
+    size_t leading_needle_len = strlen(leading_needle);
+    if (strlen(spec) >= leading_needle_len &&
+        ptn_php_filter_ascii_case_equal_len(spec, leading_needle, leading_needle_len)) {
+        return spec;
+    }
     const char *needle = "/resource=";
     size_t needle_len = strlen(needle);
     for (const char *cursor = spec; *cursor != '\0'; cursor++) {
@@ -63331,6 +63524,12 @@ static const char *ptn_php_filter_find_resource_segment(const char *spec) {
         }
     }
     return NULL;
+}
+
+static const char *ptn_php_filter_resource_path(const char *resource_segment) {
+    return resource_segment[0] == '/'
+        ? resource_segment + strlen("/resource=")
+        : resource_segment + strlen("resource=");
 }
 
 static int ptn_php_filter_apply_iconv_filter(
@@ -63549,6 +63748,7 @@ static int ptn_try_read_php_filter_url_bytes(
     PtnRuntime *runtime,
     const char *path,
     int use_include_path,
+    PtnResource *context,
     unsigned char **data_out,
     size_t *len_out,
     char **detail_out,
@@ -63565,7 +63765,7 @@ static int ptn_try_read_php_filter_url_bytes(
         errno = ENOENT;
         return 0;
     }
-    const char *resource = resource_segment + strlen("/resource=");
+    const char *resource = ptn_php_filter_resource_path(resource_segment);
     if (*resource == '\0') {
         errno = ENOENT;
         return 0;
@@ -63578,6 +63778,7 @@ static int ptn_try_read_php_filter_url_bytes(
         runtime,
         resource,
         use_include_path,
+        context,
         &data,
         &data_len,
         &opened_path,
@@ -63815,6 +64016,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             runtime,
             path,
             use_include_path,
+            context,
             &data,
             &data_len,
             &data_url_detail,
@@ -63830,6 +64032,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             runtime,
             path,
             use_include_path,
+            context,
             &data,
             &data_len,
             &opened_path,
@@ -191943,7 +192146,7 @@ static int ptn_closure_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getCurrent");
 }
 
-static int ptn_exception_method_exists(const char *method_name) {
+static int ptn_exception_method_exists(const char *class_name, const char *method_name) {
     return ptn_exception_name_equal(method_name, "getMessage")
         || ptn_exception_name_equal(method_name, "getCode")
         || ptn_exception_name_equal(method_name, "getFile")
@@ -191951,6 +192154,8 @@ static int ptn_exception_method_exists(const char *method_name) {
         || ptn_exception_name_equal(method_name, "getPrevious")
         || ptn_exception_name_equal(method_name, "getTrace")
         || ptn_exception_name_equal(method_name, "getTraceAsString")
+        || (ptn_exception_type_matches_name(class_name, "StreamException") &&
+            ptn_exception_name_equal(method_name, "getErrors"))
         || ptn_exception_name_equal(method_name, "getSeverity")
         || ptn_exception_name_equal(method_name, "__toString");
 }
@@ -192870,7 +193075,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "columnName");
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
-        return ptn_exception_method_exists(method_name);
+        return ptn_exception_method_exists(class_name, method_name);
     }
     return ptn_declared_class_method_exists_from_class_name(class_name, method_name);
 }
@@ -194797,6 +195002,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__toString",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        if (ptn_exception_type_matches_name(class_name, "StreamException")) {
+            ptn_append_method_name(result, &index, "getErrors");
+        }
         return result;
     }
     return result;
@@ -233557,6 +233765,7 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
             runtime,
             path,
             0,
+            NULL,
             &filtered_data,
             &filtered_len,
             &filter_detail,
@@ -235445,6 +235654,9 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
             }
             parent_class_name = ptn_declared_class_parent_name(parent_class_name);
         }
+    }
+    if (!exists && target.type == PTN_EXCEPTION) {
+        exists = ptn_exception_method_exists(target.as.exception->class_name, method_name);
     }
     free(method_name);
     free(class_name);
