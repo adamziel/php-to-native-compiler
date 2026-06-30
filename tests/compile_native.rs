@@ -36525,7 +36525,29 @@ try {
     echo $e->getMessage(), \"\\n\";
 }
 try {
+    hash_init('crc32', HASH_HMAC, 'secret');
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    hash_init('md5', HASH_HMAC);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
     hash_pbkdf2('md5', 'password', 'salt', 0);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+echo bin2hex(hash_hkdf(
+    'sha256',
+    hex2bin('0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b'),
+    42,
+    hex2bin('f0f1f2f3f4f5f6f7f8f9'),
+    hex2bin('000102030405060708090a0b0c')
+)), \"\\n\";
+try {
+    hash_hkdf('joaat', 'input key material');
 } catch (Throwable $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -36595,7 +36617,28 @@ try {
         "{stdout}"
     );
     assert!(
+        stdout.contains(
+            "hash_init(): Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("hash_init(): Argument #3 ($key) must not be empty when HMAC is requested\n"),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("hash_pbkdf2(): Argument #4 ($iterations) must be greater than 0\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "hash_hkdf(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n"
+        ),
         "{stdout}"
     );
     assert!(

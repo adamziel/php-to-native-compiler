@@ -74009,8 +74009,9 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         return ptn_null();
     }
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    int hmac = (flags & PTN_HASH_HMAC) != 0;
     PtnStringOperand key = { 0 };
-    if ((flags & PTN_HASH_HMAC) != 0 && argc >= 3) {
+    if (hmac && argc >= 3) {
         key = ptn_internal_expect_string_arg(runtime, "hash_init", 3, "key", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(algo);
@@ -74024,6 +74025,28 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         ptn_string_operand_free(key);
         ptn_hash_throw_invalid_algorithm(runtime, "hash_init");
         free(algo_name);
+        return ptn_null();
+    }
+    if (hmac && !ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        free(algo_name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "hash_init(): Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested"
+        );
+        return ptn_null();
+    }
+    if (hmac && key.len == 0) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        free(algo_name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "hash_init(): Argument #3 ($key) must not be empty when HMAC is requested"
+        );
         return ptn_null();
     }
     PtnHashOptions options = {0};
@@ -74047,7 +74070,7 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
     PtnValue result = ptn_hash_context_object(
         runtime,
         algo_name,
-        (flags & PTN_HASH_HMAC) != 0,
+        hmac,
         (const unsigned char *)key.data,
         key.len,
         options.has_seed ? options.seed : 0,
@@ -75147,6 +75170,209 @@ static PtnValue ptn_internal_hash_hmac_file(PtnRuntime *runtime, size_t argc, co
     free(algo_name);
     ptn_string_operand_free(algo);
     ptn_string_operand_free(key);
+    return result;
+}
+
+static PtnValue ptn_internal_hash_hkdf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 1, "algo", args[0], line);
+    PtnStringOperand key = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 2, "key", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    if (!ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+    if (key.len == 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(runtime, "ValueError", "hash_hkdf(): Argument #2 ($key) must not be empty");
+        return ptn_null();
+    }
+
+    int64_t length = argc >= 3 ? ptn_internal_expect_integer_arg(runtime, "hash_hkdf", 3, "length", args[2], line) : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+    if (length < 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_throw_exception(runtime, "ValueError", "hash_hkdf(): Argument #3 ($length) must be greater than or equal to 0");
+        return ptn_null();
+    }
+
+    PtnStringOperand info = { 0 };
+    if (argc >= 4) {
+        info = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 4, "info", args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            return ptn_null();
+        }
+    }
+    PtnStringOperand salt = { 0 };
+    if (argc >= 5) {
+        salt = ptn_internal_expect_string_arg(runtime, "hash_hkdf", 5, "salt", args[4], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            return ptn_null();
+        }
+    }
+
+    unsigned char probe_digest[PTN_HASH_MAX_DIGEST_LEN];
+    size_t digest_len = 0;
+    if (!ptn_hash_digest_bytes(algo_name, (const unsigned char *)"", 0, probe_digest, &digest_len)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+
+    size_t max_length = digest_len * 255;
+    if ((uint64_t)length > (uint64_t)max_length) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "hash_hkdf(): Argument #3 ($length) must be less than or equal to %zu",
+            max_length
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            ptn_abort_out_of_memory();
+        }
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_throw_exception(runtime, "ValueError", message);
+        return ptn_null();
+    }
+
+    unsigned char zero_salt[PTN_HASH_MAX_DIGEST_LEN];
+    const unsigned char *salt_bytes = (const unsigned char *)salt.data;
+    size_t salt_len = salt.len;
+    if (salt_len == 0) {
+        memset(zero_salt, 0, digest_len);
+        salt_bytes = zero_salt;
+        salt_len = digest_len;
+    }
+
+    unsigned char prk[PTN_HASH_MAX_DIGEST_LEN];
+    size_t prk_len = 0;
+    if (!ptn_hash_hmac_bytes(
+            algo_name,
+            salt_bytes,
+            salt_len,
+            (const unsigned char *)key.data,
+            key.len,
+            prk,
+            &prk_len
+        )) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+        return ptn_null();
+    }
+
+    size_t output_len = length == 0 ? digest_len : (size_t)length;
+    unsigned char *okm = malloc(output_len);
+    if (okm == NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_string_operand_free(info);
+        ptn_string_operand_free(salt);
+        ptn_abort_out_of_memory();
+    }
+
+    unsigned char previous[PTN_HASH_MAX_DIGEST_LEN];
+    size_t previous_len = 0;
+    size_t written_len = 0;
+    unsigned char block_index = 1;
+    while (written_len < output_len) {
+        if (previous_len > SIZE_MAX - info.len - 1) {
+            free(okm);
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            ptn_abort_out_of_memory();
+        }
+        size_t message_len = previous_len + info.len + 1;
+        unsigned char *message = malloc(message_len);
+        if (message == NULL) {
+            free(okm);
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            ptn_abort_out_of_memory();
+        }
+        if (previous_len != 0) {
+            memcpy(message, previous, previous_len);
+        }
+        if (info.len != 0) {
+            memcpy(message + previous_len, info.data, info.len);
+        }
+        message[message_len - 1] = block_index;
+        if (!ptn_hash_hmac_bytes(algo_name, prk, prk_len, message, message_len, previous, &previous_len)) {
+            free(message);
+            free(okm);
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(key);
+            ptn_string_operand_free(info);
+            ptn_string_operand_free(salt);
+            ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hkdf");
+            return ptn_null();
+        }
+        free(message);
+        size_t take = previous_len;
+        if (take > output_len - written_len) {
+            take = output_len - written_len;
+        }
+        memcpy(okm + written_len, previous, take);
+        written_len += take;
+        block_index++;
+    }
+
+    PtnValue result = ptn_owned_string_len((char *)okm, output_len);
+    free(algo_name);
+    ptn_string_operand_free(algo);
+    ptn_string_operand_free(key);
+    ptn_string_operand_free(info);
+    ptn_string_operand_free(salt);
     return result;
 }
 
@@ -187369,6 +187595,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hash_hmac", 3, 4, ptn_internal_hash_hmac },
         { "hash_hmac_algos", 0, 0, ptn_internal_hash_hmac_algos },
         { "hash_hmac_file", 3, 4, ptn_internal_hash_hmac_file },
+        { "hash_hkdf", 2, 5, ptn_internal_hash_hkdf },
         { "hash_init", 1, 4, ptn_internal_hash_init },
         { "hash_pbkdf2", 4, 6, ptn_internal_hash_pbkdf2 },
         { "hash_update", 2, 2, ptn_internal_hash_update },
@@ -235026,6 +235253,7 @@ static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
 static void ptn_internal_apply_sensitive_trace_frame(PtnTraceFrame *frame, const char *name) {
     static const unsigned char hash_equals_sensitive[] = { 1, 1 };
     static const unsigned char hash_hmac_sensitive[] = { 0, 0, 1, 0 };
+    static const unsigned char hash_hkdf_sensitive[] = { 0, 1, 0, 0, 0 };
     static const unsigned char password_hash_sensitive[] = { 1, 0, 0 };
     static const unsigned char password_verify_sensitive[] = { 1, 0 };
     if (frame == NULL || name == NULL) {
@@ -235040,6 +235268,12 @@ static void ptn_internal_apply_sensitive_trace_frame(PtnTraceFrame *frame, const
     if (ptn_ascii_case_equal(name, "hash_hmac")) {
         frame->sensitive_parameter_count = sizeof(hash_hmac_sensitive) / sizeof(hash_hmac_sensitive[0]);
         frame->sensitive_parameters = hash_hmac_sensitive;
+        frame->sensitive_variadic_position = (size_t)-1;
+        return;
+    }
+    if (ptn_ascii_case_equal(name, "hash_hkdf")) {
+        frame->sensitive_parameter_count = sizeof(hash_hkdf_sensitive) / sizeof(hash_hkdf_sensitive[0]);
+        frame->sensitive_parameters = hash_hkdf_sensitive;
         frame->sensitive_variadic_position = (size_t)-1;
         return;
     }
