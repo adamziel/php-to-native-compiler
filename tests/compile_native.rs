@@ -3083,6 +3083,47 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
 }
 
 #[test]
+fn compile_date_sun_nonfinite_args_to_native_binary() {
+    let root = temp_dir("ptn-native-date-sun-nonfinite-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-sun-nonfinite-args.php");
+    let output = root.join("date-sun-nonfinite-args-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+foreach ([[NAN, 1], [-INF, 1], [1, NAN], [1, INF]] as $args) {
+    try {
+        date_sun_info(1, $args[0], $args[1]);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+var_dump(date_sunset(1, SUNFUNCS_RET_STRING, NAN, 1));
+var_dump(date_sunrise(1, SUNFUNCS_RET_STRING, 1, NAN));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "date_sun_info(): Argument #2 ($latitude) must be finite\n",
+            "date_sun_info(): Argument #2 ($latitude) must be finite\n",
+            "date_sun_info(): Argument #3 ($longitude) must be finite\n",
+            "date_sun_info(): Argument #3 ($longitude) must be finite\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_by_ref_callback_return_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-by-ref-callback-return");
     fs::create_dir_all(&root).unwrap();

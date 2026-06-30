@@ -131156,6 +131156,32 @@ static int ptn_astro_rise_set_altitude(
     return 0;
 }
 
+static int ptn_date_validate_finite_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int arg_number,
+    const char *arg_name,
+    double value,
+    int throw_on_failure
+) {
+    if (isfinite(value)) {
+        return 1;
+    }
+    if (throw_on_failure) {
+        char message[128];
+        snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%d ($%s) must be finite",
+            function_name,
+            arg_number,
+            arg_name
+        );
+        ptn_throw_exception(runtime, "ValueError", message);
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_date_sun_event(
     PtnRuntime *runtime,
     int sunset,
@@ -131222,6 +131248,12 @@ static PtnValue ptn_internal_date_sun_event(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+    }
+    if (!ptn_date_validate_finite_arg(runtime, function_name, 3, "latitude", latitude, 0) ||
+        !ptn_date_validate_finite_arg(runtime, function_name, 4, "longitude", longitude, 0) ||
+        !ptn_date_validate_finite_arg(runtime, function_name, 5, "zenith", zenith, 0) ||
+        !ptn_date_validate_finite_arg(runtime, function_name, 6, "utcOffset", gmt_offset, 0)) {
+        return ptn_bool(0);
     }
 
     time_t timestamp_time = (time_t)timestamp;
@@ -131332,6 +131364,10 @@ static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, con
     }
     double longitude = ptn_internal_expect_float_arg(runtime, "date_sun_info", 3, "longitude", args[2], line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_date_validate_finite_arg(runtime, "date_sun_info", 2, "latitude", latitude, 1) ||
+        !ptn_date_validate_finite_arg(runtime, "date_sun_info", 3, "longitude", longitude, 1)) {
         return ptn_null();
     }
 

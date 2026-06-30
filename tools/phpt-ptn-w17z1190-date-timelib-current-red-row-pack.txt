@@ -1,0 +1,12 @@
+ext/date/tests/bug40743.phpt
+ext/date/tests/bug67251.phpt
+ext/date/tests/date-lenient-create.phpt
+ext/date/tests/bug33414-1.phpt
+ext/date/tests/date_parse_001.phpt
+ext/date/tests/gh10747-1.phpt
+ext/date/tests/strtotime_basic.phpt
+ext/date/tests/bug64157.phpt
+ext/date/tests/date_interval_non_relative_warning.phpt
+ext/date/tests/bug51987.phpt
+ext/date/tests/bug44780.phpt
+ext/date/tests/gh14732.phpt
