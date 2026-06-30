@@ -34938,6 +34938,9 @@ echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_UPPER_SIMPLE, 'UTF-8')
 echo bin2hex(mb_convert_case(\"Stra\\xc3\\x9fe\", MB_CASE_FOLD, 'UTF-8')), \"\\n\";\n\
 echo bin2hex(mb_convert_case(\"\\xce\\x9f\\xce\\xa3\\xce\\x9f\\xce\\xa3\", MB_CASE_LOWER, 'UTF-8')), \"\\n\";\n\
 echo bin2hex(mb_convert_case(\"\\xc5\\x89\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xf0\\x90\\x90\\xb8\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xe2\\xb0\\xb0\", 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_strtoupper(\"\\xd4\\xa5\", 'UTF-8')), \"\\n\";\n\
 mb_regex_encoding('UTF-8');\n\
 var_dump(mb_split(\"\\\\w\", \"\\xfc\"));\n\
 foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
@@ -34967,11 +34970,68 @@ foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
             "73747261737365\n",
             "cebfcf83cebfcf82\n",
             "cabc4e\n",
+            "f0909090\n",
+            "e2b080\n",
+            "d4a4\n",
             "bool(false)\n",
             "2:3132\n",
             "3:33f092\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mbstring_convert_variables_recursive_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-variables-recursive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-variables-recursive.php");
+    let output = root.join("mb-convert-variables-recursive-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('utf-8', 'auto', $a));\n\
+unset($a);\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+$a[] = '日本語テキスト';\n\
+var_dump(mb_convert_variables('utf-8', 'utf-8', $a), $a);\n\
+$a[] = &$a;\n\
+var_dump(mb_convert_variables('utf-8', 'utf-8', $a), $a);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches(
+                "Warning: mb_convert_variables(): Cannot convert recursively referenced values"
+            )
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nstring(5) \"UTF-8\"\narray(4) {"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[3]=>\n  string(21) \"日本語テキスト\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[4]=>\n  *RECURSION*"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

@@ -97089,6 +97089,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         if (cp >= 0x0430 && cp <= 0x044f) {
             return cp - 32;
         }
+        if (cp >= 0x0501 && cp <= 0x052f && (cp & 1u)) {
+            return cp - 1;
+        }
+        if (cp >= 0x2c30 && cp <= 0x2c5e) {
+            return cp - 0x30;
+        }
+        if (cp >= 0x10428 && cp <= 0x1044f) {
+            return cp - 0x28;
+        }
         if (cp >= 0xff41 && cp <= 0xff5a) {
             return cp - 32;
         }
@@ -97110,6 +97119,15 @@ static uint32_t ptn_mb_case_map_codepoint(uint32_t cp, int uppercase) {
         }
         if (cp >= 0x0410 && cp <= 0x042f) {
             return cp + 32;
+        }
+        if (cp >= 0x0500 && cp <= 0x052e && !(cp & 1u)) {
+            return cp + 1;
+        }
+        if (cp >= 0x2c00 && cp <= 0x2c2e) {
+            return cp + 0x30;
+        }
+        if (cp >= 0x10400 && cp <= 0x10427) {
+            return cp + 0x28;
         }
         if (cp >= 0xff21 && cp <= 0xff3a) {
             return cp + 32;
@@ -97141,6 +97159,9 @@ static int ptn_mb_codepoint_is_cased(uint32_t cp) {
         (cp >= 0x03b1 && cp <= 0x03c1) ||
         cp == 0x03c2 ||
         (cp >= 0x0410 && cp <= 0x044f) ||
+        (cp >= 0x0500 && cp <= 0x052f) ||
+        (cp >= 0x2c00 && cp <= 0x2c5e) ||
+        (cp >= 0x10400 && cp <= 0x1044f) ||
         (cp >= 0xff21 && cp <= 0xff3a) ||
         (cp >= 0xff41 && cp <= 0xff5a);
 }
@@ -101696,6 +101717,67 @@ static PtnValue ptn_internal_mb_decode_numericentity(PtnRuntime *runtime, size_t
     return ptn_mb_string_from_utf8(output.data, output.len, encoding == NULL ? "UTF-8" : encoding);
 }
 
+static int ptn_mb_convert_variables_value(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    const char *to_encoding,
+    const char *from_encoding,
+    size_t line,
+    PtnMbCheckStack *stack
+) {
+    if (slot->type == PTN_REFERENCE) {
+        return ptn_mb_convert_variables_value(
+            runtime,
+            &slot->as.reference->value,
+            to_encoding,
+            from_encoding,
+            line,
+            stack
+        );
+    }
+
+    if (slot->type == PTN_ARRAY) {
+        PtnArray *array = ptn_array_detach_value(slot);
+        if (ptn_mb_check_stack_contains(stack, array)) {
+            stack->saw_circular = 1;
+            return 0;
+        }
+        ptn_mb_check_stack_push(stack, array);
+        for (size_t i = 0; i < array->len; i++) {
+            if (!ptn_mb_convert_variables_value(
+                    runtime,
+                    &array->entries[i].value,
+                    to_encoding,
+                    from_encoding,
+                    line,
+                    stack
+                )) {
+                stack->len--;
+                return 0;
+            }
+        }
+        stack->len--;
+        return 1;
+    }
+
+    if (slot->type != PTN_STRING) {
+        return 1;
+    }
+
+    size_t out_len = 0;
+    char *out = ptn_mb_iconv_convert_alloc(
+        (const char *)slot->as.string.data,
+        slot->as.string.len,
+        from_encoding,
+        to_encoding,
+        &out_len
+    );
+    PtnValue assigned = ptn_owned_string_len(out, out_len);
+    ptn_value_destroy(slot);
+    *slot = assigned;
+    return 1;
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     const char *to_encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_variables", 1, "to_encoding", args[0], line, NULL, 0);
     const char *from_encoding = argc >= 2
@@ -101704,20 +101786,25 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
     if (to_encoding == NULL || from_encoding == NULL) {
         return ptn_bool(0);
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     for (size_t i = 2; i < argc; i++) {
         if (args[i].type != PTN_REFERENCE) {
             continue;
         }
-        PtnValue current = ptn_value_deref(args[i]);
-        if (current.type != PTN_STRING) {
-            continue;
+        if (!ptn_mb_convert_variables_value(
+                runtime,
+                &args[i].as.reference->value,
+                to_encoding,
+                from_encoding,
+                line,
+                &stack
+            )) {
+            ptn_mb_check_stack_free(&stack);
+            ptn_emit_warning(&runtime->diagnostics, "mb_convert_variables(): Cannot convert recursively referenced values", line);
+            return ptn_bool(0);
         }
-        size_t out_len = 0;
-        char *out = ptn_mb_iconv_convert_alloc((const char *)current.as.string.data, current.as.string.len, from_encoding, to_encoding, &out_len);
-        PtnValue assigned = ptn_owned_string_len(out, out_len);
-        ptn_reference_assign(runtime, args[i].as.reference, assigned);
-        ptn_value_destroy(&assigned);
     }
+    ptn_mb_check_stack_free(&stack);
     return ptn_string(to_encoding);
 }
 
