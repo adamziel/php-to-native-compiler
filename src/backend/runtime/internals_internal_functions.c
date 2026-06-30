@@ -220503,11 +220503,22 @@ static int ptn_spl_file_info_stat(
     PtnSplFileInfoData *data,
     const char *method_name,
     int use_lstat,
-    struct stat *info
+    struct stat *info,
+    size_t line
 ) {
     if (data == NULL || data->path == NULL || data->path[0] == '\0') {
         ptn_throw_exception(runtime, "RuntimeException", "SplFileInfo object is uninitialized");
         return 0;
+    }
+    char frame_name[128];
+    int frame_written = snprintf(
+        frame_name,
+        sizeof(frame_name),
+        "SplFileInfo->%s",
+        method_name
+    );
+    if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
+        ptn_abort_out_of_memory();
     }
     if (strncmp(data->path, "phar://", 7) == 0) {
         int ok = ptn_phar_uri_stat(data->path, info);
@@ -220516,14 +220527,25 @@ static int ptn_spl_file_info_stat(
             int written = snprintf(
                 message,
                 sizeof(message),
-                "%s(): stat failed for %s",
+                "SplFileInfo::%s(): stat failed for %s",
                 method_name,
                 data->path
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "RuntimeException", message);
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "RuntimeException",
+                ptn_duplicate_string(message),
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                frame_name,
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                0,
+                NULL
+            );
             return 0;
         }
         return 1;
@@ -220534,14 +220556,25 @@ static int ptn_spl_file_info_stat(
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): stat failed for %s",
+            "SplFileInfo::%s(): stat failed for %s",
             method_name,
             data->path
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "RuntimeException", message);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "RuntimeException",
+            ptn_duplicate_string(message),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            frame_name,
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            0,
+            NULL
+        );
         return 0;
     }
     return 1;
@@ -225822,7 +225855,7 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_null();
         }
         struct stat info;
-        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info)) {
+        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info, line)) {
             return ptn_null();
         }
         if (ptn_ascii_case_equal(name, "getType")) {
