@@ -56550,6 +56550,168 @@ echo $html->saveXml();
 }
 
 #[test]
+fn compile_dom_document_namespace_current_red_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-document-namespace-current-red-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-document-namespace-current-red-semantics.php");
+    let output = root.join("dom-document-namespace-current-red-semantics-bin");
+    fs::write(
+        root.join("empty.html"),
+        "<!doctype html><html><body></body></html>",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+class X extends DOMDocument {
+    public function __clone() {
+        var_dump($this->registerNodeClass('DOMDocument', 'X'));
+    }
+}
+clone (new X());
+
+function createElement($doc, $name, ?string $value = null) {
+    $element = $doc->createElement($name);
+    if ($value) $element->textContent = $value;
+    return $element;
+}
+
+function createElementNS($doc, $ns, $name, ?string $value = null) {
+    $element = $doc->createElementNS($ns, $name);
+    if ($value) $element->textContent = $value;
+    return $element;
+}
+
+function dumpList($list) {
+    echo $list->length, ":";
+    foreach ($list as $node) {
+        echo $node->nodeName, "=", $node->textContent, ";";
+    }
+    echo "\n";
+}
+
+$dom = Dom\HTMLDocument::createEmpty();
+$container = $dom->appendChild(createElement($dom, "container"));
+$container->appendChild(createElement($dom, "HTML", "1"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "html", "2"));
+$container->appendChild(createElementNS($dom, NULL, "html", "3"));
+$container->appendChild(createElementNS($dom, NULL, "HTML", "4"));
+$container->appendChild(createElementNS($dom, "urn:foo", "htML", "5"));
+$container->appendChild(createElement($dom, "foo:HTML", "6"));
+$container->appendChild(createElementNS($dom, "urn:a", "foo:HTML", "7"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "bar:HTML", "8"));
+$container->appendChild(createElementNS($dom, "http://www.w3.org/1999/xhtml", "bar:html", "9"));
+foreach (["HTml", "htML", "html", "HTML", "foo:html", "foo:HTML", "bar:HTML", "bar:html"] as $name) {
+    dumpList($dom->getElementsByTagName($name));
+}
+
+$legacy = new DOMDocument();
+$legacy->loadXML('<?xml version="1.0"?><container/>');
+$legacy->documentElement->setAttributeNS('some:ns', 'foo:bar', 'value');
+$legacy->documentElement->removeAttributeNS('some:ns', 'bar');
+echo $legacy->saveXML();
+
+$empty = Dom\HTMLDocument::createEmpty();
+$html = $empty->appendChild($empty->createElement('html'));
+var_dump($html->baseURI);
+$loaded = Dom\HTMLDocument::createFromFile(__DIR__ . "/empty.html", LIBXML_NOERROR);
+$base = $loaded->documentElement->baseURI;
+var_dump(str_starts_with($base, 'file://'), substr($base, -10));
+$withBase = Dom\HTMLDocument::createFromString("<!DOCTYPE html><html><head><base href=\"http://example.com/\"></head></html>");
+var_dump($withBase->documentElement->baseURI);
+
+$xml = DOM\XMLDocument::createFromString('<root class="A B C D"/>');
+$list = $xml->documentElement->classList;
+$counter = 0;
+foreach ($list as $key => $token) {
+    echo $key, "=", $token, "\n";
+    if (++$counter === 2) {
+        $list->value = 'E F G';
+    }
+}
+$iterator = $list->getIterator();
+$iterator->next();
+$list->value = 'X Y Z';
+var_dump($iterator->key(), $iterator->current());
+$iterator->rewind();
+var_dump($iterator->key(), $iterator->current());
+$list->value = '';
+var_dump($iterator->key(), $iterator->current(), $iterator->valid());
+
+$xdoc = Dom\XMLDocument::createFromString('<?xml version="1.0"?><root><p>hi</p><element xmlns="urn:e" xmlns:a="urn:a"><?target data?><!-- comment --></element></root>');
+$xpath = new Dom\XPath($xdoc);
+$result = $xpath->evaluate("//p");
+echo get_class($result), ":", $result->length, ":", $result->item(0)->textContent, "\n";
+var_dump($xpath->evaluate("string(//p)"));
+var_dump($xpath->evaluate("string-length(//p)"));
+var_dump($xpath->evaluate("boolean(//p)"));
+foreach ($xpath->query("//*/comment()|//*/processing-instruction()") as $item) {
+    echo get_class($item), ":", $item->textContent, "\n";
+}
+try {
+    $xpath->evaluate("//*/namespace::*");
+} catch (DOMException $e) {
+    echo $e->getCode(), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "2:HTML=1;HTML=2;\n",
+            "3:HTML=1;HTML=2;htML=5;\n",
+            "3:HTML=1;HTML=2;html=3;\n",
+            "3:HTML=1;HTML=2;HTML=4;\n",
+            "1:FOO:HTML=6;\n",
+            "2:FOO:HTML=6;foo:HTML=7;\n",
+            "1:BAR:HTML=9;\n",
+            "1:BAR:HTML=9;\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"some:ns\"/>\n",
+            "string(11) \"about:blank\"\n",
+            "bool(true)\n",
+            "string(10) \"empty.html\"\n",
+            "string(19) \"http://example.com/\"\n",
+            "0=A\n",
+            "1=B\n",
+            "2=G\n",
+            "int(1)\n",
+            "string(1) \"Y\"\n",
+            "int(0)\n",
+            "string(1) \"X\"\n",
+            "int(0)\n",
+            "NULL\n",
+            "bool(false)\n",
+            "Dom\\NodeList:1:hi\n",
+            "string(2) \"hi\"\n",
+            "float(2)\n",
+            "bool(true)\n",
+            "Dom\\ProcessingInstruction:data\n",
+            "Dom\\Comment: comment \n",
+            "9:The namespace axis is not well-defined in the living DOM specification. Use Dom\\Element::getInScopeNamespaces() or Dom\\Element::getDescendantNamespaces() instead.\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_modern_base_uri_value"));
+    assert!(c_source.contains("ptn_dom_xpath_simple_path_list_value"));
+    assert!(c_source.contains("ptn_object_invoke_clone_magic"));
+}
+
+#[test]
 fn compile_dom_namespace_lookup_and_xmlns_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-dom-namespace-lookup-xmlns-serialization");
     fs::create_dir_all(&root).unwrap();
