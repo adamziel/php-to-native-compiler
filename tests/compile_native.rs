@@ -2872,6 +2872,9 @@ var_dump(timezone_name_from_abbr('CET'));
 
 var_dump(in_array('Europe/London', timezone_identifiers_list()));
 var_dump(in_array('UTC', DateTimeZone::listIdentifiers(DateTimeZone::EUROPE | DateTimeZone::UTC)));
+$azores = new DateTime('2011-10-30 00:30:00', new DateTimeZone('Atlantic/Azores'));
+echo $azores->format('P e'), "\n";
+var_dump(in_array('Atlantic/Azores', timezone_identifiers_list(DateTimeZone::ATLANTIC)));
 
 $dto = new DateTime();
 $old = $dto->getTimezone();
@@ -2946,6 +2949,8 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "string(13) \"Etc/Universal\"\n",
             "string(13) \"Europe/Berlin\"\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "+00:00 Atlantic/Azores\n",
             "bool(true)\n",
             "string(10) \"US/Eastern\"\n",
             "string(3) \"UTC\"\n",
@@ -25379,6 +25384,12 @@ try { var_dump(round(1.5, mode: 1234)); } catch (ValueError $e) { echo $e->getMe
 var_dump(clamp(0, 1, 3), clamp(\"d\", \"c\", \"g\"), is_nan(clamp(NAN, 4, 6)));\n\
 try { var_dump(clamp(4, NAN, 6)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 echo number_format(1515.1, -3), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, 0), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -1), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -5), \"\\n\";\n\
+echo number_format(PHP_INT_MIN, -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX - 1024), -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX + 1), -1), \"\\n\";\n\
 echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
 echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
     )
@@ -25397,6 +25408,12 @@ round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)\n\
 int(1)\nstring(1) \"d\"\nbool(true)\n\
 clamp(): Argument #2 ($min) must not be NAN\n\
 2,000\n\
+9,223,372,036,854,775,807\n\
+9,223,372,036,854,775,810\n\
+9,223,372,036,854,800,000\n\
+-9,223,372,036,854,775,810\n\
+9,223,372,036,854,774,780\n\
+9,223,372,036,854,775,808\n\
 2T020.14\n\
 2,020F14\n"
     );
@@ -28342,6 +28359,9 @@ $dt = new DateTimeImmutable('2016-10-03 12:47:18.081921');\n\
 echo $dt->modify('yesterday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 echo $dt->modify('noon')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 echo $dt->modify('10 weekday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+$ms = new DateTime('2023-06-04 01:01:01.000001');\n\
+$ms->modify('-100 ms');\n\
+echo $ms->format('Y-m-d H:i:s.u'), \"\\n\";\n\
 $actual = new DateTimeImmutable('2022-07-21 15:00:10');\n\
 $delta = new DateInterval('PT0S');\n\
 $delta->f = -0.9;\n\
@@ -28369,6 +28389,7 @@ var_dump($actual < $lower, $actual > $upper);\n",
             "2016-10-02 00:00:00.000000\n",
             "2016-10-03 12:00:00.000000\n",
             "2016-10-17 12:47:18.081921\n",
+            "2023-06-04 01:01:00.900001\n",
             "15:00:10.900000 1658415610\n",
             "15:00:09.100000 1658415609\n",
             "bool(true)\n",
@@ -28376,6 +28397,50 @@ var_dump($actual < $lower, $actual > $upper);\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_datetime_modify_malformed_string_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-modify-malformed-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-modify-malformed-string.php");
+    let output = root.join("datetime-modify-malformed-string-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+$datetime = new DateTime('2020-01-01');
+var_dump(date_modify($datetime, ''));
+try {
+    var_dump($datetime->modify(''));
+} catch (DateMalformedStringException $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: date_modify(): Failed to parse time string () at position 0 ( ): Empty string"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nDateMalformedStringException: DateTime::modify(): Failed to parse time string () at position 0 ( ): Empty string\n"),
+        "{stdout}"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(stderr, "");
+    assert!(!stderr.contains("Fatal error"), "{stderr}");
 }
 
 #[test]
@@ -29759,6 +29824,79 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_zlib_wrapper_metadata_lock_and_unsupported_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-wrapper-metadata-lock");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-wrapper-metadata-lock.php");
+    let output = root.join("zlib-wrapper-metadata-lock-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/zlib-wrapper-meta.gz";
+$renamed = __DIR__ . "/zlib-wrapper-renamed.gz";
+@unlink($path);
+@unlink($renamed);
+
+$h = gzopen($path, "w");
+gzwrite($h, "payload");
+gzclose($h);
+
+$h = gzopen($path, "r");
+$meta = stream_get_meta_data($h);
+var_dump($meta["stream_type"], array_key_exists("wrapper_type", $meta), array_key_exists("uri", $meta));
+var_dump(flock($h, LOCK_EX), flock($h, LOCK_UN));
+gzclose($h);
+
+$wrapped = "compress.zlib://$path";
+$h = fopen($wrapped, "r");
+$meta = stream_get_meta_data($h);
+var_dump($meta["wrapper_type"], $meta["stream_type"], $meta["uri"] === $wrapped);
+fclose($h);
+
+var_dump(rename($wrapped, $renamed));
+var_dump(file_exists($path), file_exists($renamed));
+var_dump(unlink($wrapped));
+var_dump(file_exists($path));
+
+@unlink($path);
+@unlink($renamed);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: rename(): ZLIB wrapper does not support renaming"));
+    assert!(stdout.contains("Warning: unlink(): ZLIB does not allow unlinking"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "string(4) \"ZLIB\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+string(4) \"ZLIB\"\n\
+string(4) \"ZLIB\"\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zlib_functions_filters_and_constants_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-functions-filters");
     fs::create_dir_all(&root).unwrap();
@@ -31103,6 +31241,97 @@ var_dump(file_get_contents("/some/path/outside/open/basedir"));
         "{stdout}"
     );
     assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_open_basedir_blocks_local_filesystem_operations_to_native_binary() {
+    let root = temp_dir("ptn-native-open-basedir-filesystem-ops");
+    let base = root.join("base");
+    let outside = root.join("outside");
+    fs::create_dir_all(&base).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(base.join("ok.txt"), "ok").unwrap();
+    fs::write(outside.join("bad.txt"), "bad").unwrap();
+    let input = base.join("open-basedir-filesystem-ops.php");
+    let output = root.join("open-basedir-filesystem-ops-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ini_set("open_basedir", getcwd());
+$outsideFile = "../outside/bad.txt";
+$outsideDir = "../outside";
+var_dump(filemtime($outsideFile));
+var_dump(filetype($outsideFile));
+var_dump(fileinode($outsideFile));
+var_dump(fileowner($outsideFile));
+var_dump(filesize($outsideFile));
+var_dump(fileatime($outsideFile));
+var_dump(is_file($outsideFile));
+var_dump(scandir($outsideDir));
+var_dump(opendir($outsideDir));
+var_dump(mkdir("../outside/new"));
+var_dump(unlink($outsideFile));
+var_dump(copy("ok.txt", "../outside/copy.txt"));
+var_dump(file_get_contents("ok.txt"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).current_dir(&base).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    for function_name in [
+        "filemtime",
+        "filetype",
+        "fileinode",
+        "fileowner",
+        "filesize",
+        "fileatime",
+        "is_file",
+        "scandir",
+        "opendir",
+        "mkdir",
+        "unlink",
+        "copy",
+    ] {
+        assert!(
+            stdout.contains(&format!(
+                "{function_name}(): open_basedir restriction in effect."
+            )),
+            "{stdout}"
+        );
+    }
+    assert!(
+        stdout.contains("File(../outside/bad.txt) is not within the allowed path(s):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("scandir(../outside): Failed to open directory: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("scandir(): (errno 1): Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("opendir(../outside): Failed to open directory: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("copy(../outside/copy.txt): Failed to open stream: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("string(2) \"ok\"\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -50613,6 +50842,116 @@ int(14700)\n"
         stdout.contains("string(15) \"Europe/Brussels\"\n"),
         "{stdout}"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-timezone-mutation-display.php");
+    let output = root.join("intl-calendar-timezone-mutation-display-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+$time = strtotime('2012-02-29 00:00:00 +0000');\n\
+$intlcal = IntlCalendar::createInstance('UTC');\n\
+$intlcal->setTime($time * 1000);\n\
+$intlcal->add(IntlCalendar::FIELD_DAY_OF_MONTH, 1);\n\
+$intlcal->add(IntlCalendar::FIELD_HOUR, 5);\n\
+$intlcal->add(IntlCalendar::FIELD_MINUTE, 6);\n\
+intlcal_add($intlcal, IntlCalendar::FIELD_SECOND, 7);\n\
+var_dump($intlcal->getTime());\n\
+\n\
+$intlcal = IntlCalendar::createInstance('UTC');\n\
+$intlcal->clear();\n\
+$intlcal->set(2012, 1, 29, 23, 58);\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+var_dump($intlcal->get(IntlCalendar::FIELD_MINUTE));\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+$intlcal->clear();\n\
+$intlcal->setDateTime(2012, 1, 29, 23, 58);\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+var_dump($intlcal->get(IntlCalendar::FIELD_MINUTE));\n\
+var_dump($intlcal->isSet(IntlCalendar::FIELD_SECOND));\n\
+\n\
+$greg = new IntlGregorianCalendar(2012, 1, 28);\n\
+var_dump($greg->roll(IntlCalendar::FIELD_DAY_OF_MONTH, 2));\n\
+var_dump($greg->get(IntlCalendar::FIELD_MONTH));\n\
+var_dump($greg->get(IntlCalendar::FIELD_DAY_OF_MONTH));\n\
+$greg = new IntlGregorianCalendar(2012, 1, 28);\n\
+var_dump(intlcal_roll($greg, IntlCalendar::FIELD_DAY_OF_MONTH, 2));\n\
+var_dump($greg->get(IntlCalendar::FIELD_MONTH));\n\
+var_dump($greg->get(IntlCalendar::FIELD_DAY_OF_MONTH));\n\
+\n\
+$lsb = IntlTimeZone::createTimeZone('Europe/Lisbon');\n\
+$gmt = IntlTimeZone::getGMT();\n\
+var_dump($lsb->getDSTSavings());\n\
+var_dump(intltz_get_dst_savings($lsb));\n\
+var_dump($lsb->useDaylightTime());\n\
+var_dump($gmt->useDaylightTime());\n\
+var_dump(intltz_use_daylight_time($lsb));\n\
+var_dump(intltz_use_daylight_time($gmt));\n\
+ini_set('intl.default_locale', 'en_US');\n\
+var_dump($lsb->getDisplayName());\n\
+ini_set('intl.default_locale', 'pt_PT');\n\
+var_dump($lsb->getDisplayName());\n\
+ini_set('intl.default_locale', 'en_US');\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_GENERIC));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG_GENERIC));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_GMT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_LONG_GMT));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_SHORT_COMMONLY_USED));\n\
+var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_GENERIC_LOCATION));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_intlcal_add"));
+    assert!(c_source.contains("ptn_internal_intltz_get_dst_savings"));
+    assert!(c_source.contains("ptn_runtime_set_intl_default_locale"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("float(1330578367000)"), "{stdout}");
+    assert!(
+        stdout.contains("Calling IntlCalendar::set() with more than 2 arguments is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nint(58)\nbool(true)\nbool(false)\nint(58)\nbool(true)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.matches("bool(true)\nint(1)\nint(1)").count() >= 2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "int(3600000)\nint(3600000)\nbool(true)\nbool(false)\nbool(true)\nbool(false)"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(30) \"Western European Standard Time\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(32) \"Hora padrão da Europa Ocidental\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(3) \"GMT\""), "{stdout}");
+    assert!(stdout.contains("string(13) \"Portugal Time\""), "{stdout}");
+    assert!(
+        stdout.contains("string(21) \"Western European Time\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"+0000\""), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -80792,6 +81131,58 @@ bool(false)\n\
 string(1) \"0\"\n",
             input.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_compile_file_disabled_emits_notice() {
+    let root = temp_dir("ptn-phpc-opcache-compile-disabled");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-compile-disabled.php");
+    fs::write(&input, "<?php\nvar_dump(opcache_compile_file(__FILE__));\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable_cli=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Notice: Zend OPcache has not been properly started, can't compile file in {} on line 2\n\
+bool(false)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_interned_strings_buffer_upper_bound_warns() {
+    let root = temp_dir("ptn-phpc-opcache-interned-upper-bound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-interned-upper-bound.php");
+    fs::write(&input, "<?php\necho \"OK\\n\";\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.interned_strings_buffer=131072")
+        .arg("-d")
+        .arg("opcache.log_verbosity_level=2")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "PTN: Warning opcache.interned_strings_buffer must be less than or equal to 32767, 131072 given.\n\nOK\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

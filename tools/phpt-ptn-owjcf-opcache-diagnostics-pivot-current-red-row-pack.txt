@@ -1,0 +1,26 @@
+# Focused PHPT pivot row pack for ptn-owjcf.
+#
+# Source artifact:
+#   /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T015022Z.tsv
+#
+# Selection:
+#   First artifact-ordered opcache current-red rows after excluding the assigned
+#   ptn-owjcf pack, bug65915, and rows already present in committed opcache
+#   row-pack manifests.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-owjcf-opcache-diagnostics-pivot-current-red-row-pack.txt
+#
+# bucket: opcache-diagnostics-pivot-current-red rows=12
+ext/opcache/tests/ct_eval_frameless_002.phpt
+ext/opcache/tests/bug71127.phpt
+ext/opcache/tests/bug78376.phpt
+ext/opcache/tests/bug67215.phpt
+ext/opcache/tests/gh9259_001.phpt
+ext/opcache/tests/pipe_optimizations.phpt
+ext/opcache/tests/log_verbosity_bug.phpt
+ext/opcache/tests/get_configuration_matches_ini.phpt
+ext/opcache/tests/preload_006.phpt
+ext/opcache/tests/bug78429.phpt
+ext/opcache/tests/bug79665.phpt
+ext/opcache/tests/bug78175_2.phpt

@@ -356,6 +356,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->pcre_utf8_cache_valid = 0;
     runtime->intl_error_level = caller_runtime->intl_error_level;
     runtime->intl_use_exceptions = caller_runtime->intl_use_exceptions;
+    runtime->intl_default_locale = NULL;
     runtime->intl_last_error_message = NULL;
 }
 
@@ -1264,6 +1265,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->strtok_len = 0;
         runtime->strtok_offset = 0;
         runtime->strtok_has_state = 0;
+        free(runtime->intl_default_locale);
+        runtime->intl_default_locale = NULL;
         free(runtime->intl_last_error_message);
         runtime->intl_last_error_message = NULL;
     }
@@ -5648,6 +5651,54 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ZipArchive")) {
         if (strcmp(constant, "CREATE") == 0) {
             *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "EXCL") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "CHECKCONS") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "OVERWRITE") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+        if (strcmp(constant, "RDONLY") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "FL_OVERWRITE") == 0) {
+            *out = ptn_int(8192);
+            return 1;
+        }
+        if (strcmp(constant, "FL_ENC_RAW") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "ER_OK") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "ER_EXISTS") == 0) {
+            *out = ptn_int(10);
+            return 1;
+        }
+        if (strcmp(constant, "ER_CANCELLED") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "CM_DEFAULT") == 0) {
+            *out = ptn_int(-1);
+            return 1;
+        }
+        if (strcmp(constant, "CM_STORE") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "CM_DEFLATE") == 0) {
+            *out = ptn_int(8);
             return 1;
         }
     }
