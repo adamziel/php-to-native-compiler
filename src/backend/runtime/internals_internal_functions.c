@@ -136091,6 +136091,8 @@ typedef struct {
     PtnXmlParserFrame *stream_frames;
     size_t stream_frame_count;
     size_t stream_frame_capacity;
+    char *pending_data;
+    size_t pending_len;
 } PtnXmlParserData;
 
 static void ptn_xml_parser_frame_free(PtnXmlParserFrame *frame);
@@ -157435,6 +157437,7 @@ static void ptn_xml_parser_data_free(void *raw) {
         ptn_xml_parser_frame_free(&data->stream_frames[i]);
     }
     free(data->stream_frames);
+    free(data->pending_data);
     free(data);
 }
 
@@ -159833,6 +159836,156 @@ fail:
     return 0;
 }
 
+static int ptn_xml_parser_find_stream_token_end(const char *data, size_t len, size_t start, size_t *end_out) {
+    if (start >= len || data[start] != '<') {
+        *end_out = start;
+        return 1;
+    }
+    if (start + 4 <= len && memcmp(data + start, "<!--", 4) == 0) {
+        size_t pos = start + 4;
+        if (!ptn_xml_parser_skip_until(data, len, &pos, "-->")) {
+            return 0;
+        }
+        *end_out = pos;
+        return 1;
+    }
+    if (start + 9 <= len && memcmp(data + start, "<![CDATA[", 9) == 0) {
+        size_t pos = start + 9;
+        if (!ptn_xml_parser_skip_until(data, len, &pos, "]]>")) {
+            return 0;
+        }
+        *end_out = pos;
+        return 1;
+    }
+    if (start + 2 <= len && data[start + 1] == '?') {
+        size_t pos = start + 2;
+        if (!ptn_xml_parser_skip_until(data, len, &pos, "?>")) {
+            return 0;
+        }
+        *end_out = pos;
+        return 1;
+    }
+    if (
+        start + 2 <= len &&
+        data[start + 1] == '!' &&
+        ptn_xml_ascii_prefix_equal(data + start + 2, len - start - 2, "DOCTYPE")
+    ) {
+        size_t pos = start + 2;
+        if (!ptn_xml_parser_skip_doctype(data, len, &pos)) {
+            return 0;
+        }
+        *end_out = pos;
+        return 1;
+    }
+
+    char quote = '\0';
+    for (size_t pos = start + 1; pos < len; pos++) {
+        char ch = data[pos];
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '>') {
+            *end_out = pos + 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static size_t ptn_xml_parser_stream_safe_prefix_len(const char *data, size_t len) {
+    size_t pos = 0;
+    while (pos < len) {
+        if (data[pos] != '<') {
+            pos++;
+            continue;
+        }
+        size_t end = pos;
+        if (!ptn_xml_parser_find_stream_token_end(data, len, pos, &end)) {
+            return pos;
+        }
+        pos = end;
+    }
+    return len;
+}
+
+static void ptn_xml_parser_store_pending(PtnXmlParserData *parser, const char *data, size_t len) {
+    free(parser->pending_data);
+    parser->pending_data = NULL;
+    parser->pending_len = 0;
+    if (len == 0) {
+        return;
+    }
+    parser->pending_data = ptn_duplicate_string_len(data, len);
+    parser->pending_len = len;
+}
+
+static char *ptn_xml_parser_take_parse_buffer(PtnXmlParserData *parser, const char *data, size_t len, size_t *combined_len) {
+    *combined_len = len;
+    if (parser->pending_len == 0) {
+        return ptn_duplicate_string_len(data, len);
+    }
+    if (parser->pending_len > SIZE_MAX - len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t total = parser->pending_len + len;
+    char *combined = malloc(total + 1);
+    if (combined == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(combined, parser->pending_data, parser->pending_len);
+    memcpy(combined + parser->pending_len, data, len);
+    combined[total] = '\0';
+    free(parser->pending_data);
+    parser->pending_data = NULL;
+    parser->pending_len = 0;
+    *combined_len = total;
+    return combined;
+}
+
+static int ptn_xml_parse_into_struct_reference_unchanged(PtnReference *reference, PtnValue before) {
+    if (reference == NULL) {
+        return 0;
+    }
+    PtnValue current = ptn_value_deref(reference->value);
+    before = ptn_value_deref(before);
+    if (current.type != before.type) {
+        return 0;
+    }
+    switch (current.type) {
+        case PTN_NULL:
+            return 1;
+        case PTN_BOOL:
+            return current.as.boolean == before.as.boolean;
+        case PTN_INT:
+            return current.as.integer == before.as.integer;
+        case PTN_FLOAT:
+            return current.as.floating == before.as.floating;
+        case PTN_STRING:
+            return current.as.string.len == before.as.string.len &&
+                memcmp(current.as.string.data, before.as.string.data, current.as.string.len) == 0;
+        case PTN_ARRAY:
+            return current.as.array == before.as.array;
+        case PTN_OBJECT:
+            return current.as.object == before.as.object;
+        case PTN_CLOSURE:
+            return current.as.closure == before.as.closure;
+        case PTN_EXCEPTION:
+            return current.as.exception == before.as.exception;
+        case PTN_RESOURCE:
+            return current.as.resource == before.as.resource;
+        case PTN_REFERENCE:
+            return current.as.reference == before.as.reference;
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_xml_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnXmlParserData *parser = ptn_xml_parser_data(args[0]);
     if (parser == NULL) {
@@ -159849,13 +160002,26 @@ static PtnValue ptn_internal_xml_parse(PtnRuntime *runtime, size_t argc, const P
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    parser->parsing = 1;
     int is_final = argc >= 3 && ptn_is_truthy(args[2]);
-    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 0, is_final, NULL, NULL);
+    size_t parse_len = 0;
+    char *parse_data = ptn_xml_parser_take_parse_buffer(parser, data.data, data.len, &parse_len);
+    size_t safe_len = is_final ? parse_len : ptn_xml_parser_stream_safe_prefix_len(parse_data, parse_len);
+    if (!is_final && safe_len < parse_len) {
+        ptn_xml_parser_store_pending(parser, parse_data + safe_len, parse_len - safe_len);
+    }
+    if (safe_len == 0) {
+        free(parse_data);
+        ptn_string_operand_free(data);
+        (void)argc;
+        return ptn_int(1);
+    }
+    parser->parsing = 1;
+    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, parse_data, safe_len, line, 0, is_final, NULL, NULL);
     parser->parsing = 0;
     if (ok && is_final) {
         parser->finished = 1;
     }
+    free(parse_data);
     ptn_string_operand_free(data);
     (void)argc;
     return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(ok ? 1 : 0);
@@ -159889,6 +160055,12 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
     }
     PtnValue values = ptn_null();
     PtnValue index = ptn_null();
+    PtnValue values_before = args[2].type == PTN_REFERENCE
+        ? ptn_value_clone_deref(args[2].as.reference->value)
+        : ptn_null();
+    PtnValue index_before = argc >= 4 && args[3].type == PTN_REFERENCE
+        ? ptn_value_clone_deref(args[3].as.reference->value)
+        : ptn_null();
     parser->parsing = 1;
     int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 1, 1, &values, &index);
     parser->parsing = 0;
@@ -159897,15 +160069,24 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
     }
     ptn_string_operand_free(data);
     if (ok) {
-        if (args[2].type == PTN_REFERENCE) {
+        if (
+            args[2].type == PTN_REFERENCE &&
+            ptn_xml_parse_into_struct_reference_unchanged(args[2].as.reference, values_before)
+        ) {
             ptn_reference_assign(runtime, args[2].as.reference, values);
         }
-        if (argc >= 4 && args[3].type == PTN_REFERENCE) {
+        if (
+            argc >= 4 &&
+            args[3].type == PTN_REFERENCE &&
+            ptn_xml_parse_into_struct_reference_unchanged(args[3].as.reference, index_before)
+        ) {
             ptn_reference_assign(runtime, args[3].as.reference, index);
         }
         ptn_value_drop(&values);
         ptn_value_drop(&index);
     }
+    ptn_value_destroy(&values_before);
+    ptn_value_destroy(&index_before);
     return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(ok ? 1 : 0);
 }
 

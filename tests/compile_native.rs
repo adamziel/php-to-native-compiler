@@ -53618,6 +53618,79 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
 }
 
 #[test]
+fn compile_xml_parser_stream_chunks_and_struct_callback_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-stream-chunks-struct-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-stream-chunks-struct-mutation.php");
+    let output = root.join("xml-parser-stream-chunks-struct-mutation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$chunked = xml_parser_create();
+xml_set_default_handler($chunked, function ($parser, $data) {
+    var_dump($data);
+});
+foreach (str_split('<!DOCTYPE root [<!ENTITY writer "ptn">]><!-- hello --><root attr="&quot;&lt;&gt;&amp;"></root>') as $chunk) {
+    xml_parse($chunked, $chunk, false);
+}
+xml_parse($chunked, '', true);
+
+$immediate = xml_parser_create();
+xml_set_element_handler(
+    $immediate,
+    function ($parser, $name, $attributes) { echo "start:$name\n"; },
+    function ($parser, $name) { echo "end:$name\n"; }
+);
+xml_parse($immediate, '<ready/>');
+
+class XmlStructMutationHolder {
+    public $values;
+    public $index;
+}
+
+$holder = new XmlStructMutationHolder();
+$struct = xml_parser_create();
+xml_set_element_handler(
+    $struct,
+    function ($parser, $name, $attributes) use ($holder) {
+        $holder->values = 0xdead;
+        $holder->index = 0xbeef;
+    },
+    function ($parser, $name) {}
+);
+$holder->values = array();
+$holder->index = array();
+xml_parse_into_struct($struct, '<container/>', $holder->values, $holder->index);
+var_dump($holder->values, $holder->index);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(40) \"<!DOCTYPE root [<!ENTITY writer \"ptn\">]>\"\n",
+            "string(14) \"<!-- hello -->\"\n",
+            "string(33) \"<root attr=\"&quot;&lt;&gt;&amp;\">\"\n",
+            "string(7) \"</root>\"\n",
+            "start:READY\n",
+            "end:READY\n",
+            "int(57005)\n",
+            "int(48879)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_xml_parse"));
+    assert!(c_source.contains("ptn_internal_xml_parse_into_struct"));
+}
+
+#[test]
 fn compile_simplexml_dom_backed_basics_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-dom-backed-basics");
     fs::create_dir_all(&root).unwrap();
