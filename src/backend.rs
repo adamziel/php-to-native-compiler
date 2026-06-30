@@ -29662,6 +29662,9 @@ fn emit_instruction(
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+                out.push_str("        ptn_rethrow_exception(&runtime);\n");
+                out.push_str("    }\n");
 
                 let root_lookup_temp = values.next_temp();
                 let root_temp = values.next_temp();
@@ -43226,6 +43229,12 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+                out.push_str("        free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                out.push_str("        ptn_rethrow_exception(&runtime);\n");
+                out.push_str("    }\n");
 
                 let path = emit_array_path_segments(out, self, dimensions);
                 let value_temp = self.emit_materialized_value(out, value);
@@ -44110,6 +44119,9 @@ impl ValueEmitter {
         out.push_str("\", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        out.push_str("    }\n");
 
         let root_lookup_temp = self.next_temp();
         let root_temp = self.next_temp();
