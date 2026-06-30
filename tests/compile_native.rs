@@ -44411,7 +44411,7 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stdout.starts_with("test() called\nint(42)\nNULL\n"),
+        stdout.starts_with("test() called\nint(42)\nint(42)\n"),
         "{stdout}"
     );
     assert!(
@@ -44445,6 +44445,35 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_function_metadata_with_tentative_return"));
     assert!(c_source.contains("ptn_runtime_static_local_values"));
+}
+
+#[test]
+fn compile_reflection_function_static_variables_dump_dereferences_static_locals_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-static-vars-deref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-static-vars-deref.php");
+    let output = root.join("reflection-function-static-vars-deref-bin");
+    fs::write(
+        &input,
+        "<?php
+function reflected_static_variables() {
+    static $a = 42;
+    var_dump((new ReflectionFunction(__FUNCTION__))->getStaticVariables());
+}
+reflected_static_variables();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [\"a\"]=>\n  int(42)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -68258,6 +68287,50 @@ var_dump($a);",
             input.display(),
             input.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_offset_compound_assignment_handler_exception_stops_before_offset_to_native_binary()
+{
+    let root = temp_dir("ptn-native-array-offset-compound-handler-exception-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-compound-handler-exception-order.php");
+    let output = root.join("array-offset-compound-handler-exception-order-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function($_, $message) {
+    throw new Exception($message);
+});
+function simple_dim_assignment() {
+    $result = $a[$undef] = null;
+}
+function compound_dim_assignment() {
+    $result = $a[$undef] += 1;
+}
+try {
+    simple_dim_assignment();
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    compound_dim_assignment();
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Undefined variable $undef\nUndefined variable $a\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
