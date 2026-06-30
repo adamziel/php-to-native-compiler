@@ -20012,6 +20012,105 @@ ob_end_flush();
 }
 
 #[test]
+fn compile_session_cookie_lifetime_and_options_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-session-cookie-lifetime-options-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-cookie-lifetime-options-validation.php");
+    let output = root.join("session-cookie-lifetime-options-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ob_start();
+ini_set("session.cookie_lifetime", 100);
+ini_set("session.cookie_lifetime", "1.5");
+var_dump(ini_get("session.cookie_lifetime"));
+ini_set("session.cookie_lifetime", "abc");
+var_dump(ini_get("session.cookie_lifetime"));
+ini_set("session.cookie_lifetime", -1);
+var_dump(ini_get("session.cookie_lifetime"));
+ini_set("session.cookie_lifetime", "-99999999999999999999");
+var_dump(ini_get("session.cookie_lifetime"));
+ini_set("session.cookie_lifetime", PHP_INT_MAX);
+var_dump(ini_get("session.cookie_lifetime"));
+ini_set("session.cookie_lifetime", 200);
+var_dump(ini_get("session.cookie_lifetime"));
+
+try {
+    session_set_cookie_params([]);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    session_set_cookie_params(["unknown_key" => true, "secure_invalid" => true]);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(session_set_cookie_params(["secure" => true, "samesite" => "Strict", "lifetime" => 42]));
+var_dump(ini_get("session.cookie_secure"));
+var_dump(ini_get("session.cookie_samesite"));
+var_dump(ini_get("session.cookie_lifetime"));
+try {
+    session_set_cookie_params(["path" => "newpath/"], "arg after options array");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(ini_get("session.cookie_path"));
+ob_end_flush();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("ini_set(): session.cookie_lifetime must be of type int")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("ini_set(): session.cookie_lifetime must be between 0 and ")
+            .count(),
+        3,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("string(3) \"100\"").count(), 5, "{stdout}");
+    assert!(stdout.contains("string(3) \"200\""), "{stdout}");
+    assert!(
+        stdout.contains("session_set_cookie_params(): Argument #1 ($lifetime_or_options) must contain at least 1 valid key"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_set_cookie_params(): Argument #1 ($lifetime_or_options) contains an unrecognized key \"unknown_key\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_set_cookie_params(): Argument #1 ($lifetime_or_options) contains an unrecognized key \"secure_invalid\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\nstring(1) \"1\"\nstring(6) \"Strict\"\nstring(2) \"42\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("session_set_cookie_params(): Argument #2 ($path) must be null when argument #1 ($lifetime_or_options) is an array\nstring(1) \"/\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_user_save_handler_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-session-user-save-handler");
     fs::create_dir_all(&root).unwrap();

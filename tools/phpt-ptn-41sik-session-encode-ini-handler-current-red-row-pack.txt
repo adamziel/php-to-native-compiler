@@ -1,0 +1,12 @@
+ext/session/tests/015.phpt
+ext/session/tests/session_encode_serialize.phpt
+ext/session/tests/rfc1867_invalid_settings_2.phpt
+ext/session/tests/bug42596.phpt
+ext/session/tests/020.phpt
+ext/session/tests/session_ini_set.phpt
+ext/session/tests/gh13856.phpt
+ext/session/tests/gh13891.phpt
+ext/session/tests/user_session_module/bug60634_error_4.phpt
+ext/session/tests/session_module_name_errors.phpt
+ext/session/tests/bug41600.phpt
+ext/session/tests/bug73100.phpt

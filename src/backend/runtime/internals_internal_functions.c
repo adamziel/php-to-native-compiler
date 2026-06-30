@@ -111726,6 +111726,10 @@ static int ptn_session_ini_operand_must_not_contain_null_bytes(
 );
 static int ptn_session_ini_null_bytes_are_rejected(const char *ini_name);
 static int ptn_session_reject_active_ini_set(PtnRuntime *runtime, size_t line);
+static int ptn_session_cookie_lifetime_is_valid(int64_t lifetime);
+static void ptn_session_emit_cookie_lifetime_range_warning(PtnRuntime *runtime, const char *function_name, size_t line);
+static void ptn_session_emit_cookie_lifetime_type_warning(PtnRuntime *runtime, const char *function_name, size_t line);
+static int ptn_session_cookie_lifetime_operand_parse(PtnStringOperand value, int64_t *lifetime_out);
 
 static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -112236,6 +112240,23 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
             ptn_string_operand_free(option);
             ptn_value_destroy(&previous);
             return ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(session_ini->name, "session.cookie_lifetime")) {
+            int64_t lifetime = 0;
+            if (!ptn_session_cookie_lifetime_operand_parse(value, &lifetime)) {
+                ptn_session_emit_cookie_lifetime_type_warning(runtime, "ini_set", line);
+                ptn_string_operand_free(value);
+                ptn_string_operand_free(option);
+                ptn_value_destroy(&previous);
+                return ptn_bool(0);
+            }
+            if (!ptn_session_cookie_lifetime_is_valid(lifetime)) {
+                ptn_session_emit_cookie_lifetime_range_warning(runtime, "ini_set", line);
+                ptn_string_operand_free(value);
+                ptn_string_operand_free(option);
+                ptn_value_destroy(&previous);
+                return ptn_bool(0);
+            }
         }
         if (ptn_ascii_case_equal(session_ini->name, "session.save_handler") &&
             ptn_string_operand_ascii_case_equal(value, "user")) {
@@ -113566,13 +113587,36 @@ static int ptn_session_cookie_lifetime_is_valid(int64_t lifetime) {
     return lifetime >= 0 && lifetime <= INT_MAX;
 }
 
-static void ptn_session_emit_cookie_lifetime_warning(PtnRuntime *runtime, size_t line) {
+static void ptn_session_emit_cookie_lifetime_range_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
     char message[128];
     int written = snprintf(
         message,
         sizeof(message),
-        "session_set_cookie_params(): session.cookie_lifetime must be between 0 and %d",
+        "%s(): session.cookie_lifetime must be between 0 and %d",
+        function_name,
         INT_MAX
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
+static void ptn_session_emit_cookie_lifetime_type_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): session.cookie_lifetime must be of type int",
+        function_name
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -113586,6 +113630,49 @@ static int ptn_session_cookie_lifetime_value_is_valid(PtnValue value, int64_t *l
         *lifetime_out = lifetime;
     }
     return ptn_session_cookie_lifetime_is_valid(lifetime);
+}
+
+static int ptn_session_cookie_lifetime_operand_parse(
+    PtnStringOperand value,
+    int64_t *lifetime_out
+) {
+    PtnString string;
+    string.data = (const unsigned char *)value.data;
+    string.len = value.len;
+    string.payload = NULL;
+
+    PtnDecimalIntegerString parsed;
+    if (!ptn_parse_decimal_integer_string(string, &parsed)) {
+        return 0;
+    }
+    if (parsed.len == 0) {
+        if (lifetime_out != NULL) {
+            *lifetime_out = 0;
+        }
+        return 1;
+    }
+
+    static const char max_lifetime[] = "2147483647";
+    size_t max_len = sizeof(max_lifetime) - 1;
+    if (parsed.len > max_len ||
+        (parsed.len == max_len && memcmp(parsed.digits, max_lifetime, max_len) > 0)) {
+        if (lifetime_out != NULL) {
+            *lifetime_out = parsed.negative ? -1 : (int64_t)INT_MAX + 1;
+        }
+        return 1;
+    }
+
+    int64_t lifetime = 0;
+    for (size_t i = 0; i < parsed.len; i++) {
+        lifetime = lifetime * 10 + (int64_t)(parsed.digits[i] - '0');
+    }
+    if (parsed.negative) {
+        lifetime = -lifetime;
+    }
+    if (lifetime_out != NULL) {
+        *lifetime_out = lifetime;
+    }
+    return 1;
 }
 
 static char *ptn_session_create_id_string(PtnRuntime *runtime, const char *prefix) {
@@ -115925,7 +116012,7 @@ static int ptn_session_validate_cookie_lifetime_value(PtnRuntime *runtime, PtnVa
     int64_t lifetime = 0;
     if (!ptn_session_cookie_lifetime_value_is_valid(value, &lifetime)) {
         (void)lifetime;
-        ptn_session_emit_cookie_lifetime_warning(runtime, line);
+        ptn_session_emit_cookie_lifetime_range_warning(runtime, "session_set_cookie_params", line);
         return 0;
     }
     return 1;
@@ -115952,6 +116039,78 @@ static int ptn_session_validate_cookie_string_value(
     return ok;
 }
 
+static int ptn_session_cookie_param_option_key_is_valid(PtnArrayKey key) {
+    if (key.type != PTN_ARRAY_KEY_STRING) {
+        return 0;
+    }
+    return (key.string_len == sizeof("lifetime") - 1 && memcmp(key.as.string, "lifetime", key.string_len) == 0) ||
+        (key.string_len == sizeof("path") - 1 && memcmp(key.as.string, "path", key.string_len) == 0) ||
+        (key.string_len == sizeof("domain") - 1 && memcmp(key.as.string, "domain", key.string_len) == 0) ||
+        (key.string_len == sizeof("secure") - 1 && memcmp(key.as.string, "secure", key.string_len) == 0) ||
+        (key.string_len == sizeof("httponly") - 1 && memcmp(key.as.string, "httponly", key.string_len) == 0) ||
+        (key.string_len == sizeof("samesite") - 1 && memcmp(key.as.string, "samesite", key.string_len) == 0) ||
+        (key.string_len == sizeof("partitioned") - 1 && memcmp(key.as.string, "partitioned", key.string_len) == 0);
+}
+
+static void ptn_session_emit_cookie_param_unknown_key_warning(
+    PtnRuntime *runtime,
+    PtnArrayKey key,
+    size_t line
+) {
+    const char *key_name = key.type == PTN_ARRAY_KEY_STRING ? key.as.string : "";
+    size_t key_len = key.type == PTN_ARRAY_KEY_STRING ? key.string_len : 0;
+    int needed = snprintf(
+        NULL,
+        0,
+        "session_set_cookie_params(): Argument #1 ($lifetime_or_options) contains an unrecognized key \"%.*s\"",
+        (int)key_len,
+        key_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "session_set_cookie_params(): Argument #1 ($lifetime_or_options) contains an unrecognized key \"%.*s\"",
+        (int)key_len,
+        key_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static int ptn_session_validate_cookie_param_option_keys(
+    PtnRuntime *runtime,
+    PtnArray *options,
+    size_t line
+) {
+    int has_valid_key = 0;
+    if (options != NULL) {
+        for (size_t i = 0; i < options->len; i++) {
+            PtnArrayEntry *entry = &options->entries[i];
+            if (ptn_session_cookie_param_option_key_is_valid(entry->key)) {
+                has_valid_key = 1;
+            } else {
+                ptn_session_emit_cookie_param_unknown_key_warning(runtime, entry->key, line);
+            }
+        }
+    }
+    if (!has_valid_key) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "session_set_cookie_params(): Argument #1 ($lifetime_or_options) must contain at least 1 valid key"
+        );
+        return 0;
+    }
+    return 1;
+}
+
 static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_session_is_active(runtime)) {
         ptn_emit_runtime_warning(runtime, "session_set_cookie_params(): Session cookie parameters cannot be changed when a session is active (started from ptn on line 0)", line);
@@ -115964,6 +116123,19 @@ static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size
     if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_ARRAY) {
         PtnArray *options = ptn_value_deref(args[0]).as.array;
         PtnArrayEntry *entry;
+        for (size_t arg_index = 1; arg_index < argc; arg_index++) {
+            if (ptn_value_deref(args[arg_index]).type != PTN_NULL) {
+                ptn_throw_exception(
+                    runtime,
+                    "ValueError",
+                    "session_set_cookie_params(): Argument #2 ($path) must be null when argument #1 ($lifetime_or_options) is an array"
+                );
+                return ptn_null();
+            }
+        }
+        if (!ptn_session_validate_cookie_param_option_keys(runtime, options, line)) {
+            return ptn_null();
+        }
         if ((entry = ptn_session_array_string_entry(options, "lifetime")) != NULL &&
             !ptn_session_validate_cookie_lifetime_value(runtime, entry->value, line)) {
             return ptn_bool(0);
