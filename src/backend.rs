@@ -8114,6 +8114,13 @@ struct DeclarationFatal {
     message: String,
     line: usize,
     uncaught_error: bool,
+    pre_deprecation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EnumClassDeclarationFatal {
+    message: String,
+    pre_deprecation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8337,12 +8344,19 @@ fn emit_declaration_fatals(
     let Some(fatal) = fatals.first() else {
         return;
     };
+    if let Some(pre_deprecation) = &fatal.pre_deprecation {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(pre_deprecation));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
+        out.push_str(");\n");
+    }
     out.push_str("    fflush(stdout);\n");
     out.push_str("    if (runtime.diagnostics.display_errors) {\n");
     out.push_str(
         "        FILE *ptn_declaration_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
     );
-    if needs_separator {
+    if needs_separator || fatal.pre_deprecation.is_some() {
         out.push_str("        fputc('\\n', ptn_declaration_fatal_stream);\n");
     }
     out.push_str("        fputs(\"Fatal error: ");
@@ -33714,6 +33728,7 @@ fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<Declaration
                 message,
                 line: trait_decl.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         collect_property_hook_attribute_declaration_fatals(&mut fatals, &trait_decl.properties);
@@ -33735,6 +33750,13 @@ fn emit_class_declaration_fatals(
         return;
     };
     if fatal.uncaught_error {
+        if let Some(pre_deprecation) = &fatal.pre_deprecation {
+            out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+            out.push_str(&c_string(pre_deprecation));
+            out.push_str("\", ");
+            out.push_str(&fatal.line.to_string());
+            out.push_str(");\n");
+        }
         out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
         out.push_str(&c_string(&fatal.message));
         out.push_str("\", \"");
@@ -33744,6 +33766,13 @@ fn emit_class_declaration_fatals(
         out.push_str(");\n");
         out.push_str("        ptn_rethrow_exception(&runtime);\n");
         return;
+    }
+    if let Some(pre_deprecation) = &fatal.pre_deprecation {
+        out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(pre_deprecation));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
+        out.push_str(");\n");
     }
     out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
     out.push_str(&c_string(&fatal.message));
@@ -33768,6 +33797,7 @@ fn collect_class_declaration_fatals(
                 message: fatal.message.clone(),
                 line: fatal.line,
                 uncaught_error: class_declaration_fatal_is_uncaught_error(&fatal.message),
+                pre_deprecation: None,
             }),
     );
     if let Some(message) = reserved_declaration_name_fatal_message(
@@ -33782,13 +33812,15 @@ fn collect_class_declaration_fatals(
             message,
             line: class.line,
             uncaught_error: false,
+            pre_deprecation: None,
         });
     }
-    if let Some(message) = enum_class_declaration_fatal_message(class, classes) {
+    if let Some(fatal) = enum_class_declaration_fatal(class, classes) {
         fatals.push(DeclarationFatal {
-            message,
+            message: fatal.message,
             line: class.line,
             uncaught_error: false,
+            pre_deprecation: fatal.pre_deprecation,
         });
     }
     for method in &class.methods {
@@ -33800,6 +33832,7 @@ fn collect_class_declaration_fatals(
                 message,
                 line: method.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         if let Some(message) = magic_declaration_fatal_message(class, method, function) {
@@ -33807,6 +33840,7 @@ fn collect_class_declaration_fatals(
                 message,
                 line: method.line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
     }
@@ -33833,6 +33867,7 @@ fn collect_property_hook_attribute_declaration_fatals(
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_get_line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
         if property.hook_set_attributes.no_discard_count > 0
@@ -33842,6 +33877,7 @@ fn collect_property_hook_attribute_declaration_fatals(
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_set_line,
                 uncaught_error: false,
+                pre_deprecation: None,
             });
         }
     }
