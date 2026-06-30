@@ -1,0 +1,12 @@
+ext/phar/tests/zip/frontcontroller20.phar.phpt
+ext/zlib/tests/gzseek_basic.phpt
+ext/phar/tests/013.phpt
+ext/zlib/tests/gzrewind_basic.phpt
+ext/phar/tests/tar/phar_stub_error.phpt
+ext/phar/tests/zip/rmdir.phpt
+ext/phar/tests/include_path_advanced.phpt
+ext/phar/tests/phar_extract3.phpt
+ext/phar/tests/delete.phpt
+ext/phar/tests/rename_dir.phpt
+ext/zlib/tests/bug75273.phpt
+ext/phar/tests/gh20882.phpt
