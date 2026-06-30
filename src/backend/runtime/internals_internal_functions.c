@@ -200116,6 +200116,18 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
     const PtnObjectPropertyMetadata *metadata = is_dynamic
         ? NULL
         : ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    if (!is_dynamic &&
+        (ptn_ascii_case_equal(target.as.object->class_name, "XMLReader") ||
+         ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "XMLReader")) &&
+        property_owner != NULL &&
+        (ptn_ascii_case_equal(property_owner, "XMLReader") ||
+         ptn_declared_class_is_same_or_descendant(property_owner, "XMLReader")) &&
+        ptn_xml_reader_property_known(property_name)) {
+        PtnValue value = ptn_null();
+        if (ptn_internal_xml_property_read(runtime, target, property_name, line, &value)) {
+            return value;
+        }
+    }
     if (metadata != NULL && metadata->is_virtual) {
         ptn_reflection_property_throw_raw_virtual_error(
             runtime,

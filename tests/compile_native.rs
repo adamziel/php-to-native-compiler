@@ -54928,6 +54928,37 @@ var_dump($streamReader->depth);
 }
 
 #[test]
+fn compile_xmlreader_virtual_property_raw_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-virtual-property-raw-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlreader-virtual-property-raw-reflection.php");
+    let output = root.join("xmlreader-virtual-property-raw-reflection-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$property = (new ReflectionClass(XMLReader::class))->getProperty('nodeType');
+var_dump($property->isVirtual());
+var_dump($property->getRawValue(new XMLReader()));
+var_dump($property->getValue(new XMLReader()));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_get_raw_object_value"));
+}
+
+#[test]
 fn compile_libxml_error_buffer_and_dom_line_numbers_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-errors-dom-lines");
     fs::create_dir_all(&root).unwrap();
