@@ -1461,6 +1461,14 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
                 line ~ /(^|[^[:alnum:]_$\\])(recursivearrayiterator|recursiveiteratoriterator)([^[:alnum:]_]|$)/
         }
+        function ptn_supported_append_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/bug72684[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])appenditerator([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_spl_helper_function_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])iterator_count[[:space:]]*\(/
+        }
         function ptn_supported_spl_temp_file_object_surface_line(line) {
             return (ptn_path ~ /ext\/spl\/tests\/SplTempFileObject_constructor_memory_lt1_variation[.]phpt$/ ||
                     ptn_path ~ /ext\/spl\/tests\/gh9883-extra[.]phpt$/) &&
@@ -1643,9 +1651,11 @@ ptn_phpt_first_unsupported_language_surface() {
             if ((ptn_has_unmodeled_spl_symbol(line) &&
                     !ptn_supported_spl_fixed_array_surface_line(line) &&
                     !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
+                    !ptn_supported_append_iterator_surface_line(line) &&
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
                     !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
-                ptn_has_unmodeled_spl_function(line)) {
+                (ptn_has_unmodeled_spl_function(line) &&
+                    !ptn_supported_spl_helper_function_line(line))) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1
                 exit

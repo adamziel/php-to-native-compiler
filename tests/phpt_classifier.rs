@@ -2364,6 +2364,14 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/bug72684.phpt",
+            "--TEST--\nclosed generator append iterator\n--FILE--\n<?php\nfunction createGenerator() { yield 1; }\n$generator = createGenerator();\n$appendIterator = new AppendIterator();\n$appendIterator->append($generator);\niterator_to_array($appendIterator);\ntry { iterator_to_array($appendIterator); } catch (Exception $e) { echo $e->getMessage(); }\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_count_exception.phpt",
+            "--TEST--\niterator count exception\n--FILE--\n<?php\nfunction generator() { yield 1; throw new Exception('Iterator failed'); }\nvar_dump(iterator_count(generator()));\n--EXPECTF--\n",
+        ),
+        (
             "ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt",
             "--TEST--\nautoload validation\n--FILE--\n<?php\nspl_autoload_register('spl_autoload_call');\n--EXPECT--\n",
         ),

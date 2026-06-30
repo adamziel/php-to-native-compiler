@@ -1,0 +1,12 @@
+ext/standard/tests/math/cosh_variation.phpt
+ext/standard/tests/strings/strrchr_variation12.phpt
+ext/standard/tests/file/fileowner_variation3.phpt
+ext/standard/tests/file/file_variation5.phpt
+ext/standard/tests/strings/strrchr_basic.phpt
+ext/standard/tests/strings/strrchr_variation5.phpt
+ext/standard/tests/file/filestat.phpt
+ext/standard/tests/file/lstat_stat_error.phpt
+ext/standard/tests/strings/strncmp_variation1.phpt
+ext/standard/tests/math/cosh_basic.phpt
+ext/standard/tests/math/number_format_basiclong_64bit.phpt
+ext/standard/tests/general_functions/var_export_basic5.phpt

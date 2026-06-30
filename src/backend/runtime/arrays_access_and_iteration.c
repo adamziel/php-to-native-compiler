@@ -10832,6 +10832,36 @@ static PTN_UNUSED size_t ptn_generator_yield_line_at(PtnGenerator *generator, si
     return (size_t)line_value.as.integer;
 }
 
+static PTN_UNUSED int ptn_generator_resume_uses_iterator_helper_frame(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->trace_frame == NULL ||
+        runtime->trace_frame->function_name == NULL
+    ) {
+        return 0;
+    }
+    return strcmp(runtime->trace_frame->function_name, "iterator_count") == 0 ||
+        strcmp(runtime->trace_frame->function_name, "iterator_to_array") == 0 ||
+        strcmp(runtime->trace_frame->function_name, "iterator_apply") == 0;
+}
+
+static PTN_UNUSED int ptn_generator_trace_frame_is_generator_rewind(PtnValue frame) {
+    PtnValue resolved = ptn_value_deref(frame);
+    if (resolved.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnValue *class_slot = ptn_trace_array_string_slot(resolved, "class");
+    PtnValue *function_slot = ptn_trace_array_string_slot(resolved, "function");
+    PtnValue resolved_class = class_slot == NULL ? ptn_null() : ptn_value_deref(*class_slot);
+    PtnValue resolved_function = function_slot == NULL ? ptn_null() : ptn_value_deref(*function_slot);
+    return resolved_class.type == PTN_STRING &&
+        resolved_function.type == PTN_STRING &&
+        resolved_class.as.string.len == strlen("Generator") &&
+        memcmp(resolved_class.as.string.data, "Generator", strlen("Generator")) == 0 &&
+        resolved_function.as.string.len == strlen("rewind") &&
+        memcmp(resolved_function.as.string.data, "rewind", strlen("rewind")) == 0;
+}
+
 static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -10887,12 +10917,27 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
     } else {
         PtnValue existing = ptn_value_deref(exception->trace);
         int append_resume_frame = 0;
+        int use_iterator_helper_frame =
+            ptn_generator_resume_uses_iterator_helper_frame(runtime);
         if (existing.type == PTN_ARRAY && existing.as.array != NULL) {
             size_t yielded_from_line = ptn_generator_yield_line_at(generator, position);
             for (size_t i = 0; i < existing.as.array->len; i++) {
                 PtnValue copied_frame = ptn_value_clone_deref(existing.as.array->entries[i].value);
                 if (
+                    use_iterator_helper_frame &&
+                    i > 0 &&
+                    ptn_generator_trace_frame_is_generator_rewind(copied_frame)
+                ) {
+                    ptn_value_destroy(&copied_frame);
+                    continue;
+                }
+                if (use_iterator_helper_frame && i == 0) {
+                    ptn_value_destroy(&copied_frame);
+                    copied_frame = ptn_generator_trace_function_frame(generator, NULL, 0);
+                }
+                if (
                     i == 0 &&
+                    !use_iterator_helper_frame &&
                     !preserve_internal_resume_frame &&
                     yielded_from_line != 0 &&
                     ptn_value_deref(copied_frame).type == PTN_ARRAY &&
@@ -10923,7 +10968,9 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
                 ptn_generator_trace_function_frame(generator, NULL, 0)
             );
         }
-        if (resume_method_name != NULL && append_resume_frame) {
+        if (resume_method_name != NULL && use_iterator_helper_frame) {
+            ptn_exception_trace_append_frame(trace, runtime->trace_frame, &index);
+        } else if (resume_method_name != NULL && append_resume_frame) {
             ptn_generator_trace_append(
                 trace,
                 &index,
@@ -12221,6 +12268,15 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
         return ptn_null();
     }
     if (generator != NULL) {
+        if (
+            generator->started &&
+            !ptn_generator_position_valid(generator) &&
+            !generator->has_pending_exception &&
+            !generator->pending_exception_on_rewind
+        ) {
+            ptn_throw_exception(runtime, "Exception", "Cannot traverse an already closed generator");
+            return ptn_null();
+        }
         generator->started = 1;
         generator->position = 0;
         if (generator->delegate_sources != NULL) {

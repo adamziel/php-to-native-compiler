@@ -1,0 +1,12 @@
+tests/security/open_basedir_filemtime.phpt
+tests/security/open_basedir_filetype.phpt
+tests/security/open_basedir_scandir.phpt
+tests/security/open_basedir_fileinode.phpt
+tests/security/open_basedir_is_file.phpt
+tests/security/open_basedir_filesize.phpt
+tests/security/open_basedir_fileatime.phpt
+tests/security/open_basedir_mkdir.phpt
+tests/security/open_basedir_opendir.phpt
+tests/security/open_basedir_unlink.phpt
+tests/security/open_basedir_fileowner.phpt
+tests/security/open_basedir_copy.phpt
