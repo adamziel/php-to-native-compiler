@@ -29429,6 +29429,16 @@ foreach ($db->query('SELECT testing(name) FROM t') as $row) {
     echo $row['testing(name)'], "\n";
 }
 
+$db->createCollation('NATURAL', function($a, $b) { return strnatcmp($a, $b); });
+$db->query('CREATE TABLE c (name TEXT)');
+$db->query("INSERT INTO c VALUES ('2'), ('10'), ('1')");
+foreach ($db->query('SELECT name FROM c ORDER BY name COLLATE NATURAL') as $row) {
+    echo 'C', $row['name'], "\n";
+}
+foreach ($db->query('SELECT name FROM c ORDER BY name') as $row) {
+    echo 'D', $row['name'], "\n";
+}
+
 try {
     $db->sqliteCreateAggregate('foo', 'a', '');
 } catch (TypeError $e) {
@@ -29465,6 +29475,7 @@ try {
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("Method PDO::sqliteCreateFunction() is deprecated"));
     assert!(stdout.contains("\nphp\nphp6\n"));
+    assert!(stdout.contains("\nC1\nC2\nC10\nD1\nD10\nD2\n"));
     assert!(stdout.contains(
         "PDO::sqliteCreateAggregate(): Argument #2 ($step) must be a valid callback, function \"a\" not found or invalid function name\n"
     ));
