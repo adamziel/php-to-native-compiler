@@ -16418,6 +16418,33 @@ echo 'M';
 }
 
 #[test]
+fn compile_header_callback_shutdown_registration_does_not_run_to_native_binary() {
+    let root = temp_dir("ptn-native-header-callback-shutdown-registration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("header-callback-shutdown-registration.php");
+    let output = root.join("header-callback-shutdown-registration-bin");
+    fs::write(
+        &input,
+        "<?php
+header_register_callback(function () {
+    echo 'header';
+    register_shutdown_function(function () {
+        echo 'shutdown';
+    });
+});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "header");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();
@@ -28865,6 +28892,87 @@ var_dump(json_last_error_msg());
 }
 
 #[test]
+fn compile_json_current_red_row_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-json-current-red-row-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-current-red-row-semantics.php");
+    let output = root.join("json-current-red-row-semantics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class SerializingTest implements JsonSerializable
+{
+    public $a = 1;
+
+    public function __debugInfo()
+    {
+        return [ 'result' => $this->a ];
+    }
+
+    public function jsonSerialize(): mixed
+    {
+        print_r($this);
+        return $this;
+    }
+}
+
+var_dump(json_encode(new SerializingTest()));
+var_dump(json_encode(12.0, JSON_PRESERVE_ZERO_FRACTION));
+echo json_encode([12, 12.0], JSON_PRESERVE_ZERO_FRACTION), "\n";
+
+var_export(json_encode(new stdClass(), 0, 0)); echo "\n";
+$nested = new stdClass();
+$nested->x = new stdClass();
+var_export(json_encode($nested, 0, 1)); echo "\n";
+var_export(json_encode($nested, 0, 2)); echo "\n";
+
+echo bin2hex(json_decode("\"\x61\xf0\x80\x80\x41\"", true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+try {
+    json_decode("{", false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    $trace = $e->getTrace();
+    echo $e->getCode(), " ", $trace[0]["function"], " ", count($trace[0]["args"]), " ", $trace[0]["args"][3], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SerializingTest Object\n",
+            "(\n",
+            "    [result] => 1\n",
+            ")\n",
+            "string(7) \"{\"a\":1}\"\n",
+            "string(4) \"12.0\"\n",
+            "[12,12.0]\n",
+            "false\n",
+            "false\n",
+            "'{\"x\":{}}'\n",
+            "61efbfbdefbfbdefbfbd41\n",
+            "4 json_decode 4 4194304\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_print_r_magic_debug_info"));
+    assert!(c_source.contains("ptn_json_throw_exception"));
+}
+
+#[test]
 fn compile_ctype_extension_to_native_binary() {
     let root = temp_dir("ptn-native-ctype-extension");
     fs::create_dir_all(&root).unwrap();
@@ -28947,6 +29055,125 @@ var_dump($result->fetchArray(SQLITE3_NUM));
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\nstring(6) \"sqlite\"\nbool(true)\nint(1)\nint(2)\narray(2) {\n  [\"id\"]=>\n  int(2)\n  [\"label\"]=>\n  string(1) \"b\"\n}\nbool(false)\n'a''b'\narray(1) {\n  [0]=>\n  int(42)\n}\nbool(false)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_pdo_sqlite_callback_error_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-callback-error-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-callback-error-edges.php");
+    let output = root.join("pdo-sqlite-callback-error-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dsnFile = __DIR__ . '/db.dsn';
+$dbFile = __DIR__ . '/db.sqlite';
+file_put_contents($dsnFile, "sqlite:{$dbFile}");
+var_dump(file_exists($dbFile));
+set_error_handler(function ($errno, $errstr) {
+    echo "uri-handler: {$errstr}\n";
+    return true;
+});
+new PDO("uri:{$dsnFile}");
+restore_error_handler();
+var_dump(file_exists($dbFile));
+unlink($dbFile);
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+try {
+    new PDO("uri:{$dsnFile}");
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+restore_error_handler();
+var_dump(file_exists($dbFile));
+
+try {
+    Pdo\Pgsql::connect('sqlite::memory:');
+} catch (PDOException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$pdo = new Pdo\Sqlite('sqlite::memory:');
+try {
+    $pdo->createAggregate('foo', 'a', '');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$db = new SQLite3(':memory:');
+var_dump($db->enableExceptions(true));
+try {
+    $db->query('SELECT * FROM missing_table');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$dup = new SQLite3(':memory:');
+$dup->query('CREATE TABLE dog ( id INTEGER PRIMARY KEY, name TEXT )');
+$dup->query("INSERT INTO dog VALUES (1, 'a')");
+set_error_handler(function ($errno, $errstr) {
+    echo "sqlite-warning: {$errstr}\n";
+    return true;
+});
+$dup->query("INSERT INTO dog VALUES (1, 'a')");
+restore_error_handler();
+echo $dup->lastErrorCode(), '/', $dup->lastExtendedErrorCode(), "\n";
+
+class NativeSqliteAuthorizer {
+    public function __call(string $name, array $arguments) {
+        echo "auth {$name}\n";
+        return $arguments[0] == SQLite3::SELECT ? SQLite3::OK : SQLite3::DENY;
+    }
+}
+$auth = new SQLite3(':memory:');
+$auth->enableExceptions(true);
+$auth->setAuthorizer([new NativeSqliteAuthorizer(), 'authorizer']);
+var_dump($auth->querySingle('SELECT 1;'));
+try {
+    $auth->querySingle('CREATE TABLE blocked (id INTEGER);');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$rc = new ReflectionClass(SQLite3::class);
+$bad = $rc->newInstanceWithoutConstructor();
+try {
+    $bad->createfunction('x', 'strlen');
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(false)\nuri-handler: Looking up the DSN from a URI is deprecated")
+    );
+    assert!(
+        stdout.contains("bool(true)\nErrorException: Looking up the DSN from a URI is deprecated")
+    );
+    assert!(stdout.contains(
+        "bool(false)\nPdo\\Pgsql::connect() cannot be used for connecting to the \"sqlite\" driver"
+    ));
+    assert!(stdout
+        .contains("Pdo\\Sqlite::createAggregate(): Argument #2 ($step) must be a valid callback"));
+    assert!(stdout.contains("bool(false)\nno such table: missing_table\n"));
+    assert!(stdout.contains("sqlite-warning: SQLite3::query(): Unable to execute statement: UNIQUE constraint failed: dog.id\n19/1555\n"));
+    assert!(stdout.contains(
+        "auth authorizer\nint(1)\nauth authorizer\nUnable to prepare statement: not authorized\n"
+    ));
+    assert!(stdout.contains(
+        "Error: The SQLite3 object has not been correctly initialised or is already closed\n"
+    ));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -51712,6 +51939,14 @@ var_dump(function_exists('simplexml_import_dom'));
 dump_map(simplexml_load_string($docXml)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($dom)->getDocNamespaces(true));
 dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
+
+$sxe = simplexml_load_string('<container xmlns="urn:a">foo</container>');
+$element = Dom\import_simplexml($sxe);
+echo $element->ownerDocument->saveXml($element), "\n";
+$element->appendChild($element->ownerDocument->createElementNS('urn:a', 'child'));
+echo $element->ownerDocument->saveXml($element), "\n";
+$sxe->addChild('name', 'value');
+echo $element->ownerDocument->saveXml($element), "\n";
 "#,
     )
     .unwrap();
@@ -51750,6 +51985,9 @@ dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
             "a=urn:a\n",
             "d=urn:d\n",
             "--\n",
+            "<container xmlns=\"urn:a\">foo</container>\n",
+            "<container xmlns=\"urn:a\">foo<child/></container>\n",
+            "<container xmlns=\"urn:a\">foo<child/><name>value</name></container>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -53766,6 +54004,54 @@ var_dump($reader->getAttribute('baz'));
             "string(0) \"\"\n",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_xmlreader_reflection_virtual_raw_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-reflection-virtual-raw-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlreader-reflection-virtual-raw-properties.php");
+    let output = root.join("xmlreader-reflection-virtual-raw-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$prop = (new ReflectionClass(XMLReader::class))->getProperty("nodeType");
+var_dump($prop->isVirtual());
+var_dump($prop->getSettableType() instanceof ReflectionNamedType);
+var_dump($prop->getHooks());
+var_dump($prop->getRawValue(new XMLReader()));
+var_dump($prop->getValue(new XMLReader()));
+
+$reader = XMLReader::XML("<root>hi</root>");
+var_dump(json_encode($reader));
+var_export($reader);
+echo "\n";
+var_dump(get_object_vars($reader));
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "int(0)\n",
+            "int(0)\n",
+            "string(2) \"{}\"\n",
+            "\\XMLReader::__set_state(array(\n",
+            "))\n",
+            "array(0) {\n",
+            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -79608,6 +79894,42 @@ var_dump($inis['serialize_precision']);\n",
 }
 
 #[test]
+fn phpc_ini_get_all_reports_precision_startup_local_and_builtin_defaults() {
+    let root = temp_dir("ptn-phpc-ini-get-all-precision-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-get-all-precision-defaults.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n\
+ini_set('precision', '3');\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n\
+var_dump(ini_get_all('Core', false)['precision']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("precision=8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"8\"\nstring(1) \"8\"\nstring(2) \"14\"\nstring(1) \"8\"\nstring(1) \"3\"\nstring(2) \"14\"\nstring(1) \"3\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_serialize_precision_ini_controls_var_dump_float_stringification() {
     let root = temp_dir("ptn-phpc-serialize-precision-var-dump");
     fs::create_dir_all(&root).unwrap();
@@ -93535,6 +93857,22 @@ try {
 }
 restore_error_handler();
 var_dump(ReflectStaticChild::staticData());
+
+#[AllowDynamicProperties]
+class ReflectRawDynamic {}
+
+$sourceDynamic = new ReflectRawDynamic();
+$sourceDynamic->dyn = 1;
+$targetDynamic = new ReflectRawDynamic();
+$rawDynamic = new ReflectionProperty($sourceDynamic, 'dyn');
+set_error_handler(function ($errno, $errstr) {
+    echo \"handled:$errstr\\n\";
+    return true;
+});
+var_dump($rawDynamic->getRawValue($targetDynamic));
+restore_error_handler();
+$rawDynamic->setRawValue($targetDynamic, 5);
+var_dump($targetDynamic->dyn);
 ",
     )
     .unwrap();
@@ -93568,6 +93906,9 @@ var_dump(ReflectStaticChild::staticData());
             "string(5) \"hello\"\n",
             "caught:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
             "string(5) \"hello\"\n",
+            "handled:Undefined property: ReflectRawDynamic::$dyn\n",
+            "NULL\n",
+            "int(5)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
