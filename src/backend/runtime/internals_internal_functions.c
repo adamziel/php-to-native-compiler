@@ -202982,7 +202982,20 @@ static int ptn_reflection_dynamic_object_property_exists(
         if (entry->key.string_len != strlen(entry->key.as.string)) {
             return 1;
         }
-        return ptn_object_property_metadata(target.as.object, entry->key.as.string) == NULL;
+        const char *declaring_class = NULL;
+        int is_static = 0;
+        int visibility = 0;
+        int has_default = 0;
+        int modifiers = 0;
+        return !ptn_reflection_property_class_metadata(
+            target.as.object->class_name,
+            entry->key.as.string,
+            &declaring_class,
+            &is_static,
+            &visibility,
+            &has_default,
+            &modifiers
+        );
     }
     return 0;
 }
@@ -203290,6 +203303,10 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
     ptn_array_key_free(key);
     if (entry != NULL) {
         return ptn_value_clone_deref(entry->value);
+    }
+    if (is_dynamic) {
+        ptn_emit_undefined_property_warning(runtime, target.as.object, property_name, line);
+        return ptn_null();
     }
     if (metadata != NULL &&
         ptn_property_type_is_declared(metadata->type_kind) &&

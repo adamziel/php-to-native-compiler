@@ -96327,6 +96327,55 @@ var_dump(ReflectStaticChild::staticData());
 }
 
 #[test]
+fn compile_reflection_property_dynamic_raw_missing_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-dynamic-raw-missing-warns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-dynamic-raw-missing-warns.php");
+    let output = root.join("reflection-property-dynamic-raw-missing-warns-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class ReflectRawDynamicObject {}
+
+$rawSource = new ReflectRawDynamicObject();
+$rawSource->dyn = 'source';
+$rawDynamic = new ReflectionProperty($rawSource, 'dyn');
+set_error_handler(function ($errno, $errstr) {
+    echo \"raw:$errstr\\n\";
+    return true;
+});
+var_dump($rawDynamic->getRawValue(new ReflectRawDynamicObject()));
+restore_error_handler();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "raw:Undefined property: ReflectRawDynamicObject::$dyn\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_get_raw_object_value"));
+    assert!(c_source.contains("ptn_emit_undefined_property_warning"));
+}
+
+#[test]
 fn compile_reflection_property_qualified_names_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-qualified-names");
     fs::create_dir_all(&root).unwrap();

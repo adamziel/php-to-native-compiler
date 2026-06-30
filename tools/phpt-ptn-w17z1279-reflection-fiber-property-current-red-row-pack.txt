@@ -1,0 +1,12 @@
+ext/reflection/tests/ReflectionFiber_notrace_2.phpt
+ext/reflection/tests/ReflectionFiber_bug_gh11121_1.phpt
+ext/reflection/tests/ReflectionMethod_tentative_return_type.phpt
+ext/reflection/tests/ReflectionObject_export_basic3.phpt
+ext/reflection/tests/property_hooks/bug_001.phpt
+ext/reflection/tests/ReflectionProperty_isReadable_lazy_dynamic.phpt
+ext/reflection/tests/bug45765.phpt
+ext/reflection/tests/ReflectionEnum_getCase.phpt
+ext/reflection/tests/ReflectionFiber_bug_gh11121_2.phpt
+ext/reflection/tests/gh8444.phpt
+ext/reflection/tests/property_hooks/gh17713.phpt
+ext/reflection/tests/closures_bound_getDeclaringFunction.phpt
