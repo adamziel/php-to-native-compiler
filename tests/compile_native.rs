@@ -76602,6 +76602,50 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
 }
 
 #[test]
+fn compile_var_export_integral_float_formatting_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-integral-float-formatting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-integral-float-formatting.php");
+    let output = root.join("var-export-integral-float-formatting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([1.0, 123.0, -1.0, -123.0, 0.0, -0.0, 10000000000000000.0, -10000000000000000.0, 100000000000000000.0] as $value) {\n\
+    echo var_export($value, true), \"\\n\";\n\
+}\n\
+ini_set('serialize_precision', '0');\n\
+foreach ([10000000000000000.0, -10000000000000000.0, 100000000000000000.0] as $value) {\n\
+    echo var_export($value, true), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1.0\n\
+123.0\n\
+-1.0\n\
+-123.0\n\
+0.0\n\
+-0.0\n\
+10000000000000000.0\n\
+-10000000000000000.0\n\
+1.0E+17\n\
+1.0E+16\n\
+-1.0E+16\n\
+1.0E+17\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_format_var_export_integral_fixed"));
+}
+
+#[test]
 fn compile_array_set_operation_type_errors_are_catchable_to_native_binary() {
     let root = temp_dir("ptn-native-array-set-operation-type-errors");
     fs::create_dir_all(&root).unwrap();
