@@ -77743,7 +77743,14 @@ static char *ptn_intl_timezone_id_from_value(PtnValue value) {
 }
 
 static int ptn_intl_timezone_raw_offset_ms(const char *timezone) {
-    return ptn_intl_timezone_offset_seconds(timezone, 0) * 1000;
+    if (timezone == NULL || timezone[0] == '\0') {
+        timezone = ptn_current_timezone_name();
+    }
+    time_t january = ptn_datetime_utc_timestamp_for_parts(2012, 1, 1, 0, 0, 0);
+    time_t july = ptn_datetime_utc_timestamp_for_parts(2012, 7, 1, 0, 0, 0);
+    int january_offset = ptn_intl_timezone_offset_seconds(timezone, january);
+    int july_offset = ptn_intl_timezone_offset_seconds(timezone, july);
+    return (january_offset < july_offset ? january_offset : july_offset) * 1000;
 }
 
 static void ptn_intl_timezone_offsets_ms(const char *timezone, time_t timestamp, int *raw_offset_out, int *dst_offset_out) {
@@ -82532,6 +82539,13 @@ static PtnValue ptn_internal_intltz_to_date_time_zone(PtnRuntime *runtime, size_
         return ptn_null();
     }
     return ptn_intl_timezone_call_method(runtime, args[0], "toDateTimeZone", 0, NULL, line);
+}
+
+static PtnValue ptn_internal_intltz_get_raw_offset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        return ptn_null();
+    }
+    return ptn_intl_timezone_call_method(runtime, args[0], "getRawOffset", 0, NULL, line);
 }
 
 static PtnValue ptn_internal_intltz_get_dst_savings(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -187753,6 +187767,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_equivalent_id", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "intltz_get_gmt", 0, 0, ptn_internal_intltz_get_gmt },
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
+        { "intltz_get_raw_offset", 1, 1, ptn_internal_intltz_get_raw_offset },
         { "intltz_get_tz_data_version", 0, 0, ptn_internal_intltz_get_tz_data_version },
         { "intltz_get_unknown", 0, 0, ptn_internal_intltz_get_unknown },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },

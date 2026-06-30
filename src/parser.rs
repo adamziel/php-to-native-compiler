@@ -24500,6 +24500,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "intltz_get_dst_savings"
             | "intltz_get_equivalent_id"
             | "intltz_get_offset"
+            | "intltz_get_raw_offset"
             | "intltz_get_unknown"
             | "intltz_to_date_time_zone"
             | "intltz_use_daylight_time"
