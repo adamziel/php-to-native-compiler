@@ -28045,18 +28045,20 @@ new MyDateTime('not a date', 'UTC');\n",
         String::from_utf8_lossy(&incomplete_execution.stdout),
         String::from_utf8_lossy(&incomplete_execution.stderr)
     );
+    let incomplete_stdout = String::from_utf8(incomplete_execution.stdout).unwrap();
     let incomplete_stderr = String::from_utf8(incomplete_execution.stderr).unwrap();
+    assert_eq!(incomplete_stderr, "");
     assert!(
-        incomplete_stderr.contains("Uncaught DateObjectError: Object of type MyDateTime (inheriting DateTime) has not been correctly initialized"),
-        "{incomplete_stderr}"
+        incomplete_stdout.contains("Uncaught DateObjectError: Object of type MyDateTime (inheriting DateTime) has not been correctly initialized"),
+        "{incomplete_stdout}"
     );
     assert!(
-        incomplete_stderr.contains("DateTime->format('Y')"),
-        "{incomplete_stderr}"
+        incomplete_stdout.contains("DateTime->format('Y')"),
+        "{incomplete_stdout}"
     );
     assert!(
-        incomplete_stderr.contains("MyDateTime->__construct('not a date', Object(DateTimeZone))"),
-        "{incomplete_stderr}"
+        incomplete_stdout.contains("MyDateTime->__construct('not a date', Object(DateTimeZone))"),
+        "{incomplete_stdout}"
     );
 
     let unserialize_input = root.join("invalid-datetime-unserialize.php");
@@ -28082,19 +28084,21 @@ unserialize('a:2:{i:0;O:8:\"DateTime\":3:{s:4:\"date\";s:26:\"2000-01-01 00:00:0
         String::from_utf8_lossy(&unserialize_execution.stdout),
         String::from_utf8_lossy(&unserialize_execution.stderr)
     );
+    let unserialize_stdout = String::from_utf8(unserialize_execution.stdout).unwrap();
     let unserialize_stderr = String::from_utf8(unserialize_execution.stderr).unwrap();
+    assert_eq!(unserialize_stderr, "");
     assert!(
-        unserialize_stderr
+        unserialize_stdout
             .contains("Uncaught Error: Invalid serialization data for DateTime object"),
-        "{unserialize_stderr}"
+        "{unserialize_stdout}"
     );
     assert!(
-        unserialize_stderr.contains("[internal function]: DateTime->__unserialize(Array)"),
-        "{unserialize_stderr}"
+        unserialize_stdout.contains("[internal function]: DateTime->__unserialize(Array)"),
+        "{unserialize_stdout}"
     );
     assert!(
-        unserialize_stderr.contains("unserialize('a:2:{i:0;O:8:\"D...')"),
-        "{unserialize_stderr}"
+        unserialize_stdout.contains("unserialize('a:2:{i:0;O:8:\"D...')"),
+        "{unserialize_stdout}"
     );
 }
 
