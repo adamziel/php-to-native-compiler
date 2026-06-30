@@ -72076,6 +72076,8 @@ static const PtnTokenNameEntry PTN_TOKEN_NAMES[] = {
     { "T_NAME_RELATIVE", PTN_T_NAME_RELATIVE },
     { "T_NAME_QUALIFIED", PTN_T_NAME_QUALIFIED },
     { "T_NS_SEPARATOR", PTN_T_NS_SEPARATOR },
+    { "T_NULLSAFE_OBJECT_OPERATOR", PTN_T_NULLSAFE_OBJECT_OPERATOR },
+    { "T_BAD_CHARACTER", PTN_T_BAD_CHARACTER },
 };
 
 static const char *ptn_token_name_cstr(int64_t id) {
@@ -72347,8 +72349,18 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
             i += 2;
             continue;
         }
+        if (i + 3 <= len && memcmp(data + i, "?->", 3) == 0) {
+            ptn_token_get_all_append_token(result, &next_index, PTN_T_NULLSAFE_OBJECT_OPERATOR, data + i, 3, token_line);
+            i += 3;
+            continue;
+        }
         if (data[i] == '&') {
             ptn_token_get_all_append_token(result, &next_index, PTN_T_AND_EQUAL, data + i, 1, token_line);
+            i++;
+            continue;
+        }
+        if ((unsigned char)data[i] < 32) {
+            ptn_token_get_all_append_token(result, &next_index, PTN_T_BAD_CHARACTER, data + i, 1, token_line);
             i++;
             continue;
         }
