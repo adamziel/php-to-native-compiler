@@ -6954,6 +6954,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_pkcs12_read") && argument_index == 1 {
         return Some("certificates");
     }
+    if name.eq_ignore_ascii_case("openssl_encrypt") && argument_index == 5 {
+        return Some("tag");
+    }
     if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
         return Some("encrypted_data");
     }
@@ -10571,7 +10574,7 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
     if full_internal_dispatch {
-        out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+        out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"PhpToken\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
         out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
         out.push_str("            free(ptn_static_call_class);\n");
         out.push_str("            return ptn_static_call_result;\n");
@@ -33791,6 +33794,13 @@ fn collect_class_declaration_fatals(
             uncaught_error: false,
         });
     }
+    if let Some(message) = throwable_class_declaration_fatal_message(class, classes) {
+        fatals.push(DeclarationFatal {
+            message,
+            line: class.line,
+            uncaught_error: false,
+        });
+    }
     for method in &class.methods {
         let Some(function) = functions.get(method.function_index) else {
             continue;
@@ -33950,6 +33960,25 @@ fn enum_class_declaration_fatal_message(
     }
     if !class.properties.is_empty() || !class.static_properties.is_empty() {
         return Some(format!("Enum {} cannot include properties", class.name));
+    }
+    None
+}
+
+fn throwable_class_declaration_fatal_message(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if class.is_interface || class_extends_builtin_throwable(class, classes) {
+        return None;
+    }
+    if class_transitive_interfaces(class, classes)
+        .into_iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Throwable"))
+    {
+        return Some(format!(
+            "Class {} cannot implement interface Throwable, extend Exception or Error instead",
+            class.name
+        ));
     }
     None
 }

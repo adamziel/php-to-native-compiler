@@ -1,0 +1,5 @@
+ext/json/tests/json_decode_invalid_utf8.phpt
+ext/json/tests/bug81532.phpt
+ext/json/tests/json_encode_recursion_05.phpt
+ext/json/tests/bug50224.phpt
+ext/json/tests/json_decode_exceptions.phpt

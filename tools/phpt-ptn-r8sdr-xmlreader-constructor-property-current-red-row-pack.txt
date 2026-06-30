@@ -1,0 +1,12 @@
+ext/xmlreader/tests/fromString_custom_constructor_error.phpt
+ext/xmlreader/tests/bug64230.phpt
+ext/xmlreader/tests/cache_slot.phpt
+ext/xmlreader/tests/015.phpt
+ext/xmlreader/tests/bug74457.phpt
+ext/xmlreader/tests/bug71805.phpt
+ext/xmlreader/tests/bug70309.phpt
+ext/xmlreader/tests/bug73246.phpt
+ext/xmlreader/tests/015-move-errors.phpt
+ext/xmlreader/tests/bug51936.phpt
+ext/xmlreader/tests/bug81521.phpt
+ext/xmlreader/tests/virtual_properties.phpt
