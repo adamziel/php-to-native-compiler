@@ -33920,10 +33920,10 @@ fn reserved_declaration_name_segment(name: &str) -> Option<&str> {
     .then_some(segment)
 }
 
-fn enum_class_declaration_fatal_message(
+fn enum_class_declaration_fatal(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Option<String> {
+) -> Option<EnumClassDeclarationFatal> {
     if class.is_interface {
         return None;
     }
@@ -33932,20 +33932,23 @@ fn enum_class_declaration_fatal_message(
             .into_iter()
             .any(is_builtin_enum_interface_name)
         {
-            return Some(format!(
-                "Non-enum class {} cannot implement interface UnitEnum",
-                class.name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!(
+                    "Non-enum class {} cannot implement interface UnitEnum",
+                    class.name
+                ),
+                pre_deprecation: None,
+            });
         }
         if class.parent_name.as_deref().is_some_and(|parent_name| {
             is_builtin_enum_class_name(parent_name)
                 || class_by_name(classes, parent_name).is_some_and(|parent| parent.is_enum)
         }) {
             let parent_name = class.parent_name.as_deref().unwrap_or_default();
-            return Some(format!(
-                "Class {} cannot extend enum {}",
-                class.name, parent_name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!("Class {} cannot extend enum {}", class.name, parent_name),
+                pre_deprecation: None,
+            });
         }
         return None;
     }
@@ -33954,10 +33957,13 @@ fn enum_class_declaration_fatal_message(
         .iter()
         .any(|interface| interface.eq_ignore_ascii_case("UnitEnum"))
     {
-        return Some(format!(
-            "Enum {} cannot implement previously implemented interface UnitEnum",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Enum {} cannot implement previously implemented interface UnitEnum",
+                class.name
+            ),
+            pre_deprecation: None,
+        });
     }
     if class
         .interfaces
@@ -33965,27 +33971,39 @@ fn enum_class_declaration_fatal_message(
         .any(|interface| interface.eq_ignore_ascii_case("BackedEnum"))
     {
         if class.enum_backing_type.is_some() {
-            return Some(format!(
-                "Enum {} cannot implement previously implemented interface BackedEnum",
-                class.name
-            ));
+            return Some(EnumClassDeclarationFatal {
+                message: format!(
+                    "Enum {} cannot implement previously implemented interface BackedEnum",
+                    class.name
+                ),
+                pre_deprecation: None,
+            });
         }
-        return Some(format!(
-            "Non-backed enum {} cannot implement interface BackedEnum",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Non-backed enum {} cannot implement interface BackedEnum",
+                class.name
+            ),
+            pre_deprecation: None,
+        });
     }
     if class_transitive_interfaces(class, classes)
         .into_iter()
         .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
     {
-        return Some(format!(
-            "Enum {} cannot implement the Serializable interface",
-            class.name
-        ));
+        return Some(EnumClassDeclarationFatal {
+            message: format!(
+                "Enum {} cannot implement the Serializable interface",
+                class.name
+            ),
+            pre_deprecation: Some(format!("{}{}", class.name, SERIALIZABLE_DEPRECATION_SUFFIX)),
+        });
     }
     if !class.properties.is_empty() || !class.static_properties.is_empty() {
-        return Some(format!("Enum {} cannot include properties", class.name));
+        return Some(EnumClassDeclarationFatal {
+            message: format!("Enum {} cannot include properties", class.name),
+            pre_deprecation: None,
+        });
     }
     None
 }
