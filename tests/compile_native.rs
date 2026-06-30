@@ -25283,6 +25283,12 @@ try { var_dump(round(1.5, mode: 1234)); } catch (ValueError $e) { echo $e->getMe
 var_dump(clamp(0, 1, 3), clamp(\"d\", \"c\", \"g\"), is_nan(clamp(NAN, 4, 6)));\n\
 try { var_dump(clamp(4, NAN, 6)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 echo number_format(1515.1, -3), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, 0), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -1), \"\\n\";\n\
+echo number_format(PHP_INT_MAX, -5), \"\\n\";\n\
+echo number_format(PHP_INT_MIN, -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX - 1024), -1), \"\\n\";\n\
+echo number_format((float)(PHP_INT_MAX + 1), -1), \"\\n\";\n\
 echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
 echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
     )
@@ -25301,6 +25307,12 @@ round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)\n\
 int(1)\nstring(1) \"d\"\nbool(true)\n\
 clamp(): Argument #2 ($min) must not be NAN\n\
 2,000\n\
+9,223,372,036,854,775,807\n\
+9,223,372,036,854,775,810\n\
+9,223,372,036,854,800,000\n\
+-9,223,372,036,854,775,810\n\
+9,223,372,036,854,774,780\n\
+9,223,372,036,854,775,808\n\
 2T020.14\n\
 2,020F14\n"
     );
