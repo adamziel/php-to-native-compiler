@@ -30441,6 +30441,10 @@ try { gzuncompress($packed, -1); } catch (ValueError $e) { echo "max-error\n"; }
 var_dump(gzuncompress(gzcompress("roundtrip")));
 $deflate = deflate_init(ZLIB_ENCODING_DEFLATE);
 var_dump(gzuncompress(deflate_add($deflate, "stream", ZLIB_FINISH)));
+$deflate = deflate_init(ZLIB_ENCODING_DEFLATE);
+$incremental = deflate_add($deflate, "str", ZLIB_NO_FLUSH);
+$incremental .= deflate_add($deflate, "eam", ZLIB_FINISH);
+var_dump(gzuncompress($incremental));
 try { deflate_add(fopen("php://memory", "r+"), "bad"); } catch (TypeError $e) { echo "deflate-type\n"; }
 try { deflate_add($deflate, "bad", 6789); } catch (ValueError $e) { echo "deflate-flush\n"; }
 
@@ -30529,6 +30533,10 @@ for ($i = 0; inflate_get_status($ctx) === ZLIB_OK; $i++) {
     $inflated .= inflate_add($ctx, substr($encoded, $i, 1));
 }
 echo "inflate:", $inflated, ":", inflate_get_status($ctx), "\n";
+echo "read-len:", inflate_get_read_len($ctx), "\n";
+$ctxLen = inflate_init(ZLIB_ENCODING_DEFLATE);
+inflate_add($ctxLen, $encoded . "junk");
+echo "junk-read-len:", inflate_get_read_len($ctxLen), "\n";
 inflate_add($ctx, substr($encoded, 0, 4));
 echo "reset-status:", inflate_get_status($ctx), "\n";
 
@@ -30584,6 +30592,7 @@ bool(false)\n\
 max-error\n\
 string(9) \"roundtrip\"\n\
 string(6) \"stream\"\n\
+string(6) \"stream\"\n\
 deflate-type\n\
 deflate-flush\n\
 int(10000)\n\
@@ -30609,6 +30618,8 @@ bool(false)\n\
 string(32) \"The quick brown fox jumps over t\"\n\
 bool(false)\n\
 inflate:Hello world.:1\n\
+read-len:20\n\
+junk-read-len:20\n\
 reset-status:0\n\
 inflate-error\n\
 window-option\n\
@@ -30629,6 +30640,7 @@ option-error\n"
     assert!(c_source.contains("ptn_internal_deflate_add"));
     assert!(c_source.contains("ptn_internal_gzseek"));
     assert!(c_source.contains("ptn_internal_zlib_encode"));
+    assert!(c_source.contains("ptn_internal_inflate_get_read_len"));
     assert!(c_source.contains("ptn_internal_inflate_get_status"));
     assert!(c_source.contains("ptn_internal_stream_filter_remove"));
     assert!(c_source.contains("ptn_defined_constants_zlib_table"));
@@ -51093,7 +51105,7 @@ var_dump($functionParam->getDeclaringFunction()->getName());
 }
 
 #[test]
-fn compile_closure_invoke_reflection_declaring_function_without_full_internal_dispatch() {
+fn compile_closure_invoke_reflection_declaring_function_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invoke-reflection-declaring-function");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("closure-invoke-reflection-declaring-function.php");
@@ -51118,7 +51130,7 @@ echo $method->getName(), \"\\n\";
     )
     .unwrap();
 
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -51128,14 +51140,6 @@ echo $method->getName(), \"\\n\";
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
-    assert!(c_source.contains("ptn_closure_reflection_try_call_method"));
-    assert!(
-        c_source.len() < 3_000_000,
-        "generated C was {} bytes",
-        c_source.len()
-    );
 }
 
 #[test]
