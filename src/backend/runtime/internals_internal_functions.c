@@ -135828,6 +135828,7 @@ struct PtnXmlNode {
     int simplexml_imported_modern_dom;
     int namespace_declaration;
     int synthetic_namespace_declaration;
+    int allow_empty_prefixed_namespace_declaration;
     int id_attribute_state;
     int detached_parent_hidden;
     int allow_reconstructed_document_element_sibling;
@@ -136982,6 +136983,7 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     clone->simplexml_imported_modern_dom = node->simplexml_imported_modern_dom;
     clone->namespace_declaration = node->namespace_declaration;
     clone->synthetic_namespace_declaration = node->synthetic_namespace_declaration;
+    clone->allow_empty_prefixed_namespace_declaration = node->allow_empty_prefixed_namespace_declaration;
     clone->id_attribute_state = node->id_attribute_state;
     if (!node->modern_dom && ptn_xml_attribute_is_namespace_declaration(node)) {
         clone->parent = node->parent;
@@ -141152,7 +141154,9 @@ static int ptn_xml_namespace_declaration_is_invalid_for_serialization(PtnXmlNode
     if (strcmp(name, "xmlns:xmlns") == 0 && strcmp(uri, ptn_dom_xmlns_namespace_uri()) == 0) {
         return 0;
     }
-    return strncmp(name, "xmlns:", 6) == 0 && value[0] == '\0';
+    return strncmp(name, "xmlns:", 6) == 0 &&
+        value[0] == '\0' &&
+        !attr->allow_empty_prefixed_namespace_declaration;
 }
 
 static int ptn_xml_subtree_has_invalid_namespace_serialization(PtnXmlNode *node) {
@@ -144509,6 +144513,7 @@ static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode
     if (ptn_xml_attribute_name_is_namespace_declaration(name)) {
         attr->namespace_declaration = 1;
         attr->synthetic_namespace_declaration = 0;
+        attr->allow_empty_prefixed_namespace_declaration = 0;
         free(attr->namespace_uri);
         attr->namespace_uri = ptn_duplicate_string(ptn_dom_xmlns_namespace_uri());
     }
@@ -144855,6 +144860,16 @@ static const char *ptn_xml_lookup_namespace_uri(PtnXmlNode *element, const char 
     for (PtnXmlNode *current = element; current != NULL; current = current->parent) {
         if (current->type != PTN_XML_NODE_ELEMENT) {
             continue;
+        }
+        if (prefix != NULL && prefix[0] != '\0') {
+            char *node_prefix = ptn_xml_prefix_dup(current->name == NULL ? "" : current->name);
+            int node_prefix_matches = strcmp(node_prefix, prefix) == 0;
+            free(node_prefix);
+            if (node_prefix_matches &&
+                current->namespace_uri != NULL &&
+                current->namespace_uri[0] != '\0') {
+                return current->namespace_uri;
+            }
         }
         for (size_t i = 0; i < current->attribute_count; i++) {
             PtnXmlNode *attr = current->attributes[i];
@@ -151297,6 +151312,13 @@ static PtnValue ptn_dom_toggle_attribute_method(PtnRuntime *runtime, PtnValue re
     if (should_add) {
         if (!present) {
             ptn_xml_element_set_attribute_string(runtime, element, name_copy, "");
+            PtnXmlNode *created = ptn_xml_element_find_attribute(element, name_copy);
+            if (created != NULL &&
+                ptn_xml_attribute_is_namespace_declaration(created) &&
+                strncmp(created->name == NULL ? "" : created->name, "xmlns:", 6) == 0 &&
+                (created->value == NULL || created->value[0] == '\0')) {
+                created->allow_empty_prefixed_namespace_declaration = 1;
+            }
             ptn_xml_resolve_namespace_recursive(element);
         }
         free(name_copy);

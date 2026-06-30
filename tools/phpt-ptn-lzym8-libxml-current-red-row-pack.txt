@@ -1,0 +1,12 @@
+ext/simplexml/tests/gh15837.phpt
+ext/xmlwriter/tests/bug79029.phpt
+ext/xmlreader/tests/013.phpt
+ext/dom/tests/modern/html/parser/HTMLDocument_fromFile_parser_warning_03.phpt
+ext/dom/tests/modern/xml/simplexml_interop.phpt
+ext/xmlwriter/tests/bug79344.phpt
+ext/xmlreader/tests/fromString_custom_constructor_error.phpt
+ext/simplexml/tests/bug76712.phpt
+ext/xmlreader/tests/bug64230.phpt
+ext/dom/tests/modern/spec/Document_getElementsByTagNameNS.phpt
+ext/xmlwriter/tests/bug39504.phpt
+ext/dom/tests/delayed_freeing/namespace_xmlns_declaration_attribute_variation.phpt

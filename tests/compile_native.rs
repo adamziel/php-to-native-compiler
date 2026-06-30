@@ -58710,6 +58710,20 @@ try {
 } catch (DOMException $e) {
     echo $e->getMessage(), \"\\n\";
 }
+
+$legacy = new DOMDocument();
+$legacy->loadXML('<?xml version=\"1.0\"?><root xmlns:a=\"urn:a\"/>');
+var_dump($legacy->documentElement->toggleAttribute('xmlns:a'));
+var_dump($legacy->documentElement->toggleAttribute('xmlns:a'));
+echo $legacy->saveXML();
+
+$legacy = new DOMDocument();
+$legacy->loadXML('<?xml version=\"1.0\"?><root xmlns:p=\"urn:p\"><p:item/></root>');
+$item = $legacy->documentElement->firstChild;
+$legacy->documentElement->toggleAttribute('xmlns:p');
+$item->toggleAttribute('p:flag');
+var_dump($item->getAttributeNode('p:flag')->namespaceURI);
+echo $legacy->saveXML($item), \"\\n\";
 ",
     )
     .unwrap();
@@ -58736,6 +58750,12 @@ try {
             "<root/>\n",
             "string(13) \"<x xmlns=\"\"/>\"\n",
             "The resulting XML serialization is not well-formed\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"\"/>\n",
+            "string(5) \"urn:p\"\n",
+            "<p:item xmlns:p=\"urn:p\" p:flag=\"\"/>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
