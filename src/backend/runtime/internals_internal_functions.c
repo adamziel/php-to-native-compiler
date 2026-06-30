@@ -168112,6 +168112,7 @@ static int ptn_phar_build_from_iterator_add_path(
     const char *path,
     const char *base_directory,
     const char *iterator_class,
+    const char *entry_name_override,
     int64_t timestamp,
     PtnValue result,
     size_t line
@@ -168132,12 +168133,18 @@ static int ptn_phar_build_from_iterator_add_path(
         ptn_phar_throw_iterator_file_open_failed(runtime, iterator_class, path);
         return 0;
     }
-    char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
+    char *entry_name = entry_name_override == NULL
+        ? ptn_phar_relative_entry_name(path, base_directory)
+        : ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
     ptn_phar_archive_set_entry_with_timestamp(archive, entry_name, data, data_len, timestamp);
+    char *result_path = realpath(path, NULL);
+    if (result_path == NULL) {
+        result_path = ptn_duplicate_string(path);
+    }
     ptn_array_set_entry(
         result.as.array,
         ptn_array_string_key(entry_name),
-        ptn_owned_string(ptn_duplicate_string(path))
+        ptn_owned_string(result_path)
     );
     free(entry_name);
     free(data);
@@ -168191,6 +168198,17 @@ static PtnValue ptn_phar_build_from_iterator_result(
         }
         if (runtime->exceptions->active_exception == NULL) {
             char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
+            char *entry_name_override = NULL;
+            if (base_directory == NULL) {
+                PtnValue key_value = ptn_value_deref(key);
+                if (key_value.type == PTN_STRING ||
+                    key_value.type == PTN_INT ||
+                    key_value.type == PTN_FLOAT) {
+                    entry_name_override = ptn_phar_iterator_string_from_value(key);
+                    free(entry_name);
+                    entry_name = ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
+                }
+            }
             int64_t timestamp = 0;
             if (ptn_phar_iterator_item_timestamp(runtime, current, path, entry_name, line, &timestamp) &&
                 runtime->exceptions->active_exception == NULL) {
@@ -168200,11 +168218,13 @@ static PtnValue ptn_phar_build_from_iterator_result(
                     path,
                     base_directory,
                     iterator_class,
+                    entry_name_override,
                     timestamp,
                     result,
                     line
                 );
             }
+            free(entry_name_override);
             free(entry_name);
         }
         free(path);

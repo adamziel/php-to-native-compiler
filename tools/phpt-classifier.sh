@@ -2498,6 +2498,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/019c.phpt|\
         ext/phar/tests/bug54395.phpt|\
         ext/phar/tests/bug79503.phpt|\
+        ext/phar/tests/zip/phar_buildfromiterator4.phpt|\
         ext/phar/tests/phar_buildfromiterator10.phpt|\
         ext/phar/tests/buildFromIterator_user_overrides/getMTime_errors.phpt|\
         ext/phar/tests/phar_oo_004.phpt|\

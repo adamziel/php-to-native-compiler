@@ -60367,6 +60367,76 @@ var_dump(isset($result['content/hello.txt']));
 }
 
 #[test]
+fn compile_phar_build_from_iterator_uses_key_without_base_directory_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-key.php");
+    let output = root.join("phar-build-from-iterator-key-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyIterator implements Iterator {
+    private array $a;
+    public function __construct(array $a) { $this->a = $a; }
+    public function next(): void { echo "next\n"; next($this->a); }
+    public function current(): mixed { echo "current\n"; return current($this->a); }
+    public function key(): mixed { echo "key\n"; return key($this->a); }
+    public function valid(): bool { echo "valid\n"; return current($this->a); }
+    public function rewind(): void { echo "rewind\n"; reset($this->a); }
+}
+
+chdir(__DIR__);
+file_put_contents('iterator-source.txt', "payload\n");
+$phar = new Phar(__DIR__ . '/iterator-no-base.phar.zip');
+var_dump($phar->buildFromIterator(new MyIterator(['entry.txt' => 'iterator-source.txt'])));
+var_dump(isset($phar['entry.txt']));
+echo $phar['entry.txt']->getContent();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let source_path = root.join("iterator-source.txt").display().to_string();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "rewind\n",
+                "valid\n",
+                "current\n",
+                "key\n",
+                "next\n",
+                "valid\n",
+                "array(1) {{\n",
+                "  [\"entry.txt\"]=>\n",
+                "  string({}) \"{}\"\n",
+                "}}\n",
+                "bool(true)\n",
+                "payload\n",
+            ),
+            source_path.len(),
+            source_path
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_build_from_iterator_result"));
+    assert!(c_source.contains("ptn_phar_iterator_string_from_value"));
+}
+
+#[test]
 fn compile_phar_iterator_mtime_and_add_from_string_to_native_binary() {
     let root = temp_dir("ptn-native-phar-iterator-mtime-add-string");
     fs::create_dir_all(&root).unwrap();

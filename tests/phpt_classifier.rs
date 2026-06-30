@@ -2592,6 +2592,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_build_from_iterator_keyed_zip = classify_at_relative_path(
+        "--TEST--\nphar buildFromIterator keyed zip\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\nclass It implements Iterator { function rewind(): void {} function valid(): bool { return false; } function current(): mixed {} function key(): mixed {} function next(): void {} }\n$phar = new Phar(__DIR__ . '/archive.phar.zip');\n$phar->buildFromIterator(new It);\n--EXPECT--\n",
+        "ext/phar/tests/zip/phar_buildfromiterator4.phpt",
+    );
+    assert_eq!(
+        phar_build_from_iterator_keyed_zip.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let pdo_mysql_service = classify_at_relative_path(
         "--TEST--\npdo mysql service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
         "ext/pdo_mysql/tests/service.phpt",
