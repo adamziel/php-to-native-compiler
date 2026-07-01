@@ -15064,6 +15064,29 @@ fn parser_accepts_braced_property_interpolation() {
 }
 
 #[test]
+fn parser_accepts_braced_property_offset_interpolation_as_expression() {
+    let program = parser::parse("<?php echo \"value={$object->values[$key]}\\n\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    let StringPart::Expression(expr) = &parts[1] else {
+        panic!("expected expression interpolation");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } if matches!(array.as_ref(), Expr::PropertyFetch { name, .. } if name == "values")
+            && matches!(index.as_ref(), Expr::Variable(name, _) if name == "key")
+    ));
+}
+
+#[test]
 fn compile_braced_chained_property_interpolation_to_native_binary() {
     let root = temp_dir("ptn-native-braced-chained-property-interpolation");
     fs::create_dir_all(&root).unwrap();
@@ -15095,6 +15118,36 @@ echo \"name={$user->name} label={$user->profile->label}\\n\";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "name=Ada label=ready\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_braced_property_offset_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-property-offset-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-property-offset-interpolation.php");
+    let output = root.join("braced-property-offset-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bag {
+    public $values = ['name' => 'Ada', 'role' => 'compiler'];
+}
+$bag = new Bag();
+$key = 'role';
+echo \"value={$bag->values[$key]}\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "value=compiler\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
