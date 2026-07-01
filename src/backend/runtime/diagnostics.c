@@ -94,9 +94,10 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     ptn_symbols_set_len(symbols, name, strlen(name), value);
 }
 
-static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at(
+static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at_len(
     PtnSymbolTable *symbols,
     const char *name,
+    size_t name_len,
     PtnValue value,
     PtnRuntime *runtime,
     size_t line
@@ -104,7 +105,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at(
     PtnValue stored_value = ptn_value_clone(value);
     ptn_gc_attach_value_runtime(runtime, stored_value, 0);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
-    size_t index = ptn_symbols_find(symbols, name);
+    size_t index = ptn_symbols_find_len(symbols, name, name_len);
     if (index < symbols->len) {
         PtnValue old_value = symbols->items[index].value;
         ptn_array_note_value_replacement(old_value, stored_value);
@@ -123,12 +124,22 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at(
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string(name);
-    symbols->items[symbol_index].name_len = strlen(name);
+    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
     symbols->mutation_epoch++;
-    ptn_symbol_index_insert(symbols, name, symbol_index);
+    ptn_symbol_index_insert_len(symbols, name, name_len, symbol_index);
+}
+
+static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at(
+    PtnSymbolTable *symbols,
+    const char *name,
+    PtnValue value,
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_symbols_set_with_runtime_scope_at_len(symbols, name, strlen(name), value, runtime, line);
 }
 
 static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
@@ -159,17 +170,24 @@ static PTN_UNUSED PtnValue *ptn_symbols_value_slot_len(PtnSymbolTable *symbols, 
 }
 
 static PTN_UNUSED PtnValue *ptn_symbols_value_slot(PtnSymbolTable *symbols, const char *name) {
-    size_t index = ptn_symbols_find(symbols, name);
-    return index < symbols->len ? &symbols->items[index].value : NULL;
+    return ptn_symbols_value_slot_len(symbols, name, strlen(name));
 }
 
 static PTN_UNUSED PtnValue *ptn_symbols_get_slot(PtnSymbolTable *symbols, const char *name) {
     return ptn_symbols_value_slot(symbols, name);
 }
 
-static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols, const char *name) {
+static PTN_UNUSED PtnValue *ptn_symbols_get_slot_len(PtnSymbolTable *symbols, const char *name, size_t name_len) {
+    return ptn_symbols_value_slot_len(symbols, name, name_len);
+}
+
+static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len
+) {
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
-    size_t index = ptn_symbols_find(symbols, name);
+    size_t index = ptn_symbols_find_len(symbols, name, name_len);
     if (index < symbols->len) {
         return &symbols->items[index];
     }
@@ -183,17 +201,25 @@ static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols,
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string(name);
-    symbols->items[symbol_index].name_len = strlen(name);
+    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = ptn_null();
     symbols->len++;
     symbols->mutation_epoch++;
-    ptn_symbol_index_insert(symbols, name, symbol_index);
+    ptn_symbol_index_insert_len(symbols, name, name_len, symbol_index);
     return &symbols->items[symbol_index];
 }
 
-static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *symbols, const char *name) {
-    PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
+static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols, const char *name) {
+    return ptn_symbols_slot_for_write_len(symbols, name, strlen(name));
+}
+
+static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len
+) {
+    PtnSymbol *symbol = ptn_symbols_slot_for_write_len(symbols, name, name_len);
     if (symbol->value.type != PTN_REFERENCE) {
         PtnValue current = symbol->value;
         PtnReference *reference = ptn_reference_new_owned(current);
@@ -201,6 +227,10 @@ static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *sy
         symbols->mutation_epoch++;
     }
     return ptn_value_clone(symbol->value);
+}
+
+static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *symbols, const char *name) {
+    return ptn_symbols_reference_for_variable_len(symbols, name, strlen(name));
 }
 
 static void ptn_value_unwrap_reference_slots(PtnValue *slot, PtnReference *reference, size_t depth) {
@@ -253,13 +283,22 @@ static PTN_UNUSED void ptn_runtime_unwrap_reference_slots_if_unaliased(
     }
 }
 
-static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
-    PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
+static PTN_UNUSED void ptn_symbols_bind_reference_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len,
+    PtnValue reference
+) {
+    PtnSymbol *symbol = ptn_symbols_slot_for_write_len(symbols, name, name_len);
     PtnValue old_value = symbol->value;
     ptn_array_note_value_replacement(old_value, reference);
     symbol->value = ptn_value_clone(reference);
     symbols->mutation_epoch++;
     ptn_value_destroy(&old_value);
+}
+
+static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
+    ptn_symbols_bind_reference_len(symbols, name, strlen(name), reference);
 }
 
 static PTN_UNUSED PtnClosure *ptn_closure_from_value(PtnValue closure) {
@@ -1896,9 +1935,34 @@ static PTN_UNUSED void ptn_diagnostics_clear_last_error(PtnDiagnosticSink *diagn
     diagnostics->last_error_line = 0;
 }
 
-static void ptn_emit_undefined_variable_warning(
+static char *ptn_diagnostic_message_with_name_len(
+    const char *prefix,
+    const char *name,
+    size_t name_len,
+    size_t *message_len_out
+) {
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len > SIZE_MAX - name_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    size_t message_len = prefix_len + name_len;
+    char *message = malloc(message_len + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(message, prefix, prefix_len);
+    memcpy(message + prefix_len, name, name_len);
+    message[message_len] = '\0';
+    if (message_len_out != NULL) {
+        *message_len_out = message_len;
+    }
+    return message;
+}
+
+static void ptn_emit_undefined_variable_warning_len(
     PtnDiagnosticSink *diagnostics,
     const char *name,
+    size_t name_len,
     const char *path,
     size_t line
 ) {
@@ -1906,27 +1970,58 @@ static void ptn_emit_undefined_variable_warning(
         return;
     }
     diagnostics->emitted_warning = 1;
-    int needed = snprintf(NULL, 0, "Undefined variable $%s", name);
-    if (needed < 0) {
-        ptn_abort_out_of_memory();
-    }
-    char *message = malloc((size_t)needed + 1);
-    if (message == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    snprintf(message, (size_t)needed + 1, "Undefined variable $%s", name);
+    size_t message_len = 0;
+    char *message = ptn_diagnostic_message_with_name_len(
+        "Undefined variable $",
+        name,
+        name_len,
+        &message_len
+    );
     ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);
         return;
     }
-    ptn_diagnostic_printf(
-        diagnostics,
-        "\nWarning: Undefined variable $%s in %s on line %zu\n",
+    ptn_diagnostic_output_cstr(diagnostics, "\nWarning: ");
+    ptn_diagnostic_output_write(diagnostics, message, message_len);
+    ptn_diagnostic_printf(diagnostics, " in %s on line %zu\n", path, line);
+    free(message);
+}
+
+static void ptn_emit_undefined_variable_warning(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    const char *path,
+    size_t line
+) {
+    ptn_emit_undefined_variable_warning_len(diagnostics, name, strlen(name), path, line);
+}
+
+static void ptn_emit_undefined_global_variable_warning_len(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    size_t name_len,
+    const char *path,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    diagnostics->emitted_warning = 1;
+    size_t message_len = 0;
+    char *message = ptn_diagnostic_message_with_name_len(
+        "Undefined global variable $",
         name,
-        path,
-        line
+        name_len,
+        &message_len
     );
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
+        free(message);
+        return;
+    }
+    ptn_diagnostic_output_cstr(diagnostics, "\nWarning: ");
+    ptn_diagnostic_output_write(diagnostics, message, message_len);
+    ptn_diagnostic_printf(diagnostics, " in %s on line %zu\n", path, line);
     free(message);
 }
 
@@ -1936,31 +2031,7 @@ static void ptn_emit_undefined_global_variable_warning(
     const char *path,
     size_t line
 ) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
-        return;
-    }
-    diagnostics->emitted_warning = 1;
-    int needed = snprintf(NULL, 0, "Undefined global variable $%s", name);
-    if (needed < 0) {
-        ptn_abort_out_of_memory();
-    }
-    char *message = malloc((size_t)needed + 1);
-    if (message == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    snprintf(message, (size_t)needed + 1, "Undefined global variable $%s", name);
-    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
-        free(message);
-        return;
-    }
-    ptn_diagnostic_printf(
-        diagnostics,
-        "\nWarning: Undefined global variable $%s in %s on line %zu\n",
-        name,
-        path,
-        line
-    );
-    free(message);
+    ptn_emit_undefined_global_variable_warning_len(diagnostics, name, strlen(name), path, line);
 }
 
 static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {

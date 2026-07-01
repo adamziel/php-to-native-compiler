@@ -320,7 +320,12 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     size_t line
 );
 
-static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+static PTN_UNUSED char *ptn_dynamic_variable_name_with_len(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    size_t *len_out
+) {
     value = ptn_value_deref(value);
 
     switch (value.type) {
@@ -329,13 +334,23 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
         case PTN_INT:
         case PTN_FLOAT:
         case PTN_STRING:
-        case PTN_RESOURCE:
-            return ptn_value_to_string(value);
+        case PTN_RESOURCE: {
+            PtnStringOperand string = ptn_value_to_string_operand(value);
+            char *result = ptn_duplicate_string_len(string.data, string.len);
+            if (len_out != NULL) {
+                *len_out = string.len;
+            }
+            ptn_string_operand_free(string);
+            return result;
+        }
         case PTN_OBJECT:
         case PTN_CLOSURE:
         case PTN_EXCEPTION: {
             PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
             char *result = ptn_duplicate_string_len(string.data, string.len);
+            if (len_out != NULL) {
+                *len_out = string.len;
+            }
             ptn_string_operand_free(string);
             return result;
         }
@@ -357,6 +372,10 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
     }
     ptn_emit_type_error(&runtime->diagnostics, message);
     exit(255);
+}
+
+static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+    return ptn_dynamic_variable_name_with_len(runtime, value, line, NULL);
 }
 
 static PTN_UNUSED char *ptn_dynamic_property_name_with_array_warning(

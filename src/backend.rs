@@ -30550,10 +30550,13 @@ fn emit_instruction(
             values.known_simple_preg_patterns.remove(name);
         }
         Instruction::UnsetDynamicVariable { name, line } => {
-            let name_temp = values.emit_dynamic_variable_name(out, name, *line);
+            let (name_temp, len_temp) =
+                values.emit_dynamic_variable_name_with_len(out, name, *line);
             values.emit_dynamic_this_unset_guard(out, &name_temp, *line);
-            out.push_str("    ptn_runtime_unset_variable(&runtime, ");
+            out.push_str("    ptn_runtime_unset_variable_len(&runtime, ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&len_temp);
             out.push_str(");\n");
             out.push_str("    free(");
             out.push_str(&name_temp);
@@ -30567,9 +30570,12 @@ fn emit_instruction(
             values.known_simple_preg_patterns.remove(name);
         }
         Instruction::BindDynamicGlobal { name, line } => {
-            let name_temp = values.emit_dynamic_variable_name(out, name, *line);
-            out.push_str("    ptn_runtime_bind_global_variable(&runtime, ");
+            let (name_temp, len_temp) =
+                values.emit_dynamic_variable_name_with_len(out, name, *line);
+            out.push_str("    ptn_runtime_bind_global_variable_len(&runtime, ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&len_temp);
             out.push_str(");\n");
             out.push_str("    free(");
             out.push_str(&name_temp);
@@ -43384,17 +43390,32 @@ impl ValueEmitter {
         name: &ValueExpr,
         line: usize,
     ) -> String {
+        self.emit_dynamic_variable_name_with_len(out, name, line).0
+    }
+
+    fn emit_dynamic_variable_name_with_len(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> (String, String) {
         let value_temp = self.emit_materialized_value(out, name);
+        let len_temp = self.next_temp();
+        out.push_str("    size_t ");
+        out.push_str(&len_temp);
+        out.push_str(" = 0;\n");
         let name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&name_temp);
-        out.push_str(" = ptn_dynamic_variable_name(&runtime, ");
+        out.push_str(" = ptn_dynamic_variable_name_with_len(&runtime, ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&len_temp);
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &value_temp);
-        name_temp
+        (name_temp, len_temp)
     }
 
     fn emit_dynamic_this_reassignment_guard(&self, out: &mut String, name_temp: &str, line: usize) {
@@ -43423,18 +43444,18 @@ impl ValueEmitter {
         out.push_str("    }\n");
     }
 
-    fn emit_dynamic_variable_name_for_direct_quiet_probe(
+    fn emit_dynamic_variable_name_for_direct_quiet_probe_with_len(
         &mut self,
         out: &mut String,
         name: &ValueExpr,
         line: usize,
-    ) -> String {
+    ) -> (String, String) {
         let ValueExpr::Load {
             name: variable_name,
             ..
         } = name
         else {
-            return self.emit_dynamic_variable_name(out, name, line);
+            return self.emit_dynamic_variable_name_with_len(out, name, line);
         };
 
         let lookup_temp = self.next_temp();
@@ -43453,16 +43474,22 @@ impl ValueEmitter {
         out.push_str(&lookup_temp);
         out.push_str(".value : ptn_null();\n");
 
+        let len_temp = self.next_temp();
+        out.push_str("    size_t ");
+        out.push_str(&len_temp);
+        out.push_str(" = 0;\n");
         let name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&name_temp);
-        out.push_str(" = ptn_dynamic_variable_name(&runtime, ");
+        out.push_str(" = ptn_dynamic_variable_name_with_len(&runtime, ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&len_temp);
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &value_temp);
-        name_temp
+        (name_temp, len_temp)
     }
 
     fn emit_dynamic_property_name(
@@ -43678,12 +43705,14 @@ impl ValueEmitter {
         name: &ValueExpr,
         line: usize,
     ) -> String {
-        let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, line);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_read_variable(&runtime, ");
+        out.push_str(" = ptn_runtime_read_variable_len(&runtime, ");
         out.push_str(&name_temp);
+        out.push_str(", ");
+        out.push_str(&len_temp);
         out.push_str(", \"");
         out.push_str(&c_string(&self.source_file));
         out.push_str("\", ");
@@ -43828,12 +43857,14 @@ impl ValueEmitter {
         name: &ValueExpr,
         line: usize,
     ) -> String {
-        let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, line);
         let result_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+        out.push_str(" = ptn_runtime_read_variable_quiet_len(&runtime, ");
         out.push_str(&name_temp);
+        out.push_str(", ");
+        out.push_str(&len_temp);
         out.push_str(");\n");
         out.push_str("        free(");
         out.push_str(&name_temp);
@@ -44561,15 +44592,17 @@ impl ValueEmitter {
         }
 
         if let AssignmentTarget::DynamicVariable { name, line } = target {
-            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+            let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, *line);
             self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let value_temp = self.emit_materialized_value(out, value);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_value_clone_deref(ptn_runtime_read_variable(&runtime, ");
+                out.push_str(" = ptn_value_clone_deref(ptn_runtime_read_variable_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
@@ -44589,8 +44622,10 @@ impl ValueEmitter {
                 out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
                 out.push_str("        ");
                 out.push_str(&assigned_temp);
-                out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
+                out.push_str(" = ptn_runtime_write_variable_result_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(");\n");
@@ -44613,8 +44648,10 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
+            out.push_str(" = ptn_runtime_write_variable_result_len(&runtime, ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&len_temp);
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
@@ -47238,13 +47275,16 @@ impl ValueEmitter {
                 result_temp
             }
             AssignmentTarget::DynamicVariable { name, line } => {
-                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let (name_temp, len_temp) =
+                    self.emit_dynamic_variable_name_with_len(out, name, *line);
                 self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
+                out.push_str(" = ptn_runtime_write_variable_result_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(");\n");
@@ -48243,10 +48283,13 @@ impl ValueEmitter {
                 out.push_str(");\n");
             }
             ReferenceTarget::DynamicVariable { name, line } => {
-                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let (name_temp, len_temp) =
+                    self.emit_dynamic_variable_name_with_len(out, name, *line);
                 self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
-                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, ");
+                out.push_str("    ptn_runtime_bind_variable_reference_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", ");
                 out.push_str(reference_temp);
                 out.push_str(");\n");
@@ -49677,13 +49720,16 @@ impl ValueEmitter {
                 name,
                 line: target_line,
             } => {
-                let name_temp = self.emit_dynamic_variable_name(out, name, *target_line);
+                let (name_temp, len_temp) =
+                    self.emit_dynamic_variable_name_with_len(out, name, *target_line);
                 self.emit_dynamic_this_reassignment_guard(out, &name_temp, *target_line);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_read_variable_for_increment(&runtime, ");
+                out.push_str(" = ptn_runtime_read_variable_for_increment_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
@@ -49712,8 +49758,10 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-                out.push_str("    ptn_runtime_write_variable(&runtime, ");
+                out.push_str("    ptn_runtime_write_variable_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(");\n");
@@ -53654,20 +53702,63 @@ impl ValueEmitter {
                 out.push_str("    }\n");
             } else {
                 let resolved_class_name = self.static_member_class_name(class_name);
+                let guard_dynamic_name = !matches!(name, ValueExpr::String(value) if value.eq_ignore_ascii_case("class"));
+                if guard_dynamic_name {
+                    let class_probe_temp = self.next_temp();
+                    out.push_str("    const char *");
+                    out.push_str(&class_probe_temp);
+                    out.push_str(" = ptn_runtime_maybe_autoload_static_member_class(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL && !ptn_runtime_class_constant_container_exists(&runtime, ");
+                    out.push_str(&class_probe_temp);
+                    out.push_str(")) {\n");
+                    out.push_str("        ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_undefined_class_constant(&runtime, ");
+                    out.push_str(&class_probe_temp);
+                    out.push_str(", NULL, \"\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                }
                 let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
-                out.push_str("    if (");
+                out.push_str(if guard_dynamic_name {
+                    "        if ("
+                } else {
+                    "    if ("
+                });
                 out.push_str(&name_temp);
                 out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
-                out.push_str("        if (ptn_ascii_case_equal(");
+                out.push_str(if guard_dynamic_name {
+                    "            if (ptn_ascii_case_equal("
+                } else {
+                    "        if (ptn_ascii_case_equal("
+                });
                 out.push_str(&name_temp);
                 out.push_str(", \"class\")) {\n");
-                out.push_str("            ");
+                out.push_str(if guard_dynamic_name {
+                    "                "
+                } else {
+                    "            "
+                });
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_string(\"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\");\n");
-                out.push_str("        } else {\n");
-                out.push_str("            ");
+                out.push_str(if guard_dynamic_name {
+                    "            } else {\n"
+                } else {
+                    "        } else {\n"
+                });
+                out.push_str(if guard_dynamic_name {
+                    "                "
+                } else {
+                    "            "
+                });
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
@@ -53678,11 +53769,26 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-                out.push_str("        }\n");
-                out.push_str("    }\n");
-                out.push_str("    free(");
+                out.push_str(if guard_dynamic_name {
+                    "            }\n"
+                } else {
+                    "        }\n"
+                });
+                out.push_str(if guard_dynamic_name {
+                    "        }\n"
+                } else {
+                    "    }\n"
+                });
+                out.push_str(if guard_dynamic_name {
+                    "        free("
+                } else {
+                    "    free("
+                });
                 out.push_str(&name_temp);
                 out.push_str(");\n");
+                if guard_dynamic_name {
+                    out.push_str("    }\n");
+                }
             }
         } else if let Some(receiver) = receiver {
             let (class_value_temp, class_name_temp) =
@@ -54590,13 +54696,15 @@ impl ValueEmitter {
         line: usize,
         value: &ValueExpr,
     ) -> String {
-        let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, line);
         self.emit_dynamic_this_reassignment_guard(out, &name_temp, line);
         let lookup_temp = self.next_temp();
         out.push_str("    PtnLookupResult ");
         out.push_str(&lookup_temp);
-        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+        out.push_str(" = ptn_runtime_read_variable_quiet_len(&runtime, ");
         out.push_str(&name_temp);
+        out.push_str(", ");
+        out.push_str(&len_temp);
         out.push_str(");\n");
 
         let result_temp = self.next_temp();
@@ -54618,8 +54726,10 @@ impl ValueEmitter {
         out.push_str("    } else {\n");
         emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
         let value_temp = self.emit_materialized_value(out, value);
-        out.push_str("        ptn_runtime_write_variable(&runtime, ");
+        out.push_str("        ptn_runtime_write_variable_len(&runtime, ");
         out.push_str(&name_temp);
+        out.push_str(", ");
+        out.push_str(&len_temp);
         out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(");\n");
@@ -55742,13 +55852,15 @@ impl ValueEmitter {
             }
             ValueExpr::LegacyDollarBraceExpressionVariable { name, line }
             | ValueExpr::DynamicVariable { name, line } => {
-                let name_temp =
-                    self.emit_dynamic_variable_name_for_direct_quiet_probe(out, name, *line);
+                let (name_temp, len_temp) = self
+                    .emit_dynamic_variable_name_for_direct_quiet_probe_with_len(out, name, *line);
                 let lookup_temp = self.next_temp();
                 out.push_str("        PtnLookupResult ");
                 out.push_str(&lookup_temp);
-                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+                out.push_str(" = ptn_runtime_read_variable_quiet_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(");\n");
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
@@ -55997,13 +56109,15 @@ impl ValueEmitter {
             }
             ValueExpr::LegacyDollarBraceExpressionVariable { name, line }
             | ValueExpr::DynamicVariable { name, line } => {
-                let name_temp =
-                    self.emit_dynamic_variable_name_for_direct_quiet_probe(out, name, *line);
+                let (name_temp, len_temp) = self
+                    .emit_dynamic_variable_name_for_direct_quiet_probe_with_len(out, name, *line);
                 let lookup_temp = self.next_temp();
                 out.push_str("        PtnLookupResult ");
                 out.push_str(&lookup_temp);
-                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+                out.push_str(" = ptn_runtime_read_variable_quiet_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(");\n");
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
@@ -57242,13 +57356,16 @@ impl ValueEmitter {
                 temp
             }
             ReferenceTarget::DynamicVariable { name, line } => {
-                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let (name_temp, len_temp) =
+                    self.emit_dynamic_variable_name_with_len(out, name, *line);
                 self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);
-                out.push_str(" = ptn_runtime_reference_for_variable(&runtime, ");
+                out.push_str(" = ptn_runtime_reference_for_variable_len(&runtime, ");
                 out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&len_temp);
                 out.push_str(");\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);
