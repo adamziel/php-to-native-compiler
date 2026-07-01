@@ -1,3 +1,4 @@
+use crate::ast::{CompileWarning, CompileWarningKind};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
@@ -254,7 +255,16 @@ pub struct Token {
     pub span: SourceSpan,
 }
 
+pub struct LexOutput {
+    pub tokens: Vec<Token>,
+    pub compile_warnings: Vec<CompileWarning>,
+}
+
 pub fn lex(source: &str) -> Result<Vec<Token>> {
+    Ok(lex_with_warnings(source)?.tokens)
+}
+
+pub fn lex_with_warnings(source: &str) -> Result<LexOutput> {
     Lexer::new(source).lex()
 }
 
@@ -264,6 +274,7 @@ struct Lexer<'a> {
     line: usize,
     column: usize,
     tokens: Vec<Token>,
+    compile_warnings: Vec<CompileWarning>,
     seen_open_tag: bool,
     closed_php: bool,
 }
@@ -276,12 +287,13 @@ impl<'a> Lexer<'a> {
             line: 1,
             column: 1,
             tokens: Vec::new(),
+            compile_warnings: Vec::new(),
             seen_open_tag: false,
             closed_php: false,
         }
     }
 
-    fn lex(mut self) -> Result<Vec<Token>> {
+    fn lex(mut self) -> Result<LexOutput> {
         while let Some(ch) = self.peek_char() {
             if self.closed_php {
                 self.lex_inline_html()?;
@@ -435,7 +447,10 @@ impl<'a> Lexer<'a> {
             kind: TokenKind::Eof,
             span: self.current_span(0),
         });
-        Ok(self.tokens)
+        Ok(LexOutput {
+            tokens: self.tokens,
+            compile_warnings: self.compile_warnings,
+        })
     }
 
     fn skip_line_comment(&mut self) {
@@ -754,6 +769,7 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     '0'..='7' => {
+                        let escape_span = self.current_char_span();
                         let mut digits = String::new();
                         for _ in 0..3 {
                             if let Some(octal) = self.peek_char() {
@@ -765,8 +781,7 @@ impl<'a> Lexer<'a> {
                             }
                             break;
                         }
-                        let byte = (u16::from_str_radix(&digits, 8).unwrap() & 0xff) as u8;
-                        push_php_string_byte(&mut literal, byte);
+                        self.push_octal_escape_byte(&mut literal, &digits, escape_span);
                         at_line_start = false;
                         continue;
                     }
@@ -968,6 +983,7 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     '0'..='7' => {
+                        let escape_span = self.current_char_span();
                         let mut digits = String::new();
                         for _ in 0..3 {
                             if let Some(octal) = self.peek_char() {
@@ -979,8 +995,7 @@ impl<'a> Lexer<'a> {
                             }
                             break;
                         }
-                        let value = u16::from_str_radix(&digits, 8).unwrap();
-                        push_php_string_byte(&mut literal, (value & 0xff) as u8);
+                        self.push_octal_escape_byte(&mut literal, &digits, escape_span);
                         continue;
                     }
                     other => {
@@ -1368,6 +1383,7 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     '0'..='7' if quote == '"' => {
+                        let escape_span = self.current_char_span();
                         let mut digits = String::new();
                         for _ in 0..3 {
                             if let Some(octal) = self.peek_char() {
@@ -1379,8 +1395,7 @@ impl<'a> Lexer<'a> {
                             }
                             break;
                         }
-                        let byte = u16::from_str_radix(&digits, 8).unwrap();
-                        push_php_string_byte(&mut value, (byte & 0xff) as u8);
+                        self.push_octal_escape_byte(&mut value, &digits, escape_span);
                         continue;
                     }
                     other => {
@@ -1396,6 +1411,18 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn push_octal_escape_byte(&mut self, literal: &mut String, digits: &str, span: SourceSpan) {
+        let value = u16::from_str_radix(digits, 8).unwrap();
+        if value > 0xff {
+            self.compile_warnings.push(CompileWarning {
+                message: format!("Octal escape sequence overflow \\{digits} is greater than \\377"),
+                span,
+                kind: CompileWarningKind::Warning,
+            });
+        }
+        push_php_string_byte(literal, (value & 0xff) as u8);
     }
 
     fn lex_unicode_codepoint_escape(&mut self, literal: &mut String) -> Result<()> {

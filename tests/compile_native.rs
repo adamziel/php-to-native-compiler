@@ -4021,6 +4021,19 @@ fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
 }
 
 #[test]
+fn parser_warns_for_overflowing_octal_string_escapes() {
+    let program = parser::parse("<?php\n$bytes = \"\\141\\542\\143\";\n").unwrap();
+    assert_eq!(program.compile_warnings.len(), 1);
+    let warning = &program.compile_warnings[0];
+    assert_eq!(warning.kind, CompileWarningKind::Warning);
+    assert_eq!(
+        warning.message,
+        "Octal escape sequence overflow \\542 is greater than \\377"
+    );
+    assert_eq!(warning.span.line, 2);
+}
+
+#[test]
 fn lexer_decodes_double_quoted_unicode_codepoint_escapes() {
     let tokens = lexer::lex("<?php \"\\u{20bb7}\" \"\\u{41}\"").unwrap();
     assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "𠮷"));
@@ -26953,6 +26966,35 @@ echo ord("\e"), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "9 000a7f8090ffff1030\n255 255\n27\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_overflowing_octal_string_escape_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-overflowing-octal-string-escape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overflowing-octal-string-escape.php");
+    let output = root.join("overflowing-octal-string-escape-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo "\141\542\143\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: Octal escape sequence overflow \\542 is greater than \\377 in {} on line 2\n\
+abc\n",
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

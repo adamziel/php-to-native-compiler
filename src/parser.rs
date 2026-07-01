@@ -18,8 +18,8 @@ use crate::ast::{
 };
 use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
-    lex, StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
-    Token, TokenKind,
+    lex, lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
+    StringPart as TokenStringPart, Token, TokenKind,
 };
 
 const KEYWORD_OR_PRECEDENCE: u8 = 1;
@@ -118,7 +118,8 @@ fn parse_with_options(
     validate_method_signatures: bool,
     validate_function_names: bool,
 ) -> Result<Program> {
-    let tokens = lex(source)?;
+    let lexed = lex_with_warnings(source)?;
+    let tokens = lexed.tokens;
     let compiler_halt_offset = find_compiler_halt_offset(&tokens);
     let mut parser = Parser {
         source,
@@ -165,7 +166,7 @@ fn parse_with_options(
         ticks: false,
         strict_types_declare_allowed: true,
         compiler_halt_offset,
-        compile_warnings: Vec::new(),
+        compile_warnings: lexed.compile_warnings,
         validate_method_signatures,
         validate_function_names,
         current_statement_doc_comment: None,
