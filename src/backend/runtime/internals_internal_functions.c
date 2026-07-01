@@ -8829,6 +8829,7 @@ static void ptn_phar_archive_set_entry(
 );
 static int ptn_phar_archive_retain_entry(PtnPharArchiveState *archive, const char *entry_name);
 static void ptn_phar_archive_release_entry(PtnPharArchiveState *archive, const char *entry_name);
+static uint32_t ptn_crc32_bytes(const unsigned char *input, size_t input_len);
 static void ptn_spl_file_info_init_data(
     PtnSplFileInfoData *data,
     char *path,
@@ -165676,11 +165677,170 @@ static int ptn_phar_archive_entry_is_dir(PtnPharArchiveEntry *entry) {
     return len > 0 && (entry->name[len - 1] == '/' || entry->name[len - 1] == '\\');
 }
 
+static int ptn_phar_zip_write_all(FILE *file, const void *data, size_t len) {
+    return len == 0 || fwrite(data, 1, len, file) == len;
+}
+
+static int ptn_phar_zip_write_u16le(FILE *file, uint16_t value) {
+    unsigned char bytes[2] = {
+        (unsigned char)(value & 0xff),
+        (unsigned char)((value >> 8) & 0xff),
+    };
+    return ptn_phar_zip_write_all(file, bytes, sizeof(bytes));
+}
+
+static int ptn_phar_zip_write_u32le(FILE *file, uint32_t value) {
+    unsigned char bytes[4] = {
+        (unsigned char)(value & 0xff),
+        (unsigned char)((value >> 8) & 0xff),
+        (unsigned char)((value >> 16) & 0xff),
+        (unsigned char)((value >> 24) & 0xff),
+    };
+    return ptn_phar_zip_write_all(file, bytes, sizeof(bytes));
+}
+
+typedef struct {
+    uint32_t local_offset;
+    uint32_t crc;
+    uint32_t size;
+    uint16_t dos_time;
+    uint16_t dos_date;
+} PtnPharZipCentralRecord;
+
+static void ptn_phar_zip_time_to_dos(int64_t timestamp, uint16_t *dos_time, uint16_t *dos_date) {
+    time_t raw_time = (time_t)timestamp;
+    struct tm *parts = localtime(&raw_time);
+    if (parts == NULL) {
+        *dos_time = 0;
+        *dos_date = (uint16_t)((1 << 5) | 1);
+        return;
+    }
+    int year = parts->tm_year + 1900;
+    if (year < 1980) {
+        year = 1980;
+    }
+    if (year > 2107) {
+        year = 2107;
+    }
+    *dos_time = (uint16_t)(((parts->tm_hour & 0x1f) << 11) |
+        ((parts->tm_min & 0x3f) << 5) |
+        ((parts->tm_sec / 2) & 0x1f));
+    *dos_date = (uint16_t)((((year - 1980) & 0x7f) << 9) |
+        (((parts->tm_mon + 1) & 0x0f) << 5) |
+        (parts->tm_mday & 0x1f));
+}
+
+static int ptn_phar_archive_write_zip(PtnPharArchiveState *archive) {
+    if (archive == NULL || archive->path == NULL || archive->entry_count > UINT16_MAX) {
+        return 0;
+    }
+    FILE *file = fopen(archive->path, "wb");
+    if (file == NULL) {
+        return 0;
+    }
+    PtnPharZipCentralRecord *records = NULL;
+    if (archive->entry_count != 0) {
+        records = calloc(archive->entry_count, sizeof(PtnPharZipCentralRecord));
+        if (records == NULL) {
+            fclose(file);
+            ptn_abort_out_of_memory();
+        }
+    }
+    int ok = 1;
+    for (size_t i = 0; ok && i < archive->entry_count; i++) {
+        PtnPharArchiveEntry *entry = &archive->entries[i];
+        const char *name = entry->name == NULL ? "" : entry->name;
+        size_t name_len = strlen(name);
+        if (name_len > UINT16_MAX || entry->content_len > UINT32_MAX) {
+            ok = 0;
+            break;
+        }
+        long offset = ftell(file);
+        if (offset < 0 || (unsigned long)offset > UINT32_MAX) {
+            ok = 0;
+            break;
+        }
+        uint16_t dos_time = 0;
+        uint16_t dos_date = 0;
+        ptn_phar_zip_time_to_dos(entry->timestamp, &dos_time, &dos_date);
+        uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
+        records[i].local_offset = (uint32_t)offset;
+        records[i].crc = crc;
+        records[i].size = (uint32_t)entry->content_len;
+        records[i].dos_time = dos_time;
+        records[i].dos_date = dos_date;
+        ok = ptn_phar_zip_write_u32le(file, 0x04034b50u) &&
+            ptn_phar_zip_write_u16le(file, 20) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, dos_time) &&
+            ptn_phar_zip_write_u16le(file, dos_date) &&
+            ptn_phar_zip_write_u32le(file, crc) &&
+            ptn_phar_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_phar_zip_write_u32le(file, (uint32_t)entry->content_len) &&
+            ptn_phar_zip_write_u16le(file, (uint16_t)name_len) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_all(file, name, name_len) &&
+            ptn_phar_zip_write_all(file, entry->content, entry->content_len);
+    }
+    long central_offset_long = ok ? ftell(file) : -1;
+    if (central_offset_long < 0 || (unsigned long)central_offset_long > UINT32_MAX) {
+        ok = 0;
+    }
+    uint32_t central_offset = ok ? (uint32_t)central_offset_long : 0;
+    for (size_t i = 0; ok && i < archive->entry_count; i++) {
+        PtnPharArchiveEntry *entry = &archive->entries[i];
+        const char *name = entry->name == NULL ? "" : entry->name;
+        size_t name_len = strlen(name);
+        ok = ptn_phar_zip_write_u32le(file, 0x02014b50u) &&
+            ptn_phar_zip_write_u16le(file, 20) &&
+            ptn_phar_zip_write_u16le(file, 20) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, records[i].dos_time) &&
+            ptn_phar_zip_write_u16le(file, records[i].dos_date) &&
+            ptn_phar_zip_write_u32le(file, records[i].crc) &&
+            ptn_phar_zip_write_u32le(file, records[i].size) &&
+            ptn_phar_zip_write_u32le(file, records[i].size) &&
+            ptn_phar_zip_write_u16le(file, (uint16_t)name_len) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u32le(file, 0) &&
+            ptn_phar_zip_write_u32le(file, records[i].local_offset) &&
+            ptn_phar_zip_write_all(file, name, name_len);
+    }
+    long central_end_long = ok ? ftell(file) : -1;
+    if (central_end_long < 0 || (unsigned long)central_end_long > UINT32_MAX) {
+        ok = 0;
+    }
+    uint32_t central_size = ok ? (uint32_t)((unsigned long)central_end_long - central_offset) : 0;
+    if (ok) {
+        ok = ptn_phar_zip_write_u32le(file, 0x06054b50u) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, 0) &&
+            ptn_phar_zip_write_u16le(file, (uint16_t)archive->entry_count) &&
+            ptn_phar_zip_write_u16le(file, (uint16_t)archive->entry_count) &&
+            ptn_phar_zip_write_u32le(file, central_size) &&
+            ptn_phar_zip_write_u32le(file, central_offset) &&
+            ptn_phar_zip_write_u16le(file, 0);
+    }
+    if (fclose(file) != 0) {
+        ok = 0;
+    }
+    free(records);
+    return ok;
+}
+
 static void ptn_phar_archive_sync_placeholder(PtnPharArchiveState *archive) {
     if (archive == NULL ||
         archive->loading ||
         archive->path == NULL ||
         archive->path[0] == '\0') {
+        return;
+    }
+    if (archive->format == PTN_PHAR_FORMAT_ZIP && ptn_phar_archive_write_zip(archive)) {
         return;
     }
     FILE *file = fopen(archive->path, "wb");
