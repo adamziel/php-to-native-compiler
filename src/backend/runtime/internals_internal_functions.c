@@ -144578,12 +144578,14 @@ static uint32_t ptn_tiff_read_u32(const unsigned char *data, int big_endian) {
     return big_endian ? ptn_image_read_u32_be(data) : ptn_image_read_u32_le(data);
 }
 
-static PtnValue ptn_getimagesize_result(
+static PtnValue ptn_getimagesize_result_full(
     uint32_t width,
     uint32_t height,
     int64_t image_type,
     int has_bits,
-    int bits
+    int bits,
+    int has_channels,
+    int channels
 ) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     char dimensions[128];
@@ -144608,6 +144610,9 @@ static PtnValue ptn_getimagesize_result(
     if (has_bits) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("bits"), ptn_int(bits));
     }
+    if (has_channels) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("channels"), ptn_int(channels));
+    }
     ptn_array_set_entry(
         result.as.array,
         ptn_array_string_key("mime"),
@@ -144616,6 +144621,16 @@ static PtnValue ptn_getimagesize_result(
     ptn_array_set_entry(result.as.array, ptn_array_string_key("width_unit"), ptn_string("px"));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("height_unit"), ptn_string("px"));
     return result;
+}
+
+static PtnValue ptn_getimagesize_result(
+    uint32_t width,
+    uint32_t height,
+    int64_t image_type,
+    int has_bits,
+    int bits
+) {
+    return ptn_getimagesize_result_full(width, height, image_type, has_bits, bits, 0, 0);
 }
 
 static int ptn_getimagesize_ico(
@@ -144741,6 +144756,7 @@ static int ptn_getimagesize_jpeg(
     uint32_t *width,
     uint32_t *height,
     int *bits,
+    int *channels,
     PtnValue info
 ) {
     if (len < 4 || data[0] != 0xFF || data[1] != 0xD8) {
@@ -144794,11 +144810,590 @@ static int ptn_getimagesize_jpeg(
             *bits = payload[0];
             *height = ptn_image_read_u16_be(payload + 1);
             *width = ptn_image_read_u16_be(payload + 3);
+            *channels = payload[5];
             found = *width != 0 && *height != 0;
         }
         pos += payload_len;
     }
     return found;
+}
+
+static uint32_t ptn_image_read_u24_le(const unsigned char *data) {
+    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16);
+}
+
+static int ptn_getimagesize_gif(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits,
+    int *channels
+) {
+    if (len < 11 ||
+        (memcmp(data, "GIF87a", 6) != 0 && memcmp(data, "GIF89a", 6) != 0)) {
+        return 0;
+    }
+    *width = ptn_image_read_u16_le(data + 6);
+    *height = ptn_image_read_u16_le(data + 8);
+    *bits = (int)((data[10] & 0x07U) + 1U);
+    *channels = 3;
+    return *width != 0 && *height != 0;
+}
+
+static int ptn_getimagesize_png(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits
+) {
+    static const unsigned char signature[] = { 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a };
+    if (len < 29 ||
+        memcmp(data, signature, sizeof(signature)) != 0 ||
+        ptn_image_read_u32_be(data + 8) < 13 ||
+        memcmp(data + 12, "IHDR", 4) != 0) {
+        return 0;
+    }
+    *width = ptn_image_read_u32_be(data + 16);
+    *height = ptn_image_read_u32_be(data + 20);
+    *bits = data[24];
+    return *width != 0 && *height != 0;
+}
+
+static uint32_t ptn_image_abs_i32(uint32_t raw) {
+    int32_t value = (int32_t)raw;
+    if (value < 0) {
+        return (uint32_t)(-(int64_t)value);
+    }
+    return (uint32_t)value;
+}
+
+static int ptn_getimagesize_bmp(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits
+) {
+    if (len < 26 || data[0] != 'B' || data[1] != 'M') {
+        return 0;
+    }
+    uint32_t header_size = ptn_image_read_u32_le(data + 14);
+    if (header_size == 12) {
+        if (len < 26) {
+            return 0;
+        }
+        *width = ptn_image_read_u16_le(data + 18);
+        *height = ptn_image_read_u16_le(data + 20);
+        *bits = ptn_image_read_u16_le(data + 24);
+        return *width != 0 && *height != 0;
+    }
+    if (header_size < 16 || len < 30 || header_size > len - 14) {
+        return 0;
+    }
+    *width = ptn_image_abs_i32(ptn_image_read_u32_le(data + 18));
+    *height = ptn_image_abs_i32(ptn_image_read_u32_le(data + 22));
+    *bits = ptn_image_read_u16_le(data + 28);
+    return *width != 0 && *height != 0;
+}
+
+static int ptn_wbmp_read_mbi(const unsigned char *data, size_t len, size_t *pos, uint32_t *value) {
+    uint32_t result = 0;
+    for (size_t i = 0; i < 5 && *pos < len; i++) {
+        unsigned char byte = data[(*pos)++];
+        if (result > (UINT32_MAX >> 7)) {
+            return 0;
+        }
+        result = (result << 7) | (uint32_t)(byte & 0x7fU);
+        if ((byte & 0x80U) == 0) {
+            *value = result;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_wbmp(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height
+) {
+    if (len < 4 || data[0] != 0 || data[1] != 0) {
+        return 0;
+    }
+    size_t pos = 2;
+    if (!ptn_wbmp_read_mbi(data, len, &pos, width) ||
+        !ptn_wbmp_read_mbi(data, len, &pos, height) ||
+        *width == 0 || *height == 0) {
+        return 0;
+    }
+    uint64_t row_bytes = ((uint64_t)*width + 7ULL) / 8ULL;
+    uint64_t image_bytes = row_bytes * (uint64_t)*height;
+    return image_bytes <= (uint64_t)(len - pos);
+}
+
+static int ptn_xbm_name_has_suffix(const unsigned char *name, size_t name_len, const char *suffix) {
+    size_t suffix_len = strlen(suffix);
+    return name_len >= suffix_len &&
+        memcmp(name + name_len - suffix_len, suffix, suffix_len) == 0;
+}
+
+static int ptn_getimagesize_xbm_define(
+    const unsigned char *data,
+    size_t len,
+    const char *suffix,
+    uint32_t *value
+) {
+    const char keyword[] = "#define";
+    size_t keyword_len = sizeof(keyword) - 1;
+    for (size_t pos = 0; pos + keyword_len < len; pos++) {
+        if (memcmp(data + pos, keyword, keyword_len) != 0) {
+            continue;
+        }
+        pos += keyword_len;
+        while (pos < len && isspace(data[pos])) {
+            pos++;
+        }
+        size_t name_start = pos;
+        while (pos < len && (isalnum(data[pos]) || data[pos] == '_')) {
+            pos++;
+        }
+        size_t name_len = pos - name_start;
+        if (!ptn_xbm_name_has_suffix(data + name_start, name_len, suffix)) {
+            continue;
+        }
+        while (pos < len && isspace(data[pos])) {
+            pos++;
+        }
+        if (pos >= len || !isdigit(data[pos])) {
+            return 0;
+        }
+        unsigned long parsed = 0;
+        while (pos < len && isdigit(data[pos])) {
+            unsigned int digit = (unsigned int)(data[pos] - '0');
+            if (parsed > (unsigned long)(UINT32_MAX - digit) / 10UL) {
+                return 0;
+            }
+            parsed = parsed * 10UL + digit;
+            pos++;
+        }
+        *value = (uint32_t)parsed;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_xbm(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height
+) {
+    return ptn_getimagesize_xbm_define(data, len, "_width", width) &&
+        ptn_getimagesize_xbm_define(data, len, "_height", height) &&
+        *width != 0 && *height != 0;
+}
+
+typedef struct {
+    const unsigned char *data;
+    size_t len;
+    size_t bit_pos;
+} PtnImageBitReader;
+
+static int ptn_image_bit_reader_read(PtnImageBitReader *reader, unsigned int bit_count, uint32_t *value) {
+    if (bit_count > 32 || reader->bit_pos + bit_count > reader->len * 8U) {
+        return 0;
+    }
+    uint32_t result = 0;
+    for (unsigned int i = 0; i < bit_count; i++) {
+        size_t absolute_bit = reader->bit_pos++;
+        unsigned char byte = reader->data[absolute_bit / 8U];
+        unsigned int bit = (byte >> (7U - (absolute_bit % 8U))) & 1U;
+        result = (result << 1) | bit;
+    }
+    *value = result;
+    return 1;
+}
+
+static int32_t ptn_image_sign_extend_bits(uint32_t value, unsigned int bit_count) {
+    if (bit_count == 0 || bit_count >= 32 || (value & (1U << (bit_count - 1U))) == 0) {
+        return (int32_t)value;
+    }
+    return (int32_t)(value | (~0U << bit_count));
+}
+
+static int ptn_getimagesize_swf_rect(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height
+) {
+    PtnImageBitReader reader = { data, len, 0 };
+    uint32_t nbits = 0;
+    if (!ptn_image_bit_reader_read(&reader, 5, &nbits) || nbits == 0 || nbits > 31) {
+        return 0;
+    }
+    uint32_t raw_xmin = 0;
+    uint32_t raw_xmax = 0;
+    uint32_t raw_ymin = 0;
+    uint32_t raw_ymax = 0;
+    if (!ptn_image_bit_reader_read(&reader, nbits, &raw_xmin) ||
+        !ptn_image_bit_reader_read(&reader, nbits, &raw_xmax) ||
+        !ptn_image_bit_reader_read(&reader, nbits, &raw_ymin) ||
+        !ptn_image_bit_reader_read(&reader, nbits, &raw_ymax)) {
+        return 0;
+    }
+    int64_t xmin = ptn_image_sign_extend_bits(raw_xmin, nbits);
+    int64_t xmax = ptn_image_sign_extend_bits(raw_xmax, nbits);
+    int64_t ymin = ptn_image_sign_extend_bits(raw_ymin, nbits);
+    int64_t ymax = ptn_image_sign_extend_bits(raw_ymax, nbits);
+    if (xmax <= xmin || ymax <= ymin) {
+        return 0;
+    }
+    *width = (uint32_t)((xmax - xmin) / 20);
+    *height = (uint32_t)((ymax - ymin) / 20);
+    return *width != 0 && *height != 0;
+}
+
+static int ptn_getimagesize_swf(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int64_t *image_type
+) {
+    if (len < 10 || data[1] != 'W' || data[2] != 'S') {
+        return 0;
+    }
+    if (data[0] == 'F') {
+        *image_type = PTN_IMAGE_FILETYPE_SWF;
+        return ptn_getimagesize_swf_rect(data + 8, len - 8, width, height);
+    }
+    if (data[0] == 'C') {
+        unsigned char *inflated = NULL;
+        size_t inflated_len = 0;
+        int ok = ptn_zlib_transform_bytes_no_dictionary(
+            data + 8,
+            len - 8,
+            1,
+            PTN_ZLIB_ENCODING_DEFLATE,
+            -1,
+            0,
+            &inflated,
+            &inflated_len
+        );
+        if (ok <= 0) {
+            free(inflated);
+            return 0;
+        }
+        int parsed = ptn_getimagesize_swf_rect(inflated, inflated_len, width, height);
+        free(inflated);
+        *image_type = PTN_IMAGE_FILETYPE_SWC;
+        return parsed;
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_webp(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits
+) {
+    if (len < 30 || memcmp(data, "RIFF", 4) != 0 || memcmp(data + 8, "WEBP", 4) != 0) {
+        return 0;
+    }
+    size_t pos = 12;
+    while (pos + 8 <= len) {
+        const unsigned char *chunk = data + pos;
+        uint32_t chunk_size = ptn_image_read_u32_le(chunk + 4);
+        size_t payload_pos = pos + 8;
+        if ((size_t)chunk_size > len - payload_pos) {
+            return 0;
+        }
+        const unsigned char *payload = data + payload_pos;
+        if (memcmp(chunk, "VP8X", 4) == 0 && chunk_size >= 10) {
+            *width = ptn_image_read_u24_le(payload + 4) + 1U;
+            *height = ptn_image_read_u24_le(payload + 7) + 1U;
+            *bits = 8;
+            return *width != 0 && *height != 0;
+        }
+        if (memcmp(chunk, "VP8L", 4) == 0 && chunk_size >= 5 && payload[0] == 0x2f) {
+            *width = 1U + (((uint32_t)payload[2] & 0x3fU) << 8) + (uint32_t)payload[1];
+            *height = 1U + (((uint32_t)payload[4] & 0x0fU) << 10) +
+                ((uint32_t)payload[3] << 2) + (((uint32_t)payload[2] & 0xc0U) >> 6);
+            *bits = 8;
+            return *width != 0 && *height != 0;
+        }
+        if (memcmp(chunk, "VP8 ", 4) == 0 &&
+            chunk_size >= 10 &&
+            payload[3] == 0x9d &&
+            payload[4] == 0x01 &&
+            payload[5] == 0x2a) {
+            *width = ptn_image_read_u16_le(payload + 6) & 0x3fffU;
+            *height = ptn_image_read_u16_le(payload + 8) & 0x3fffU;
+            *bits = 8;
+            return *width != 0 && *height != 0;
+        }
+        pos = payload_pos + (size_t)chunk_size + ((chunk_size & 1U) ? 1U : 0U);
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_psd(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height
+) {
+    if (len < 26 ||
+        memcmp(data, "8BPS", 4) != 0 ||
+        ptn_image_read_u16_be(data + 4) != 1) {
+        return 0;
+    }
+    *height = ptn_image_read_u32_be(data + 14);
+    *width = ptn_image_read_u32_be(data + 18);
+    return *width != 0 && *height != 0;
+}
+
+static int ptn_getimagesize_iff(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits
+) {
+    if (len < 20 ||
+        memcmp(data, "FORM", 4) != 0 ||
+        (memcmp(data + 8, "ILBM", 4) != 0 && memcmp(data + 8, "PBM ", 4) != 0)) {
+        return 0;
+    }
+    size_t pos = 12;
+    while (pos + 8 <= len) {
+        const unsigned char *chunk = data + pos;
+        uint32_t chunk_size = ptn_image_read_u32_be(chunk + 4);
+        size_t payload_pos = pos + 8;
+        if ((size_t)chunk_size > len - payload_pos) {
+            return 0;
+        }
+        const unsigned char *payload = data + payload_pos;
+        if (memcmp(chunk, "BMHD", 4) == 0 && chunk_size >= 9) {
+            *width = ptn_image_read_u16_be(payload);
+            *height = ptn_image_read_u16_be(payload + 2);
+            *bits = payload[8];
+            return *width != 0 && *height != 0;
+        }
+        pos = payload_pos + (size_t)chunk_size + ((chunk_size & 1U) ? 1U : 0U);
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_jpc_codestream(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits,
+    int *channels
+) {
+    if (len < 40 || data[0] != 0xff || data[1] != 0x4f) {
+        return 0;
+    }
+    size_t pos = 2;
+    while (pos + 4 <= len && data[pos] == 0xff) {
+        unsigned char marker = data[pos + 1];
+        pos += 2;
+        if (marker == 0x51) {
+            if (pos + 2 > len) {
+                return 0;
+            }
+            uint16_t segment_len = ptn_image_read_u16_be(data + pos);
+            if (segment_len < 38 || (size_t)segment_len > len - pos) {
+                return 0;
+            }
+            const unsigned char *payload = data + pos + 2;
+            size_t payload_len = (size_t)segment_len - 2;
+            if (payload_len < 36) {
+                return 0;
+            }
+            uint32_t xsiz = ptn_image_read_u32_be(payload + 2);
+            uint32_t ysiz = ptn_image_read_u32_be(payload + 6);
+            uint32_t xosiz = ptn_image_read_u32_be(payload + 10);
+            uint32_t yosiz = ptn_image_read_u32_be(payload + 14);
+            uint16_t csiz = ptn_image_read_u16_be(payload + 34);
+            if (csiz == 0 || payload_len < 36U + ((size_t)csiz * 3U) || xsiz <= xosiz || ysiz <= yosiz) {
+                return 0;
+            }
+            *width = xsiz - xosiz;
+            *height = ysiz - yosiz;
+            *channels = csiz;
+            *bits = (int)((payload[36] & 0x7fU) + 1U);
+            return *width != 0 && *height != 0;
+        }
+        if (pos + 2 > len) {
+            return 0;
+        }
+        uint16_t segment_len = ptn_image_read_u16_be(data + pos);
+        if (segment_len < 2 || (size_t)segment_len > len - pos) {
+            return 0;
+        }
+        pos += segment_len;
+    }
+    return 0;
+}
+
+static int ptn_jp2_has_brand(const unsigned char *data, size_t len, const char *brand) {
+    size_t pos = 0;
+    while (pos + 8 <= len) {
+        uint32_t box_size = ptn_image_read_u32_be(data + pos);
+        if (box_size < 8 || (size_t)box_size > len - pos) {
+            return 0;
+        }
+        if (memcmp(data + pos + 4, "ftyp", 4) == 0) {
+            size_t payload_pos = pos + 8;
+            size_t payload_len = (size_t)box_size - 8;
+            for (size_t brand_pos = 0; brand_pos + 4 <= payload_len; brand_pos += 4) {
+                if (memcmp(data + payload_pos + brand_pos, brand, 4) == 0) {
+                    return 1;
+                }
+            }
+            return 0;
+        }
+        pos += box_size;
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_jp2_container(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits,
+    int *channels
+) {
+    static const unsigned char signature[] = {
+        0x00, 0x00, 0x00, 0x0c, 'j', 'P', ' ', ' ', 0x0d, 0x0a, 0x87, 0x0a
+    };
+    if (len < sizeof(signature) || memcmp(data, signature, sizeof(signature)) != 0) {
+        return 0;
+    }
+    if (!ptn_jp2_has_brand(data, len, "jp2 ")) {
+        return 0;
+    }
+    for (size_t pos = 0; pos + 22 <= len; pos++) {
+        uint32_t box_size = ptn_image_read_u32_be(data + pos);
+        if (box_size < 22 || (size_t)box_size > len - pos || memcmp(data + pos + 4, "ihdr", 4) != 0) {
+            continue;
+        }
+        const unsigned char *payload = data + pos + 8;
+        *height = ptn_image_read_u32_be(payload);
+        *width = ptn_image_read_u32_be(payload + 4);
+        *channels = ptn_image_read_u16_be(payload + 8);
+        *bits = (int)((payload[10] & 0x7fU) + 1U);
+        return *width != 0 && *height != 0 && *channels != 0;
+    }
+    return 0;
+}
+
+static int ptn_isobmff_brand_is_avif(const unsigned char *brand) {
+    return memcmp(brand, "avif", 4) == 0 || memcmp(brand, "avis", 4) == 0;
+}
+
+static int ptn_isobmff_brand_is_heif(const unsigned char *brand) {
+    return memcmp(brand, "heic", 4) == 0 ||
+        memcmp(brand, "heix", 4) == 0 ||
+        memcmp(brand, "hevc", 4) == 0 ||
+        memcmp(brand, "hevx", 4) == 0 ||
+        memcmp(brand, "heim", 4) == 0 ||
+        memcmp(brand, "heis", 4) == 0 ||
+        memcmp(brand, "mif1", 4) == 0 ||
+        memcmp(brand, "msf1", 4) == 0;
+}
+
+static int ptn_isobmff_image_type_from_ftyp(
+    const unsigned char *data,
+    size_t len,
+    int64_t *image_type
+) {
+    if (len < 16 || ptn_image_read_u32_be(data) < 16 || memcmp(data + 4, "ftyp", 4) != 0) {
+        return 0;
+    }
+    uint32_t box_size = ptn_image_read_u32_be(data);
+    if ((size_t)box_size > len) {
+        return 0;
+    }
+    int saw_heif = 0;
+    for (size_t pos = 8; pos + 4 <= (size_t)box_size; pos += 4) {
+        const unsigned char *brand = data + pos;
+        if (ptn_isobmff_brand_is_avif(brand)) {
+            *image_type = PTN_IMAGE_FILETYPE_AVIF;
+            return 1;
+        }
+        if (ptn_isobmff_brand_is_heif(brand)) {
+            saw_heif = 1;
+        }
+    }
+    if (saw_heif) {
+        *image_type = PTN_IMAGE_FILETYPE_HEIF;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_getimagesize_isobmff_heif(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *width,
+    uint32_t *height,
+    int *bits,
+    int *channels,
+    int64_t *image_type
+) {
+    if (!ptn_isobmff_image_type_from_ftyp(data, len, image_type)) {
+        return 0;
+    }
+    int found_dimensions = 0;
+    int channel_total = 0;
+    int found_bits = 0;
+    for (size_t pos = 0; pos + 8 <= len; pos++) {
+        uint32_t box_size = ptn_image_read_u32_be(data + pos);
+        if (box_size < 8 || (size_t)box_size > len - pos) {
+            continue;
+        }
+        if (!found_dimensions && box_size >= 20 && memcmp(data + pos + 4, "ispe", 4) == 0) {
+            const unsigned char *payload = data + pos + 8;
+            uint32_t parsed_width = ptn_image_read_u32_be(payload + 4);
+            uint32_t parsed_height = ptn_image_read_u32_be(payload + 8);
+            if (parsed_width != 0 && parsed_height != 0) {
+                *width = parsed_width;
+                *height = parsed_height;
+                found_dimensions = 1;
+            }
+        }
+        if (box_size >= 14 && memcmp(data + pos + 4, "pixi", 4) == 0) {
+            const unsigned char *payload = data + pos + 8;
+            unsigned int box_channels = payload[4];
+            if (box_channels > 0 && box_channels <= box_size - 13) {
+                channel_total += (int)box_channels;
+                if (!found_bits) {
+                    *bits = payload[5];
+                    found_bits = 1;
+                }
+            }
+        }
+    }
+    if (!found_dimensions) {
+        return 0;
+    }
+    if (!found_bits) {
+        *bits = 8;
+    }
+    *channels = channel_total > 0 ? channel_total : 3;
+    return 1;
 }
 
 static PtnValue ptn_getimagesize_svg_result(PtnSvgImageInfo *info);
@@ -144811,6 +145406,7 @@ static PtnValue ptn_getimagesize_from_bytes(
     uint32_t width = 0;
     uint32_t height = 0;
     int bits = 0;
+    int channels = 0;
     int64_t image_type = PTN_IMAGE_FILETYPE_UNKNOWN;
     if (ptn_getimagesize_ico(data, len, &width, &height, &bits)) {
         return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_ICO, 1, bits);
@@ -144818,8 +145414,44 @@ static PtnValue ptn_getimagesize_from_bytes(
     if (ptn_getimagesize_tiff(data, len, &width, &height, &image_type)) {
         return ptn_getimagesize_result(width, height, image_type, 0, 0);
     }
-    if (ptn_getimagesize_jpeg(data, len, &width, &height, &bits, info)) {
-        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_JPEG, 1, bits);
+    if (ptn_getimagesize_jpeg(data, len, &width, &height, &bits, &channels, info)) {
+        return ptn_getimagesize_result_full(width, height, PTN_IMAGE_FILETYPE_JPEG, 1, bits, channels > 0, channels);
+    }
+    if (ptn_getimagesize_gif(data, len, &width, &height, &bits, &channels)) {
+        return ptn_getimagesize_result_full(width, height, PTN_IMAGE_FILETYPE_GIF, 1, bits, 1, channels);
+    }
+    if (ptn_getimagesize_png(data, len, &width, &height, &bits)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_PNG, 1, bits);
+    }
+    if (ptn_getimagesize_bmp(data, len, &width, &height, &bits)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_BMP, 1, bits);
+    }
+    if (ptn_getimagesize_webp(data, len, &width, &height, &bits)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_WEBP, 1, bits);
+    }
+    if (ptn_getimagesize_swf(data, len, &width, &height, &image_type)) {
+        return ptn_getimagesize_result(width, height, image_type, 0, 0);
+    }
+    if (ptn_getimagesize_wbmp(data, len, &width, &height)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_WBMP, 0, 0);
+    }
+    if (ptn_getimagesize_xbm(data, len, &width, &height)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_XBM, 0, 0);
+    }
+    if (ptn_getimagesize_iff(data, len, &width, &height, &bits)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_IFF, 1, bits);
+    }
+    if (ptn_getimagesize_psd(data, len, &width, &height)) {
+        return ptn_getimagesize_result(width, height, PTN_IMAGE_FILETYPE_PSD, 0, 0);
+    }
+    if (ptn_getimagesize_jp2_container(data, len, &width, &height, &bits, &channels)) {
+        return ptn_getimagesize_result_full(width, height, PTN_IMAGE_FILETYPE_JP2, 1, bits, 1, channels);
+    }
+    if (ptn_getimagesize_jpc_codestream(data, len, &width, &height, &bits, &channels)) {
+        return ptn_getimagesize_result_full(width, height, PTN_IMAGE_FILETYPE_JPC, 1, bits, 1, channels);
+    }
+    if (ptn_getimagesize_isobmff_heif(data, len, &width, &height, &bits, &channels, &image_type)) {
+        return ptn_getimagesize_result_full(width, height, image_type, 1, bits, 1, channels);
     }
 
     PtnSvgImageInfo svg_info;
@@ -145194,8 +145826,12 @@ static PtnValue ptn_internal_getimagesize(PtnRuntime *runtime, size_t argc, cons
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "getimagesize(): Filename contains null byte", line);
-        return ptn_bool(0);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "getimagesize(): Argument #1 ($filename) must not contain any null bytes"
+        );
+        return ptn_null();
     }
 
     unsigned char *data = NULL;
@@ -145218,6 +145854,29 @@ static PtnValue ptn_internal_getimagesize(PtnRuntime *runtime, size_t argc, cons
         free(data);
         return ptn_bool(0);
     }
+    if (data_len == 0) {
+        int needed = snprintf(NULL, 0, "getimagesize(): Error reading from %s!", path);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "getimagesize(): Error reading from %s!", path);
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_notice(&runtime->diagnostics, message, line);
+        free(message);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
 
     PtnValue info = ptn_array_from_literal_entries(0, NULL);
     PtnValue result = ptn_getimagesize_from_bytes(data, data_len, info);
@@ -145236,11 +145895,11 @@ static PtnValue ptn_internal_getimagesizefromstring(PtnRuntime *runtime, size_t 
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnSvgImageInfo info;
-    memset(&info, 0, sizeof(info));
-    int ok = ptn_libxml_svg_image_info_from_string(input, &info);
+    PtnValue info = ptn_array_from_literal_entries(0, NULL);
+    PtnValue result = ptn_getimagesize_from_bytes((const unsigned char *)input.data, input.len, info);
+    ptn_value_destroy(&info);
     ptn_string_operand_free(input);
-    return ok ? ptn_getimagesize_svg_result(&info) : ptn_bool(0);
+    return result;
 }
 
 static PtnValue ptn_internal_image_type_to_extension(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
