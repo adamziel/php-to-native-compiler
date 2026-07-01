@@ -1,0 +1,12 @@
+# Fresh top-level Zend GH regression pack from ptn-wm2tg.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260701T093034Z
+Zend/tests/get_defined_vars.phpt
+Zend/tests/gh16799.phpt
+Zend/tests/gh17162.phpt
+Zend/tests/gh18572.phpt
+Zend/tests/gh19306.phpt
+Zend/tests/gh19326.phpt
+Zend/tests/gh19844.phpt
+Zend/tests/gh18756.phpt
+Zend/tests/gh19543-001.phpt
+Zend/tests/gh19543-002.phpt

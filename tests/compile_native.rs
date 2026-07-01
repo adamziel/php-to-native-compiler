@@ -68639,6 +68639,45 @@ echo "Done\n";
 }
 
 #[test]
+fn compile_get_defined_vars_exposes_argc_without_this_to_native_binary() {
+    let root = temp_dir("ptn-native-get-defined-vars-argc-no-this");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-defined-vars-argc-no-this.php");
+    let output = root.join("get-defined-vars-argc-no-this-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$top = get_defined_vars();
+echo isset($top['argc']) ? "argc\n" : "missing-argc\n";
+
+class Probe {
+    public function inspect() {
+        $local = 1;
+        $vars = get_defined_vars();
+        var_dump(isset($vars['local']), array_key_exists('this', $vars));
+    }
+}
+
+(new Probe())->inspect();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "argc\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_initialize_request_context(&runtime"));
+}
+
+#[test]
 fn compile_array_read_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-array-read-diagnostics");
     fs::create_dir_all(&root).unwrap();

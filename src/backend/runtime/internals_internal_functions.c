@@ -242932,6 +242932,9 @@ static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, 
     PtnSymbolTable *symbols = &runtime->symbols;
     for (size_t i = 0; i < symbols->len; i++) {
         PtnSymbol *symbol = &symbols->items[i];
+        if (strcmp(symbol->name, "this") == 0) {
+            continue;
+        }
         PtnArrayKey key = ptn_array_string_key(symbol->name);
         ptn_array_set_entry(result.as.array, key, ptn_value_clone_deref(symbol->value));
     }

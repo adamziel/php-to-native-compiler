@@ -36635,6 +36635,9 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    if name.eq_ignore_ascii_case("get_defined_vars") {
+        requirements.request_context = true;
+    }
     if name.eq_ignore_ascii_case("file_get_contents")
         && (arguments.len() >= 3
             || argument_names.iter().any(|name| {
