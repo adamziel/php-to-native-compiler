@@ -1,0 +1,14 @@
+# Focused Zend try/finally regression row pack for ptn-1q5x2.
+#
+# Selection: bug70228_2..8 plus fresh full-PHPT failures try_finally_023
+# and try_finally_027, all exercising completion-state precedence when
+# returns and throws cross finally boundaries.
+Zend/tests/try/bug70228_2.phpt
+Zend/tests/try/bug70228_3.phpt
+Zend/tests/try/bug70228_4.phpt
+Zend/tests/try/bug70228_5.phpt
+Zend/tests/try/bug70228_6.phpt
+Zend/tests/try/bug70228_7.phpt
+Zend/tests/try/bug70228_8.phpt
+Zend/tests/try/try_finally_023.phpt
+Zend/tests/try/try_finally_027.phpt

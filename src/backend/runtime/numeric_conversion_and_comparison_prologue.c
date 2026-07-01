@@ -60,7 +60,6 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = caller_runtime->exceptions;
-    runtime->finally_return_suppressed_exception = NULL;
     runtime->native_argc = caller_runtime->native_argc;
     runtime->native_argv = caller_runtime->native_argv;
     runtime->owned_call_frame.argc = 0;
@@ -232,6 +231,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->owns_finally_return_suppressed_exception = 0;
     runtime->defer_unreferenced_destructors_for_catch = 0;
     runtime->deferred_yield_from_iterator_object = ptn_null();
     runtime->suppress_generator_rewind_trace_frame =
@@ -957,41 +957,6 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
 }
 #endif
 
-static PTN_UNUSED void ptn_runtime_adopt_finally_return_suppressed_exception(
-    PtnRuntime *runtime,
-    PtnException *exception
-) {
-    if (runtime == NULL || exception == NULL) {
-        return;
-    }
-    if (runtime->finally_return_suppressed_exception == exception) {
-        return;
-    }
-    ptn_exception_free(runtime->finally_return_suppressed_exception);
-    runtime->finally_return_suppressed_exception = exception;
-}
-
-static PTN_UNUSED void ptn_runtime_clear_finally_return_suppressed_exception(
-    PtnRuntime *runtime
-) {
-    if (runtime == NULL || runtime->finally_return_suppressed_exception == NULL) {
-        return;
-    }
-    PtnException *exception = runtime->finally_return_suppressed_exception;
-    runtime->finally_return_suppressed_exception = NULL;
-    if (
-        runtime->exceptions != NULL &&
-        runtime->exceptions->active_exception == exception
-    ) {
-        runtime->exceptions->active_exception = NULL;
-        ptn_exception_free(exception);
-    }
-    ptn_exception_free(exception);
-    if (runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL) {
-        runtime->generator_chained_exception_during_unwind = 0;
-    }
-}
-
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         if (runtime->shutdown_in_progress) {
@@ -999,7 +964,6 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         }
         runtime->shutdown_in_progress = 1;
     }
-    ptn_runtime_clear_finally_return_suppressed_exception(runtime);
     free(runtime->dynamic_property_deprecation_suppress_property);
     runtime->dynamic_property_deprecation_suppress_property = NULL;
     runtime->dynamic_property_deprecation_suppress_object = NULL;
@@ -2901,10 +2865,69 @@ static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
     PtnValue previous
 ) {
     PtnValue resolved = ptn_value_deref(previous);
-    if (resolved.type != PTN_NULL || runtime->exceptions->active_exception == NULL) {
+    if (resolved.type != PTN_NULL || runtime == NULL || runtime->exceptions == NULL) {
         return previous;
     }
-    return ptn_exception_borrow(runtime->exceptions->active_exception);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_exception_borrow(runtime->exceptions->active_exception);
+    }
+    if (runtime->exceptions->finally_return_suppressed_exception != NULL) {
+        runtime->exceptions->finally_return_suppressed_exception_should_resume = 1;
+        return ptn_exception_borrow(runtime->exceptions->finally_return_suppressed_exception);
+    }
+    return previous;
+}
+
+static PTN_UNUSED void ptn_runtime_resume_finally_return_suppressed_exception(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception != NULL ||
+        runtime->exceptions->finally_return_suppressed_exception == NULL ||
+        !runtime->exceptions->finally_return_suppressed_exception_should_resume
+    ) {
+        return;
+    }
+    ptn_exception_retain(runtime->exceptions->finally_return_suppressed_exception);
+    runtime->exceptions->active_exception = runtime->exceptions->finally_return_suppressed_exception;
+}
+
+static PTN_UNUSED void ptn_runtime_release_finally_return_suppressed_exception(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->finally_return_suppressed_exception == NULL
+    ) {
+        return;
+    }
+    ptn_exception_free(runtime->exceptions->finally_return_suppressed_exception);
+    runtime->exceptions->finally_return_suppressed_exception = NULL;
+    runtime->exceptions->finally_return_suppressed_exception_should_resume = 0;
+    runtime->owns_finally_return_suppressed_exception = 0;
+}
+
+static PTN_UNUSED void ptn_runtime_release_owned_finally_return_suppressed_exception(
+    PtnRuntime *runtime
+) {
+    if (runtime == NULL || !runtime->owns_finally_return_suppressed_exception) {
+        return;
+    }
+    ptn_runtime_release_finally_return_suppressed_exception(runtime);
+}
+
+static PTN_UNUSED void ptn_runtime_note_caught_finally_return_suppressed_exception(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->finally_return_suppressed_exception == NULL ||
+        exception == NULL
+    ) {
+        return;
+    }
+    runtime->exceptions->finally_return_suppressed_exception_should_resume = 1;
 }
 
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right);
@@ -8673,6 +8696,7 @@ static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
 
 static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
     PtnException *exception = runtime->exceptions->active_exception;
+    ptn_runtime_note_caught_finally_return_suppressed_exception(runtime, exception);
     runtime->exceptions->active_exception = NULL;
     ptn_exception_free(exception);
     if (runtime->exceptions->active_exception == NULL) {
@@ -8689,6 +8713,7 @@ static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const
         return 1;
     }
     PtnException *caught_exception = runtime->exceptions->active_exception;
+    ptn_runtime_note_caught_finally_return_suppressed_exception(runtime, caught_exception);
     ptn_exception_retain(caught_exception);
     runtime->exceptions->active_exception = NULL;
     ptn_exception_free(caught_exception);

@@ -24723,6 +24723,140 @@ try {
 }
 
 #[test]
+fn compile_finally_return_suppressed_exception_resumes_when_abandoned_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-return-suppressed-exception-resume");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-return-suppressed-exception-resume.php");
+    let output = root.join("finally-return-suppressed-exception-resume-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Dtor {
+    public function __destruct() {
+        throw new Exception(2);
+    }
+}
+
+function print_chain($label, $e) {
+    echo $label, "\n";
+    do {
+        echo $e->getMessage(), "\n";
+        $e = $e->getPrevious();
+    } while ($e);
+}
+
+function destructor_throw_caught() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            foreach ([new Dtor] as $v) {
+                unset($v);
+                return 42;
+            }
+        } catch (Exception $e) {
+        }
+    }
+}
+
+function nested_finally_throw() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            return 42;
+        } finally {
+            throw new Exception(2);
+        }
+    }
+}
+
+function outer_finally_throw_replaces_return() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            try {
+            } finally {
+                return 42;
+            }
+        } finally {
+            throw new Exception(2);
+        }
+    }
+}
+
+function caught_outer_finally_throw_resumes_original() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            try {
+                try {
+                } finally {
+                    return 42;
+                }
+            } finally {
+                throw new Exception(3);
+            }
+        } catch (Exception $e) {
+        }
+    }
+}
+
+function return_still_wins() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            throw new Exception(2);
+        } finally {
+            return 42;
+        }
+    }
+}
+
+try {
+    destructor_throw_caught();
+} catch (Exception $e) {
+    print_chain("destructor", $e);
+}
+
+try {
+    nested_finally_throw();
+} catch (Exception $e) {
+    print_chain("nested", $e);
+}
+
+try {
+    outer_finally_throw_replaces_return();
+} catch (Exception $e) {
+    print_chain("outer", $e);
+}
+
+try {
+    caught_outer_finally_throw_resumes_original();
+} catch (Exception $e) {
+    print_chain("caught", $e);
+}
+
+var_dump(return_still_wins());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "destructor\n1\nnested\n2\n1\nouter\n2\n1\ncaught\n1\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_abort_through_nested_finally_to_native_binary() {
     let root = temp_dir("ptn-native-generator-abort-nested-finally");
     fs::create_dir_all(&root).unwrap();

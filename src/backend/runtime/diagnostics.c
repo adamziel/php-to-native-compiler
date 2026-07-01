@@ -1328,6 +1328,8 @@ static PTN_UNUSED void ptn_exception_handlers_init(PtnExceptionState *state) {
     if (state == NULL) {
         return;
     }
+    state->finally_return_suppressed_exception = NULL;
+    state->finally_return_suppressed_exception_should_resume = 0;
     state->has_exception_handler = 0;
     state->exception_handler = ptn_null();
     state->exception_handler_stack = NULL;
@@ -1390,6 +1392,9 @@ static PTN_UNUSED void ptn_exception_handlers_restore(PtnExceptionState *state) 
     if (state == NULL) {
         return;
     }
+    ptn_exception_free(state->finally_return_suppressed_exception);
+    state->finally_return_suppressed_exception = NULL;
+    state->finally_return_suppressed_exception_should_resume = 0;
     ptn_exception_handlers_clear_current(state);
     if (state->exception_handler_stack_len == 0) {
         return;
@@ -2686,7 +2691,6 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = &runtime->owned_exceptions;
-    runtime->finally_return_suppressed_exception = NULL;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
     runtime->owned_call_frame.arg_names = NULL;
@@ -2826,6 +2830,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->owns_finally_return_suppressed_exception = 0;
     runtime->defer_unreferenced_destructors_for_catch = 0;
     runtime->deferred_yield_from_iterator_object = ptn_null();
     runtime->suppress_generator_rewind_trace_frame = 0;

@@ -697,10 +697,11 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ");
     out.push_str(&return_label);
     out.push_str(":\n");
-    out.push_str("    ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n");
+    out.push_str("    ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
     out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
     out.push_str("        ptn_rethrow_exception(&runtime);\n");
     out.push_str("    }\n");
+    out.push_str("    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n");
     out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
@@ -6182,7 +6183,6 @@ fn emit_user_functions(
         out.push_str("    }\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
-            out.push_str("    ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n");
             out.push_str("    if (ptn_generator_capture_pending_exception(&runtime, runtime.current_generator)) {\n");
             out.push_str("        if (runtime.current_generator != NULL) {\n");
             out.push_str("            runtime.current_generator->executing = 0;\n");
@@ -6201,10 +6201,12 @@ fn emit_user_functions(
             out.push_str("        runtime.current_generator->executing = 0;\n");
             out.push_str("    }\n");
         }
-        out.push_str("    ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n");
         out.push_str("    ptn_runtime_clear_temporary_roots(&runtime);\n");
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
+        out.push_str(
+            "    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
+        );
         out.push_str("    ptn_runtime_free(&runtime);\n");
         if function.is_anonymous {
             out.push_str("    free(ptn_closure_trace_name);\n");
@@ -6215,8 +6217,14 @@ fn emit_user_functions(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
+        out.push_str("    ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
+        out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        out.push_str("    }\n");
+        out.push_str(
+            "    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
+        );
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
-        out.push_str("    ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n");
         if function.is_generator {
             out.push_str("    ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
             out.push_str("    if (runtime.current_generator != NULL) {\n");
@@ -7284,7 +7292,6 @@ fn emit_include_helpers(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
-        out.push_str("    ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n");
         out.push_str("    runtime.compiled_include_depth--;\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
         out.push_str("    runtime.source_snapshot_data = ptn_previous_source_snapshot_data;\n");
@@ -18024,9 +18031,6 @@ fn emit_property_hook_get_helper(
                 out.push_str(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
-                out.push_str(
-                    "        ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n",
-                );
                 if hook_body_is_generator {
                     out.push_str("        ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
                     out.push_str("        if (runtime.current_generator != NULL) {\n");
@@ -18318,9 +18322,6 @@ fn emit_property_hook_set_helper(
                 out.push_str("        ;\n");
                 out.push_str(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
-                );
-                out.push_str(
-                    "        ptn_runtime_clear_finally_return_suppressed_exception(&runtime);\n",
                 );
                 out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             } else {
@@ -32860,6 +32861,8 @@ fn emit_exceptional_finally_and_rethrow(
         out.push_str(";\n");
     }
     out.push_str(indent);
+    out.push_str("ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
+    out.push_str(indent);
     out.push_str("if (runtime.exceptions->active_exception == NULL && ");
     out.push_str(&saved_exception_temp);
     out.push_str(" != NULL) {\n");
@@ -32919,9 +32922,6 @@ fn emit_exceptional_finally_return_override(
         out.push_str("    if (");
         out.push_str(saved_exception_temp);
         out.push_str(" != NULL) {\n");
-        out.push_str("        ptn_runtime_adopt_finally_return_suppressed_exception(&runtime, ");
-        out.push_str(saved_exception_temp);
-        out.push_str(");\n");
         out.push_str("        if (runtime.exceptions->active_exception == ");
         out.push_str(saved_exception_temp);
         out.push_str(") {\n");
@@ -32930,6 +32930,19 @@ fn emit_exceptional_finally_return_override(
         out.push_str(saved_exception_temp);
         out.push_str(");\n");
         out.push_str("        }\n");
+        out.push_str(
+            "        ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
+        );
+        out.push_str("        runtime.exceptions->finally_return_suppressed_exception = ");
+        out.push_str(saved_exception_temp);
+        out.push_str(";\n");
+        out.push_str("        runtime.owns_finally_return_suppressed_exception = 1;\n");
+        out.push_str(
+            "        runtime.exceptions->finally_return_suppressed_exception_should_resume = 0;\n",
+        );
+        out.push_str("        ");
+        out.push_str(saved_exception_temp);
+        out.push_str(" = NULL;\n");
         out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
         out.push_str("            runtime.generator_chained_exception_during_unwind = 0;\n");
         out.push_str("        }\n");
@@ -32992,6 +33005,7 @@ fn emit_instruction_sequence_with_generator_yield_abort_target(
             out.push_str(";\n");
             out.push_str("    }\n");
         }
+        out.push_str("    ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
         emit_instruction(
             out,
             values,

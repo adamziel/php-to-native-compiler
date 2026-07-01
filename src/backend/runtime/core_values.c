@@ -1451,7 +1451,9 @@ typedef struct {
 
 typedef struct {
     PtnException *active_exception;
+    PtnException *finally_return_suppressed_exception;
     PtnTryFrame *try_frame;
+    int finally_return_suppressed_exception_should_resume;
     int has_exception_handler;
     PtnValue exception_handler;
     PtnExceptionHandlerFrame *exception_handler_stack;
@@ -1683,7 +1685,6 @@ struct PtnRuntime {
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;
-    PtnException *finally_return_suppressed_exception;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
     const char *const *next_call_arg_names;
@@ -1804,6 +1805,7 @@ struct PtnRuntime {
     int generator_aborted_after_yield;
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
+    int owns_finally_return_suppressed_exception;
     int defer_unreferenced_destructors_for_catch;
     PtnValue deferred_yield_from_iterator_object;
     int suppress_generator_rewind_trace_frame;
