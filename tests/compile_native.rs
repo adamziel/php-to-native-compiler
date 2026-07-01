@@ -30677,6 +30677,21 @@ error_reporting($old_reporting);
 fclose($mem);
 
 $encoded = zlib_encode("Hello world.", ZLIB_ENCODING_DEFLATE);
+var_dump(
+    zlib_decode(gzdeflate("raw")),
+    zlib_decode(gzencode("gzip")),
+    zlib_decode(gzcompress("zlib"))
+);
+$incremental = "";
+$incrementalContext = deflate_init(ZLIB_ENCODING_DEFLATE);
+foreach (str_split("abcdef") as $chunk) {
+    $incremental .= deflate_add($incrementalContext, $chunk, ZLIB_SYNC_FLUSH);
+}
+$incremental .= deflate_add($incrementalContext, "", ZLIB_FINISH);
+var_dump(zlib_decode($incremental));
+try { zlib_decode(gzcompress("abcdef"), -1); } catch (ValueError $e) { echo "zlib-decode-max\n"; }
+var_dump(zlib_decode(gzcompress("abcdef"), 3));
+var_dump(zlib_decode("bad"));
 $ctx = inflate_init(ZLIB_ENCODING_DEFLATE);
 $inflated = "";
 for ($i = 0; inflate_get_status($ctx) === ZLIB_OK; $i++) {
@@ -30715,6 +30730,8 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
         "Warning: gzopen(): Cannot open a zlib stream for reading and writing at the same time!"
     ));
     assert!(stdout.contains("Warning: gzseek(): SEEK_END is not supported"));
+    assert!(stdout.contains("Warning: zlib_decode(): insufficient memory"));
+    assert!(stdout.contains("Warning: zlib_decode(): data error"));
     let stdout_without_warnings = stdout
         .lines()
         .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
@@ -30762,6 +30779,13 @@ string(4) \"1f8b\"\n\
 bool(false)\n\
 string(32) \"The quick brown fox jumps over t\"\n\
 bool(false)\n\
+string(3) \"raw\"\n\
+string(4) \"gzip\"\n\
+string(4) \"zlib\"\n\
+string(6) \"abcdef\"\n\
+zlib-decode-max\n\
+bool(false)\n\
+bool(false)\n\
 inflate:Hello world.:1\n\
 reset-status:0\n\
 inflate-error\n\
@@ -30782,6 +30806,7 @@ option-error\n"
     assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_deflate_add"));
     assert!(c_source.contains("ptn_internal_gzseek"));
+    assert!(c_source.contains("ptn_internal_zlib_decode"));
     assert!(c_source.contains("ptn_internal_zlib_encode"));
     assert!(c_source.contains("ptn_internal_inflate_get_status"));
     assert!(c_source.contains("ptn_internal_stream_filter_remove"));

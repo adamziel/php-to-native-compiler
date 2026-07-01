@@ -1,0 +1,12 @@
+ext/phar/tests/tar/links.phpt
+ext/standard/tests/streams/bug69521.phpt
+ext/standard/tests/streams/stream_context_set_params_notification_error.phpt
+ext/zlib/tests/deflate_add_basic.phpt
+ext/phar/tests/014.phpt
+ext/phar/tests/bug69324.phpt
+ext/phar/tests/tar/phar_setsignaturealgo2.phpt
+ext/phar/tests/004.phpt
+ext/zlib/tests/bug74240.phpt
+ext/standard/tests/streams/gh14930.phpt
+ext/phar/tests/phar_convert_repeated_b.phpt
+ext/phar/tests/pharfileinfo_construct.phpt
