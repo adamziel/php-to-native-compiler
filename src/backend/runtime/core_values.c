@@ -1837,6 +1837,7 @@ struct PtnRuntime {
     char *memory_limit;
     char *max_memory_limit;
     char *fiber_stack_size;
+    int fiber_stack_size_explicit;
     char *auto_detect_line_endings;
     char *default_charset;
     char *arg_separator_input;
@@ -2251,7 +2252,11 @@ static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
 
 static PTN_UNUSED void ptn_runtime_shutdown_before_exit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
+    if (runtime != NULL) {
+        runtime->current_fiber = NULL;
+    }
     if (root != NULL) {
+        root->current_fiber = NULL;
         ptn_runtime_free(root);
     }
 }

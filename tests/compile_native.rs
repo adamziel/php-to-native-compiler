@@ -3345,6 +3345,75 @@ echo "DONE\n";
 }
 
 #[test]
+fn compile_fiber_stack_size_start_validates_explicit_small_values_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-stack-size-start-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-stack-size-start-validation.php");
+    let output = root.join("fiber-stack-size-start-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(ini_set("fiber.stack_size", ""));
+try {
+    (new Fiber(function() { echo "bad\n"; }))->start();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("string(1) \"0\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("Fiber stack size is too small, it needs to be at least "),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let env_input = root.join("fiber-stack-size-env-start-validation.php");
+    let env_output = root.join("fiber-stack-size-env-start-validation-bin");
+    fs::write(
+        &env_input,
+        r#"<?php
+try {
+    (new Fiber(function() { echo "bad\n"; }))->start();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    compile_file(&env_input, &env_output, CompileOptions { emit_c: true }).unwrap();
+
+    let env_execution = Command::new(&env_output)
+        .env("PTN_FIBER_STACK_SIZE", "1024")
+        .output()
+        .unwrap();
+    assert!(
+        env_execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        env_execution.status.code(),
+        String::from_utf8_lossy(&env_execution.stderr)
+    );
+    let env_stdout = String::from_utf8(env_execution.stdout).unwrap();
+    assert!(
+        env_stdout.contains("Fiber stack size is too small, it needs to be at least "),
+        "{env_stdout}"
+    );
+    assert_eq!(String::from_utf8(env_execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_get_return_lifecycle_errors_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-get-return-lifecycle-errors");
     fs::create_dir_all(&root).unwrap();
@@ -3629,6 +3698,48 @@ $fiber->start();
         "NULL\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_fatal_clears_current_before_shutdown_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-fatal-shutdown-current");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-fatal-shutdown-current.php");
+    let output = root.join("fiber-fatal-shutdown-current-bin");
+    fs::write(
+        &input,
+        r#"<?php
+register_shutdown_function(function (): void {
+    var_dump(Fiber::getCurrent());
+});
+
+$fiber = new Fiber(function (): void {
+    trigger_error("fatal from fiber", E_USER_ERROR);
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        stdout.contains(
+            "Deprecated: Passing E_USER_ERROR to trigger_error() is deprecated since 8.4"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        combined.contains("Fatal error: fatal from fiber in "),
+        "{combined}"
+    );
+    assert!(stdout.ends_with("NULL\n"), "{stdout}");
+    assert!(!stdout.contains("object(Fiber)"), "{stdout}");
 }
 
 #[test]
