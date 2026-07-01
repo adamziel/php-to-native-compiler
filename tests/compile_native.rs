@@ -61950,6 +61950,118 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
+fn compile_soap_classmap_declared_null_properties_decode_once_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-classmap-declared-null-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-classmap-declared-null-properties.php");
+    let output = root.join("soap-classmap-declared-null-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/classmap-declared.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ab" targetNamespace="urn:ab"
+  xmlns:typens="urn:ab"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <xsd:schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:ab">
+      <xsd:complexType name="A">
+        <xsd:sequence>
+          <xsd:element name="x" type="xsd:anyType"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="B">
+        <xsd:complexContent>
+          <xsd:extension base="typens:A">
+            <xsd:sequence>
+              <xsd:element name="y" type="xsd:anyType"/>
+            </xsd:sequence>
+          </xsd:extension>
+        </xsd:complexContent>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="f"/>
+  <message name="fResponse"><part name="fReturn" type="typens:A"/></message>
+  <portType name="abServerPortType">
+    <operation name="f"><input message="typens:f"/><output message="typens:fResponse"/></operation>
+  </portType>
+  <binding name="abServerBinding" type="typens:abServerPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="f">
+      <soap:operation soapAction="urn:abServerAction"/>
+      <input><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="abService">
+    <port name="abServerPort" binding="typens:abServerBinding"><soap:address location="http://localhost/abServer.php"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class A {
+    public $x;
+    function __construct($a) { $this->x = $a; }
+}
+
+class B extends A {
+    public $y;
+    function __construct($a) {
+        parent::__construct($a);
+        $this->y = $a + 1;
+    }
+}
+
+function f() { return new B(5); }
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('f');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        return ob_get_clean();
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['classmap' => ['A' => 'A', 'B' => 'B']]);
+$result = $client->f();
+echo get_class($result), "\n";
+var_dump($result->x, $result->y);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "B\nint(5)\nint(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("has_non_null_existing"));
+}
+
+#[test]
 fn compile_soap_document_literal_any_wildcard_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-document-literal-any-wildcard-response");
     fs::create_dir_all(&root).unwrap();
@@ -62186,6 +62298,10 @@ echo round2_server_response($wsdl, $client->__getLastRequest());
     );
     assert!(
         stdout.contains("<input2DStringArray SOAP-ENC:arrayType=\"SOAP-ENC:Array[2]\" xsi:type=\"ns2:ArrayOfString2D\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:ns2=\"http://soapinterop.org/xsd\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\""),
         "{stdout}"
     );
     assert!(
@@ -63044,6 +63160,102 @@ print_r($client->__getTypes());
 }
 
 #[test]
+fn compile_soap_document_literal_complex_type_omits_unused_xsi_namespace_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-complex-type-no-unused-xsi");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("complex-type.wsdl"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="http://soapinterop.org/"
+  xmlns:s="http://soapinterop.org/xsd"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="http://soapinterop.org/">
+  <types>
+    <xsd:schema elementFormDefault="qualified" targetNamespace="http://soapinterop.org/">
+      <xsd:import namespace="http://soapinterop.org/xsd" />
+      <xsd:element name="echoComplexType">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="inputComplexType" type="s:SOAPStruct" />
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+    <xsd:schema elementFormDefault="qualified" targetNamespace="http://soapinterop.org/xsd">
+      <xsd:complexType name="SOAPStruct">
+        <xsd:sequence>
+          <xsd:element name="varInt" type="xsd:int" />
+          <xsd:element name="varString" type="xsd:string" />
+          <xsd:element name="varFloat" type="xsd:float" />
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="echoComplexTypeRequest"><part name="parameters" element="tns:echoComplexType" /></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoComplexType"><input message="tns:echoComplexTypeRequest" /></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" />
+    <operation name="echoComplexType">
+      <soap:operation soapAction="http://soapinterop.org/" style="document" />
+      <input><soap:body use="literal" /></input>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding"><soap:address location="test://" /></port>
+  </service>
+</definitions>
+"#,
+    )
+    .unwrap();
+    let input = root.join("soap-document-literal-complex-type-no-unused-xsi.php");
+    let output = root.join("soap-document-literal-complex-type-no-unused-xsi-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LocalSoapClient extends SoapClient {
+  function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+    echo $request;
+    return "";
+  }
+}
+$payload = new stdClass();
+$payload->inputComplexType = new stdClass();
+$payload->inputComplexType->varInt = 34;
+$payload->inputComplexType->varString = "arg";
+$payload->inputComplexType->varFloat = 325.325;
+$client = new LocalSoapClient(__DIR__ . "/complex-type.wsdl");
+$client->echoComplexType($payload);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://soapinterop.org/xsd\" xmlns:ns2=\"http://soapinterop.org/\"><SOAP-ENV:Body><ns2:echoComplexType><ns2:inputComplexType><ns1:varInt>34</ns1:varInt><ns1:varString>arg</ns1:varString><ns1:varFloat>325.325</ns1:varFloat></ns2:inputComplexType></ns2:echoComplexType></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_literal_document_type_needs_xsi_namespace"));
+}
+
+#[test]
 fn compile_soap_document_literal_foreign_field_namespace_array_to_native_binary() {
     let root = temp_dir("ptn-native-soap-document-literal-foreign-field-namespace-array");
     fs::create_dir_all(&root).unwrap();
@@ -63128,13 +63340,13 @@ $client->send(new Message());
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:FieldTypes\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"urn:Messages\"><SOAP-ENV:Body><ns2:message><ns2:event/><ns2:event/></ns2:message></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:Messages\"><SOAP-ENV:Body><ns1:message><ns1:event/><ns1:event/></ns1:message></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_soap_first_foreign_field_type_namespace"));
+    assert!(c_source.contains("ptn_soap_literal_document_type_needs_xsi_namespace"));
     assert!(c_source.contains("ptn_soap_enclosing_schema_element_form_qualified"));
 }
 

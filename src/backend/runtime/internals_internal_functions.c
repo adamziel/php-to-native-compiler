@@ -137501,12 +137501,32 @@ static void ptn_xml_append_parsed_text_span(
             ptn_xml_document_substitute_entities_enabled(document)) {
             char *system_id = ptn_xml_document_external_entity_system_id(document, entity_name);
             if (system_id != NULL && system_id[0] != '\0') {
+                char *local_system_id = NULL;
+                const char *entity_path = system_id;
+                size_t system_id_len = strlen(system_id);
+                if (system_id_len >= 8 && ptn_ascii_case_equal_n(system_id, "file:///", 8)) {
+                    local_system_id = ptn_duplicate_string(system_id + 7);
+                    entity_path = local_system_id;
+                }
+                if (!ptn_open_basedir_allows_path(runtime, entity_path)) {
+                    const char *function_name = ptn_dom_xml_parse_warning_function_name == NULL
+                        ? "DOMDocument::loadXML"
+                        : ptn_dom_xml_parse_warning_function_name;
+                    ptn_emit_open_basedir_warning(runtime, function_name, entity_path, ptn_dom_xml_parse_warning_php_line);
+                    free(local_system_id);
+                    free(system_id);
+                    free(entity_name);
+                    pos = semi + 1;
+                    chunk_start = pos;
+                    continue;
+                }
                 unsigned char *entity_data = NULL;
                 size_t entity_len = 0;
-                int read_result = ptn_read_file_bytes(system_id, &entity_data, &entity_len);
+                int read_result = ptn_read_file_bytes(entity_path, &entity_data, &entity_len);
                 if (read_result > 0) {
                     ptn_xml_append_text_span(runtime, parent, (const char *)entity_data, entity_len);
                     free(entity_data);
+                    free(local_system_id);
                     free(system_id);
                     free(entity_name);
                     pos = semi + 1;
@@ -137514,6 +137534,7 @@ static void ptn_xml_append_parsed_text_span(
                     continue;
                 }
                 free(entity_data);
+                free(local_system_id);
             }
             free(system_id);
         }
@@ -145440,6 +145461,34 @@ static void ptn_xml_materialize_default_namespaces_for_root(PtnRuntime *runtime,
     }
 }
 
+static void ptn_xml_materialize_inherited_default_namespace_root(PtnRuntime *runtime, PtnXmlNode *root) {
+    if (root == NULL ||
+        root->type != PTN_XML_NODE_ELEMENT ||
+        root->namespace_uri == NULL ||
+        root->namespace_uri[0] == '\0' ||
+        ptn_xml_name_has_prefix(root->name) ||
+        ptn_xml_element_has_local_default_namespace(root, root->namespace_uri)) {
+        return;
+    }
+    const char *inherited_default = ptn_xml_lookup_namespace_uri(root->parent, "");
+    if (inherited_default == NULL || strcmp(inherited_default, root->namespace_uri) != 0) {
+        return;
+    }
+    char *prefix = ptn_dom_element_find_prefix_for_namespace(root, root->namespace_uri);
+    if (prefix == NULL) {
+        prefix = ptn_dom_element_generated_attribute_prefix(root, root->namespace_uri, NULL);
+    }
+    ptn_dom_element_ensure_prefixed_namespace(runtime, root, prefix, root->namespace_uri);
+    char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
+    PtnXmlNode *declaration = ptn_xml_element_find_attribute(root, xmlns_name);
+    if (declaration != NULL) {
+        declaration->synthetic_namespace_declaration = 0;
+    }
+    free(xmlns_name);
+    ptn_xml_prefix_unqualified_namespace_elements(root, root->namespace_uri, prefix);
+    free(prefix);
+}
+
 static void ptn_xml_materialize_adopted_default_namespace(PtnRuntime *runtime, PtnXmlNode *node) {
     if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
         return;
@@ -145448,6 +145497,7 @@ static void ptn_xml_materialize_adopted_default_namespace(PtnRuntime *runtime, P
     if (document != NULL && document->modern_dom) {
         return;
     }
+    ptn_xml_materialize_inherited_default_namespace_root(runtime, node);
     for (size_t i = 0; i < node->child_count; i++) {
         ptn_xml_materialize_default_namespaces_for_root(runtime, node, node->children[i]);
     }
@@ -152373,6 +152423,18 @@ static PtnValue ptn_dom_write_serialized_file(
         return ptn_null();
     }
     PtnStringOperand data = ptn_value_to_string_operand(serialized);
+    if (!ptn_open_basedir_check_local_path(runtime, function_name, path, line)) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, function_name, path, detail, line);
+        free(path);
+        ptn_string_operand_free(data);
+        ptn_value_destroy(&serialized);
+        return ptn_bool(0);
+    }
     FILE *stream = fopen(path, "wb");
     if (stream == NULL) {
         char detail[192];
@@ -153194,6 +153256,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             }
             return ptn_null();
         }
+        ptn_xml_materialize_adopted_default_namespace(runtime, node);
         ptn_xml_detach_node(node);
         ptn_xml_set_owner_document_recursive(node, document);
         ptn_xml_materialize_adopted_default_namespace(runtime, node);
@@ -180902,6 +180965,36 @@ static int ptn_soap_type_has_attribute_fields(const PtnSoapType *type) {
     return 0;
 }
 
+static int ptn_soap_literal_document_type_needs_xsi_namespace(
+    PtnSoapType *types,
+    size_t type_count,
+    const PtnSoapType *type,
+    int depth
+) {
+    if (type == NULL || depth > 32) {
+        return 0;
+    }
+    if (!type->has_simple_content &&
+        !ptn_soap_type_has_element_fields(type) &&
+        ptn_soap_type_has_attribute_fields(type)) {
+        return 1;
+    }
+    for (size_t i = 0; i < type->field_count; i++) {
+        const PtnSoapField *field = &type->fields[i];
+        if (field->is_attribute || field->is_wildcard) {
+            continue;
+        }
+        PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
+        if (field_type != NULL &&
+            !field_type->is_simple &&
+            !field_type->is_array &&
+            ptn_soap_literal_document_type_needs_xsi_namespace(types, type_count, field_type, depth + 1)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_soap_append_schema_scalar_value(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
@@ -181285,12 +181378,6 @@ static void ptn_soap_collect_type_element_namespaces(
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
         if (field_type != NULL &&
-            field_type->namespace_uri != NULL &&
-            field_type->namespace_uri[0] != '\0' &&
-            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
-            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
-        }
-        if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
             !field_type->is_array) {
@@ -181326,12 +181413,6 @@ static void ptn_soap_collect_type_value_namespaces(
             continue;
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
-        if (field_type != NULL &&
-            field_type->namespace_uri != NULL &&
-            field_type->namespace_uri[0] != '\0' &&
-            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
-            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
-        }
         if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
@@ -183173,10 +183254,10 @@ static int ptn_soap_build_rpc_encoded_request(
     );
     if (has_array_part) {
         ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
-        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (part_count != 0) {
             ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (custom_namespace != NULL && custom_namespace[0] != '\0') {
             ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
         }
@@ -183427,10 +183508,14 @@ static int ptn_soap_build_request(
         if (type != NULL && type->is_array) {
             ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         }
+        int include_xsi = type != NULL &&
+            !type->is_array &&
+            literal_namespaces.count > 1 &&
+            ptn_soap_literal_document_type_needs_xsi_namespace(data->types, data->type_count, type, 0);
         ptn_soap_append_namespace_declarations_with_xsi_after_first(
             &body,
             &literal_namespaces,
-            type != NULL && !type->is_array && literal_namespaces.count > 1
+            include_xsi
         );
         ptn_string_buffer_append_char(&body, '>');
         if (header_xml.len != 0) {
@@ -184518,13 +184603,14 @@ static void ptn_soap_write_decoded_field_property(
 ) {
     PtnValue existing = ptn_null();
     int has_existing = ptn_soap_schema_value_property(object, property, &existing);
-    if ((field != NULL && field->is_repeated) || has_existing) {
+    int has_non_null_existing = has_existing && ptn_value_deref(existing).type != PTN_NULL;
+    if ((field != NULL && field->is_repeated) || has_non_null_existing) {
         PtnValue array = ptn_null();
-        if (has_existing && ptn_value_deref(existing).type == PTN_ARRAY) {
+        if (has_non_null_existing && ptn_value_deref(existing).type == PTN_ARRAY) {
             array = ptn_value_deref(existing);
         } else {
             array = ptn_array_from_literal_entries(0, NULL);
-            if (has_existing) {
+            if (has_non_null_existing) {
                 ptn_array_set_entry(
                     array.as.array,
                     ptn_array_int_key(array.as.array->next_auto_key),
