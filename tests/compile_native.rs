@@ -111666,6 +111666,77 @@ new B;
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_static_property_read_as_instance_reports_receiver_class_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-read-as-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-read-as-instance.php");
+    let output = root.join("static-property-read-as-instance-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class StaticReadParent {
+    private static $a = "a";
+    protected static $b = "b";
+    public static $c = "c";
+    public function __construct() {
+        var_dump($this->a, $this->b, $this->c);
+    }
+}
+class StaticReadChild extends StaticReadParent {}
+new StaticReadChild;
+
+class HiddenStaticReadParent {
+    private static $a = "a";
+    private static $b = "b";
+    private static $c = "c";
+    public function __construct() {
+        var_dump($this->a, $this->b, $this->c);
+    }
+}
+class HiddenStaticReadChild extends HiddenStaticReadParent {
+    private static $a = "a1";
+    protected static $b = "b1";
+    public static $c = "c1";
+}
+new HiddenStaticReadChild;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    for class_name in ["StaticReadChild", "HiddenStaticReadChild"] {
+        for property in ["a", "b", "c"] {
+            assert!(
+                stdout.contains(&format!(
+                    "Notice: Accessing static property {class_name}::${property} as non static"
+                )),
+                "{stdout}"
+            );
+            assert!(
+                stdout.contains(&format!(
+                    "Warning: Undefined property: {class_name}::${property}"
+                )),
+                "{stdout}"
+            );
+        }
+    }
+    assert!(
+        !stdout.contains("StaticReadParent::$a as non static"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Cannot access private property HiddenStaticReadChild::$a"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("NULL\nNULL\nNULL\n").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

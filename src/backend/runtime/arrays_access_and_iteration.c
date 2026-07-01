@@ -6595,30 +6595,6 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         return array_object_value;
     }
 #endif
-    PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
-    const char *inaccessible_static_declaring_class = NULL;
-    if (ptn_object_static_property_inaccessible(
-        runtime,
-        receiver.as.object,
-        property,
-        access_scope,
-        PTN_PROPERTY_ACCESS_READ,
-        &static_visibility,
-        &inaccessible_static_declaring_class
-    )) {
-        ptn_throw_property_visibility_error(
-            runtime,
-            static_visibility,
-            ptn_static_property_visibility_error_class(
-                static_visibility,
-                receiver.as.object->class_name,
-                inaccessible_static_declaring_class
-            ),
-            property,
-            line
-        );
-        return ptn_null();
-    }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
     if (blocked_metadata != NULL) {
@@ -6674,7 +6650,6 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
-    const char *static_declaring_class = NULL;
     int static_property_as_instance = metadata == NULL && ptn_object_static_property_visibility(
         runtime,
         receiver.as.object,
@@ -6682,7 +6657,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
         NULL,
-        &static_declaring_class
+        NULL
     );
     ptn_array_key_free(key);
     free(storage_key);
@@ -6802,7 +6777,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         if (static_property_as_instance) {
             ptn_emit_static_property_non_static_notice(
                 runtime,
-                static_declaring_class,
+                receiver.as.object->class_name,
                 property,
                 line
             );
@@ -6842,7 +6817,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     if (static_property_as_instance) {
         ptn_emit_static_property_non_static_notice(
             runtime,
-            static_declaring_class,
+            receiver.as.object->class_name,
             property,
             line
         );
