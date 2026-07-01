@@ -1786,9 +1786,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
         ptn_rethrow_exception(runtime);
         return 1;
     }
-    if (suppress_user_call_frame_location) {
-        runtime->suppress_user_call_frame_location = 1;
-    }
+    (void)suppress_user_call_frame_location;
     handler_diagnostics->error_handler_call_depth++;
     result = ptn_call_callable(runtime, saved_handler, 4, call_args, line, 0);
     handler_diagnostics->error_handler_call_depth--;
