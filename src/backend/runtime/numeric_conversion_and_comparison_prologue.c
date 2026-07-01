@@ -377,10 +377,16 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     size_t limit = 0;
     if (ptn_runtime_memory_limit_bytes(runtime, &limit) && limit != 0) {
         const size_t estimated_frame_bytes = 8192;
+        /* Keep PHP memory-limit fatals ahead of native stack exhaustion. */
+        const size_t max_synthetic_frame_depth = 768;
         size_t depth = 1;
         for (PtnTraceFrame *frame = runtime->trace_frame;
              frame != NULL;
              frame = frame->previous) {
+            if (depth >= max_synthetic_frame_depth) {
+                depth = max_synthetic_frame_depth;
+                break;
+            }
             if (depth > SIZE_MAX / estimated_frame_bytes) {
                 depth = SIZE_MAX / estimated_frame_bytes;
                 break;
@@ -388,7 +394,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
             depth++;
         }
         size_t estimated_usage = depth * estimated_frame_bytes;
-        if (estimated_usage > limit) {
+        if (estimated_usage > limit || depth >= max_synthetic_frame_depth) {
             char message[192];
             int written = snprintf(
                 message,

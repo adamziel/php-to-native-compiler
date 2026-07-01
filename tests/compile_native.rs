@@ -17481,6 +17481,52 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_large_object_cycle_bails_without_native_stack_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-large-object-cycle-stack-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-large-object-cycle-stack-guard.php");
+    let output = root.join("gc-large-object-cycle-stack-guard-bin");
+    fs::write(
+        &input,
+        "<?php
+class Node {
+    public $previous;
+    public $next;
+}
+
+var_dump(gc_enabled());
+$firstNode = new Node();
+$firstNode->previous = $firstNode;
+$firstNode->next = $firstNode;
+$circularDoublyLinkedList = $firstNode;
+for ($i = 0; $i < 70000; $i++) {
+    $currentNode = $circularDoublyLinkedList;
+    $nextNode = $circularDoublyLinkedList->next;
+    $newNode = new Node();
+    $newNode->previous = $currentNode;
+    $currentNode->next = $newNode;
+    $newNode->next = $nextNode;
+    $nextNode->previous = $newNode;
+    $circularDoublyLinkedList = $nextNode;
+}
+gc_collect_cycles();
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_defers_foreach_by_ref_array_cycles_until_iterator_cleanup_to_native_binary() {
     let root = temp_dir("ptn-native-gc-foreach-by-ref-array-cycle-deferral");
     fs::create_dir_all(&root).unwrap();
@@ -69202,6 +69248,17 @@ Test::$mystatic = new DestructorCreator();\n",
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     let stderr = String::from_utf8(execution.stderr).unwrap();
     assert!(stderr.contains("Fatal error: Allowed memory size of 131072 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 8192 bytes"));
+    assert!(stderr.contains("recursive-shutdown-destructor-memory-limit.php on line "));
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "8M")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 8388608 bytes exhausted"));
     assert!(stderr.contains("tried to allocate 8192 bytes"));
     assert!(stderr.contains("recursive-shutdown-destructor-memory-limit.php on line "));
 }
