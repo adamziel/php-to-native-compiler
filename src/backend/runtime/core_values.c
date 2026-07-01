@@ -1324,6 +1324,7 @@ typedef struct {
     int writable;
     int append;
     int spilled;
+    int write_at_truncated_end;
     int eof;
     int error;
 } PtnMemoryStream;
@@ -4350,6 +4351,7 @@ static PTN_UNUSED PtnMemoryStream *ptn_memory_stream_new(size_t max_memory, int 
     stream->writable = writable;
     stream->append = append;
     stream->spilled = 0;
+    stream->write_at_truncated_end = 0;
     stream->eof = 0;
     stream->error = 0;
     return stream;
@@ -4674,6 +4676,12 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
     }
     if (stream->append) {
         stream->position = stream->len;
+        stream->write_at_truncated_end = 0;
+    } else if (stream->write_at_truncated_end && stream->position > stream->len) {
+        stream->position = stream->len;
+        stream->write_at_truncated_end = 0;
+    } else {
+        stream->write_at_truncated_end = 0;
     }
     if (stream->position > SIZE_MAX - len) {
         ptn_abort_out_of_memory();
@@ -4825,6 +4833,7 @@ static PTN_UNUSED int ptn_stream_seek(PtnResource *resource, int64_t offset, int
         return -1;
     }
     stream->position = (size_t)target;
+    stream->write_at_truncated_end = 0;
     stream->eof = 0;
     stream->error = 0;
     return 0;
@@ -4944,6 +4953,7 @@ static PTN_UNUSED int ptn_stream_truncate(PtnResource *resource, int64_t size) {
         memset(stream->data + stream->len, 0, new_len - stream->len);
     }
     stream->len = new_len;
+    stream->write_at_truncated_end = stream->position > stream->len;
     ptn_memory_stream_note_size(resource, stream);
     stream->eof = 0;
     stream->error = 0;
