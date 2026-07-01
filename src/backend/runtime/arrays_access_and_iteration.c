@@ -6597,15 +6597,22 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
 #endif
     PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
     const char *inaccessible_static_declaring_class = NULL;
-    if (ptn_object_static_property_inaccessible(
-        runtime,
-        receiver.as.object,
-        property,
-        access_scope,
-        PTN_PROPERTY_ACCESS_READ,
-        &static_visibility,
-        &inaccessible_static_declaring_class
-    )) {
+    if (!ptn_object_instance_property_accessible(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ
+        ) &&
+        ptn_object_static_property_inaccessible(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            &static_visibility,
+            &inaccessible_static_declaring_class
+        )) {
         ptn_throw_property_visibility_error(
             runtime,
             static_visibility,

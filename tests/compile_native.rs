@@ -41066,6 +41066,70 @@ var_dump($box->reveal());
 }
 
 #[test]
+fn compile_private_static_instance_property_name_collisions_to_native_binary() {
+    let root = temp_dir("ptn-native-private-static-instance-property-collisions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-static-instance-property-collisions.php");
+    let output = root.join("private-static-instance-property-collisions-bin");
+    fs::write(
+        &input,
+        "<?php
+class StaticBase {
+    private static $p = \"base static\";
+
+    public static function showStatic() {
+        echo self::$p, \"\\n\";
+    }
+}
+
+class InstanceChild extends StaticBase {
+    private $p = \"child instance\";
+
+    public function showInstance() {
+        echo $this->p, \"\\n\";
+    }
+}
+
+class InstanceBase {
+    private $p = \"base instance\";
+
+    public function showInstance() {
+        echo $this->p, \"\\n\";
+    }
+}
+
+class StaticChild extends InstanceBase {
+    private static $p = \"child static\";
+
+    public static function showStatic() {
+        echo self::$p, \"\\n\";
+    }
+}
+
+StaticBase::showStatic();
+(new InstanceChild)->showInstance();
+(new StaticChild)->showInstance();
+StaticChild::showStatic();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base static\nchild instance\nbase instance\nchild static\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_instance_property_accessible"));
+    assert!(c_source.contains("ptn_object_static_property_inaccessible"));
+}
+
+#[test]
 fn compile_declared_non_public_instance_properties_to_native_binary() {
     let root = temp_dir("ptn-native-declared-non-public-properties");
     fs::create_dir_all(&root).unwrap();
