@@ -114510,6 +114510,9 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "zip")) {
         return "zip";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "zend_test")) {
+        return "zend_test";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "zlib")) {
         return "zlib";
     }
@@ -120242,20 +120245,21 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(24), ptn_string("xmlreader"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(25), ptn_string("xmlwriter"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(26), ptn_string("zip"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(27), ptn_string("zlib"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(28), ptn_string("PDO"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(29), ptn_string("pdo_sqlite"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(30), ptn_string("sqlite3"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(31), ptn_string("mysqli"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(32), ptn_string("pgsql"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(33), ptn_string("pdo_mysql"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(34), ptn_string("pdo_pgsql"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(35), ptn_string("pdo_firebird"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(36), ptn_string("pdo_dblib"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(37), ptn_string("odbc"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(38), ptn_string("Zend OPcache"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(39), ptn_string("session"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(40), ptn_string("simplexml"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(27), ptn_string("zend_test"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(28), ptn_string("zlib"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(29), ptn_string("PDO"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(30), ptn_string("pdo_sqlite"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(31), ptn_string("sqlite3"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(32), ptn_string("mysqli"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(33), ptn_string("pgsql"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(34), ptn_string("pdo_mysql"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(35), ptn_string("pdo_pgsql"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(36), ptn_string("pdo_firebird"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(37), ptn_string("pdo_dblib"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(38), ptn_string("odbc"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(39), ptn_string("Zend OPcache"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(40), ptn_string("session"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(41), ptn_string("simplexml"));
     return result;
 }
 

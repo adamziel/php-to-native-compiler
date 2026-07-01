@@ -10,7 +10,7 @@
 # runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
-PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="bcmath,calendar,Core,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,mysqli,odbc,opcache,openssl,pcre,pdo,pdo_dblib,pdo_firebird,pdo_mysql,pdo_odbc,pdo_pgsql,pdo_sqlite,pgsql,Phar,phar,random,Reflection,session,simplexml,sockets,soap,SPL,sqlite3,standard,tokenizer,uri,xml,xmlreader,xmlwriter,zip,zlib"
+PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="bcmath,calendar,Core,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,mysqli,odbc,opcache,openssl,pcre,pdo,pdo_dblib,pdo_firebird,pdo_mysql,pdo_odbc,pdo_pgsql,pdo_sqlite,pgsql,Phar,phar,random,Reflection,session,simplexml,sockets,soap,SPL,sqlite3,standard,tokenizer,uri,xml,xmlreader,xmlwriter,zip,zend_test,zlib"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="allow_url_fopen,allow_url_include,always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,bcmath.scale,date.timezone,default_charset,display_errors,html_errors,enable_post_data_reading,enable_dl,error_reporting,expose_php,extension_dir,file_uploads,filter.default,highlight.comment,highlight.default,highlight.html,highlight.keyword,highlight.string,include_path,input_encoding,internal_encoding,intl.default_locale,intl.use_exceptions,max_input_nesting_level,max_input_vars,max_memory_limit,mbstring.detect_order,mbstring.encoding_translation,mbstring.http_input,mbstring.http_output,mbstring.internal_encoding,mbstring.language,mbstring.regex_retry_limit,mbstring.regex_stack_limit,mbstring.strict_detection,mbstring.substitute_character,memory_limit,opcache.blacklist_filename,opcache.enable,opcache.enable_cli,opcache.fast_shutdown,opcache.file_cache_only,opcache.file_update_protection,opcache.interned_strings_buffer,opcache.log_verbosity_level,opcache.optimization_level,opcache.preload,opcache.preload_user,opcache.revalidate_path,opcache.save_comments,opcache.validate_timestamps,open_basedir,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,pcre.recursion_limit,phar.cache_list,phar.readonly,phar.require_hash,post_max_size,precision,register_argc_argv,serialize_precision,session.auto_start,session.cache_expire,session.cache_limiter,session.cookie_domain,session.cookie_httponly,session.cookie_lifetime,session.cookie_partitioned,session.cookie_path,session.cookie_samesite,session.cookie_secure,session.gc_divisor,session.gc_maxlifetime,session.gc_probability,session.name,session.save_handler,session.save_path,session.serialize_handler,session.sid_bits_per_character,session.sid_length,session.upload_progress.cleanup,session.upload_progress.enabled,session.upload_progress.freq,session.upload_progress.min_freq,session.upload_progress.name,session.upload_progress.prefix,session.use_cookies,session.use_only_cookies,session.use_strict_mode,session.use_trans_sid,soap.wsdl_cache_enabled,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.enable_gc,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
@@ -1046,6 +1046,36 @@ ptn_phpt_first_unsupported_extension() {
             return 0
         fi
     done < <(ptn_phpt_skipif_extension_probes "$path")
+
+    return 1
+}
+
+ptn_phpt_requires_zend_test_native_helper() {
+    local row=$1
+    local path=$2
+    local helper_pattern="zend_test_|zend_get_current_func_name|_ZendTest|ZendTest|ZEND_TEST|DoOperationNoCast|ReflectionExtension[[:space:]]*[(][[:space:]]*['\"]zend_test['\"]"
+
+    [[ "$row" == ext/zend_test/tests/* ]] || return 1
+
+    if LC_ALL=C grep -Eq "$helper_pattern" "$path"; then
+        return 0
+    fi
+
+    local dir
+    dir=$(dirname -- "$path")
+    local include
+    while IFS= read -r include; do
+        [[ "$include" == /* || "$include" == *://* || "$include" == *..* ]] && continue
+        local target="$dir/$include"
+        [[ -f "$target" ]] || continue
+        if LC_ALL=C grep -Eq "$helper_pattern" "$target"; then
+            return 0
+        fi
+    done < <(
+        LC_ALL=C grep -Eo "(require|include)(_once)?[[:space:]]+['\"][^'\"]+['\"]" "$path" \
+            | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/" \
+            || true
+    )
 
     return 1
 }
@@ -2656,6 +2686,11 @@ ptn_phpt_classify_row() {
                 "$value" "$(ptn_phpt_supported_extensions)"
             return 0
         fi
+    fi
+
+    if ptn_phpt_requires_zend_test_native_helper "$rel" "$path"; then
+        printf 'unsupported-zend-test-helper\trequires zend_test native helper API not modeled by the PTN runtime extension shim\n'
+        return 0
     fi
 
     if ptn_phpt_has_external_service_harness "$path"; then
