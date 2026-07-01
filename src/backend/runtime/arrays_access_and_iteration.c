@@ -1084,12 +1084,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_class_name_is_stdclass(lookup_class_name)) {
         (void)argc;
         (void)args;
-        return ptn_object_new_shell(runtime, "stdClass");
+        return ptn_object_new_shell_at(runtime, "stdClass", line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "__PHP_Incomplete_Class")) {
         (void)argc;
         (void)args;
-        return ptn_object_new_shell(runtime, "__PHP_Incomplete_Class");
+        return ptn_object_new_shell_at(runtime, "__PHP_Incomplete_Class", line);
     }
     if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -1117,7 +1117,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_runtime_dynamic_class_exists(runtime, lookup_class_name)) {
         (void)argc;
         (void)args;
-        return ptn_object_new_shell(runtime, lookup_class_name);
+        return ptn_object_new_shell_at(runtime, lookup_class_name, line);
     }
     if (ptn_declared_runtime_user_class_exists(runtime, lookup_class_name)) {
         return ptn_declared_class_new_instance(runtime, lookup_class_name, argc, args, line);
@@ -1415,7 +1415,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
             return ptn_null();
         }
-        return ptn_object_new_shell(runtime, "DateTime");
+        return ptn_object_new_shell_at(runtime, "DateTime", line);
 #endif
     }
     if (ptn_class_name_is_datetime_immutable(lookup_class_name)) {
@@ -1426,7 +1426,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTimeImmutable constructor expects at most 1 argument");
             return ptn_null();
         }
-        return ptn_object_new_shell(runtime, "DateTimeImmutable");
+        return ptn_object_new_shell_at(runtime, "DateTimeImmutable", line);
 #endif
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH

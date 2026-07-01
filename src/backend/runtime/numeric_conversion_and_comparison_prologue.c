@@ -2904,6 +2904,10 @@ static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
     if (resolved.type != PTN_NULL || runtime == NULL || runtime->exceptions == NULL) {
         return previous;
     }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->destructor_shutdown_phase) {
+        return previous;
+    }
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_exception_borrow(runtime->exceptions->active_exception);
     }
@@ -7703,6 +7707,36 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
     ptn_throw_exception_at(
         runtime,
         "Error",
+        "Class name must be a valid object or a string",
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name_or_fatal(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_STRING) {
+        return ptn_value_clone_deref(receiver);
+    }
+    const char *class_name = NULL;
+    if (receiver.type == PTN_OBJECT) {
+        class_name = receiver.as.object->class_name;
+    } else if (receiver.type == PTN_EXCEPTION) {
+        class_name = receiver.as.exception->class_name;
+    } else if (receiver.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    }
+    if (class_name != NULL) {
+        return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+
+    ptn_emit_fatal_error_at(
+        runtime,
         "Class name must be a valid object or a string",
         runtime != NULL ? runtime->source_path : NULL,
         line

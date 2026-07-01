@@ -1395,8 +1395,18 @@ fn compile_and_run(
         }
     })?;
 
+    let php_binary = std::env::current_exe()
+        .ok()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| {
+            std::env::args_os()
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("phpc"))
+        });
     let mut command = Command::new(native.path());
     command.args(args);
+    command.env("PTN_PHP_BINARY", &php_binary);
     command.env("PTN_SCRIPT_FILENAME", script);
     command.env("PTN_RUNTIME_SOURCE_PATH", script);
     if let Some(loaded_file_path) = &ini.loaded_file_path {

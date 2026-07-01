@@ -8894,7 +8894,9 @@ impl Parser<'_> {
                             }
                         };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
-                        if dynamic_static_property_fetch_has_illegal_literal_receiver(&expr) {
+                        if (direct_variable_member || literal_name.is_some())
+                            && dynamic_static_property_fetch_has_illegal_literal_receiver(&expr)
+                        {
                             return Err(Diagnostic::new("Illegal class name", Some(start_span)));
                         }
                         if direct_variable_member {
@@ -8908,9 +8910,6 @@ impl Parser<'_> {
                                 };
                                 continue;
                             }
-                        }
-                        if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
-                            return Err(Diagnostic::new("Illegal class name", Some(start_span)));
                         }
                         let name = literal_name.map_or_else(
                             || dynamic_name.expect("dynamic class constant expression"),
@@ -26987,18 +26986,12 @@ fn validate_coalesce_assignment_target(
             Some(span),
         )),
         AssignmentTarget::ValueArrayDim {
-            array, dimensions, ..
+            dimensions, ..
         } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
                     "Cannot use [] for reading",
                     Some(span),
-                ));
-            }
-            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
-                return Err(Diagnostic::new(
-                    "Cannot use result of built-in function in write context",
-                    Some(call_span),
                 ));
             }
             Ok(())
@@ -27013,121 +27006,6 @@ fn validate_coalesce_assignment_target(
             Some(span),
         )),
     }
-}
-
-fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> {
-    match expr {
-        Expr::Call { name, span, .. }
-            if is_modeled_internal_function_name(name)
-                && !modeled_internal_may_return_string(name)
-                && !modeled_internal_has_by_ref_parameter(name) =>
-        {
-            Some(*span)
-        }
-        Expr::Grouped { expr, .. } => modeled_internal_write_context_error_span(expr),
-        _ => None,
-    }
-}
-
-fn modeled_internal_may_return_string(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "addcslashes"
-            | "addslashes"
-            | "base64_decode"
-            | "base64_encode"
-            | "bin2hex"
-            | "chop"
-            | "chr"
-            | "chunk_split"
-            | "convert_uudecode"
-            | "convert_uuencode"
-            | "crypt"
-            | "dirname"
-            | "escapeshellarg"
-            | "hash"
-            | "hash_file"
-            | "hash_final"
-            | "hash_hmac"
-            | "hash_hmac_file"
-            | "hash_hkdf"
-            | "hash_pbkdf2"
-            | "hex2bin"
-            | "gzdeflate"
-            | "gzencode"
-            | "gzcompress"
-            | "gzuncompress"
-            | "zlib_decode"
-            | "zlib_encode"
-            | "html_entity_decode"
-            | "htmlentities"
-            | "iconv"
-            | "iconv_mime_decode"
-            | "iconv_mime_encode"
-            | "iconv_substr"
-            | "implode"
-            | "join"
-            | "lcfirst"
-            | "ltrim"
-            | "md5"
-            | "md5_file"
-            | "metaphone"
-            | "mb_chr"
-            | "mb_convert_case"
-            | "mb_convert_encoding"
-            | "mb_convert_kana"
-            | "mb_decode_mimeheader"
-            | "mb_encode_mimeheader"
-            | "mb_lcfirst"
-            | "mb_ltrim"
-            | "mb_preferred_mime_name"
-            | "mb_rtrim"
-            | "mb_scrub"
-            | "mb_str_pad"
-            | "mb_strcut"
-            | "mb_strimwidth"
-            | "mb_stristr"
-            | "mb_strtolower"
-            | "mb_strtoupper"
-            | "mb_substitute_character"
-            | "mb_substr"
-            | "mb_trim"
-            | "mb_ucfirst"
-            | "ob_get_contents"
-            | "pack"
-            | "quoted_printable_decode"
-            | "quoted_printable_encode"
-            | "quotemeta"
-            | "rawurldecode"
-            | "rawurlencode"
-            | "rtrim"
-            | "sha1"
-            | "sha1_file"
-            | "soundex"
-            | "sprintf"
-            | "str_increment"
-            | "str_pad"
-            | "str_repeat"
-            | "str_rot13"
-            | "strchr"
-            | "stristr"
-            | "strpbrk"
-            | "strrev"
-            | "strstr"
-            | "strtolower"
-            | "strtoupper"
-            | "strip_tags"
-            | "stripcslashes"
-            | "stripslashes"
-            | "substr"
-            | "trim"
-            | "ucfirst"
-            | "urldecode"
-            | "urlencode"
-            | "utf8_decode"
-            | "utf8_encode"
-            | "vsprintf"
-    )
 }
 
 fn validate_expression_assignment_target(
@@ -28506,6 +28384,23 @@ fn is_supported_global_const_expr_with_options(
             allow_array_access,
             allow_new_object,
         ),
+        Expr::DynamicClassConstantFetch {
+            receiver: Some(receiver),
+            name,
+            ..
+        } if dynamic_static_property_fetch_has_illegal_literal_receiver(receiver) => {
+            is_supported_global_const_expr_with_options(
+                receiver,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+                allow_new_object,
+            ) && is_supported_global_const_expr_with_options(
+                name,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+                allow_new_object,
+            )
+        }
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr_with_options(
                 left,
@@ -29017,13 +28912,21 @@ fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> 
             Some(*span),
         )),
         Expr::DynamicClassConstantFetch {
-            receiver: Some(_),
+            receiver: Some(receiver),
+            name,
             span,
             ..
-        } => Err(Diagnostic::new(
-            "Dynamic class names are not allowed in compile-time class constant references",
-            Some(*span),
-        )),
+        } => {
+            if dynamic_static_property_fetch_has_illegal_literal_receiver(receiver) {
+                validate_constant_expression_runtime_restrictions(receiver)?;
+                validate_constant_expression_runtime_restrictions(name)
+            } else {
+                Err(Diagnostic::new(
+                    "Dynamic class names are not allowed in compile-time class constant references",
+                    Some(*span),
+                ))
+            }
+        }
         Expr::DynamicClassNameFetch { span, .. } => Err(Diagnostic::new(
             "(expression)::class cannot be used in constant expressions",
             Some(*span),

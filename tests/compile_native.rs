@@ -17544,6 +17544,50 @@ $map[$obj] = new class {
 }
 
 #[test]
+fn compile_shutdown_reentrant_destructor_exception_replaces_active_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-reentrant-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-reentrant-destructor-exception.php");
+    let output = root.join("shutdown-reentrant-destructor-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public $name;
+    public function __construct($name) {
+        $this->name = $name;
+    }
+    public function __destruct() {
+        static $again = true;
+        if ($again) {
+            $again = false;
+            $c = new C('nested');
+        }
+        throw new Exception($this->name);
+    }
+}
+$c = new C('outer');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        combined.contains("Fatal error: Uncaught Exception: nested in "),
+        "{combined}"
+    );
+    assert!(!combined.contains("Next Exception"), "{combined}");
+}
+
+#[test]
 fn compile_destructor_object_echo_chains_conversion_error_to_native_binary() {
     let root = temp_dir("ptn-native-destructor-object-echo-chain");
     fs::create_dir_all(&root).unwrap();
@@ -17569,16 +17613,19 @@ new a;
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
-    let original_error = stderr
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    let original_error = combined
         .find("Fatal error: Uncaught Error: Object of class a could not be converted to string")
-        .unwrap_or_else(|| panic!("{stderr}"));
-    let chained_exception = stderr
+        .unwrap_or_else(|| panic!("{combined}"));
+    let chained_exception = combined
         .find("\nNext Exception in ")
-        .unwrap_or_else(|| panic!("{stderr}"));
-    assert!(original_error < chained_exception, "{stderr}");
-    assert!(stderr.contains("a->__destruct()"), "{stderr}");
+        .unwrap_or_else(|| panic!("{combined}"));
+    assert!(original_error < chained_exception, "{combined}");
+    assert!(combined.contains("a->__destruct()"), "{combined}");
 }
 
 #[test]
@@ -43467,6 +43514,27 @@ fn parser_reports_late_static_class_name_row_diagnostics() {
 }
 
 #[test]
+fn phpc_dynamic_class_constant_literal_receiver_uses_runtime_class_name_error() {
+    let root = temp_dir("ptn-phpc-dynamic-class-constant-literal-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-literal-receiver.php");
+    fs::write(&input, "<?php\nconst B = []::{A};\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("Fatal error: Class name must be a valid object or a string in "),
+        "{combined}"
+    );
+    assert!(!combined.contains("Uncaught Error"), "{combined}");
+    assert!(!combined.contains("Stack trace:"), "{combined}");
+    assert!(!combined.contains("Illegal class name"), "{combined}");
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();
@@ -53539,6 +53607,25 @@ bool(true)\n\
 string(9) \"127.0.0.1\"\n\
 string(19) \"ptn.invalid.example\"\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_php_binary_can_reinvoke_phpc_from_script() {
+    let root = temp_dir("ptn-phpc-php-binary-reinvoke");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-binary-reinvoke.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$cmd = escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('echo 123;');\n\
+echo shell_exec($cmd), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "123\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -70098,6 +70185,36 @@ echo \"unreachable\\n\";\n",
     assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
     assert!(stderr.contains("tried to allocate "));
     assert!(stderr.contains("array-append-memory-limit.php on line 3"));
+}
+
+#[test]
+fn compile_object_allocation_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-object-allocation-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-allocation-memory-limit.php");
+    let output = root.join("object-allocation-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$objects = [];\n\
+for ($i = 0; $i < 140; $i++) { $objects[] = new stdClass; }\n\
+echo \"unreachable\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "2M")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 2097152 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 8192 bytes"));
+    assert!(stderr.contains("object-allocation-memory-limit.php on line 3"));
+    assert!(stderr.contains("Stack trace:\n#0 {main}"), "{stderr}");
 }
 
 #[test]
@@ -88456,6 +88573,37 @@ try {
 }
 
 #[test]
+fn compile_required_wrapper_like_missing_path_emits_open_stream_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-require-wrapper-like-missing-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("require-wrapper-like-missing-path.php");
+    let output = root.join("require-wrapper-like-missing-path-bin");
+    fs::write(&input, "<?php\nrequire '://@';\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        combined.contains(
+            "Warning: require(://@): Failed to open stream: No such file or directory in "
+        ),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(
+            "Fatal error: Uncaught Error: Failed opening required '://@' (include_path='.')"
+        ),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_include_function_callback_to_native_binary() {
     let root = temp_dir("ptn-native-include-function-callback");
     fs::create_dir_all(&root).unwrap();
@@ -104486,6 +104634,28 @@ fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
             "Fatal error: Cannot use [] for reading in {} on line 2\n",
             input.display()
         )
+    );
+}
+
+#[test]
+fn phpc_offset_coalesce_assignment_evaluates_dimension_before_temp_write_error() {
+    let root = temp_dir("ptn-phpc-offset-coalesce-assignment-dimension-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("offset-coalesce-assignment-dimension-order.php");
+    fs::write(&input, "<?php\nassert(fn()=>y)[y]??=y;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("Fatal error: Uncaught Error: Undefined constant \"y\" in "),
+        "{combined}"
+    );
+    assert!(
+        !combined.contains("Cannot use result of built-in function in write context"),
+        "{combined}"
     );
 }
 

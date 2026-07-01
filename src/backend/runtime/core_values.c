@@ -2070,6 +2070,23 @@ static PTN_UNUSED int ptn_cow_debug_counter(const char *name, size_t *out);
 static PTN_UNUSED void ptn_cow_debug_assert_named_counter(const char *name, int64_t expected);
 static PTN_UNUSED void ptn_cow_debug_assert_balanced(void);
 static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_emit_fatal_error_at(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *source_path,
+    size_t line
+);
+static PTN_UNUSED void ptn_emit_memory_allocation_overflow_error(
+    PtnRuntime *runtime,
+    size_t count,
+    size_t item_size,
+    size_t extra_size,
+    size_t line
+);
+static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
+    PtnRuntime *runtime,
+    PtnException *exception
+);
 static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);

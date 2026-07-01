@@ -3748,7 +3748,11 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "PHP_BINARY") == 0) {
-        *out = ptn_string(PTN_PHP_BINARY);
+        const char *binary = getenv("PTN_PHP_BINARY");
+        if (binary == NULL || binary[0] == '\0') {
+            binary = PTN_PHP_BINARY;
+        }
+        *out = ptn_string(binary);
         return 1;
     }
     if (strcmp(name, "PHP_VERSION") == 0) {
