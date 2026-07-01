@@ -23881,6 +23881,42 @@ foreach (gen() as $value) {
 }
 
 #[test]
+fn compile_generator_exception_trace_includes_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-trace-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-trace-args.php");
+    let output = root.join("generator-trace-args-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen($o) {
+    yield "foo";
+    $o->fatalError();
+}
+
+foreach (gen(new stdClass()) as $value) {
+    echo $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let output = format!("{stdout}{stderr}");
+    assert!(output.starts_with("foo\n"), "{output}");
+    assert!(
+        output.contains(": gen(Object(stdClass))\n#1 {main}"),
+        "{output}"
+    );
+    assert!(!output.contains(": gen()\n#1 {main}"), "{output}");
+}
+
+#[test]
 fn compile_generator_send_into_yield_argument_to_native_binary() {
     let root = temp_dir("ptn-native-generator-send-yield-argument");
     fs::create_dir_all(&root).unwrap();
