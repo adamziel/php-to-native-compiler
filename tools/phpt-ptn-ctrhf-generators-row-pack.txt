@@ -1,0 +1,4 @@
+Zend/tests/generators/generator_with_nonscalar_keys.phpt
+Zend/tests/generators/generator_with_type_check.phpt
+Zend/tests/generators/get_return_errors.phpt
+Zend/tests/generators/gh11028_3.phpt
