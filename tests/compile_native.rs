@@ -31797,6 +31797,85 @@ string(0) \"\"\n"
 }
 
 #[test]
+fn compile_stream_context_get_params_and_option_array_merge_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-get-params-merge");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-get-params-merge.php");
+    let output = root.join("stream-context-get-params-merge-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function cb() {}
+$ctx = stream_context_create();
+var_dump(function_exists('stream_context_get_params'));
+var_dump(stream_context_get_params($ctx));
+stream_context_set_option($ctx, "http", "method", "POST");
+var_dump(stream_context_set_option($ctx, [
+    "http" => [
+        "protocol_version" => 1.1,
+        "user_agent" => "PHPT Agent",
+    ],
+    "ftp" => [
+        "overwrite" => true,
+    ],
+]));
+var_dump(stream_context_get_options($ctx));
+stream_context_set_params($ctx, ["notification" => "cb"]);
+var_dump(stream_context_get_params($ctx));
+
+$created = stream_context_create(["http" => ["method" => "GET"]], ["notification" => "cb"]);
+var_dump(stream_context_get_params($created));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(true)\narray(1) {\n  [\"options\"]=>\n  array(0) {\n  }\n}\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Deprecated: Calling stream_context_set_option() with 2 arguments is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"method\"]=>\n    string(4) \"POST\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"protocol_version\"]=>\n    float(1.1)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"user_agent\"]=>\n    string(10) \"PHPT Agent\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"ftp\"]=>\n  array(1) {\n    [\"overwrite\"]=>\n    bool(true)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"notification\"]=>\n  string(2) \"cb\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"method\"]=>\n      string(3) \"GET\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_get_params"));
+    assert!(c_source.contains("ptn_stream_context_merge_options"));
+}
+
+#[test]
 fn compile_stream_context_mutators_paths_and_error_modes_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-mutators-errors");
     fs::create_dir_all(&root).unwrap();
@@ -32356,6 +32435,7 @@ echo bin2hex(strip_tags("<" . chr(0) . "\n!\n")), "\n";
 $memory = fopen("php://memory", "w+");
 fwrite($memory, "Hello World");
 ftruncate($memory, 2);
+var_dump(ftell($memory));
 fwrite($memory, "World");
 rewind($memory);
 var_dump(fread($memory, 100));
@@ -32400,6 +32480,7 @@ source\n\
 anim.GIF,photo.JpG,\n\
 hello\n\
 \n\
+int(11)\n\
 string(7) \"HeWorld\"\n\
 bool(true)\n\
 bool(false)\n\
