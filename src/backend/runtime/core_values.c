@@ -1190,6 +1190,8 @@ struct PtnGenerator {
     char *function_name;
     char *source_file;
     size_t source_line;
+    PtnRuntime *activation_object_id_runtime;
+    size_t activation_object_id;
     size_t position;
     int64_t next_auto_key;
     int completed;
@@ -1995,7 +1997,9 @@ static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED void ptn_generator_begin_activation(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
+static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);

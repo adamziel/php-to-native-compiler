@@ -5554,28 +5554,6 @@ fn emit_user_functions(
         if function.return_by_ref && !function.is_generator {
             out.push_str("    int ptn_return_value_from_declared_reference_call = 0;\n");
         }
-        if function.is_generator {
-            out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
-            out.push_str(if function.return_by_ref { "1" } else { "0" });
-            out.push_str(");\n");
-            if function.is_anonymous {
-                out.push_str(
-                    "    ptn_generator_adopt_pending_assignment_capture(&runtime, ptn_generator_value);\n",
-                );
-                out.push_str(
-                    "    ptn_generator_adopt_pending_yield_from_delegate(&runtime, ptn_generator_value);\n",
-                );
-            }
-            out.push_str(
-                "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
-            );
-            out.push_str("    if (runtime.current_generator != NULL) {\n");
-            out.push_str("        runtime.current_generator->executing = 1;\n");
-            out.push_str("        runtime.current_generator->source_line = ");
-            out.push_str(&function.line.to_string());
-            out.push_str(";\n");
-            out.push_str("    }\n");
-        }
         if function.return_by_ref && !function.is_generator {
             if matches!(function.return_type.as_ref(), Some(TypeHint::Void)) {
                 out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
@@ -6155,6 +6133,31 @@ fn emit_user_functions(
                     arity_error_is_exact,
                 );
             }
+        }
+        if function.is_generator {
+            out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
+            out.push_str(if function.return_by_ref { "1" } else { "0" });
+            out.push_str(");\n");
+            if function.is_anonymous {
+                out.push_str(
+                    "    ptn_generator_adopt_pending_assignment_capture(&runtime, ptn_generator_value);\n",
+                );
+                out.push_str(
+                    "    ptn_generator_adopt_pending_yield_from_delegate(&runtime, ptn_generator_value);\n",
+                );
+            }
+            out.push_str(
+                "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
+            );
+            out.push_str(
+                "    ptn_generator_begin_activation(&runtime, runtime.current_generator);\n",
+            );
+            out.push_str("    if (runtime.current_generator != NULL) {\n");
+            out.push_str("        runtime.current_generator->executing = 1;\n");
+            out.push_str("        runtime.current_generator->source_line = ");
+            out.push_str(&function.line.to_string());
+            out.push_str(";\n");
+            out.push_str("    }\n");
         }
         out.push_str("    runtime.strict_types = ");
         out.push_str(if function.strict_types { "1" } else { "0" });
@@ -17958,6 +17961,7 @@ fn emit_property_hook_get_helper(
                     });
                     out.push_str(");\n");
                     out.push_str("        runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n");
+                    out.push_str("        ptn_generator_begin_activation(&runtime, runtime.current_generator);\n");
                     out.push_str("        if (runtime.current_generator != NULL) {\n");
                     out.push_str("            runtime.current_generator->executing = 1;\n");
                     out.push_str("            runtime.current_generator->source_line = ");

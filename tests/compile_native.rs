@@ -23864,20 +23864,20 @@ foreach (gen() as $value) {
 
     let execution = Command::new(&output).output().unwrap();
     assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let path = input.display().to_string();
     assert!(
-        stderr.contains("Fatal error: Uncaught Exception: foo in "),
-        "{stderr}"
+        stdout.contains("Fatal error: Uncaught Exception: foo in "),
+        "{stdout}"
     );
     assert!(
-        stderr.contains(&format!("Stack trace:\n#0 {path}(")),
-        "{stderr}"
+        stdout.contains(&format!("Stack trace:\n#0 {path}(")),
+        "{stdout}"
     );
-    assert!(stderr.contains(": gen()\n#1 {main}"), "{stderr}");
-    assert!(!stderr.contains("Generator->rewind()"), "{stderr}");
-    assert!(!stderr.contains("[internal function]: gen()"), "{stderr}");
+    assert!(stdout.contains(": gen()\n#1 {main}"), "{stdout}");
+    assert!(!stdout.contains("Generator->rewind()"), "{stdout}");
+    assert!(!stdout.contains("[internal function]: gen()"), "{stdout}");
 }
 
 #[test]
@@ -23989,7 +23989,11 @@ foreach (root_gen() as $key => $value) {
     var_dump($key, $value);
 }
 var_dump(root_gen()->current());
-var_dump(root_gen()->getReturn());
+try {
+    var_dump(root_gen()->getReturn());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
 $typed = typed_return_gen();
 var_dump($typed->valid());
 var_dump($typed->getReturn());
@@ -23999,8 +24003,12 @@ while ($gen->valid()) {
     $gen->next();
 }
 var_dump($gen->valid());
-$gen->rewind();
-var_dump($gen->key(), $gen->current());
+try {
+    $gen->rewind();
+    var_dump($gen->key(), $gen->current());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
 var_dump(method_exists($gen, "getReturn"));
 var_dump(method_exists($gen, "key"));
 var_dump(method_exists($gen, "next"));
@@ -24016,7 +24024,7 @@ var_dump(method_exists($gen, "valid"));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nstring(11) \"root-return\"\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nstring(5) \"start\"\nint(0)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nCannot get return value of a generator that hasn't returned\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
