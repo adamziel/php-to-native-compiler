@@ -30867,7 +30867,7 @@ fn emit_instruction(
         } => {
             if values.class_name_fetch_uses_runtime_scope(class_name) {
                 let scoped_class_temp = values.next_temp();
-                values.emit_runtime_scoped_class_name_cstr(
+                values.emit_runtime_scoped_member_class_name_cstr(
                     out,
                     &scoped_class_temp,
                     class_name,
@@ -30909,7 +30909,7 @@ fn emit_instruction(
             let name_temp = values.emit_dynamic_property_name(out, name, *line);
             if values.class_name_fetch_uses_runtime_scope(class_name) {
                 let scoped_class_temp = values.next_temp();
-                values.emit_runtime_scoped_class_name_cstr(
+                values.emit_runtime_scoped_member_class_name_cstr(
                     out,
                     &scoped_class_temp,
                     class_name,
@@ -52071,7 +52071,7 @@ impl ValueEmitter {
         match target {
             InstanceOfTarget::ClassName(class_name) => {
                 if self.class_name_fetch_uses_runtime_scope(class_name) {
-                    self.emit_runtime_scoped_class_name_cstr(
+                    self.emit_runtime_scoped_member_class_name_cstr(
                         out,
                         &expected_class_temp,
                         class_name,
@@ -52610,7 +52610,7 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_null();\n");
-            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            self.emit_runtime_scoped_member_class_name_cstr(out, &result_temp, class_name, line);
             out.push_str("    if (");
             out.push_str(&result_temp);
             out.push_str(
@@ -52659,7 +52659,7 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         if self.class_name_fetch_uses_runtime_scope(class_name) {
             out.push_str(" = ptn_null();\n");
-            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            self.emit_runtime_scoped_member_class_name_cstr(out, &result_temp, class_name, line);
             out.push_str("    if (");
             out.push_str(&result_temp);
             out.push_str(
@@ -53058,7 +53058,7 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_null();\n");
-            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            self.emit_runtime_scoped_member_class_name_cstr(out, &result_temp, class_name, line);
             out.push_str("    if (");
             out.push_str(&result_temp);
             out.push_str(
@@ -53201,7 +53201,12 @@ impl ValueEmitter {
                 }
             } else if self.class_name_fetch_uses_runtime_scope(class_name) {
                 out.push_str(" = ptn_null();\n");
-                self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+                self.emit_runtime_scoped_member_class_name_cstr(
+                    out,
+                    &result_temp,
+                    class_name,
+                    line,
+                );
                 out.push_str("    if (");
                 out.push_str(&result_temp);
                 out.push_str("_class_name != NULL) {\n");
@@ -53313,7 +53318,12 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
             } else if self.class_name_fetch_uses_runtime_scope(class_name) {
-                self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+                self.emit_runtime_scoped_member_class_name_cstr(
+                    out,
+                    &result_temp,
+                    class_name,
+                    line,
+                );
                 out.push_str("    if (");
                 out.push_str(&result_temp);
                 out.push_str("_class_name != NULL) {\n");
@@ -53448,6 +53458,39 @@ impl ValueEmitter {
         class_name: &str,
         line: usize,
     ) {
+        self.emit_runtime_scoped_class_name_cstr_with_diagnostic(
+            out,
+            result_temp,
+            class_name,
+            line,
+            false,
+        );
+    }
+
+    fn emit_runtime_scoped_member_class_name_cstr(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        line: usize,
+    ) {
+        self.emit_runtime_scoped_class_name_cstr_with_diagnostic(
+            out,
+            result_temp,
+            class_name,
+            line,
+            true,
+        );
+    }
+
+    fn emit_runtime_scoped_class_name_cstr_with_diagnostic(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        line: usize,
+        access_diagnostic: bool,
+    ) {
         out.push_str("    const char *");
         out.push_str(result_temp);
         out.push_str("_class_name = NULL;\n");
@@ -53473,13 +53516,25 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str("_class_name == NULL) {\n");
             out.push_str("        if (runtime.current_class_name != NULL) {\n");
-            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" when current class scope has no parent\", \"");
+            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"");
+            if access_diagnostic {
+                out.push_str("Cannot access \\\"parent\\\" when current class scope has no parent");
+            } else {
+                out.push_str("Cannot use \\\"parent\\\" when current class scope has no parent");
+            }
+            out.push_str("\", \"");
             out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        } else {\n");
-            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" in the global scope\", \"");
+            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"");
+            if access_diagnostic {
+                out.push_str("Cannot access \\\"parent\\\" when no class scope is active");
+            } else {
+                out.push_str("Cannot use \\\"parent\\\" in the global scope");
+            }
+            out.push_str("\", \"");
             out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");
             out.push_str(&line.to_string());
@@ -53491,9 +53546,17 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str("_class_name == NULL) {\n");
             out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
-            out.push_str("Cannot use \\\"");
+            if access_diagnostic {
+                out.push_str("Cannot access \\\"");
+            } else {
+                out.push_str("Cannot use \\\"");
+            }
             out.push_str(&c_string(&class_name.to_ascii_lowercase()));
-            out.push_str("\\\" in the global scope");
+            if access_diagnostic {
+                out.push_str("\\\" when no class scope is active");
+            } else {
+                out.push_str("\\\" in the global scope");
+            }
             out.push_str("\", \"");
             out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");
@@ -59589,7 +59652,7 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(result_temp);
         out.push_str(" = ptn_null();\n");
-        self.emit_runtime_scoped_class_name_cstr(out, result_temp, class_name, line);
+        self.emit_runtime_scoped_member_class_name_cstr(out, result_temp, class_name, line);
         out.push_str("    if (");
         out.push_str(result_temp);
         out.push_str("_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n");

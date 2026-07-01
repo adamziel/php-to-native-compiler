@@ -237974,6 +237974,48 @@ static int ptn_eval_parse_dynamic_class_constant_fetch(
     free(literal_class_name);
     free(receiver_variable_name);
 
+    size_t member_cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (member_cursor < len && code[member_cursor] == '$') {
+        cursor = member_cursor + 1;
+        char *property_name = NULL;
+        if (ptn_eval_consume_char(code, len, &cursor, '{')) {
+            PtnValue property_name_value = ptn_null();
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &property_name_value)) {
+                free(class_name);
+                return 0;
+            }
+            if (!ptn_eval_consume_char(code, len, &cursor, '}')) {
+                ptn_value_destroy(&property_name_value);
+                free(class_name);
+                return 0;
+            }
+            property_name = ptn_dynamic_property_name(runtime, property_name_value, line);
+            ptn_value_destroy(&property_name_value);
+        } else if (!ptn_eval_parse_identifier_name(code, len, &cursor, &property_name)) {
+            free(class_name);
+            return 0;
+        }
+        if (property_name == NULL || runtime->exceptions->active_exception != NULL) {
+            free(property_name);
+            free(class_name);
+            *out = ptn_null();
+            *pos = cursor;
+            return 1;
+        }
+
+        *out = ptn_runtime_read_static_property(
+            runtime,
+            class_name,
+            property_name,
+            runtime != NULL ? runtime->current_class_name : NULL,
+            line
+        );
+        free(property_name);
+        free(class_name);
+        *pos = cursor;
+        return 1;
+    }
+
     char *constant_name = NULL;
     if (ptn_eval_consume_char(code, len, &cursor, '{')) {
         PtnValue constant_name_value = ptn_null();

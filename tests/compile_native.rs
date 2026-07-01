@@ -70015,6 +70015,114 @@ const AFTER_EVAL_SCOPE_CONST = self::class;
 }
 
 #[test]
+fn compile_eval_relative_static_access_keeps_method_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-relative-static-access-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-relative-static-access-scope.php");
+    let output = root.join("eval-relative-static-access-scope-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class C {
+    const FOO = 1;
+    private static $bar = 2;
+
+    public static function f() {
+        eval(<<<'PHP'
+var_dump(self::FOO);
+var_dump(self::$bar);
+var_dump(self::class);
+var_dump(static::class);
+PHP
+        );
+    }
+}
+
+C::f();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nstring(1) \"C\"\nstring(1) \"C\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unscoped_self_access_directly_in_closure_body_errors_at_runtime() {
+    let root = temp_dir("ptn-native-unscoped-self-direct-closure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unscoped-self-direct-closure.php");
+    let output = root.join("unscoped-self-direct-closure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fn = function() {
+    try {
+        new stdClass instanceof self;
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+
+    $str = "foo";
+    try {
+        self::${$str . "bar"};
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        unset(self::${$str . "bar"});
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        isset(self::${$str . "bar"});
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        self::{$str . "bar"}();
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+};
+$fn();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false })
+        .unwrap_or_else(|error| panic!("compile failed: {error}"));
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&execution.stdout),
+        "Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&execution.stderr), "");
+}
+
+#[test]
 fn compile_unscoped_self_access_in_closure_errors_at_runtime() {
     let root = temp_dir("ptn-native-unscoped-self-closure");
     fs::create_dir_all(&root).unwrap();
