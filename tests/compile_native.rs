@@ -4110,6 +4110,79 @@ fn lexer_accepts_interpolating_heredoc_bodies() {
 }
 
 #[test]
+fn parser_strips_flexible_heredoc_indentation_across_cr_line_breaks() {
+    let source = "<?php $value = <<<TXT\r    a\r\r    b\r    TXT;";
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "a\r\rb"));
+}
+
+#[test]
+fn parser_allows_extra_mixed_indentation_after_flexible_heredoc_prefix() {
+    let source = concat!("<?php $value = <<<TXT\n", "\t    a\n", "\tTXT;");
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "    a"));
+}
+
+#[test]
+fn parser_blanks_whitespace_only_flexible_heredoc_lines() {
+    let source = concat!("<?php $value = <<<TXT\n", " \n", "  TXT;");
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value.is_empty()));
+}
+
+#[test]
+fn parser_preserves_spaces_before_interpolation_after_flexible_heredoc_prefix() {
+    let source = concat!("<?php $value = <<<TXT\n", "\t  $test\n", "\tTXT;");
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    let Expr::InterpolatedString(parts, _) = value else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("  ".to_string()),
+            StringPart::Variable("test".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn parser_inlines_literal_eval_assignments() {
+    let source = "<?php eval(\"\\$value = <<<TXT\\r    a\\r\\r    b\\r    TXT;\");";
+    let program = parser::parse(source).unwrap();
+    let Statement::Block { statements, .. } = &program.statements[0] else {
+        panic!("expected inlined eval block");
+    };
+    let Statement::Assign { name, value, .. } = &statements[0] else {
+        panic!("expected inlined assignment");
+    };
+    assert_eq!(name, "value");
+    assert!(matches!(value, Expr::String(value, _) if value == "a\r\rb"));
+}
+
+#[test]
+fn parser_reports_literal_eval_parse_errors() {
+    let error = parser::parse("<?php eval('<<<\\'end\\'\n  ');").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected end of file, expecting variable or heredoc end or \"${\" or \"{$\""
+    );
+}
+
+#[test]
 fn parser_rejects_flexible_heredoc_body_with_less_indent_than_closing_label() {
     let error = parser::parse(concat!("<?php\n", "<<<X\n", "%0$a\n", " X;\n")).unwrap_err();
 
@@ -15030,6 +15103,35 @@ fn parser_accepts_braced_method_call_interpolation() {
             StringPart::Literal("\n".to_string()),
         ]
     );
+}
+
+#[test]
+fn parser_accepts_braced_function_call_interpolation_with_heredoc_argument() {
+    let source = concat!(
+        "<?php $s = 'substr'; echo \"{$s(<<<'TXT'\n",
+        "abcdefg\n",
+        "TXT\n",
+        ", 0, 3)}\";"
+    );
+    let program = parser::parse(source).unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    let StringPart::Expression(expr) = &parts[0] else {
+        panic!("expected expression interpolation");
+    };
+    let Expr::DynamicCall {
+        callee, arguments, ..
+    } = expr.as_ref()
+    else {
+        panic!("expected dynamic call expression");
+    };
+    assert!(matches!(callee.as_ref(), Expr::Variable(name, _) if name == "s"));
+    assert_eq!(arguments.len(), 3);
+    assert!(matches!(&arguments[0], Expr::String(value, _) if value == "abcdefg"));
 }
 
 #[test]

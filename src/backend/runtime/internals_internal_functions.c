@@ -68153,6 +68153,79 @@ static size_t ptn_highlight_operator_len(const char *data, size_t len, size_t of
     return 1;
 }
 
+static int ptn_highlight_scan_heredoc(
+    const char *data,
+    size_t len,
+    size_t offset,
+    size_t *header_end,
+    size_t *body_end,
+    size_t *closing_end
+) {
+    if (offset + 3 > len || data[offset] != '<' || data[offset + 1] != '<' || data[offset + 2] != '<') {
+        return 0;
+    }
+    size_t i = offset + 3;
+    while (i < len && (data[i] == ' ' || data[i] == '\t')) {
+        i++;
+    }
+    char quote = '\0';
+    if (i < len && (data[i] == '\'' || data[i] == '"')) {
+        quote = data[i++];
+    }
+    if (i >= len || !ptn_highlight_is_ident_start((unsigned char)data[i])) {
+        return 0;
+    }
+    size_t label_start = i++;
+    while (i < len && ptn_highlight_is_ident_part((unsigned char)data[i])) {
+        i++;
+    }
+    size_t label_len = i - label_start;
+    if (quote != '\0') {
+        if (i >= len || data[i] != quote) {
+            return 0;
+        }
+        i++;
+    }
+    while (i < len && (data[i] == ' ' || data[i] == '\t')) {
+        i++;
+    }
+    if (i >= len || (data[i] != '\r' && data[i] != '\n')) {
+        return 0;
+    }
+    if (data[i] == '\r' && i + 1 < len && data[i + 1] == '\n') {
+        i += 2;
+    } else {
+        i++;
+    }
+    *header_end = i;
+
+    size_t line_start = i;
+    while (line_start < len) {
+        size_t label_offset = line_start;
+        while (label_offset < len && (data[label_offset] == ' ' || data[label_offset] == '\t')) {
+            label_offset++;
+        }
+        if (label_offset + label_len <= len &&
+            memcmp(data + label_offset, data + label_start, label_len) == 0) {
+            size_t after_label = label_offset + label_len;
+            if (after_label == len || !ptn_highlight_is_ident_part((unsigned char)data[after_label])) {
+                *body_end = line_start;
+                *closing_end = ptn_highlight_scan_trailing_whitespace(data, len, after_label);
+                return 1;
+            }
+        }
+        while (line_start < len && data[line_start] != '\r' && data[line_start] != '\n') {
+            line_start++;
+        }
+        if (line_start < len && data[line_start] == '\r' && line_start + 1 < len && data[line_start + 1] == '\n') {
+            line_start += 2;
+        } else if (line_start < len) {
+            line_start++;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_highlight_string_value(PtnRuntime *runtime, PtnStringOperand input, int wrap_pre) {
     PtnHighlightColors colors = {
         ptn_runtime_highlight_html(runtime),
@@ -68285,6 +68358,41 @@ static PtnValue ptn_highlight_string_value(PtnRuntime *runtime, PtnStringOperand
                 i - start
             );
             continue;
+        }
+        if (byte == '<' && i + 2 < len && data[i + 1] == '<' && data[i + 2] == '<') {
+            size_t header_end = i;
+            size_t body_end = i;
+            size_t closing_end = i;
+            if (ptn_highlight_scan_heredoc(data, len, i, &header_end, &body_end, &closing_end)) {
+                ptn_highlight_append_colored(
+                    &buffer,
+                    &current,
+                    PTN_HIGHLIGHT_KEYWORD,
+                    &colors,
+                    data + i,
+                    header_end - i
+                );
+                if (body_end > header_end) {
+                    ptn_highlight_append_colored(
+                        &buffer,
+                        &current,
+                        PTN_HIGHLIGHT_STRING,
+                        &colors,
+                        data + header_end,
+                        body_end - header_end
+                    );
+                }
+                ptn_highlight_append_colored(
+                    &buffer,
+                    &current,
+                    PTN_HIGHLIGHT_KEYWORD,
+                    &colors,
+                    data + body_end,
+                    closing_end - body_end
+                );
+                i = closing_end;
+                continue;
+            }
         }
         if (isdigit(byte)) {
             size_t start = i;

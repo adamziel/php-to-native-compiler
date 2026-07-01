@@ -677,6 +677,7 @@ impl<'a> Lexer<'a> {
                                 &literal,
                                 indent,
                                 &mut line_start,
+                                true,
                             );
                         } else {
                             literal = strip_heredoc_indentation(&literal, indent);
@@ -791,7 +792,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.bump_char();
-                at_line_start = escaped == '\n';
+                at_line_start = false;
                 continue;
             }
 
@@ -867,7 +868,7 @@ impl<'a> Lexer<'a> {
 
             literal.push(ch);
             self.bump_char();
-            at_line_start = ch == '\n';
+            at_line_start = matches!(ch, '\n' | '\r');
         }
 
         let message = if literal.is_empty() && parts.is_empty() {
@@ -1219,6 +1220,10 @@ impl<'a> Lexer<'a> {
                     self.bump_char();
                     indices.push(index);
                 }
+                Some('(') => {
+                    let tail = self.read_balanced_interpolation_expression(start)?;
+                    return Ok(StringPart::Expression(format!("${array}{tail}")));
+                }
                 Some('{') => {
                     return Err(Diagnostic::parse_error(
                         "syntax error, unexpected token \"{\", expecting \"->\" or \"?->\" or \"[\"",
@@ -1226,10 +1231,8 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 Some(_) => {
-                    return Err(Diagnostic::new(
-                        "complex string interpolation is unsupported",
-                        Some(self.current_char_span()),
-                    ));
+                    let tail = self.read_balanced_interpolation_expression(start)?;
+                    return Ok(StringPart::Expression(format!("${array}{tail}")));
                 }
                 None => {
                     return Err(Diagnostic::new(
@@ -1662,37 +1665,57 @@ impl<'a> Lexer<'a> {
             return Ok(());
         };
         let mut line_number = span.line + 1;
-        for line in body.split_inclusive('\n') {
-            let content = line.trim_end_matches(['\r', '\n']);
-            if content.trim_matches([' ', '\t']).is_empty() {
-                if line.ends_with('\n') {
-                    line_number += 1;
-                }
-                continue;
-            }
-            let line_span =
-                SourceSpan::new(span.byte_start, span.byte_end, line_number, span.column);
-            let line_indent = content
-                .bytes()
-                .take_while(|byte| matches!(byte, b' ' | b'\t'))
-                .collect::<Vec<_>>();
-            if heredoc_indent_bytes_contain_mixed_whitespace(&line_indent)
-                || heredoc_indent_kinds_conflict(indent.as_bytes(), &line_indent)
+        let mut offset = 0usize;
+        while offset < body.len() {
+            let rest = &body[offset..];
+            let Some(newline_index) = rest.bytes().position(|byte| matches!(byte, b'\r' | b'\n'))
+            else {
+                self.validate_heredoc_body_line_indentation(rest, indent, line_number, span)?;
+                break;
+            };
+            let newline_offset = offset + newline_index;
+            let next_offset = if body.as_bytes()[newline_offset] == b'\r'
+                && body.as_bytes().get(newline_offset + 1) == Some(&b'\n')
             {
-                return Err(heredoc_mixed_indentation_error(line_span));
-            }
-            if !content.starts_with(indent) {
-                return Err(Diagnostic::parse_error(
+                newline_offset + 2
+            } else {
+                newline_offset + 1
+            };
+            let line = &body[offset..next_offset];
+            self.validate_heredoc_body_line_indentation(line, indent, line_number, span)?;
+            line_number += 1;
+            offset = next_offset;
+        }
+        Ok(())
+    }
+
+    fn validate_heredoc_body_line_indentation(
+        &self,
+        line: &str,
+        indent: &str,
+        line_number: usize,
+        span: SourceSpan,
+    ) -> Result<()> {
+        let content = line.trim_end_matches(['\r', '\n']);
+        if content.trim_matches([' ', '\t']).is_empty() {
+            return Ok(());
+        }
+        let line_span = SourceSpan::new(span.byte_start, span.byte_end, line_number, span.column);
+        let line_indent = content
+            .bytes()
+            .take_while(|byte| matches!(byte, b' ' | b'\t'))
+            .collect::<Vec<_>>();
+        if heredoc_indent_kinds_conflict(indent.as_bytes(), &line_indent) {
+            return Err(heredoc_mixed_indentation_error(line_span));
+        }
+        if !content.starts_with(indent) {
+            return Err(Diagnostic::parse_error(
                     format!(
                         "Invalid body indentation level (expecting an indentation level of at least {})",
                         indent.chars().count()
                     ),
                     Some(line_span),
                 ));
-            }
-            if line.ends_with('\n') {
-                line_number += 1;
-            }
         }
         Ok(())
     }
@@ -2241,20 +2264,28 @@ fn trim_heredoc_terminal_newline(value: &mut String) {
         if value.ends_with('\r') {
             value.pop();
         }
+    } else if value.ends_with('\r') {
+        value.pop();
     }
 }
 
 fn strip_heredoc_indentation(value: &str, indent: &str) -> String {
     let mut line_start = true;
-    strip_heredoc_literal_indentation(value, indent, &mut line_start)
+    strip_heredoc_literal_indentation(value, indent, &mut line_start, true)
 }
 
 fn strip_heredoc_parts_indentation(parts: &mut [StringPart], indent: &str) {
     let mut line_start = true;
-    for part in parts {
+    let last_index = parts.len().saturating_sub(1);
+    for (index, part) in parts.iter_mut().enumerate() {
         match part {
             StringPart::Literal(value) => {
-                *value = strip_heredoc_literal_indentation(value, indent, &mut line_start);
+                *value = strip_heredoc_literal_indentation(
+                    value,
+                    indent,
+                    &mut line_start,
+                    index == last_index,
+                );
             }
             _ => {
                 line_start = false;
@@ -2268,7 +2299,7 @@ fn heredoc_parts_end_at_line_start(parts: &[StringPart]) -> bool {
     for part in parts {
         match part {
             StringPart::Literal(value) => {
-                line_start = value.ends_with('\n');
+                line_start = value.ends_with(['\r', '\n']);
             }
             _ => {
                 line_start = false;
@@ -2278,18 +2309,57 @@ fn heredoc_parts_end_at_line_start(parts: &[StringPart]) -> bool {
     line_start
 }
 
-fn strip_heredoc_literal_indentation(value: &str, indent: &str, line_start: &mut bool) -> String {
+fn strip_heredoc_literal_indentation(
+    value: &str,
+    indent: &str,
+    line_start: &mut bool,
+    blank_terminal_whitespace: bool,
+) -> String {
     let mut stripped = String::with_capacity(value.len());
     let mut rest = value;
     while !rest.is_empty() {
         if *line_start {
+            let (line_content_end, through_newline) =
+                match rest.bytes().position(|byte| matches!(byte, b'\r' | b'\n')) {
+                    Some(newline_index) => {
+                        let through_newline = if rest.as_bytes()[newline_index] == b'\r'
+                            && rest.as_bytes().get(newline_index + 1) == Some(&b'\n')
+                        {
+                            newline_index + 2
+                        } else {
+                            newline_index + 1
+                        };
+                        (newline_index, Some(through_newline))
+                    }
+                    None => (rest.len(), None),
+                };
+            if rest[..line_content_end]
+                .trim_matches([' ', '\t'])
+                .is_empty()
+                && (through_newline.is_some() || blank_terminal_whitespace)
+            {
+                if let Some(through_newline) = through_newline {
+                    stripped.push_str(&rest[line_content_end..through_newline]);
+                    rest = &rest[through_newline..];
+                    *line_start = true;
+                } else {
+                    rest = "";
+                }
+                continue;
+            }
             if let Some(after_indent) = rest.strip_prefix(indent) {
                 rest = after_indent;
             }
             *line_start = false;
         }
-        if let Some(newline_index) = rest.find('\n') {
-            let through_newline = newline_index + 1;
+        if let Some(newline_index) = rest.bytes().position(|byte| matches!(byte, b'\r' | b'\n')) {
+            let through_newline = if rest.as_bytes()[newline_index] == b'\r'
+                && rest.as_bytes().get(newline_index + 1) == Some(&b'\n')
+            {
+                newline_index + 2
+            } else {
+                newline_index + 1
+            };
             stripped.push_str(&rest[..through_newline]);
             rest = &rest[through_newline..];
             *line_start = true;

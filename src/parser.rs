@@ -6661,6 +6661,16 @@ impl Parser<'_> {
             self.expect_statement_terminator()?;
             return Ok(statement);
         }
+        if let Some(statement) = self.literal_eval_inline_statement(
+            &name,
+            &arguments,
+            &argument_names,
+            &argument_unpacks,
+            span,
+        )? {
+            self.expect_statement_terminator()?;
+            return Ok(statement);
+        }
         validate_mutating_array_internal_call(&name, &arguments, span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
@@ -6854,6 +6864,52 @@ impl Parser<'_> {
         }
 
         Ok(None)
+    }
+
+    fn literal_eval_inline_statement(
+        &mut self,
+        name: &str,
+        arguments: &[Expr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        span: SourceSpan,
+    ) -> Result<Option<Statement>> {
+        if !name.eq_ignore_ascii_case("eval")
+            || arguments.len() != 1
+            || argument_names.iter().any(Option::is_some)
+            || argument_unpacks.iter().any(|unpack| *unpack)
+        {
+            return Ok(None);
+        }
+
+        let Some(eval_source) = self.compile_time_eval_source(&arguments[0]) else {
+            return Ok(None);
+        };
+        let eval_program = parse_with_options(
+            &format!("<?php {eval_source}"),
+            &self.runtime_class_aliases,
+            &self.eval_visible_classes,
+            &self.eval_visible_traits,
+            false,
+            true,
+        )?;
+
+        if !eval_program.functions.is_empty()
+            || !eval_program.classes.is_empty()
+            || !eval_program.traits.is_empty()
+            || !eval_program
+                .statements
+                .iter()
+                .all(literal_eval_inlineable_statement)
+        {
+            return Ok(None);
+        }
+
+        Ok(Some(Statement::Block {
+            statements: eval_program.statements,
+            ticks: None,
+            span,
+        }))
     }
 
     fn literal_eval_return_expr(
@@ -29850,6 +29906,16 @@ fn validate_function_parameter_defaults(parameters: &[FunctionParameter]) -> Res
         }
     }
     Ok(())
+}
+
+fn literal_eval_inlineable_statement(statement: &Statement) -> bool {
+    matches!(
+        statement,
+        Statement::Assign { .. }
+            | Statement::AssignRef { .. }
+            | Statement::ArrayAssign { .. }
+            | Statement::ArrayAssignRef { .. }
+    )
 }
 
 fn magic_constant_kind(name: &str) -> Option<MagicConstantKind> {
