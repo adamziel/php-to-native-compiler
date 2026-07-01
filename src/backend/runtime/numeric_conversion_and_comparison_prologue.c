@@ -263,6 +263,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
     runtime->fiber_stack_size = NULL;
+    runtime->fiber_stack_size_explicit = 0;
     runtime->default_charset = NULL;
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;

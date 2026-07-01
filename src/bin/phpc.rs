@@ -338,6 +338,7 @@ struct RuntimeIni {
     zend_enable_gc: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
+    fiber_stack_size: Option<String>,
     variables_order: Option<String>,
     register_argc_argv: Option<String>,
     enable_post_data_reading: Option<String>,
@@ -611,6 +612,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.memory_limit = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("max_memory_limit") {
         ini.max_memory_limit = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("fiber.stack_size") {
+        ini.fiber_stack_size = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("variables_order") {
         ini.variables_order = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("register_argc_argv") {
@@ -1294,6 +1297,7 @@ fn compile_and_run(
         zend_enable_gc: ini.zend_enable_gc.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
+        fiber_stack_size: ini.fiber_stack_size.clone(),
         variables_order: ini.variables_order.clone(),
         register_argc_argv: ini.register_argc_argv.clone(),
         enable_post_data_reading: ini.enable_post_data_reading.clone(),
@@ -1560,6 +1564,9 @@ fn compile_and_run(
     }
     if let Some(max_memory_limit) = &ini.max_memory_limit {
         command.env("PTN_MAX_MEMORY_LIMIT", max_memory_limit);
+    }
+    if let Some(fiber_stack_size) = &ini.fiber_stack_size {
+        command.env("PTN_FIBER_STACK_SIZE", fiber_stack_size);
     }
     if let Some(variables_order) = &ini.variables_order {
         command.env("PTN_VARIABLES_ORDER", variables_order);

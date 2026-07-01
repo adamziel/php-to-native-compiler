@@ -114354,9 +114354,18 @@ static const char *ptn_runtime_fiber_stack_size(PtnRuntime *runtime) {
     return root->fiber_stack_size;
 }
 
-static void ptn_runtime_set_fiber_stack_size(PtnRuntime *runtime, const char *value) {
+static int ptn_runtime_fiber_stack_size_is_explicit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
+    return root != NULL && root->fiber_stack_size_explicit;
+}
+
+static void ptn_runtime_set_fiber_stack_size(PtnRuntime *runtime, const char *value, int explicit_value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        return;
+    }
     ptn_runtime_set_ini_string(&root->fiber_stack_size, value);
+    root->fiber_stack_size_explicit = explicit_value;
 }
 
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
@@ -115357,7 +115366,7 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         return ptn_null();
     }
     if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
-        ptn_runtime_set_fiber_stack_size(runtime, "0");
+        ptn_runtime_set_fiber_stack_size(runtime, "0", 0);
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -116085,7 +116094,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         int64_t requested = ptn_parse_ini_quantity_operand(runtime, value, line);
-        if (requested <= 0) {
+        if (requested < 0) {
             ptn_emit_sourced_ini_warning(runtime, "fiber.stack_size must be a positive number", line);
             ptn_string_operand_free(value);
             ptn_value_destroy(&previous);
@@ -116093,7 +116102,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
             return ptn_bool(0);
         }
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        ptn_runtime_set_fiber_stack_size(runtime, next);
+        ptn_runtime_set_fiber_stack_size(runtime, next, 1);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -176515,6 +176524,64 @@ static int ptn_fiber_set_entry_args(
 #if !defined(_WIN32)
 #define PTN_FIBER_STACK_SIZE (1024 * 1024)
 
+static size_t ptn_fiber_min_stack_size(void) {
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0) {
+        page_size = 4096;
+    }
+    if ((unsigned long)page_size > (unsigned long)(SIZE_MAX / 2)) {
+        return SIZE_MAX;
+    }
+    return (size_t)page_size * 2;
+}
+
+static void ptn_fiber_throw_stack_too_small(PtnRuntime *runtime, size_t min_size, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Fiber stack size is too small, it needs to be at least %zu bytes",
+        min_size
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(
+        runtime,
+        "Exception",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+}
+
+static int ptn_fiber_configured_stack_size(
+    PtnRuntime *runtime,
+    size_t line,
+    size_t *stack_size_out
+) {
+    if (stack_size_out == NULL) {
+        return 0;
+    }
+    if (!ptn_runtime_fiber_stack_size_is_explicit(runtime)) {
+        *stack_size_out = PTN_FIBER_STACK_SIZE;
+        return 1;
+    }
+    const char *configured = ptn_runtime_fiber_stack_size(runtime);
+    int64_t requested = ptn_parse_ini_quantity_operand(
+        runtime,
+        ptn_string_operand_borrowed(configured == NULL ? "" : configured),
+        line
+    );
+    size_t min_size = ptn_fiber_min_stack_size();
+    if (requested <= 0 || (uint64_t)requested < (uint64_t)min_size) {
+        ptn_fiber_throw_stack_too_small(runtime, min_size, line);
+        return 0;
+    }
+    *stack_size_out = (size_t)requested;
+    return 1;
+}
+
 static void ptn_fiber_restore_caller_runtime(PtnRuntime *runtime, PtnFiberData *data) {
     if (runtime == NULL || data == NULL) {
         return;
@@ -176634,7 +176701,9 @@ static int ptn_fiber_prepare_context(PtnRuntime *runtime, PtnFiberData *data, si
         );
         return 0;
     }
-    data->fiber_stack_size = PTN_FIBER_STACK_SIZE;
+    if (!ptn_fiber_configured_stack_size(runtime, line, &data->fiber_stack_size)) {
+        return 0;
+    }
     data->fiber_stack = malloc(data->fiber_stack_size);
     if (data->fiber_stack == NULL) {
         ptn_abort_out_of_memory();
