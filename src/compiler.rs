@@ -653,6 +653,7 @@ impl IncludeCollector {
                 argument_names,
                 argument_unpacks,
                 span,
+                ..
             } if name.eq_ignore_ascii_case("opcache_compile_file")
                 && arguments.len() == 1
                 && argument_names.iter().all(Option::is_none)
@@ -1155,6 +1156,7 @@ impl IncludeCollector {
                 argument_names,
                 argument_unpacks,
                 span,
+                ..
             } if name.eq_ignore_ascii_case("opcache_compile_file")
                 && arguments.len() == 1
                 && argument_names.iter().all(Option::is_none)

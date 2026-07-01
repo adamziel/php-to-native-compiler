@@ -1016,6 +1016,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        call_line: usize,
         span: SourceSpan,
     },
     FirstClassCallable {
@@ -1028,6 +1029,7 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
         static_method_syntax: bool,
+        call_line: usize,
         span: SourceSpan,
     },
     MethodCall {
@@ -1037,6 +1039,7 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
         nullsafe: bool,
+        call_line: usize,
         span: SourceSpan,
     },
     DynamicMethodCall {
@@ -1045,6 +1048,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        call_line: usize,
         span: SourceSpan,
     },
     NewObject {
@@ -1055,6 +1059,7 @@ pub enum Expr {
         argument_unpacks: Vec<bool>,
         constructor_parentheses: bool,
         anonymous_class_source: Option<String>,
+        call_line: usize,
         span: SourceSpan,
     },
     DynamicNewObject {
@@ -1063,6 +1068,7 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
         constructor_parentheses: bool,
+        call_line: usize,
         span: SourceSpan,
     },
     Clone {

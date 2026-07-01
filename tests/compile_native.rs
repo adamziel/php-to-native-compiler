@@ -49348,16 +49348,16 @@ new Foo();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
+        String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "\nFatal error: Uncaught Error: Class \"NonExistent\" not found in {}:5\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 5\n",
+            "\nFatal error: Uncaught Error: Class \"NonExistent\" not found in {}:5\nStack trace:\n#0 {}(3): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 5\n",
             definition.display(),
             input.display(),
             definition.display()
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -49400,22 +49400,23 @@ var_dump(new B());
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "object(B)#3 (1) {\n  [\"prop\"]=>\n  string(2) \"AS\"\n}\n"
-    );
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stderr.contains("Fatal error: Uncaught Exception: Thrown from S"),
-        "{stderr}"
+        stdout.starts_with("object(B)#3 (1) {\n  [\"prop\"]=>\n  string(2) \"AS\"\n}\n"),
+        "{stdout}"
     );
-    let constant_frame = stderr
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: Thrown from S"),
+        "{stdout}"
+    );
+    let constant_frame = stdout
         .find(": [constant expression]()")
-        .unwrap_or_else(|| panic!("{stderr}"));
-    let tostring_frame = stderr
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let tostring_frame = stdout
         .find(": S->__toString()")
-        .unwrap_or_else(|| panic!("{stderr}"));
-    assert!(constant_frame < tostring_frame, "{stderr}");
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(constant_frame < tostring_frame, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_class_constant_suppress_deprecation"));
@@ -112538,6 +112539,170 @@ new HiddenStaticReadChild;
         "{stdout}"
     );
     assert_eq!(stdout.matches("NULL\nNULL\nNULL\n").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_multiline_call_trace_lines_to_native_binary() {
+    let root = temp_dir("ptn-native-multiline-call-trace-lines");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("multiline-call-trace-lines.php");
+    let output = root.join("multiline-call-trace-lines-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($label, $fn) {
+    try {
+        $fn();
+    } catch (Throwable $e) {
+        echo $label, ':', $e->getTrace()[0]['line'], \"\\n\";
+    }
+}
+class A {
+    public function b() { throw new Exception(); }
+    public static function c() { throw new Exception(); }
+}
+class N {
+    public function __construct() { throw new Exception(); }
+}
+function foo() { throw new Exception(); }
+report('method', function () {
+    (new A())
+        ->
+        b
+        ();
+});
+report('dynamic', function () {
+    'foo'
+        ();
+});
+report('static', function () {
+    A
+        ::
+        c
+        ();
+});
+report('new', function () {
+    new
+        N
+        ();
+});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "method:20\ndynamic:25\nstatic:30\nnew:35\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_output_started_header_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-output-started-header");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-output-started-header.php");
+    let output = root.join("eval-output-started-header-bin");
+    fs::write(
+        &input,
+        "<?php
+eval('echo \"Foo\\n\";');
+header('Foo: Bar');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("Foo\n\nWarning: Cannot modify header information"));
+    assert!(
+        stdout.contains(&format!(
+            "output started at {}(2) : eval()'d code:1",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_default_php_user_filter_include_read_fails_without_callback_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-default-php-user-filter-include");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("default-php-user-filter-include.php");
+    let output = root.join("default-php-user-filter-include-bin");
+    fs::write(
+        &input,
+        "<?php
+class SampleFilter extends php_user_filter { }
+stream_filter_register('sample.filter', SampleFilter::class);
+include 'php://filter/read=sample.filter/resource=' . __FILE__;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("Warning: include(): Unprocessed filter buckets remaining on input brigade"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Failed opening 'php://filter/read=sample.filter/resource="),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Invalid callback"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_class_constant_expression_trace_uses_instantiation_line_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-instantiation-trace-line");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-instantiation-trace-line.php");
+    let output = root.join("class-constant-instantiation-trace-line-bin");
+    fs::write(
+        &input,
+        "<?php
+
+enum Alpha {
+    case Foo;
+}
+
+class Bravo {
+    public const C = [Alpha::Foo => 3];
+}
+
+new Bravo();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Cannot access offset of type Alpha on array"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{}(11): [constant expression]()", input.display())),
+        "{stdout}"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

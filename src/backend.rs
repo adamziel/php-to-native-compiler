@@ -7923,11 +7923,13 @@ fn emit_class_constant_initializer_helper(
                 out.push_str("            ptn_runtime_push_trace_frame(&runtime, &");
                 out.push_str(&initializing_trace_frame_temp);
                 out.push_str(", \"[constant expression]\", runtime.source_path, ");
+                out.push_str("(runtime.current_class_constant_trigger_line != 0 ? runtime.current_class_constant_trigger_line : ");
                 out.push_str(
                     &value_expr_runtime_line(&constant.value)
                         .unwrap_or(0)
                         .to_string(),
                 );
+                out.push_str(")");
                 out.push_str(", 0, NULL);\n");
             }
             let mut extra_cleanup_temps = Vec::new();
@@ -51404,7 +51406,7 @@ impl ValueEmitter {
             out.push_str("        ptn_runtime_push_trace_frame(&runtime, &");
             out.push_str(&trace_temp);
             out.push_str(", \"[constant expression]\", runtime.source_path, ");
-            out.push_str(&read.line.to_string());
+            out.push_str(&line.to_string());
             out.push_str(", 0, NULL);\n");
             out.push_str("        PtnValue ");
             out.push_str(&temp);

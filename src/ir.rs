@@ -4972,6 +4972,7 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                call_line: _,
                 span,
             } if name.eq_ignore_ascii_case("opcache_compile_file")
                 && arguments.len() == 1
@@ -5006,7 +5007,8 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
-                span,
+                call_line,
+                span: _,
             } => {
                 let (arguments, argument_names) =
                     self.lower_internal_call_arguments(name, arguments, argument_names);
@@ -5015,7 +5017,7 @@ impl<'a> LoweringContext<'a> {
                     arguments,
                     argument_names,
                     argument_unpacks: argument_unpacks.clone(),
-                    line: span.line,
+                    line: *call_line,
                 }
             }
             Expr::FirstClassCallable { callable, span } => ValueExpr::FirstClassCallable {
@@ -5028,7 +5030,8 @@ impl<'a> LoweringContext<'a> {
                 argument_names,
                 argument_unpacks,
                 static_method_syntax,
-                span,
+                call_line,
+                span: _,
             } => ValueExpr::DynamicCall {
                 callee: Box::new(self.lower_expr(callee)),
                 arguments: arguments
@@ -5038,7 +5041,7 @@ impl<'a> LoweringContext<'a> {
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
                 static_method_syntax: *static_method_syntax,
-                line: span.line,
+                line: *call_line,
             },
             Expr::MethodCall {
                 receiver,
@@ -5047,7 +5050,8 @@ impl<'a> LoweringContext<'a> {
                 argument_names,
                 argument_unpacks,
                 nullsafe,
-                span,
+                call_line,
+                span: _,
             } => ValueExpr::MethodCall {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
@@ -5058,7 +5062,7 @@ impl<'a> LoweringContext<'a> {
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
                 nullsafe: *nullsafe,
-                line: span.line,
+                line: *call_line,
             },
             Expr::DynamicMethodCall {
                 receiver,
@@ -5066,7 +5070,8 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
-                span,
+                call_line,
+                span: _,
             } => ValueExpr::DynamicMethodCall {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: Box::new(self.lower_expr(name)),
@@ -5076,7 +5081,7 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
-                line: span.line,
+                line: *call_line,
             },
             Expr::NewObject {
                 class_name,
@@ -5085,7 +5090,8 @@ impl<'a> LoweringContext<'a> {
                 argument_names,
                 argument_unpacks,
                 anonymous_class_source: _,
-                span,
+                call_line,
+                span: _,
                 ..
             } => ValueExpr::NewObject {
                 class_name: class_name.clone(),
@@ -5095,14 +5101,15 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
-                line: span.line,
+                line: *call_line,
             },
             Expr::DynamicNewObject {
                 class_name,
                 arguments,
                 argument_names,
                 argument_unpacks,
-                span,
+                call_line,
+                span: _,
                 ..
             } => ValueExpr::DynamicNewObject {
                 class_name: Box::new(self.lower_expr(class_name)),
@@ -5112,7 +5119,7 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
-                line: span.line,
+                line: *call_line,
             },
             Expr::Clone {
                 expr,

@@ -932,6 +932,17 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     }
     fwrite(output_data, 1, rewritten_len, stdout);
     if (root != NULL) {
+        if (!root->output_has_started) {
+            const char *output_source_path =
+                runtime != NULL && runtime->current_output_source_path != NULL
+                    ? runtime->current_output_source_path
+                    : (runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn");
+            root->output_started_source_path = ptn_duplicate_string(output_source_path);
+            root->output_started_line =
+                runtime != NULL && runtime->current_output_line != 0
+                    ? runtime->current_output_line
+                    : 0;
+        }
         root->output_has_started = 1;
         root->output_at_line_start = rewritten_len != 0 && output_data[rewritten_len - 1] == '\n';
     }
@@ -984,6 +995,17 @@ static PTN_UNUSED void ptn_output_write_cstr(PtnRuntime *runtime, const char *da
 }
 
 static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line) {
+    const char *previous_output_source_path =
+        runtime == NULL ? NULL : runtime->current_output_source_path;
+    size_t previous_output_line = runtime == NULL ? 0 : runtime->current_output_line;
+    int assigned_output_location =
+        runtime != NULL &&
+        runtime->current_output_source_path == NULL &&
+        runtime->current_output_line == 0;
+    if (assigned_output_location) {
+        runtime->current_output_source_path = runtime->source_path;
+        runtime->current_output_line = line;
+    }
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -1060,6 +1082,10 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
         }
         case PTN_REFERENCE:
             break;
+    }
+    if (assigned_output_location) {
+        runtime->current_output_source_path = previous_output_source_path;
+        runtime->current_output_line = previous_output_line;
     }
 }
 
@@ -57685,6 +57711,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
     filter->write_seek_mode = write_seek_mode;
+    filter->user_filter_failed = 0;
     filter->user_filter_invalid_callback_reported = 0;
     filter->user_filter_closed = 0;
     filter->has_user_filter_object = 0;
@@ -58498,14 +58525,31 @@ static char *ptn_stream_apply_user_filter_alloc(
     char *invalid_filter_reason = filter_class_name == NULL
         ? ptn_duplicate_string("no array or string given")
         : ptn_inaccessible_declared_method_callback_reason(runtime, filter_class_name, "filter");
-    if (
-        invalid_filter_reason == NULL &&
-        filter_class_name != NULL &&
-        !ptn_declared_class_method_is_callable(
+    int declared_filter_callable = filter_class_name != NULL &&
+        ptn_declared_class_method_is_callable(
             filter_class_name,
             "filter",
             runtime == NULL ? NULL : runtime->current_class_name
-        ) &&
+        );
+    int uses_default_php_user_filter_method =
+        invalid_filter_reason == NULL &&
+        filter_class_name != NULL &&
+        !declared_filter_callable &&
+        !ptn_declared_class_has_call_magic(filter_class_name) &&
+        !ptn_internal_class_method_exists(filter_class_name, "filter") &&
+        ptn_declared_class_is_same_or_descendant(filter_class_name, "php_user_filter");
+    if (uses_default_php_user_filter_method) {
+        if (!filter->user_filter_failed) {
+            ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        }
+        filter->user_filter_failed = 1;
+        *ok = 0;
+        return NULL;
+    }
+    if (
+        invalid_filter_reason == NULL &&
+        filter_class_name != NULL &&
+        !declared_filter_callable &&
         !ptn_declared_class_has_call_magic(filter_class_name) &&
         !ptn_internal_class_method_exists(filter_class_name, "filter")
     ) {
@@ -63866,6 +63910,7 @@ static int ptn_php_filter_apply_filter_name(
     PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
+    const char *function_name,
     const char *filter_name,
     size_t filter_name_len,
     size_t line
@@ -63911,7 +63956,7 @@ static int ptn_php_filter_apply_filter_name(
             size_t output_len = 0;
             char *output = ptn_stream_apply_filter_chain_alloc(
                 runtime,
-                "php://filter",
+                function_name == NULL ? "php://filter" : function_name,
                 filter,
                 (const char *)*data_io,
                 *len_io,
@@ -63919,6 +63964,13 @@ static int ptn_php_filter_apply_filter_name(
                 line,
                 &output_len
             );
+            if (filter->user_filter_failed &&
+                runtime->exceptions->active_exception == NULL) {
+                free(output);
+                ptn_stream_filter_free(filter);
+                ptn_resource_release(stream_resource);
+                return 0;
+            }
             if (runtime->exceptions->active_exception == NULL) {
                 free(*data_io);
                 *data_io = (unsigned char *)output;
@@ -63962,6 +64014,7 @@ static int ptn_php_filter_apply_filter_list(
     PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
+    const char *function_name,
     const char *filters,
     size_t filters_len,
     size_t line
@@ -63975,7 +64028,15 @@ static int ptn_php_filter_apply_filter_list(
         if (end > start) {
             size_t decoded_len = 0;
             char *decoded = ptn_url_decode_bytes(filters + start, end - start, 0, &decoded_len);
-            int applied = ptn_php_filter_apply_filter_name(runtime, data_io, len_io, decoded, decoded_len, line);
+            int applied = ptn_php_filter_apply_filter_name(
+                runtime,
+                data_io,
+                len_io,
+                function_name,
+                decoded,
+                decoded_len,
+                line
+            );
             free(decoded);
             if (!applied) {
                 return 0;
@@ -63993,6 +64054,7 @@ static int ptn_php_filter_apply_segment(
     PtnRuntime *runtime,
     unsigned char **data_io,
     size_t *len_io,
+    const char *function_name,
     const char *segment,
     size_t segment_len,
     size_t line
@@ -64009,12 +64071,21 @@ static int ptn_php_filter_apply_segment(
             runtime,
             data_io,
             len_io,
+            function_name,
             segment + strlen(read_prefix),
             segment_len - strlen(read_prefix),
             line
         );
     }
-    return ptn_php_filter_apply_filter_list(runtime, data_io, len_io, segment, segment_len, line);
+    return ptn_php_filter_apply_filter_list(
+        runtime,
+        data_io,
+        len_io,
+        function_name,
+        segment,
+        segment_len,
+        line
+    );
 }
 
 static int ptn_try_read_php_filter_url_bytes(
@@ -64022,6 +64093,7 @@ static int ptn_try_read_php_filter_url_bytes(
     const char *path,
     int use_include_path,
     PtnResource *context,
+    const char *function_name,
     unsigned char **data_out,
     size_t *len_out,
     char **detail_out,
@@ -64075,6 +64147,7 @@ static int ptn_try_read_php_filter_url_bytes(
                 runtime,
                 &data,
                 &data_len,
+                function_name,
                 segment_start,
                 (size_t)(segment_end - segment_start),
                 line
@@ -64290,6 +64363,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             path,
             use_include_path,
             context,
+            "file_get_contents",
             &data,
             &data_len,
             &data_url_detail,
@@ -124527,6 +124601,39 @@ static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnV
     }
     if (argc >= 3) {
         (void)ptn_internal_expect_integer_arg(runtime, "header", 3, "response_code", args[2], line);
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->output_has_started) {
+        const char *output_path =
+            root->output_started_source_path == NULL ? "ptn" : root->output_started_source_path;
+        size_t output_line = root->output_started_line;
+        int needed = snprintf(
+            NULL,
+            0,
+            "Cannot modify header information - headers already sent by (output started at %s:%zu)",
+            output_path,
+            output_line
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Cannot modify header information - headers already sent by (output started at %s:%zu)",
+            output_path,
+            output_line
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        return ptn_null();
     }
     return ptn_null();
 }
@@ -242796,6 +242903,7 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
             path,
             0,
             NULL,
+            "include",
             &filtered_data,
             &filtered_len,
             &filter_detail,
@@ -243145,10 +243253,28 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     char *code = ptn_value_to_string(args[0]);
     ptn_eval_scan_class_declarations(runtime, code, line);
     PtnValue result = ptn_null();
+    char *eval_output_path = ptn_eval_source_path(runtime, line);
+    const char *previous_output_source_path =
+        runtime == NULL ? NULL : runtime->current_output_source_path;
+    size_t previous_output_line = runtime == NULL ? 0 : runtime->current_output_line;
+    if (runtime != NULL) {
+        runtime->current_output_source_path = eval_output_path;
+        runtime->current_output_line = 1;
+    }
     if (ptn_eval_execute_supported_statements(runtime, code, line, &result)) {
+        if (runtime != NULL) {
+            runtime->current_output_source_path = previous_output_source_path;
+            runtime->current_output_line = previous_output_line;
+        }
+        free(eval_output_path);
         free(code);
         return result;
     }
+    if (runtime != NULL) {
+        runtime->current_output_source_path = previous_output_source_path;
+        runtime->current_output_line = previous_output_line;
+    }
+    free(eval_output_path);
     char *parse_error_message = ptn_eval_dynamic_parse_error_message(code);
     if (parse_error_message != NULL) {
         free(code);

@@ -1429,6 +1429,7 @@ struct PtnStreamFilter {
     int64_t zlib_level;
     int zlib_error;
     int write_seek_mode;
+    int user_filter_failed;
     int user_filter_invalid_callback_reported;
     int user_filter_closed;
     int has_user_filter_object;
@@ -1665,6 +1666,7 @@ struct PtnRuntime {
     const char *current_class_constant_initializing_key_class_name;
     const char *current_class_constant_initializing_constant_name;
     const char *current_class_constant_source_path;
+    size_t current_class_constant_trigger_line;
     const char *class_constant_deprecation_suppress_class;
     const char *class_constant_deprecation_suppress_constant;
     PtnObject *dynamic_property_deprecation_suppress_object;
@@ -1735,6 +1737,10 @@ struct PtnRuntime {
     size_t output_buffer_callback_skip_buffers;
     int output_at_line_start;
     int output_has_started;
+    const char *current_output_source_path;
+    size_t current_output_line;
+    char *output_started_source_path;
+    size_t output_started_line;
     int http_response_code_initialized;
     int64_t http_response_code;
     int header_callback_registered;
