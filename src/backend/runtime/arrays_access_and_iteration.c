@@ -16736,7 +16736,11 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
+        if (runtime != NULL) {
+            ptn_emit_array_runtime_warning(runtime, message, line);
+        } else {
+            ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
+        }
         return ptn_null();
     }
 
