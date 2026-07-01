@@ -11920,6 +11920,77 @@ throw new Exception('main');
 }
 
 #[test]
+fn compile_set_exception_handler_invalid_callback_messages_to_native_binary() {
+    let root = temp_dir("ptn-native-set-exception-handler-invalid-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("set-exception-handler-invalid-callback.php");
+    let output = root.join("set-exception-handler-invalid-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+foreach ([\"fo\", [\"\", \"\"]] as $callback) {
+    try {
+        set_exception_handler($callback);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, function \"fo\" not found or invalid function name\n",
+            "set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, class \"\" not found\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_exception_shutdown_handler_registration_does_not_reemit_to_native_binary() {
+    let root = temp_dir("ptn-native-uncaught-exception-shutdown-no-reemit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uncaught-exception-shutdown-no-reemit.php");
+    let output = root.join("uncaught-exception-shutdown-no-reemit-bin");
+    fs::write(
+        &input,
+        "<?php
+register_shutdown_function(function () {
+    echo \"shutdown\\n\";
+    set_exception_handler(function (Throwable $exception) {
+        echo 'Caught: ', $exception->getMessage(), \"\\n\";
+    });
+});
+
+throw new Exception('main');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("shutdown\n"));
+    assert_eq!(
+        stdout
+            .matches("Fatal error: Uncaught Exception: main")
+            .count(),
+        1
+    );
+    assert!(!stdout.contains("Caught: main"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_function_callbacks_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-function-callbacks");
     fs::create_dir_all(&root).unwrap();

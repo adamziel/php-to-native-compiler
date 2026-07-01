@@ -124272,7 +124272,7 @@ static PtnValue ptn_internal_set_exception_handler(PtnRuntime *runtime, size_t a
         return previous;
     }
 
-    PtnValue checked = ptn_internal_expect_callback_arg(
+    PtnValue checked = ptn_internal_expect_nullable_callback_arg(
         runtime,
         "set_exception_handler",
         1,
