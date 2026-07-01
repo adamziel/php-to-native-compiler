@@ -33684,6 +33684,9 @@ fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDef
         fatal: None,
     };
     for function in &module.functions {
+        if function.is_anonymous {
+            continue;
+        }
         if imported_trait_method_function(function) {
             continue;
         }
@@ -47201,7 +47204,20 @@ impl ValueEmitter {
             } => {
                 let resolved_class_name = self.static_property_class_name(class_name);
                 let result_temp = self.next_temp();
+                let try_frame_temp = self.next_temp();
                 out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    PtnTryFrame ");
+                out.push_str(&try_frame_temp);
+                out.push_str(";\n");
+                out.push_str("    ptn_try_frame_push(&runtime, &");
+                out.push_str(&try_frame_temp);
+                out.push_str(");\n");
+                out.push_str("    if (setjmp(");
+                out.push_str(&try_frame_temp);
+                out.push_str(".jump) == 0) {\n");
+                out.push_str("        ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
@@ -47214,6 +47230,16 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("        ptn_try_frame_pop(&runtime, &");
+                out.push_str(&try_frame_temp);
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_try_frame_pop(&runtime, &");
+                out.push_str(&try_frame_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "        ", value_temp);
+                out.push_str("        ptn_rethrow_exception(&runtime);\n");
+                out.push_str("    }\n");
                 result_temp
             }
             AssignmentTarget::DynamicStaticProperty {
@@ -50214,6 +50240,19 @@ impl ValueEmitter {
     ) -> String {
         let closure_temp = self.next_temp();
         let function = &self.user_functions[function_index];
+        let mut parameter_default_diagnostics = ParameterDefaultDiagnostics {
+            deprecations: Vec::new(),
+            fatal: None,
+        };
+        collect_function_parameter_default_diagnostics(
+            function,
+            &mut parameter_default_diagnostics,
+        );
+        emit_parameter_default_diagnostics(
+            out,
+            &parameter_default_diagnostics,
+            &function.source_file,
+        );
         let required_parameter_count = function_required_parameter_count(function);
         let is_variadic = function
             .parameters

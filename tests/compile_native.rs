@@ -44137,6 +44137,74 @@ try {
 }
 
 #[test]
+fn compile_failed_typed_static_property_writes_release_rhs_to_native_binary() {
+    let root = temp_dir("ptn-native-failed-typed-static-property-writes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("failed-typed-static-property-writes.php");
+    let output = root.join("failed-typed-static-property-writes-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {}
+class Bar extends Foo {
+    public static self $selfProp;
+    public static ?self $selfNullProp;
+    public static parent $parentProp;
+}
+
+try { Bar::$selfProp = new stdClass; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+try { Bar::$selfNullProp = new stdClass; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+try { Bar::$parentProp = new stdClass; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+
+Bar::$selfNullProp = null;
+var_dump(Bar::$selfNullProp);
+
+Bar::$selfProp = new Bar;
+Bar::$selfNullProp = new Bar;
+Bar::$parentProp = new Foo;
+var_dump(Bar::$selfProp, Bar::$selfNullProp, Bar::$parentProp);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Cannot assign stdClass to property Bar::$selfProp"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign stdClass to property Bar::$selfNullProp"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign stdClass to property Bar::$parentProp"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(concat!(
+            "NULL\n",
+            "object(Bar)#3 (0) {\n",
+            "}\n",
+            "object(Bar)#2 (0) {\n",
+            "}\n",
+            "object(Foo)#4 (0) {\n",
+            "}\n",
+        )),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_trait_duplicate_property_defaults_resolve_constants_to_native_binary() {
     let root = temp_dir("ptn-native-trait-duplicate-property-defaults");
     fs::create_dir_all(&root).unwrap();
@@ -65310,6 +65378,49 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "assert(0 && new class {\n} && new class(42) extends stdclass {\n})\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assertion_text_keeps_closure_defaults_and_local_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-closure-default-assignment-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-closure-default-assignment-text.php");
+    let output = root.join("assert-closure-default-assignment-text-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+assert(0 && ($a = function (int $a, ?int $b, int $c = null): ?int {
+    $x = new class {
+        public $a;
+        public int $b;
+        public ?int $c;
+    };
+}));
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(): assert(0 && ($a = function (int $a, ?int $b, int $c = null): ?int {\n",
+            "    $x = new class {\n",
+            "        public $a;\n",
+            "        public int $b;\n",
+            "        public ?int $c;\n",
+            "    };\n",
+            "})) failed\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

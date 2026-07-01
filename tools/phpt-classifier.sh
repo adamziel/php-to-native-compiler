@@ -1927,7 +1927,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         function ptn_supported_typed_static_property_metadata_row() {
             return ptn_reflection_property_typed_metadata_row ||
-                ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_setStaticPropertyValue_003|ReflectionProperty_(isReadable_static|isWritable_static|typed_static)|gh12856)[.]phpt$/
+                ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_setStaticPropertyValue_003|ReflectionProperty_(isReadable_static|isWritable_static|typed_static)|gh12856)[.]phpt$/ ||
+                ptn_path ~ /(^|\/)Zend\/tests\/type_declarations\/typed_properties_043[.]phpt$/
+        }
+        function ptn_supported_assertion_closure_source_row() {
+            return ptn_path ~ /(^|\/)Zend\/tests\/type_declarations\/types_in_ast[.]phpt$/
         }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
@@ -2232,8 +2236,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
 
 ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
     local path=$1
+    local display_path=${2:-$path}
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$display_path" '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -2297,7 +2302,8 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
                     found = 1
                     exit
                 }
-                if (line ~ /assert[[:space:]]*\([[:space:]]*0[[:space:]]*&&.*function[[:space:]]*\(/) {
+                if (ptn_path !~ /(^|\/)Zend\/tests\/type_declarations\/types_in_ast[.]phpt$/ &&
+                    line ~ /assert[[:space:]]*\([[:space:]]*0[[:space:]]*&&.*function[[:space:]]*\(/) {
                     print "unsupported-assertion-runtime\trequires assertion AST pretty-printing for closure expressions, outside PTN modeled assertion diagnostics"
                     found = 1
                     exit
@@ -2768,7 +2774,7 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if value=$(ptn_phpt_first_unsupported_runtime_diagnostics_surface "$path"); then
+    if value=$(ptn_phpt_first_unsupported_runtime_diagnostics_surface "$path" "$rel"); then
         printf '%s\n' "$value"
         return 0
     fi

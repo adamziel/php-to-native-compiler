@@ -2105,6 +2105,7 @@ fn phpt_classifier_keeps_supported_typed_static_reflection_rows_runnable_by_path
     let phpt =
         "--TEST--\ntyped static reflection\n--FILE--\n<?php\nclass Box { public static int $value; }\n$ref = new ReflectionProperty('Box', 'value');\n--EXPECT--\n";
     let rows = [
+        "Zend/tests/type_declarations/typed_properties_043.phpt",
         "ext/reflection/tests/ReflectionClass_setStaticPropertyValue_003.phpt",
         "ext/reflection/tests/ReflectionProperty_isReadable_static.phpt",
         "ext/reflection/tests/ReflectionProperty_isWritable_static.phpt",
@@ -2756,6 +2757,15 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "{name}: {classification:?}"
         );
     }
+
+    let types_in_ast = classify_at_relative_path(
+        "--TEST--\ntypes in ast\n--FILE--\n<?php\nassert(0 && ($a = function (int $a, ?int $b, int $c = null): ?int {\n    $x = new class {\n        public $a;\n        public int $b;\n        public ?int $c;\n    };\n}));\n--EXPECT--\n",
+        "Zend/tests/type_declarations/types_in_ast.phpt",
+    );
+    assert_eq!(
+        types_in_ast,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
 
     let namespace_assert = classify(
         "--TEST--\nnamespace assert\n--FILE--\n<?php\nnamespace Foo;\nvar_dump(assert(false));\n--EXPECT--\n",

@@ -6102,6 +6102,15 @@ fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<Strin
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
+        Statement::Assign {
+            name, op, value, ..
+        } => {
+            let value = assertion_statement_value_text(value, indent);
+            Some(format!(
+                "{indent}${name} {} {value};",
+                assertion_assignment_op_text(*op)
+            ))
+        }
         Statement::Expression { expression, .. } => {
             Some(assertion_expression_statement_text(expression, indent))
         }
@@ -6112,6 +6121,25 @@ fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<Strin
         Statement::Empty { .. } => None,
         _ => None,
     }
+}
+
+fn assertion_statement_value_text(expr: &Expr, indent: &str) -> String {
+    let text = assertion_expr_text(expr);
+    assertion_indent_continuation_lines(&text, indent)
+}
+
+fn assertion_indent_continuation_lines(text: &str, indent: &str) -> String {
+    let mut lines = text.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let mut formatted = first.to_string();
+    for line in lines {
+        formatted.push('\n');
+        formatted.push_str(indent);
+        formatted.push_str(line);
+    }
+    formatted
 }
 
 fn assertion_expression_statement_text(expr: &Expr, indent: &str) -> String {
@@ -6416,11 +6444,16 @@ fn assertion_function_parameter_text(parameter: &AstFunctionParameter) -> String
     variable.push('$');
     variable.push_str(&parameter.name);
 
-    if let Some(type_hint) = &parameter.type_hint {
+    let mut text = if let Some(type_hint) = &parameter.type_hint {
         format!("{} {variable}", assertion_type_hint_text(type_hint))
     } else {
         variable
+    };
+    if let Some(default_value) = &parameter.default_value {
+        text.push_str(" = ");
+        text.push_str(&assertion_expr_text(default_value));
     }
+    text
 }
 
 fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
