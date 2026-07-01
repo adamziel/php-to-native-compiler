@@ -48382,6 +48382,58 @@ new C();
 }
 
 #[test]
+fn compile_class_constant_initializer_preserves_relative_constant_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-relative-diagnostic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-relative-diagnostic.php");
+    let output = root.join("class-constant-relative-diagnostic-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    const A = self::B;
+
+    public static function regular() {
+        return self::B;
+    }
+}
+
+class Base {}
+class Child extends Base {
+    const A = parent::B;
+}
+
+foreach ([fn() => Foo::A, fn() => Child::A, fn() => Foo::regular()] as $read) {
+    try {
+        $read();
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Undefined constant self::B\n",
+            "Undefined constant parent::B\n",
+            "Undefined constant Foo::B\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("current_class_constant_initializing_constant_name"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope_message_class"));
+}
+
+#[test]
 fn compile_included_class_constant_initializer_error_uses_declaring_source_path_to_native_binary() {
     let root = temp_dir("ptn-native-include-class-constant-error-source");
     fs::create_dir_all(&root).unwrap();

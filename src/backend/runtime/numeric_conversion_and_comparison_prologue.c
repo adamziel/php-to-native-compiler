@@ -7055,11 +7055,25 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     ) {
         written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
     } else {
-        const char *display_class_name =
-            message_class_name == NULL ||
+        int preserve_lexical_constant_expression_class =
+            runtime != NULL &&
+            runtime->current_class_constant_initializing_constant_name != NULL &&
+            message_class_name != NULL &&
+            (
                 ptn_ascii_case_equal(message_class_name, "self") ||
                 ptn_ascii_case_equal(message_class_name, "static") ||
                 ptn_ascii_case_equal(message_class_name, "parent")
+            );
+        const char *display_class_name =
+            message_class_name == NULL ||
+                (
+                    !preserve_lexical_constant_expression_class &&
+                    (
+                        ptn_ascii_case_equal(message_class_name, "self") ||
+                        ptn_ascii_case_equal(message_class_name, "static") ||
+                        ptn_ascii_case_equal(message_class_name, "parent")
+                    )
+                )
                 ? lookup_class_name
                 : message_class_name;
         written = snprintf(
