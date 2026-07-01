@@ -2836,6 +2836,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    const char *configured_fiber_stack_size = getenv("PTN_FIBER_STACK_SIZE");
+    runtime->fiber_stack_size = ptn_duplicate_string(
+        configured_fiber_stack_size == NULL ? "0" : configured_fiber_stack_size
+    );
     const char *configured_auto_detect_line_endings = getenv("PTN_AUTO_DETECT_LINE_ENDINGS");
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");

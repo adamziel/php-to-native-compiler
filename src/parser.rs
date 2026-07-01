@@ -24303,6 +24303,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "getimagesizefromstring"
             | "get_html_translation_table"
             | "get_meta_tags"
+            | "iptcembed"
+            | "iptcparse"
             | "get_current_user"
             | "checkdnsrr"
             | "dns_check_record"
