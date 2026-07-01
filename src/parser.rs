@@ -6070,7 +6070,7 @@ impl Parser<'_> {
     fn parse_if(&mut self) -> Result<Statement> {
         let span = self.expect_if_like()?;
         self.expect_left_paren()?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition_expr()?;
         self.expect_right_paren()?;
         if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -6126,7 +6126,7 @@ impl Parser<'_> {
     fn parse_while(&mut self) -> Result<Statement> {
         let span = self.expect_while()?;
         self.expect_left_paren()?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition_expr()?;
         self.expect_right_paren()?;
         let body = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -6151,7 +6151,7 @@ impl Parser<'_> {
         self.skip_php_tags();
         self.expect_while()?;
         self.expect_left_paren()?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition_expr()?;
         self.expect_right_paren()?;
         self.expect_statement_terminator()?;
         Ok(Statement::DoWhile {
@@ -6306,7 +6306,7 @@ impl Parser<'_> {
         self.allow_void_cast_expression += 1;
         let mut conditions = Vec::new();
         let result = loop {
-            let condition = self.parse_expr();
+            let condition = self.parse_condition_expr();
             match condition {
                 Ok(condition) => {
                     if matches!(
@@ -7974,6 +7974,11 @@ impl Parser<'_> {
 
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_assignment_expr()
+    }
+
+    fn parse_condition_expr(&mut self) -> Result<Expr> {
+        let expression = self.parse_expr()?;
+        self.parse_keyword_boolean_tail_from_left(expression, KEYWORD_OR_PRECEDENCE)
     }
 
     fn parse_const_context_expr(&mut self) -> Result<Expr> {

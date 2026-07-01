@@ -9734,6 +9734,28 @@ static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
     return ptn_number_float(floating);
 }
 
+static PTN_UNUSED int ptn_string_has_negative_zero_integer_prefix(const char *string) {
+    const char *start = string;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start != '-') {
+        return 0;
+    }
+    const char *digits = start + 1;
+    if (!isdigit((unsigned char)*digits)) {
+        return 0;
+    }
+
+    char *int_end = NULL;
+    errno = 0;
+    long long integer = strtoll(start, &int_end, 10);
+    if (errno == ERANGE || integer != 0 || int_end == digits) {
+        return 0;
+    }
+    return !ptn_contains_float_marker(start, int_end);
+}
+
 static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -9993,6 +10015,19 @@ static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
     double fast_number = 0.0;
     if (ptn_fast_scalar_double(value, &fast_number)) {
         return ptn_float(fast_number);
+    }
+    if (value.type == PTN_STRING) {
+        if (ptn_string_has_embedded_nul(value.as.string)) {
+            return ptn_float(0.0);
+        }
+        const char *string = (const char *)value.as.string.data;
+        PtnNumber string_number = ptn_string_to_number(string);
+        if (string_number.type == PTN_NUMBER_INT &&
+            string_number.integer == 0 &&
+            ptn_string_has_negative_zero_integer_prefix(string)) {
+            return ptn_float(-0.0);
+        }
+        return ptn_float(string_number.floating);
     }
 
     PtnNumber number = ptn_to_number(value);

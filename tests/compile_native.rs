@@ -7791,6 +7791,32 @@ fn parser_accepts_keyword_boolean_tail_after_direct_assignment_statement() {
 }
 
 #[test]
+fn parser_accepts_keyword_boolean_tail_after_assignment_condition() {
+    let program = parser::parse(
+        "<?php while ($callback = array_shift($callbacks) and ($callback() || true));",
+    )
+    .unwrap();
+    let Statement::While { condition, .. } = &program.statements[0] else {
+        panic!("expected while statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::And,
+        left,
+        ..
+    } = condition
+    else {
+        panic!("expected keyword boolean condition tail");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Assign {
+            op: AssignmentOp::Assign,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_strict_identity_expressions() {
     let program = parser::parse("<?php echo 1 === 1, \"1\" !== 1;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -67528,6 +67554,36 @@ var_dump($items[0]);\n",
 }
 
 #[test]
+fn compile_keyword_boolean_assignment_condition_tail_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-boolean-assignment-condition-tail");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-boolean-assignment-condition-tail.php");
+    let output = root.join("keyword-boolean-assignment-condition-tail-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+         $callbacks = [\n\
+             function () { echo \"First item!\\n\"; },\n\
+             function () { echo \"Second item!\\n\"; },\n\
+             function () { echo \"Third item!\\n\"; },\n\
+             function () { echo \"Fourth item!\\n\"; },\n\
+         ];\n\
+         while ($callback = array_shift($callbacks) and ($callback() || true));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "First item!\nSecond item!\nThird item!\nFourth item!\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_spaceship_and_identity_to_native_binary() {
     let root = temp_dir("ptn-native-array-spaceship-identity");
     fs::create_dir_all(&root).unwrap();
@@ -71078,9 +71134,44 @@ try { list($objectValue) = new stdClass(); } catch (\\Throwable $e) { echo $e->g
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let input_path = input.display().to_string();
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nWarning: Cannot use bool as array in ptn on line 2\nNULL\nCannot use object of type stdClass as array\n"
+        format!(
+            "\nWarning: Cannot use bool as array in {input_path} on line 2\nNULL\nCannot use object of type stdClass as array\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_list_destructuring_warnings_respect_error_reporting_to_native_binary() {
+    let root = temp_dir("ptn-native-list-destructuring-warning-reporting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("list-destructuring-warning-reporting.php");
+    let output = root.join("list-destructuring-warning-reporting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+         error_reporting(0);\n\
+         list($hidden) = true;\n\
+         echo \"hidden:\", var_export($hidden, true), \"\\n\";\n\
+         error_reporting(E_ALL);\n\
+         list($shown) = true;\n\
+         echo \"shown:\", var_export($shown, true), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let input_path = input.display().to_string();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "hidden:NULL\n\nWarning: Cannot use bool as array in {input_path} on line 6\nshown:NULL\n"
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -102498,6 +102589,33 @@ fn compile_unary_plus_precedence_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "-2.5\n-9");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_float_cast_preserves_negative_zero_string_to_native_binary() {
+    let root = temp_dir("ptn-native-float-cast-negative-zero-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("float-cast-negative-zero-string.php");
+    let output = root.join("float-cast-negative-zero-string-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+         var_dump((float)\"-0\");\n\
+         var_dump(+(float)\"-0\");\n\
+         var_dump((float)\" -000abc\");\n\
+         var_dump((float)\"0\");\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(-0)\nfloat(-0)\nfloat(-0)\nfloat(0)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
