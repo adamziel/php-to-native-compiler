@@ -1,0 +1,6 @@
+# ptn-w17z.1287 focused pivot: Zend generator delegate current/next rows.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T215131Z.tsv
+# Pivot reason: original row pack includes stale-green and excluded rows on current master.
+# Paths are relative to PHP_SRC_PHPT.
+Zend/tests/generators/gh15275-003.phpt
+Zend/tests/generators/gh15275-006.phpt
