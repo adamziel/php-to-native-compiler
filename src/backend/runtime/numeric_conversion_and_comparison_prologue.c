@@ -26,6 +26,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->current_class_constant_initializing_constant_name;
     runtime->current_class_constant_source_path =
         caller_runtime->current_class_constant_source_path;
+    runtime->current_class_constant_trigger_line =
+        caller_runtime->current_class_constant_trigger_line;
     runtime->class_constant_deprecation_suppress_class =
         caller_runtime->class_constant_deprecation_suppress_class;
     runtime->class_constant_deprecation_suppress_constant =
@@ -130,6 +132,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffer_callback_skip_buffers = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
+    runtime->current_output_source_path = NULL;
+    runtime->current_output_line = 0;
+    runtime->output_started_source_path = NULL;
+    runtime->output_started_line = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
     runtime->header_callback_registered = 0;
@@ -1240,6 +1246,11 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffer_callback_skip_buffers = 0;
         runtime->output_at_line_start = 1;
         runtime->output_has_started = 0;
+        runtime->current_output_source_path = NULL;
+        runtime->current_output_line = 0;
+        free(runtime->output_started_source_path);
+        runtime->output_started_source_path = NULL;
+        runtime->output_started_line = 0;
         if (runtime->header_callback_registered) {
             ptn_value_destroy(&runtime->header_callback);
         }
@@ -7260,12 +7271,15 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 runtime->current_class_constant_initializing_key_class_name;
             const char *previous_initializing_constant =
                 runtime->current_class_constant_initializing_constant_name;
+            size_t previous_trigger_line =
+                runtime->current_class_constant_trigger_line;
             runtime->current_class_constant_initializing_class_name =
                 message_class_name == NULL ? lookup_class_name : message_class_name;
             runtime->current_class_constant_initializing_key_class_name =
                 metadata_declaring_class;
             runtime->current_class_constant_initializing_constant_name =
                 constant;
+            runtime->current_class_constant_trigger_line = line;
             int initialized =
                 runtime->class_constant_initializer(runtime, metadata_declaring_class, constant);
             runtime->current_class_constant_initializing_class_name =
@@ -7274,6 +7288,8 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 previous_initializing_key_class;
             runtime->current_class_constant_initializing_constant_name =
                 previous_initializing_constant;
+            runtime->current_class_constant_trigger_line =
+                previous_trigger_line;
             if (initialized) {
             if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
                 free(key);

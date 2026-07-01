@@ -8228,6 +8228,7 @@ impl Parser<'_> {
                     argument_names: vec![None],
                     argument_unpacks: vec![false],
                     static_method_syntax: false,
+                    call_line: pipe_span.line,
                     span,
                 };
                 continue;
@@ -8388,6 +8389,7 @@ impl Parser<'_> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                call_line: token.span.line,
                 span: combine_spans(token.span, right_span),
             });
         }
@@ -8722,6 +8724,7 @@ impl Parser<'_> {
                             argument_names,
                             argument_unpacks,
                             nullsafe,
+                            call_line: member_span.line,
                             span,
                         }
                     } else {
@@ -8737,6 +8740,7 @@ impl Parser<'_> {
                             arguments,
                             argument_names,
                             argument_unpacks,
+                            call_line: member_span.line,
                             span,
                         }
                     };
@@ -8762,6 +8766,7 @@ impl Parser<'_> {
                         argument_names,
                         argument_unpacks,
                         static_method_syntax: false,
+                        call_line: right_span.line,
                         span: combine_spans(start_span, right_span),
                     };
                 }
@@ -8936,6 +8941,7 @@ impl Parser<'_> {
                         class_name_fetch,
                         start_span,
                         method_name,
+                        member_span,
                     )?;
                 }
                 TokenKind::PlusPlus | TokenKind::MinusMinus => {
@@ -9081,6 +9087,7 @@ impl Parser<'_> {
                                 arguments,
                                 argument_names,
                                 argument_unpacks,
+                                call_line: parsed_name.span.line,
                                 span: combine_spans(parsed_name.span, right_span),
                             })
                         }
@@ -9141,6 +9148,7 @@ impl Parser<'_> {
                             arguments,
                             argument_names,
                             argument_unpacks,
+                            call_line: token.span.line,
                             span: combine_spans(token.span, right_span),
                         });
                     }
@@ -9207,6 +9215,7 @@ impl Parser<'_> {
                         arguments,
                         argument_names,
                         argument_unpacks,
+                        call_line: parsed_name.span.line,
                         span: combine_spans(parsed_name.span, right_span),
                     });
                 }
@@ -9625,7 +9634,12 @@ impl Parser<'_> {
                         member.span,
                     );
                 }
-                return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
+                return self.parse_dynamic_static_method_call(
+                    class_name,
+                    class_span,
+                    name_expr,
+                    member.span,
+                );
             }
             return Ok(Expr::StaticPropertyFetch {
                 class_name,
@@ -9658,7 +9672,12 @@ impl Parser<'_> {
                     member_span,
                 );
             }
-            return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
+            return self.parse_dynamic_static_method_call(
+                class_name,
+                class_span,
+                name_expr,
+                member_span,
+            );
         }
         if let TokenKind::LeftBrace = member.kind {
             let name_expr = self.parse_expr()?;
@@ -9680,7 +9699,12 @@ impl Parser<'_> {
                     member_span,
                 );
             }
-            return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
+            return self.parse_dynamic_static_method_call(
+                class_name,
+                class_span,
+                name_expr,
+                member_span,
+            );
         }
         let Some(member_name) = literal_member_name else {
             return Err(Diagnostic::new(
@@ -9712,6 +9736,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            call_line: member.span.line,
             span: combine_spans(class_span, right_span),
         })
     }
@@ -9721,11 +9746,13 @@ impl Parser<'_> {
         class_name: String,
         class_span: SourceSpan,
         method_name: Expr,
+        method_span: SourceSpan,
     ) -> Result<Expr> {
         self.parse_dynamic_static_method_call_expr(
             Expr::String(class_name, class_span),
             class_span,
             method_name,
+            method_span,
         )
     }
 
@@ -9764,6 +9791,7 @@ impl Parser<'_> {
         class_name: Expr,
         class_span: SourceSpan,
         method_name: Expr,
+        method_span: SourceSpan,
     ) -> Result<Expr> {
         let (arguments, argument_names, argument_unpacks, right_span) =
             self.parse_call_arguments()?;
@@ -9777,11 +9805,11 @@ impl Parser<'_> {
                 ArrayElement {
                     key: None,
                     value: ArrayElementValue::Value(method_name),
-                    line: class_span.line,
+                    line: method_span.line,
                 },
             ],
             short_syntax: true,
-            span: class_span,
+            span: combine_spans(class_span, method_span),
         };
         Ok(Expr::DynamicCall {
             callee: Box::new(callable),
@@ -9789,6 +9817,7 @@ impl Parser<'_> {
             argument_names,
             argument_unpacks,
             static_method_syntax: true,
+            call_line: method_span.line,
             span: combine_spans(class_span, right_span),
         })
     }
@@ -9893,6 +9922,7 @@ impl Parser<'_> {
             };
             let class_name =
                 self.parse_postfix_expr_from(Expr::Variable(name, token.span), false)?;
+            let call_line = class_name.span().line;
             let mut span = combine_spans(start_span, class_name.span());
             let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
@@ -9917,12 +9947,14 @@ impl Parser<'_> {
                 argument_names,
                 argument_unpacks,
                 constructor_parentheses,
+                call_line,
                 span,
             });
         }
         if matches!(self.peek().kind, TokenKind::Dollar | TokenKind::LeftParen) {
             let class_name = self.parse_primary_expr()?;
             let class_name = self.parse_postfix_expr_from(class_name, false)?;
+            let call_line = class_name.span().line;
             let mut span = combine_spans(start_span, class_name.span());
             let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
@@ -9947,6 +9979,7 @@ impl Parser<'_> {
                 argument_names,
                 argument_unpacks,
                 constructor_parentheses,
+                call_line,
                 span,
             });
         }
@@ -9995,6 +10028,7 @@ impl Parser<'_> {
                     argument_names,
                     argument_unpacks,
                     constructor_parentheses,
+                    call_line: class_span.line,
                     span,
                 });
             } else {
@@ -10008,6 +10042,7 @@ impl Parser<'_> {
             argument_unpacks,
             constructor_parentheses,
             anonymous_class_source: None,
+            call_line: class_span.line,
             span,
         })
     }
@@ -10138,6 +10173,7 @@ impl Parser<'_> {
             argument_unpacks,
             constructor_parentheses: true,
             anonymous_class_source: Some(source),
+            call_line: class_span.line,
             span,
         })
     }
@@ -26572,6 +26608,7 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             argument_names,
             argument_unpacks,
             span,
+            ..
         } if name.eq_ignore_ascii_case("list") => {
             reject_named_language_construct_arguments(&argument_names, span)?;
             reject_unpacked_language_construct_arguments(&argument_unpacks, span)?;

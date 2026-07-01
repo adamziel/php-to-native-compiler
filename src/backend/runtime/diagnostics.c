@@ -2661,6 +2661,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_class_constant_initializing_key_class_name = NULL;
     runtime->current_class_constant_initializing_constant_name = NULL;
     runtime->current_class_constant_source_path = NULL;
+    runtime->current_class_constant_trigger_line = 0;
     runtime->class_constant_deprecation_suppress_class = NULL;
     runtime->class_constant_deprecation_suppress_constant = NULL;
     runtime->dynamic_property_deprecation_suppress_object = NULL;
@@ -2757,6 +2758,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffer_callback_skip_buffers = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
+    runtime->current_output_source_path = NULL;
+    runtime->current_output_line = 0;
+    runtime->output_started_source_path = NULL;
+    runtime->output_started_line = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
     runtime->header_callback_registered = 0;
