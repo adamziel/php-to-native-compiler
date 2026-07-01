@@ -30991,7 +30991,7 @@ fn emit_instruction(
                         out.push_str("));\n");
                         emit_value_cleanup(out, "    ", &return_temp);
                     }
-                    emit_exceptional_finally_return_override(out, values);
+                    emit_exceptional_finally_return_override(out, values, target);
                     let context_indices = return_cleanup_context_indices(finally_stack);
                     emit_jump_through_finally_contexts_with_line(
                         out,
@@ -31051,7 +31051,7 @@ fn emit_instruction(
                     out.push_str("));\n");
                     emit_value_cleanup(out, "    ", &result_value);
                 }
-                emit_exceptional_finally_return_override(out, values);
+                emit_exceptional_finally_return_override(out, values, target);
                 let context_indices = return_cleanup_context_indices(finally_stack);
                 emit_jump_through_finally_contexts_with_line(
                     out,
@@ -31912,6 +31912,16 @@ fn emit_try(
         None
     };
     let body_return_target = return_label.as_deref().or(return_target);
+    let deferred_exceptional_finally_return_targets_len =
+        values.exceptional_finally_deferred_return_targets.len();
+    if let (Some(return_label), Some(_)) = (
+        &return_label,
+        values.exceptional_finally_saved_exception.as_ref(),
+    ) {
+        values
+            .exceptional_finally_deferred_return_targets
+            .push(return_label.clone());
+    }
     let body_generator_yield_abort_target = if try_or_catch_has_generator_statement_yield {
         body_return_target.map(str::to_string)
     } else {
@@ -32387,6 +32397,9 @@ fn emit_try(
         out.push_str(":\n");
         out.push_str("            ;\n");
     }
+    values
+        .exceptional_finally_deferred_return_targets
+        .truncate(deferred_exceptional_finally_return_targets_len);
     if let Some(catch_binding_failed_label) = &catch_binding_failed_label {
         out.push_str("            ");
         out.push_str(catch_binding_failed_label);
@@ -32520,6 +32533,7 @@ fn emit_try(
             Some(return_target),
             finally_generator_yield_abort_target.as_deref(),
         );
+        emit_exceptional_finally_return_override(out, values, return_target);
         let context_indices = return_cleanup_context_indices(finally_stack);
         emit_jump_through_finally_contexts(out, finally_stack, &context_indices, return_target);
     }
@@ -32666,7 +32680,18 @@ fn emit_exceptional_finally_and_rethrow(
     out.push_str("ptn_rethrow_exception(&runtime);\n");
 }
 
-fn emit_exceptional_finally_return_override(out: &mut String, values: &ValueEmitter) {
+fn emit_exceptional_finally_return_override(
+    out: &mut String,
+    values: &ValueEmitter,
+    return_target: &str,
+) {
+    if values
+        .exceptional_finally_deferred_return_targets
+        .iter()
+        .any(|target| target == return_target)
+    {
+        return;
+    }
     if let Some(saved_exception_temp) = &values.exceptional_finally_saved_exception {
         out.push_str("    if (");
         out.push_str(saved_exception_temp);
@@ -40589,6 +40614,7 @@ struct ValueEmitter {
     generator_yield_abort_target: Option<String>,
     generator_yield_assignment_variables: Vec<String>,
     exceptional_finally_saved_exception: Option<String>,
+    exceptional_finally_deferred_return_targets: Vec<String>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -42341,6 +42367,7 @@ impl ValueEmitter {
             generator_yield_abort_target: None,
             generator_yield_assignment_variables: Vec::new(),
             exceptional_finally_saved_exception: None,
+            exceptional_finally_deferred_return_targets: Vec::new(),
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),

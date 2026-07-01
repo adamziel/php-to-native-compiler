@@ -24572,6 +24572,52 @@ try {
 }
 
 #[test]
+fn compile_finally_return_hidden_by_caught_throw_restores_pending_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-return-hidden-by-caught-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-return-hidden-by-caught-throw.php");
+    let output = root.join("finally-return-hidden-by-caught-throw-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            try {
+                try {
+                } finally {
+                    return 42;
+                }
+            } finally {
+                throw new Exception(3);
+            }
+        } catch (Exception $e) {}
+    }
+}
+
+try {
+    var_dump(test());
+} catch (Exception $e) {
+    do {
+        echo $e->getMessage() . "\n";
+        $e = $e->getPrevious();
+    } while ($e);
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_finally_rethrow_skips_recursive_previous_chain_to_native_binary() {
     let root = temp_dir("ptn-native-finally-recursive-previous");
     fs::create_dir_all(&root).unwrap();
