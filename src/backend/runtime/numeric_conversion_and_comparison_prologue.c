@@ -246,6 +246,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->by_ref_argument_notice_line = caller_runtime->by_ref_argument_notice_line;
     runtime->suppress_scoped_callable_deprecation = 0;
     runtime->include_path = NULL;
+    runtime->php_ini_loaded_file = NULL;
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
@@ -1023,6 +1024,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         free(runtime->include_path);
         runtime->include_path = NULL;
+        free(runtime->php_ini_loaded_file);
+        runtime->php_ini_loaded_file = NULL;
         for (size_t i = 0; i < runtime->included_files_len; i++) {
             free(runtime->included_files[i]);
         }

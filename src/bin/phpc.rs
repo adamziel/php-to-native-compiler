@@ -282,6 +282,7 @@ enum Mode {
 
 #[derive(Debug, Default)]
 struct RuntimeIni {
+    loaded_file_path: Option<PathBuf>,
     precision: Option<i16>,
     serialize_precision: Option<String>,
     default_charset: Option<String>,
@@ -370,7 +371,10 @@ impl Invocation {
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "-q" | "-n" => {}
+                "-q" => {}
+                "-n" => {
+                    ini.loaded_file_path = None;
+                }
                 "-C" => {
                     sapi = Sapi::Cgi;
                 }
@@ -395,8 +399,10 @@ impl Invocation {
                     apply_ini_setting(&value, &mut ini);
                 }
                 "-c" => {
-                    args.next()
+                    let path = args
+                        .next()
                         .ok_or_else(|| format!("missing value for {arg}"))?;
+                    ini.loaded_file_path = Some(PathBuf::from(path));
                 }
                 "-f" => {
                     let path = args
@@ -443,7 +449,11 @@ impl Invocation {
                 _ if let Some(value) = arg.strip_prefix("-d") => {
                     apply_ini_setting(value, &mut ini);
                 }
-                _ if arg.starts_with("-c") => {}
+                _ if let Some(path) = arg.strip_prefix("-c") => {
+                    if !path.is_empty() {
+                        ini.loaded_file_path = Some(PathBuf::from(path));
+                    }
+                }
                 _ if arg.starts_with('-') => {}
                 _ => {
                     script = Some(PathBuf::from(arg));
@@ -1238,6 +1248,7 @@ fn compile_and_run(
     sapi: Sapi,
 ) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
+        loaded_file_path: ini.loaded_file_path.clone(),
         precision: ini.precision,
         serialize_precision: ini.serialize_precision.clone(),
         default_charset: ini.default_charset.clone(),
@@ -1384,6 +1395,9 @@ fn compile_and_run(
     command.args(args);
     command.env("PTN_SCRIPT_FILENAME", script);
     command.env("PTN_RUNTIME_SOURCE_PATH", script);
+    if let Some(loaded_file_path) = &ini.loaded_file_path {
+        command.env("PTN_PHP_INI_LOADED_FILE", loaded_file_path);
+    }
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }

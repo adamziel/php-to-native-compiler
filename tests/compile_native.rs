@@ -65654,6 +65654,47 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
 }
 
 #[test]
+fn compile_hrtime_and_loaded_ini_probes_to_native_binary() {
+    let root = temp_dir("ptn-native-hrtime-loaded-ini-probes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hrtime-loaded-ini-probes.php");
+    let output = root.join("hrtime-loaded-ini-probes-bin");
+    let ini_path = root.join("loaded.ini");
+    fs::write(&ini_path, "date.timezone=UTC\n").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$parts = hrtime();\n\
+var_dump(is_array($parts), count($parts), is_int($parts[0]), is_int($parts[1]));\n\
+$start = hrtime(true);\n\
+$end = hrtime(true);\n\
+var_dump(is_int($start), is_int($end), $end >= $start);\n\
+var_dump(php_ini_loaded_file());\n\
+var_dump(get_cfg_var('cfg_file_path'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHP_INI_LOADED_FILE", &ini_path)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(true)\nbool(true)\nbool(true)\n"));
+    assert!(stdout.contains("bool(true)\nbool(true)\nbool(true)\n"));
+    assert!(stdout.contains(&format!(
+        "string({}) \"{}\"\nstring({}) \"{}\"\n",
+        ini_path.display().to_string().len(),
+        ini_path.display(),
+        ini_path.display().to_string().len(),
+        ini_path.display()
+    )));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_uname_rejects_invalid_modes_to_native_binary() {
     let root = temp_dir("ptn-native-php-uname-invalid-modes");
     fs::create_dir_all(&root).unwrap();
