@@ -4,9 +4,27 @@
     }
 }
 
-static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, PtnString string, int number_is_left) {
+static PTN_UNUSED void ptn_number_value_to_runtime_string(
+    PtnRuntime *runtime,
+    PtnValue value,
+    char *buffer,
+    size_t buffer_len
+) {
+    if (value.type == PTN_FLOAT) {
+        ptn_format_runtime_scalar_float(runtime, value.as.floating, buffer, buffer_len);
+        return;
+    }
+    ptn_number_value_to_string(value, buffer, buffer_len);
+}
+
+static PTN_UNUSED int ptn_compare_number_and_string(
+    PtnRuntime *runtime,
+    PtnValue number,
+    PtnString string,
+    int number_is_left
+) {
     char number_string[128];
-    ptn_number_value_to_string(number, number_string, sizeof(number_string));
+    ptn_number_value_to_runtime_string(runtime, number, number_string, sizeof(number_string));
     size_t number_len = strlen(number_string);
     int compared = ptn_compare_string_bytes(
         (const unsigned char *)number_string,

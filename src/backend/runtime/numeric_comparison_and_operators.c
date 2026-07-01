@@ -1117,13 +1117,13 @@ static int ptn_compare_order_inner(
         if (ptn_value_is_nan(left)) {
             return PTN_COMPARE_UNORDERED;
         }
-        return ptn_compare_number_and_string(left, right.as.string, 1);
+        return ptn_compare_number_and_string(runtime, left, right.as.string, 1);
     }
     if (left.type == PTN_STRING && ptn_is_number_type(right)) {
         if (ptn_value_is_nan(right)) {
             return PTN_COMPARE_UNORDERED;
         }
-        return ptn_compare_number_and_string(right, left.as.string, 0);
+        return ptn_compare_number_and_string(runtime, right, left.as.string, 0);
     }
     if (ptn_value_is_comparison_object(left) || ptn_value_is_comparison_object(right)) {
         return ptn_value_is_comparison_object(left) ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;

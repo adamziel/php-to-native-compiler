@@ -66578,6 +66578,37 @@ var_dump(null < -4, null > -4, null <=> -4, -4 <=> null, null <=> 0, null <=> -I
 }
 
 #[test]
+fn compile_loose_float_non_numeric_string_comparison_uses_runtime_precision_to_native_binary() {
+    let root = temp_dir("ptn-native-float-string-comparison-precision");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("float-string-comparison-precision.php");
+    let output = root.join("float-string-comparison-precision-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$float = 1.75;
+ini_set('precision', 14);
+var_dump($float <=> "1.75abc");
+var_dump("1.75abc" <=> $float);
+ini_set('precision', 0);
+var_dump($float <=> "1.75abc");
+var_dump("1.75abc" <=> $float);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(-1)\nint(1)\nint(1)\nint(-1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_large_numeric_string_loose_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-large-numeric-string-comparisons");
     fs::create_dir_all(&root).unwrap();
