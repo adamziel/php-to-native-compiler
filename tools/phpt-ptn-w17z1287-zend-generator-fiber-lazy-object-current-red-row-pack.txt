@@ -1,0 +1,16 @@
+# ptn-w17z.1287 focused Zend generator/fiber/lazy-object current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260630T215131Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: zend-generator-fiber-lazy-object-current-red rows=12
+Zend/tests/generators/bug79657.phpt
+Zend/tests/generators/bug66041.phpt
+Zend/tests/generators/gh15330-005.phpt
+Zend/tests/generators/gh15275-006.phpt
+Zend/tests/generators/throw_caught.phpt
+Zend/tests/generators/yield_in_finally.phpt
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt
+Zend/tests/fibers/gh9916-003.phpt
+Zend/tests/fibers/gh15108-001.phpt
+Zend/tests/fibers/get-return-after-bailout.phpt
+Zend/tests/lazy_objects/isset_hooked_may_not_initialize.phpt

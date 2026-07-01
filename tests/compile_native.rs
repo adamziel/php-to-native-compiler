@@ -23768,6 +23768,119 @@ var_dump(method_exists($gen, "valid"));
 }
 
 #[test]
+fn compile_generator_yield_from_iteratoraggregate_pending_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-iteratoraggregate-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-iteratoraggregate-exception.php");
+    let output = root.join("generator-yield-from-iteratoraggregate-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate {
+    public function getIterator(): Traversable {
+        yield "k" => "foo";
+        throw new Exception("boom");
+    }
+}
+
+function f() {
+    yield from new It();
+}
+
+$gen = f();
+var_dump($gen->key(), $gen->current());
+try {
+    $gen->next();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+    foreach ($e->getTrace() as $frame) {
+        echo ($frame["class"] ?? ""), ($frame["type"] ?? ""), $frame["function"], "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("string(1) \"k\"\nstring(3) \"foo\"\nboom\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("getIterator\n"), "{stdout}");
+    assert!(stdout.contains("Generator->next\n"), "{stdout}");
+    assert!(!stdout.contains("Generator->rewind\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_pending_exception_after_last_yield"));
+}
+
+#[test]
+fn compile_generator_nested_yield_from_iteratoraggregate_pending_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-nested-yield-from-iteratoraggregate-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-nested-yield-from-iteratoraggregate-exception.php");
+    let output = root.join("generator-nested-yield-from-iteratoraggregate-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate {
+    public function getIterator(): Traversable {
+        yield "foo";
+        throw new Exception("boom");
+    }
+}
+
+function f() {
+    try {
+        var_dump(new stdClass, yield from new It());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+function g() {
+    try {
+        var_dump(new stdClass, yield from f());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+$gen = g();
+var_dump($gen->current());
+$gen->next();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(
+            "string(3) \"foo\"\nstring(1) \"f\"\nstring(1) \"g\"\n\nFatal error: Uncaught Exception: boom"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("It->getIterator()"), "{stdout}");
+    assert!(stdout.contains(": f()"), "{stdout}");
+    assert!(stdout.contains(": g()"), "{stdout}");
+    assert!(stdout.contains("Generator->next()"), "{stdout}");
+    assert!(!stdout.contains("Generator->rewind()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_traversable_delegate_source_value"));
+}
+
+#[test]
 fn compile_generator_yield_from_iterator_enters_inside_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-iterator-in-fiber");
     fs::create_dir_all(&root).unwrap();
