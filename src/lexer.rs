@@ -1157,10 +1157,14 @@ impl<'a> Lexer<'a> {
                     }
                     self.skip_interpolation_whitespace();
                     if !matches!(self.peek_char(), Some('}')) {
-                        return Err(Diagnostic::new(
-                            "complex string interpolation is unsupported",
-                            Some(self.current_char_span()),
-                        ));
+                        let tail = self.read_balanced_interpolation_expression(start)?;
+                        let mut expr = format!("${array}");
+                        for property in properties {
+                            expr.push_str("->");
+                            expr.push_str(&property);
+                        }
+                        expr.push_str(&tail);
+                        return Ok(StringPart::Expression(expr));
                     }
                     self.bump_char();
                     if properties.len() == 1 {
