@@ -1818,6 +1818,7 @@ struct PtnRuntime {
     size_t by_ref_argument_notice_line;
     int suppress_scoped_callable_deprecation;
     char *include_path;
+    char *php_ini_loaded_file;
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;

@@ -2843,6 +2843,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->by_ref_argument_notice_line = 0;
     runtime->suppress_scoped_callable_deprecation = 0;
     runtime->include_path = ptn_duplicate_string(".");
+    const char *configured_php_ini_loaded_file = getenv("PTN_PHP_INI_LOADED_FILE");
+    runtime->php_ini_loaded_file = ptn_duplicate_string(
+        configured_php_ini_loaded_file == NULL ? "" : configured_php_ini_loaded_file
+    );
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;

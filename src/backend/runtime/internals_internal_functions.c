@@ -116755,6 +116755,15 @@ static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const
     (void)line;
     PtnStringOperand option = ptn_value_to_string_operand(args[0]);
     if (ptn_string_operand_ascii_case_equal(option, "cfg_file_path")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        if (root != NULL && root->php_ini_loaded_file != NULL && root->php_ini_loaded_file[0] != '\0') {
+            PtnValue value = ptn_owned_string(ptn_duplicate_string(root->php_ini_loaded_file));
+            ptn_string_operand_free(option);
+            return value;
+        }
         ptn_string_operand_free(option);
         return ptn_bool(0);
     }
@@ -116767,6 +116776,48 @@ static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const
     int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_hrtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int as_number = argc >= 1 && ptn_is_truthy(args[0]);
+    int64_t seconds = 0;
+    int64_t nanoseconds = 0;
+#if !defined(_WIN32) && defined(CLOCK_MONOTONIC)
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+        seconds = (int64_t)now.tv_sec;
+        nanoseconds = (int64_t)now.tv_nsec;
+    }
+#else
+    struct timespec now;
+    if (timespec_get(&now, TIME_UTC) == TIME_UTC) {
+        seconds = (int64_t)now.tv_sec;
+        nanoseconds = (int64_t)now.tv_nsec;
+    }
+#endif
+    if (as_number) {
+        return ptn_int(seconds * 1000000000LL + nanoseconds);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int(seconds));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_int(nanoseconds));
+    return result;
+}
+
+static PtnValue ptn_internal_php_ini_loaded_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->php_ini_loaded_file == NULL || root->php_ini_loaded_file[0] == '\0') {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(root->php_ini_loaded_file));
 }
 
 static PtnRuntime *ptn_session_root(PtnRuntime *runtime) {
@@ -193818,6 +193869,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_required_files", 0, 0, ptn_internal_get_required_files },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getlastmod", 0, 0, ptn_internal_getlastmod },
+        { "hrtime", 0, 1, ptn_internal_hrtime },
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
         { "get_mangled_object_vars", 1, 1, ptn_internal_get_mangled_object_vars },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
@@ -194279,6 +194331,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "password_verify", 2, 2, ptn_internal_password_verify },
         { "phpcredits", 0, 1, ptn_internal_phpcredits },
         { "phpinfo", 0, 1, ptn_internal_phpinfo },
+        { "php_ini_loaded_file", 0, 0, ptn_internal_php_ini_loaded_file },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
@@ -194896,6 +194949,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "is_a") ||
         ptn_ascii_case_equal(name, "is_subclass_of") ||
         ptn_ascii_case_equal(name, "method_exists") ||
+        ptn_ascii_case_equal(name, "php_ini_loaded_file") ||
         ptn_ascii_case_equal(name, "php_ini_scanned_files") ||
         ptn_ascii_case_equal(name, "php_sapi_name") ||
         ptn_ascii_case_equal(name, "php_uname") ||
