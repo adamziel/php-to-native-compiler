@@ -111954,18 +111954,27 @@ static PTN_UNUSED PtnValue ptn_random_engine_clone(PtnRuntime *runtime, PtnValue
     }
 
     PtnObject *object = resolved.as.object;
-    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, object);
-    PtnObject *cloned = clone.as.object;
-
     if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Secure")) {
-        ptn_unserialize_replace_native_data(cloned, NULL, NULL);
-        return clone;
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Trying to clone an uncloneable object of class %s",
+            object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
     }
     if (object->native_data == NULL) {
-        ptn_value_destroy(&clone);
         ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
         return ptn_null();
     }
+
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, object);
+    PtnObject *cloned = clone.as.object;
 
     size_t size = 0;
     if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Mt19937")) {
@@ -209513,6 +209522,7 @@ static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *cl
     }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
         ptn_internal_class_name_is_directory(class_name) ||
+        ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure") ||
         ptn_declared_class_is_same_or_descendant(class_name, "SplFileObject") ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return 0;

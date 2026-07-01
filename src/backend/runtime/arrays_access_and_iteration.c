@@ -5025,6 +5025,20 @@ static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
         runtime->declared_class_allows_dynamic_properties(class_name);
 }
 
+static PTN_UNUSED int ptn_object_class_forbids_dynamic_properties(
+    const char *class_name
+) {
+    if (class_name == NULL) {
+        return 0;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_random_engine(class_name)) {
+        return 1;
+    }
+#endif
+    return 0;
+}
+
 static PTN_UNUSED int ptn_object_is_incomplete_class(PtnObject *object) {
     return object != NULL &&
         object->class_name != NULL &&
@@ -6005,6 +6019,9 @@ static PTN_UNUSED int ptn_object_missing_dynamic_property_for_creation(
     ptn_array_key_free(key);
     free(storage_key);
     if (metadata != NULL || entry != NULL) {
+        return 0;
+    }
+    if (ptn_object_class_forbids_dynamic_properties(receiver.as.object->class_name)) {
         return 0;
     }
     if (object_out != NULL) {
@@ -8453,6 +8470,20 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         ptn_array_key_free(key);
         free(storage_key);
         PTN_OBJECT_WRITE_RETURN(ptn_null());
+    }
+    if (metadata == NULL &&
+        entry == NULL &&
+        ptn_object_class_forbids_dynamic_properties(receiver.as.object->class_name)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
+        ptn_throw_dynamic_property_readonly_class_error(
+            runtime,
+            receiver.as.object->class_name,
+            property,
+            line
+        );
+        return ptn_null();
     }
     if (metadata == NULL && entry == NULL && !suppress_dynamic_property_deprecation) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
