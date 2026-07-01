@@ -835,27 +835,7 @@ impl<'a> Lexer<'a> {
                                 break;
                             }
                         }
-                        if self.rest().starts_with("->") {
-                            self.bump_char();
-                            self.bump_char();
-                            let property = self.read_interpolation_variable_name(start)?;
-                            parts.push(StringPart::PropertyFetch {
-                                variable: name,
-                                property,
-                            });
-                            has_variable = true;
-                            at_line_start = false;
-                            continue;
-                        }
-                        let indices = self.lex_unbraced_interpolation_indices()?;
-                        if indices.is_empty() {
-                            parts.push(StringPart::Variable(name));
-                        } else {
-                            parts.push(StringPart::ArrayAccess {
-                                array: name,
-                                indices,
-                            });
-                        }
+                        parts.push(self.lex_unbraced_interpolation_variable_part(name, start)?);
                         has_variable = true;
                         at_line_start = false;
                         continue;
@@ -1045,26 +1025,7 @@ impl<'a> Lexer<'a> {
                                 break;
                             }
                         }
-                        if self.rest().starts_with("->") {
-                            self.bump_char();
-                            self.bump_char();
-                            let property = self.read_interpolation_variable_name(start)?;
-                            parts.push(StringPart::PropertyFetch {
-                                variable: name,
-                                property,
-                            });
-                            has_variable = true;
-                            continue;
-                        }
-                        let indices = self.lex_unbraced_interpolation_indices()?;
-                        if indices.is_empty() {
-                            parts.push(StringPart::Variable(name));
-                        } else {
-                            parts.push(StringPart::ArrayAccess {
-                                array: name,
-                                indices,
-                            });
-                        }
+                        parts.push(self.lex_unbraced_interpolation_variable_part(name, start)?);
                         has_variable = true;
                         continue;
                     }
@@ -1200,6 +1161,9 @@ impl<'a> Lexer<'a> {
                         properties,
                     });
                 }
+                Some('?') if self.rest().starts_with("?->") && indices.is_empty() => {
+                    return self.lex_braced_nullsafe_interpolation_expression(array, start);
+                }
                 Some('[') => {
                     self.bump_char();
                     self.skip_interpolation_whitespace();
@@ -1248,6 +1212,93 @@ impl<'a> Lexer<'a> {
         } else {
             Ok(StringPart::ArrayAccess { array, indices })
         }
+    }
+
+    fn lex_unbraced_interpolation_variable_part(
+        &mut self,
+        name: String,
+        start: SourceSpan,
+    ) -> Result<StringPart> {
+        if self.rest().starts_with("->") {
+            self.bump_char();
+            self.bump_char();
+            let property = self.read_interpolation_variable_name(start)?;
+            return Ok(StringPart::PropertyFetch {
+                variable: name,
+                property,
+            });
+        }
+        if self.rest().starts_with("?->") {
+            self.bump_char();
+            self.bump_char();
+            self.bump_char();
+            let property = self.read_interpolation_variable_name(start)?;
+            return Ok(StringPart::Expression(format!("${name}?->{property}")));
+        }
+        let indices = self.lex_unbraced_interpolation_indices()?;
+        if indices.is_empty() {
+            Ok(StringPart::Variable(name))
+        } else {
+            Ok(StringPart::ArrayAccess {
+                array: name,
+                indices,
+            })
+        }
+    }
+
+    fn lex_braced_nullsafe_interpolation_expression(
+        &mut self,
+        array: String,
+        start: SourceSpan,
+    ) -> Result<StringPart> {
+        let mut expr = format!("${array}");
+        loop {
+            self.skip_interpolation_whitespace();
+            if self.rest().starts_with("?->") {
+                expr.push_str("?->");
+                self.bump_char();
+                self.bump_char();
+                self.bump_char();
+            } else if self.rest().starts_with("->") {
+                expr.push_str("->");
+                self.bump_char();
+                self.bump_char();
+            } else {
+                break;
+            }
+            let member = self.read_interpolation_variable_name(start)?;
+            expr.push_str(&member);
+            self.skip_interpolation_whitespace();
+            if matches!(self.peek_char(), Some('(')) {
+                expr.push('(');
+                self.bump_char();
+                self.skip_interpolation_whitespace();
+                if !matches!(self.peek_char(), Some(')')) {
+                    let tail = self.read_balanced_interpolation_expression(start)?;
+                    expr.push_str(&tail);
+                    return Ok(StringPart::Expression(expr));
+                }
+                self.bump_char();
+                expr.push(')');
+                self.skip_interpolation_whitespace();
+                if !matches!(self.peek_char(), Some('}')) {
+                    let tail = self.read_balanced_interpolation_expression(start)?;
+                    expr.push_str(&tail);
+                    return Ok(StringPart::Expression(expr));
+                }
+                self.bump_char();
+                return Ok(StringPart::Expression(expr));
+            }
+        }
+        self.skip_interpolation_whitespace();
+        if !matches!(self.peek_char(), Some('}')) {
+            return Err(Diagnostic::new(
+                "complex string interpolation is unsupported",
+                Some(self.current_char_span()),
+            ));
+        }
+        self.bump_char();
+        Ok(StringPart::Expression(expr))
     }
 
     fn lex_unbraced_interpolation_indices(&mut self) -> Result<Vec<StringInterpolationIndex>> {

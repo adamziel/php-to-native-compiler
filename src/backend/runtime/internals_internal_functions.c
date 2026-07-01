@@ -9697,6 +9697,12 @@ static const PtnParameterMetadata PTN_INTERNAL_ARRAY_SLICE_PARAMETERS[] = {
     { "preserve_keys", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_ARRAY_KEYS_PARAMETERS[] = {
+    { "array", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "filter_value", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "strict", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_COLLATOR_SORT_PARAMETERS[] = {
     { "array", "array", "array", 0, 1, 1, 0, 0, NULL, NULL, NULL },
     { "flags", "int", "int", 0, 1, 0, 0, 1, "Collator::SORT_REGULAR", "Collator::SORT_REGULAR", NULL },
@@ -12663,7 +12669,8 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
 static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
     if (object != NULL &&
         object->lazy_uninitialized &&
-        (object->lazy_options & PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE) == 0) {
+        (object->lazy_options & PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE) == 0 &&
+        !ptn_serialize_declared_magic_method_exists(state, object, "__serialize")) {
         PtnValue value = ptn_value_borrow(ptn_object(object));
         if (!ptn_lazy_object_initialize(state == NULL ? NULL : state->runtime, value, state == NULL ? 0 : state->line)) {
             ptn_string_buffer_append(buffer, "N;");
@@ -26515,8 +26522,19 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
 
 static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_keys", 1, "array", args[0]);
-    int has_search_value = argc >= 2;
-    int strict = argc >= 3 && ptn_is_truthy(args[2]);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (argc >= 2 && ptn_value_is_missing(args[1])) {
+        ptn_throw_exception(
+            runtime,
+            "ArgumentCountError",
+            "array_keys(): Argument #2 ($filter_value) must be passed explicitly, because the default value is not known"
+        );
+        return ptn_null();
+    }
+    int has_search_value = argc >= 2 && !ptn_value_is_missing(args[1]);
+    int strict = argc >= 3 && !ptn_value_is_missing(args[2]) && ptn_is_truthy(args[2]);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
@@ -195201,6 +195219,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             1
         );
     }
+    if (ptn_ascii_case_equal(function->name, "array_keys")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ARRAY_KEYS_PARAMETERS) / sizeof(PTN_INTERNAL_ARRAY_KEYS_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_ARRAY_KEYS_PARAMETERS,
+            0,
+            "array",
+            "array",
+            0,
+            1
+        );
+    }
     if (ptn_ascii_case_equal(function->name, "assert")) {
         return ptn_function_metadata_found(
             function->name,
@@ -202082,13 +202115,21 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
         PtnValue arguments = ptn_value_deref(constructor_arguments);
         size_t ctor_argc = arguments.type == PTN_ARRAY ? arguments.as.array->len : 0;
         PtnValue *ctor_args = NULL;
+        const char **ctor_arg_names = NULL;
         if (ctor_argc != 0) {
             ctor_args = malloc(ctor_argc * sizeof(PtnValue));
-            if (ctor_args == NULL) {
+            ctor_arg_names = calloc(ctor_argc, sizeof(char *));
+            if (ctor_args == NULL || ctor_arg_names == NULL) {
+                free(ctor_args);
+                free(ctor_arg_names);
                 ptn_abort_out_of_memory();
             }
             for (size_t i = 0; i < ctor_argc; i++) {
-                ctor_args[i] = ptn_value_clone_deref(arguments.as.array->entries[i].value);
+                PtnArrayEntry *entry = &arguments.as.array->entries[i];
+                ctor_args[i] = ptn_value_clone_deref(entry->value);
+                if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+                    ctor_arg_names[i] = entry->key.as.string;
+                }
             }
         }
         const char *frame_source_path = runtime->source_path;
@@ -202113,12 +202154,15 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
         }
         runtime->strict_types = data->strict_types;
         runtime->throw_argument_count_errors = 1;
+        const char *const *saved_next_call_arg_names = runtime->next_call_arg_names;
+        runtime->next_call_arg_names = (const char *const *)ctor_arg_names;
         PtnValue instance =
             ptn_declared_class_new_instance(runtime, data->name, ctor_argc, ctor_args, constructor_line);
         if (runtime->exceptions->active_exception == NULL && ptn_value_deref(instance).type == PTN_NULL) {
             ptn_value_destroy(&instance);
             instance = ptn_new_object(runtime, data->name, ctor_argc, ctor_args, constructor_line);
         }
+        runtime->next_call_arg_names = saved_next_call_arg_names;
         runtime->source_path = saved_source_path;
         runtime->strict_types = saved_strict_types;
         runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
@@ -202128,6 +202172,7 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             ptn_value_destroy(&ctor_args[i]);
         }
         free(ctor_args);
+        free(ctor_arg_names);
         return instance;
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

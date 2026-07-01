@@ -9397,7 +9397,7 @@ impl Parser<'_> {
             current_statement_doc_comment: None,
         };
         parser.expect_open_tag()?;
-        let parsed = parser.parse_expr().map_err(|mut diagnostic| {
+        let mut parsed = parser.parse_expr().map_err(|mut diagnostic| {
             if diagnostic.span.is_some() {
                 diagnostic.span = Some(span);
             }
@@ -9409,6 +9409,7 @@ impl Parser<'_> {
             }
             diagnostic
         })?;
+        rebase_expr_top_span(&mut parsed, span);
         Ok(parsed)
     }
 
@@ -28136,6 +28137,145 @@ fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
         right.end_line,
         left.column,
     )
+}
+
+fn rebase_expr_top_span(expr: &mut Expr, span: SourceSpan) {
+    match expr {
+        Expr::String(_, expr_span)
+        | Expr::InterpolatedString(_, expr_span)
+        | Expr::Int(_, expr_span)
+        | Expr::Float(_, expr_span)
+        | Expr::Bool(_, expr_span)
+        | Expr::Null(expr_span)
+        | Expr::Variable(_, expr_span)
+        | Expr::Constant(_, expr_span)
+        | Expr::MagicConstant(_, expr_span) => *expr_span = span,
+        Expr::ShellExec {
+            span: expr_span, ..
+        }
+        | Expr::DynamicVariable {
+            span: expr_span, ..
+        }
+        | Expr::IncDec {
+            span: expr_span, ..
+        }
+        | Expr::Assign {
+            span: expr_span, ..
+        }
+        | Expr::AssignRef {
+            span: expr_span, ..
+        }
+        | Expr::Call {
+            span: expr_span, ..
+        }
+        | Expr::FirstClassCallable {
+            span: expr_span, ..
+        }
+        | Expr::DynamicCall {
+            span: expr_span, ..
+        }
+        | Expr::MethodCall {
+            span: expr_span, ..
+        }
+        | Expr::DynamicMethodCall {
+            span: expr_span, ..
+        }
+        | Expr::NewObject {
+            span: expr_span, ..
+        }
+        | Expr::DynamicNewObject {
+            span: expr_span, ..
+        }
+        | Expr::Clone {
+            span: expr_span, ..
+        }
+        | Expr::PropertyFetch {
+            span: expr_span, ..
+        }
+        | Expr::NullsafePropertyFetch {
+            span: expr_span, ..
+        }
+        | Expr::DynamicPropertyFetch {
+            span: expr_span, ..
+        }
+        | Expr::StaticPropertyFetch {
+            span: expr_span, ..
+        }
+        | Expr::DynamicStaticPropertyNameFetch {
+            span: expr_span, ..
+        }
+        | Expr::ParentPropertyHookCall {
+            span: expr_span, ..
+        }
+        | Expr::DynamicStaticPropertyFetch {
+            span: expr_span, ..
+        }
+        | Expr::ClassConstantFetch {
+            span: expr_span, ..
+        }
+        | Expr::DynamicClassConstantFetch {
+            span: expr_span, ..
+        }
+        | Expr::DynamicClassNameFetch {
+            span: expr_span, ..
+        }
+        | Expr::InstanceOf {
+            span: expr_span, ..
+        }
+        | Expr::Match {
+            span: expr_span, ..
+        }
+        | Expr::Array {
+            span: expr_span, ..
+        }
+        | Expr::ArrayAccess {
+            span: expr_span, ..
+        }
+        | Expr::Isset {
+            span: expr_span, ..
+        }
+        | Expr::Empty {
+            span: expr_span, ..
+        }
+        | Expr::Print {
+            span: expr_span, ..
+        }
+        | Expr::Include {
+            span: expr_span, ..
+        }
+        | Expr::Exit {
+            span: expr_span, ..
+        }
+        | Expr::Throw {
+            span: expr_span, ..
+        }
+        | Expr::Yield {
+            span: expr_span, ..
+        }
+        | Expr::YieldFrom {
+            span: expr_span, ..
+        }
+        | Expr::Unary {
+            span: expr_span, ..
+        }
+        | Expr::Cast {
+            span: expr_span, ..
+        }
+        | Expr::Binary {
+            span: expr_span, ..
+        }
+        | Expr::Ternary {
+            span: expr_span, ..
+        }
+        | Expr::Grouped {
+            span: expr_span, ..
+        }
+        | Expr::PipeValue {
+            span: expr_span, ..
+        } => *expr_span = span,
+        Expr::AnonymousFunction(function) => function.span = span,
+        Expr::List(list) => list.span = span,
+    }
 }
 
 fn lower_string_interpolation_index(

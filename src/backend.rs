@@ -37316,6 +37316,20 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static ARRAY_KEYS_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "array",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "filter_value",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "strict",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     static ASSERT_PARAMETERS: [InternalParameterSpec; 2] = [
         InternalParameterSpec {
             name: "assertion",
@@ -38709,6 +38723,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&ARRAY_FILTER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_slice") {
         Some(&ARRAY_SLICE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("array_keys") {
+        Some(&ARRAY_KEYS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("assert") {
         Some(&ASSERT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("is_callable") {

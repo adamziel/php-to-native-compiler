@@ -49687,6 +49687,62 @@ var_dump($instance->message, $instance->since);
 }
 
 #[test]
+fn compile_reflection_attribute_new_instance_preserves_named_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-attribute-named-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-named-slots.php");
+    let output = root.join("reflection-attribute-named-slots-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[Attribute]
+class MyAttribute {
+    public function __construct(public $a = 'a', public $b = 'b', public $c = 'c') {}
+}
+
+#[MyAttribute('A', c: 'C')]
+class Test1 {}
+
+#[MyAttribute('A', a: 'C')]
+class Test2 {}
+
+$attribute = (new ReflectionClass(Test1::class))->getAttributes()[0];
+var_dump($attribute->getArguments());
+$instance = $attribute->newInstance();
+var_dump($instance->a, $instance->b, $instance->c);
+
+try {
+    (new ReflectionClass(Test2::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"A\"\n",
+            "  [\"c\"]=>\n",
+            "  string(1) \"C\"\n",
+            "}\n",
+            "string(1) \"A\"\n",
+            "string(1) \"b\"\n",
+            "string(1) \"C\"\n",
+            "Named parameter $a overwrites previous argument\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_attribute_named_argument_validation_to_native_binary() {
     let root = temp_dir("ptn-native-attribute-named-argument-validation");
     fs::create_dir_all(&root).unwrap();
@@ -73278,7 +73334,10 @@ $nested = array(\"x\" => array(\"seed\"));\n\
 $keys = array_keys($nested);\n\
 $keys[] = \"copy\";\n\
 var_dump($keys, $nested);\n\
-var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
+var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));\n\
+try { array_keys(strict: true); } catch (ArgumentCountError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_keys([], strict: true); } catch (ArgumentCountError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(array_keys([41, 42], filter_value: 42, strict: true));",
     )
     .unwrap();
 
@@ -73288,7 +73347,20 @@ var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(5) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  int(2)\n  [2]=>\n  string(2) \"03\"\n  [3]=>\n  int(4)\n  [4]=>\n  string(3) \"dup\"\n}\narray(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(3) \"dup\"\n}\narray(0) {\n}\narray(1) {\n  [0]=>\n  int(4)\n}\narray(1) {\n  [0]=>\n  int(4)\n}\narray(2) {\n  [0]=>\n  string(1) \"x\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [\"x\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
+        concat!(
+            "array(5) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  int(2)\n  [2]=>\n  string(2) \"03\"\n  [3]=>\n  int(4)\n  [4]=>\n  string(3) \"dup\"\n}\n",
+            "array(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(3) \"dup\"\n}\n",
+            "array(0) {\n}\n",
+            "array(1) {\n  [0]=>\n  int(4)\n}\n",
+            "array(1) {\n  [0]=>\n  int(4)\n}\n",
+            "array(2) {\n  [0]=>\n  string(1) \"x\"\n  [1]=>\n  string(4) \"copy\"\n}\n",
+            "array(1) {\n  [\"x\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array_keys(): Argument #1 ($array) not passed\n",
+            "array_keys(): Argument #2 ($filter_value) must be passed explicitly, because the default value is not known\n",
+            "array(1) {\n  [0]=>\n  int(1)\n}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -89144,6 +89216,46 @@ echo \"value={$box->text()}\\n\";",
 }
 
 #[test]
+fn compile_nullsafe_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-nullsafe-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nullsafe-interpolation.php");
+    let output = root.join("nullsafe-interpolation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class NullsafeInterpolationBox {
+    public $bar = 'bar';
+    public $qux = 'prop';
+    public function qux() { return 'method'; }
+}
+
+$foo = new NullsafeInterpolationBox();
+$null = null;
+
+echo "A={$foo?->bar}|{$foo?->qux()}|{$null?->bar}|{$null?->qux()}\n";
+echo "B=$foo?->bar|$foo?->qux()|$null?->bar|$null?->qux()\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "A=bar|method||\nB=bar|prop()||()\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_simple_and_legacy_interpolation_to_native_binary() {
     let root = temp_dir("ptn-native-simple-legacy-interpolation");
     fs::create_dir_all(&root).unwrap();
@@ -99228,6 +99340,72 @@ exercise_lazy_mangled_vars('proxy', $proxy);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_get_mangled_object_vars"));
     assert!(c_source.contains("lazy_skip"));
+}
+
+#[test]
+fn compile_lazy_serialize_magic_does_not_initialize_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-magic-serialize-no-init");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-magic-serialize-no-init.php");
+    let output = root.join("lazy-magic-serialize-no-init-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LazyMagicSerializeBox {
+    public int $a;
+    public function __serialize() { return []; }
+}
+
+function exercise_lazy_magic_serialize(string $label, object $obj): void {
+    echo $label, ':';
+    $serialized = serialize($obj);
+    var_dump($serialized);
+    var_dump(unserialize($serialized));
+}
+
+$reflector = new ReflectionClass(LazyMagicSerializeBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo "ghost initializer\n";
+    $obj->a = 1;
+});
+exercise_lazy_magic_serialize('ghost', $ghost);
+
+$proxy = $reflector->newLazyProxy(function ($obj) {
+    echo "proxy initializer\n";
+    $real = new LazyMagicSerializeBox();
+    $real->a = 2;
+    return $real;
+});
+exercise_lazy_magic_serialize('proxy', $proxy);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(!stdout.contains("initializer"), "{stdout}");
+    assert!(
+        stdout.contains("ghost:string(33) \"O:21:\"LazyMagicSerializeBox\":0:{}\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("proxy:string(33) \"O:21:\"LazyMagicSerializeBox\":0:{}\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("uninitialized(int)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("__serialize"));
 }
 
 #[test]
