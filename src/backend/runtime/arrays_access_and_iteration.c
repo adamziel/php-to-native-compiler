@@ -17183,13 +17183,26 @@ static PTN_UNUSED int ptn_runtime_is_globals_name(const char *name) {
     return strcmp(name, "GLOBALS") == 0;
 }
 
-static PTN_UNUSED char *ptn_runtime_global_name_from_segment(
-    const PtnArrayPathSegment *segment
+static PTN_UNUSED char *ptn_runtime_global_name_from_segment_len(
+    const PtnArrayPathSegment *segment,
+    size_t *len_out
 ) {
     if (segment->append) {
         return NULL;
     }
-    return ptn_value_to_string(segment->value);
+    PtnStringOperand string = ptn_value_to_string_operand(segment->value);
+    char *result = ptn_duplicate_string_len(string.data, string.len);
+    if (len_out != NULL) {
+        *len_out = string.len;
+    }
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PTN_UNUSED char *ptn_runtime_global_name_from_segment(
+    const PtnArrayPathSegment *segment
+) {
+    return ptn_runtime_global_name_from_segment_len(segment, NULL);
 }
 
 static PTN_UNUSED PtnLookupResult ptn_runtime_globals_array_path_lookup_quiet(
@@ -17202,12 +17215,17 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_globals_array_path_lookup_quiet(
         return ptn_lookup_found(ptn_runtime_globals_snapshot(runtime));
     }
 
-    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    size_t global_name_len = 0;
+    char *global_name = ptn_runtime_global_name_from_segment_len(&segments[0], &global_name_len);
     if (global_name == NULL) {
         return ptn_lookup_missing();
     }
 
-    PtnLookupResult root = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+    PtnLookupResult root = ptn_runtime_read_global_variable_quiet_len(
+        runtime,
+        global_name,
+        global_name_len
+    );
     free(global_name);
     if (!root.exists || segment_count == 1) {
         return root;
@@ -17257,16 +17275,23 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_read(
         return ptn_runtime_globals_snapshot(runtime);
     }
 
-    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    size_t global_name_len = 0;
+    char *global_name = ptn_runtime_global_name_from_segment_len(&segments[0], &global_name_len);
     if (global_name == NULL) {
         return ptn_null();
     }
 
     PtnValue root_value;
-    if (!ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), global_name, &root_value)) {
-        ptn_emit_undefined_global_variable_warning(
+    if (!ptn_symbols_get_len(
+        ptn_runtime_global_symbol_table(runtime),
+        global_name,
+        global_name_len,
+        &root_value
+    )) {
+        ptn_emit_undefined_global_variable_warning_len(
             &runtime->diagnostics,
             global_name,
+            global_name_len,
             runtime->source_path,
             line
         );
@@ -19513,16 +19538,23 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         return ptn_null();
     }
     if (ptn_runtime_is_globals_name(name)) {
-        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        size_t global_name_len = 0;
+        char *global_name = ptn_runtime_global_name_from_segment_len(&segments[0], &global_name_len);
         if (global_name == NULL) {
             return ptn_null();
         }
 
         PtnValue root_value;
-        if (!ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), global_name, &root_value)) {
-            ptn_emit_undefined_global_variable_warning(
+        if (!ptn_symbols_get_len(
+            ptn_runtime_global_symbol_table(runtime),
+            global_name,
+            global_name_len,
+            &root_value
+        )) {
+            ptn_emit_undefined_global_variable_warning_len(
                 &runtime->diagnostics,
                 global_name,
+                global_name_len,
                 runtime->source_path,
                 line
             );
@@ -19544,11 +19576,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     }
 
     if (ptn_runtime_is_globals_name(name)) {
-        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        size_t global_name_len = 0;
+        char *global_name = ptn_runtime_global_name_from_segment_len(&segments[0], &global_name_len);
         if (global_name == NULL) {
             return ptn_null();
         }
-        PtnLookupResult root = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+        PtnLookupResult root = ptn_runtime_read_global_variable_quiet_len(
+            runtime,
+            global_name,
+            global_name_len
+        );
         free(global_name);
         if (!root.exists) {
             ptn_emit_assign_op_missing_array_key(runtime, segments[0].value, line);

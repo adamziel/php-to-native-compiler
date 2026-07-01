@@ -96178,6 +96178,98 @@ test(fn() => Foo::{bar()}::{foo()});
 }
 
 #[test]
+fn compile_dynamic_class_constant_missing_class_precedes_bad_name_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-class-constant-missing-class-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-missing-class-order.php");
+    let output = root.join("dynamic-class-constant-missing-class-order-bin");
+    fs::write(&input, "<?php\ny::{5}::y;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let output_text = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        output_text.contains("Fatal error: Uncaught Error: Class \"y\" not found"),
+        "{output_text}"
+    );
+    assert!(
+        !output_text.contains("Cannot use value of type int as class constant name"),
+        "{output_text}"
+    );
+}
+
+#[test]
+fn compile_dynamic_variable_names_preserve_embedded_nul_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-nul-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-nul-name.php");
+    let output = root.join("dynamic-variable-nul-name-bin");
+    fs::write(
+        &input,
+        "<?php
+$test = 'truncated';
+$ab = 'truncated';
+$a = \"test\\0test\";
+var_dump($$a);
+$a = \"\\0test\";
+var_dump($$a);
+$a = \"test\\0\";
+var_dump($$a);
+$GLOBALS[\"test\\0test\"];
+$GLOBALS[\"\\0test\"];
+$GLOBALS[\"test\\0\"];
+var_dump(compact(\"a\\0b\", \"\\0ab\", \"ab\\0\"));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Undefined variable $test\0test"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Undefined variable $\0test"), "{stdout}");
+    assert!(stdout.contains("Undefined variable $test\0"), "{stdout}");
+    assert!(
+        stdout.contains("Undefined global variable $test\0test"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Undefined global variable $\0test"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Undefined global variable $test\0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("compact(): Undefined variable $a\0b"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("compact(): Undefined variable $\0ab"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("compact(): Undefined variable $ab\0"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("array(0) {\n}\n"), "{stdout}");
+    assert!(!stdout.contains("truncated"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_eval_dynamic_class_constant_returns_to_native_binary() {
     let root = temp_dir("ptn-native-eval-dynamic-class-constant");
     fs::create_dir_all(&root).unwrap();

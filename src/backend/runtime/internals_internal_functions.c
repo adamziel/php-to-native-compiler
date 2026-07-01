@@ -27958,16 +27958,26 @@ static void ptn_compact_emit_undefined_variable_warning(
     PtnStringOperand name,
     size_t line
 ) {
-    int needed = snprintf(NULL, 0, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
-    if (needed < 0) {
-        ptn_abort_out_of_memory();
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
     }
-    char *message = malloc((size_t)needed + 1);
-    if (message == NULL) {
-        ptn_abort_out_of_memory();
+    diagnostics->emitted_warning = 1;
+    size_t message_len = 0;
+    char *message = ptn_diagnostic_message_with_name_len(
+        "compact(): Undefined variable $",
+        name.data,
+        name.len,
+        &message_len
+    );
+    ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, NULL, line);
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+        free(message);
+        return;
     }
-    snprintf(message, (size_t)needed + 1, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_diagnostic_output_cstr(diagnostics, "\nWarning: ");
+    ptn_diagnostic_output_write(diagnostics, message, message_len);
+    ptn_diagnostic_printf(diagnostics, " in %s on line %zu\n", ptn_diagnostic_builtin_path(line), line);
     free(message);
 }
 
@@ -27982,9 +27992,7 @@ static int ptn_compact_collect_value(
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
         PtnStringOperand name = ptn_value_to_string_operand(value);
-        char *lookup_name = ptn_duplicate_string_len(name.data, name.len);
-        PtnLookupResult lookup = ptn_runtime_read_variable_quiet(runtime, lookup_name);
-        free(lookup_name);
+        PtnLookupResult lookup = ptn_runtime_read_variable_quiet_len(runtime, name.data, name.len);
         if (lookup.exists) {
             ptn_array_set_entry(
                 result,
