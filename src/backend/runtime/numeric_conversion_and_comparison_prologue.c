@@ -728,6 +728,11 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
     while (root->shutdown_function_index < root->shutdown_functions_len) {
         PtnShutdownFunction *function =
             &root->shutdown_functions[root->shutdown_function_index++];
+        PtnException *saved_active_exception =
+            runtime->exceptions == NULL ? NULL : runtime->exceptions->active_exception;
+        if (saved_active_exception != NULL) {
+            runtime->exceptions->active_exception = NULL;
+        }
         PtnValue result = ptn_null();
         PtnTryFrame callback_frame;
         PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
@@ -747,6 +752,17 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
                 saved_warn_by_ref_argument_mismatch;
             runtime->throw_argument_count_errors =
                 saved_throw_argument_count_errors;
+            if (saved_active_exception != NULL) {
+                if (runtime->exceptions->active_exception != NULL) {
+                    ptn_exception_chain_previous_if_missing(
+                        runtime->exceptions->active_exception,
+                        saved_active_exception
+                    );
+                    ptn_exception_free(saved_active_exception);
+                } else {
+                    runtime->exceptions->active_exception = saved_active_exception;
+                }
+            }
             root->shutdown_functions_running = 0;
             ptn_rethrow_exception(runtime);
         }
@@ -771,8 +787,18 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
             saved_throw_argument_count_errors;
         ptn_value_destroy(&result);
         if (runtime->exceptions->active_exception != NULL) {
+            if (saved_active_exception != NULL) {
+                ptn_exception_chain_previous_if_missing(
+                    runtime->exceptions->active_exception,
+                    saved_active_exception
+                );
+                ptn_exception_free(saved_active_exception);
+            }
             root->shutdown_functions_running = 0;
             ptn_rethrow_exception(runtime);
+        }
+        if (saved_active_exception != NULL) {
+            runtime->exceptions->active_exception = saved_active_exception;
         }
     }
     root->shutdown_functions_running = 0;
