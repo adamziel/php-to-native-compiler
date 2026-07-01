@@ -2915,7 +2915,7 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
         ptn_array_set_entry(
             generator_frame.as.array,
             ptn_array_string_key("args"),
-            ptn_array_from_literal_entries(0, NULL)
+            ptn_generator_trace_args_array(runtime->current_generator)
         );
         if (runtime->suppress_generator_rewind_trace_frame) {
             ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);

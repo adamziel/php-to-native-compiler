@@ -10099,6 +10099,18 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
     ptn_value_destroy(&generator->receiver);
+    if (generator->trace_args != NULL) {
+        for (size_t i = 0; i < generator->trace_argc; i++) {
+            ptn_value_destroy(&generator->trace_args[i]);
+        }
+        free(generator->trace_args);
+    }
+    if (generator->trace_arg_names != NULL) {
+        for (size_t i = 0; i < generator->trace_argc; i++) {
+            free(generator->trace_arg_names[i]);
+        }
+        free(generator->trace_arg_names);
+    }
     free(generator->function_name);
     free(generator->source_file);
     free(generator);
@@ -10177,10 +10189,34 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->has_receiver = 0;
     generator->receiver = ptn_null();
     generator->function_name = NULL;
+    generator->trace_argc = 0;
+    generator->trace_args = NULL;
+    generator->trace_arg_names = NULL;
     generator->source_file = NULL;
     generator->source_line = 0;
     generator->activation_object_id_runtime = NULL;
     generator->activation_object_id = 0;
+    if (runtime != NULL && runtime->call_frame != NULL && runtime->call_frame->argc > 0) {
+        generator->trace_argc = runtime->call_frame->argc;
+        generator->trace_args = malloc(sizeof(PtnValue) * generator->trace_argc);
+        if (generator->trace_args == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < generator->trace_argc; i++) {
+            generator->trace_args[i] = ptn_value_clone_deref(runtime->call_frame->args[i]);
+        }
+        if (runtime->call_frame->arg_names != NULL) {
+            generator->trace_arg_names = calloc(generator->trace_argc, sizeof(char *));
+            if (generator->trace_arg_names == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < generator->trace_argc; i++) {
+                if (runtime->call_frame->arg_names[i] != NULL) {
+                    generator->trace_arg_names[i] = ptn_duplicate_string(runtime->call_frame->arg_names[i]);
+                }
+            }
+        }
+    }
     if (
         runtime != NULL &&
         runtime->owned_call_frame.has_current_closure &&
@@ -10842,6 +10878,23 @@ static PTN_UNUSED void ptn_generator_trace_set_empty_args(PtnValue frame) {
     );
 }
 
+static PTN_UNUSED PtnValue ptn_generator_trace_args_array(PtnGenerator *generator) {
+    PtnValue args = ptn_array_from_literal_entries(0, NULL);
+    if (generator == NULL || generator->trace_args == NULL) {
+        return args;
+    }
+    for (size_t i = 0; i < generator->trace_argc; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArrayKey key = generator->trace_arg_names != NULL && generator->trace_arg_names[i] != NULL
+            ? ptn_array_string_key(generator->trace_arg_names[i])
+            : ptn_array_int_key((int64_t)i);
+        ptn_array_set_entry(args.as.array, key, ptn_trace_value_snapshot(generator->trace_args[i]));
+    }
+    return args;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_trace_function_frame(
     PtnGenerator *generator,
     const char *file,
@@ -10879,7 +10932,11 @@ static PTN_UNUSED PtnValue ptn_generator_trace_function_frame(
             ptn_owned_string(ptn_duplicate_string(function_name))
         );
     }
-    ptn_generator_trace_set_empty_args(frame);
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("args"),
+        ptn_generator_trace_args_array(generator)
+    );
     return frame;
 }
 

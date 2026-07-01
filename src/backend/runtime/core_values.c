@@ -1188,6 +1188,9 @@ struct PtnGenerator {
     int has_receiver;
     PtnValue receiver;
     char *function_name;
+    size_t trace_argc;
+    PtnValue *trace_args;
+    char **trace_arg_names;
     char *source_file;
     size_t source_line;
     PtnRuntime *activation_object_id_runtime;
@@ -2014,6 +2017,7 @@ static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue recei
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_trace_args_array(PtnGenerator *generator);
 static PTN_UNUSED void ptn_generator_trace_set_file_line(PtnValue frame, const char *file, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
