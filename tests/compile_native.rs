@@ -85152,6 +85152,49 @@ var_dump(test([1]));
 }
 
 #[test]
+fn compile_nested_finally_return_preserves_previous_for_later_finally_throw_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-finally-return-previous-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-finally-return-previous-throw.php");
+    let output = root.join("nested-finally-return-previous-throw-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            try {
+            } finally {
+                return 42;
+            }
+        } finally {
+            throw new Exception(2);
+        }
+    }
+}
+
+try {
+    var_dump(test());
+} catch (Exception $e) {
+    do {
+        echo $e->getMessage(), "\n";
+    } while ($e = $e->getPrevious());
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2\n1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_foreach_finally_goto_cleanup_to_native_binary() {
     let root = temp_dir("ptn-native-nested-foreach-finally-goto-cleanup");
     fs::create_dir_all(&root).unwrap();

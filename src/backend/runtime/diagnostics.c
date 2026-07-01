@@ -2660,6 +2660,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = &runtime->owned_exceptions;
+    runtime->finally_return_suppressed_exception = NULL;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
     runtime->owned_call_frame.arg_names = NULL;

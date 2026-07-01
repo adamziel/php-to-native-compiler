@@ -60,6 +60,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = caller_runtime->exceptions;
+    runtime->finally_return_suppressed_exception = NULL;
     runtime->native_argc = caller_runtime->native_argc;
     runtime->native_argv = caller_runtime->native_argv;
     runtime->owned_call_frame.argc = 0;
@@ -956,6 +957,41 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
 }
 #endif
 
+static PTN_UNUSED void ptn_runtime_adopt_finally_return_suppressed_exception(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    if (runtime == NULL || exception == NULL) {
+        return;
+    }
+    if (runtime->finally_return_suppressed_exception == exception) {
+        return;
+    }
+    ptn_exception_free(runtime->finally_return_suppressed_exception);
+    runtime->finally_return_suppressed_exception = exception;
+}
+
+static PTN_UNUSED void ptn_runtime_clear_finally_return_suppressed_exception(
+    PtnRuntime *runtime
+) {
+    if (runtime == NULL || runtime->finally_return_suppressed_exception == NULL) {
+        return;
+    }
+    PtnException *exception = runtime->finally_return_suppressed_exception;
+    runtime->finally_return_suppressed_exception = NULL;
+    if (
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception == exception
+    ) {
+        runtime->exceptions->active_exception = NULL;
+        ptn_exception_free(exception);
+    }
+    ptn_exception_free(exception);
+    if (runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL) {
+        runtime->generator_chained_exception_during_unwind = 0;
+    }
+}
+
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         if (runtime->shutdown_in_progress) {
@@ -963,6 +999,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         }
         runtime->shutdown_in_progress = 1;
     }
+    ptn_runtime_clear_finally_return_suppressed_exception(runtime);
     free(runtime->dynamic_property_deprecation_suppress_property);
     runtime->dynamic_property_deprecation_suppress_property = NULL;
     runtime->dynamic_property_deprecation_suppress_object = NULL;

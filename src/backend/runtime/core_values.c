@@ -1681,6 +1681,7 @@ struct PtnRuntime {
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;
+    PtnException *finally_return_suppressed_exception;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
     const char *const *next_call_arg_names;
