@@ -1519,6 +1519,9 @@ ptn_phpt_first_unsupported_language_surface() {
             lower = tolower(raw)
             return lower ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\([[:space:]]*["\047][[:space:]]*class[[:space:]]+[a-z_\\][a-z0-9_\\]*/
         }
+        function ptn_supported_eval_static_variable_dynamic_function_row() {
+            return ptn_path ~ /Zend\/tests\/static_variables\/static_variable_in_dynamic_function(_2)?[.]phpt$/
+        }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
@@ -1786,7 +1789,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 }
             }
             if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/ &&
-                !ptn_supported_eval_class_declaration_raw($0)) {
+                !ptn_supported_eval_class_declaration_raw($0) &&
+                !ptn_supported_eval_static_variable_dynamic_function_row()) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit

@@ -805,6 +805,29 @@ fn phpt_classifier_allows_literal_eval_class_declarations() {
 }
 
 #[test]
+fn phpt_classifier_allows_static_variable_dynamic_function_eval_rows() {
+    let phpt = "--TEST--\nstatic dynamic function\n--FILE--\n<?php\n$code = <<<'CODE'\nif (1) {\n    function test() {\n        static $x = 0;\n        var_dump(++$x);\n    }\n    test();\n}\nCODE;\neval($code);\ntest();\n--EXPECT--\nint(1)\nint(2)\n";
+    assert_eq!(
+        classify_at_relative_path(
+            phpt,
+            "Zend/tests/static_variables/static_variable_in_dynamic_function.phpt"
+        ),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    assert_eq!(
+        classify_at_relative_path(
+            phpt,
+            "Zend/tests/static_variables/static_variable_in_dynamic_function_2.phpt"
+        ),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    assert!(
+        classify(phpt).starts_with("unsupported-dynamic-eval\t"),
+        "generic eval($code) rows stay classified until the path is known supported"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (

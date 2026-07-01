@@ -242,6 +242,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         runtime_requirements.internal_function_dispatch,
     );
+    emit_function_static_variable_providers(&mut out, &module.functions, &module.classes);
     emit_user_functions(
         &mut out,
         &module.classes,
@@ -10100,8 +10101,6 @@ fn emit_user_function_dispatch(
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
-
-    emit_function_static_variable_providers(out, functions, classes);
 
     out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
     if functions

@@ -1,0 +1,8 @@
+Zend/tests/static_variables/static_variable.phpt
+Zend/tests/static_variables/static_variable_func_call.phpt
+Zend/tests/static_variables/static_variable_in_dynamic_function.phpt
+Zend/tests/static_variables/static_variable_in_dynamic_function_2.phpt
+Zend/tests/static_variables/static_variables_global.phpt
+Zend/tests/static_variables/static_variables_global_2.phpt
+Zend/tests/static_variables/static_variables_recursive.phpt
+Zend/tests/static_variables/static_variables_throwing_initializer.phpt

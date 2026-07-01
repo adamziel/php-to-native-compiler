@@ -41914,6 +41914,76 @@ echo \"done\\n\";
 }
 
 #[test]
+fn compile_function_static_local_without_dispatch_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-function-static-local-no-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-static-local-no-dispatch.php");
+    let output = root.join("function-static-local-no-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php
+function next_value() {
+    static $value = 1;
+    echo $value++, \"\\n\";
+}
+next_value();
+next_value();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_0_static_variables(PtnRuntime *runtime) {"));
+    assert!(c_source.contains("ptn_reset_preload_static_locals_from"));
+}
+
+#[test]
+fn compile_literal_eval_conditional_function_static_local_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-conditional-function-static-local");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-conditional-function-static-local.php");
+    let output = root.join("eval-conditional-function-static-local-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$code = <<<'PHP'
+if (1) {
+    function test() {
+        static $x = 0;
+        var_dump(++$x);
+    }
+    test();
+}
+PHP;
+eval($code);
+test();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.declared_user_functions[0] = 1"));
+    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+}
+
+#[test]
 fn compile_inherited_class_destructor_runs_on_unset_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-class-destructor-unset");
     fs::create_dir_all(&root).unwrap();

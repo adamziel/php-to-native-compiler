@@ -6708,6 +6708,8 @@ impl Parser<'_> {
             && (source_contains_ascii_keyword(&lower_source, "extends")
                 || source_contains_ascii_keyword(&lower_source, "implements")
                 || source_contains_ascii_keyword(&lower_source, "function"));
+        let contains_function_declaration =
+            source_contains_ascii_keyword(&lower_source, "function");
         if starts_class
             && !source_contains_ascii_keyword(&lower_source, "use")
             && !starts_typed_property_class
@@ -6719,6 +6721,7 @@ impl Parser<'_> {
         if !lower_source.starts_with("function")
             && !lower_source.starts_with("trait")
             && !starts_class
+            && !contains_function_declaration
             && !may_contain_class_alias_call
         {
             return Ok(None);
@@ -6759,6 +6762,20 @@ impl Parser<'_> {
             let name = function.name.clone();
             self.nested_functions.push(function);
             return Ok(Some(Statement::FunctionDeclaration { name, span }));
+        }
+        if !eval_program.functions.is_empty()
+            && eval_program.classes.is_empty()
+            && eval_program.traits.is_empty()
+        {
+            for mut function in eval_program.functions {
+                function.is_conditionally_declared = true;
+                self.nested_functions.push(function);
+            }
+            return Ok(Some(Statement::Block {
+                statements: eval_program.statements,
+                ticks: None,
+                span,
+            }));
         }
 
         if eval_program.traits.len() == 1
@@ -6892,6 +6909,10 @@ impl Parser<'_> {
         match expr {
             Expr::String(value, _) => Some(value.clone()),
             Expr::InterpolatedString(parts, _) => self.compile_time_interpolated_string(parts),
+            Expr::Variable(name, _) => self
+                .eval_scalar_variables
+                .get(name)
+                .map(EvalScalarValue::to_interpolated_string),
             Expr::Constant(name, _) => self
                 .eval_string_constants
                 .get(&name.to_ascii_lowercase())
