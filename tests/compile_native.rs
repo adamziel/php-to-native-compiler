@@ -8088,6 +8088,76 @@ fn parser_rejects_nullsafe_write_and_reference_contexts() {
 }
 
 #[test]
+fn compile_nullsafe_chains_preserve_short_circuit_sentinel_to_native_binary() {
+    let root = temp_dir("ptn-native-nullsafe-chain-short-circuit-sentinel");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nullsafe-chain-short-circuit-sentinel.php");
+    let output = root.join("nullsafe-chain-short-circuit-sentinel-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    function null() {
+        var_dump('Foo::null()');
+        return null;
+    }
+
+    function self() {
+        var_dump('Foo::self()');
+        return $this;
+    }
+}
+
+var_dump(null?->bar()->baz());
+var_dump(null?->bar()->baz);
+var_dump(null?->bar()::baz());
+
+$foo = new Foo();
+var_dump($foo->null()?->bar()->baz());
+var_dump($foo?->self(var_dump('Executed'))->null()?->bar()->baz());
+
+try {
+    var_dump($foo?->self()[null?->bar()]);
+} catch (Throwable $e) {
+    var_dump($e->getMessage());
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "string(11) \"Foo::null()\"\n",
+            "NULL\n",
+            "string(8) \"Executed\"\n",
+            "string(11) \"Foo::self()\"\n",
+            "string(11) \"Foo::null()\"\n",
+            "NULL\n",
+            "string(11) \"Foo::self()\"\n",
+            "string(38) \"Cannot use object of type Foo as array\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_is_nullsafe_short_circuit"));
+    assert!(c_source.contains("ptn_nullsafe_short_circuit"));
+}
+
+#[test]
 fn parser_reports_php_class_declaration_diagnostics() {
     let cases = [
         (
@@ -98301,6 +98371,102 @@ var_dump($mark->a);
     assert!(c_source.contains("markLazyObjectAsInitialized"));
     assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
     assert!(c_source.contains("skipLazyInitialization"));
+}
+
+#[test]
+fn compile_lazy_parent_raw_write_realizes_overridden_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-parent-raw-write-overridden");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-parent-raw-write-overridden.php");
+    let output = root.join("lazy-parent-raw-write-overridden-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyOverrideBase {
+    public readonly string $b;
+
+    public function __construct() {
+        $this->b = 'b';
+    }
+}
+
+class LazyOverrideChild extends LazyOverrideBase {
+    public string $a;
+    public readonly string $b;
+
+    public function __construct() {
+        parent::__construct();
+        $this->a = 'init';
+    }
+}
+
+function exercise_lazy_override(string $label, object $obj): void {
+    $reflector = new ReflectionClass(LazyOverrideChild::class);
+    echo \"# $label\\n\";
+    var_dump($reflector->isUninitializedLazyObject($obj));
+
+    $reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, 'a1');
+    $reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, 'a2');
+    try {
+        $reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, new stdClass);
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    }
+
+    (new ReflectionProperty(LazyOverrideBase::class, 'b'))
+        ->setRawValueWithoutLazyInitialization($obj, 'b');
+    var_dump($reflector->isUninitializedLazyObject($obj));
+    var_dump($obj->a, $obj->b);
+}
+
+$reflector = new ReflectionClass(LazyOverrideChild::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo \"ghost initializer\\n\";
+    $obj->__construct();
+});
+exercise_lazy_override('Ghost', $ghost);
+
+$proxy = $reflector->newLazyProxy(function ($obj) {
+    echo \"proxy initializer\\n\";
+    return new LazyOverrideChild();
+});
+exercise_lazy_override('Proxy', $proxy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "# Ghost\n",
+            "bool(true)\n",
+            "TypeError: Cannot assign stdClass to property LazyOverrideChild::$a of type string\n",
+            "bool(false)\n",
+            "string(2) \"a2\"\n",
+            "string(1) \"b\"\n",
+            "# Proxy\n",
+            "bool(true)\n",
+            "TypeError: Cannot assign stdClass to property LazyOverrideChild::$a of type string\n",
+            "bool(false)\n",
+            "string(2) \"a2\"\n",
+            "string(1) \"b\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_metadata"));
+    assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
 }
 
 #[test]

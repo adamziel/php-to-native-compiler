@@ -1937,6 +1937,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         function ptn_supported_assertion_closure_source_row() {
             return ptn_path ~ /(^|\/)Zend\/tests\/type_declarations\/types_in_ast[.]phpt$/
         }
+        function ptn_supported_lazy_reflection_property_raw_row() {
+            return ptn_path ~ /(^|\/)Zend\/tests\/lazy_objects\/realize_proxy_overridden[.]phpt$/
+        }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/asymmetric_visibility\/virtual_(get|set)_only[.]phpt$/ ||
@@ -2137,7 +2140,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     exit
                 }
                 if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(") &&
-                    !(ptn_supported_property_hook_metadata_row() && line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*gethook[[:space:]]*\\("))) {
+                    !(ptn_supported_property_hook_metadata_row() && line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*gethook[[:space:]]*\\(")) &&
+                    !(ptn_supported_lazy_reflection_property_raw_row() && line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\("))) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
@@ -2153,7 +2157,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&
-                    !(ptn_supported_property_hook_metadata_row() && line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*gethook[[:space:]]*\(/)) ||
+                    !(ptn_supported_property_hook_metadata_row() && line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*gethook[[:space:]]*\(/) &&
+                    !(ptn_supported_lazy_reflection_property_raw_row() && line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/)) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\(/ &&
                     !ptn_supported_reflection_property_named_type_metadata_row()) ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_[a-z0-9_]*|export|setaccessible|getmodifiernames)[[:space:]]*[(]/) {

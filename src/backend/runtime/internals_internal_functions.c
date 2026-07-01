@@ -205808,6 +205808,36 @@ static const PtnObjectPropertyMetadata *ptn_reflection_property_object_metadata(
             return metadata;
         }
     }
+    if (declaring_class != NULL) {
+        const char *declared_owner = NULL;
+        int declared_visibility = PTN_PROPERTY_PRIVATE;
+        int declared_set_visibility = PTN_PROPERTY_PRIVATE;
+        int declared_is_static = 0;
+        if (ptn_declared_class_property_metadata(
+                declaring_class,
+                property_name,
+                &declared_owner,
+                &declared_visibility,
+                &declared_set_visibility,
+                &declared_is_static
+            ) &&
+            declared_owner != NULL &&
+            declared_visibility != PTN_PROPERTY_PRIVATE &&
+            !declared_is_static) {
+            for (size_t i = 0; i < target.as.object->property_metadata_len; i++) {
+                const PtnObjectPropertyMetadata *metadata =
+                    &target.as.object->property_metadata[i];
+                if (strcmp(metadata->display_name, property_name) == 0 &&
+                    metadata->read_visibility != PTN_PROPERTY_PRIVATE &&
+                    ptn_declared_class_is_same_or_descendant(
+                        metadata->declaring_class,
+                        declared_owner
+                    )) {
+                    return metadata;
+                }
+            }
+        }
+    }
     return NULL;
 }
 

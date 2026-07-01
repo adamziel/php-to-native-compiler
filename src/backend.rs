@@ -56385,9 +56385,20 @@ impl ValueEmitter {
         let receiver_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&receiver_temp);
+        out.push_str(";\n");
+        out.push_str("    if (ptn_value_is_nullsafe_short_circuit(");
+        out.push_str(&raw_temp);
+        out.push_str(")) {\n");
+        out.push_str("        ");
+        out.push_str(&receiver_temp);
+        out.push_str(" = ptn_nullsafe_short_circuit();\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(&receiver_temp);
         out.push_str(" = ptn_value_clone_deref(");
         out.push_str(&raw_temp);
         out.push_str(");\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &raw_temp);
         receiver_temp
     }

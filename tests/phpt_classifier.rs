@@ -2940,6 +2940,18 @@ fn phpt_classifier_excludes_reflection_property_mutation_rows() {
 }
 
 #[test]
+fn phpt_classifier_keeps_fixed_lazy_raw_reflection_property_row_runnable_by_path() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nlazy raw reflection property\n--FILE--\n<?php\nclass B { public string $b; }\nclass C extends B { public string $a; public string $b; }\n$reflector = new ReflectionClass(C::class);\n$obj = $reflector->newLazyGhost(function ($obj) {});\n$reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, 'a');\n(new ReflectionProperty(B::class, 'b'))->setRawValueWithoutLazyInitialization($obj, 'b');\n--EXPECT--\n",
+        "Zend/tests/lazy_objects/realize_proxy_overridden.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_declared_reflection_property_rows_runnable() {
     let classification = classify(
         "--TEST--\nreflection property\n--FILE--\n<?php\nclass Bag { public $value = 1; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getName(), $ref->getModifiers());\n--EXPECT--\n",
