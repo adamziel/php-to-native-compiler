@@ -141,9 +141,11 @@ typedef struct PtnFiberData {
     PtnValue suspension_trace;
     PtnValue suspend_value;
     PtnValue resume_value;
+    PtnValue resume_exception;
     PtnValue *entry_args;
     size_t entry_argc;
     size_t entry_line;
+    size_t resume_throw_line;
     char *executing_file;
     size_t executing_line;
     int started;
@@ -151,6 +153,7 @@ typedef struct PtnFiberData {
     int completed;
     int threw;
     int resume_credit;
+    int resume_throw;
 #if !defined(_WIN32)
     ucontext_t caller_context;
     ucontext_t fiber_context;
@@ -163,6 +166,8 @@ typedef struct PtnFiberData {
     PtnTryFrame *suspended_try_frame;
     PtnTraceFrame *caller_trace_frame;
     PtnTraceFrame *suspended_trace_frame;
+    PtnTraceFrame *active_method_frame;
+    PtnTraceFrame *active_trace_tail;
     PtnObject *caller_fiber;
     PtnGenerator *caller_generator;
     PtnGenerator *suspended_generator;
@@ -1643,7 +1648,8 @@ static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *t
             ptn_value_reaches_object(data->return_value, target, depth + 1) ||
             ptn_value_reaches_object(data->suspension_trace, target, depth + 1) ||
             ptn_value_reaches_object(data->suspend_value, target, depth + 1) ||
-            ptn_value_reaches_object(data->resume_value, target, depth + 1)) {
+            ptn_value_reaches_object(data->resume_value, target, depth + 1) ||
+            ptn_value_reaches_object(data->resume_exception, target, depth + 1)) {
             return 1;
         }
         for (size_t i = 0; i < data->entry_argc; i++) {
