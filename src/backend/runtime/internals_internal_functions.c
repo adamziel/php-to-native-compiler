@@ -13134,6 +13134,7 @@ typedef struct {
 typedef struct {
     PtnValue value;
     size_t id;
+    size_t start;
 } PtnUnserializeValue;
 
 static PtnObject *ptn_unserialize_slot_object(PtnValue *slot) {
@@ -15841,6 +15842,29 @@ static void ptn_unserialize_emit_dynamic_property_deprecation(
     ptn_emit_runtime_deprecation(runtime, message, line);
 }
 
+static void ptn_unserialize_emit_virtual_property_warning(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t line
+) {
+    if (runtime == NULL || metadata == NULL) {
+        return;
+    }
+
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unserialize(): Cannot unserialize value for virtual property %s::$%s",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
 static const PtnObjectPropertyMetadata *ptn_unserialize_register_dynamic_mangled_property(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -16436,6 +16460,13 @@ static int ptn_unserialize_store_object_property_entry(
         property_key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, property_key.as.string)
             : NULL;
+    if (metadata != NULL && metadata->is_virtual) {
+        ptn_unserialize_emit_virtual_property_warning(runtime, metadata, state->line);
+        ptn_array_key_free(property_key);
+        ptn_value_destroy(&parsed.value);
+        ptn_unserialize_fail_at(state, parsed.start);
+        return 0;
+    }
     if (!ptn_unserialize_prepare_property_value(runtime, metadata, &parsed, state->line)) {
         ptn_array_key_free(property_key);
         ptn_value_destroy(&parsed.value);
@@ -16561,6 +16592,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
     PtnUnserializeValue result;
     result.value = ptn_null();
     result.id = 0;
+    result.start = state->pos;
 
     size_t value_start = state->pos;
     if (!ptn_unserialize_require(state, 1)) {
@@ -17260,9 +17292,11 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     PtnUnserializeValue count_value;
     count_value.value = ptn_null();
     count_value.id = 0;
+    count_value.start = 0;
     PtnUnserializeValue members;
     members.value = ptn_null();
     members.id = 0;
+    members.start = 0;
 
     if (!ptn_unserialize_consume(state, 'x') ||
         !ptn_unserialize_consume(state, ':') ||
@@ -17327,6 +17361,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
         PtnUnserializeValue info;
         info.value = ptn_null();
         info.id = 0;
+        info.start = 0;
         if (ptn_unserialize_has(state, 1) && state->data[state->pos] == ',') {
             state->pos++;
             info = ptn_unserialize_parse_value(state, runtime);
@@ -17641,6 +17676,7 @@ static int ptn_unserialize_spl_dllist_legacy_payload(
     PtnUnserializeValue flags;
     flags.value = ptn_null();
     flags.id = 0;
+    flags.start = 0;
     PtnValue storage = ptn_array_from_literal_entries(0, NULL);
     int64_t parsed_flags = 0;
 
@@ -17798,6 +17834,7 @@ static int ptn_unserialize_value_from_operand(
         PtnUnserializeValue parsed;
         parsed.value = ptn_null();
         parsed.id = 0;
+        parsed.start = 0;
         int caught_exception = 0;
         PtnTryFrame parse_frame;
         if (runtime != NULL) {
@@ -17935,6 +17972,7 @@ static int ptn_unserialize_value_from_operand(
     PtnUnserializeValue parsed;
     parsed.value = ptn_null();
     parsed.id = 0;
+    parsed.start = 0;
     int caught_exception = 0;
     PtnTryFrame parse_frame;
     if (runtime != NULL) {
@@ -128519,6 +128557,7 @@ static int ptn_date_unserialize_extra_string_properties(
         PtnUnserializeValue parsed = {
             .value = ptn_value_clone_deref(entry->value),
             .id = 0,
+            .start = 0,
         };
         if (!ptn_unserialize_prepare_property_value(runtime, metadata, &parsed, line)) {
             ptn_array_key_free(property_key);
@@ -128623,6 +128662,7 @@ static int ptn_datetime_zone_unserialize_extra_properties(
         PtnUnserializeValue parsed = {
             .value = ptn_value_clone_deref(entry->value),
             .id = 0,
+            .start = 0,
         };
         if (!ptn_unserialize_prepare_property_value(runtime, metadata, &parsed, line)) {
             ptn_array_key_free(property_key);
@@ -218835,6 +218875,7 @@ static void ptn_unserialize_load_spl_array_backed_members(
         PtnUnserializeValue parsed;
         parsed.value = ptn_value_clone(entry->value);
         parsed.id = 0;
+        parsed.start = 0;
         if (!ptn_unserialize_store_object_property_entry(
                 runtime,
                 state,
@@ -224734,6 +224775,7 @@ static void ptn_spl_load_unserialized_members(
         PtnUnserializeValue parsed;
         parsed.value = ptn_value_clone(entry->value);
         parsed.id = 0;
+        parsed.start = 0;
         if (!ptn_unserialize_store_object_property_entry(
                 runtime,
                 state,
@@ -226266,6 +226308,7 @@ static void ptn_spl_object_storage_load_members(
         PtnUnserializeValue parsed;
         parsed.value = ptn_value_clone(entry->value);
         parsed.id = 0;
+        parsed.start = 0;
         if (!ptn_unserialize_store_object_property_entry(
                 runtime,
                 state,
@@ -226849,6 +226892,7 @@ static PtnValue ptn_spl_object_storage_call_method(
         PtnUnserializeValue parsed;
         parsed.value = ptn_null();
         parsed.id = 0;
+        parsed.start = 0;
         PtnSplObjectStorageData *new_data = NULL;
         PtnValue members = ptn_null();
         int ok = ptn_unserialize_spl_object_storage_legacy_payload(
@@ -233949,12 +233993,15 @@ static int ptn_array_object_unserialize_legacy_payload(
     PtnUnserializeValue flags;
     flags.value = ptn_null();
     flags.id = 0;
+    flags.start = 0;
     PtnUnserializeValue storage;
     storage.value = ptn_null();
     storage.id = 0;
+    storage.start = 0;
     PtnUnserializeValue members;
     members.value = ptn_null();
     members.id = 0;
+    members.start = 0;
     int64_t parsed_flags = 0;
     size_t error_offset = 0;
     int unexpected_end = 0;
@@ -234012,6 +234059,7 @@ static int ptn_array_object_unserialize_legacy_payload(
             PtnUnserializeValue parsed;
             parsed.value = ptn_value_clone(entry->value);
             parsed.id = 0;
+            parsed.start = 0;
             if (!ptn_unserialize_store_object_property_entry(
                     runtime,
                     state,

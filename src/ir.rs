@@ -2884,6 +2884,9 @@ impl<'a> LoweringContext<'a> {
                 *function_index = Some(lowered_index);
             }
             AttributeArgumentExpression::FirstClassCallable { .. } => {}
+            AttributeArgumentExpression::PropertyFetch { receiver, .. } => {
+                self.lower_attribute_argument_expression_closures(receiver);
+            }
             AttributeArgumentExpression::NewObject { arguments, .. } => {
                 for argument in arguments {
                     self.lower_attribute_argument_expression_closures(argument);
@@ -3353,6 +3356,14 @@ fn resolve_attribute_argument_expression_for_class_scope(
         }
         AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
             resolve_first_class_callable_scope_name(callable, current_class, current_parent);
+        }
+        AttributeArgumentExpression::PropertyFetch { receiver, .. } => {
+            resolve_attribute_argument_expression_for_class_scope(
+                receiver,
+                current_class,
+                current_parent,
+                current_property,
+            );
         }
         AttributeArgumentExpression::NewObject { arguments, .. } => {
             for argument in arguments {
@@ -6035,6 +6046,16 @@ fn assertion_attribute_argument_expression_text(
         AttributeArgumentExpression::ClassConstant {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
+        AttributeArgumentExpression::PropertyFetch {
+            receiver,
+            name,
+            nullsafe,
+            ..
+        } => format!(
+            "{}{}>{name}",
+            assertion_attribute_argument_expression_text(receiver),
+            if *nullsafe { "?" } else { "-" }
+        ),
         AttributeArgumentExpression::NewObject {
             class_name,
             arguments,
@@ -6273,7 +6294,9 @@ fn assertion_anonymous_class_source_text(source: &str) -> String {
             line.to_string()
         }
     }));
-    let text = assertion_normalized_anonymous_class_text(normalized.join("\n"));
+    let text = assertion_expand_inline_property_hooks(&assertion_normalized_anonymous_class_text(
+        normalized.join("\n"),
+    ));
     assertion_anonymous_class_constructor_text(&text).unwrap_or(text)
 }
 
@@ -6356,6 +6379,48 @@ fn assertion_constructor_parameter_text(parameters: &str) -> String {
     }
     formatted.push_str(&parameters[cursor..]);
     formatted.trim().to_string()
+}
+
+fn assertion_expand_inline_property_hooks(source: &str) -> String {
+    source
+        .lines()
+        .flat_map(|line| {
+            assertion_expand_inline_property_hook_line(line)
+                .unwrap_or_else(|| vec![line.to_string()])
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn assertion_expand_inline_property_hook_line(line: &str) -> Option<Vec<String>> {
+    let open = line.find('{')?;
+    let close = find_matching_ascii_delimiter(line, open, b'{', b'}')?;
+    if !line[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let prefix = &line[..open];
+    let prefix_trimmed = prefix.trim_end();
+    if !prefix_trimmed.contains('$') || prefix_trimmed.contains("function") {
+        return None;
+    }
+    let body = line[open + 1..close].trim();
+    if body.is_empty() || body.contains('{') || body.contains('}') {
+        return None;
+    }
+    let hooks = body
+        .split(';')
+        .map(str::trim)
+        .filter(|hook| !hook.is_empty())
+        .collect::<Vec<_>>();
+    if hooks.is_empty() {
+        return None;
+    }
+    let indent = &line[..line.len() - line.trim_start().len()];
+    let mut expanded = Vec::with_capacity(hooks.len() + 2);
+    expanded.push(format!("{prefix_trimmed} {{"));
+    expanded.extend(hooks.into_iter().map(|hook| format!("{indent}    {hook};")));
+    expanded.push(format!("{indent}}}"));
+    Some(expanded)
 }
 
 fn assertion_property_hook_block_text(body: &str) -> String {

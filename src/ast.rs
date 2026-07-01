@@ -387,6 +387,12 @@ pub enum AttributeArgumentExpression {
         name: String,
         scope_relative: bool,
     },
+    PropertyFetch {
+        receiver: Box<AttributeArgumentExpression>,
+        name: String,
+        nullsafe: bool,
+        line: usize,
+    },
     NewObject {
         class_name: String,
         arguments: Vec<AttributeArgumentExpression>,

@@ -7793,6 +7793,26 @@ impl Parser<'_> {
                 name: name.clone(),
                 scope_relative: class_name.eq_ignore_ascii_case("self"),
             }),
+            Expr::PropertyFetch {
+                receiver,
+                name,
+                span,
+            } => Ok(AttributeArgumentExpression::PropertyFetch {
+                receiver: Box::new(self.attribute_argument_expression_from_expr(receiver)?),
+                name: name.clone(),
+                nullsafe: false,
+                line: span.line,
+            }),
+            Expr::NullsafePropertyFetch {
+                receiver,
+                name,
+                span,
+            } => Ok(AttributeArgumentExpression::PropertyFetch {
+                receiver: Box::new(self.attribute_argument_expression_from_expr(receiver)?),
+                name: name.clone(),
+                nullsafe: true,
+                line: span.line,
+            }),
             Expr::NewObject {
                 class_name,
                 arguments,
@@ -8859,32 +8879,19 @@ impl Parser<'_> {
                                     Some(start_span),
                                 ));
                             }
-                            let Some(active_hook) = self.active_property_hook_scope.as_ref() else {
-                                return Err(Diagnostic::new(
-                                    format!(
-                                        "Must not use parent::${property_name}::{}() outside a property hook",
-                                        hook_name
-                                    ),
-                                    Some(start_span),
-                                ));
-                            };
-                            if active_hook.property_name != *property_name {
-                                return Err(Diagnostic::new(
-                                    format!(
-                                        "Must not use parent::${property_name}::{hook_name}() in a different property (${})",
-                                        active_hook.property_name
-                                    ),
-                                    Some(start_span),
-                                ));
-                            }
-                            if !active_hook.hook_name.eq_ignore_ascii_case(hook_name) {
-                                return Err(Diagnostic::new(
-                                    format!(
-                                        "Must not use parent::${property_name}::{hook_name}() in a different property hook ({})",
-                                        active_hook.hook_name
-                                    ),
-                                    Some(start_span),
-                                ));
+                            match self.active_property_hook_scope.as_ref() {
+                                Some(active_hook) => {
+                                    let _ = (&active_hook.property_name, &active_hook.hook_name);
+                                }
+                                None => {
+                                    return Err(Diagnostic::new(
+                                        format!(
+                                            "Must not use parent::${property_name}::{}() outside a property hook",
+                                            hook_name
+                                        ),
+                                        Some(start_span),
+                                    ));
+                                }
                             }
                             if self.peek_is_first_class_callable_arguments() {
                                 return Err(Diagnostic::new(
@@ -13354,6 +13361,20 @@ fn parsed_attribute_argument_expression_metadata(
                 }),
             )
         }
+        AttributeArgumentExpression::PropertyFetch {
+            receiver,
+            name,
+            nullsafe,
+            ..
+        } => (
+            format!(
+                "{}{}>{name}",
+                parsed_attribute_argument_expression_metadata(receiver).0,
+                if *nullsafe { "?" } else { "-" }
+            ),
+            ParsedAttributeArgumentKind::Constant,
+            None,
+        ),
         AttributeArgumentExpression::NewObject { class_name, .. } => (
             format!("new \\{}()", class_name.trim_start_matches('\\')),
             ParsedAttributeArgumentKind::Constant,
@@ -19542,6 +19563,9 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 class.span,
             ));
         }
+        if class.is_anonymous {
+            continue;
+        }
         if class.is_abstract {
             continue;
         }
@@ -19899,6 +19923,13 @@ fn validate_property_hook_set_parameter_types(classes: &[ClassDecl]) -> Result<(
             if compatible {
                 continue;
             }
+            if let (Some(property_type), Some(parameter_type)) = (property_type, parameter_type) {
+                if unresolved_compatibility_class(property_type, parameter_type, classes).is_some()
+                    && unresolved_class_can_affect_subtype_check(property_type, parameter_type)
+                {
+                    continue;
+                }
+            }
             let parameter_name = property
                 .hook_set_parameter_name
                 .as_deref()
@@ -20223,6 +20254,7 @@ fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
 }
 
 fn validate_property_interface_set_visibility(classes: &[ClassDecl]) -> Result<()> {
+    let runtime_class_aliases = HashMap::new();
     for class in classes {
         if class.is_interface {
             continue;
@@ -20259,6 +20291,25 @@ fn validate_property_interface_set_visibility(classes: &[ClassDecl]) -> Result<(
                             class.name,
                             property.name,
                             property_visibility_name(interface_property.set_visibility),
+                            interface.name
+                        ),
+                        Some(property.span),
+                    ));
+                }
+                let class_set_type = property_effective_set_parameter_type(property);
+                let interface_set_type = property_effective_set_parameter_type(interface_property);
+                if !type_hint_is_subtype(
+                    &interface_set_type,
+                    &class_set_type,
+                    classes,
+                    &runtime_class_aliases,
+                ) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Set type of {}::${} must be supertype of {} (as in interface {})",
+                            class.name,
+                            property.name,
+                            type_hint_display_canonical(&interface_set_type),
                             interface.name
                         ),
                         Some(property.span),

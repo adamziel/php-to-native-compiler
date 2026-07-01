@@ -15428,6 +15428,9 @@ fn attribute_flag_argument_expression_value(
         AttributeArgumentExpression::PropertyMagicConstant => Err(AttributeFlagError::Type {
             type_name: "string",
         }),
+        AttributeArgumentExpression::PropertyFetch { .. } => {
+            Err(AttributeFlagError::Type { type_name: "mixed" })
+        }
         AttributeArgumentExpression::Float(_) => {
             Err(AttributeFlagError::Type { type_name: "float" })
         }
@@ -16407,6 +16410,16 @@ fn attribute_argument_expression_display_text(expression: &AttributeArgumentExpr
         AttributeArgumentExpression::ClassConstant {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
+        AttributeArgumentExpression::PropertyFetch {
+            receiver,
+            name,
+            nullsafe,
+            ..
+        } => format!(
+            "{}{}>{name}",
+            attribute_argument_expression_display_text(receiver),
+            if *nullsafe { "?" } else { "-" }
+        ),
         AttributeArgumentExpression::NewObject {
             class_name,
             arguments,
@@ -16607,6 +16620,9 @@ fn attribute_expression_arguments_error(
         AttributeArgumentExpression::ClassConstant {
             class_name, name, ..
         } => attribute_class_constant_arguments_error(class_name, name, classes, traits),
+        AttributeArgumentExpression::PropertyFetch { receiver, .. } => {
+            attribute_expression_arguments_error(receiver, classes, traits)
+        }
         AttributeArgumentExpression::Array(elements) => elements.iter().find_map(|element| {
             element
                 .key
@@ -16801,6 +16817,55 @@ fn emit_attribute_argument_expression(
                 )
             };
             emit_attribute_argument_simple(out, target, indent, &read_expression);
+        }
+        AttributeArgumentExpression::PropertyFetch {
+            receiver,
+            name,
+            nullsafe,
+            line,
+        } => {
+            let receiver_temp = format!("{target}_receiver");
+            emit_attribute_argument_expression(
+                out,
+                &receiver_temp,
+                receiver,
+                indent,
+                *line,
+                attribute_scope_class_var,
+                functions,
+            );
+            out.push_str(indent);
+            out.push_str("PtnValue ");
+            out.push_str(target);
+            out.push_str(" = ");
+            if *nullsafe {
+                out.push_str("ptn_nullsafe_short_circuit();\n");
+                out.push_str(indent);
+                out.push_str("if (ptn_value_deref(");
+                out.push_str(&receiver_temp);
+                out.push_str(").type != PTN_NULL) {\n");
+                out.push_str(indent);
+                out.push_str("    ");
+                out.push_str(target);
+                out.push_str(" = ptn_object_read_property(runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str(indent);
+                out.push_str("}\n");
+            } else {
+                out.push_str("ptn_object_read_property(runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            emit_value_cleanup(out, indent, &receiver_temp);
         }
         AttributeArgumentExpression::NewObject {
             class_name,
@@ -22088,6 +22153,7 @@ fn class_runtime_unsatisfied_abstract_methods(
         return Vec::new();
     }
     let mut requirements = Vec::new();
+    collect_own_runtime_abstract_methods(class, &mut requirements);
     collect_parent_runtime_abstract_methods(class, classes, &mut requirements);
     collect_interface_runtime_abstract_methods(class, classes, &mut requirements);
     collect_trait_runtime_abstract_methods(class, classes, functions, &mut requirements);
@@ -22103,6 +22169,34 @@ fn class_runtime_unsatisfied_abstract_methods(
             seen.insert(key) && !class_has_concrete_method(class, &required.method_name, classes)
         })
         .collect()
+}
+
+fn collect_own_runtime_abstract_methods(
+    class: &ClassDecl,
+    requirements: &mut Vec<RuntimeAbstractMethodRequirement>,
+) {
+    for method in &class.methods {
+        if method.is_abstract {
+            requirements.push(RuntimeAbstractMethodRequirement {
+                declaring_class: class.name.clone(),
+                method_name: method.name.clone(),
+            });
+        }
+    }
+    for property in &class.properties {
+        if property.hook_get_is_abstract {
+            requirements.push(RuntimeAbstractMethodRequirement {
+                declaring_class: class.name.clone(),
+                method_name: format!("${}::get", property.name),
+            });
+        }
+        if property.hook_set_is_abstract {
+            requirements.push(RuntimeAbstractMethodRequirement {
+                declaring_class: class.name.clone(),
+                method_name: format!("${}::set", property.name),
+            });
+        }
+    }
 }
 
 fn class_runtime_method_visibility_override_fatal(
@@ -22238,6 +22332,130 @@ fn emit_class_method_signature_compatibility_validation(
         class_index,
         source_path,
     );
+}
+
+fn emit_class_property_hook_set_parameter_compatibility_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    class_index: usize,
+) {
+    let mut type_temp_counter = 0usize;
+    for (property_index, property) in class.properties.iter().enumerate() {
+        if !property.has_hooks
+            || !property.hook_has_set
+            || property.hook_set_parameter_type.is_none()
+        {
+            continue;
+        }
+        let Some(property_type) = property
+            .type_hint
+            .as_ref()
+            .and_then(|type_hint| type_hint.semantic_type.as_ref())
+        else {
+            continue;
+        };
+        let Some(parameter_type) = property.hook_set_parameter_type.as_ref() else {
+            continue;
+        };
+        if runtime_type_hint_static_subtype(property_type, parameter_type, class, classes) {
+            continue;
+        }
+
+        let mut seen_names = HashSet::new();
+        let mut type_names = Vec::new();
+        collect_runtime_variance_type_names(property_type, &mut seen_names, &mut type_names);
+        collect_runtime_variance_type_names(parameter_type, &mut seen_names, &mut type_names);
+        for type_name in type_names {
+            out.push_str("        (void)ptn_declared_runtime_variance_type_available(&runtime, \"");
+            out.push_str(&c_string(&type_name));
+            out.push_str("\", ");
+            out.push_str(&property.hook_set_line.to_string());
+            out.push_str(");\n");
+        }
+
+        let condition = emit_property_hook_set_parameter_runtime_condition(
+            out,
+            property_type,
+            parameter_type,
+            class_index,
+            property_index,
+            &mut type_temp_counter,
+        )
+        .unwrap_or_else(|| "0".to_string());
+        let parameter_name = property
+            .hook_set_parameter_name
+            .as_deref()
+            .unwrap_or("value");
+        let message = format!(
+            "Type of parameter ${parameter_name} of hook {}::${}::set must be compatible with property type",
+            class.name, property.name
+        );
+        out.push_str("        if (!");
+        out.push_str(&condition);
+        out.push_str(") {\n");
+        emit_runtime_signature_fatal(
+            out,
+            &message,
+            &class.source_file,
+            property.hook_set_line,
+            "            ",
+        );
+        out.push_str("        }\n");
+    }
+}
+
+fn emit_property_hook_set_parameter_runtime_condition(
+    out: &mut String,
+    property_type: &TypeHint,
+    parameter_type: &TypeHint,
+    class_index: usize,
+    property_index: usize,
+    type_temp_counter: &mut usize,
+) -> Option<String> {
+    let (TypeHint::Class(property_type_name), TypeHint::Class(parameter_type_name)) =
+        (property_type, parameter_type)
+    else {
+        return None;
+    };
+    let property_temp = emit_property_hook_set_parameter_resolved_type(
+        out,
+        property_type_name,
+        class_index,
+        property_index,
+        type_temp_counter,
+    );
+    let parameter_temp = emit_property_hook_set_parameter_resolved_type(
+        out,
+        parameter_type_name,
+        class_index,
+        property_index,
+        type_temp_counter,
+    );
+    Some(format!(
+        "(ptn_ascii_case_equal({0}, {1}) || ptn_declared_class_is_same_or_descendant({0}, {1}) || ptn_declared_class_implements_interface({0}, {1}) || ptn_builtin_class_implements_interface({0}, {1}) || ptn_declared_runtime_linking_class_static_subtype(&runtime, {0}, {1}))",
+        property_temp, parameter_temp
+    ))
+}
+
+fn emit_property_hook_set_parameter_resolved_type(
+    out: &mut String,
+    type_name: &str,
+    class_index: usize,
+    property_index: usize,
+    type_temp_counter: &mut usize,
+) -> String {
+    let resolved_temp = format!(
+        "ptn_hook_set_type_{}_{}_{}",
+        class_index, property_index, *type_temp_counter
+    );
+    *type_temp_counter += 1;
+    out.push_str("        const char *");
+    out.push_str(&resolved_temp);
+    out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+    out.push_str(&c_string(type_name));
+    out.push_str("\");\n");
+    resolved_temp
 }
 
 struct TentativeInternalReturnMethod {
@@ -29707,6 +29925,12 @@ fn emit_class_declaration_validation(
         functions,
         class_index,
         source_path,
+    );
+    emit_class_property_hook_set_parameter_compatibility_validation(
+        out,
+        class,
+        classes,
+        class_index,
     );
     for conflict in class_inherited_property_conflicts(class, classes) {
         out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
@@ -52802,6 +53026,42 @@ impl ValueEmitter {
         out.push_str("        }\n");
     }
 
+    fn parent_property_hook_call_validation_message(
+        &self,
+        property_name: &str,
+        hook_name: &str,
+    ) -> Option<String> {
+        let Some(current_property_name) = self.current_property_name.as_deref() else {
+            return Some(format!(
+                "Must not use parent::${property_name}::{hook_name}() outside a property hook"
+            ));
+        };
+        if current_property_name != property_name {
+            return Some(format!(
+                "Must not use parent::${property_name}::{hook_name}() in a different property (${current_property_name})"
+            ));
+        }
+        let current_hook_name = self.current_property_hook_name();
+        if !current_hook_name.is_some_and(|current| current.eq_ignore_ascii_case(hook_name)) {
+            let current_hook_name = current_hook_name.unwrap_or("");
+            return Some(format!(
+                "Must not use parent::${property_name}::{hook_name}() in a different property hook ({current_hook_name})"
+            ));
+        }
+        None
+    }
+
+    fn current_property_hook_name(&self) -> Option<&str> {
+        let current_function_name = self.current_function_name.as_deref()?;
+        if current_function_name.ends_with("::get") {
+            Some("get")
+        } else if current_function_name.ends_with("::set") {
+            Some("set")
+        } else {
+            None
+        }
+    }
+
     fn emit_parent_property_hook_call(
         &mut self,
         out: &mut String,
@@ -52812,6 +53072,25 @@ impl ValueEmitter {
         argument_unpacks: &[bool],
         line: usize,
     ) -> String {
+        if let Some(message) =
+            self.parent_property_hook_call_validation_message(property_name, hook_name)
+        {
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
+            out.push_str(&c_string(&message));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            return result_temp;
+        }
+
         let (modeled_parent_class_name, modeled_set_parameter_name, modeled_has_runtime_hook) =
             self.modeled_parent_property_hook_runtime(property_name, hook_name);
         let mut argument_temps = Vec::with_capacity(arguments.len());
