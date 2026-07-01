@@ -103866,6 +103866,9 @@ typedef struct {
     size_t capacity;
 } PtnGcMarkStack;
 
+/* Avoid native stack exhaustion while broad GC collection remains bounded. */
+#define PTN_GC_LARGE_OBJECT_SWEEP_LIMIT 65536
+
 static void ptn_gc_mark_stack_push(PtnGcMarkStack *stack, PtnValue value) {
     if (stack == NULL) {
         return;
@@ -105180,6 +105183,10 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         return ptn_int(0);
     }
     if (root->gc_running) {
+        return ptn_int(0);
+    }
+    if (root->live_objects_len > PTN_GC_LARGE_OBJECT_SWEEP_LIMIT) {
+        root->gc_roots = root->live_objects_len;
         return ptn_int(0);
     }
     root->gc_running = 1;
