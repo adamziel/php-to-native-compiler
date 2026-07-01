@@ -105738,6 +105738,57 @@ echo $copy->x, \"\\n\";
 }
 
 #[test]
+fn compile_clone_with_random_engine_internal_class_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-clone-with-random-engine-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("clone-with-random-engine-guards.php");
+    let output = root.join("clone-with-random-engine-guards-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach ([Random\Engine\Secure::class, Random\Engine\Xoshiro256StarStar::class] as $class) {
+    try {
+        var_dump(clone(new $class(), ['with' => 'something']));
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    $engine = new Random\Engine\Mt19937();
+    $engine->extra = 1;
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+var_dump((new ReflectionClass(Random\Engine\Secure::class))->isCloneable());
+var_dump((new ReflectionClass(Random\Engine\Xoshiro256StarStar::class))->isCloneable());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Trying to clone an uncloneable object of class Random\\Engine\\Secure\n",
+            "Error: Cannot create dynamic property Random\\Engine\\Xoshiro256StarStar::$with\n",
+            "Error: Cannot create dynamic property Random\\Engine\\Mt19937::$extra\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_class_forbids_dynamic_properties"));
+    assert!(c_source.contains("ptn_random_engine_clone"));
+}
+
+#[test]
 fn compile_clone_preserves_live_property_references_to_native_binary() {
     let root = temp_dir("ptn-native-clone-live-property-references");
     fs::create_dir_all(&root).unwrap();
