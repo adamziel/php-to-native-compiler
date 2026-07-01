@@ -511,7 +511,10 @@ impl Parser<'_> {
     fn parse_program(&mut self) -> Result<Program> {
         if matches!(self.peek().kind, TokenKind::OpenTag) {
             self.expect_open_tag()?;
-        } else if !matches!(self.peek().kind, TokenKind::InlineHtml(_) | TokenKind::Eof) {
+        } else if !matches!(
+            self.peek().kind,
+            TokenKind::OpenTagWithEcho | TokenKind::InlineHtml(_) | TokenKind::Eof
+        ) {
             return Err(Diagnostic::new(
                 "expected <?php open tag",
                 Some(self.peek().span),
@@ -2251,7 +2254,7 @@ impl Parser<'_> {
                 if self.peek_is_identifier("abstract") {
                     let span = self.peek().span;
                     self.advance();
-                    self.expect_semicolon()?;
+                    self.expect_trait_adaptation_terminator()?;
                     return Err(Diagnostic::new(
                         "Cannot use \"abstract\" as method modifier in trait alias",
                         Some(span),
@@ -2260,7 +2263,7 @@ impl Parser<'_> {
                 if self.peek_is_identifier("static") {
                     let span = self.peek().span;
                     self.advance();
-                    self.expect_semicolon()?;
+                    self.expect_trait_adaptation_terminator()?;
                     return Err(Diagnostic::new(
                         "Cannot use \"static\" as method modifier in trait alias",
                         Some(span),
@@ -2269,7 +2272,7 @@ impl Parser<'_> {
                 if self.peek_is_identifier("readonly") {
                     let span = self.peek().span;
                     self.advance();
-                    self.expect_semicolon()?;
+                    self.expect_trait_adaptation_terminator()?;
                     return Err(Diagnostic::new(
                         "Cannot use the readonly modifier on a method",
                         Some(span),
@@ -2303,7 +2306,7 @@ impl Parser<'_> {
                 if !matches!(self.peek().kind, TokenKind::Semicolon) {
                     alias = Some(self.parse_trait_adaptation_method_name()?);
                 }
-                let semicolon = self.expect_semicolon()?;
+                let semicolon = self.expect_trait_adaptation_terminator()?;
                 adaptations.push(TraitAdaptation::Alias(TraitAliasAdaptation {
                     method,
                     alias,
@@ -2325,7 +2328,7 @@ impl Parser<'_> {
                     }
                     self.advance();
                 }
-                let semicolon = self.expect_semicolon()?;
+                let semicolon = self.expect_trait_adaptation_terminator()?;
                 adaptations.push(TraitAdaptation::Precedence(TraitPrecedenceAdaptation {
                     method,
                     instead_of,
@@ -2400,10 +2403,25 @@ impl Parser<'_> {
 
     fn parse_trait_adaptation_method_name(&mut self) -> Result<String> {
         let token = self.advance();
+        if matches!(token.kind, TokenKind::OpenTagWithEcho) {
+            return Err(Diagnostic::parse_error(
+                "Cannot use \"<?=\" as an identifier",
+                Some(token.span),
+            ));
+        }
         if let Some(name) = method_name_from_token(&token.kind) {
             return Ok(name);
         }
         Err(Diagnostic::new("expected method name", Some(token.span)))
+    }
+
+    fn expect_trait_adaptation_terminator(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Semicolon | TokenKind::CloseTag) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected semicolon", Some(token.span)))
+        }
     }
 
     fn previous_span(&self) -> SourceSpan {
@@ -4261,6 +4279,7 @@ impl Parser<'_> {
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
+            TokenKind::OpenTagWithEcho => self.parse_short_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
             TokenKind::Do => self.parse_do_while(),
@@ -5658,6 +5677,20 @@ impl Parser<'_> {
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Echo { expressions, span })
+    }
+
+    fn parse_short_echo(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let mut expressions = vec![self.parse_expr()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            expressions.push(self.parse_expr()?);
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Echo {
+            expressions,
+            span: token.span,
+        })
     }
 
     fn parse_print(&mut self) -> Result<Statement> {
@@ -8103,7 +8136,13 @@ impl Parser<'_> {
             self.expect_colon()?;
             (Some(Box::new(value)), false)
         };
-        let if_false = self.parse_assignment_expr_without_ternary(0)?;
+        let mut if_false = self.parse_assignment_expr_without_ternary(0)?;
+        if matches!(self.peek().kind, TokenKind::Question)
+            && first_is_short
+            && self.peek_next_is_colon()
+        {
+            if_false = self.parse_ternary_tail_from_condition(if_false)?;
+        }
         if matches!(self.peek().kind, TokenKind::Question) {
             return Err(Diagnostic::new(
                 nested_ternary_message(first_is_short, self.peek_next_is_colon()),
@@ -12385,6 +12424,7 @@ fn method_name_from_token(kind: &TokenKind) -> Option<String> {
 fn token_text(kind: &TokenKind) -> &'static str {
     match kind {
         TokenKind::OpenTag => "<?php",
+        TokenKind::OpenTagWithEcho => "<?=",
         TokenKind::CloseTag => "?>",
         TokenKind::InlineHtml(_) => "inline HTML",
         TokenKind::Echo => "echo",

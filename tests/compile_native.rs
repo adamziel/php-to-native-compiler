@@ -5378,6 +5378,22 @@ fn parser_rejects_unparenthesized_nested_ternaries() {
 }
 
 #[test]
+fn parser_accepts_chained_short_ternary_expression() {
+    parser::parse("<?php\n1 ?: 2 ?: 3;\n(1 ?: 2) ?: 3;\n1 ?: (2 ?: 3);\n").unwrap();
+}
+
+#[test]
+fn parser_rejects_short_echo_open_tag_as_trait_alias_identifier() {
+    let error = parser::parse(
+        "<?php\ntrait T {\n    public function x() {}\n}\nclass C {\n    use T {\n        x as y?><?= as my_echo;\n    }\n}\n",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "Cannot use \"<?=\" as an identifier");
+    assert_eq!(error.span.unwrap().line, 7);
+}
+
+#[test]
 fn lexer_skips_php_comments_and_preserves_following_span() {
     let tokens =
         lexer::lex("<?php\n// first\n# second\n/* block\ncomment */\nprint \"ok\";").unwrap();
@@ -109996,6 +110012,43 @@ var_dump(new C() instanceof C);
         "Exception\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_splobjectstorage_tentative_return_unavailable_class_to_native_binary() {
+    let root = temp_dir("ptn-native-splobjectstorage-tentative-unavailable-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("splobjectstorage-tentative-unavailable-return.php");
+    let output = root.join("splobjectstorage-tentative-unavailable-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test extends SplObjectStorage {
+    function valid() {}
+    function current(): Unknown {}
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Deprecated: Return type of Test::valid() should either be compatible with SplObjectStorage::valid(): bool, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice in {} on line 3\n",
+            input.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Could not check compatibility between Test::current(): Unknown and SplObjectStorage::current(): object, because class Unknown is not available in {} on line 4\n",
+            input.display()
+        )
+    );
 }
 
 #[test]

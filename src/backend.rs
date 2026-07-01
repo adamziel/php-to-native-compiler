@@ -22288,6 +22288,20 @@ fn tentative_internal_return_method(
                 return_type: TypeHint::Int,
             })
         }
+        ("splobjectstorage", "valid") => Some(TentativeInternalReturnMethod {
+            class_name: "SplObjectStorage",
+            method_name: "valid",
+            signature: "valid(): bool",
+            is_static: false,
+            return_type: TypeHint::Bool,
+        }),
+        ("splobjectstorage", "current") => Some(TentativeInternalReturnMethod {
+            class_name: "SplObjectStorage",
+            method_name: "current",
+            signature: "current(): object",
+            is_static: false,
+            return_type: TypeHint::Object,
+        }),
         _ => None,
     }
 }
@@ -22395,15 +22409,39 @@ fn emit_tentative_internal_return_signature_deprecations(
             );
             continue;
         }
-        if function.return_type.as_ref().is_some_and(|return_type| {
-            runtime_type_hint_static_subtype(
+        if let Some(return_type) = function.return_type.as_ref() {
+            if runtime_type_hint_static_subtype(
                 return_type,
                 &tentative_method.return_type,
                 class,
                 classes,
-            )
-        }) {
-            continue;
+            ) {
+                if let Some(unavailable_name) = runtime_object_compatibility_class_names(
+                    return_type,
+                    &tentative_method.return_type,
+                    classes,
+                )
+                .into_iter()
+                .next()
+                {
+                    let message = format!(
+                        "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+                        class.name,
+                        runtime_method_signature_display(method, function),
+                        tentative_method.class_name,
+                        tentative_method.signature,
+                        unavailable_name
+                    );
+                    emit_runtime_signature_fatal(
+                        out,
+                        &message,
+                        &method.source_file,
+                        method.line,
+                        "        ",
+                    );
+                }
+                continue;
+            }
         }
         let message = format!(
             "Return type of {}::{} should either be compatible with {}::{}, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice",

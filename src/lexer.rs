@@ -96,6 +96,7 @@ fn is_shift_jis_trail_byte(byte: u8) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     OpenTag,
+    OpenTagWithEcho,
     CloseTag,
     InlineHtml(String),
     Echo,
@@ -527,6 +528,10 @@ impl<'a> Lexer<'a> {
         self.source
             .get(cursor..cursor.saturating_add(5))
             .is_some_and(|tag| tag.eq_ignore_ascii_case("<?php"))
+            || self
+                .source
+                .get(cursor..cursor.saturating_add(3))
+                .is_some_and(|tag| tag == "<?=")
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -2101,7 +2106,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn push_open_tag(&mut self) {
-        self.push_fixed(TokenKind::OpenTag, 5);
+        if self.rest().starts_with("<?=") {
+            self.push_fixed(TokenKind::OpenTagWithEcho, 3);
+        } else {
+            self.push_fixed(TokenKind::OpenTag, 5);
+        }
         self.seen_open_tag = true;
         self.closed_php = false;
     }
