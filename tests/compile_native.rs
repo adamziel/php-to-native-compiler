@@ -32660,6 +32660,176 @@ var_dump($info);
 }
 
 #[test]
+fn compile_getimagesize_common_archive_formats_to_native_binary() {
+    let root = temp_dir("ptn-native-getimagesize-common-formats");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getimagesize-common.php");
+    let output = root.join("getimagesize-common-bin");
+
+    fs::write(
+        root.join("sample.gif"),
+        [b'G', b'I', b'F', b'8', b'9', b'a', 2, 0, 1, 0, 0, 0],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.png"),
+        [
+            0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R', 0,
+            0, 0, 4, 0, 0, 0, 1, 4, 3, 0, 0, 0,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.bmp"),
+        [
+            b'B', b'M', 54, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0,
+            1, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.webp"),
+        [
+            b'R', b'I', b'F', b'F', 30, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X',
+            10, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 2, 0, 0,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.swf"),
+        [
+            b'F', b'W', b'S', 6, 71, 0, 0, 0, 0x68, 0x00, 0x1f, 0x40, 0x00, 0x03, 0xe8, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.swc"),
+        [
+            b'C', b'W', b'S', 6, 17, 0, 0, 0, 120, 156, 171, 96, 96, 141, 103, 96, 224, 95, 192, 0,
+            0, 8, 11, 1, 140,
+        ],
+    )
+    .unwrap();
+    let mut wbmp = vec![0, 0, 75, 50];
+    wbmp.resize(4 + 500, 0);
+    fs::write(root.join("sample.wbmp"), wbmp).unwrap();
+    fs::write(
+        root.join("sample.xbm"),
+        "#define Xbitmap_width 75\n#define Xbitmap_height 50\nstatic unsigned char Xbitmap_bits[] = {0};\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.psd"),
+        [
+            b'8', b'B', b'P', b'S', 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 4, 0, 8, 0,
+            2,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.iff"),
+        [
+            b'F', b'O', b'R', b'M', 0, 0, 0, 28, b'I', b'L', b'B', b'M', b'B', b'M', b'H', b'D', 0,
+            0, 0, 20, 0, 4, 0, 1, 0, 0, 0, 0, 4, 0, 1, 0, 0, 0, 1, 1, 0, 4, 0, 1,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.jp2"),
+        [
+            0, 0, 0, 12, b'j', b'P', b' ', b' ', 0x0d, 0x0a, 0x87, 0x0a, 0, 0, 0, 20, b'f', b't',
+            b'y', b'p', b'j', b'p', b'2', b' ', 0, 0, 0, 0, b'j', b'p', b'2', b' ', 0, 0, 0, 22,
+            b'i', b'h', b'd', b'r', 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 7, 7, 1, 0,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.jpc"),
+        [
+            0xff, 0x4f, 0xff, 0x51, 0, 47, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7, 1, 1, 7, 1, 1, 7, 1, 1,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.avif"),
+        [
+            0, 0, 0, 24, b'f', b't', b'y', b'p', b'a', b'v', b'i', b'f', 0, 0, 0, 0, b'a', b'v',
+            b'i', b'f', b'm', b'i', b'f', b'1', 0, 0, 0, 20, b'i', b's', b'p', b'e', 0, 0, 0, 0, 0,
+            0, 0, 8, 0, 0, 0, 8, 0, 0, 0, 16, b'p', b'i', b'x', b'i', 0, 0, 0, 0, 3, 8, 8, 8,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.heic"),
+        [
+            0, 0, 0, 24, b'f', b't', b'y', b'p', b'h', b'e', b'i', b'c', 0, 0, 0, 0, b'h', b'e',
+            b'i', b'c', b'm', b'i', b'f', b'1', 0, 0, 0, 20, b'i', b's', b'p', b'e', 0, 0, 0, 0, 0,
+            0, 0, 54, 0, 0, 0, 84, 0, 0, 0, 16, b'p', b'i', b'x', b'i', 0, 0, 0, 0, 3, 8, 8, 8,
+        ],
+    )
+    .unwrap();
+
+    fs::write(
+        &input,
+        r#"<?php
+function show($label, $path) {
+    $size = getimagesize($path);
+    echo $label, ':', $size[0], 'x', $size[1], ':', $size[2], ':', $size['mime'];
+    if (isset($size['bits'])) echo ':b', $size['bits'];
+    if (isset($size['channels'])) echo ':c', $size['channels'];
+    echo "\n";
+}
+show('gif', __DIR__ . '/sample.gif');
+show('png', __DIR__ . '/sample.png');
+show('bmp', __DIR__ . '/sample.bmp');
+show('webp', __DIR__ . '/sample.webp');
+show('swf', __DIR__ . '/sample.swf');
+show('swc', __DIR__ . '/sample.swc');
+show('wbmp', __DIR__ . '/sample.wbmp');
+show('xbm', __DIR__ . '/sample.xbm');
+show('psd', __DIR__ . '/sample.psd');
+show('iff', __DIR__ . '/sample.iff');
+show('jp2', __DIR__ . '/sample.jp2');
+show('jpc', __DIR__ . '/sample.jpc');
+show('avif', __DIR__ . '/sample.avif');
+show('heif', __DIR__ . '/sample.heic');
+$size = getimagesizefromstring(file_get_contents(__DIR__ . '/sample.gif'));
+echo 'from-string:', $size[0], 'x', $size[1], ':', $size[2], ':', $size['mime'], ':b', $size['bits'], ':c', $size['channels'], "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "gif:2x1:1:image/gif:b1:c3\n",
+            "png:4x1:3:image/png:b4\n",
+            "bmp:2x3:6:image/bmp:b24\n",
+            "webp:4x3:18:image/webp:b8\n",
+            "swf:200x100:4:application/x-shockwave-flash\n",
+            "swc:550x400:13:application/x-shockwave-flash\n",
+            "wbmp:75x50:15:image/vnd.wap.wbmp\n",
+            "xbm:75x50:16:image/xbm\n",
+            "psd:4x1:5:image/psd\n",
+            "iff:4x1:14:image/iff:b4\n",
+            "jp2:1x1:10:image/jp2:b8:c3\n",
+            "jpc:1x1:9:application/octet-stream:b8:c3\n",
+            "avif:8x8:19:image/avif:b8:c3\n",
+            "heif:54x84:20:image/heif:b8:c3\n",
+            "from-string:2x1:1:image/gif:b1:c3\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_getimagesize_from_bytes"));
+}
+
+#[test]
 fn compile_php_fd_bad_syntax_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-php-fd-bad-syntax");
     fs::create_dir_all(&root).unwrap();
