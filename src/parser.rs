@@ -24263,6 +24263,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_select"
             | "stream_set_blocking"
             | "stream_set_chunk_size"
+            | "stream_set_timeout"
+            | "stream_set_write_buffer"
             | "stream_socket_client"
             | "stream_socket_get_name"
             | "stream_socket_pair"
