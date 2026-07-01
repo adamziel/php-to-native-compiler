@@ -3474,6 +3474,255 @@ var_dump($fiber->isTerminated());
 }
 
 #[test]
+fn compile_fiber_debug_backtrace_includes_start_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-debug-backtrace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-debug-backtrace.php");
+    let output = root.join("fiber-debug-backtrace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function inner_function() {
+    debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+}
+$fiber = new Fiber(function () {
+    inner_function();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let path = input.to_string_lossy();
+    assert!(
+        stdout.contains(&format!("#0 {path}(6): inner_function()")),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("#1 [internal function]: {{closure:{path}:5}}()")),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("#2 {path}(8): Fiber->start()")),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_resume_running_trace_includes_start_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-resume-running-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-resume-running-trace.php");
+    let output = root.join("fiber-resume-running-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function () use (&$fiber) {
+    $fiber->resume();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    let path = input.to_string_lossy();
+    assert!(
+        combined.contains(
+            "Fatal error: Uncaught FiberError: Cannot resume a fiber that is not suspended"
+        ),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(&format!("#0 {path}(3): Fiber->resume()")),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(&format!("#1 [internal function]: {{closure:{path}:2}}()")),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(&format!("#2 {path}(5): Fiber->start()")),
+        "{combined}"
+    );
+}
+
+#[test]
+fn compile_fiber_throw_non_running_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-throw-non-running");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-throw-non-running.php");
+    let output = root.join("fiber-throw-non-running-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function () {});
+$fiber->throw(new Exception());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_fiber_throw"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    let path = input.to_string_lossy();
+    assert!(
+        combined.contains(
+            "Fatal error: Uncaught FiberError: Cannot resume a fiber that is not suspended"
+        ),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(&format!("#0 {path}(3): Fiber->throw(Object(Exception))")),
+        "{combined}"
+    );
+}
+
+#[test]
+fn compile_fiber_throw_resumes_suspended_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-throw-suspended");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-throw-suspended.php");
+    let output = root.join("fiber-throw-suspended-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function () {
+    try {
+        Fiber::suspend("pause");
+    } catch (Exception $e) {
+        echo "caught:", $e->getMessage(), "\n";
+        return "done";
+    }
+});
+var_dump($fiber->start());
+var_dump($fiber->throw(new Exception("boom")));
+var_dump($fiber->getReturn());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"pause\"\n",
+            "caught:boom\n",
+            "NULL\n",
+            "string(4) \"done\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_gc_collect_inside_shutdown_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-gc-in-shutdown-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-gc-in-shutdown-destructor.php");
+    let output = root.join("fiber-gc-in-shutdown-destructor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public function __destruct() {
+        echo "A::__destruct\n";
+        new B();
+    }
+}
+class B {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        echo "B::__destruct\n";
+        $fiber = new Fiber(function () {
+            echo "collect\n";
+            gc_collect_cycles();
+            echo "done\n";
+        });
+        $fiber->start();
+    }
+}
+register_shutdown_function(function () {
+    echo "Shutdown\n";
+});
+new A();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "A::__destruct\n",
+            "Shutdown\n",
+            "B::__destruct\n",
+            "collect\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-return-gc");
     fs::create_dir_all(&root).unwrap();
