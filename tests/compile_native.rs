@@ -34400,6 +34400,30 @@ var_dump(preg_last_error_msg());\n",
 fn compile_preg_match_all_named_and_split_to_native_binary() {
     let root = temp_dir("ptn-native-preg-match-all-named-and-split");
     fs::create_dir_all(&root).unwrap();
+    let lightweight_input = root.join("preg-match-all-direct-helper-slice.php");
+    let lightweight_output = root.join("preg-match-all-direct-helper-slice-bin");
+    fs::write(
+        &lightweight_input,
+        "<?php\n\
+preg_match_all('/(\\\\w+)/', 'abc def', $words);\n\
+echo $words[1][1], \"\\n\";\n\
+$parts = preg_split('/,/', 'a,b');\n\
+echo $parts[1], \"\\n\";\n",
+    )
+    .unwrap();
+
+    let lightweight = compile_file(
+        &lightweight_input,
+        &lightweight_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let c_source = fs::read_to_string(lightweight.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_preg_match_all"));
+    assert!(c_source.contains("ptn_internal_preg_split"));
+    assert!(c_source.contains("ptn_preg_compile_pcre2"));
+    assert!(!c_source.contains("static PtnValue ptn_internal_function_exists"));
+
     let input = root.join("preg-match-all-named-and-split.php");
     let output = root.join("preg-match-all-named-and-split-bin");
     fs::write(
@@ -34418,7 +34442,7 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -34464,6 +34488,37 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
             "}\n",
             "preg_match_all(): Argument #4 ($flags) must be a PREG_* constant\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_preg_zero_width_and_recursion_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-zero-width-recursion-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-zero-width-recursion-limit.php");
+    let output = root.join("preg-zero-width-recursion-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(preg_match_all('/\\\\b/', \"a'\", $m, PREG_OFFSET_CAPTURE));\n\
+var_dump($m[0][1][1]);\n\
+$parts = preg_split('/\\\\b/', \"a'\", -1, PREG_SPLIT_OFFSET_CAPTURE);\n\
+var_dump($parts[2][1]);\n\
+ini_set('pcre.recursion_limit', '1');\n\
+var_dump(preg_last_error_msg() === 'No error');\n\
+preg_split('/(\\\\d*)/', 'ab2c3u');\n\
+var_dump(preg_last_error_msg() === 'Recursion limit exhausted');\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(1)\nint(1)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

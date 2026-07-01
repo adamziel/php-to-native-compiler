@@ -1,0 +1,12 @@
+ext/pcre/tests/pcre_anchored.phpt
+ext/pcre/tests/bug77827.phpt
+ext/pcre/tests/001.phpt
+ext/pcre/tests/ungreedy.phpt
+ext/pcre/tests/preg_match_error4.phpt
+ext/pcre/tests/null_bytes.phpt
+ext/pcre/tests/preg_match_basic_edit.phpt
+ext/pcre/tests/bug47662.phpt
+ext/pcre/tests/bug67238.phpt
+ext/pcre/tests/bug74183.phpt
+ext/pcre/tests/check_jit_enabled.phpt
+ext/pcre/tests/bug75457.phpt
