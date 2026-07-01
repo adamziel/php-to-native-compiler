@@ -25203,6 +25203,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PREG_BAD_UTF8_ERROR"
             | "PREG_BAD_UTF8_OFFSET_ERROR"
             | "PREG_JIT_STACKLIMIT_ERROR"
+            | "PCRE_JIT_SUPPORT"
             | "PCRE_VERSION"
             | "PCRE_VERSION_MAJOR"
             | "PCRE_VERSION_MINOR"

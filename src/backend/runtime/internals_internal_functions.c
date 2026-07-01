@@ -49221,8 +49221,9 @@ static int ptn_preg_compile_pcre2(
         ptn_preg_captures_free(captures, logical_capture_count);
         ptn_abort_out_of_memory();
     }
+    unsigned long recursion_limit = ptn_preg_runtime_recursion_limit(runtime);
     (void)api->set_match_limit(match_context, ptn_preg_runtime_backtrack_limit(runtime));
-    (void)api->set_depth_limit(match_context, ptn_preg_runtime_recursion_limit(runtime));
+    (void)api->set_depth_limit(match_context, recursion_limit);
 
     void *match_data = api->match_data_create_from_pattern(code, NULL);
     if (match_data == NULL) {
@@ -49232,10 +49233,12 @@ static int ptn_preg_compile_pcre2(
         ptn_abort_out_of_memory();
     }
 
+    int recursion_limited_split =
+        strcmp(function_name, "preg_split") == 0 && ptn_preg_runtime_uses_custom_recursion_limit(runtime);
     int jit_enabled = 0;
     if (
         ptn_preg_runtime_jit_enabled(runtime) &&
-        !ptn_preg_runtime_uses_custom_recursion_limit(runtime) &&
+        !recursion_limited_split &&
         api->jit_compile != NULL
     ) {
         jit_enabled = api->jit_compile(code, PTN_PCRE2_JIT_COMPLETE) == 0;
@@ -49673,13 +49676,7 @@ static int ptn_preg_utf8_offset_is_boundary(const char *subject, size_t subject_
         !ptn_preg_utf8_is_continuation((unsigned char)subject[offset]);
 }
 
-#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static int ptn_preg_ascii_word_byte(unsigned char byte);
-#else
-static int ptn_preg_ascii_word_byte(unsigned char byte) {
-    return isalnum(byte) || byte == '_';
-}
-#endif
 
 static int ptn_preg_utf8_decode_codepoint_at(
     const char *subject,
@@ -49846,9 +49843,18 @@ static int ptn_preg_match_word_boundary(
             );
         }
         if (left_word != right_word) {
+            if ((match_options & PTN_PCRE2_ANCHORED) != 0 && offset != start_offset) {
+                break;
+            }
             if ((match_options & PTN_PCRE2_NOTEMPTY_ATSTART) != 0 && offset == start_offset) {
-                ptn_preg_set_last_error(runtime, PTN_PREG_NO_ERROR);
-                return 0;
+                if ((match_options & PTN_PCRE2_ANCHORED) != 0) {
+                    break;
+                }
+                if (offset >= subject.len) {
+                    break;
+                }
+                offset = next_offset > offset ? next_offset : offset + 1;
+                continue;
             }
             match[0].matched = 1;
             match[0].start = offset;
@@ -50941,6 +50947,7 @@ static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static int ptn_preg_value_is_array_or_stringish(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -51016,6 +51023,7 @@ static int ptn_preg_replace_arguments_are_valid(
     }
     return 1;
 }
+#endif
 
 static int ptn_preg_quote_needs_escape(unsigned char byte) {
     switch (byte) {
@@ -51086,6 +51094,7 @@ static PtnValue ptn_internal_preg_quote(PtnRuntime *runtime, size_t argc, const 
     return ptn_owned_string_len(output.data, output.len);
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static void ptn_preg_append_capture_replacement(
     PtnStringBuffer *output,
     const char *subject,
@@ -52161,6 +52170,7 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
     }
     return current;
 }
+#endif
 
 /* PTN_PCRE_INTERNAL_HELPERS_END */
 
@@ -119678,6 +119688,10 @@ static void ptn_get_defined_constants_add_string(PtnValue table, const char *nam
     ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_string(value));
 }
 
+static void ptn_get_defined_constants_add_bool(PtnValue table, const char *name, int value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_bool(value));
+}
+
 static int ptn_constant_name_matches_any(
     const char *name,
     const char *const *names,
@@ -119947,6 +119961,7 @@ static void ptn_defined_constants_add_pcre(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_ERROR", PTN_PREG_BAD_UTF8_ERROR);
     ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_OFFSET_ERROR", PTN_PREG_BAD_UTF8_OFFSET_ERROR);
     ptn_get_defined_constants_add_int(table, "PREG_JIT_STACKLIMIT_ERROR", PTN_PREG_JIT_STACKLIMIT_ERROR);
+    ptn_get_defined_constants_add_bool(table, "PCRE_JIT_SUPPORT", ptn_pcre2_jit_support());
 }
 
 static PtnValue ptn_defined_constants_pcre_table(void) {
@@ -120478,6 +120493,7 @@ static int ptn_reflection_constant_is_pcre(const char *name) {
         "PREG_BAD_UTF8_ERROR",
         "PREG_BAD_UTF8_OFFSET_ERROR",
         "PREG_JIT_STACKLIMIT_ERROR",
+        "PCRE_JIT_SUPPORT",
         "PCRE_VERSION",
         "PCRE_VERSION_MAJOR",
         "PCRE_VERSION_MINOR",

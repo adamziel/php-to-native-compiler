@@ -1399,6 +1399,19 @@ static const PtnPcre2VersionInfo *ptn_pcre2_version_info_load(void) {
     return &ptn_pcre2_version_info;
 }
 
+static int ptn_pcre2_jit_support(void) {
+#if defined(_WIN32)
+    return 0;
+#else
+    void *handle = ptn_pcre2_version_open_known_name();
+    if (handle == NULL) {
+        return 0;
+    }
+    return dlsym(handle, "pcre2_jit_compile_8") != NULL &&
+        dlsym(handle, "pcre2_jit_match_8") != NULL;
+#endif
+}
+
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
 #define PTN_BUILTIN_INT_CONSTANT(constant_name, value) \
     if (strcmp(name, constant_name) == 0) { \
@@ -2749,6 +2762,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "PREG_JIT_STACKLIMIT_ERROR") == 0) {
         *out = ptn_int(PTN_PREG_JIT_STACKLIMIT_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PCRE_JIT_SUPPORT") == 0) {
+        *out = ptn_bool(ptn_pcre2_jit_support());
         return 1;
     }
     if (strcmp(name, "PCRE_VERSION") == 0) {
