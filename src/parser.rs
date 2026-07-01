@@ -3347,6 +3347,8 @@ impl Parser<'_> {
             return Ok((
                 PropertyDecl {
                     name,
+                    declaring_class_name: None,
+                    trait_name: None,
                     visibility,
                     set_visibility,
                     is_final,
@@ -3403,6 +3405,8 @@ impl Parser<'_> {
         Ok((
             PropertyDecl {
                 name,
+                declaring_class_name: None,
+                trait_name: None,
                 visibility,
                 set_visibility,
                 is_final,
@@ -13909,6 +13913,8 @@ fn promoted_properties_from_constructor(
             let promoted = parameter.promoted_property.as_ref()?;
             Some(PropertyDecl {
                 name: parameter.name.clone(),
+                declaring_class_name: None,
+                trait_name: None,
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
                 is_final: promoted.is_final,
@@ -14490,7 +14496,14 @@ fn import_trait_members_into_trait(
                 target.span,
             )?;
         } else {
-            target.properties.push(property.clone());
+            let mut imported = property.clone();
+            imported
+                .declaring_class_name
+                .get_or_insert_with(|| source.name.clone());
+            imported
+                .trait_name
+                .get_or_insert_with(|| source.name.clone());
+            target.properties.push(imported);
         }
     }
     for property in &source.static_properties {
@@ -14746,6 +14759,12 @@ fn import_trait_members_into_class(
             )?;
         } else {
             let mut imported = property.clone();
+            imported
+                .declaring_class_name
+                .get_or_insert_with(|| trait_decl.name.clone());
+            imported
+                .trait_name
+                .get_or_insert_with(|| trait_decl.name.clone());
             substitute_trait_relative_property_type_hint(
                 &mut imported.type_hint,
                 &trait_decl.name,

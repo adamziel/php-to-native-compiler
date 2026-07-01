@@ -115,6 +115,8 @@ pub struct TraitPrecedenceAdaptation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDecl {
     pub name: String,
+    pub declaring_class_name: Option<String>,
+    pub trait_name: Option<String>,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_final: bool,

@@ -183,6 +183,8 @@ pub struct TraitMethodDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDecl {
     pub name: String,
+    pub declaring_class_name: String,
+    pub trait_name: Option<String>,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_final: bool,
@@ -2037,6 +2039,11 @@ impl<'a> LoweringContext<'a> {
                 .iter()
                 .map(|property| PropertyDecl {
                     name: property.name.clone(),
+                    declaring_class_name: property
+                        .declaring_class_name
+                        .clone()
+                        .unwrap_or_else(|| class.name.clone()),
+                    trait_name: property.trait_name.clone(),
                     visibility: lower_property_visibility(property.visibility),
                     set_visibility: lower_property_visibility(property.set_visibility),
                     is_final: property.is_final,
@@ -2912,6 +2919,14 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|property| PropertyDecl {
                 name: property.name.clone(),
+                declaring_class_name: property
+                    .declaring_class_name
+                    .clone()
+                    .unwrap_or_else(|| trait_decl.name.clone()),
+                trait_name: property
+                    .trait_name
+                    .clone()
+                    .or_else(|| Some(trait_decl.name.clone())),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,

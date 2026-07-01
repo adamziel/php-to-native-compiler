@@ -1706,6 +1706,10 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\ntrait hook conflict\n--FILE--\n<?php\ntrait T { public $prop { get {} } } class C { use T; public $prop { set {} } }\n--EXPECTF--\n",
         ),
         (
+            "Zend/tests/property_hooks/traits.phpt",
+            "--TEST--\nhooked property in trait\n--FILE--\n<?php\ntrait T { public $prop { get { echo __METHOD__; } set { echo __METHOD__; } } } class C { use T; }\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/final.phpt",
             "--TEST--\nfinal hook override\n--FILE--\n<?php\nclass A { public $prop { final get { return 42; } } } class B extends A { public $prop { get { return 24; } } }\n--EXPECTF--\n",
         ),
@@ -1832,6 +1836,10 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
         (
             "Zend/tests/property_hooks/object_in_hook.phpt",
             "--TEST--\nobject in hook\n--FILE--\n<?php\nclass Box { public $other; public $prop { get { $this->other = new stdClass; return 1; } } }\nvar_dump((new Box())->prop);\n--EXPECT--\nint(1)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parameter_attributes.phpt",
+            "--TEST--\nhook parameter attributes\n--FILE--\n<?php\nclass C { public $prop { set(#[SensitiveParameter] $value) { throw new Exception('Exception from $prop'); } } }\n--EXPECTF--\n",
         ),
         (
             "Zend/tests/property_hooks/unset.phpt",

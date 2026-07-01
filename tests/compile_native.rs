@@ -10645,6 +10645,96 @@ string(1) \"i\"\n"
 }
 
 #[test]
+fn compile_property_hook_sensitive_set_parameter_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-sensitive-set-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-sensitive-set-trace.php");
+    let output = root.join("property-hook-sensitive-set-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public $prop {
+        set(#[SensitiveParameter] $value) {
+            throw new Exception('Exception from $prop');
+        }
+    }
+}
+
+$c = new C();
+try {
+    $c->prop = 'secret';
+} catch (Exception $e) {
+    echo $e;
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Exception: Exception from $prop in "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("C->$prop::set(Object(SensitiveParameterValue))"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("secret"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_hook_set_sensitive_parameters"));
+    assert!(c_source.contains("ptn_runtime_set_call_frame(&runtime, 1, ptn_hook_set_args"));
+}
+
+#[test]
+fn compile_trait_property_hook_magic_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-property-hook-magic-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-property-hook-magic-constants.php");
+    let output = root.join("trait-property-hook-magic-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+trait T {
+    public $prop {
+        get {
+            echo __METHOD__, '|', __TRAIT__, \"\\n\";
+        }
+        set {
+            echo __METHOD__, '|', __TRAIT__, \"\\n\";
+        }
+    }
+}
+
+class C {
+    use T;
+}
+
+$c = new C();
+$c->prop;
+$c->prop = 1;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "T::$prop::get|T\nT::$prop::set|T\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_constructor_promoted_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-constructor-promoted-reference-property");
     fs::create_dir_all(&root).unwrap();

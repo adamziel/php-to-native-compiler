@@ -17821,7 +17821,7 @@ fn emit_property_hook_get_helper(
             out.push_str("        PtnRuntime runtime;\n");
             out.push_str("        ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
             let hook_name = property_hook_method_name(&property.name, "get");
-            let display_name = format!("{}::{hook_name}", class.name);
+            let display_name = format!("{}::{hook_name}", property.declaring_class_name);
             out.push_str("        runtime.current_function_name = \"");
             out.push_str(&c_string(&display_name));
             out.push_str("\";\n");
@@ -17859,7 +17859,7 @@ fn emit_property_hook_get_helper(
                 Some(hook_name.as_str()),
                 Some(display_name.as_str()),
                 Some(class.name.as_str()),
-                None,
+                property.trait_name.as_deref(),
                 property.hook_get_returns_by_ref,
                 hook_body_is_generator,
                 property.hook_get_body.is_some() && !hook_body_is_generator,
@@ -18120,7 +18120,7 @@ fn emit_property_hook_set_helper(
             out.push_str("        PtnRuntime runtime;\n");
             out.push_str("        ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
             let hook_name = property_hook_method_name(&property.name, "set");
-            let display_name = format!("{}::{hook_name}", class.name);
+            let display_name = format!("{}::{hook_name}", property.declaring_class_name);
             out.push_str("        runtime.current_function_name = \"");
             out.push_str(&c_string(&display_name));
             out.push_str("\";\n");
@@ -18142,7 +18142,40 @@ fn emit_property_hook_set_helper(
                     .unwrap_or("value"),
             ));
             out.push_str("\", value);\n");
-            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+            let hook_set_parameter_name = property
+                .hook_set_parameter_name
+                .as_deref()
+                .unwrap_or("value");
+            let hook_set_parameter_names = format!("ptn_hook_set_parameter_names_{branch_index}");
+            let hook_set_sensitive_parameters =
+                format!("ptn_hook_set_sensitive_parameters_{branch_index}");
+            out.push_str("        PtnValue ptn_hook_set_args[] = { value };\n");
+            out.push_str("        static const char *");
+            out.push_str(&hook_set_parameter_names);
+            out.push_str("[] = { \"");
+            out.push_str(&c_string(hook_set_parameter_name));
+            out.push_str("\" };\n");
+            if attribute_metadata_has_builtin_attribute(
+                &property.hook_set_parameter_attributes,
+                "SensitiveParameter",
+            ) {
+                out.push_str("        static const unsigned char ");
+                out.push_str(&hook_set_sensitive_parameters);
+                out.push_str("[] = { 1 };\n");
+                out.push_str(
+                    "        ptn_runtime_set_call_frame(&runtime, 1, ptn_hook_set_args, NULL, 1, ",
+                );
+                out.push_str(&hook_set_parameter_names);
+                out.push_str(", 1, ");
+                out.push_str(&hook_set_sensitive_parameters);
+                out.push_str(", ((size_t)-1));\n");
+            } else {
+                out.push_str(
+                    "        ptn_runtime_set_call_frame(&runtime, 1, ptn_hook_set_args, NULL, 1, ",
+                );
+                out.push_str(&hook_set_parameter_names);
+                out.push_str(", 1, NULL, ((size_t)-1));\n");
+            }
             out.push_str("        runtime.active_property_hook_class = \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\";\n");
@@ -18162,7 +18195,7 @@ fn emit_property_hook_set_helper(
                 Some(hook_name.as_str()),
                 Some(display_name.as_str()),
                 Some(class.name.as_str()),
-                None,
+                property.trait_name.as_deref(),
                 false,
                 false,
                 false,

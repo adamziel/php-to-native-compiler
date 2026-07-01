@@ -173,6 +173,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->property_hook_set = caller_runtime->property_hook_set;
     runtime->active_property_hook_class = NULL;
     runtime->active_property_hook_property = NULL;
+    runtime->active_property_hook_object = NULL;
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->static_property_initializer = caller_runtime->static_property_initializer;
     runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
@@ -1942,6 +1943,52 @@ static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
 
 static const char *ptn_trace_frame_method_separator(const char *function_name);
 
+static PTN_UNUSED int ptn_trace_frame_is_active_property_hook(PtnTraceFrame *frame) {
+    return frame != NULL &&
+        frame->runtime != NULL &&
+        frame->runtime->trace_frame == frame &&
+        frame->runtime->active_property_hook_class != NULL &&
+        frame->runtime->active_property_hook_property != NULL;
+}
+
+static PTN_UNUSED void ptn_trace_frame_set_active_property_hook_method(
+    PtnValue result,
+    PtnTraceFrame *frame,
+    int include_object
+) {
+    const char *function_name = frame->function_name == NULL ? "" : frame->function_name;
+    const char *separator = ptn_trace_frame_method_separator(function_name);
+    const char *method_name =
+        separator != NULL && separator != function_name && separator[2] != '\0'
+            ? separator + 2
+            : function_name;
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("function"),
+        ptn_owned_string(ptn_duplicate_string(method_name))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("class"),
+        ptn_owned_string(ptn_duplicate_string(frame->runtime->active_property_hook_class))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("type"),
+        ptn_string("->")
+    );
+    if (include_object && frame->has_receiver) {
+        PtnValue receiver = ptn_value_deref(frame->receiver);
+        if (receiver.type == PTN_OBJECT) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("object"),
+                ptn_trace_value_snapshot(receiver)
+            );
+        }
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (frame->file != NULL && frame->line != 0) {
@@ -1959,7 +2006,9 @@ static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
             ptn_int((int64_t)frame->line)
         );
     }
-    if (frame->function_name != NULL) {
+    if (ptn_trace_frame_is_active_property_hook(frame)) {
+        ptn_trace_frame_set_active_property_hook_method(result, frame, 0);
+    } else if (frame->function_name != NULL) {
         const char *separator = ptn_trace_frame_method_separator(frame->function_name);
         if (separator != NULL && separator != frame->function_name && separator[2] != '\0') {
             size_t class_len = (size_t)(separator - frame->function_name);
@@ -2020,7 +2069,13 @@ static PTN_UNUSED PtnValue ptn_debug_backtrace_frame_array(PtnTraceFrame *frame,
             ptn_int((int64_t)frame->line)
         );
     }
-    if (frame->function_name != NULL) {
+    if (ptn_trace_frame_is_active_property_hook(frame)) {
+        ptn_trace_frame_set_active_property_hook_method(
+            result,
+            frame,
+            (options & PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT) != 0
+        );
+    } else if (frame->function_name != NULL) {
         const char *separator = ptn_trace_frame_method_separator(frame->function_name);
         if (separator != NULL && separator != frame->function_name && separator[2] != '\0') {
             size_t class_len = (size_t)(separator - frame->function_name);
