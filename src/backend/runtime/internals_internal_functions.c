@@ -209061,7 +209061,9 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     }
     const PtnObjectPropertyMetadata *display_metadata =
         ptn_object_metadata_for_display_name(object, entry->key.as.string);
-    if (display_metadata != NULL) {
+    if (display_metadata != NULL &&
+        (display_metadata->read_visibility != PTN_PROPERTY_PRIVATE ||
+            ptn_ascii_case_equal(display_metadata->declaring_class, object->class_name))) {
         return 0;
     }
     return 1;
@@ -216588,7 +216590,7 @@ static PtnValue ptn_reflection_parameter_declaring_function(
                 data->metadata,
                 data->closure_function_index,
                 data->closure_scope_class_name,
-                1
+                0
             );
         }
         return ptn_reflection_method_object_from_name(
