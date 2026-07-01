@@ -2218,11 +2218,9 @@ fn emit_include_runtime_helpers(out: &mut String) {
     );
     out.push_str("    const char *display_path = path != NULL ? path : \"\";\n");
     out.push_str("    const char *include_path = runtime != NULL && runtime->include_path != NULL ? runtime->include_path : \".\";\n");
-    out.push_str("    int wrapper_path = strstr(display_path, \"://\") != NULL;\n");
     out.push_str("    int needed = 0;\n");
     out.push_str("    char *message = NULL;\n");
     out.push_str("    int written = 0;\n");
-    out.push_str("    if (!wrapper_path) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
@@ -2240,7 +2238,6 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    free(message);\n");
     out.push_str("    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("        return ptn_null();\n");
-    out.push_str("    }\n");
     out.push_str("    }\n");
     out.push_str("    if (required) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Failed opening required '%s' (include_path='%s')\", display_path, include_path);\n");
@@ -5134,7 +5131,7 @@ fn emit_declared_class_new_instance_without_constructor(
         out.push_str("    (void)line;\n");
     }
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
-    out.push_str("        return ptn_object_new_shell(caller_runtime, \"stdClass\");\n");
+    out.push_str("        return ptn_object_new_shell_at(caller_runtime, \"stdClass\", line);\n");
     out.push_str("    }\n");
     for declared_class in classes {
         if declared_class.is_enum
@@ -5155,9 +5152,11 @@ fn emit_declared_class_new_instance_without_constructor(
             if parent_class_name.eq_ignore_ascii_case("ArrayIterator")
                 || parent_class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
             {
-                out.push_str("        PtnValue result = ptn_object_new_shell(caller_runtime, \"");
+                out.push_str(
+                    "        PtnValue result = ptn_object_new_shell_at(caller_runtime, \"",
+                );
                 out.push_str(&c_string(&declared_class.name));
-                out.push_str("\");\n");
+                out.push_str("\", line);\n");
                 out.push_str("        PtnValue parent = ptn_new_object(caller_runtime, \"");
                 out.push_str(&c_string(parent_class_name));
                 out.push_str("\", 0, NULL, line);\n");
@@ -5172,9 +5171,9 @@ fn emit_declared_class_new_instance_without_constructor(
                 continue;
             }
         }
-        out.push_str("        return ptn_object_new_shell(caller_runtime, \"");
+        out.push_str("        return ptn_object_new_shell_at(caller_runtime, \"");
         out.push_str(&c_string(&declared_class.name));
-        out.push_str("\");\n");
+        out.push_str("\", line);\n");
         out.push_str("    }\n");
     }
     out.push_str("    PtnRuntime runtime;\n");
@@ -5272,7 +5271,7 @@ fn emit_declared_class_new_instance_without_constructor(
         out.push_str("    (void)line;\n");
     }
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
-    out.push_str("        return ptn_object_new_shell(runtime, \"stdClass\");\n");
+    out.push_str("        return ptn_object_new_shell_at(runtime, \"stdClass\", line);\n");
     out.push_str("    }\n");
     for declared_class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -30978,7 +30977,7 @@ fn emit_instruction(
             line,
         } => {
             let (class_value_temp, class_name_temp) =
-                values.emit_dynamic_class_name_cstr(out, receiver, *line);
+                values.emit_dynamic_class_name_cstr(out, receiver, *line, false);
             let path = emit_array_unset_path_segments(out, values, dimensions);
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
@@ -45590,7 +45589,7 @@ impl ValueEmitter {
         value_temp: &str,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -45667,7 +45666,7 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -45745,7 +45744,7 @@ impl ValueEmitter {
         value_temp: &str,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -45840,7 +45839,7 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -46361,7 +46360,7 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -53702,7 +53701,7 @@ impl ValueEmitter {
             }
         } else if let Some(receiver) = receiver {
             let (class_value_temp, class_name_temp) =
-                self.emit_dynamic_class_name_cstr(out, receiver, line);
+                self.emit_dynamic_class_name_cstr(out, receiver, line, self.in_const_declaration);
             out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
             let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
             out.push_str("        if (");
@@ -53927,12 +53926,17 @@ impl ValueEmitter {
         out: &mut String,
         receiver: &ValueExpr,
         line: usize,
+        fatal_on_invalid_receiver: bool,
     ) -> (String, String) {
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let class_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&class_value_temp);
-        out.push_str(" = ptn_runtime_fetch_dynamic_static_member_class_name(&runtime, ");
+        out.push_str(if fatal_on_invalid_receiver {
+            " = ptn_runtime_fetch_dynamic_static_member_class_name_or_fatal(&runtime, "
+        } else {
+            " = ptn_runtime_fetch_dynamic_static_member_class_name(&runtime, "
+        });
         out.push_str(&receiver_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
@@ -54014,7 +54018,7 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &receiver_temp);
         } else {
             let (class_value_temp, class_name_temp) =
-                self.emit_dynamic_class_name_cstr(out, receiver, line);
+                self.emit_dynamic_class_name_cstr(out, receiver, line, false);
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
@@ -55328,7 +55332,7 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let (class_value_temp, class_name_temp) =
-            self.emit_dynamic_class_name_cstr(out, receiver, line);
+            self.emit_dynamic_class_name_cstr(out, receiver, line, false);
         let lookup_temp = self.next_temp();
         out.push_str("    PtnLookupResult ");
         out.push_str(&lookup_temp);

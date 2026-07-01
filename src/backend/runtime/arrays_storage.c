@@ -1400,11 +1400,12 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     object->destructor_called = 1;
     const char *previous_scope = root->current_class_name;
     int previous_shutdown_phase = root->destructor_shutdown_phase;
+    int effective_shutdown_phase = during_shutdown || previous_shutdown_phase;
     int previous_suppress_user_call_frame_location =
         root->suppress_user_call_frame_location;
     root->current_class_name = root->destructor_access_scope;
-    root->destructor_shutdown_phase = during_shutdown;
-    if (during_shutdown) {
+    root->destructor_shutdown_phase = effective_shutdown_phase;
+    if (effective_shutdown_phase) {
         root->suppress_user_call_frame_location = 1;
     }
     PtnException *saved_active_exception = root->exceptions == NULL
@@ -1429,10 +1430,12 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
             ptn_try_frame_pop(root, &destructor_frame);
             if (saved_active_exception != NULL) {
                 if (root->exceptions->active_exception != NULL) {
-                    ptn_exception_chain_previous_if_missing(
-                        root->exceptions->active_exception,
-                        saved_active_exception
-                    );
+                    if (!effective_shutdown_phase) {
+                        ptn_exception_chain_previous_if_missing(
+                            root->exceptions->active_exception,
+                            saved_active_exception
+                        );
+                    }
                     ptn_exception_free(saved_active_exception);
                 } else {
                     root->exceptions->active_exception = saved_active_exception;
@@ -1458,10 +1461,12 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         if (root->exceptions->active_exception == NULL) {
             root->exceptions->active_exception = saved_active_exception;
         } else {
-            ptn_exception_chain_previous_if_missing(
-                root->exceptions->active_exception,
-                saved_active_exception
-            );
+            if (!effective_shutdown_phase) {
+                ptn_exception_chain_previous_if_missing(
+                    root->exceptions->active_exception,
+                    saved_active_exception
+                );
+            }
             ptn_exception_free(saved_active_exception);
         }
     }
@@ -2019,7 +2024,78 @@ static PTN_UNUSED void ptn_runtime_run_static_property_destructors(PtnRuntime *r
     }
 }
 
-static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char *class_name) {
+static PTN_UNUSED void ptn_emit_object_memory_limit_fatal_error(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t line
+) {
+    fflush(stdout);
+    if (runtime != NULL && runtime->diagnostics.display_errors) {
+        FILE *stream = runtime->diagnostics.stream == NULL
+            ? stderr
+            : runtime->diagnostics.stream;
+        const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+        size_t display_line = line == 0 ? runtime->call_site_line : line;
+        fprintf(
+            stream,
+            "\nFatal error: %s in %s on line %zu\nStack trace:\n",
+            message,
+            path,
+            display_line
+        );
+        PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, NULL);
+        fwrite(trace.data, 1, trace.len, stream);
+        free(trace.owned);
+        fputc('\n', stream);
+    }
+    exit(255);
+}
+
+static PTN_UNUSED void ptn_object_enforce_memory_limit_for_allocation(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    size_t limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &limit) || limit == 0) {
+        return;
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    size_t live_objects = root == NULL ? 0 : root->live_objects_len;
+    const size_t baseline_usage = 1024 * 1024;
+    const size_t estimated_object_bytes = 8192;
+    if (live_objects >= (SIZE_MAX - baseline_usage) / estimated_object_bytes) {
+        ptn_emit_memory_allocation_overflow_error(runtime, live_objects, estimated_object_bytes, baseline_usage, line);
+        return;
+    }
+    size_t projected_usage = baseline_usage + (live_objects + 1) * estimated_object_bytes;
+    if (projected_usage <= limit) {
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        limit,
+        estimated_object_bytes
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_object_memory_limit_fatal_error(runtime, message, line);
+}
+
+static PTN_UNUSED PtnValue ptn_object_new_shell_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    ptn_object_enforce_memory_limit_for_allocation(runtime, line);
     PtnObject *object = malloc(sizeof(PtnObject));
     if (object == NULL) {
         ptn_abort_out_of_memory();
@@ -2059,6 +2135,14 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     ptn_runtime_register_object(root, object);
     ptn_runtime_register_array(root, object->properties);
     return ptn_object(object);
+}
+
+static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char *class_name) {
+    return ptn_object_new_shell_at(
+        runtime,
+        class_name,
+        runtime == NULL ? 0 : runtime->call_site_line
+    );
 }
 
 static PTN_UNUSED int ptn_lazy_object_is_uninitialized(PtnValue value) {
