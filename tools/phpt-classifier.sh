@@ -1530,6 +1530,12 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_generator_by_reference_yield_from_diagnostic_row() {
             return ptn_path ~ /Zend\/tests\/generators\/yield_from_by_reference[.]phpt$/
         }
+        function ptn_has_direct_assignment_yield(line) {
+            return line ~ /(^|[^=!<>])[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*yield([^[:alnum:]_]|$)/
+        }
+        function ptn_has_generator_resume_call(line) {
+            return line ~ /->[[:space:]]*(send|next|throw)[[:space:]]*\(/
+        }
         function ptn_supported_fiber_surface_line(line) {
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+fiber([^[:alnum:]_]|$)/) {
                 return line !~ /(^|[^[:alnum:]_$])function[[:space:]]*&/
@@ -1625,6 +1631,17 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/ &&
                 !ptn_supported_fiber_surface_line(line)) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                found = 1
+                exit
+            }
+            if (ptn_has_direct_assignment_yield(line)) {
+                ptn_generator_assignment_yield_context = 1
+            }
+            if (ptn_has_generator_resume_call(line)) {
+                ptn_generator_resume_call_context = 1
+            }
+            if (ptn_generator_assignment_yield_context && ptn_generator_resume_call_context) {
+                print "unsupported-generator-runtime\trequires Generator::send/next/throw continuation for yielded assignment expressions, outside PTN collected generator runtime"
                 found = 1
                 exit
             }
