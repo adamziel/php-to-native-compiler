@@ -53338,7 +53338,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zend_test,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache,session,simplexml\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

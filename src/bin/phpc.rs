@@ -104,6 +104,7 @@ fn print_modules() {
         "xmlreader",
         "xmlwriter",
         "zip",
+        "zend_test",
         "zlib",
     ] {
         println!("{module}");

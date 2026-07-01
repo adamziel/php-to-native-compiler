@@ -25,16 +25,39 @@ fn classify_at_relative_path_with_harness_programs(body: &str, relative_path: &s
     classify_at_relative_path_with_options(body, relative_path, true)
 }
 
+fn classify_at_relative_path_with_files(
+    body: &str,
+    relative_path: &str,
+    extra_files: &[(&str, &str)],
+) -> String {
+    classify_at_relative_path_with_options_and_files(body, relative_path, false, extra_files)
+}
+
 fn classify_at_relative_path_with_options(
     body: &str,
     relative_path: &str,
     harness_programs: bool,
+) -> String {
+    classify_at_relative_path_with_options_and_files(body, relative_path, harness_programs, &[])
+}
+
+fn classify_at_relative_path_with_options_and_files(
+    body: &str,
+    relative_path: &str,
+    harness_programs: bool,
+    extra_files: &[(&str, &str)],
 ) -> String {
     let root = temp_dir("ptn-phpt-classifier-path");
     let phpt = root.join(relative_path);
     fs::create_dir_all(phpt.parent().expect("relative path should have parent"))
         .expect("create PHPT parent");
     fs::write(&phpt, body).expect("write PHPT");
+    for (extra_path, contents) in extra_files {
+        let path = root.join(extra_path);
+        fs::create_dir_all(path.parent().expect("extra path should have parent"))
+            .expect("create extra file parent");
+        fs::write(path, contents).expect("write extra file");
+    }
 
     let mut command = Command::new("bash");
     if harness_programs {
@@ -177,6 +200,53 @@ fn phpt_classifier_file_section_helpers_survive_pipefail() {
     let classification = classify_with_pipefail(&phpt);
     assert!(
         classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_supports_plain_zend_test_extension_rows() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nzend_test extension probe\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nvar_dump(extension_loaded('zend_test'));\n--EXPECT--\nbool(true)\n",
+        "ext/zend_test/tests/plain_extension_probe.phpt",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_zend_test_native_helper_rows() {
+    let classification = classify_at_relative_path(
+        "--TEST--\ncompile to ast\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nzend_test_compile_to_ast('<?php echo 1;');\n--EXPECT--\n",
+        "ext/zend_test/tests/compile_to_ast/basic_ast.phpt",
+    );
+
+    assert!(
+        classification.starts_with("unsupported-zend-test-helper\t"),
+        "{classification:?}"
+    );
+    assert!(
+        classification.contains("zend_test native helper API"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_zend_test_required_include_helper_rows() {
+    let classification = classify_at_relative_path_with_files(
+        "--TEST--\ncurrent function helper\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nrequire 'get_function_or_method_name_01.inc';\n--EXPECT--\n",
+        "ext/zend_test/tests/get_function_or_method_name_01.phpt",
+        &[(
+            "ext/zend_test/tests/get_function_or_method_name_01.inc",
+            "<?php\nreturn zend_get_current_func_name();\n",
+        )],
+    );
+
+    assert!(
+        classification.starts_with("unsupported-zend-test-helper\t"),
         "{classification:?}"
     );
 }
