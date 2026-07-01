@@ -34909,6 +34909,41 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
 }
 
 #[test]
+fn compile_preg_match_all_by_ref_error_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-match-all-by-ref-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-match-all-by-ref-error.php");
+    let output = root.join("preg-match-all-by-ref-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { var_dump(preg_match_all('/[a-z]/', 'string', 'test')); }\n\
+catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(c_source.contains("ptn_internal_preg_match_all"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "preg_match_all(): Argument #3 ($matches) could not be passed by reference\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_uses_pcre2_runtime_boundary_to_native_binary() {
     let Some(pcre2_library) = discover_pcre2_library() else {
         eprintln!("skipping PCRE2 runtime-boundary test: libpcre2-8 was not found");
@@ -73748,6 +73783,47 @@ var_dump(next_value());
         "int(1)\nint(2)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_function_static_local_without_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-function-static-local-without-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-static-local-without-dispatch.php");
+    let output = root.join("function-static-local-without-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php
+function s() {
+  static $storage = array(array('x', 'y'));
+  return $storage[0];
+}
+
+foreach (s() as $k => $function) {
+  echo \"op1 $k\\n\";
+  if ($k == 0) {
+    foreach (s() as $k => $function) {
+      echo \"op2 $k\\n\";
+    }
+  }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "op1 0\nop2 0\nop2 1\nop1 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_0_static_variables"));
+    assert!(c_source.contains("ptn_reset_preload_static_locals_from"));
 }
 
 #[test]

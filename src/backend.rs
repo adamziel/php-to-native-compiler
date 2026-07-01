@@ -36484,7 +36484,7 @@ fn collect_call_runtime_requirements(
     {
         requirements.direct_internal_helpers = true;
         if !is_direct_simple_preg_match_call(arguments, requirements) {
-            requirements.pcre_internal_helpers = true;
+            requirements.internal_function_dispatch = true;
         }
         return;
     }
@@ -36494,7 +36494,7 @@ fn collect_call_runtime_requirements(
         && (2..=5).contains(&arguments.len())
     {
         requirements.direct_internal_helpers = true;
-        requirements.pcre_internal_helpers = true;
+        requirements.internal_function_dispatch = true;
         return;
     }
     if !has_named_arguments
@@ -36503,7 +36503,7 @@ fn collect_call_runtime_requirements(
         && (2..=4).contains(&arguments.len())
     {
         requirements.direct_internal_helpers = true;
-        requirements.pcre_internal_helpers = true;
+        requirements.internal_function_dispatch = true;
         return;
     }
     if !has_named_arguments
