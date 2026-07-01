@@ -3301,6 +3301,50 @@ foreach ([$fresh, $finished] as $candidate) {
 }
 
 #[test]
+fn compile_fiber_stack_size_ini_set_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-stack-size-ini-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-stack-size-ini-warning.php");
+    let output = root.join("fiber-stack-size-ini-warning-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(ini_set("fiber.stack_size", "-1"));
+var_dump(ini_set("fiber.stack_size", "131072"));
+var_dump(ini_get("fiber.stack_size"));
+$fiber = new Fiber(function() {});
+$fiber->start();
+echo "DONE\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Warning: fiber.stack_size must be a positive number in {} on line 2\n",
+                "bool(false)\n",
+                "string(1) \"0\"\n",
+                "string(6) \"131072\"\n",
+                "DONE\n",
+            ),
+            input.to_string_lossy()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_get_return_lifecycle_errors_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-get-return-lifecycle-errors");
     fs::create_dir_all(&root).unwrap();
@@ -25926,7 +25970,11 @@ echo number_format(PHP_INT_MIN, -1), \"\\n\";\n\
 echo number_format((float)(PHP_INT_MAX - 1024), -1), \"\\n\";\n\
 echo number_format((float)(PHP_INT_MAX + 1), -1), \"\\n\";\n\
 echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
-echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
+echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n\
+echo number_format(9223372036854775807, 5), \"\\n\";\n\
+echo number_format(9223372036854775807, -1), \"\\n\";\n\
+echo number_format(9223372036854775807, -5), \"\\n\";\n\
+echo number_format(9.223372036854775E+18, -5), \"\\n\";\n",
     )
     .unwrap();
 
@@ -25950,7 +25998,11 @@ clamp(): Argument #2 ($min) must not be NAN\n\
 9,223,372,036,854,774,780\n\
 9,223,372,036,854,775,808\n\
 2T020.14\n\
-2,020F14\n"
+2,020F14\n\
+9,223,372,036,854,775,807.00000\n\
+9,223,372,036,854,775,810\n\
+9,223,372,036,854,800,000\n\
+9,223,372,036,854,800,000\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -35692,6 +35744,140 @@ var_dump(mb_strimwidth('some string', 1, -2, '...', 'ASCII'));\n",
         "{stdout}"
     );
     assert!(stdout.contains("string(8) \"ome s...\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_mbstring_encoding_mail_trim_row_pack_edges() {
+    let root = temp_dir("ptn-phpc-mbstring-encoding-mail-trim-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let startup_input = root.join("mbstring-startup.php");
+    fs::write(&startup_input, "<?php echo \"startup-ok\\n\";\n").unwrap();
+
+    let startup = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("mbstring.detect_order=DETECT_ORDER")
+        .arg("-d")
+        .arg("mbstring.http_input=HTTP_INPUT")
+        .arg("-d")
+        .arg("mbstring.http_output=HTTP_OUTPUT")
+        .arg("-d")
+        .arg("mbstring.internal_encoding=UNKNOWN_ENCODING")
+        .arg("-d")
+        .arg("mbstring.language=UNKNOWN_LANGUAGE")
+        .arg("-f")
+        .arg(&startup_input)
+        .output()
+        .unwrap();
+    assert!(startup.status.success());
+    assert_eq!(
+        String::from_utf8(startup.stdout).unwrap(),
+        concat!(
+            "Warning: PHP Startup: INI setting contains invalid encoding \"DETECT_ORDER\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: INI setting contains invalid encoding \"HTTP_INPUT\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_output is deprecated in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: Unknown encoding \"UNKNOWN_ENCODING\" in ini setting in Unknown on line 0\n",
+            "startup-ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(startup.stderr).unwrap(), "");
+
+    let input = root.join("mbstring-row-pack.php");
+    let mail = root.join("mail.eml");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_exception(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo bin2hex(mb_strtoupper(hex2bin('f09090b8e2b0b0d4a5'), 'UTF-8')), \"\\n\";\n\
+echo mb_convert_case(\"'haddocks'\", MB_CASE_TITLE, 'UTF-8'), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e38080e38182e38184e38186e38188e3818ae38182e3818ae38080'), hex2bin('e38080e38182'), 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e3808061c2a0'))), \"\\n\";\n\
+$hz = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hz)), ']', \"\\n\";\n\
+mb_substitute_character('entity');\n\
+$hzEntity = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hzEntity)), ']', \"\\n\";\n\
+$text = 'abc';\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $text));\n\
+echo $text, \"\\n\";\n\
+$recursive = [1];\n\
+$recursive[] = &$recursive;\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $recursive));\n\
+dump_exception(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+$folded = mb_encode_mimeheader('Subject: Dies ist ein langer Test mit unterschiedlichen Worten und weiteren Worten', 'UTF-8', 'Q');\n\
+echo str_replace(\"\\r\\n\", '<CRLF>', $folded), \"\\n\";\n\
+dump_exception(fn() => mb_send_mail(\"a\\0b\", 'subject', 'test'));\n\
+var_dump(mb_send_mail('bug@example.com', 'subject', 'test', \"MIME-Version: 2.0\"));\n\
+readfile(getenv('MAIL_CAPTURE_PATH'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg(format!("sendmail_path=tee {} >/dev/null", mail.display()))
+        .arg("-f")
+        .arg(&input)
+        .env("MAIL_CAPTURE_PATH", &mail)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("f0909090e2b080d4a4\n"), "{stdout}");
+    assert!(stdout.contains("'Haddocks'\n"), "{stdout}");
+    assert!(
+        stdout.contains("e38184e38186e38188e3818ae38182e3818a\n61\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d3f]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d26, 2378, 3341, 433b]\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"UTF-8\"\nabc\n"), "{stdout}");
+    assert!(
+        stdout.contains("mb_convert_variables(): Cannot convert recursively referenced values"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"), "{stdout}");
+    assert!(stdout.contains("<CRLF>"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("To: bug@example.com\nSubject: subject\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("MIME-Version: 2.0\n"), "{stdout}");
+    assert!(
+        stdout.contains("Content-Type: text/plain; charset=UTF-8\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Content-Transfer-Encoding: BASE64\n\n"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("dGVzdA==\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -52157,6 +52343,185 @@ $_SERVER['test'] => test\n"
 }
 
 #[test]
+fn compile_phpinfo_nested_array_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-phpinfo-nested-array-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phpinfo-nested-array-variables.php");
+    let output = root.join("phpinfo-nested-array-variables-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$_ENV = [];\n\
+$_SERVER = ['foo' => ['bar' => ['baz' => 'qux']]];\n\
+phpinfo(INFO_VARIABLES);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "phpinfo()\n",
+            "\n",
+            "PHP Variables\n",
+            "\n",
+            "Variable => Value\n",
+            "$_SERVER['foo'] => Array\n",
+            "(\n",
+            "    [bar] => Array\n",
+            "        (\n",
+            "            [baz] => qux\n",
+            "        )\n",
+            "\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getimagesize_ico_and_tiff_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-getimagesize-ico-tiff");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getimagesize.php");
+    let output = root.join("getimagesize-bin");
+    fs::write(
+        root.join("sample.ico"),
+        [
+            0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        root.join("sample.tiff"),
+        [
+            0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x02, 0x01, 0x00, 0x00, 0x03,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x01, 0x01, 0x00, 0x03, 0x00, 0x00,
+            0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(getimagesize(__DIR__ . '/sample.ico'));\n\
+var_dump(getimagesize(__DIR__ . '/sample.tiff', $info));\n\
+var_dump($info);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(8) {\n",
+            "  [0]=>\n",
+            "  int(32)\n",
+            "  [1]=>\n",
+            "  int(256)\n",
+            "  [2]=>\n",
+            "  int(17)\n",
+            "  [3]=>\n",
+            "  string(23) \"width=\"32\" height=\"256\"\"\n",
+            "  [\"bits\"]=>\n",
+            "  int(8)\n",
+            "  [\"mime\"]=>\n",
+            "  string(24) \"image/vnd.microsoft.icon\"\n",
+            "  [\"width_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "  [\"height_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "}\n",
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(8)\n",
+            "  [3]=>\n",
+            "  string(20) \"width=\"2\" height=\"2\"\"\n",
+            "  [\"mime\"]=>\n",
+            "  string(10) \"image/tiff\"\n",
+            "  [\"width_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "  [\"height_unit\"]=>\n",
+            "  string(2) \"px\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_iptcembed_and_iptcparse_jpeg_app13_to_native_binary() {
+    let root = temp_dir("ptn-native-iptcembed-iptcparse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iptc.php");
+    let output = root.join("iptc-bin");
+    fs::write(
+        root.join("sample.jpg"),
+        [
+            0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00,
+            0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9,
+        ],
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$iptc = \"\\x1C\\x02\\x69\\x00\\x06Tauren\";\n\
+$content = iptcembed($iptc, __DIR__ . '/sample.jpg', 0);\n\
+var_dump($content === false);\n\
+file_put_contents(__DIR__ . '/with-iptc.jpg', $content);\n\
+$size = getimagesize(__DIR__ . '/with-iptc.jpg', $info);\n\
+var_dump($size[0], $size[1], isset($info['APP0']), isset($info['APP13']));\n\
+var_dump(iptcparse($info['APP13']), iptcparse($iptc));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [\"2#105\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(6) \"Tauren\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"2#105\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(6) \"Tauren\"\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     let root = temp_dir("ptn-native-versioning-registry");
     fs::create_dir_all(&root).unwrap();
@@ -61950,70 +62315,66 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
-fn compile_soap_document_literal_any_wildcard_response_to_native_binary() {
-    let root = temp_dir("ptn-native-soap-document-literal-any-wildcard-response");
+fn compile_soap_wsdl_builtin_scalar_request_uses_xsd_type_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-builtin-scalar-request");
     fs::create_dir_all(&root).unwrap();
-    fs::write(
-        root.join("any-response.wsdl"),
-        r###"<?xml version="1.0" encoding="UTF-8"?>
-<definitions targetNamespace="urn:test.example.org"
-             xmlns="http://schemas.xmlsoap.org/wsdl/"
-             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
-             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-             xmlns:tns="urn:test.example.org"
-             xmlns:ens="urn:object.test.example.org">
-  <types>
-    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:object.test.example.org">
-      <import namespace="urn:test.example.org"/>
-      <complexType name="genericObject">
-        <sequence>
-          <element name="type" type="xsd:string"/>
-          <element name="Id" type="tns:ID" nillable="true"/>
-          <any namespace="##targetNamespace" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
-        </sequence>
-      </complexType>
-    </schema>
-    <schema elementFormDefault="qualified" xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test.example.org">
-      <import namespace="urn:object.test.example.org"/>
-      <simpleType name="ID"><restriction base="xsd:string"/></simpleType>
-      <element name="query"><complexType><sequence><element name="queryString" type="xsd:string"/></sequence></complexType></element>
-      <element name="queryResponse"><complexType><sequence><element name="result" type="tns:QueryResult"/></sequence></complexType></element>
-    </schema>
-  </types>
-  <message name="queryRequest"><part element="tns:query" name="parameters"/></message>
-  <message name="queryResponse"><part element="tns:queryResponse" name="parameters"/></message>
-  <portType name="Soap"><operation name="query"><input message="tns:queryRequest"/><output message="tns:queryResponse"/></operation></portType>
-  <binding name="SoapBinding" type="tns:Soap">
-    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
-    <operation name="query"><soap:operation soapAction=""/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
-  </binding>
-  <service name="TestService"><port binding="tns:SoapBinding" name="Soap"><soap:address location="test://"/></port></service>
-</definitions>
-"###,
-    )
-    .unwrap();
-    let input = root.join("soap-document-literal-any-wildcard-response.php");
-    let output = root.join("soap-document-literal-any-wildcard-response-bin");
+    let input = root.join("soap-wsdl-builtin-scalar-request.php");
+    let output = root.join("soap-wsdl-builtin-scalar-request-bin");
     fs::write(
         &input,
-        r###"<?php
-class LocalSoapClient extends SoapClient {
-  function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
-    return '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns="urn:test.example.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:sf="urn:object.test.example.org"><soapenv:Body><queryResponse><result xsi:type="QueryResult"><records xsi:type="sf:genericObject"><sf:type>CampaignMember</sf:type><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:Id>00vi0000011VMgeAAG</sf:Id><sf:CampaignId>701i0000001lreeAAA</sf:CampaignId><sf:Lead xsi:type="sf:genericObject"><sf:type>Lead</sf:type><sf:Id xsi:nil="true"/><sf:Email>angela.lansbury@cbs.com</sf:Email></sf:Lead></records></result></queryResponse></soapenv:Body></soapenv:Envelope>';
-  }
-}
-$client = new LocalSoapClient(__DIR__ . "/any-response.wsdl");
-$result = $client->query("");
-$records = $result->result->records;
-echo array_key_exists('result', get_object_vars($result)) ? "wrapped\n" : "unwrapped\n";
-echo get_class($records), "\n";
-echo $records->enc_stype, "\n";
-echo $records->enc_ns, "\n";
-echo implode(",", $records->enc_value->Id), "\n";
-echo $records->enc_value->any[0], "\n";
-echo $records->enc_value->any["Lead"]->type, "\n";
-echo $records->enc_value->any["Lead"]->any, "\n";
-"###,
+        r#"<?php
+$wsdl = __DIR__ . '/builtin-scalar.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://soapinterop.org/">
+  <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDateTimeRequest"><part name="inputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoDateTimeResponse"><part name="outputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoStringRequest"><part name="inputString" type="xsd:string"/></message>
+  <message name="echoStringResponse"><part name="outputString" type="xsd:string"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echoDateTime"><input message="tns:echoDateTimeRequest"/><output message="tns:echoDateTimeResponse"/></operation>
+    <operation name="echoString"><input message="tns:echoStringRequest"/><output message="tns:echoStringResponse"/></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoDecimal">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoDateTime">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoString">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding"><soap:address location="http://localhost/interop"/></port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoDecimal('12345.67890');
+echo $client->__getLastRequest();
+$client->echoDateTime('2001-02-03T04:05:06Z');
+echo $client->__getLastRequest();
+$client->echoString(null);
+echo $client->__getLastRequest();
+"#,
     )
     .unwrap();
 
@@ -62026,24 +62387,37 @@ echo $records->enc_value->any["Lead"]->any, "\n";
         execution.status.code(),
         String::from_utf8_lossy(&execution.stderr)
     );
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "wrapped\n",
-            "SoapVar\n",
-            "genericObject\n",
-            "urn:object.test.example.org\n",
-            "00vi0000011VMgeAAG,00vi0000011VMgeAAG\n",
-            "<sf:CampaignId>701i0000001lreeAAA</sf:CampaignId>\n",
-            "Lead\n",
-            "<sf:Email>angela.lansbury@cbs.com</sf:Email>\n",
-        )
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<inputDecimal xsi:type=\"xsd:decimal\">12345.67890</inputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDecimal xsi:type=\"ns1:decimal\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "<inputDateTime xsi:type=\"xsd:dateTime\">2001-02-03T04:05:06Z</inputDateTime>"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDateTime xsi:type=\"ns1:dateTime\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputString xsi:nil=\"true\"/>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputString xsi:type=\"xsd:string\"></inputString>"),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_soap_type_wildcard_element_field"));
-    assert!(c_source.contains("ptn_soap_wsdl_output_part_element_local_dup"));
+    assert!(c_source.contains("ptn_soap_encoded_part_xsi_type_prefix"));
 }
 
 #[test]
@@ -82125,6 +82499,35 @@ echo $_SERVER['PHP_SELF'] === __FILE__ ? \"self\\n\" : \"wrong-self\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "4\nscript\n4\nalpha/beta/gamma\nsame\nself\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cli_request_context_populates_request_time() {
+    let root = temp_dir("ptn-phpc-cli-request-time");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-request-time.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo isset($_SERVER['REQUEST_TIME'], $_SERVER['REQUEST_TIME_FLOAT']) ? \"set\\n\" : \"missing\\n\";\n\
+echo is_int($_SERVER['REQUEST_TIME']) ? \"int\\n\" : \"not-int\\n\";\n\
+echo is_float($_SERVER['REQUEST_TIME_FLOAT']) ? \"float\\n\" : \"not-float\\n\";\n\
+echo $_SERVER['REQUEST_TIME_FLOAT'] >= $_SERVER['REQUEST_TIME'] ? \"ordered\\n\" : \"not-ordered\\n\";\n\
+echo microtime(true) >= $_SERVER['REQUEST_TIME_FLOAT'] ? \"elapsed\\n\" : \"future\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("run")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "set\nint\nfloat\nordered\nelapsed\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

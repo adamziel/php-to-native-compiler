@@ -1,0 +1,19 @@
+# Focused current-red PHPT row pack for ptn-w17z.1029.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T104255Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+#
+#   PTN_PHPT_TEST_TIMEOUT=180 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1029-date-timelib-residual-row-pack.txt
+
+# bucket: date-timelib-residual rows=12
+ext/date/tests/bug75851.phpt
+ext/date/tests/bug66721.phpt
+ext/date/tests/bug41964.phpt
+ext/date/tests/bug35456.phpt
+ext/date/tests/strtotime_variation_scottish.phpt
+ext/date/tests/bug53437_var1.phpt
+ext/date/tests/bug75002.phpt
+ext/date/tests/bug62852.phpt
+ext/date/tests/gh18422.phpt
+ext/date/tests/bug33578.phpt
+ext/date/tests/bug-gh18076.phpt
+ext/date/tests/bug55397.phpt

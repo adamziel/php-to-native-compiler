@@ -362,6 +362,26 @@ typedef struct {
 #define PTN_ZLIB_ENCODING_DEFLATE 15
 #define PTN_ZLIB_VERSION "1.3.1"
 #define PTN_ZLIB_VERNUM 0x1310
+#define PTN_ZIP_CREATE 1
+#define PTN_ZIP_EXCL 2
+#define PTN_ZIP_CHECKCONS 4
+#define PTN_ZIP_OVERWRITE 8
+#define PTN_ZIP_RDONLY 16
+#define PTN_ZIP_FL_UNCHANGED 8
+#define PTN_ZIP_FL_OPEN_FILE_NOW 1073741824
+#define PTN_ZIP_LENGTH_TO_END 0
+#define PTN_ZIP_ER_OK 0
+#define PTN_ZIP_ER_INCONS 21
+#define PTN_ZIP_ER_CANCELLED 32
+#define PTN_ZIP_CM_STORE 0
+#define PTN_ZIP_CM_DEFLATE 8
+#define PTN_ZIP_CM_DEFLATE64 9
+#define PTN_ZIP_CM_BZIP2 12
+#define PTN_ZIP_CM_LZMA 14
+#define PTN_ZIP_CM_PPMD 98
+#define PTN_ZIP_AFL_IS_TORRENTZIP 1
+#define PTN_ZIP_AFL_WANT_TORRENTZIP 2
+#define PTN_ZIP_LIBZIP_VERSION "1.11.3"
 #define PTN_FORCE_GZIP 31
 #define PTN_FORCE_DEFLATE 15
 #define PTN_ZLIB_OK 0
@@ -1809,6 +1829,7 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
+    char *fiber_stack_size;
     char *auto_detect_line_endings;
     char *default_charset;
     char *arg_separator_input;

@@ -1,0 +1,16 @@
+# Focused PHPT manifest for ptn-w17z.1033 ZipArchive operation residuals.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T104255Z.tsv
+# Run:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1033-ziparchive-operation-row-pack.txt
+ext/zip/tests/bug47667.phpt
+ext/zip/tests/oo_rename.phpt
+ext/zip/tests/oo_addfile.phpt
+ext/zip/tests/oo_torrentzip.phpt
+ext/zip/tests/bug53885.phpt
+ext/zip/tests/oo_cancel.phpt
+ext/zip/tests/addGlob_empty_options.phpt
+ext/zip/tests/ZipArchive_closeString_false.phpt
+ext/zip/tests/compression_methods.phpt
+ext/zip/tests/oo_extract.phpt
+ext/zip/tests/oo_getcomment.phpt
+ext/zip/tests/oo_setmtime.phpt

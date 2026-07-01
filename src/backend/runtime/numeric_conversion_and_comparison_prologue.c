@@ -261,6 +261,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
+    runtime->fiber_stack_size = NULL;
     runtime->default_charset = NULL;
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;
@@ -1056,6 +1057,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);
         runtime->max_memory_limit = NULL;
+        free(runtime->fiber_stack_size);
+        runtime->fiber_stack_size = NULL;
         free(runtime->auto_detect_line_endings);
         runtime->auto_detect_line_endings = NULL;
         free(runtime->default_charset);
@@ -5524,6 +5527,28 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(8192);
             return 1;
         }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ZipArchive")) {
+        if (strcmp(constant, "CREATE") == 0) { *out = ptn_int(PTN_ZIP_CREATE); return 1; }
+        if (strcmp(constant, "EXCL") == 0) { *out = ptn_int(PTN_ZIP_EXCL); return 1; }
+        if (strcmp(constant, "CHECKCONS") == 0) { *out = ptn_int(PTN_ZIP_CHECKCONS); return 1; }
+        if (strcmp(constant, "OVERWRITE") == 0) { *out = ptn_int(PTN_ZIP_OVERWRITE); return 1; }
+        if (strcmp(constant, "RDONLY") == 0) { *out = ptn_int(PTN_ZIP_RDONLY); return 1; }
+        if (strcmp(constant, "FL_UNCHANGED") == 0) { *out = ptn_int(PTN_ZIP_FL_UNCHANGED); return 1; }
+        if (strcmp(constant, "FL_OPEN_FILE_NOW") == 0) { *out = ptn_int(PTN_ZIP_FL_OPEN_FILE_NOW); return 1; }
+        if (strcmp(constant, "LENGTH_TO_END") == 0) { *out = ptn_int(PTN_ZIP_LENGTH_TO_END); return 1; }
+        if (strcmp(constant, "ER_OK") == 0) { *out = ptn_int(PTN_ZIP_ER_OK); return 1; }
+        if (strcmp(constant, "ER_INCONS") == 0) { *out = ptn_int(PTN_ZIP_ER_INCONS); return 1; }
+        if (strcmp(constant, "ER_CANCELLED") == 0) { *out = ptn_int(PTN_ZIP_ER_CANCELLED); return 1; }
+        if (strcmp(constant, "CM_STORE") == 0) { *out = ptn_int(PTN_ZIP_CM_STORE); return 1; }
+        if (strcmp(constant, "CM_DEFLATE") == 0) { *out = ptn_int(PTN_ZIP_CM_DEFLATE); return 1; }
+        if (strcmp(constant, "CM_DEFLATE64") == 0) { *out = ptn_int(PTN_ZIP_CM_DEFLATE64); return 1; }
+        if (strcmp(constant, "CM_BZIP2") == 0) { *out = ptn_int(PTN_ZIP_CM_BZIP2); return 1; }
+        if (strcmp(constant, "CM_LZMA") == 0) { *out = ptn_int(PTN_ZIP_CM_LZMA); return 1; }
+        if (strcmp(constant, "CM_PPMD") == 0) { *out = ptn_int(PTN_ZIP_CM_PPMD); return 1; }
+        if (strcmp(constant, "AFL_IS_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_IS_TORRENTZIP); return 1; }
+        if (strcmp(constant, "AFL_WANT_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_WANT_TORRENTZIP); return 1; }
+        if (strcmp(constant, "LIBZIP_VERSION") == 0) { *out = ptn_string(PTN_ZIP_LIBZIP_VERSION); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "XMLReader")) {
         if (strcmp(constant, "NONE") == 0) { *out = ptn_int(0); return 1; }

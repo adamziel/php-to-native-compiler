@@ -2622,9 +2622,9 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
         "ext/zip/tests/ZipArchive_bailout.phpt",
     );
-    assert!(
-        zip_archive_runtime.starts_with("unsupported-zip-archive-runtime\t"),
-        "{zip_archive_runtime:?}"
+    assert_eq!(
+        zip_archive_runtime.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let xmlwriter_extension = classify(

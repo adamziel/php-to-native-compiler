@@ -1,0 +1,14 @@
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T104255Z.tsv
+# Bead: ptn-w17z.1031
+ext/mbstring/tests/bug52981.phpt
+ext/mbstring/tests/bug66964.phpt
+ext/mbstring/tests/ini_mbstring_invalid.phpt
+ext/mbstring/tests/mb_str_split_error_conditions.phpt
+ext/mbstring/tests/mb_send_mail01.phpt
+ext/mbstring/tests/mb_send_mail_null_bytes.phpt
+ext/mbstring/tests/bug65544.phpt
+ext/mbstring/tests/mb_trim.phpt
+ext/mbstring/tests/bug52681.phpt
+ext/mbstring/tests/gh17503.phpt
+ext/mbstring/tests/gh8208.phpt
+ext/mbstring/tests/mb_encode_mimeheader_crash.phpt

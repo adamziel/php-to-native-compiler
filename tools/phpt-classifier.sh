@@ -2597,9 +2597,8 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
         }
         {
             line = ptn_php_code_line($0)
-            if (line ~ /(^|[^[:alnum:]_$>])new[[:space:]]+\\?ziparchive[[:space:]]*([;(]|$)/ ||
-                line ~ /->[[:space:]]*(open|close|addfromstring|addfile|addemptydir|registercancelcallback|registerprogresscallback|setpassword|setarchivecomment|setcomment(name|index)|delete(name|index)|rename(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
-                print "unsupported-zip-archive-runtime\trequires ZipArchive archive mutation/callback runtime, outside PTN modeled ZipArchive metadata surface"
+            if (line ~ /->[[:space:]]*(addemptydir|registerprogresscallback|setpassword|setarchivecomment|setcomment(name|index)|delete(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
+                print "unsupported-zip-archive-runtime\trequires unmodeled ZipArchive archive operation surface"
                 found = 1
                 exit
             }

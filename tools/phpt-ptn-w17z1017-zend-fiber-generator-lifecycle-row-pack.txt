@@ -1,0 +1,13 @@
+# Focused Zend fiber/generator lifecycle residual row pack for ptn-w17z.1017.
+Zend/tests/fibers/gh9916-008.phpt
+Zend/tests/fibers/gh15108-006.phpt
+Zend/tests/fibers/gh9735-008.phpt
+Zend/tests/fibers/fatal-error-in-nested-fiber.phpt
+Zend/tests/fibers/resume.phpt
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/fibers/gh9916-003.phpt
+Zend/tests/fibers/gh15108-001.phpt
+Zend/tests/exceptions/bug31102.phpt
+Zend/tests/fibers/negative_stack_size.phpt
+Zend/tests/generators/yield_without_value.phpt
+Zend/tests/generators/gh15275-003.phpt
