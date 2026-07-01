@@ -788,6 +788,15 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->has_wrapped_callable) {
         ptn_value_destroy(&closure->wrapped_callable);
     }
+    if (closure->owns_metadata_name) {
+        free((char *)closure->metadata.name);
+    }
+    if (closure->owns_metadata_parameters) {
+        ptn_parameter_metadata_free_owned(
+            (PtnParameterMetadata *)closure->metadata.parameters,
+            closure->metadata.parameter_count
+        );
+    }
     free(closure->dynamic_body);
     if (closure->dynamic_parameter_names != NULL) {
         for (size_t i = 0; i < closure->dynamic_parameter_count; i++) {

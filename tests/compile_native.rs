@@ -29526,6 +29526,8 @@ echo json_encode(null), \"\\n\";\n\
 echo json_encode(true), \"\\n\";\n\
 echo json_encode([1, true, null, \"a\\nb\", \"/\"]), \"\\n\";\n\
 echo json_encode([\"x\" => 1, \"two\" => false]), \"\\n\";\n\
+echo json_encode(42.0, JSON_PRESERVE_ZERO_FRACTION), \"\\n\";\n\
+echo json_encode(\"42.0\", JSON_NUMERIC_CHECK | JSON_PRESERVE_ZERO_FRACTION), \"\\n\";\n\
 $nul = chr(0);\n\
 echo json_encode([\"a\" . $nul . \"b\" => 1]), \"\\n\";\n\
 echo json_encode([\"\" => \"\"], JSON_FORCE_OBJECT), \"\\n\";\n\
@@ -29558,6 +29560,8 @@ var_dump(function_exists(\"json_encode\"), function_exists(\"printf\"), function
 true\n\
 [1,true,null,\"a\\nb\",\"\\/\"]\n\
 {\"x\":1,\"two\":false}\n\
+42.0\n\
+42.0\n\
 {\"a\\u0000b\":1}\n\
 {\"\":\"\"}\n\
 {\"0\":{\"0\":1}}\n\
@@ -83598,7 +83602,9 @@ try { var_dump(error_get_last(true)); } catch (TypeError $e) { echo $e->getMessa
 var_dump(error_get_last());\n\
 $a = $missing;\n\
 $last = error_get_last();\n\
-var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n",
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n\
+var_dump(error_clear_last());\n\
+var_dump(error_get_last());\n",
     )
     .unwrap();
 
@@ -83625,6 +83631,7 @@ var_dump($last['type'], $last['message'], basename($last['file']), $last['line']
         stdout.contains("string(18) \"error-get-last.php\"\nbool(true)\n"),
         "{stdout}"
     );
+    assert!(stdout.ends_with("NULL\nNULL\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

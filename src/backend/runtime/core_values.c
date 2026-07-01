@@ -956,6 +956,8 @@ struct PtnClosure {
     size_t function_index;
     const char *display_name;
     PtnFunctionMetadata metadata;
+    int owns_metadata_name;
+    int owns_metadata_parameters;
     char *scope_class_name;
     char *called_class_name;
     int is_static;
@@ -4224,6 +4226,8 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->function_index = function_index;
     closure->display_name = display_name;
     closure->metadata = metadata;
+    closure->owns_metadata_name = 0;
+    closure->owns_metadata_parameters = 0;
     closure->scope_class_name = NULL;
     closure->called_class_name = NULL;
     closure->is_static = is_static;

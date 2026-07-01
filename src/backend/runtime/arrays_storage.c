@@ -18,6 +18,54 @@ static PTN_UNUSED char *ptn_duplicate_string_len(const char *string, size_t len)
     return copy;
 }
 
+static PTN_UNUSED char *ptn_metadata_duplicate_optional_string(const char *value) {
+    return value == NULL ? NULL : ptn_duplicate_string(value);
+}
+
+static PTN_UNUSED PtnParameterMetadata *ptn_parameter_metadata_clone_owned(
+    const PtnParameterMetadata *source,
+    size_t count
+) {
+    if (source == NULL || count == 0) {
+        return NULL;
+    }
+    PtnParameterMetadata *copy = calloc(count, sizeof(PtnParameterMetadata));
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < count; i++) {
+        copy[i] = source[i];
+        copy[i].name = ptn_metadata_duplicate_optional_string(source[i].name);
+        copy[i].type_name = ptn_metadata_duplicate_optional_string(source[i].type_name);
+        copy[i].type_display_name =
+            ptn_metadata_duplicate_optional_string(source[i].type_display_name);
+        copy[i].default_value_display =
+            ptn_metadata_duplicate_optional_string(source[i].default_value_display);
+        copy[i].default_value_constant_name =
+            ptn_metadata_duplicate_optional_string(source[i].default_value_constant_name);
+        copy[i].doc_comment = ptn_metadata_duplicate_optional_string(source[i].doc_comment);
+    }
+    return copy;
+}
+
+static PTN_UNUSED void ptn_parameter_metadata_free_owned(
+    PtnParameterMetadata *parameters,
+    size_t count
+) {
+    if (parameters == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free((char *)parameters[i].name);
+        free((char *)parameters[i].type_name);
+        free((char *)parameters[i].type_display_name);
+        free((char *)parameters[i].default_value_display);
+        free((char *)parameters[i].default_value_constant_name);
+        free((char *)parameters[i].doc_comment);
+    }
+    free(parameters);
+}
+
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_share(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);

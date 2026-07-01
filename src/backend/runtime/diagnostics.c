@@ -362,6 +362,19 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
         source->is_static,
         source->uses_this
     );
+    if (source->owns_metadata_name) {
+        copy.as.closure->metadata.name =
+            ptn_metadata_duplicate_optional_string(source->metadata.name);
+        copy.as.closure->display_name = copy.as.closure->metadata.name;
+        copy.as.closure->owns_metadata_name = 1;
+    }
+    if (source->owns_metadata_parameters) {
+        copy.as.closure->metadata.parameters = ptn_parameter_metadata_clone_owned(
+            source->metadata.parameters,
+            source->metadata.parameter_count
+        );
+        copy.as.closure->owns_metadata_parameters = 1;
+    }
     ptn_closure_set_scope(copy, source->scope_class_name, source->called_class_name);
     for (size_t i = 0; i < source->captures.len; i++) {
         PtnSymbol *capture = &source->captures.items[i];
@@ -1863,6 +1876,19 @@ static void ptn_diagnostics_record_last_error(
     diagnostics->last_error_set = 1;
     diagnostics->last_error_type = severity;
     diagnostics->last_error_line = line;
+}
+
+static PTN_UNUSED void ptn_diagnostics_clear_last_error(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    free(diagnostics->last_error_message);
+    diagnostics->last_error_message = NULL;
+    free(diagnostics->last_error_file);
+    diagnostics->last_error_file = NULL;
+    diagnostics->last_error_set = 0;
+    diagnostics->last_error_type = 0;
+    diagnostics->last_error_line = 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
