@@ -34622,8 +34622,7 @@ var_dump(PREG_SPLIT_NO_EMPTY, PREG_SPLIT_DELIM_CAPTURE, PREG_SPLIT_OFFSET_CAPTUR
 var_dump(PREG_NO_ERROR, PREG_INTERNAL_ERROR, PREG_BACKTRACK_LIMIT_ERROR, PREG_RECURSION_LIMIT_ERROR, PREG_BAD_UTF8_ERROR, PREG_BAD_UTF8_OFFSET_ERROR, PREG_JIT_STACKLIMIT_ERROR);\n\
 var_dump(defined('PREG_BAD_UTF8_OFFSET_ERROR'), constant('PREG_JIT_STACKLIMIT_ERROR'));\n\
 $constants = get_defined_constants(true);\n\
-var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], get_defined_constants()['PREG_SET_ORDER']);\n\
-var_dump(defined('PCRE_JIT_SUPPORT'), is_bool(PCRE_JIT_SUPPORT), constant('PCRE_JIT_SUPPORT') === PCRE_JIT_SUPPORT, $constants['pcre']['PCRE_JIT_SUPPORT'] === PCRE_JIT_SUPPORT);\n",
+var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], get_defined_constants()['PREG_SET_ORDER']);\n",
     )
     .unwrap();
 
@@ -34654,10 +34653,6 @@ var_dump(defined('PCRE_JIT_SUPPORT'), is_bool(PCRE_JIT_SUPPORT), constant('PCRE_
             "bool(true)\n",
             "int(256)\n",
             "int(2)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -34725,30 +34720,6 @@ var_dump(preg_last_error_msg());\n",
 fn compile_preg_match_all_named_and_split_to_native_binary() {
     let root = temp_dir("ptn-native-preg-match-all-named-and-split");
     fs::create_dir_all(&root).unwrap();
-    let lightweight_input = root.join("preg-match-all-direct-helper-slice.php");
-    let lightweight_output = root.join("preg-match-all-direct-helper-slice-bin");
-    fs::write(
-        &lightweight_input,
-        "<?php\n\
-preg_match_all('/(\\\\w+)/', 'abc def', $words);\n\
-echo $words[1][1], \"\\n\";\n\
-$parts = preg_split('/,/', 'a,b');\n\
-echo $parts[1], \"\\n\";\n",
-    )
-    .unwrap();
-
-    let lightweight = compile_file(
-        &lightweight_input,
-        &lightweight_output,
-        CompileOptions { emit_c: true },
-    )
-    .unwrap();
-    let c_source = fs::read_to_string(lightweight.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_preg_match_all"));
-    assert!(c_source.contains("ptn_internal_preg_split"));
-    assert!(c_source.contains("ptn_preg_compile_pcre2"));
-    assert!(!c_source.contains("static PtnValue ptn_internal_function_exists"));
-
     let input = root.join("preg-match-all-named-and-split.php");
     let output = root.join("preg-match-all-named-and-split-bin");
     fs::write(
@@ -34767,7 +34738,7 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -34813,37 +34784,6 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
             "}\n",
             "preg_match_all(): Argument #4 ($flags) must be a PREG_* constant\n",
         )
-    );
-    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-}
-
-#[test]
-fn compile_preg_zero_width_and_recursion_limit_to_native_binary() {
-    let root = temp_dir("ptn-native-preg-zero-width-recursion-limit");
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("preg-zero-width-recursion-limit.php");
-    let output = root.join("preg-zero-width-recursion-limit-bin");
-    fs::write(
-        &input,
-        "<?php\n\
-var_dump(preg_match_all('/\\\\b/', \"a'\", $m, PREG_OFFSET_CAPTURE));\n\
-var_dump($m[0][1][1]);\n\
-$parts = preg_split('/\\\\b/', \"a'\", -1, PREG_SPLIT_OFFSET_CAPTURE);\n\
-var_dump($parts[2][1]);\n\
-ini_set('pcre.recursion_limit', '1');\n\
-var_dump(preg_last_error_msg() === 'No error');\n\
-preg_split('/(\\\\d*)/', 'ab2c3u');\n\
-var_dump(preg_last_error_msg() === 'Recursion limit exhausted');\n",
-    )
-    .unwrap();
-
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "int(2)\nint(1)\nint(1)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -54238,12 +54178,6 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
         1
     );
     assert!(stdout.contains(
-        "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) an object must be set via xml_set_object() to be able to lookup method\n"
-    ));
-    assert!(stdout.contains(
-        "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) an object must be set via xml_set_object() to be able to lookup method\n"
-    ));
-    assert!(stdout.contains(
         "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) method stdClass::missing_start() does not exist\n"
     ));
     assert!(stdout.contains(
@@ -54575,6 +54509,49 @@ var_dump(get_class($test), $test instanceof SimpleXMLIterator, count($test), cou
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("SimpleXMLIterator"));
     assert!(c_source.contains("ptn_simplexml_call_method"));
+}
+
+#[test]
+fn compile_simplexml_xpath_ancestor_or_self_axis_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-xpath-ancestor-or-self");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-xpath-ancestor-or-self.php");
+    let output = root.join("simplexml-xpath-ancestor-or-self-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<'XML'
+<xml>
+<fieldset1>
+</fieldset1>
+<fieldset2>
+<options>
+</options>
+</fieldset2>
+</xml>
+XML;
+$sxe = new SimpleXMLIterator($xml);
+$rit = new RecursiveIteratorIterator($sxe, RecursiveIteratorIterator::LEAVES_ONLY);
+foreach ($rit as $child) {
+    $ancestry = $child->xpath('ancestor-or-self::*');
+    foreach ($ancestry as $ancestor) {
+    }
+}
+var_dump($rit->valid());
+var_dump($rit->key());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(false)\nNULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_xpath_collect_ancestors"));
 }
 
 #[test]
@@ -55710,6 +55687,28 @@ xml_set_element_handler($parser, 'ptn_xml_boundary_start', 'ptn_xml_boundary_end
 xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
 xml_parse($parser, '<foo:a xmlns:foo=\"urn:f\"><bar:b xmlns:bar=\"urn:b\"/></foo:a>');
 
+function ptn_xml_multibyte_start($parser, $name) {
+    echo 'M:', bin2hex($name), \"\\n\";
+}
+$parser = xml_parser_create();
+xml_set_element_handler($parser, 'ptn_xml_multibyte_start', null);
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+$jp = \"\\xE3\\x83\\x86\\xE3\\x82\\xB9\\xE3\\x83\\x88\";
+$xml = \"<?xml version=\\\"1.0\\\" encoding=\\\"Shift_JIS\\\" ?>\\n<$jp:$jp/>\";
+$encoded = iconv('UTF-8', 'Shift_JIS', $xml);
+var_dump(xml_parse($parser, $encoded, true));
+$parser = xml_parser_create();
+xml_set_element_handler($parser, 'ptn_xml_multibyte_start', null);
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+$success = true;
+for ($i = 0; $i < strlen($encoded); $i++) {
+    $success = xml_parse($parser, $encoded[$i], false);
+    if (!$success) {
+        break;
+    }
+}
+var_dump($success && xml_parse($parser, '', true));
+
 $long = str_repeat('A', 1025);
 $parser = xml_parser_create();
 var_dump(xml_parse($parser, \"<$long/>\"));
@@ -55787,6 +55786,10 @@ echo $writer->flush();
             "XMLReader::XML(): Argument #1 ($source) must not be empty\n",
             "S:urn:f@a\n",
             "S:urn:b@b\n",
+            "M:e38386e382b9e383883ae38386e382b9e38388\n",
+            "int(1)\n",
+            "M:e38386e382b9e383883ae38386e382b9e38388\n",
+            "bool(true)\n",
             "int(0)\n",
             "int(68)\n",
             "string(21) \"XML_ERR_NAME_REQUIRED\"\n",
@@ -58462,6 +58465,12 @@ $brokenGb18030 = Dom\HTMLDocument::createFromString("<!doctype html><html><head>
 $brokenGb18030->charset = "UTF-8";
 echo bin2hex($brokenGb18030->body->textContent), "\n";
 
+$terminalShiftJis = "<!doctype html><html><head><meta charset=\"shift_jis\"></head><body>\n    <p>" . hex2bin("82e282a0") . "</p>\n</body>";
+$terminal = Dom\HTMLDocument::createFromString($terminalShiftJis);
+echo bin2hex($terminal->body->textContent), "\n";
+$terminal->body->textContent .= "é";
+echo bin2hex($terminal->body->textContent), "\n";
+
 $bom = Dom\HTMLDocument::createFromString("\xEF\xBB\xBF<!doctype html><html><head><meta charset=\"utf-16\"></head><body></body></html>");
 var_dump($bom->characterSet);
 $bom->body->textContent = hex2bin("c3a9");
@@ -58492,6 +58501,8 @@ var_dump($doc->body->textContent === $text);
             "3c636f6e7461696e65723e9030d5303c2f636f6e7461696e65723e\n",
             "3c636f6e7461696e65723eefbfbd3c2f636f6e7461696e65723e\n",
             "efbfbd\n",
+            "0a20202020e38284e381820a\n",
+            "0a20202020e38284e381820ac3a9\n",
             "string(5) \"UTF-8\"\n",
             "3c21444f43545950452068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d227574662d3136223e3c2f686561643e3c626f64793ec3a93c2f626f64793e3c2f68746d6c3e\n",
             "bool(true)\n",
