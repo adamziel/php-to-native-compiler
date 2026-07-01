@@ -96807,6 +96807,93 @@ var_dump($b->prop);
 }
 
 #[test]
+fn compile_property_hook_magic_interaction_unset_uses_receiver_class_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-magic-interaction-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-magic-interaction-unset.php");
+    let output = root.join("property-hook-magic-interaction-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public $prop {
+        get {
+            echo __METHOD__, \"\\n\";
+            return 'prop';
+        }
+        set { echo __METHOD__, \"\\n\"; }
+    }
+}
+
+class B extends A {
+    public function __get($name) {
+        echo __METHOD__, \"($name)\\n\";
+        try {
+            $this->$name;
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+    public function __set($name, $value) {
+        echo __METHOD__, \"($name, $value)\\n\";
+        try {
+            $this->$name = $value;
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+    public function __isset($name) {
+        echo __METHOD__, \"($name)\\n\";
+        try {
+            var_dump(isset($this->$name));
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+    public function __unset($name) {
+        echo \"Never reached\\n\";
+    }
+}
+
+$b = new B;
+$b->prop;
+var_dump(isset($b->prop));
+$b->prop = 1;
+try {
+    unset($b->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "A::$prop::get\n",
+            "A::$prop::get\n",
+            "bool(true)\n",
+            "A::$prop::set\n",
+            "Cannot unset hooked property B::$prop\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_hooked_property_unset_error"));
+}
+
+#[test]
 fn compile_property_hook_inherited_backing_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-inherited-backing-defaults");
     fs::create_dir_all(&root).unwrap();

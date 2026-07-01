@@ -2797,6 +2797,7 @@ static PTN_UNUSED void ptn_throw_create_reference_to_property_error(
 static PTN_UNUSED void ptn_throw_hooked_property_unset_error(
     PtnRuntime *runtime,
     const PtnObjectPropertyMetadata *metadata,
+    const char *class_name,
     size_t line
 ) {
     char message[192];
@@ -2804,7 +2805,7 @@ static PTN_UNUSED void ptn_throw_hooked_property_unset_error(
         message,
         sizeof(message),
         "Cannot unset hooked property %s::$%s",
-        metadata->declaring_class,
+        class_name != NULL ? class_name : metadata->declaring_class,
         metadata->display_name
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -9606,7 +9607,12 @@ static PTN_UNUSED void ptn_object_unset_property_len(
     if (mutable_metadata != NULL && mutable_metadata->has_hooks) {
         ptn_array_key_free(key);
         free(storage_key);
-        ptn_throw_hooked_property_unset_error(runtime, mutable_metadata, line);
+        ptn_throw_hooked_property_unset_error(
+            runtime,
+            mutable_metadata,
+            receiver.as.object->class_name,
+            line
+        );
         return;
     }
     if (ptn_object_property_is_date_period_internal(runtime, receiver.as.object, mutable_metadata)) {
