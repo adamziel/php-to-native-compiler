@@ -414,6 +414,9 @@ impl<'a> Lexer<'a> {
                 '(' => self.push_fixed(TokenKind::LeftParen, 1),
                 ')' => self.push_fixed(TokenKind::RightParen, 1),
                 '$' => self.lex_variable()?,
+                'b' | 'B' if self.rest().starts_with("b<<<") || self.rest().starts_with("B<<<") => {
+                    self.lex_binary_heredoc_string()?
+                }
                 'b' | 'B'
                     if self.rest().starts_with("b'")
                         || self.rest().starts_with("B'")
@@ -631,6 +634,16 @@ impl<'a> Lexer<'a> {
 
     fn lex_heredoc_string(&mut self) -> Result<()> {
         let start = self.current_span(0);
+        self.lex_heredoc_string_from_start(start)
+    }
+
+    fn lex_binary_heredoc_string(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        self.lex_heredoc_string_from_start(start)
+    }
+
+    fn lex_heredoc_string_from_start(&mut self, start: SourceSpan) -> Result<()> {
         self.bump_char();
         self.bump_char();
         self.bump_char();
@@ -792,7 +805,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.bump_char();
-                at_line_start = false;
+                at_line_start = matches!(escaped, '\n' | '\r');
                 continue;
             }
 

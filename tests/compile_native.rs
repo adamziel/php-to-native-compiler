@@ -4055,6 +4055,12 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         "$slash = <<<SLASH\n",
         "\\\n",
         "SLASH;\n",
+        "$binaryLeft = b<<<BIN\n",
+        "binary heredoc\n",
+        "BIN;\n",
+        "$binaryRight = B<<<'NOW'\n",
+        "binary nowdoc\n",
+        "NOW;\n",
     );
     let program = parser::parse(source).unwrap();
     let Statement::Assign { value, .. } = &program.statements[0] else {
@@ -4076,6 +4082,16 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         panic!("expected assignment");
     };
     assert!(matches!(value, Expr::String(value, _) if value == "\\"));
+
+    let Statement::Assign { value, .. } = &program.statements[4] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "binary heredoc"));
+
+    let Statement::Assign { value, .. } = &program.statements[5] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "binary nowdoc"));
 }
 
 #[test]
