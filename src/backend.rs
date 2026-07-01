@@ -25202,21 +25202,10 @@ fn class_constructor_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<ClassMethodLookupEntry<'a>> {
-    let methods = class_method_lookup_chain(class, classes);
-    if let Some(constructor) = methods
+    class_method_lookup_chain(class, classes)
         .iter()
         .copied()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
-    {
-        return Some(constructor);
-    }
-
-    let class_short_name = class.name.rsplit('\\').next().unwrap_or(&class.name);
-    methods.iter().copied().find(|method| {
-        !method.is_static
-            && method.declaring_class.eq_ignore_ascii_case(&class.name)
-            && method.name.eq_ignore_ascii_case(class_short_name)
-    })
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {

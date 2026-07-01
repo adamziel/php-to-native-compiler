@@ -96034,6 +96034,62 @@ echo \"ok\\n\";
 }
 
 #[test]
+fn compile_property_hook_property_magic_constant_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-property-magic-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-property-magic-constant.php");
+    let output = root.join("property-hook-property-magic-constant-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public $prop {
+        get => __PROPERTY__;
+        set { var_dump(__PROPERTY__); }
+    }
+
+    private $privProp {
+        get => __PROPERTY__;
+    }
+
+    public function test() {
+        var_dump(__PROPERTY__);
+        var_dump($this->privProp);
+    }
+}
+
+$test = new Test;
+var_dump($test->prop);
+$test->prop = 'foo';
+$test->test();
+var_dump(__PROPERTY__);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"prop\"\n",
+            "string(4) \"prop\"\n",
+            "string(0) \"\"\n",
+            "string(8) \"privProp\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_property_hook_object_foreach_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-object-foreach-lifecycle");
     fs::create_dir_all(&root).unwrap();
