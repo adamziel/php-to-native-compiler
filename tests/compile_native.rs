@@ -11433,25 +11433,29 @@ call_user_func(function (array &$ref) {}, 'not_an_array_variable');
 
     let execution = Command::new(&output).output().unwrap();
     assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     assert!(
-        stderr.contains("Fatal error: Uncaught Exception: {closure:"),
-        "{stderr}"
+        stdout.contains("Fatal error: Uncaught Exception: {closure:"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("Argument #1 ($ref) must be passed by reference, value given"),
-        "{stderr}"
+        stdout.contains("Argument #1 ($ref) must be passed by reference, value given"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("[internal function]: {closure:"),
-        "{stderr}"
+        stdout.contains("error-handler-call-user-func-forwarder.php(6): {closure:"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("error-handler-call-user-func-forwarder.php(6): call_user_func("),
-        "{stderr}"
+        !stdout.contains("[internal function]: {closure:"),
+        "{stdout}"
     );
-    assert!(stderr.contains("\n#2 {main}"), "{stderr}");
+    assert!(
+        stdout.contains("error-handler-call-user-func-forwarder.php(6): call_user_func("),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\n#2 {main}"), "{stdout}");
 }
 
 #[test]
@@ -92214,7 +92218,7 @@ echo strpos((string)$re, "Next TypeError") !== false ? "chain\n" : "missing-chai
 }
 
 #[test]
-fn compile_call_user_func_by_ref_warning_uses_internal_handler_frame_to_native_binary() {
+fn compile_call_user_func_by_ref_warning_uses_user_handler_frame_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-by-ref-internal-frame");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("call-user-func-by-ref-internal-frame.php");
@@ -92235,15 +92239,19 @@ call_user_func(function (array &$ref) { var_dump("xxx"); }, "not_an_array_variab
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
     assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     assert!(
-        stderr.contains("must be passed by reference, value given"),
-        "{stderr}"
+        stdout.contains("must be passed by reference, value given"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("\n#0 [internal function]: {closure:"),
-        "{stderr}"
+        stdout.contains("call-user-func-by-ref-internal-frame.php(5): {closure:"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("\n#0 [internal function]: {closure:"),
+        "{stdout}"
     );
 }
 
