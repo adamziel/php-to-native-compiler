@@ -2035,26 +2035,11 @@ static PTN_UNUSED void ptn_emit_object_memory_limit_fatal_error(
     const char *message,
     size_t line
 ) {
-    fflush(stdout);
-    if (runtime != NULL && runtime->diagnostics.display_errors) {
-        FILE *stream = runtime->diagnostics.stream == NULL
-            ? stderr
-            : runtime->diagnostics.stream;
-        const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
-        size_t display_line = line == 0 ? runtime->call_site_line : line;
-        fprintf(
-            stream,
-            "\nFatal error: %s in %s on line %zu\nStack trace:\n",
-            message,
-            path,
-            display_line
-        );
-        PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, NULL);
-        fwrite(trace.data, 1, trace.len, stream);
-        free(trace.owned);
-        fputc('\n', stream);
+    if (runtime == NULL) {
+        exit(255);
     }
-    exit(255);
+    size_t display_line = line == 0 ? runtime->call_site_line : line;
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, display_line);
 }
 
 static PTN_UNUSED void ptn_object_enforce_memory_limit_for_allocation(
@@ -2072,7 +2057,8 @@ static PTN_UNUSED void ptn_object_enforce_memory_limit_for_allocation(
     PtnRuntime *root = ptn_runtime_root(runtime);
     size_t live_objects = root == NULL ? 0 : root->live_objects_len;
     const size_t baseline_usage = 1024 * 1024;
-    const size_t estimated_object_bytes = 8192;
+    const size_t estimated_object_bytes =
+        sizeof(PtnObject) + sizeof(PtnArray) + sizeof(PtnObject *) + 64;
     if (live_objects >= (SIZE_MAX - baseline_usage) / estimated_object_bytes) {
         ptn_emit_memory_allocation_overflow_error(runtime, live_objects, estimated_object_bytes, baseline_usage, line);
         return;
