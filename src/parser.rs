@@ -25607,6 +25607,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "T_WHITESPACE"
             | "T_NULLSAFE_OBJECT_OPERATOR"
             | "T_BAD_CHARACTER"
+            | "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG"
+            | "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG"
             | "T_START_HEREDOC"
             | "T_END_HEREDOC"
             | "T_DOLLAR_OPEN_CURLY_BRACES"

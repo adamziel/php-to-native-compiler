@@ -73242,6 +73242,8 @@ static const PtnTokenNameEntry PTN_TOKEN_NAMES[] = {
     { "T_NS_SEPARATOR", PTN_T_NS_SEPARATOR },
     { "T_NULLSAFE_OBJECT_OPERATOR", PTN_T_NULLSAFE_OBJECT_OPERATOR },
     { "T_BAD_CHARACTER", PTN_T_BAD_CHARACTER },
+    { "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG", PTN_T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG },
+    { "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG", PTN_T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG },
 };
 
 static const char *ptn_token_name_cstr(int64_t id) {
@@ -73978,6 +73980,21 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
         if (i + 2 <= len && memcmp(data + i, "^=", 2) == 0) {
             PTN_TOKEN_APPEND_TOKEN(PTN_T_XOR_EQUAL, data + i, 2);
             i += 2;
+            continue;
+        }
+        if (data[i] == '&') {
+            size_t next = i + 1;
+            while (next < len && isspace((unsigned char)data[next])) {
+                next++;
+            }
+            int64_t token_id = PTN_T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG;
+            if (next < len &&
+                (data[next] == '$' ||
+                 (next + 3 <= len && memcmp(data + next, "...", 3) == 0))) {
+                token_id = PTN_T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG;
+            }
+            PTN_TOKEN_APPEND_TOKEN(token_id, data + i, 1);
+            i++;
             continue;
         }
         if ((unsigned char)data[i] < 32) {
