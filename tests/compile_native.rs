@@ -62011,6 +62011,54 @@ var_dump($sf->headerfault);
 }
 
 #[test]
+fn compile_ziparchive_shutdown_destructor_polls_cancel_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-shutdown-cancel-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-shutdown-cancel-callback.php");
+    let output = root.join("ziparchive-shutdown-cancel-callback-bin");
+    fs::write(
+        &input,
+        r#"<?php
+
+function &zip_shutdown_cancel_cb() {}
+
+$file = __DIR__ . '/shutdown-cancel.zip';
+$zip = new ZipArchive;
+$zip->open($file, ZipArchive::CREATE);
+$zip->registerCancelCallback(zip_shutdown_cancel_cb(...));
+$zip->addFromString('test', 'test');
+$fusion = $zip;
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Notice: Only variable references should be returned by reference in ")
+            .count(),
+        3,
+        "{stdout}"
+    );
+    assert!(stdout.contains(input.to_str().unwrap()), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_run_destructor"));
+    assert!(c_source.contains("ptn_zip_archive_poll_cancel_callback"));
+}
+
+#[test]
 fn compile_ziparchive_compression_method_bounds_to_native_binary() {
     let root = temp_dir("ptn-native-ziparchive-compression-bounds");
     fs::create_dir_all(&root).unwrap();

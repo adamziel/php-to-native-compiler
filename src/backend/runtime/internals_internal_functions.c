@@ -180674,6 +180674,23 @@ static int ptn_zip_archive_poll_cancel_callback(
     return 0;
 }
 
+static int ptn_zip_archive_poll_cancel_callback_for_write(
+    PtnRuntime *runtime,
+    PtnZipArchiveData *data,
+    PtnValue receiver,
+    size_t line
+) {
+    if (data == NULL || !data->dirty) {
+        return 0;
+    }
+    for (size_t phase = 0; phase < 3; phase++) {
+        if (ptn_zip_archive_poll_cancel_callback(runtime, data, receiver, line)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_zip_archive_open(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -180958,7 +180975,7 @@ static PtnValue ptn_zip_archive_close(
         return ptn_null();
     }
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    int cancelled = ptn_zip_archive_poll_cancel_callback(runtime, data, receiver, line);
+    int cancelled = ptn_zip_archive_poll_cancel_callback_for_write(runtime, data, receiver, line);
     if (data != NULL) {
         if (!cancelled && data->dirty) {
             (void)ptn_zip_archive_write_to_path(data);
@@ -181996,7 +182013,8 @@ static PTN_UNUSED void ptn_zip_archive_run_destructor(
     if (data == NULL || !data->is_open) {
         return;
     }
-    if (data->dirty) {
+    int cancelled = ptn_zip_archive_poll_cancel_callback_for_write(runtime, data, receiver, line);
+    if (!cancelled && data->dirty) {
         (void)ptn_zip_archive_write_to_path(data);
     }
     data->is_open = 0;
