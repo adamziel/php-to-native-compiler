@@ -98378,14 +98378,14 @@ static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mod
             } else {
                 cp = final_sigma_context ? 0x03c2 : ptn_mb_case_map_codepoint(cp, 0);
             }
-            if ((cp == '\'' || cp == 0x2019) && title_in_word) {
-                title_next = 0;
-            } else if (ptn_mb_title_is_word_codepoint(cp)) {
-                title_next = 0;
-                title_in_word = 1;
-            } else {
-                title_next = 1;
-                title_in_word = 0;
+            if (!ptn_mb_codepoint_is_case_ignorable(original_cp)) {
+                if (ptn_mb_title_is_word_codepoint(cp)) {
+                    title_next = 0;
+                    title_in_word = 1;
+                } else {
+                    title_next = 1;
+                    title_in_word = 0;
+                }
             }
         } else {
             cp = final_sigma_context ? 0x03c2 : ptn_mb_case_map_codepoint(cp, 0);
