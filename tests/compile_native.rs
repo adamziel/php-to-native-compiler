@@ -112494,6 +112494,62 @@ var_dump(rand(0, 999999999), rand(0, 999));
 }
 
 #[test]
+fn compile_randomizer_mt19937_matches_mt_rand_to_native_binary() {
+    let root = temp_dir("ptn-native-randomizer-mt19937-matches-mt-rand");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("randomizer-mt19937-matches-mt-rand.php");
+    let output = root.join("randomizer-mt19937-matches-mt-rand-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Engine\Mt19937;
+use Random\Randomizer;
+
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+foreach ([MT_RAND_PHP, MT_RAND_MT19937] as $mode) {
+    $randomizer = new Randomizer(new Mt19937(1234, $mode));
+    mt_srand(1234, $mode);
+
+    $ok = true;
+    for ($i = 0; $i < 256; $i++) {
+        if ($randomizer->nextInt() !== mt_rand()) {
+            $ok = false;
+            break;
+        }
+    }
+    for ($i = 0; $i < 256; $i++) {
+        if ($randomizer->getInt(0, $i) !== mt_rand(0, $i)) {
+            $ok = false;
+            break;
+        }
+    }
+    var_dump($ok);
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_mt19937_range_php_legacy"));
+}
+
+#[test]
 fn compile_random_randomizer_engine_exception_trace_to_native_binary() {
     let root = temp_dir("ptn-native-random-randomizer-engine-exception-trace");
     fs::create_dir_all(&root).unwrap();

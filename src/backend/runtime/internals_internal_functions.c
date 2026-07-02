@@ -112728,6 +112728,21 @@ static int ptn_random_randomizer_range(
     size_t line,
     uint64_t *out
 ) {
+    PtnValue engine = ptn_value_deref(data->engine);
+    if (engine.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(engine.as.object->class_name, "Random\\Engine\\Mt19937") &&
+        engine.as.object->native_data != NULL) {
+        PtnMt19937State *state = (PtnMt19937State *)engine.as.object->native_data;
+        if (state->mode == PTN_MT_RAND_PHP) {
+            *out = ptn_mt19937_range_php_legacy(state, upper_inclusive);
+            return 1;
+        }
+        *out = upper_inclusive > UINT32_MAX
+            ? ptn_mt19937_range64(state, upper_inclusive)
+            : (uint64_t)ptn_mt19937_range32(state, (uint32_t)upper_inclusive);
+        return 1;
+    }
+
     if (upper_inclusive > UINT32_MAX) {
         return ptn_random_randomizer_range64(runtime, data, function_name, upper_inclusive, line, out);
     }
