@@ -61218,6 +61218,21 @@ foreach (["HTml", "htML", "html", "HTML", "foo:html", "foo:HTML", "bar:HTML", "b
     dumpList($dom->getElementsByTagName($name));
 }
 
+foreach (["nodeValue", "textContent"] as $field) {
+    $legacyNamespaced = new DOMDocument();
+    $legacyNamespaced->loadXML('<root xmlns:ns1="foo" xmlns:ns2="bar"><ns1:a/></root>');
+    $list = $legacyNamespaced->getElementsByTagName('a');
+    var_dump($list->item(0) === NULL);
+    $legacyNamespaced->documentElement->{$field} = 'new_content';
+    var_dump($list->item(0) === NULL);
+}
+$legacyNamespaced = new DOMDocument();
+$legacyNamespaced->loadXML('<root xmlns:ns1="foo" xmlns:ns2="bar"><ns1:a/></root>');
+$list = $legacyNamespaced->getElementsByTagNameNS('foo', 'a');
+var_dump($list->item(0) === NULL);
+$legacyNamespaced->documentElement->firstChild->prefix = 'ns2';
+var_dump($list->item(0) === NULL);
+
 $legacy = new DOMDocument();
 $legacy->loadXML('<?xml version="1.0"?><container/>');
 $legacy->documentElement->setAttributeNS('some:ns', 'foo:bar', 'value');
@@ -61304,6 +61319,12 @@ try {
             "2:FOO:HTML=6;foo:HTML=7;\n",
             "1:BAR:HTML=9;\n",
             "1:BAR:HTML=9;\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"some:ns\"/>\n",
             "<?xml version=\"1.0\"?>\n",
