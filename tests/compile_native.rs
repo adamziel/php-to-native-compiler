@@ -56008,6 +56008,12 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
         1
     );
     assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) an object must be set via xml_set_object() to be able to lookup method\n"
+    ));
+    assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) an object must be set via xml_set_object() to be able to lookup method\n"
+    ));
+    assert!(stdout.contains(
         "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) method stdClass::missing_start() does not exist\n"
     ));
     assert!(stdout.contains(

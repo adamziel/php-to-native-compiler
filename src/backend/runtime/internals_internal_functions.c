@@ -160274,7 +160274,14 @@ static int ptn_xml_parser_validate_handler(
             }
         }
         if (!data->has_callback_object) {
-            return 1;
+            ptn_xml_parser_throw_handler_value_error(
+                runtime,
+                function_name,
+                position,
+                parameter_name,
+                "an object must be set via xml_set_object() to be able to lookup method"
+            );
+            return 0;
         }
         if (!ptn_xml_parser_object_string_handler_is_valid(runtime, data, deref)) {
             if (runtime->exceptions->active_exception != NULL) {
