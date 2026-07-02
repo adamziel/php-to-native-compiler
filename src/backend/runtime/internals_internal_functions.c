@@ -50945,9 +50945,11 @@ static int ptn_preg_pattern_is_ascii_word_boundary(PtnStringOperand pattern) {
         pattern.data[2] == 'b';
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static int ptn_preg_ascii_word_byte(unsigned char byte) {
     return isalnum(byte) || byte == '_';
 }
+#endif
 
 static int ptn_preg_ascii_word_boundary_at(PtnStringOperand subject, size_t offset) {
     if (subject.len == 0) {
