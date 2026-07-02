@@ -3090,7 +3090,11 @@ static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
         return previous;
     }
     PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root != NULL && root->destructor_shutdown_phase) {
+    if (
+        root != NULL &&
+        root->destructor_shutdown_phase &&
+        !root->defer_uncaught_exception_emit
+    ) {
         return previous;
     }
     if (runtime->exceptions->active_exception != NULL) {

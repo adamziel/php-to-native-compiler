@@ -25017,6 +25017,59 @@ $gen->next();
 }
 
 #[test]
+fn compile_generator_pending_exception_chains_shutdown_destructor_throw_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-pending-exception-shutdown-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-pending-exception-shutdown-destructor.php");
+    let output = root.join("generator-pending-exception-shutdown-destructor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate {
+    public function getIterator(): Traversable {
+        yield "foo";
+        echo "baz\n";
+        throw new Exception("inner");
+    }
+
+    public function __destruct() {
+        throw new Exception("destruct");
+    }
+}
+
+function f() {
+    var_dump(new stdClass, yield from new It());
+}
+
+$gen = f();
+var_dump($gen->current());
+$gen->next();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("string(3) \"foo\"\nbaz\n\n"), "{stdout}");
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: inner in "),
+        "{stdout}"
+    );
+    assert!(stdout.contains("It->getIterator()"), "{stdout}");
+    assert!(stdout.contains(": f()"), "{stdout}");
+    assert!(stdout.contains("Generator->next()"), "{stdout}");
+    assert!(
+        stdout.contains("\n\nNext Exception: destruct in "),
+        "{stdout}"
+    );
+    assert!(stdout.contains("It->__destruct()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_iterator_enters_inside_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-iterator-in-fiber");
     fs::create_dir_all(&root).unwrap();
