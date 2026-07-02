@@ -1830,8 +1830,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(date_create_from_format|date_parse_from_format)[[:space:]]*\(/) {
-                print "unsupported-internal\trequires date format parser diagnostics and fractional-second normalization outside PTN modeled date runtime"
+            if (line ~ /(^|[^[:alnum:]_$])date_create_from_format[[:space:]]*\(/) {
+                print "unsupported-internal\trequires procedural date_create_from_format object construction outside PTN modeled date runtime"
                 found = 1
                 exit
             }

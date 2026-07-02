@@ -2551,11 +2551,11 @@ fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
 #[test]
 fn phpt_classifier_excludes_unsupported_date_format_parser_rows() {
     let classification = classify(
-        "--TEST--\ndate parser\n--FILE--\n<?php\nvar_dump(date_parse_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777'));\n--EXPECT--\n",
+        "--TEST--\ndate parser\n--FILE--\n<?php\nvar_dump(date_create_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777'));\n--EXPECT--\n",
     );
 
     assert!(classification.starts_with("unsupported-internal\t"));
-    assert!(classification.contains("date format parser diagnostics"));
+    assert!(classification.contains("procedural date_create_from_format"));
 }
 
 #[test]

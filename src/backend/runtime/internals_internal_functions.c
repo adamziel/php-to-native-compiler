@@ -135754,6 +135754,234 @@ static PtnValue ptn_date_parse_result(
     return result;
 }
 
+static void ptn_date_parse_result_set_diagnostics(
+    PtnValue result,
+    const char *kind,
+    int64_t count,
+    int64_t offset,
+    const char *message
+) {
+    PtnValue entries = ptn_array_from_literal_entries(0, NULL);
+    if (message != NULL) {
+        ptn_array_set_entry(entries.as.array, ptn_array_int_key(offset), ptn_string(message));
+    }
+    if (strcmp(kind, "warnings") == 0) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("warning_count"), ptn_int(count));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("warnings"), entries);
+    } else {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("error_count"), ptn_int(count));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("errors"), entries);
+    }
+}
+
+static int ptn_date_parse_from_format_digits(
+    const char **cursor_in_out,
+    size_t width,
+    int *value_out
+) {
+    const char *cursor = *cursor_in_out;
+    int value = 0;
+    for (size_t i = 0; i < width; i++) {
+        if (!isdigit((unsigned char)cursor[i])) {
+            return 0;
+        }
+        value = value * 10 + (cursor[i] - '0');
+    }
+    *cursor_in_out = cursor + width;
+    *value_out = value;
+    return 1;
+}
+
+static int ptn_date_parse_from_format_fraction(
+    const char **cursor_in_out,
+    double *fraction_out
+) {
+    const char *cursor = *cursor_in_out;
+    if (!isdigit((unsigned char)*cursor)) {
+        return 0;
+    }
+    double fraction = 0.0;
+    double scale = 0.1;
+    int digits = 0;
+    while (digits < 6 && isdigit((unsigned char)*cursor)) {
+        fraction += (double)(*cursor - '0') * scale;
+        scale /= 10.0;
+        digits++;
+        cursor++;
+    }
+    *cursor_in_out = cursor;
+    *fraction_out = fraction;
+    return 1;
+}
+
+static int ptn_date_parse_from_format_unescaped_plus(const char *format) {
+    size_t len = strlen(format);
+    if (len == 0 || format[len - 1] != '+') {
+        return 0;
+    }
+    size_t slash_count = 0;
+    for (size_t i = len - 1; i > 0 && format[i - 1] == '\\'; i--) {
+        slash_count++;
+    }
+    return slash_count % 2 == 0;
+}
+
+static PtnValue ptn_date_parse_from_format_result(const char *format, const char *datetime) {
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    double fraction = 0.0;
+    int has_year = 0;
+    int has_month = 0;
+    int has_day = 0;
+    int has_hour = 0;
+    int has_minute = 0;
+    int has_second = 0;
+    int has_fraction = 0;
+    int error_count = 0;
+    int64_t diagnostic_offset = 0;
+    const char *diagnostic_message = NULL;
+    const int trailing_allowed = ptn_date_parse_from_format_unescaped_plus(format);
+    const char *format_cursor = format;
+    const char *datetime_cursor = datetime;
+
+    while (*format_cursor != '\0') {
+        char token = *format_cursor++;
+        if (token == '+' && *format_cursor == '\0') {
+            break;
+        }
+        if (token == '\\') {
+            if (*format_cursor == '\0') {
+                if (*datetime_cursor == '\0') {
+                    error_count++;
+                    diagnostic_offset = (int64_t)(datetime_cursor - datetime);
+                    diagnostic_message = "Not enough data available to satisfy format";
+                } else {
+                    error_count += 2;
+                    diagnostic_offset = (int64_t)(datetime_cursor - datetime);
+                    diagnostic_message = "Trailing data";
+                }
+                break;
+            }
+            token = *format_cursor++;
+            if (*datetime_cursor != token) {
+                error_count++;
+                diagnostic_offset = (int64_t)(datetime_cursor - datetime);
+                diagnostic_message = *datetime_cursor == '\0'
+                    ? "Not enough data available to satisfy format"
+                    : "Unexpected data found.";
+                break;
+            }
+            datetime_cursor++;
+            continue;
+        }
+        int parsed = 0;
+        switch (token) {
+            case 'Y':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 4, &year);
+                has_year = parsed;
+                break;
+            case 'y':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &year);
+                if (parsed) {
+                    year += year >= 70 ? 1900 : 2000;
+                    has_year = 1;
+                }
+                break;
+            case 'm':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &month);
+                has_month = parsed;
+                break;
+            case 'd':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &day);
+                has_day = parsed;
+                break;
+            case 'H':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &hour);
+                has_hour = parsed;
+                break;
+            case 'i':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &minute);
+                has_minute = parsed;
+                break;
+            case 's':
+                parsed = ptn_date_parse_from_format_digits(&datetime_cursor, 2, &second);
+                has_second = parsed;
+                break;
+            case 'u':
+                parsed = ptn_date_parse_from_format_fraction(&datetime_cursor, &fraction);
+                has_fraction = parsed;
+                break;
+            default:
+                if (*datetime_cursor == token) {
+                    datetime_cursor++;
+                    parsed = 1;
+                } else {
+                    parsed = 0;
+                }
+                break;
+        }
+        if (!parsed) {
+            error_count++;
+            diagnostic_offset = (int64_t)(datetime_cursor - datetime);
+            diagnostic_message = *datetime_cursor == '\0'
+                ? "Not enough data available to satisfy format"
+                : "Unexpected data found.";
+            break;
+        }
+    }
+
+    if (error_count == 0 && *datetime_cursor != '\0') {
+        diagnostic_offset = (int64_t)(datetime_cursor - datetime);
+        diagnostic_message = "Trailing data";
+        if (trailing_allowed) {
+            PtnValue result = ptn_date_parse_result(
+                has_year,
+                year,
+                has_month,
+                month,
+                has_day,
+                day,
+                has_hour,
+                hour,
+                has_minute,
+                minute,
+                has_second,
+                second,
+                has_fraction,
+                fraction
+            );
+            ptn_date_parse_result_set_diagnostics(result, "warnings", 1, diagnostic_offset, diagnostic_message);
+            return result;
+        }
+        error_count = 1;
+    }
+
+    PtnValue result = ptn_date_parse_result(
+        has_year,
+        year,
+        has_month,
+        month,
+        has_day,
+        day,
+        has_hour,
+        hour,
+        has_minute,
+        minute,
+        has_second,
+        second,
+        has_fraction,
+        fraction
+    );
+    if (error_count > 0) {
+        ptn_date_parse_result_set_diagnostics(result, "errors", error_count, diagnostic_offset, diagnostic_message);
+    }
+    return result;
+}
+
 static int ptn_date_military_zone_offset(char letter, int *offset_out) {
     char upper = (char)toupper((unsigned char)letter);
     if (upper >= 'A' && upper <= 'I') {
@@ -135884,6 +136112,27 @@ static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const 
 
     free(datetime);
     return ptn_date_parse_result(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0);
+}
+
+static PtnValue ptn_internal_date_parse_from_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "date_parse_from_format", 1, "format", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand datetime = ptn_internal_expect_string_arg(runtime, "date_parse_from_format", 2, "datetime", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(format);
+        return ptn_null();
+    }
+    char *format_string = ptn_duplicate_string_len(format.data, format.len);
+    char *datetime_string = ptn_duplicate_string_len(datetime.data, datetime.len);
+    PtnValue result = ptn_date_parse_from_format_result(format_string, datetime_string);
+    free(datetime_string);
+    free(format_string);
+    ptn_string_operand_free(format);
+    ptn_string_operand_free(datetime);
+    return result;
 }
 
 static PtnValue ptn_internal_date_get_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -194784,6 +195033,7 @@ static PtnValue ptn_internal_date_offset_get(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_date_isodate_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_modify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_parse_from_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sunrise(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -195632,6 +195882,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_modify", 2, 2, ptn_internal_date_modify },
         { "date_offset_get", 1, 1, ptn_internal_date_offset_get },
         { "date_parse", 1, 1, ptn_internal_date_parse },
+        { "date_parse_from_format", 2, 2, ptn_internal_date_parse_from_format },
         { "date_sun_info", 3, 3, ptn_internal_date_sun_info },
         { "date_sub", 2, 2, ptn_internal_date_sub },
         { "date_sun_info", 3, 3, ptn_internal_date_sun_info },

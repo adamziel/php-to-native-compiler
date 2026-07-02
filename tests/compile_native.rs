@@ -30191,6 +30191,84 @@ var_dump(DateTime::createFromFormat('O', 'invalid'));
 }
 
 #[test]
+fn compile_date_parse_from_format_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-date-parse-from-format-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-parse-from-format-diagnostics.php");
+    let output = root.join("date-parse-from-format-diagnostics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+$bareEscape = date_parse_from_format("\\", "AAAABBBB");
+var_dump($bareEscape['year']);
+var_dump($bareEscape['error_count']);
+var_dump($bareEscape['errors']);
+
+$trailingError = date_parse_from_format('Y-m-d', '2024-01-02foo');
+echo $trailingError['year'], '-', $trailingError['month'], '-', $trailingError['day'], "\n";
+var_dump($trailingError['error_count']);
+var_dump($trailingError['errors']);
+
+$trailingWarning = date_parse_from_format('Y-m-d+', '2024-01-02foo');
+var_dump($trailingWarning['warning_count']);
+var_dump($trailingWarning['warnings']);
+
+$fraction = date_parse_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777');
+var_dump($fraction['fraction']);
+var_dump($fraction['error_count']);
+var_dump($fraction['errors']);
+var_dump(function_exists('date_parse_from_format'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "int(2)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(13) \"Trailing data\"\n",
+            "}\n",
+            "2024-1-2\n",
+            "int(1)\n",
+            "array(1) {\n",
+            "  [10]=>\n",
+            "  string(13) \"Trailing data\"\n",
+            "}\n",
+            "int(1)\n",
+            "array(1) {\n",
+            "  [10]=>\n",
+            "  string(13) \"Trailing data\"\n",
+            "}\n",
+            "float(0.777777)\n",
+            "int(1)\n",
+            "array(1) {\n",
+            "  [26]=>\n",
+            "  string(13) \"Trailing data\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_date_parse_from_format"));
+}
+
+#[test]
 fn compile_date_timelib_relative_edges_to_native_binary() {
     let root = temp_dir("ptn-native-date-timelib-relative-edges");
     fs::create_dir_all(&root).unwrap();
