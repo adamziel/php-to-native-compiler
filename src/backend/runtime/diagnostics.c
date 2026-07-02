@@ -3266,15 +3266,6 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->filter_default = ptn_duplicate_string(
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default
     );
-    if (configured_filter_default != NULL &&
-        !ptn_ascii_case_equal(configured_filter_default, "unsafe_raw") &&
-        ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
-        runtime->diagnostics.emitted_deprecation = 1;
-        ptn_diagnostic_output_cstr(
-            &runtime->diagnostics,
-            "Deprecated: The filter.default ini setting is deprecated in Unknown on line 0\n"
-        );
-    }
     runtime->pcre_backtrack_limit = ptn_duplicate_string(
         configured_pcre_backtrack_limit == NULL ? "1000000" : configured_pcre_backtrack_limit
     );
@@ -3416,6 +3407,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->session_last_data = NULL;
     runtime->session_last_data_len = 0;
     runtime->session_last_data_valid = 0;
+    if (configured_filter_default != NULL &&
+        !ptn_ascii_case_equal(configured_filter_default, "unsafe_raw") &&
+        ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+        runtime->diagnostics.emitted_deprecation = 1;
+        ptn_diagnostic_output_cstr(
+            &runtime->diagnostics,
+            "Deprecated: The filter.default ini setting is deprecated in Unknown on line 0\n"
+        );
+    }
     runtime->precision = ptn_ini_precision_value(
         getenv("PTN_PHP_PRECISION"),
         PTN_DEFAULT_PRECISION,

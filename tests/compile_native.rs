@@ -85048,6 +85048,35 @@ O&#39;Henry&#60;b&#62;Bold&#60;/b&#62;&#34;quotes&#34;\\slash"
 }
 
 #[test]
+fn phpc_filter_default_special_chars_emits_startup_deprecation() {
+    let root = temp_dir("ptn-phpc-filter-default-startup-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-default-startup-deprecation.php");
+    fs::write(&input, "<?php\necho \"Done\\n\";\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("filter.default=special_chars")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+
+    assert!(
+        execution.status.success(),
+        "phpc exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: The filter.default ini setting is deprecated in Unknown on line 0\nDone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_filter_validation_and_input_semantics() {
     let root = temp_dir("ptn-phpc-filter-validation-input");
     fs::create_dir_all(&root).unwrap();
