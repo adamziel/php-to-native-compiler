@@ -16,7 +16,9 @@ use crate::ast::{
     TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
     UnsetTarget,
 };
-use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
+use crate::diagnostic::{
+    Diagnostic, DiagnosticKind, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan,
+};
 use crate::lexer::{
     lex, lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
     StringPart as TokenStringPart, Token, TokenKind,
@@ -6740,14 +6742,18 @@ impl Parser<'_> {
             return Ok(None);
         }
 
-        let eval_program = parse_with_options(
+        let eval_program = match parse_with_options(
             &format!("<?php {eval_source}"),
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
             false,
             true,
-        )?;
+        ) {
+            Ok(program) => program,
+            Err(error) if error.kind == DiagnosticKind::ParseError => return Ok(None),
+            Err(error) => return Err(error),
+        };
         for statement in &eval_program.statements {
             self.note_runtime_class_alias_statement(statement);
         }
@@ -6887,14 +6893,18 @@ impl Parser<'_> {
         let Some(eval_source) = self.compile_time_eval_source(&arguments[0]) else {
             return Ok(None);
         };
-        let eval_program = parse_with_options(
+        let eval_program = match parse_with_options(
             &format!("<?php {eval_source}"),
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
             false,
             true,
-        )?;
+        ) {
+            Ok(program) => program,
+            Err(error) if error.kind == DiagnosticKind::ParseError => return Ok(None),
+            Err(error) => return Err(error),
+        };
 
         if !eval_program.functions.is_empty()
             || !eval_program.classes.is_empty()
