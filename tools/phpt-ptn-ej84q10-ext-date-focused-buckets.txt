@@ -1,0 +1,12 @@
+/home/claude/php-src-phpt/ext/date/tests/013.phpt
+/home/claude/php-src-phpt/ext/date/tests/date-set-timestamp.phpt
+/home/claude/php-src-phpt/ext/date/tests/date_timestamp_get.phpt
+/home/claude/php-src-phpt/ext/date/tests/date_timezone_get_basic1.phpt
+/home/claude/php-src-phpt/ext/date/tests/date_add_basic.phpt
+/home/claude/php-src-phpt/ext/date/tests/date_basic1.phpt
+/home/claude/php-src-phpt/ext/date/tests/date.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug28599.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug30096.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug43527.phpt
+/home/claude/php-src-phpt/ext/date/tests/DateTimeZone_getTransitions_bug1.phpt
+/home/claude/php-src-phpt/ext/date/tests/bug81504.phpt

@@ -127805,6 +127805,7 @@ static int ptn_timezone_system_is_dst_for_name(const char *name, time_t timestam
 static int ptn_timezone_is_europe_dst_zone(const char *name) {
     return ptn_ascii_case_equal(name, "Europe/London") ||
         ptn_ascii_case_equal(name, "Atlantic/Azores") ||
+        ptn_ascii_case_equal(name, "MET") ||
         ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
@@ -128152,6 +128153,9 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "Atlantic/Azores")) {
         return europe_dst ? 0 : -3600;
     }
+    if (ptn_ascii_case_equal(name, "MET")) {
+        return europe_dst ? 7200 : 3600;
+    }
     if (ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
@@ -128303,10 +128307,6 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
         ptn_ascii_case_equal(name, "Africa/Abidjan")) {
         return "UTC";
     }
-    const char *system_abbreviation = ptn_timezone_system_abbreviation_for_name(name, timestamp);
-    if (system_abbreviation != NULL) {
-        return system_abbreviation;
-    }
     if (ptn_ascii_case_equal(name, "Europe/London")) {
         return europe_dst ? "BST" : "GMT";
     }
@@ -128315,6 +128315,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "Atlantic/Azores")) {
         return europe_dst ? "AZOST" : "AZOT";
+    }
+    if (ptn_ascii_case_equal(name, "MET")) {
+        return europe_dst ? "MEST" : "MET";
     }
     if (ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
@@ -128416,6 +128419,10 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
         ptn_ascii_case_equal(name, "PDT") ||
         ptn_ascii_case_equal(name, "ADT")) {
         return name;
+    }
+    const char *system_abbreviation = ptn_timezone_system_abbreviation_for_name(name, timestamp);
+    if (system_abbreviation != NULL) {
+        return system_abbreviation;
     }
     return name;
 }
@@ -132405,9 +132412,12 @@ static int ptn_datetime_update_wall_date(PtnValue target, int64_t year, int64_t 
     int64_t wall_timestamp = ptn_datetime_clamp_i128_to_i64((__int128)data->timestamp + (__int128)offset);
     PtnDateTimeCivilParts civil;
     ptn_datetime_break_timestamp(wall_timestamp, &civil);
+    int64_t month_zero_based = month - 1;
+    int64_t year_delta = ptn_datetime_floor_div_i64(month_zero_based, 12);
+    int64_t normalized_month_zero_based = month_zero_based - year_delta * 12;
     time_t adjusted_wall = ptn_datetime_utc_timestamp_for_parts(
-        year,
-        (int)month,
+        year + year_delta,
+        (int)normalized_month_zero_based + 1,
         (int)day,
         civil.hour,
         civil.minute,
