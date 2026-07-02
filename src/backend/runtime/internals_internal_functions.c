@@ -140299,7 +140299,8 @@ static int ptn_xml_node_matches_tag(PtnXmlNode *node, const char *tag_name) {
     }
     const char *node_name = node->name == NULL ? "" : node->name;
     int requested_has_prefix = strchr(requested, ':') != NULL;
-    if (!requested_has_prefix && strchr(node_name, ':') != NULL) {
+    PtnXmlNode *document = ptn_xml_document_for_node(node);
+    if (!requested_has_prefix && strchr(node_name, ':') != NULL && document != NULL && document->html_document) {
         return 0;
     }
     const char *candidate = requested_has_prefix ? node_name : ptn_xml_local_name(node_name);
@@ -153627,10 +153628,12 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
         attr->id_attribute_state = replace->id_attribute_state;
     }
     ptn_dom_element_attach_attribute(runtime, element, attr, replace, 0);
+    PtnXmlNode *document = ptn_xml_document_for_node(element);
     if (ns &&
         attr->namespace_uri != NULL &&
         attr->namespace_uri[0] != '\0' &&
-        !ptn_xml_attribute_is_namespace_declaration(attr)) {
+        !ptn_xml_attribute_is_namespace_declaration(attr) &&
+        !(document != NULL && document->modern_dom && document->html_document)) {
         char *prefix = ptn_xml_prefix_dup(attr->name == NULL ? "" : attr->name);
         ptn_dom_element_mark_prefixed_namespace_explicit(element, prefix, attr->namespace_uri);
         free(prefix);
