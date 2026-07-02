@@ -80442,7 +80442,17 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
         if (field == 10) return ptn_int(hour % 12);
         if (field == 12) return ptn_int(minute);
         if (field == 13) return ptn_int(second);
-        if (field == 15) return ptn_int(ptn_intl_timezone_offset_seconds(data->timezone, (time_t)(data->time_ms / 1000)) * 1000);
+        if (field == 15 || field == 16) {
+            int raw_offset = 0;
+            int dst_offset = 0;
+            ptn_intl_timezone_offsets_ms(
+                data->timezone,
+                (time_t)(data->time_ms / 1000),
+                &raw_offset,
+                &dst_offset
+            );
+            return ptn_int(field == 15 ? raw_offset : dst_offset);
+        }
         if (field == 2) return ptn_int(month - 1);
         if (field == 5) return ptn_int(day);
         if (field == 1) return ptn_int(year);

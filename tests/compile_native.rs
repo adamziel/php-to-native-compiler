@@ -54481,6 +54481,15 @@ var_dump($lsb->useDaylightTime());\n\
 var_dump($gmt->useDaylightTime());\n\
 var_dump(intltz_use_daylight_time($lsb));\n\
 var_dump(intltz_use_daylight_time($gmt));\n\
+$ams = IntlCalendar::createInstance('Europe/Amsterdam');\n\
+$ams->setTime(strtotime('2012-07-01 00:00:00 +0000') * 1000);\n\
+var_dump($ams->get(IntlCalendar::FIELD_ZONE_OFFSET));\n\
+var_dump($ams->get(IntlCalendar::FIELD_DST_OFFSET));\n\
+$ams->setTimeZone(null);\n\
+var_dump($ams->getTimeZone()->getID());\n\
+$ams->setTimeZone(IntlTimeZone::createTimeZone('GMT+05:30'));\n\
+var_dump($ams->get(IntlCalendar::FIELD_ZONE_OFFSET));\n\
+var_dump($ams->get(IntlCalendar::FIELD_DST_OFFSET));\n\
 ini_set('intl.default_locale', 'en_US');\n\
 var_dump($lsb->getDisplayName());\n\
 ini_set('intl.default_locale', 'pt_PT');\n\
@@ -54522,6 +54531,12 @@ var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_GENERIC_LOCATION));\n
     assert!(
         stdout.contains(
             "int(3600000)\nint(3600000)\nbool(true)\nbool(false)\nbool(true)\nbool(false)"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "int(3600000)\nint(3600000)\nstring(16) \"Europe/Amsterdam\"\nint(19800000)\nint(0)"
         ),
         "{stdout}"
     );
