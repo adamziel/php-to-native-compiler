@@ -134,6 +134,24 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 }
 
 #[test]
+fn parser_rejects_isset_result_expressions() {
+    let message = "Cannot use isset() on the result of an expression (you can use \"null !== expression\" instead)";
+
+    let error = parser::parse("<?php isset(1 + 1);").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, message);
+
+    let error = parser::parse("<?php isset(abc());").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, message);
+
+    parser::parse(
+        "<?php function values() { return [1]; } isset(values()[0]); isset((new stdClass)->prop);",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_reports_namespace_separator_whitespace_and_reserved_constant_redeclaration() {
     let error = parser::parse("<?php\nFoo \\ Bar \\ Baz;\n").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::ParseError);
@@ -95820,6 +95838,60 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Using $this when not in object context\nUsing $this when not in object context\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_isset_this_member_receivers_throw_outside_object_context_to_native_binary() {
+    let root = temp_dir("ptn-native-isset-this-member-receivers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("isset-this-member-receivers.php");
+    let output = root.join("isset-this-member-receivers-bin");
+    fs::write(
+        &input,
+        "<?php
+function key_name() {
+    echo \"key\\n\";
+    return 0;
+}
+var_dump(isset($this));
+try {
+    var_dump(isset($this->foo));
+} catch (Throwable $e) {
+    echo \"exception\\n\";
+}
+try {
+    var_dump(isset($this->foo->bar));
+} catch (Throwable $e) {
+    echo \"exception\\n\";
+}
+try {
+    var_dump(isset($this[key_name()]));
+} catch (Throwable $e) {
+    echo \"exception\\n\";
+}
+class A extends ArrayObject {
+    public $foo = 1;
+    public function test() {
+        $this[0] = 5;
+        var_dump(isset($this));
+        var_dump(isset($this->foo));
+        var_dump(isset($this[0]));
+    }
+}
+(new A)->test();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nexception\nexception\nexception\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

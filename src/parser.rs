@@ -43,6 +43,8 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
     "class constant fetches are unsupported; class constants and enum cases require class metadata";
 const NULLSAFE_WRITE_CONTEXT_MESSAGE: &str = "Can't use nullsafe operator in write context";
 const TEMPORARY_WRITE_CONTEXT_MESSAGE: &str = "Cannot use temporary expression in write context";
+const ISSET_RESULT_EXPRESSION_MESSAGE: &str =
+    "Cannot use isset() on the result of an expression (you can use \"null !== expression\" instead)";
 const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe chain";
 const INVALID_FIRST_CLASS_CALLABLE_PLACEHOLDER_MESSAGE: &str =
     "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders";
@@ -10538,6 +10540,9 @@ impl Parser<'_> {
                 "isset() expects at least one argument",
                 Some(start_span),
             ));
+        }
+        for target in &targets {
+            validate_isset_target_expr(target)?;
         }
         Ok(Expr::Isset {
             targets,
@@ -27780,6 +27785,26 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::MagicConstant(_, _) => {}
     }
     Ok(())
+}
+
+fn validate_isset_target_expr(expr: &Expr) -> Result<()> {
+    reject_append_array_read(expr)?;
+    match expr {
+        Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
+        | Expr::PropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. }
+        | Expr::DynamicPropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
+        | Expr::DynamicStaticPropertyFetch { .. }
+        | Expr::ArrayAccess { index: Some(_), .. } => Ok(()),
+        Expr::Grouped { expr, .. } => validate_isset_target_expr(expr),
+        _ => Err(Diagnostic::new(
+            ISSET_RESULT_EXPRESSION_MESSAGE,
+            Some(expr.span()),
+        )),
+    }
 }
 
 fn reject_array_literal_holes(expr: &Expr) -> Result<()> {

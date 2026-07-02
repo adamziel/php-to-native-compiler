@@ -55605,7 +55605,7 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
-        let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+        let receiver_lookup_temp = self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
         let lookup_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
         out.push_str(&lookup_temp);
@@ -55641,7 +55641,7 @@ impl ValueEmitter {
         nullsafe: bool,
         line: usize,
     ) -> String {
-        let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+        let receiver_lookup_temp = self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
         let eager_name_value_temp = (!nullsafe).then(|| self.emit_materialized_value(out, name));
         let lookup_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
@@ -55710,7 +55710,7 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
-        let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+        let receiver_lookup_temp = self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
         let lookup_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
         out.push_str(&lookup_temp);
@@ -55738,6 +55738,24 @@ impl ValueEmitter {
         out.push_str("        }\n");
         emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
         lookup_temp
+    }
+
+    fn emit_quiet_lookup_for_dereference_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+    ) -> String {
+        if matches!(receiver, ValueExpr::Load { name, .. } if name == "this") {
+            let receiver_temp = self.emit_materialized_value(out, receiver);
+            let lookup_temp = self.next_temp();
+            out.push_str("        PtnLookupResult ");
+            out.push_str(&lookup_temp);
+            out.push_str(" = ptn_lookup_found(");
+            out.push_str(&receiver_temp);
+            out.push_str(");\n");
+            return lookup_temp;
+        }
+        self.emit_quiet_lookup(out, receiver)
     }
 
     fn emit_comparison(
@@ -55940,65 +55958,71 @@ impl ValueEmitter {
             }
             ValueExpr::ArrayAccess { array, index, line } => {
                 if let ValueExpr::Load { name, .. } = array.as_ref() {
-                    let index_temp = self.emit_materialized_value(out, index);
-                    let diagnostic_needed_temp = self.next_temp();
-                    out.push_str("        int ");
-                    out.push_str(&diagnostic_needed_temp);
-                    out.push_str(" = 1;\n");
-                    let diagnostic_probe_temp = self.next_temp();
-                    out.push_str("        PtnLookupResult ");
-                    out.push_str(&diagnostic_probe_temp);
-                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\");\n");
-                    out.push_str("        if (");
-                    out.push_str(&diagnostic_probe_temp);
-                    out.push_str(".exists && ptn_value_deref(");
-                    out.push_str(&diagnostic_probe_temp);
-                    out.push_str(".value).type == PTN_ARRAY) {\n");
-                    out.push_str(
-                        "            ptn_emit_array_offset_key_conversion_diagnostic(&runtime, ",
-                    );
-                    out.push_str(&index_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(", 1);\n");
-                    out.push_str("            ");
-                    out.push_str(&diagnostic_needed_temp);
-                    out.push_str(" = 0;\n");
-                    out.push_str("        }\n");
-                    emit_value_cleanup(out, "        ", &format!("{diagnostic_probe_temp}.value"));
+                    if name != "this" {
+                        let index_temp = self.emit_materialized_value(out, index);
+                        let diagnostic_needed_temp = self.next_temp();
+                        out.push_str("        int ");
+                        out.push_str(&diagnostic_needed_temp);
+                        out.push_str(" = 1;\n");
+                        let diagnostic_probe_temp = self.next_temp();
+                        out.push_str("        PtnLookupResult ");
+                        out.push_str(&diagnostic_probe_temp);
+                        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\");\n");
+                        out.push_str("        if (");
+                        out.push_str(&diagnostic_probe_temp);
+                        out.push_str(".exists && ptn_value_deref(");
+                        out.push_str(&diagnostic_probe_temp);
+                        out.push_str(".value).type == PTN_ARRAY) {\n");
+                        out.push_str(
+                            "            ptn_emit_array_offset_key_conversion_diagnostic(&runtime, ",
+                        );
+                        out.push_str(&index_temp);
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(", 1);\n");
+                        out.push_str("            ");
+                        out.push_str(&diagnostic_needed_temp);
+                        out.push_str(" = 0;\n");
+                        out.push_str("        }\n");
+                        emit_value_cleanup(
+                            out,
+                            "        ",
+                            &format!("{diagnostic_probe_temp}.value"),
+                        );
 
-                    let container_temp = self.next_temp();
-                    out.push_str("        PtnLookupResult ");
-                    out.push_str(&container_temp);
-                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\");\n");
-                    let result_temp = self.next_temp();
-                    out.push_str("        int ");
-                    out.push_str(&result_temp);
-                    out.push_str(" = 0;\n");
-                    out.push_str("        if (");
-                    out.push_str(&container_temp);
-                    out.push_str(".exists) {\n");
-                    out.push_str("            ");
-                    out.push_str(&result_temp);
-                    out.push_str(" = ptn_offset_is_set(&runtime, ");
-                    out.push_str(&container_temp);
-                    out.push_str(".value, ");
-                    out.push_str(&index_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(", ");
-                    out.push_str(&diagnostic_needed_temp);
-                    out.push_str(");\n");
-                    out.push_str("        }\n");
-                    emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
-                    emit_value_cleanup(out, "        ", &index_temp);
-                    return result_temp;
+                        let container_temp = self.next_temp();
+                        out.push_str("        PtnLookupResult ");
+                        out.push_str(&container_temp);
+                        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\");\n");
+                        let result_temp = self.next_temp();
+                        out.push_str("        int ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = 0;\n");
+                        out.push_str("        if (");
+                        out.push_str(&container_temp);
+                        out.push_str(".exists) {\n");
+                        out.push_str("            ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_offset_is_set(&runtime, ");
+                        out.push_str(&container_temp);
+                        out.push_str(".value, ");
+                        out.push_str(&index_temp);
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(", ");
+                        out.push_str(&diagnostic_needed_temp);
+                        out.push_str(");\n");
+                        out.push_str("        }\n");
+                        emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
+                        emit_value_cleanup(out, "        ", &index_temp);
+                        return result_temp;
+                    }
                 }
-                let container_temp = self.emit_quiet_lookup(out, array);
+                let container_temp = self.emit_quiet_lookup_for_dereference_receiver(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
@@ -56026,7 +56050,8 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let receiver_lookup_temp =
+                    self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
                 out.push_str(&result_temp);
@@ -56068,7 +56093,8 @@ impl ValueEmitter {
                 nullsafe,
                 line,
             } => {
-                let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let receiver_lookup_temp =
+                    self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
                 let eager_name_value_temp =
                     (!*nullsafe).then(|| self.emit_materialized_value(out, name));
                 let result_temp = self.next_temp();
@@ -56196,7 +56222,7 @@ impl ValueEmitter {
                 result_temp
             }
             ValueExpr::ArrayAccess { array, index, line } => {
-                let container_temp = self.emit_quiet_lookup(out, array);
+                let container_temp = self.emit_quiet_lookup_for_dereference_receiver(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
@@ -56265,7 +56291,8 @@ impl ValueEmitter {
                 nullsafe,
                 line,
             } => {
-                let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let receiver_lookup_temp =
+                    self.emit_quiet_lookup_for_dereference_receiver(out, receiver);
                 let eager_name_value_temp =
                     (!*nullsafe).then(|| self.emit_materialized_value(out, name));
                 let result_temp = self.next_temp();
@@ -56387,7 +56414,7 @@ impl ValueEmitter {
                 self.emit_dynamic_variable_quiet_lookup(out, name, *line)
             }
             ValueExpr::ArrayAccess { array, index, line } => {
-                let container_temp = self.emit_quiet_lookup(out, array);
+                let container_temp = self.emit_quiet_lookup_for_dereference_receiver(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
                 let result_temp = self.next_temp();
                 out.push_str("        PtnLookupResult ");
