@@ -147960,6 +147960,25 @@ static int ptn_xml_element_has_local_default_namespace(PtnXmlNode *element, cons
         strcmp(attr->value, namespace_uri) == 0;
 }
 
+static void ptn_xml_materialize_prefixed_namespace_for_root(PtnRuntime *runtime, PtnXmlNode *root, const char *namespace_uri) {
+    if (root == NULL || namespace_uri == NULL || namespace_uri[0] == '\0') {
+        return;
+    }
+    char *prefix = ptn_dom_element_find_prefix_for_namespace(root, namespace_uri);
+    if (prefix == NULL) {
+        prefix = ptn_dom_element_generated_attribute_prefix(root, namespace_uri, NULL);
+    }
+    ptn_dom_element_ensure_prefixed_namespace(runtime, root, prefix, namespace_uri);
+    char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
+    PtnXmlNode *declaration = ptn_xml_element_find_attribute(root, xmlns_name);
+    if (declaration != NULL) {
+        declaration->synthetic_namespace_declaration = 0;
+    }
+    free(xmlns_name);
+    ptn_xml_prefix_unqualified_namespace_elements(root, namespace_uri, prefix);
+    free(prefix);
+}
+
 static void ptn_xml_materialize_default_namespaces_for_root(PtnRuntime *runtime, PtnXmlNode *root, PtnXmlNode *node) {
     if (root == NULL || node == NULL) {
         return;
@@ -147971,19 +147990,7 @@ static void ptn_xml_materialize_default_namespaces_for_root(PtnRuntime *runtime,
         ptn_xml_element_has_local_default_namespace(node, node->namespace_uri)) {
         const char *inherited_default = ptn_xml_lookup_namespace_uri(node->parent, "");
         if (inherited_default == NULL || strcmp(inherited_default, node->namespace_uri) != 0) {
-            char *prefix = ptn_dom_element_find_prefix_for_namespace(root, node->namespace_uri);
-            if (prefix == NULL) {
-                prefix = ptn_dom_element_generated_attribute_prefix(root, node->namespace_uri, NULL);
-            }
-            ptn_dom_element_ensure_prefixed_namespace(runtime, root, prefix, node->namespace_uri);
-            char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
-            PtnXmlNode *declaration = ptn_xml_element_find_attribute(root, xmlns_name);
-            if (declaration != NULL) {
-                declaration->synthetic_namespace_declaration = 0;
-            }
-            free(xmlns_name);
-            ptn_xml_prefix_unqualified_namespace_elements(root, node->namespace_uri, prefix);
-            free(prefix);
+            ptn_xml_materialize_prefixed_namespace_for_root(runtime, root, node->namespace_uri);
         }
     }
     for (size_t i = 0; i < node->child_count; i++) {
@@ -147998,6 +148005,12 @@ static void ptn_xml_materialize_adopted_default_namespace(PtnRuntime *runtime, P
     PtnXmlNode *document = ptn_xml_document_for_node(node);
     if (document != NULL && document->modern_dom) {
         return;
+    }
+    if (node->namespace_uri != NULL &&
+        node->namespace_uri[0] != '\0' &&
+        !ptn_xml_name_has_prefix(node->name) &&
+        !ptn_xml_element_has_local_default_namespace(node, node->namespace_uri)) {
+        ptn_xml_materialize_prefixed_namespace_for_root(runtime, node, node->namespace_uri);
     }
     for (size_t i = 0; i < node->child_count; i++) {
         ptn_xml_materialize_default_namespaces_for_root(runtime, node, node->children[i]);
