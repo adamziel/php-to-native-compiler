@@ -74923,6 +74923,51 @@ static int ptn_hash_context_payload_int(PtnArray *payload, int64_t key, int64_t 
     return 1;
 }
 
+static int ptn_hash_context_php_spec_array_has_ints(PtnArray *payload, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        int64_t ignored = 0;
+        if (!ptn_hash_context_payload_int(payload, (int64_t)i, &ignored)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_hash_context_xxhash_validation_failure_code(
+    const char *algo,
+    PtnArray *state,
+    int *code_out
+) {
+    size_t spec_count = 0;
+    int64_t memsize_key = -1;
+    int64_t memsize_limit = 0;
+    if (ptn_ascii_case_equal(algo, "xxh32")) {
+        spec_count = 12;
+        memsize_key = 10;
+        memsize_limit = 16;
+    } else if (ptn_ascii_case_equal(algo, "xxh64")) {
+        spec_count = 22;
+        memsize_key = 18;
+        memsize_limit = 32;
+    } else {
+        return 0;
+    }
+
+    if (!ptn_hash_context_php_spec_array_has_ints(state, spec_count)) {
+        return 0;
+    }
+
+    int64_t memsize = 0;
+    if (!ptn_hash_context_payload_int(state, memsize_key, &memsize)) {
+        return 0;
+    }
+    if (memsize < 0 || memsize >= memsize_limit) {
+        *code_out = -2000;
+        return 1;
+    }
+    return 0;
+}
+
 static int ptn_hash_context_unserialize_payload(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -74991,6 +75036,16 @@ static int ptn_hash_context_unserialize_payload(
     PtnValue state = ptn_value_deref(state_entry->value);
     if (state.type != PTN_ARRAY) {
         ptn_hash_context_throw_ill_formed_code(runtime, algo, -1);
+        free(algo);
+        return 0;
+    }
+    int xxhash_validation_code = 0;
+    if (ptn_hash_context_xxhash_validation_failure_code(
+            algo,
+            state.as.array,
+            &xxhash_validation_code
+        )) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, xxhash_validation_code);
         free(algo);
         return 0;
     }
