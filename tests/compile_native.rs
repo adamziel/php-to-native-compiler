@@ -58478,6 +58478,65 @@ var_dump($property->getValue(new XMLReader()));
 }
 
 #[test]
+fn compile_xmlreader_expand_adopted_default_namespace_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-expand-adopted-default-ns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlreader-expand-adopted-default-ns.php");
+    let output = root.join("xmlreader-expand-adopted-default-ns-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml_reader = XMLReader::XML('
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+ <results>
+  <result><binding xml:id="foo" xmlns:custom="urn:custom" custom:foo="bar" name="s"><uri/></binding></result>
+ </results>
+</sparql>');
+
+$xml_reader->next("sparql");
+$xml_reader->read();
+$xml_reader->next("results");
+
+while ($xml_reader->read()) {
+    if ($xml_reader->next("result")) {
+        $result_as_dom_node = $xml_reader->expand();
+        $child = $result_as_dom_node->firstChild;
+        unset($result_as_dom_node);
+        var_dump($child->namespaceURI);
+        foreach ($child->attributes as $attr) {
+            var_dump($attr->namespaceURI);
+        }
+        $doc = new DOMDocument();
+        $doc->adoptNode($child);
+        echo $doc->saveXML($child), "\n";
+        break;
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(38) \"http://www.w3.org/2005/sparql-results#\"\n",
+            "string(36) \"http://www.w3.org/XML/1998/namespace\"\n",
+            "string(10) \"urn:custom\"\n",
+            "NULL\n",
+            "<default:binding xmlns:custom=\"urn:custom\" xmlns:default=\"http://www.w3.org/2005/sparql-results#\" xml:id=\"foo\" custom:foo=\"bar\" name=\"s\"><default:uri/></default:binding>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_materialize_prefixed_namespace_for_root"));
+}
+
+#[test]
 fn compile_libxml_error_buffer_and_dom_line_numbers_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-errors-dom-lines");
     fs::create_dir_all(&root).unwrap();
