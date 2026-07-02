@@ -767,6 +767,8 @@ typedef struct {
 #define PTN_T_NS_SEPARATOR 1120
 #define PTN_T_NULLSAFE_OBJECT_OPERATOR 1121
 #define PTN_T_BAD_CHARACTER 1122
+#define PTN_T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG 1123
+#define PTN_T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG 1124
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
