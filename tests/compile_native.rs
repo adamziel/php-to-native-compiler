@@ -36993,6 +36993,41 @@ foreach (mb_str_split(pack('H*', '313233f092'), 2, 'UTF-8') as $chunk) {\n\
 }
 
 #[test]
+fn compile_mbstring_convert_case_title_ignorable_context_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-case-title-ignorable-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-case-title-ignorable-context.php");
+    let output = root.join("mb-convert-case-title-ignorable-context-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo bin2hex(mb_convert_case('a' . str_repeat('.', 63) . \"\\xce\\xa3\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case('a' . str_repeat('.', 64) . \"\\xce\\xa3\", MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_case(\"abc\\xce\\xa3\" . str_repeat('.', 64) . 'a abc', MB_CASE_TITLE, 'UTF-8')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let expected = format!(
+        "41{}cf82\n41{}cf83\n416263cf83{}6120416263\n",
+        "2e".repeat(63),
+        "2e".repeat(64),
+        "2e".repeat(64)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_convert_variables_recursive_arrays_to_native_binary() {
     let root = temp_dir("ptn-native-mb-convert-variables-recursive");
     fs::create_dir_all(&root).unwrap();
