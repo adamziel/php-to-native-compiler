@@ -25420,6 +25420,51 @@ try {
 }
 
 #[test]
+fn compile_exceptional_finally_continues_after_function_call_to_native_binary() {
+    let root = temp_dir("ptn-native-exceptional-finally-call-continues");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exceptional-finally-call-continues.php");
+    let output = root.join("exceptional-finally-call-continues-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo() {
+    echo "4";
+}
+function bar() {
+    try {
+        echo "2";
+        throw new Exception();
+        echo "x";
+    } catch (MyEx $ex) {
+        echo "x";
+    } finally {
+        echo "3";
+        foo();
+        echo "5";
+    }
+}
+try {
+    echo "1";
+    bar();
+    echo "x";
+} catch (Exception $ex) {
+    echo "6";
+}
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "123456\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_finally_return_hidden_by_caught_throw_restores_pending_exception_to_native_binary() {
     let root = temp_dir("ptn-native-finally-return-hidden-by-caught-throw");
     fs::create_dir_all(&root).unwrap();

@@ -33016,6 +33016,22 @@ fn emit_instruction_sequence_with_generator_yield_abort_target(
             out.push_str(";\n");
             out.push_str("    }\n");
         }
+        let suspend_exceptional_finally_exception = values
+            .exceptional_finally_saved_exception
+            .as_ref()
+            .filter(|_| instruction_suspends_exceptional_finally_exception(instruction))
+            .cloned();
+        if let Some(saved_exception_temp) = &suspend_exceptional_finally_exception {
+            out.push_str("    if (runtime.exceptions->active_exception == ");
+            out.push_str(saved_exception_temp);
+            out.push_str(") {\n");
+            out.push_str("        runtime.exceptions->active_exception = NULL;\n");
+            out.push_str("        ptn_exception_free(");
+            out.push_str(saved_exception_temp);
+            out.push_str(");\n");
+            out.push_str("        runtime.generator_chained_exception_during_unwind = 0;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
         emit_instruction(
             out,
@@ -33027,8 +33043,28 @@ fn emit_instruction_sequence_with_generator_yield_abort_target(
             return_target,
             label_scope,
         );
+        if let Some(saved_exception_temp) = &suspend_exceptional_finally_exception {
+            out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
+            out.push_str(saved_exception_temp);
+            out.push_str(" != NULL) {\n");
+            out.push_str("        ptn_exception_retain(");
+            out.push_str(saved_exception_temp);
+            out.push_str(");\n");
+            out.push_str("        runtime.exceptions->active_exception = ");
+            out.push_str(saved_exception_temp);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+        }
     }
     values.generator_yield_abort_target = previous_target;
+}
+
+fn instruction_suspends_exceptional_finally_exception(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::InternalCall { .. } => true,
+        Instruction::Expression(value) => call_result_needs_value_deref(value),
+        _ => false,
+    }
 }
 
 fn generator_yield_abort_target_for_finally<'a>(
