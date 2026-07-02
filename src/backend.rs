@@ -28688,7 +28688,12 @@ fn emit_callable_dispatch(
         out.push_str(
             "            if (receiver.type == PTN_STRING && method.type != PTN_STRING) {\n",
         );
-        out.push_str("                ptn_throw_exception_at(runtime, \"Error\", \"Method name must be a string\", runtime->source_path, line);\n");
+        out.push_str("                if (from_call_user_func) {\n");
+        out.push_str("                    char *message = ptn_invalid_callback_message(runtime, \"call_user_func\", 1, \"callback\", resolved, 0);\n");
+        out.push_str("                    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
+        out.push_str("                    return ptn_null();\n");
+        out.push_str("                }\n");
+        out.push_str("                ptn_emit_fatal_error_at(runtime, \"Method name must be a string\", runtime->source_path, line);\n");
         out.push_str("                return ptn_null();\n");
         out.push_str("            }\n");
         out.push_str("        }\n");
@@ -62541,10 +62546,9 @@ impl ValueEmitter {
         out.push_str(".type != PTN_STRING) {\n");
         emit_value_cleanup(out, "        ", &name_temp);
         emit_method_receiver_cleanup(out, "        ", &receiver_temp);
-        out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"Method name must be a string\", runtime.source_path, ");
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"Method name must be a string\", runtime.source_path, ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        out.push_str("        ptn_rethrow_exception(&runtime);\n");
         out.push_str("    }\n");
         let method_name_temp = self.next_temp();
         out.push_str("    char *");

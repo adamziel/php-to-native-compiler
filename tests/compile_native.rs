@@ -41622,8 +41622,33 @@ fn compile_dynamic_method_call_rejects_non_string_names_before_magic_call() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "\nFatal error: Uncaught Error: Method name must be a string in {}:1\nStack trace:\n#0 {{main}}\n  thrown in {} on line 1\n",
-            input.display(),
+            "Fatal error: Method name must be a string in {} on line 1\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_dynamic_static_method_call_rejects_non_string_names_before_magic_call() {
+    let root = temp_dir("ptn-native-dynamic-static-method-non-string-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-method-non-string-name.php");
+    let output = root.join("dynamic-static-method-non-string-name-bin");
+    fs::write(
+        &input,
+        "<?php class DynStaticMethodName { public static function __callStatic($name, $args) { echo \"bad\\n\"; } } DynStaticMethodName::{0}(); echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Method name must be a string in {} on line 1\n",
             input.display()
         )
     );
