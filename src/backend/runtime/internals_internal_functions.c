@@ -184839,12 +184839,6 @@ static void ptn_soap_collect_type_element_namespaces(
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
         if (field_type != NULL &&
-            field_type->namespace_uri != NULL &&
-            field_type->namespace_uri[0] != '\0' &&
-            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
-            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
-        }
-        if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
             !field_type->is_array) {
@@ -184880,12 +184874,6 @@ static void ptn_soap_collect_type_value_namespaces(
             continue;
         }
         PtnSoapType *field_type = ptn_soap_type_list_find(types, type_count, field->type);
-        if (field_type != NULL &&
-            field_type->namespace_uri != NULL &&
-            field_type->namespace_uri[0] != '\0' &&
-            strcmp(field_type->namespace_uri, field->namespace_uri == NULL ? "" : field->namespace_uri) != 0) {
-            (void)ptn_soap_namespace_list_add(namespaces, field_type->namespace_uri);
-        }
         if (field_type != NULL &&
             !field_type->is_simple &&
             !field_type->has_simple_content &&
@@ -189509,6 +189497,23 @@ static char *ptn_soap_wsdl_response_part_type(
     return ptn_soap_wsdl_output_part_type_dup(&wsdl_view, operation_name);
 }
 
+static int ptn_soap_wsdl_output_message_has_no_parts(
+    PtnSoapServerData *data,
+    const char *operation_name
+) {
+    if (data == NULL || data->wsdl_cache == NULL || operation_name == NULL) {
+        return 0;
+    }
+    PtnSoapClientData wsdl_view = { 0 };
+    wsdl_view.wsdl = data->wsdl_cache;
+    wsdl_view.wsdl_len = data->wsdl_cache_len;
+    PtnSoapMessagePart *parts = NULL;
+    size_t part_count = 0;
+    int found = ptn_soap_operation_message_parts(&wsdl_view, operation_name, "output", &parts, &part_count);
+    ptn_soap_message_parts_free(parts, part_count);
+    return found && part_count == 0;
+}
+
 static char *ptn_soap_wsdl_namespace_uri(
     PtnRuntime *runtime,
     PtnSoapServerData *data,
@@ -190732,6 +190737,23 @@ static void ptn_soap_emit_response(
         return;
     }
     if (ptn_value_deref(result).type == PTN_NULL) {
+        if (ptn_soap_wsdl_output_message_has_no_parts(data, method_name)) {
+            PtnStringBuffer buffer;
+            ptn_string_buffer_init(&buffer);
+            if (!ptn_soap_append_options_xml_declaration(runtime, &buffer, data == NULL ? ptn_null() : data->options, line)) {
+                free(buffer.data);
+                return;
+            }
+            ptn_string_buffer_append(&buffer, "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"");
+            ptn_xml_append_escaped_ex(&buffer, namespace_uri == NULL ? "" : namespace_uri, 1, 0);
+            ptn_string_buffer_append(&buffer, "\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:");
+            ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
+            ptn_string_buffer_append(&buffer, "Response/></SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
+            ptn_output_write(runtime, buffer.data, buffer.len);
+            free(buffer.data);
+            (void)line;
+            return;
+        }
         PtnStringBuffer buffer;
         ptn_string_buffer_init(&buffer);
         if (!ptn_soap_append_options_xml_declaration(runtime, &buffer, data == NULL ? ptn_null() : data->options, line)) {
