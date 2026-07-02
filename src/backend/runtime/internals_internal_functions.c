@@ -194612,6 +194612,308 @@ static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
+static void ptn_zend_test_throw_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *expected_type,
+    PtnValue value
+) {
+    const char *given_type = ptn_direct_internal_string_arg_type_name(value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must be of type %s, %s given",
+        function_name,
+        position,
+        argument_name,
+        expected_type,
+        given_type
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must be of type %s, %s given",
+        function_name,
+        position,
+        argument_name,
+        expected_type,
+        given_type
+    );
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
+static void ptn_zend_test_emit_null_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *expected_type,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Passing null to parameter #1 ($param) of type %s is deprecated",
+        function_name,
+        expected_type
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Passing null to parameter #1 ($param) of type %s is deprecated",
+        function_name,
+        expected_type
+    );
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static PtnValue ptn_zend_test_empty_string(void) {
+    return ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0);
+}
+
+static PtnValue ptn_zend_test_string_from_operand(PtnStringOperand operand) {
+    size_t len = operand.len;
+    char *data = ptn_duplicate_string_len(operand.data, len);
+    ptn_string_operand_free(operand);
+    return ptn_owned_string_len(data, len);
+}
+
+static int ptn_zend_test_is_iterable(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_ARRAY ||
+        (value.type == PTN_OBJECT && ptn_value_is_unpack_traversable(value));
+}
+
+static int ptn_zend_test_is_object_like(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION;
+}
+
+static int ptn_zend_test_is_stdclass_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(value.as.object->class_name, "stdClass") ||
+        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "stdClass");
+}
+
+static PtnValue ptn_zend_test_coerce_string_branch(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *expected_type,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_STRING:
+            return ptn_value_clone_deref(value);
+        case PTN_NULL:
+            return ptn_zend_test_empty_string();
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return ptn_zend_test_string_from_operand(
+                ptn_value_to_string_operand_with_runtime(runtime, value, line)
+            );
+        case PTN_OBJECT: {
+            PtnStringOperand object_string;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+                if (runtime->exceptions->active_exception != NULL) {
+                    ptn_string_operand_free(object_string);
+                    return ptn_null();
+                }
+                return ptn_zend_test_string_from_operand(object_string);
+            }
+            ptn_zend_test_throw_arg_type_error(runtime, function_name, 1, "param", expected_type, value);
+            return ptn_null();
+        }
+        case PTN_EXCEPTION:
+            return ptn_zend_test_string_from_operand(
+                ptn_exception_to_string_operand(runtime, value.as.exception)
+            );
+        case PTN_ARRAY:
+        case PTN_CLOSURE:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+    ptn_zend_test_throw_arg_type_error(runtime, function_name, 1, "param", expected_type, value);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_iterable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (!ptn_zend_test_is_iterable(args[0])) {
+        ptn_zend_test_throw_arg_type_error(runtime, "zend_iterable", 1, "arg1", "Traversable|array", args[0]);
+        return ptn_null();
+    }
+    if (argc >= 2) {
+        PtnValue second = ptn_value_deref(args[1]);
+        if (second.type != PTN_NULL && !ptn_zend_test_is_iterable(second)) {
+            ptn_zend_test_throw_arg_type_error(runtime, "zend_iterable", 2, "arg2", "Traversable|array|null", second);
+            return ptn_null();
+        }
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_zend_test_number_or_string_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int nullable,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    const char *expected_type = nullable ? "string|int|float|null" : "string|int|float";
+    switch (value.type) {
+        case PTN_STRING:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return ptn_value_clone_deref(value);
+        case PTN_BOOL:
+            return ptn_int(value.as.boolean ? 1 : 0);
+        case PTN_NULL:
+            if (nullable) {
+                return ptn_null();
+            }
+            ptn_zend_test_emit_null_deprecation(runtime, function_name, expected_type, line);
+            return ptn_int(0);
+        case PTN_OBJECT: {
+            PtnStringOperand object_string;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+                if (runtime->exceptions->active_exception != NULL) {
+                    ptn_string_operand_free(object_string);
+                    return ptn_null();
+                }
+                return ptn_zend_test_string_from_operand(object_string);
+            }
+            ptn_zend_test_throw_arg_type_error(runtime, function_name, 1, "param", expected_type, value);
+            return ptn_null();
+        }
+        case PTN_EXCEPTION:
+            return ptn_zend_test_string_from_operand(
+                ptn_exception_to_string_operand(runtime, value.as.exception)
+            );
+        case PTN_ARRAY:
+        case PTN_CLOSURE:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+    ptn_zend_test_throw_arg_type_error(runtime, function_name, 1, "param", expected_type, value);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_number_or_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_number_or_string_impl(runtime, "zend_number_or_string", 0, args[0], line);
+}
+
+static PtnValue ptn_internal_zend_number_or_string_or_null(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_number_or_string_impl(runtime, "zend_number_or_string_or_null", 1, args[0], line);
+}
+
+static PtnValue ptn_zend_test_string_or_object_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int nullable,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    const char *expected_type = nullable ? "object|string|null" : "object|string";
+    if (value.type == PTN_NULL) {
+        if (nullable) {
+            return ptn_null();
+        }
+        ptn_zend_test_emit_null_deprecation(runtime, function_name, expected_type, line);
+        return ptn_zend_test_empty_string();
+    }
+    if (ptn_zend_test_is_object_like(value)) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_zend_test_coerce_string_branch(runtime, function_name, expected_type, value, line);
+}
+
+static PtnValue ptn_internal_zend_string_or_object(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_string_or_object_impl(runtime, "zend_string_or_object", 0, args[0], line);
+}
+
+static PtnValue ptn_internal_zend_string_or_object_or_null(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_string_or_object_impl(runtime, "zend_string_or_object_or_null", 1, args[0], line);
+}
+
+static PtnValue ptn_zend_test_string_or_stdclass_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int nullable,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    const char *expected_type = nullable ? "stdClass|string|null" : "stdClass|string";
+    if (value.type == PTN_NULL) {
+        if (nullable) {
+            return ptn_null();
+        }
+        ptn_zend_test_emit_null_deprecation(runtime, function_name, "string", line);
+        return ptn_zend_test_empty_string();
+    }
+    if (ptn_zend_test_is_stdclass_object(value)) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_zend_test_coerce_string_branch(runtime, function_name, expected_type, value, line);
+}
+
+static PtnValue ptn_internal_zend_string_or_stdclass(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_string_or_stdclass_impl(runtime, "zend_string_or_stdclass", 0, args[0], line);
+}
+
+static PtnValue ptn_internal_zend_string_or_stdclass_or_null(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_zend_test_string_or_stdclass_impl(runtime, "zend_string_or_stdclass_or_null", 1, args[0], line);
+}
+
+static PtnValue ptn_internal_zend_test_nullable_array_return(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_test_void_return(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue source = ptn_value_deref(args[0]);
@@ -195957,6 +196259,15 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "xmlwriter_write_element_ns", 4, 5, ptn_internal_xmlwriter_write_element_ns },
         { "xmlwriter_write_pi", 3, 3, ptn_internal_xmlwriter_write_pi },
         { "xmlwriter_write_raw", 2, 2, ptn_internal_xmlwriter_write_raw },
+        { "zend_iterable", 1, 2, ptn_internal_zend_iterable },
+        { "zend_number_or_string", 1, 1, ptn_internal_zend_number_or_string },
+        { "zend_number_or_string_or_null", 1, 1, ptn_internal_zend_number_or_string_or_null },
+        { "zend_string_or_object", 1, 1, ptn_internal_zend_string_or_object },
+        { "zend_string_or_object_or_null", 1, 1, ptn_internal_zend_string_or_object_or_null },
+        { "zend_string_or_stdclass", 1, 1, ptn_internal_zend_string_or_stdclass },
+        { "zend_string_or_stdclass_or_null", 1, 1, ptn_internal_zend_string_or_stdclass_or_null },
+        { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
+        { "zend_test_void_return", 0, 0, ptn_internal_zend_test_void_return },
         { "zend_version", 0, 0, ptn_internal_zend_version },
         { "zlib_decode", 1, 2, ptn_internal_zlib_decode },
         { "zlib_encode", 2, 3, ptn_internal_zlib_encode },
@@ -196003,6 +196314,18 @@ static int ptn_internal_function_name_has_prefix(const char *name, const char *p
     return strncmp(name, prefix, strlen(prefix)) == 0;
 }
 
+static int ptn_internal_function_is_zend_test_helper(const char *name) {
+    return ptn_ascii_case_equal(name, "zend_iterable") ||
+        ptn_ascii_case_equal(name, "zend_number_or_string") ||
+        ptn_ascii_case_equal(name, "zend_number_or_string_or_null") ||
+        ptn_ascii_case_equal(name, "zend_string_or_object") ||
+        ptn_ascii_case_equal(name, "zend_string_or_object_or_null") ||
+        ptn_ascii_case_equal(name, "zend_string_or_stdclass") ||
+        ptn_ascii_case_equal(name, "zend_string_or_stdclass_or_null") ||
+        ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||
+        ptn_ascii_case_equal(name, "zend_test_void_return");
+}
+
 static const char *ptn_internal_function_extension_name(const char *name) {
     if (strstr(name, "::") != NULL) {
         if (ptn_internal_function_name_has_prefix(name, "Reflection")) {
@@ -196045,6 +196368,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_ascii_case_equal(name, "pdo_drivers")) {
         return "PDO";
+    }
+    if (ptn_internal_function_is_zend_test_helper(name)) {
+        return "zend_test";
     }
     if (ptn_internal_function_name_has_prefix(name, "bc")) {
         return "bcmath";

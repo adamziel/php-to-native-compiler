@@ -1,0 +1,26 @@
+# ptn-5uvp6 current merged-master Zend property/type/return residual row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260701T221833Z
+# Source commit: d5ab3aaba511ee91ba249f3037039b7eb6776fcb
+# bucket: property-type-return rows=22
+Zend/tests/property_hooks/read_sibling_backing_value.phpt
+Zend/tests/property_hooks/backed_delegated_read_write.phpt
+Zend/tests/type_declarations/typed_properties_095.phpt
+Zend/tests/type_declarations/scalar_return_basic.phpt
+Zend/tests/iterable_or_null.phpt
+Zend/tests/property_hooks/parent_in_different_hook.phpt
+Zend/tests/property_hooks/parent_in_different_property.phpt
+Zend/tests/type_declarations/union_types/inheritance_internal.phpt
+Zend/tests/return_types/internal_functions003.phpt
+Zend/tests/type_declarations/union_types/internal_trait_use_typed_union.phpt
+Zend/tests/property_hooks/virtual_read_write.phpt
+Zend/tests/type_declarations/scalar_strict.phpt
+Zend/tests/return_types/029.phpt
+Zend/tests/return_types/internal_functions002.phpt
+Zend/tests/property_hooks/gh17234.phpt
+Zend/tests/inheritance/inherit_internal_static.phpt
+Zend/tests/number_or_str_zpp.phpt
+Zend/tests/str_or_obj_of_class_zpp.phpt
+Zend/tests/internal_class_variance.phpt
+Zend/tests/return_types/internal_functions001.phpt
+Zend/tests/str_or_obj_zpp.phpt
+Zend/tests/inheritance/bug70957.phpt
