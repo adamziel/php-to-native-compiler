@@ -85313,6 +85313,62 @@ fn phpc_error_reporting_ini_sets_initial_level() {
 }
 
 #[test]
+fn phpc_ignore_repeated_error_ini_filters_duplicate_runtime_warnings() {
+    let root = temp_dir("ptn-phpc-ignore-repeated-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ignore-repeated-errors.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$u1 + $u2;\n\
+$u + $u;\n\
+$u + 1;\n",
+    )
+    .unwrap();
+
+    let repeated_errors = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("ignore_repeated_errors=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(repeated_errors.status.success());
+    assert_eq!(
+        String::from_utf8(repeated_errors.stdout).unwrap(),
+        format!(
+            "{}{}{}{}",
+            undefined_variable_warning(&input, "u1", 2),
+            undefined_variable_warning(&input, "u2", 2),
+            undefined_variable_warning(&input, "u", 3),
+            undefined_variable_warning(&input, "u", 4)
+        )
+    );
+    assert_eq!(String::from_utf8(repeated_errors.stderr).unwrap(), "");
+
+    let repeated_source = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("ignore_repeated_errors=1")
+        .arg("-d")
+        .arg("ignore_repeated_source=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(repeated_source.status.success());
+    assert_eq!(
+        String::from_utf8(repeated_source.stdout).unwrap(),
+        format!(
+            "{}{}{}",
+            undefined_variable_warning(&input, "u1", 2),
+            undefined_variable_warning(&input, "u2", 2),
+            undefined_variable_warning(&input, "u", 3)
+        )
+    );
+    assert_eq!(String::from_utf8(repeated_source.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_open_basedir_ini_constrains_tempnam_fallback() {
     let root = temp_dir("ptn-phpc-open-basedir-tempnam");
     fs::create_dir_all(&root).unwrap();

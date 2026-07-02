@@ -303,6 +303,8 @@ struct RuntimeIni {
     display_errors: Option<String>,
     html_errors: Option<String>,
     error_reporting: Option<i64>,
+    ignore_repeated_errors: Option<String>,
+    ignore_repeated_source: Option<String>,
     output_handler: Option<String>,
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
@@ -529,6 +531,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         if let Some(parsed) = parse_error_reporting_level(raw_value) {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("ignore_repeated_errors") {
+        ini.ignore_repeated_errors = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("ignore_repeated_source") {
+        ini.ignore_repeated_source = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("arg_separator.input") {
         ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("filter.default") {
@@ -1272,6 +1278,8 @@ fn compile_and_run(
         display_errors: ini.display_errors.clone(),
         html_errors: ini.html_errors.clone(),
         error_reporting: ini.error_reporting,
+        ignore_repeated_errors: ini.ignore_repeated_errors.clone(),
+        ignore_repeated_source: ini.ignore_repeated_source.clone(),
         output_handler: ini.output_handler.clone(),
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
@@ -1471,6 +1479,12 @@ fn compile_and_run(
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(ignore_repeated_errors) = &ini.ignore_repeated_errors {
+        command.env("PTN_IGNORE_REPEATED_ERRORS", ignore_repeated_errors);
+    }
+    if let Some(ignore_repeated_source) = &ini.ignore_repeated_source {
+        command.env("PTN_IGNORE_REPEATED_SOURCE", ignore_repeated_source);
     }
     if let Some(output_handler) = &ini.output_handler {
         command.env("PTN_OUTPUT_HANDLER", output_handler);

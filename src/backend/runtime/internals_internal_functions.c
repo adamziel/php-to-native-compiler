@@ -114881,6 +114881,22 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(value == NULL ? "0" : value));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        *out = ptn_ini_int_string(root == NULL ? 0 : root->diagnostics.ignore_repeated_errors);
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_source")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        *out = ptn_ini_int_string(root == NULL ? 0 : root->diagnostics.ignore_repeated_source);
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "intl.error_level")) {
         *out = ptn_ini_int_string(ptn_runtime_intl_error_level(runtime));
         return 1;
@@ -115599,6 +115615,28 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        if (root != NULL) {
+            root->diagnostics.ignore_repeated_errors = 0;
+        }
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_source")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        if (root != NULL) {
+            root->diagnostics.ignore_repeated_source = 0;
+        }
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
         ptn_runtime_set_exception_ignore_args(runtime, 0);
         ptn_string_operand_free(option);
@@ -116196,6 +116234,38 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         root->diagnostics.html_errors_ini_value = ptn_duplicate_string(next);
         root->diagnostics.html_errors = ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]));
         free(next);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        PtnValue previous =
+            ptn_ini_int_string(root == NULL ? 0 : root->diagnostics.ignore_repeated_errors);
+        if (root != NULL) {
+            char *next = ptn_ini_value_to_string(args[1]);
+            root->diagnostics.ignore_repeated_errors =
+                ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]));
+            free(next);
+        }
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "ignore_repeated_source")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        PtnValue previous =
+            ptn_ini_int_string(root == NULL ? 0 : root->diagnostics.ignore_repeated_source);
+        if (root != NULL) {
+            char *next = ptn_ini_value_to_string(args[1]);
+            root->diagnostics.ignore_repeated_source =
+                ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]));
+            free(next);
+        }
         ptn_string_operand_free(option);
         return previous;
     }
@@ -219077,6 +219147,8 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
     if (ptn_ascii_case_equal(extension_name, "Core")) {
         ptn_extension_ini_set_entry(runtime, result, "display_errors");
         ptn_extension_ini_set_entry(runtime, result, "html_errors");
+        ptn_extension_ini_set_entry(runtime, result, "ignore_repeated_errors");
+        ptn_extension_ini_set_entry(runtime, result, "ignore_repeated_source");
         ptn_extension_ini_set_entry(runtime, result, "error_reporting");
         ptn_extension_ini_set_entry(runtime, result, "include_path");
         ptn_extension_ini_set_entry(runtime, result, "memory_limit");

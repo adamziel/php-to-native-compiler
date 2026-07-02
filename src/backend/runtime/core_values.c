@@ -1513,6 +1513,13 @@ typedef struct {
     int display_errors;
     int html_errors;
     char *html_errors_ini_value;
+    int ignore_repeated_errors;
+    int ignore_repeated_source;
+    int last_emitted_error_set;
+    int64_t last_emitted_error_type;
+    char *last_emitted_error_message;
+    char *last_emitted_error_file;
+    size_t last_emitted_error_line;
     int last_error_set;
     int64_t last_error_type;
     char *last_error_message;
