@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-02T14:50:23Z |
+| last refresh | 2026-07-02T15:00:24Z |
 | source commit | `1d096be3444d` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,28 +22,27 @@
 | field | value |
 | --- | --- |
 | source commit | `2a8cbc5a0b45` |
-| statused tests | 20603 |
-| passed tests | 12332 |
-| failed tests | 5341 |
-| skipped tests | 2925 |
+| statused tests | 20645 |
+| passed tests | 12340 |
+| failed tests | 5353 |
+| skipped tests | 2947 |
 | warned tests | 5 |
-| unknown tests | 1264 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260702T144622Z` |
+| unknown tests | 1222 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260702T145904Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-02T14:00Z) | 0 |
-| last 24 hours (2026-07-01T15:00Z - 2026-07-02T14:00Z) | 0 |
-| last 7 days (2026-06-25T15:00Z - 2026-07-02T14:00Z) | 1707 |
+| latest hour (2026-07-02T15:00Z) | 0 |
+| last 24 hours (2026-07-01T16:00Z - 2026-07-02T15:00Z) | 0 |
+| last 7 days (2026-06-25T16:00Z - 2026-07-02T15:00Z) | 1707 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 13975 | 21867 |
-| hourly history retained 2026-06-25T15:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-25T16:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-25T17:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-25T18:00Z | 0 | 0 | 0 |
@@ -170,12 +169,12 @@
 | hourly history retained 2026-07-02T11:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-02T12:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-02T13:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-02T14:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-25T15:00Z | 0 | 12268 |
 | 2026-06-25T16:00Z | 1641 | 13909 |
 | 2026-06-25T17:00Z | 0 | 13909 |
 | 2026-06-25T18:00Z | 0 | 13909 |
@@ -343,3 +342,4 @@
 | 2026-07-02T12:00Z | 0 | 13975 |
 | 2026-07-02T13:00Z | 0 | 13975 |
 | 2026-07-02T14:00Z | 0 | 13975 |
+| 2026-07-02T15:00Z | 0 | 13975 |
