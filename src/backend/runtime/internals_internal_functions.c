@@ -127299,6 +127299,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "America/Vancouver", 2, 0 },
     { "Atlantic/Azores", 32, 0 },
     { "Asia/Calcutta", 16, 1 },
+    { "Asia/Shanghai", 16, 0 },
     { "Asia/Hong_Kong", 16, 0 },
     { "Asia/Jerusalem", 16, 0 },
     { "Asia/Kashgar", 16, 0 },
@@ -127397,6 +127398,7 @@ static const PtnTimezoneLocation ptn_timezone_locations[] = {
     { "America/Vancouver", "CA", 49.26666, -123.11666, "Pacific - BC (most areas)" },
     { "Atlantic/Azores", "PT", 37.73333, -25.66667, "Azores" },
     { "Asia/Calcutta", "??", -90.0, -180.0, "" },
+    { "Asia/Shanghai", "CN", 31.23333, 121.46666, "" },
     { "Asia/Hong_Kong", "HK", 22.28333, 114.14999, "" },
     { "Asia/Jerusalem", "IL", 31.78055, 35.22388, "" },
     { "Asia/Yerevan", "AM", 40.18333, 44.5, "Armenia" },
@@ -128291,7 +128293,8 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "America/Sao_Paulo")) {
         return -7200;
     }
-    if (ptn_ascii_case_equal(name, "Asia/Hong_Kong") ||
+    if (ptn_ascii_case_equal(name, "Asia/Shanghai") ||
+        ptn_ascii_case_equal(name, "Asia/Hong_Kong") ||
         ptn_ascii_case_equal(name, "Asia/Singapore") ||
         ptn_ascii_case_equal(name, "Australia/Perth")) {
         return 28800;
@@ -128455,6 +128458,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     if (ptn_ascii_case_equal(name, "Asia/Calcutta") ||
         ptn_ascii_case_equal(name, "Asia/Kolkata")) {
         return "IST";
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Shanghai")) {
+        return "CST";
     }
     if (ptn_ascii_case_equal(name, "Asia/Hong_Kong")) {
         return "HKT";
@@ -136929,6 +136935,91 @@ static PtnValue ptn_internal_timezone_abbreviations_list(PtnRuntime *runtime, si
     return ptn_timezone_abbreviations_value();
 }
 
+static int ptn_timezone_name_from_abbr_candidate_matches(
+    const char *timezone_name,
+    const char *abbr,
+    int has_offset,
+    int64_t offset,
+    int has_isdst,
+    int64_t isdst,
+    time_t timestamp
+) {
+    if (has_offset && ptn_timezone_offset_for_name(timezone_name, timestamp) != offset) {
+        return 0;
+    }
+    if (has_isdst && isdst >= 0 && ptn_timezone_is_dst_for_name(timezone_name, timestamp) != (isdst != 0)) {
+        return 0;
+    }
+    if (abbr != NULL && abbr[0] != '\0') {
+        const char *candidate_abbr = ptn_timezone_abbreviation_for_name(timezone_name, timestamp);
+        if (candidate_abbr == NULL || !ptn_ascii_case_equal(candidate_abbr, abbr)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static const char *ptn_timezone_name_from_abbr_by_rules(
+    const char *abbr,
+    int has_offset,
+    int64_t offset,
+    int has_isdst,
+    int64_t isdst
+) {
+    time_t probes[] = {
+        ptn_datetime_utc_timestamp_for_parts(2024, 1, 1, 0, 0, 0),
+        ptn_datetime_utc_timestamp_for_parts(2024, 7, 1, 0, 0, 0),
+    };
+    for (int include_backward = 0; include_backward <= 1; include_backward++) {
+        for (size_t i = 0; i < sizeof(ptn_timezone_identifiers) / sizeof(ptn_timezone_identifiers[0]); i++) {
+            if (ptn_timezone_identifiers[i].backward_compatible != include_backward) {
+                continue;
+            }
+            for (size_t j = 0; j < sizeof(probes) / sizeof(probes[0]); j++) {
+                if (ptn_timezone_name_from_abbr_candidate_matches(
+                        ptn_timezone_identifiers[i].name,
+                        abbr,
+                        has_offset,
+                        offset,
+                        has_isdst,
+                        isdst,
+                        probes[j])) {
+                    return ptn_timezone_identifiers[i].name;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_timezone_name_from_empty_abbr_offset(int64_t offset, int64_t isdst) {
+    if (isdst == 0) {
+        if (offset == 0) {
+            return "Europe/London";
+        }
+        if (offset == -18000) {
+            return "America/New_York";
+        }
+        if (offset == -21600) {
+            return "America/Chicago";
+        }
+        if (offset == -28800) {
+            return "America/Los_Angeles";
+        }
+        if (offset == 19800) {
+            return "Asia/Kolkata";
+        }
+        if (offset == 28800) {
+            return "Asia/Shanghai";
+        }
+    } else if (isdst == 1) {
+        if (offset == 0) {
+            return "Atlantic/Azores";
+        }
+    }
+    return NULL;
+}
+
 static PtnValue ptn_internal_timezone_name_from_abbr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand abbr = ptn_internal_expect_string_arg(runtime, "timezone_name_from_abbr", 1, "abbr", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -136973,6 +137064,17 @@ static PtnValue ptn_internal_timezone_name_from_abbr(PtnRuntime *runtime, size_t
         result = ptn_string("America/New_York");
     } else if (has_offset && has_isdst && offset == -14400 && isdst == 0) {
         result = ptn_string("America/Halifax");
+    } else if (abbr_name[0] != '\0' || (has_offset && has_isdst && isdst >= 0)) {
+        const char *matched = NULL;
+        if (abbr_name[0] == '\0') {
+            matched = ptn_timezone_name_from_empty_abbr_offset(offset, isdst);
+        }
+        if (matched == NULL) {
+            matched = ptn_timezone_name_from_abbr_by_rules(abbr_name, has_offset, offset, has_isdst, isdst);
+        }
+        if (matched != NULL) {
+            result = ptn_string(matched);
+        }
     }
     free(abbr_name);
     return result;

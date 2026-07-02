@@ -3040,6 +3040,8 @@ var_dump($la->getOffset($dt));
 $abbr = timezone_abbreviations_list();
 var_dump($abbr['utc'][0]['timezone_id']);
 var_dump(timezone_name_from_abbr('CET'));
+var_dump(timezone_name_from_abbr('', 5.5 * 3600, 0));
+var_dump(timezone_name_from_abbr('', 28800, 0));
 
 var_dump(in_array('Europe/London', timezone_identifiers_list()));
 var_dump(in_array('UTC', DateTimeZone::listIdentifiers(DateTimeZone::EUROPE | DateTimeZone::UTC)));
@@ -3119,6 +3121,8 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "int(-28800)\n",
             "string(13) \"Etc/Universal\"\n",
             "string(13) \"Europe/Berlin\"\n",
+            "string(12) \"Asia/Kolkata\"\n",
+            "string(13) \"Asia/Shanghai\"\n",
             "bool(true)\n",
             "bool(true)\n",
             "+00:00 Atlantic/Azores\n",
