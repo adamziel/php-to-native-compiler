@@ -3367,6 +3367,18 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
+static PTN_UNUSED int ptn_try_frame_stack_has_user_try(PtnRuntime *runtime) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        return 0;
+    }
+    for (PtnTryFrame *frame = runtime->exceptions->try_frame; frame != NULL; frame = frame->previous) {
+        if (frame->is_user_try) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnDiagnosticSink *ptn_uncaught_exception_diagnostics(PtnRuntime *runtime) {
     if (runtime == NULL) {
         return NULL;
@@ -4584,6 +4596,17 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         char *exception_path = ptn_value_to_string(file_value);
         ptn_value_destroy(&file_value);
         int64_t stored_line = ptn_throwable_int_property(runtime, resolved, "line", (int64_t)line, line);
+        PtnStringOperand uncaught_text = { "", NULL, 0 };
+        int has_uncaught_text = 0;
+        if (
+            !ptn_try_frame_stack_has_user_try(runtime) &&
+            runtime->declared_method_exists != NULL &&
+            runtime->declared_method_exists(resolved.as.object->class_name, "__toString")
+        ) {
+            if (ptn_try_object_to_string_operand(runtime, resolved, line, &uncaught_text)) {
+                has_uncaught_text = runtime->exceptions->active_exception == NULL;
+            }
+        }
         ptn_exception_free(runtime->exceptions->active_exception);
         runtime->exceptions->active_exception = ptn_exception_new_owned(
             runtime,
@@ -4596,28 +4619,23 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
         );
+        if (has_uncaught_text) {
+            runtime->exceptions->active_exception->uncaught_text_len = uncaught_text.len;
+            if (uncaught_text.owned != NULL) {
+                runtime->exceptions->active_exception->uncaught_text = uncaught_text.owned;
+            } else {
+                runtime->exceptions->active_exception->uncaught_text =
+                    ptn_duplicate_string_len(uncaught_text.data, uncaught_text.len);
+            }
+        } else {
+            free(uncaught_text.owned);
+        }
         ptn_exception_copy_soap_fault_code_from_throwable(
             runtime,
             runtime->exceptions->active_exception,
             resolved,
             line
         );
-        if (
-            runtime->exceptions->try_frame == NULL &&
-            runtime->declared_method_exists != NULL &&
-            runtime->declared_method_exists(resolved.as.object->class_name, "__toString")
-        ) {
-            PtnStringOperand uncaught_text;
-            if (ptn_try_object_to_string_operand(runtime, resolved, line, &uncaught_text)) {
-                runtime->exceptions->active_exception->uncaught_text_len = uncaught_text.len;
-                if (uncaught_text.owned != NULL) {
-                    runtime->exceptions->active_exception->uncaught_text = uncaught_text.owned;
-                } else {
-                    runtime->exceptions->active_exception->uncaught_text =
-                        ptn_duplicate_string_len(uncaught_text.data, uncaught_text.len);
-                }
-            }
-        }
         ptn_value_destroy(&previous);
         if (runtime->exceptions->try_frame != NULL) {
             longjmp(runtime->exceptions->try_frame->jump, 1);

@@ -2775,6 +2775,17 @@ impl<'a> LoweringContext<'a> {
         lowered
     }
 
+    fn lower_parameter_for_trait_scope(
+        &mut self,
+        parameter: &AstFunctionParameter,
+        current_trait: &str,
+    ) -> FunctionParameter {
+        let mut lowered = self.lower_parameter(parameter);
+        lowered.attributes =
+            self.lower_trait_scoped_attribute_metadata(&parameter.attributes, current_trait);
+        lowered
+    }
+
     fn lower_class_scoped_attribute_metadata(
         &mut self,
         metadata: &AttributeMetadata,
@@ -2825,6 +2836,47 @@ impl<'a> LoweringContext<'a> {
             &mut self.current_class_parent_name,
             current_parent.map(ToString::to_string),
         );
+        let annotated = self.annotate_attribute_metadata(&resolved);
+        self.current_class_name = previous_class_name;
+        self.current_class_parent_name = previous_class_parent_name;
+        annotated
+    }
+
+    fn lower_trait_scoped_attribute_metadata(
+        &mut self,
+        metadata: &AttributeMetadata,
+        current_trait: &str,
+    ) -> AttributeMetadata {
+        self.lower_trait_scoped_attribute_metadata_with_property(metadata, current_trait, None)
+    }
+
+    fn lower_trait_property_scoped_attribute_metadata(
+        &mut self,
+        metadata: &AttributeMetadata,
+        current_trait: &str,
+        current_property: &str,
+    ) -> AttributeMetadata {
+        self.lower_trait_scoped_attribute_metadata_with_property(
+            metadata,
+            current_trait,
+            Some(current_property),
+        )
+    }
+
+    fn lower_trait_scoped_attribute_metadata_with_property(
+        &mut self,
+        metadata: &AttributeMetadata,
+        current_trait: &str,
+        current_property: Option<&str>,
+    ) -> AttributeMetadata {
+        let resolved =
+            resolve_attribute_metadata_for_trait_scope(metadata, current_trait, current_property);
+        let previous_class_name = std::mem::replace(
+            &mut self.current_class_name,
+            Some(current_trait.to_string()),
+        );
+        let previous_class_parent_name =
+            std::mem::replace(&mut self.current_class_parent_name, None);
         let annotated = self.annotate_attribute_metadata(&resolved);
         self.current_class_name = previous_class_name;
         self.current_class_parent_name = previous_class_parent_name;
@@ -2912,11 +2964,8 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_trait(&mut self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
-        let trait_attributes = self.lower_class_scoped_attribute_metadata(
-            &trait_decl.attributes,
-            &trait_decl.name,
-            None,
-        );
+        let trait_attributes =
+            self.lower_trait_scoped_attribute_metadata(&trait_decl.attributes, &trait_decl.name);
         let properties = trait_decl
             .properties
             .iter()
@@ -2945,16 +2994,14 @@ impl<'a> LoweringContext<'a> {
                 hook_get_returns_by_ref: property.hook_get_returns_by_ref,
                 hook_set_is_final: property.hook_set_is_final,
                 hook_set_is_abstract: property.hook_set_is_abstract,
-                hook_get_attributes: self.lower_class_property_scoped_attribute_metadata(
+                hook_get_attributes: self.lower_trait_property_scoped_attribute_metadata(
                     &property.hook_get_attributes,
                     &trait_decl.name,
-                    None,
                     &property.name,
                 ),
-                hook_set_attributes: self.lower_class_property_scoped_attribute_metadata(
+                hook_set_attributes: self.lower_trait_property_scoped_attribute_metadata(
                     &property.hook_set_attributes,
                     &trait_decl.name,
-                    None,
                     &property.name,
                 ),
                 hook_get_doc_comment: property.hook_get_doc_comment.clone(),
@@ -2986,10 +3033,9 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
-                hook_set_parameter_attributes: self.lower_class_property_scoped_attribute_metadata(
+                hook_set_parameter_attributes: self.lower_trait_property_scoped_attribute_metadata(
                     &property.hook_set_parameter_attributes,
                     &trait_decl.name,
-                    None,
                     &property.name,
                 ),
                 hook_set_parameter_type: property
@@ -2998,10 +3044,9 @@ impl<'a> LoweringContext<'a> {
                     .map(lower_type_hint),
                 hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: self.lower_class_property_scoped_attribute_metadata(
+                attributes: self.lower_trait_property_scoped_attribute_metadata(
                     &property.attributes,
                     &trait_decl.name,
-                    None,
                     &property.name,
                 ),
                 doc_comment: property.doc_comment.clone(),
@@ -3019,10 +3064,9 @@ impl<'a> LoweringContext<'a> {
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: self.lower_class_property_scoped_attribute_metadata(
+                attributes: self.lower_trait_property_scoped_attribute_metadata(
                     &property.attributes,
                     &trait_decl.name,
-                    None,
                     &property.name,
                 ),
                 doc_comment: property.doc_comment.clone(),
@@ -3041,11 +3085,8 @@ impl<'a> LoweringContext<'a> {
             .constants
             .iter()
             .map(|constant| {
-                let attributes = self.lower_class_scoped_attribute_metadata(
-                    &constant.attributes,
-                    &trait_decl.name,
-                    None,
-                );
+                let attributes = self
+                    .lower_trait_scoped_attribute_metadata(&constant.attributes, &trait_decl.name);
                 let metadata = self.class_deprecated_metadata(
                     &attributes,
                     &trait_decl.name,
@@ -3096,21 +3137,17 @@ impl<'a> LoweringContext<'a> {
                         &mut self.current_function_display_name,
                         Some(method_display_name.clone()),
                     );
-                    let method_attributes = self.lower_class_scoped_attribute_metadata(
+                    let method_attributes = self.lower_trait_scoped_attribute_metadata(
                         &method.attributes,
                         &trait_decl.name,
-                        None,
                     );
                     self.current_function_display_name = previous_function_display_name;
                     let parameters = method
                         .parameters
                         .iter()
                         .map(|parameter| {
-                            let mut lowered = self.lower_parameter_for_class_scope(
-                                parameter,
-                                &trait_decl.name,
-                                None,
-                            );
+                            let mut lowered =
+                                self.lower_parameter_for_trait_scope(parameter, &trait_decl.name);
                             lowered.default_value = parameter
                                 .default_value
                                 .as_ref()
@@ -3320,6 +3357,43 @@ fn resolve_attribute_metadata_for_class_scope(
     resolved
 }
 
+fn resolve_attribute_metadata_for_trait_scope(
+    metadata: &AttributeMetadata,
+    current_trait: &str,
+    current_property: Option<&str>,
+) -> AttributeMetadata {
+    let mut resolved = metadata.clone();
+    for instance in &mut resolved.instances {
+        for argument in &mut instance.arguments {
+            if let Some(expression) = &mut argument.value.expression {
+                resolve_attribute_argument_expression_for_trait_scope(
+                    expression,
+                    current_trait,
+                    current_property,
+                );
+            }
+            let Some(AttributeConstantReference::ClassConstant { class_name, name }) =
+                &mut argument.value.constant_reference
+            else {
+                continue;
+            };
+            if !name.eq_ignore_ascii_case("class") {
+                continue;
+            }
+            let Some(resolved_class) =
+                resolve_attribute_class_scope_name(class_name, current_trait, None)
+            else {
+                continue;
+            };
+            *class_name = resolved_class.clone();
+            if matches!(argument.value.kind, AttributeArgumentKind::String) {
+                argument.value.text = resolved_class;
+            }
+        }
+    }
+    resolved
+}
+
 fn resolve_attribute_constant_reference_for_class_scope(
     reference: &mut AttributeConstantReference,
     current_class: &str,
@@ -3412,6 +3486,90 @@ fn resolve_attribute_argument_expression_for_class_scope(
                 right,
                 current_class,
                 current_parent,
+                current_property,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn resolve_attribute_argument_expression_for_trait_scope(
+    expression: &mut AttributeArgumentExpression,
+    current_trait: &str,
+    current_property: Option<&str>,
+) {
+    match expression {
+        AttributeArgumentExpression::PropertyMagicConstant => {
+            *expression =
+                AttributeArgumentExpression::String(current_property.unwrap_or("").to_string());
+        }
+        AttributeArgumentExpression::ClassName { class_name, .. } => {
+            if let Some(resolved_class) =
+                resolve_attribute_class_scope_name(class_name, current_trait, None)
+            {
+                *class_name = resolved_class;
+            }
+        }
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } if name.eq_ignore_ascii_case("class") => {
+            if let Some(resolved_class) =
+                resolve_attribute_class_scope_name(class_name, current_trait, None)
+            {
+                *class_name = resolved_class;
+            }
+        }
+        AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
+            resolve_first_class_callable_scope_name(callable, current_trait, None);
+        }
+        AttributeArgumentExpression::PropertyFetch { receiver, .. } => {
+            resolve_attribute_argument_expression_for_trait_scope(
+                receiver,
+                current_trait,
+                current_property,
+            );
+        }
+        AttributeArgumentExpression::NewObject { arguments, .. } => {
+            for argument in arguments {
+                resolve_attribute_argument_expression_for_trait_scope(
+                    argument,
+                    current_trait,
+                    current_property,
+                );
+            }
+        }
+        AttributeArgumentExpression::Array(elements) => {
+            for element in elements {
+                if let Some(key) = &mut element.key {
+                    resolve_attribute_argument_expression_for_trait_scope(
+                        key,
+                        current_trait,
+                        current_property,
+                    );
+                }
+                resolve_attribute_argument_expression_for_trait_scope(
+                    &mut element.value,
+                    current_trait,
+                    current_property,
+                );
+            }
+        }
+        AttributeArgumentExpression::Unary { expr, .. } => {
+            resolve_attribute_argument_expression_for_trait_scope(
+                expr,
+                current_trait,
+                current_property,
+            );
+        }
+        AttributeArgumentExpression::Binary { left, right, .. } => {
+            resolve_attribute_argument_expression_for_trait_scope(
+                left,
+                current_trait,
+                current_property,
+            );
+            resolve_attribute_argument_expression_for_trait_scope(
+                right,
+                current_trait,
                 current_property,
             );
         }

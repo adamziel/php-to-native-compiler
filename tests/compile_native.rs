@@ -8511,6 +8511,13 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     );
     assert_eq!(builtin_offset_write.kind, DiagnosticKind::Fatal);
 
+    let builtin_offset_coalesce_write = parser::parse("<?php strlen('foo')[0] ??= 1;").unwrap_err();
+    assert_eq!(
+        builtin_offset_coalesce_write.message,
+        "Cannot use result of built-in function in write context"
+    );
+    assert_eq!(builtin_offset_coalesce_write.kind, DiagnosticKind::Fatal);
+
     parser::parse("<?php chr(0)[0] = 1; chr(0)[0][] = 1; chr(0)[0] ??= 'x';").unwrap();
 
     let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
@@ -13131,6 +13138,10 @@ fn parser_rejects_missing_abstract_property_hook_implementations() {
             "<?php class P {} class C extends P { public $a { get { return parent::${0}::get(); } } }",
             "Must not use parent::$0::get() in a different property ($a)",
         ),
+        (
+            "<?php class P { public $a { set {} } } class C extends P { public $a { get { return parent::$a::set(); } } }",
+            "Must not use parent::$a::set() in a different property hook (get)",
+        ),
     ];
 
     for (source, message) in cases {
@@ -17559,6 +17570,82 @@ $map[$obj] = new class {
         "{stderr}"
     );
     assert!(stderr.contains("#1 {main}"), "{stderr}");
+}
+
+#[test]
+fn compile_uncaught_exception_uses_tostring_only_without_user_try_to_native_binary() {
+    let root = temp_dir("ptn-native-uncaught-exception-tostring-display");
+    fs::create_dir_all(&root).unwrap();
+
+    let uncaught_input = root.join("uncaught-exception-tostring.php");
+    let uncaught_output = root.join("uncaught-exception-tostring-bin");
+    fs::write(
+        &uncaught_input,
+        "<?php
+class MyException extends Exception {
+    private $field = 'my string';
+    public function &__toString(): string {
+        return $this->field;
+    }
+}
+throw new MyException;
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &uncaught_input,
+        &uncaught_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let uncaught = Command::new(&uncaught_output).output().unwrap();
+    assert!(!uncaught.status.success());
+    let uncaught_text = format!(
+        "{}{}",
+        String::from_utf8(uncaught.stdout).unwrap(),
+        String::from_utf8(uncaught.stderr).unwrap()
+    );
+    assert!(
+        uncaught_text.contains("Fatal error: Uncaught my string\n"),
+        "{uncaught_text}"
+    );
+    assert!(uncaught_text.contains("  thrown in "), "{uncaught_text}");
+    assert!(
+        !uncaught_text.contains("Uncaught MyException"),
+        "{uncaught_text}"
+    );
+
+    let caught_input = root.join("caught-exception-tostring.php");
+    let caught_output = root.join("caught-exception-tostring-bin");
+    fs::write(
+        &caught_input,
+        "<?php
+class MyCaughtException extends Exception {
+    public function __toString(): string {
+        echo \"stringified\\n\";
+        return 'caught string';
+    }
+}
+try {
+    throw new MyCaughtException;
+} catch (Throwable $e) {
+    echo \"caught\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &caught_input,
+        &caught_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let caught = Command::new(&caught_output).output().unwrap();
+    assert!(caught.status.success());
+    assert_eq!(String::from_utf8(caught.stdout).unwrap(), "caught\n");
+    assert_eq!(String::from_utf8(caught.stderr).unwrap(), "");
 }
 
 #[test]
@@ -70409,7 +70496,7 @@ fn compile_object_allocation_obeys_memory_limit_to_native_binary() {
         &input,
         "<?php\n\
 $objects = [];\n\
-for ($i = 0; $i < 5000; $i++) { $objects[] = new stdClass; }\n\
+for ($i = 0; $i < 20000; $i++) { $objects[] = new stdClass; }\n\
 echo \"unreachable\\n\";\n",
     )
     .unwrap();
@@ -70424,7 +70511,7 @@ echo \"unreachable\\n\";\n",
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     let stderr = String::from_utf8(execution.stderr).unwrap();
     assert!(stderr.contains("Fatal error: Allowed memory size of 2097152 bytes exhausted"));
-    assert!(stderr.contains("tried to allocate "));
+    assert!(stderr.contains("tried to allocate 128 bytes"));
     assert!(stderr.contains("object-allocation-memory-limit.php on line 3"));
     assert!(!stderr.contains("Stack trace:"), "{stderr}");
 }
@@ -96522,6 +96609,33 @@ fn compile_dynamic_class_constant_missing_class_precedes_bad_name_to_native_bina
     );
     assert!(
         !output_text.contains("Cannot use value of type int as class constant name"),
+        "{output_text}"
+    );
+}
+
+#[test]
+fn compile_dynamic_class_constant_name_expression_precedes_missing_class_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-class-constant-name-expression-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-name-expression-order.php");
+    let output = root.join("dynamic-class-constant-name-expression-order-bin");
+    fs::write(&input, "<?php\nconst y = y::{y};\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let output_text = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        output_text.contains("Fatal error: Uncaught Error: Undefined constant \"y\""),
+        "{output_text}"
+    );
+    assert!(
+        !output_text.contains("Class \"y\" not found"),
         "{output_text}"
     );
 }

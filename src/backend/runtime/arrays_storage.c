@@ -2057,8 +2057,7 @@ static PTN_UNUSED void ptn_object_enforce_memory_limit_for_allocation(
     PtnRuntime *root = ptn_runtime_root(runtime);
     size_t live_objects = root == NULL ? 0 : root->live_objects_len;
     const size_t baseline_usage = 1024 * 1024;
-    const size_t estimated_object_bytes =
-        sizeof(PtnObject) + sizeof(PtnArray) + sizeof(PtnObject *) + 64;
+    const size_t estimated_object_bytes = 128;
     if (live_objects >= (SIZE_MAX - baseline_usage) / estimated_object_bytes) {
         ptn_emit_memory_allocation_overflow_error(runtime, live_objects, estimated_object_bytes, baseline_usage, line);
         return;

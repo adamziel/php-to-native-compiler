@@ -8949,7 +8949,25 @@ impl Parser<'_> {
                             }
                             match self.active_property_hook_scope.as_ref() {
                                 Some(active_hook) => {
-                                    let _ = (&active_hook.property_name, &active_hook.hook_name);
+                                    if active_hook.property_name != *property_name {
+                                        return Err(Diagnostic::new(
+                                            format!(
+                                                "Must not use parent::${property_name}::{}() in a different property (${active_property_name})",
+                                                hook_name,
+                                                active_property_name = active_hook.property_name
+                                            ),
+                                            Some(start_span),
+                                        ));
+                                    }
+                                    if !active_hook.hook_name.eq_ignore_ascii_case(hook_name) {
+                                        return Err(Diagnostic::new(
+                                            format!(
+                                                "Must not use parent::${property_name}::{}() in a different property hook ({})",
+                                                hook_name, active_hook.hook_name
+                                            ),
+                                            Some(start_span),
+                                        ));
+                                    }
                                 }
                                 None => {
                                     return Err(Diagnostic::new(
@@ -25832,6 +25850,13 @@ fn modeled_internal_has_by_ref_parameter(name: &str) -> bool {
     )
 }
 
+fn modeled_internal_result_disallows_offset_write(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "count" | "sizeof" | "strlen"
+    )
+}
+
 fn is_reserved_compile_time_constant_declaration_name(name: &str) -> bool {
     name.rsplit('\\').next().is_some_and(|local| {
         matches!(
@@ -27028,7 +27053,7 @@ fn validate_coalesce_assignment_target(
             Some(span),
         )),
         AssignmentTarget::ValueArrayDim {
-            dimensions, ..
+            array, dimensions, ..
         } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
@@ -27036,6 +27061,7 @@ fn validate_coalesce_assignment_target(
                     Some(span),
                 ));
             }
+            reject_non_offset_writable_modeled_internal_result(array.as_ref())?;
             Ok(())
         }
         AssignmentTarget::Property { .. } => Ok(()),
@@ -27059,6 +27085,9 @@ fn validate_expression_assignment_target(
     reject_this_assignment_target(target)?;
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
+        if let AssignmentTarget::ValueArrayDim { array, .. } = target {
+            reject_non_offset_writable_modeled_internal_result(array.as_ref())?;
+        }
         return Ok(());
     }
 
@@ -27092,6 +27121,23 @@ fn validate_expression_assignment_target(
             Some(span),
         )),
     }
+}
+
+fn reject_non_offset_writable_modeled_internal_result(array: &Expr) -> Result<()> {
+    if let Expr::Call {
+        name,
+        span: call_span,
+        ..
+    } = array
+    {
+        if modeled_internal_result_disallows_offset_write(name) {
+            return Err(Diagnostic::new(
+                "Cannot use result of built-in function in write context",
+                Some(*call_span),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn reject_this_assignment_target(target: &AssignmentTarget) -> Result<()> {

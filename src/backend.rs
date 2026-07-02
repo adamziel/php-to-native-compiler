@@ -201,6 +201,7 @@ pub fn emit_c(module: &Module) -> String {
         || needs_magic_property_unset;
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
+    emit_attribute_constant_expression_helpers(&mut out);
     if runtime_requirements.internal_function_dispatch {
         emit_internal_dispatch_prototypes(&mut out);
     }
@@ -8418,6 +8419,32 @@ fn emit_declaration_fatals(
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    exit(255);\n");
+}
+
+fn emit_attribute_constant_expression_helpers(out: &mut String) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_attribute_read_class_constant_with_scope_message_class(PtnRuntime *runtime, const char *class_name, const char *constant, const char *message_class_name, const char *access_scope, size_t line) {\n",
+    );
+    out.push_str(
+        "    const char *previous_initializing_constant = runtime != NULL ? runtime->current_class_constant_initializing_constant_name : NULL;\n",
+    );
+    out.push_str(
+        "    if (runtime != NULL && message_class_name != NULL && (ptn_ascii_case_equal(message_class_name, \"self\") || ptn_ascii_case_equal(message_class_name, \"static\") || ptn_ascii_case_equal(message_class_name, \"parent\"))) {\n",
+    );
+    out.push_str(
+        "        runtime->current_class_constant_initializing_constant_name = constant;\n",
+    );
+    out.push_str("    }\n");
+    out.push_str(
+        "    PtnValue result = ptn_runtime_read_class_constant_with_scope_message_class(runtime, class_name, constant, message_class_name, access_scope, line);\n",
+    );
+    out.push_str("    if (runtime != NULL) {\n");
+    out.push_str(
+        "        runtime->current_class_constant_initializing_constant_name = previous_initializing_constant;\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
 }
 
 fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
@@ -16816,7 +16843,7 @@ fn emit_attribute_argument_expression(
             let read_expression = if *scope_relative {
                 let access_scope = attribute_scope_class_var.unwrap_or("NULL");
                 format!(
-                    "ptn_runtime_read_class_constant_with_scope_message_class(runtime, {class_name_expr}, \"{}\", \"self\", {access_scope}, {})",
+                    "ptn_attribute_read_class_constant_with_scope_message_class(runtime, {class_name_expr}, \"{}\", \"self\", {access_scope}, {})",
                     c_string(name),
                     fallback_line
                 )
@@ -53686,13 +53713,25 @@ impl ValueEmitter {
         let name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&name_temp);
-        out.push_str(" = ptn_runtime_dynamic_class_constant_name(&runtime, ");
+        out.push_str(" = runtime.exceptions->active_exception == NULL ? ptn_runtime_dynamic_class_constant_name(&runtime, ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
-        out.push_str(");\n");
+        out.push_str(") : NULL;\n");
         emit_value_cleanup(out, "    ", &value_temp);
         name_temp
+    }
+
+    fn dynamic_class_constant_name_precedes_static_class_check(name: &ValueExpr) -> bool {
+        !matches!(
+            name,
+            ValueExpr::String(_)
+                | ValueExpr::Int(_)
+                | ValueExpr::Float(_)
+                | ValueExpr::Bool(_)
+                | ValueExpr::Null
+                | ValueExpr::Array(_)
+        )
     }
 
     fn emit_dynamic_class_constant_fetch(
@@ -53760,91 +53799,150 @@ impl ValueEmitter {
             } else {
                 let resolved_class_name = self.static_member_class_name(class_name);
                 let guard_dynamic_name = !matches!(name, ValueExpr::String(value) if value.eq_ignore_ascii_case("class"));
-                if guard_dynamic_name {
+                if guard_dynamic_name
+                    && Self::dynamic_class_constant_name_precedes_static_class_check(name)
+                {
+                    let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
                     let class_probe_temp = self.next_temp();
-                    out.push_str("    const char *");
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        const char *");
                     out.push_str(&class_probe_temp);
                     out.push_str(" = ptn_runtime_maybe_autoload_static_member_class(&runtime, \"");
                     out.push_str(&c_string(&resolved_class_name));
                     out.push_str("\", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
-                    out.push_str("    if (runtime.exceptions->active_exception == NULL && !ptn_runtime_class_constant_container_exists(&runtime, ");
+                    out.push_str("        if (runtime.exceptions->active_exception == NULL && !ptn_runtime_class_constant_container_exists(&runtime, ");
                     out.push_str(&class_probe_temp);
                     out.push_str(")) {\n");
-                    out.push_str("        ");
+                    out.push_str("            ");
                     out.push_str(&result_temp);
                     out.push_str(" = ptn_runtime_undefined_class_constant(&runtime, ");
                     out.push_str(&class_probe_temp);
                     out.push_str(", NULL, \"\", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
+                    out.push_str("        }\n");
+                    out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("            if (");
+                    out.push_str(&name_temp);
+                    out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("                if (ptn_ascii_case_equal(");
+                    out.push_str(&name_temp);
+                    out.push_str(", \"class\")) {\n");
+                    out.push_str("                    ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_string(\"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\");\n");
+                    out.push_str("                } else {\n");
+                    out.push_str("                    ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", ");
+                    out.push_str(&name_temp);
+                    out.push_str(", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("                }\n");
+                    out.push_str("            }\n");
+                    out.push_str("        }\n");
                     out.push_str("    }\n");
-                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
-                }
-                let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
-                out.push_str(if guard_dynamic_name {
-                    "        if ("
+                    out.push_str("    free(");
+                    out.push_str(&name_temp);
+                    out.push_str(");\n");
                 } else {
-                    "    if ("
-                });
-                out.push_str(&name_temp);
-                out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
-                out.push_str(if guard_dynamic_name {
-                    "            if (ptn_ascii_case_equal("
-                } else {
-                    "        if (ptn_ascii_case_equal("
-                });
-                out.push_str(&name_temp);
-                out.push_str(", \"class\")) {\n");
-                out.push_str(if guard_dynamic_name {
-                    "                "
-                } else {
-                    "            "
-                });
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_string(\"");
-                out.push_str(&c_string(&resolved_class_name));
-                out.push_str("\");\n");
-                out.push_str(if guard_dynamic_name {
-                    "            } else {\n"
-                } else {
-                    "        } else {\n"
-                });
-                out.push_str(if guard_dynamic_name {
-                    "                "
-                } else {
-                    "            "
-                });
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
-                out.push_str(&c_string(&resolved_class_name));
-                out.push_str("\", ");
-                out.push_str(&name_temp);
-                out.push_str(", ");
-                self.emit_access_scope(out);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                out.push_str(if guard_dynamic_name {
-                    "            }\n"
-                } else {
-                    "        }\n"
-                });
-                out.push_str(if guard_dynamic_name {
-                    "        }\n"
-                } else {
-                    "    }\n"
-                });
-                out.push_str(if guard_dynamic_name {
-                    "        free("
-                } else {
-                    "    free("
-                });
-                out.push_str(&name_temp);
-                out.push_str(");\n");
-                if guard_dynamic_name {
-                    out.push_str("    }\n");
+                    if guard_dynamic_name {
+                        let class_probe_temp = self.next_temp();
+                        out.push_str("    const char *");
+                        out.push_str(&class_probe_temp);
+                        out.push_str(
+                            " = ptn_runtime_maybe_autoload_static_member_class(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&resolved_class_name));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("    if (runtime.exceptions->active_exception == NULL && !ptn_runtime_class_constant_container_exists(&runtime, ");
+                        out.push_str(&class_probe_temp);
+                        out.push_str(")) {\n");
+                        out.push_str("        ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_runtime_undefined_class_constant(&runtime, ");
+                        out.push_str(&class_probe_temp);
+                        out.push_str(", NULL, \"\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    }
+                    let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
+                    out.push_str(if guard_dynamic_name {
+                        "        if ("
+                    } else {
+                        "    if ("
+                    });
+                    out.push_str(&name_temp);
+                    out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str(if guard_dynamic_name {
+                        "            if (ptn_ascii_case_equal("
+                    } else {
+                        "        if (ptn_ascii_case_equal("
+                    });
+                    out.push_str(&name_temp);
+                    out.push_str(", \"class\")) {\n");
+                    out.push_str(if guard_dynamic_name {
+                        "                "
+                    } else {
+                        "            "
+                    });
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_string(\"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\");\n");
+                    out.push_str(if guard_dynamic_name {
+                        "            } else {\n"
+                    } else {
+                        "        } else {\n"
+                    });
+                    out.push_str(if guard_dynamic_name {
+                        "                "
+                    } else {
+                        "            "
+                    });
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", ");
+                    out.push_str(&name_temp);
+                    out.push_str(", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str(if guard_dynamic_name {
+                        "            }\n"
+                    } else {
+                        "        }\n"
+                    });
+                    out.push_str(if guard_dynamic_name {
+                        "        }\n"
+                    } else {
+                        "    }\n"
+                    });
+                    out.push_str(if guard_dynamic_name {
+                        "        free("
+                    } else {
+                        "    free("
+                    });
+                    out.push_str(&name_temp);
+                    out.push_str(");\n");
+                    if guard_dynamic_name {
+                        out.push_str("    }\n");
+                    }
                 }
             }
         } else if let Some(receiver) = receiver {
