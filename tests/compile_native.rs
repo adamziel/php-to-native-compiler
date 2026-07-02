@@ -65178,13 +65178,13 @@ $client->send(new Message());
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:FieldTypes\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"urn:Messages\"><SOAP-ENV:Body><ns2:message><ns2:event/><ns2:event/></ns2:message></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:FieldTypes\" xmlns:ns2=\"urn:Messages\"><SOAP-ENV:Body><ns2:message><ns2:event/><ns2:event/></ns2:message></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_soap_first_foreign_field_type_namespace"));
+    assert!(c_source.contains("ptn_soap_append_namespace_declarations_with_xsi_after_first"));
     assert!(c_source.contains("ptn_soap_enclosing_schema_element_form_qualified"));
 }
 
@@ -65776,6 +65776,110 @@ var_dump($roundTrip);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("default_value"));
     assert!(c_source.contains("ptn_soap_object_property"));
+}
+
+#[test]
+fn compile_soap_wsdl_repeated_singleton_decode_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-repeated-singleton-decode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-repeated-singleton-decode.php");
+    let output = root.join("soap-wsdl-repeated-singleton-decode-bin");
+    fs::write(
+        &input,
+        r##"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+class Box extends stdClass {}
+
+class LocalSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        return <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://test-uri/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><ns1:testResponse><res xsi:type="ns1:testType"><item xsi:type="xsd:int">123</item></res></ns1:testResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
+XML;
+    }
+}
+
+$wsdl = <<<'WSDL'
+<definitions name="RepeatedSingleton"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <complexType name="testType">
+        <sequence>
+          <element name="item" type="int" maxOccurs="unbounded"/>
+        </sequence>
+      </complexType>
+    </schema>
+  </types>
+  <message name="testRequest"/>
+  <message name="testResponse"><part name="res" type="tns:testType"/></message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="tns:testRequest"/>
+      <output message="tns:testResponse"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input><soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="testService"><port name="testPort" binding="tns:testBinding"><soap:address location="test://" /></port></service>
+</definitions>
+WSDL;
+
+$path = __DIR__ . '/repeated-singleton.wsdl';
+file_put_contents($path, $wsdl);
+
+echo "default\n";
+var_dump((new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0]))->test());
+
+echo "single\n";
+var_dump((new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0, 'features' => SOAP_SINGLE_ELEMENT_ARRAYS]))->test());
+
+echo "classmap\n";
+var_dump((new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0, 'classmap' => ['testType' => Box::class]]))->test());
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("default\nobject(stdClass)#"), "{stdout}");
+    assert!(stdout.contains("single\nobject(stdClass)#"), "{stdout}");
+    assert!(stdout.contains("classmap\nobject(Box)#"), "{stdout}");
+    assert!(
+        stdout.matches("[\"item\"]=>\n  int(123)").count() >= 2,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout.matches("[\"item\"]=>\n  array(1) {").count(),
+        1,
+        "{stdout}"
+    );
+    assert!(stdout.contains("[0]=>\n    int(123)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_options_feature_enabled"));
+    assert!(c_source.contains("ptn_soap_write_decoded_field_property"));
 }
 
 #[test]
