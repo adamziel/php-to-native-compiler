@@ -693,6 +693,54 @@ fn phpt_classifier_unlocks_verified_bounded_slow_skipif_rows() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_bounded_residual_skipif_rows() {
+    let slow = "--TEST--\nverified residual slow row\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    for path in [
+        "ext/date/tests/bug73837.phpt",
+        "ext/pcre/tests/bug69864.phpt",
+        "ext/pcre/tests/cache_limit.phpt",
+        "ext/standard/tests/general_functions/sleep_basic.phpt",
+        "ext/standard/tests/general_functions/usleep_basic.phpt",
+        "ext/standard/tests/network/gethostbyname_basic001.phpt",
+        "ext/standard/tests/password/password_hash.phpt",
+        "ext/standard/tests/password/password_removed_salt_option.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(slow, path);
+        assert!(
+            classification.starts_with("runnable\t") && classification.contains("resource-limit"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    for path in [
+        "ext/date/tests/date_diff.phpt",
+        "ext/standard/tests/network/gethostbyname_error004.phpt",
+        "ext/standard/tests/network/getmxrr.phpt",
+        "ext/standard/tests/streams/bug74090.phpt",
+        "tests/basic/timeout_variation_0.phpt",
+        "tests/func/005a.phpt",
+        "tests/func/010.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(slow, path);
+        assert!(
+            classification.starts_with("skipif-precondition\t")
+                && classification.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let perf = "--TEST--\nverified residual perf row\n--SKIPIF--\n<?php if (getenv('SKIP_PERF_SENSITIVE')) die('skip performance sensitive test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_at_relative_path_with_harness_programs(perf, "Zend/tests/concat/concat_003.phpt");
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("resource-limit gate keeps SKIP_PERF_SENSITIVE rows"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(
