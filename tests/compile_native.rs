@@ -66546,6 +66546,132 @@ var_dump(
 }
 
 #[test]
+fn compile_ziparchive_entry_metadata_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-entry-metadata-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-entry-metadata-boundaries.php");
+    let output = root.join("ziparchive-entry-metadata-boundaries-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$file = __DIR__ . '/row-pack.zip';
+$empty = __DIR__ . '/empty.zip';
+$extract = __DIR__ . '/extract';
+mkdir($extract);
+
+$zip = new ZipArchive;
+var_dump($zip instanceof Countable);
+var_dump(
+    method_exists('ZipArchive', 'deleteName'),
+    method_exists('ZipArchive', 'setCommentIndex'),
+    method_exists('ZipArchive', 'unchangeName')
+);
+var_dump($zip->open($file, ZipArchive::CREATE | ZipArchive::OVERWRITE));
+$zip->addFromString('Dir/File.TXT', 'payload');
+$zip->addFromString('../down2/file.txt', 'safe');
+var_dump(
+    count($zip),
+    $zip->count(),
+    ZipArchive::FL_NOCASE,
+    ZipArchive::FL_NODIR,
+    $zip->locateName('file.txt', ZipArchive::FL_NODIR),
+    $zip->locateName('dir/file.txt', ZipArchive::FL_NOCASE)
+);
+$stat = $zip->statName('FILE.TXT', ZipArchive::FL_NOCASE | ZipArchive::FL_NODIR);
+var_dump($stat['name']);
+
+$stream = $zip->getStream('Dir/File.TXT');
+$meta = stream_get_meta_data($stream);
+var_dump($meta['stream_type'], isset($meta['wrapper_type']), $meta['uri']);
+fclose($stream);
+
+var_dump(
+    $zip->setCommentIndex(0, 'comment'),
+    $zip->getCommentIndex(0),
+    $zip->renameIndex(0, 'renamed.txt'),
+    $zip->unchangeName('renamed.txt'),
+    $zip->getNameIndex(0),
+    $zip->getCommentIndex(0)
+);
+var_dump(
+    $zip->extractTo($extract, '../down2/file.txt'),
+    file_exists($extract . '/down2/file.txt'),
+    file_exists(__DIR__ . '/down2/file.txt')
+);
+var_dump($zip->deleteName('Dir/File.TXT'), $zip->locateName('Dir/File.TXT'), count($zip));
+$zip->close();
+
+touch($empty);
+$emptyZip = new ZipArchive;
+$emptyZip->open($empty, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+$emptyZip->close();
+var_dump(file_exists($empty));
+
+$wrapped = fopen('zip://' . $file . '#../down2/file.txt', 'rb');
+$wrappedMeta = stream_get_meta_data($wrapped);
+var_dump($wrappedMeta['wrapper_type'], $wrappedMeta['stream_type'], $wrappedMeta['uri'], stream_get_contents($wrapped));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "string(12) \"Dir/File.TXT\"\n",
+            "string(3) \"zip\"\n",
+            "bool(false)\n",
+            "string(12) \"Dir/File.TXT\"\n",
+            "bool(true)\n",
+            "string(7) \"comment\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(12) \"Dir/File.TXT\"\n",
+            "string(0) \"\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "string(11) \"zip wrapper\"\n",
+            "string(3) \"zip\"\n",
+        )),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(4) \"safe\"\n"), "{stdout}");
+    assert!(stdout.contains("zip://"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_count"));
+    assert!(c_source.contains("ptn_zip_archive_unchange_name"));
+    assert!(c_source.contains("PTN_ZIP_FL_NOCASE"));
+    assert!(c_source.contains("PTN_STREAM_BACKEND_ZIP"));
+}
+
+#[test]
 fn compile_zip_name_metadata_edges_to_native_binary() {
     let root = temp_dir("ptn-native-zip-name-metadata-edges");
     fs::create_dir_all(&root).unwrap();

@@ -3134,8 +3134,8 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     let zip_archive_unmodeled_mutation = classify_at_relative_path(
-        "--TEST--\nzip archive unmodeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->deleteName('test');\n--EXPECT--\n",
-        "ext/zip/tests/delete_name.phpt",
+        "--TEST--\nzip archive unmodeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->setArchiveComment('test');\n--EXPECT--\n",
+        "ext/zip/tests/set_archive_comment.phpt",
     );
     assert!(
         zip_archive_unmodeled_mutation.starts_with("unsupported-zip-archive-runtime\t"),
@@ -3143,8 +3143,8 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     let zip_archive_modeled_mutation = classify_at_relative_path(
-        "--TEST--\nzip archive modeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n$zip->setPassword('secret');\n--EXPECT--\n",
-        "ext/zip/tests/oo_cancel_trampoline.phpt",
+        "--TEST--\nzip archive modeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->addFromString('test', 'test');\n$zip->setPassword('secret');\n$zip->setCommentIndex(0, 'comment');\n$zip->renameIndex(0, 'renamed');\n$zip->unchangeName('renamed');\n$zip->deleteName('test');\n--EXPECT--\n",
+        "ext/zip/tests/oo_unchangeName.phpt",
     );
     assert_eq!(
         zip_archive_modeled_mutation.trim_end(),

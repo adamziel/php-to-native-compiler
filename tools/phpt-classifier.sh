@@ -2980,7 +2980,7 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
         }
         {
             line = ptn_php_code_line($0)
-            if (line ~ /->[[:space:]]*(registerprogresscallback|setarchivecomment|setcomment(name|index)|delete(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
+            if (line ~ /->[[:space:]]*(registerprogresscallback|setarchivecomment|unchange(all|archive)?)[[:space:]]*\(/) {
                 print "unsupported-zip-archive-runtime\trequires unmodeled ZipArchive archive mutation/callback runtime"
                 found = 1
                 exit

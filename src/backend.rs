@@ -4768,6 +4768,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ZipArchive\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Countable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"IntlBreakIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlRuleBasedBreakIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlCodePointBreakIterator\") ||\n");
@@ -24547,6 +24550,8 @@ fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str)
         &["DateTimeInterface"][..]
     } else if candidate_name.eq_ignore_ascii_case("SessionHandler") {
         &["SessionHandlerInterface"][..]
+    } else if candidate_name.eq_ignore_ascii_case("ZipArchive") {
+        &["Countable"][..]
     } else if candidate_name
         .trim_start_matches('\\')
         .eq_ignore_ascii_case("BcMath\\Number")
@@ -38070,6 +38075,42 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         }
         if name.eq_ignore_ascii_case("SIMPLE_CASE_INSENSITIVE") {
             return Some("6");
+        }
+    }
+    if class_name.eq_ignore_ascii_case("ZipArchive") {
+        const ZIP_ARCHIVE_CONSTANTS: &[(&str, &str)] = &[
+            ("CREATE", "PTN_ZIP_CREATE"),
+            ("EXCL", "PTN_ZIP_EXCL"),
+            ("CHECKCONS", "PTN_ZIP_CHECKCONS"),
+            ("OVERWRITE", "PTN_ZIP_OVERWRITE"),
+            ("RDONLY", "PTN_ZIP_RDONLY"),
+            ("FL_NOCASE", "PTN_ZIP_FL_NOCASE"),
+            ("FL_NODIR", "PTN_ZIP_FL_NODIR"),
+            ("FL_UNCHANGED", "PTN_ZIP_FL_UNCHANGED"),
+            ("FL_OVERWRITE", "PTN_ZIP_FL_OVERWRITE"),
+            ("FL_OPEN_FILE_NOW", "PTN_ZIP_FL_OPEN_FILE_NOW"),
+            ("LENGTH_TO_END", "PTN_ZIP_LENGTH_TO_END"),
+            ("ER_OK", "PTN_ZIP_ER_OK"),
+            ("ER_INCONS", "PTN_ZIP_ER_INCONS"),
+            ("ER_CANCELLED", "PTN_ZIP_ER_CANCELLED"),
+            ("CM_STORE", "PTN_ZIP_CM_STORE"),
+            ("CM_DEFLATE", "PTN_ZIP_CM_DEFLATE"),
+            ("CM_DEFLATE64", "PTN_ZIP_CM_DEFLATE64"),
+            ("CM_BZIP2", "PTN_ZIP_CM_BZIP2"),
+            ("CM_LZMA", "PTN_ZIP_CM_LZMA"),
+            ("CM_PPMD", "PTN_ZIP_CM_PPMD"),
+            ("EM_NONE", "PTN_ZIP_EM_NONE"),
+            ("EM_TRAD_PKWARE", "PTN_ZIP_EM_TRAD_PKWARE"),
+            ("EM_AES_128", "PTN_ZIP_EM_AES_128"),
+            ("EM_AES_192", "PTN_ZIP_EM_AES_192"),
+            ("EM_AES_256", "PTN_ZIP_EM_AES_256"),
+            ("AFL_IS_TORRENTZIP", "PTN_ZIP_AFL_IS_TORRENTZIP"),
+            ("AFL_WANT_TORRENTZIP", "PTN_ZIP_AFL_WANT_TORRENTZIP"),
+        ];
+        for (constant, value) in ZIP_ARCHIVE_CONSTANTS {
+            if name.eq_ignore_ascii_case(constant) {
+                return Some(value);
+            }
         }
     }
     None
