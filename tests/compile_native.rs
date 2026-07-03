@@ -68941,6 +68941,112 @@ $client->PostEvents(new EnvelopeArg());
 }
 
 #[test]
+fn compile_soap_document_literal_repeated_foreign_type_declares_type_namespace_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-repeated-foreign-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-document-literal-repeated-foreign-type.php");
+    let output = root.join("soap-document-literal-repeated-foreign-type-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/literal-repeated-foreign-type.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="RepeatedForeignType"
+  targetNamespace="urn:service"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="urn:service"
+  xmlns:m="urn:message"
+  xmlns:e="urn:event">
+  <types>
+    <xsd:schema targetNamespace="urn:message" elementFormDefault="qualified">
+      <xsd:import namespace="urn:event"/>
+      <xsd:element name="ivrEvents" type="m:Events"/>
+      <xsd:complexType name="Events">
+        <xsd:sequence>
+          <xsd:choice maxOccurs="unbounded">
+            <xsd:element minOccurs="0" maxOccurs="1" name="logOffEvent" type="e:LogOffEvent"/>
+          </xsd:choice>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+    <xsd:schema targetNamespace="urn:event" elementFormDefault="qualified">
+      <xsd:complexType name="AbstractEvent"/>
+      <xsd:complexType name="LogOffEvent">
+        <xsd:complexContent>
+          <xsd:extension base="e:AbstractEvent"/>
+        </xsd:complexContent>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="PostEventsRequest"><part name="parameters" element="m:ivrEvents"/></message>
+  <message name="PostEventsResponse"/>
+  <portType name="LiteralPort">
+    <operation name="PostEvents"><input message="tns:PostEventsRequest"/><output message="tns:PostEventsResponse"/></operation>
+  </portType>
+  <binding name="LiteralBinding" type="tns:LiteralPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="PostEvents">
+      <soap:operation soapAction="urn:post"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="LiteralService">
+    <port name="LiteralPort" binding="tns:LiteralBinding"><soap:address location="test://literal"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class LogOffEvent {}
+
+class IVREvents {
+    public $logOffEvent;
+
+    function __construct() {
+        $this->logOffEvent = [new LogOffEvent(), new LogOffEvent()];
+    }
+}
+
+class LocalSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        return '';
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->PostEvents(new IVREvents());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:ns1=\"urn:event\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"urn:message\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<ns2:ivrEvents><ns2:logOffEvent/><ns2:logOffEvent/></ns2:ivrEvents>"),
+        "{stdout}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("literal_needs_xsi"));
+}
+
+#[test]
 fn compile_soap_wsdl_rpc_void_response_omits_nil_return_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-rpc-void-response");
     fs::create_dir_all(&root).unwrap();
