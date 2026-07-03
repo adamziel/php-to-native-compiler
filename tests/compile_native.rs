@@ -6168,6 +6168,24 @@ fn parser_accepts_inline_html_between_php_blocks_as_output() {
 }
 
 #[test]
+fn parser_accepts_short_echo_tags_between_inline_html() {
+    let program = parser::parse("<?php $sid = 'x'; ?><a><?= $sid ?></a>").unwrap();
+    assert_eq!(program.statements.len(), 4);
+    assert!(matches!(
+        &program.statements[1],
+        Statement::InlineHtml { content, .. } if content == "<a>"
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Echo { expressions, .. } if expressions.len() == 1
+    ));
+    assert!(matches!(
+        &program.statements[3],
+        Statement::InlineHtml { content, .. } if content == "</a>"
+    ));
+}
+
+#[test]
 fn compile_inline_html_between_php_blocks_to_native_binary() {
     let root = temp_dir("ptn-native-inline-html-between-blocks");
     fs::create_dir_all(&root).unwrap();
@@ -6184,6 +6202,22 @@ fn compile_inline_html_between_php_blocks_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "#1##1");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_short_echo_tag_between_inline_html_to_native_binary() {
+    let root = temp_dir("ptn-native-short-echo-inline-html");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("short-echo-inline-html.php");
+    let output = root.join("short-echo-inline-html-bin");
+    fs::write(&input, "<?php $sid = 'x'; ?><a><?= $sid ?></a>").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "<a>x</a>");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -21890,6 +21924,136 @@ ob_end_flush();
         ),
         "{stdout}"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_trans_sid_respects_arg_separator_output_to_native_binary() {
+    let root = temp_dir("ptn-native-session-trans-sid-arg-separator-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-trans-sid-arg-separator-output.php");
+    let output = root.join("session-trans-sid-arg-separator-output-bin");
+    let session_id = "abc123abc123abc123abc123abc123ab";
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+session_id('{session_id}');\n\
+session_start();\n\
+echo '<a href=\"next.php?a=b\">link</a>', \"\\n\";\n"
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", &root)
+        .env("PTN_SESSION_USE_COOKIES", "0")
+        .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_TRANS_SID", "1")
+        .env("PTN_ARG_SEPARATOR_OUTPUT", "&amp;")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("<a href=\"next.php?a=b&amp;PHPSESSID={session_id}\">link</a>\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_sid_constant_is_rewritten_with_trans_sid_to_native_binary() {
+    let root = temp_dir("ptn-native-session-sid-constant-trans-sid");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-sid-constant-trans-sid.php");
+    let output = root.join("session-sid-constant-trans-sid-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+session_id('test015');\n\
+session_start();\n\
+$sid = SID;\n\
+echo '<a href=\"/link?' . $sid . '\">', \"\\n\";\n\
+session_destroy();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", &root)
+        .env("PTN_SESSION_USE_COOKIES", "0")
+        .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_TRANS_SID", "1")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: Constant SID is deprecated since 8.4, as GET/POST sessions were deprecated in "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<a href=\"/link?PHPSESSID=test015&PHPSESSID=test015\">\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_save_path_mode_controls_created_file_permissions_to_native_binary() {
+    let root = temp_dir("ptn-native-session-save-path-mode");
+    let session_dir = root.join("sessions");
+    fs::create_dir_all(&session_dir).unwrap();
+    let input = root.join("session-save-path-mode.php");
+    let output = root.join("session-save-path-mode-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+umask(0);
+session_id('modeid');
+session_save_path('0;0777;{}');
+session_start();
+$_SESSION['value'] = 'stored';
+session_write_close();
+foreach (glob('{}/*') as $path) {{
+    echo substr(decoct(fileperms($path)), -3), "\n";
+    unlink($path);
+}}
+"#,
+            session_dir.display(),
+            session_dir.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_USE_COOKIES", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "777\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -88801,6 +88965,73 @@ fn phpc_session_save_handler_user_startup_ini_emits_diagnostic() {
             "Fatal error: PHP Startup: Session save handler \"user\" cannot be set by ini_set() in Unknown on line 0\n",
             "Done!\n"
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_session_ini_upload_progress_trans_sid_and_lazy_write_are_runtime_visible() {
+    let root = temp_dir("ptn-phpc-session-ini-upload-trans-sid");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-ini-upload-trans-sid.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('session.upload_progress.freq'));\n\
+var_dump(ini_get('arg_separator.output'));\n\
+var_dump(ini_get('session.lazy_write'));\n\
+var_dump(ini_get('session.referer_check'));\n\
+var_dump(ini_set('session.auto_start', '0'));\n\
+var_dump(ini_set('session.trans_sid_hosts', 'runtime.example'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("session.upload_progress.freq=200%")
+        .arg("-d")
+        .arg("arg_separator.output=&amp;")
+        .arg("-d")
+        .arg("session.trans_sid_hosts=php.net")
+        .arg("-d")
+        .arg("session.lazy_write=0")
+        .arg("-d")
+        .arg("session.referer_check=referer")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Warning: PHP Startup: session.upload_progress.freq must be less than or equal to 100% in Unknown on line 0\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Deprecated: PHP Startup: Usage of session.trans_sid_hosts INI setting is deprecated in Unknown on line 0\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(2) \"1%\"\n"), "{stdout}");
+    assert!(stdout.contains("string(5) \"&amp;\"\n"), "{stdout}");
+    assert!(stdout.contains("string(1) \"0\"\n"), "{stdout}");
+    assert!(stdout.contains("string(7) \"referer\"\n"), "{stdout}");
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Deprecated: ini_set(): Usage of session.trans_sid_hosts INI setting is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(7) \"php.net\"\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Deprecated: PHP Request Shutdown: Usage of session.trans_sid_hosts INI setting is deprecated in Unknown on line 0\n"
+        ),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

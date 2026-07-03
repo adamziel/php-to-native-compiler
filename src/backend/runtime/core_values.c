@@ -1290,6 +1290,7 @@ typedef struct {
     char *trans_sid_session_name;
     char *trans_sid_session_id;
     char *trans_sid_hosts;
+    char *trans_sid_arg_separator_output;
 } PtnOutputBuffer;
 
 typedef struct {
@@ -1771,6 +1772,8 @@ struct PtnRuntime {
     size_t output_buffer_callback_skip_buffers;
     int output_at_line_start;
     int output_has_started;
+    char *trans_sid_pending_output;
+    size_t trans_sid_pending_output_len;
     const char *current_output_source_path;
     size_t current_output_line;
     char *output_started_source_path;

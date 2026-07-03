@@ -2108,10 +2108,6 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PHP_SESSION_ACTIVE);
         return 1;
     }
-    if (strcmp(name, "SID") == 0) {
-        *out = ptn_string("");
-        return 1;
-    }
     if (strcmp(name, "DEBUG_BACKTRACE_PROVIDE_OBJECT") == 0) {
         *out = ptn_int(PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT);
         return 1;
@@ -4241,6 +4237,8 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
     return 0;
 }
 
+static PtnValue ptn_runtime_sid_constant_value(PtnRuntime *runtime);
+
 static PTN_UNUSED int ptn_runtime_constant_value_len(
     PtnRuntime *runtime,
     const char *name,
@@ -4268,10 +4266,101 @@ static PTN_UNUSED int ptn_runtime_constant_value_len(
         *out = ptn_null();
         return 1;
     }
+    if (name_len == 3 && memcmp(name, "SID", 3) == 0) {
+        *out = ptn_runtime_sid_constant_value(runtime);
+        return 1;
+    }
     if (ptn_builtin_constant_value(name, out)) {
         return 1;
     }
     return ptn_runtime_class_constant_value(runtime, name, out);
+}
+
+static const char *ptn_runtime_sid_session_ini(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *env_name,
+    const char *default_value
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root != NULL) {
+        PtnValue stored;
+        if (ptn_symbols_get(&root->session_ini, name, &stored)) {
+            stored = ptn_value_deref(stored);
+            if (stored.type == PTN_STRING) {
+                return (const char *)stored.as.string.data;
+            }
+        }
+    }
+    const char *configured = getenv(env_name);
+    return configured == NULL ? default_value : configured;
+}
+
+static int ptn_runtime_sid_ini_bool(const char *value, int default_value) {
+    if (value == NULL) {
+        return default_value;
+    }
+    if (value[0] == '\0') {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(value, "0") ||
+        ptn_ascii_case_equal(value, "off") ||
+        ptn_ascii_case_equal(value, "false") ||
+        ptn_ascii_case_equal(value, "no")) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(value, "1") ||
+        ptn_ascii_case_equal(value, "on") ||
+        ptn_ascii_case_equal(value, "true") ||
+        ptn_ascii_case_equal(value, "yes")) {
+        return 1;
+    }
+    return 1;
+}
+
+static PtnValue ptn_runtime_sid_constant_value(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    const char *id = root == NULL || root->session_id == NULL ? "" : root->session_id;
+    if (id[0] == '\0') {
+        return ptn_string("");
+    }
+    const char *use_cookies = ptn_runtime_sid_session_ini(
+        runtime,
+        "session.use_cookies",
+        "PTN_SESSION_USE_COOKIES",
+        "1"
+    );
+    if (ptn_runtime_sid_ini_bool(use_cookies, 1)) {
+        return ptn_string("");
+    }
+    const char *name = ptn_runtime_sid_session_ini(
+        runtime,
+        "session.name",
+        "PTN_SESSION_NAME",
+        "PHPSESSID"
+    );
+    if (name == NULL || name[0] == '\0') {
+        name = "PHPSESSID";
+    }
+    size_t name_len = strlen(name);
+    size_t id_len = strlen(id);
+    if (name_len > SIZE_MAX - 1 - id_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *sid = malloc(name_len + 1 + id_len + 1);
+    if (sid == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(sid, name, name_len);
+    sid[name_len] = '=';
+    memcpy(sid + name_len + 1, id, id_len + 1);
+    return ptn_owned_string(sid);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {

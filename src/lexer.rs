@@ -306,7 +306,7 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
                 if self.rest_starts_with_open_tag() {
-                    self.push_open_tag();
+                    self.push_open_or_short_echo_tag();
                     continue;
                 }
                 if ch.is_whitespace() && self.leading_whitespace_reaches_open_tag_or_eof() {
@@ -508,7 +508,7 @@ impl<'a> Lexer<'a> {
                         ),
                     });
                 }
-                self.push_open_tag();
+                self.push_open_or_short_echo_tag();
                 return Ok(());
             }
             content.push(ch);
@@ -542,9 +542,20 @@ impl<'a> Lexer<'a> {
     }
 
     fn source_starts_with_open_tag_at(&self, cursor: usize) -> bool {
+        self.source_starts_with_php_open_tag_at(cursor)
+            || self.source_starts_with_short_echo_tag_at(cursor)
+    }
+
+    fn source_starts_with_php_open_tag_at(&self, cursor: usize) -> bool {
         self.source
             .get(cursor..cursor.saturating_add(5))
             .is_some_and(|tag| tag.eq_ignore_ascii_case("<?php"))
+    }
+
+    fn source_starts_with_short_echo_tag_at(&self, cursor: usize) -> bool {
+        self.source
+            .get(cursor..cursor.saturating_add(3))
+            .is_some_and(|tag| tag == "<?=")
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -2220,6 +2231,31 @@ impl<'a> Lexer<'a> {
 
     fn push_open_tag(&mut self) {
         self.push_fixed(TokenKind::OpenTag, 5);
+        self.seen_open_tag = true;
+        self.closed_php = false;
+    }
+
+    fn push_open_or_short_echo_tag(&mut self) {
+        if self.source_starts_with_short_echo_tag_at(self.cursor) {
+            self.push_short_echo_tag();
+        } else {
+            self.push_open_tag();
+        }
+    }
+
+    fn push_short_echo_tag(&mut self) {
+        let span = self.current_span(3);
+        for _ in 0..3 {
+            self.bump_char();
+        }
+        self.tokens.push(Token {
+            kind: TokenKind::OpenTag,
+            span,
+        });
+        self.tokens.push(Token {
+            kind: TokenKind::Echo,
+            span,
+        });
         self.seen_open_tag = true;
         self.closed_php = false;
     }

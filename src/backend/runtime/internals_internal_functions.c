@@ -244,6 +244,12 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
                 "Constant ASSERT_EXCEPTION is deprecated since 8.3, as assert_options() is deprecated",
                 line
             );
+        } else if (strcmp(name, "SID") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant SID is deprecated since 8.4, as GET/POST sessions were deprecated",
+                line
+            );
         } else if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
             ptn_emit_deprecation(
                 &runtime->diagnostics,
@@ -400,6 +406,7 @@ typedef struct {
     const char *session_name;
     const char *session_id;
     const char *trans_sid_hosts;
+    const char *arg_separator_output;
 } PtnSessionTransSidRewriteState;
 
 static const PtnOutputSessionIniDefinition PTN_OUTPUT_SESSION_INI_DEFINITIONS[] = {
@@ -439,6 +446,15 @@ static const char *ptn_output_session_ini(PtnRuntime *runtime, const char *name)
     }
     const char *configured = getenv(definition->env_name);
     return configured == NULL ? definition->default_value : configured;
+}
+
+static const char *ptn_output_arg_separator_output(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->arg_separator_output != NULL) {
+        return root->arg_separator_output;
+    }
+    const char *configured = getenv("PTN_ARG_SEPARATOR_OUTPUT");
+    return configured == NULL ? "&" : configured;
 }
 
 static int ptn_output_ini_bool(const char *value, int default_value) {
@@ -484,6 +500,7 @@ static PtnSessionTransSidRewriteState ptn_session_trans_sid_current_state(PtnRun
     state.session_name = ptn_output_session_ini(runtime, "session.name");
     state.session_id = ptn_output_session_id(runtime);
     state.trans_sid_hosts = ptn_output_session_ini(runtime, "session.trans_sid_hosts");
+    state.arg_separator_output = ptn_output_arg_separator_output(runtime);
     return state;
 }
 
@@ -765,7 +782,12 @@ static void ptn_session_append_rewritten_url(
     if (external && fragment == url_len && !has_query && fragment == host_end) {
         ptn_string_buffer_append_char(output, '/');
     }
-    ptn_string_buffer_append_char(output, has_query ? '&' : '?');
+    if (has_query) {
+        const char *separator = state == NULL ? NULL : state->arg_separator_output;
+        ptn_string_buffer_append(output, separator == NULL || separator[0] == '\0' ? "&" : separator);
+    } else {
+        ptn_string_buffer_append_char(output, '?');
+    }
     ptn_string_buffer_append(output, session_name == NULL || session_name[0] == '\0' ? "PHPSESSID" : session_name);
     ptn_string_buffer_append_char(output, '=');
     ptn_string_buffer_append(output, session_id == NULL ? "" : session_id);
@@ -868,6 +890,67 @@ static char *ptn_session_rewrite_trans_sid_output(
 
 static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer);
 
+static void ptn_output_write_raw(PtnRuntime *runtime, PtnRuntime *root, const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    fwrite(data, 1, len, stdout);
+    if (root != NULL) {
+        if (!root->output_has_started) {
+            const char *output_source_path =
+                runtime != NULL && runtime->current_output_source_path != NULL
+                    ? runtime->current_output_source_path
+                    : (runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn");
+            root->output_started_source_path = ptn_duplicate_string(output_source_path);
+            root->output_started_line =
+                runtime != NULL && runtime->current_output_line != 0
+                    ? runtime->current_output_line
+                    : 0;
+        }
+        root->output_has_started = 1;
+        root->output_at_line_start = data[len - 1] == '\n';
+    }
+}
+
+static size_t ptn_session_trans_sid_incomplete_tag_start(const char *data, size_t len) {
+    for (size_t i = len; i > 0; i--) {
+        char byte = data[i - 1];
+        if (byte == '>') {
+            return SIZE_MAX;
+        }
+        if (byte == '<') {
+            return i - 1;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static void ptn_output_store_trans_sid_pending(PtnRuntime *root, const char *data, size_t len) {
+    if (root == NULL || data == NULL || len == 0) {
+        return;
+    }
+    char *pending = ptn_duplicate_string_len(data, len);
+    free(root->trans_sid_pending_output);
+    root->trans_sid_pending_output = pending;
+    root->trans_sid_pending_output_len = len;
+}
+
+static void ptn_output_flush_trans_sid_pending(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->trans_sid_pending_output == NULL || root->trans_sid_pending_output_len == 0) {
+        return;
+    }
+    char *pending = root->trans_sid_pending_output;
+    size_t pending_len = root->trans_sid_pending_output_len;
+    root->trans_sid_pending_output = NULL;
+    root->trans_sid_pending_output_len = 0;
+    ptn_output_write_raw(runtime, root, pending, pending_len);
+    free(pending);
+}
+
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
     if (data == NULL || len == 0) {
         return;
@@ -923,30 +1006,50 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         return;
     }
     char *rewritten = NULL;
+    char *combined = NULL;
     size_t rewritten_len = len;
     const char *output_data = data;
     if (ptn_session_trans_sid_output_enabled(runtime)) {
+        PtnRuntime *rewrite_root = root == NULL ? runtime : root;
+        const char *rewrite_input = data;
+        size_t rewrite_len = len;
+        if (
+            rewrite_root != NULL &&
+            rewrite_root->trans_sid_pending_output != NULL &&
+            rewrite_root->trans_sid_pending_output_len != 0
+        ) {
+            size_t pending_len = rewrite_root->trans_sid_pending_output_len;
+            if (pending_len > SIZE_MAX - len) {
+                ptn_abort_out_of_memory();
+            }
+            combined = malloc(pending_len + len);
+            if (combined == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            memcpy(combined, rewrite_root->trans_sid_pending_output, pending_len);
+            memcpy(combined + pending_len, data, len);
+            free(rewrite_root->trans_sid_pending_output);
+            rewrite_root->trans_sid_pending_output = NULL;
+            rewrite_root->trans_sid_pending_output_len = 0;
+            rewrite_input = combined;
+            rewrite_len = pending_len + len;
+        }
+        size_t pending_start = ptn_session_trans_sid_incomplete_tag_start(rewrite_input, rewrite_len);
+        if (pending_start != SIZE_MAX) {
+            ptn_output_store_trans_sid_pending(rewrite_root, rewrite_input + pending_start, rewrite_len - pending_start);
+            rewrite_len = pending_start;
+        }
+        if (rewrite_len == 0) {
+            free(combined);
+            return;
+        }
         PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
-        rewritten = ptn_session_rewrite_trans_sid_output(runtime, &state, data, len, &rewritten_len);
+        rewritten = ptn_session_rewrite_trans_sid_output(runtime, &state, rewrite_input, rewrite_len, &rewritten_len);
         output_data = rewritten;
     }
-    fwrite(output_data, 1, rewritten_len, stdout);
-    if (root != NULL) {
-        if (!root->output_has_started) {
-            const char *output_source_path =
-                runtime != NULL && runtime->current_output_source_path != NULL
-                    ? runtime->current_output_source_path
-                    : (runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn");
-            root->output_started_source_path = ptn_duplicate_string(output_source_path);
-            root->output_started_line =
-                runtime != NULL && runtime->current_output_line != 0
-                    ? runtime->current_output_line
-                    : 0;
-        }
-        root->output_has_started = 1;
-        root->output_at_line_start = rewritten_len != 0 && output_data[rewritten_len - 1] == '\n';
-    }
+    ptn_output_write_raw(runtime, root, output_data, rewritten_len);
     free(rewritten);
+    free(combined);
 }
 
 static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) {
@@ -956,9 +1059,11 @@ static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) 
     free(buffer->trans_sid_session_name);
     free(buffer->trans_sid_session_id);
     free(buffer->trans_sid_hosts);
+    free(buffer->trans_sid_arg_separator_output);
     buffer->trans_sid_session_name = NULL;
     buffer->trans_sid_session_id = NULL;
     buffer->trans_sid_hosts = NULL;
+    buffer->trans_sid_arg_separator_output = NULL;
     buffer->trans_sid_rewrite = 0;
 }
 
@@ -972,6 +1077,9 @@ static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, Pt
     );
     buffer->trans_sid_session_id = ptn_duplicate_string(state.session_id == NULL ? "" : state.session_id);
     buffer->trans_sid_hosts = ptn_duplicate_string(state.trans_sid_hosts == NULL ? "" : state.trans_sid_hosts);
+    buffer->trans_sid_arg_separator_output = ptn_duplicate_string(
+        state.arg_separator_output == NULL || state.arg_separator_output[0] == '\0' ? "&" : state.arg_separator_output
+    );
     buffer->trans_sid_rewrite = 1;
 }
 
@@ -984,6 +1092,7 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
     state.session_name = buffer->trans_sid_session_name;
     state.session_id = buffer->trans_sid_session_id;
     state.trans_sid_hosts = buffer->trans_sid_hosts;
+    state.arg_separator_output = buffer->trans_sid_arg_separator_output;
     size_t rewritten_len = len;
     char *rewritten = ptn_session_rewrite_trans_sid_output(runtime, &state, data, len, &rewritten_len);
     ptn_output_write(runtime, rewritten, rewritten_len);
@@ -7949,6 +8058,7 @@ static void ptn_output_buffer_push(
     buffer->trans_sid_session_name = NULL;
     buffer->trans_sid_session_id = NULL;
     buffer->trans_sid_hosts = NULL;
+    buffer->trans_sid_arg_separator_output = NULL;
 }
 
 static PTN_UNUSED void ptn_runtime_startup_output_handler(PtnRuntime *runtime) {
@@ -8119,6 +8229,7 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
     buffer->trans_sid_session_name = NULL;
     buffer->trans_sid_session_id = NULL;
     buffer->trans_sid_hosts = NULL;
+    buffer->trans_sid_arg_separator_output = NULL;
     int handler_output_warned = 0;
     PtnValue output = ptn_output_buffer_apply_callback(
         runtime,
@@ -8310,6 +8421,7 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
             PTN_PHP_OUTPUT_HANDLER_REMOVABLE;
         (void)ptn_output_buffer_close(runtime, 1, 0, "ob_end_flush");
     }
+    ptn_output_flush_trans_sid_pending(runtime);
 }
 
 static int ptn_array_user_compare(
@@ -116503,7 +116615,9 @@ static const PtnSessionIniDefinition PTN_SESSION_INI_DEFINITIONS[] = {
     { "session.gc_divisor", "PTN_SESSION_GC_DIVISOR", "100" },
     { "session.gc_maxlifetime", "PTN_SESSION_GC_MAXLIFETIME", "1440" },
     { "session.gc_probability", "PTN_SESSION_GC_PROBABILITY", "1" },
+    { "session.lazy_write", "PTN_SESSION_LAZY_WRITE", "1" },
     { "session.name", "PTN_SESSION_NAME", "PHPSESSID" },
+    { "session.referer_check", "PTN_SESSION_REFERER_CHECK", "" },
     { "session.save_handler", "PTN_SESSION_SAVE_HANDLER", "files" },
     { "session.save_path", "PTN_SESSION_SAVE_PATH", "" },
     { "session.serialize_handler", "PTN_SESSION_SERIALIZE_HANDLER", "php" },
@@ -117670,6 +117784,10 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     const PtnSessionIniDefinition *session_ini = ptn_session_ini_definition_from_operand(option);
     if (session_ini != NULL) {
+        if (ptn_ascii_case_equal(session_ini->name, "session.auto_start")) {
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
         if (ptn_session_reject_active_ini_set(runtime, line)) {
             ptn_string_operand_free(option);
             return ptn_bool(0);
@@ -119213,6 +119331,30 @@ static char *ptn_session_storage_dir(PtnRuntime *runtime) {
     return ptn_duplicate_string(path);
 }
 
+static int ptn_session_save_path_file_mode(PtnRuntime *runtime, mode_t *mode_out) {
+    const char *configured = ptn_runtime_session_ini(runtime, "session.save_path");
+    if (configured == NULL || configured[0] == '\0') {
+        return 0;
+    }
+    char *depth_end = NULL;
+    (void)strtol(configured, &depth_end, 10);
+    if (depth_end == configured || *depth_end != ';') {
+        return 0;
+    }
+    const char *mode_start = depth_end + 1;
+    if (*mode_start == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char *mode_end = NULL;
+    long parsed = strtol(mode_start, &mode_end, 8);
+    if (mode_end == mode_start || *mode_end != ';' || errno == ERANGE || parsed < 0 || parsed > 07777) {
+        return 0;
+    }
+    *mode_out = (mode_t)parsed;
+    return 1;
+}
+
 static char *ptn_session_file_path(PtnRuntime *runtime, const char *id) {
     if (id == NULL || id[0] == '\0') {
         return NULL;
@@ -119248,9 +119390,11 @@ static int ptn_session_start_files_storage(PtnRuntime *runtime, const char *id, 
     if (path == NULL) {
         return 1;
     }
-    FILE *file = fopen(path, "a+b");
-    if (file != NULL) {
-        fclose(file);
+    mode_t mode = 0666;
+    (void)ptn_session_save_path_file_mode(runtime, &mode);
+    int fd = open(path, O_CREAT | O_RDWR, mode);
+    if (fd >= 0) {
+        close(fd);
         free(path);
         return 1;
     }
@@ -119363,9 +119507,16 @@ static int ptn_session_write_file(PtnRuntime *runtime, const char *id, const cha
     if (path == NULL) {
         return 0;
     }
-    FILE *file = fopen(path, "wb");
+    mode_t mode = 0666;
+    (void)ptn_session_save_path_file_mode(runtime, &mode);
+    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, mode);
     free(path);
+    if (fd < 0) {
+        return 0;
+    }
+    FILE *file = fdopen(fd, "wb");
     if (file == NULL) {
+        close(fd);
         return 0;
     }
     size_t written = len == 0 ? 0 : fwrite(data, 1, len, file);
@@ -119421,7 +119572,7 @@ static void ptn_session_clear_user_handler(PtnRuntime *runtime) {
     root->session_last_data = NULL;
     root->session_last_data_len = 0;
     root->session_last_data_valid = 0;
-    root->session_lazy_write = 1;
+    root->session_lazy_write = ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.lazy_write"), 1);
 }
 
 static int ptn_session_has_user_handler(PtnRuntime *runtime) {
@@ -121123,7 +121274,7 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     if (root != NULL) {
         root->session_lazy_write = argc >= 1 && ptn_session_array_bool_option(args[0], "lazy_write")
             ? 1
-            : (argc >= 1 ? 0 : 1);
+            : (argc >= 1 ? 0 : ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.lazy_write"), 1));
     }
     if (ptn_session_has_user_handler(runtime)) {
         int open_ok = ptn_session_user_open(runtime, line);
@@ -121946,6 +122097,14 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
     if (ptn_session_is_active(runtime)) {
         PtnValue result = ptn_internal_session_write_close(runtime, 0, NULL, 0);
         ptn_value_destroy(&result);
+    }
+    const char *trans_sid_hosts = ptn_runtime_session_ini(runtime, "session.trans_sid_hosts");
+    if (trans_sid_hosts != NULL && trans_sid_hosts[0] != '\0') {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "PHP Request Shutdown: Usage of session.trans_sid_hosts INI setting is deprecated",
+            0
+        );
     }
 }
 

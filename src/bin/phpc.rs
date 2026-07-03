@@ -287,6 +287,7 @@ struct RuntimeIni {
     serialize_precision: Option<String>,
     default_charset: Option<String>,
     arg_separator_input: Option<String>,
+    arg_separator_output: Option<String>,
     highlight_comment: Option<String>,
     highlight_default: Option<String>,
     highlight_html: Option<String>,
@@ -537,6 +538,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.ignore_repeated_source = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("arg_separator.input") {
         ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("arg_separator.output") {
+        ini.arg_separator_output = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("filter.default") {
         ini.filter_default = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.backtrack_limit") {
@@ -688,7 +691,9 @@ fn canonical_session_ini_name(name: &str) -> Option<&'static str> {
         "session.gc_divisor" => Some("session.gc_divisor"),
         "session.gc_maxlifetime" => Some("session.gc_maxlifetime"),
         "session.gc_probability" => Some("session.gc_probability"),
+        "session.lazy_write" => Some("session.lazy_write"),
         "session.name" => Some("session.name"),
+        "session.referer_check" => Some("session.referer_check"),
         "session.save_handler" => Some("session.save_handler"),
         "session.save_path" => Some("session.save_path"),
         "session.serialize_handler" => Some("session.serialize_handler"),
@@ -1087,7 +1092,38 @@ fn session_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
             "Deprecated: PHP Startup: Enabling session.use_trans_sid INI setting is deprecated in Unknown on line 0",
         );
     }
+    if ini
+        .session
+        .iter()
+        .rev()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("session.trans_sid_hosts")
+                .then_some(value)
+        })
+        .is_some_and(|value| !value.is_empty())
+    {
+        warnings.push(
+            "Deprecated: PHP Startup: Usage of session.trans_sid_hosts INI setting is deprecated in Unknown on line 0",
+        );
+    }
     warnings
+}
+
+fn normalize_session_upload_progress_freq(ini: &mut RuntimeIni) -> Option<&'static str> {
+    let value = ini.session.iter().rev().find_map(|(name, value)| {
+        name.eq_ignore_ascii_case("session.upload_progress.freq")
+            .then_some(value.as_str())
+    })?;
+    let percent = value.strip_suffix('%')?;
+    let parsed = percent.trim().parse::<u64>().ok()?;
+    if parsed <= 100 {
+        return None;
+    }
+    ini.session
+        .push(("session.upload_progress.freq".to_string(), "1%".to_string()));
+    Some(
+        "Warning: PHP Startup: session.upload_progress.freq must be less than or equal to 100% in Unknown on line 0",
+    )
 }
 
 fn assert_ini_bool_differs_from_default(value: Option<&str>, default: bool) -> bool {
@@ -1262,6 +1298,7 @@ fn compile_and_run(
         serialize_precision: ini.serialize_precision.clone(),
         default_charset: ini.default_charset.clone(),
         arg_separator_input: ini.arg_separator_input.clone(),
+        arg_separator_output: ini.arg_separator_output.clone(),
         highlight_comment: ini.highlight_comment.clone(),
         highlight_default: ini.highlight_default.clone(),
         highlight_html: ini.highlight_html.clone(),
@@ -1344,6 +1381,7 @@ fn compile_and_run(
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let zend_script_encoding_warning = invalid_zend_script_encoding_warning(&ini);
+    let session_upload_progress_freq_warning = normalize_session_upload_progress_freq(&mut ini);
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
@@ -1434,6 +1472,9 @@ fn compile_and_run(
     }
     if let Some(arg_separator_input) = &ini.arg_separator_input {
         command.env("PTN_ARG_SEPARATOR_INPUT", arg_separator_input);
+    }
+    if let Some(arg_separator_output) = &ini.arg_separator_output {
+        command.env("PTN_ARG_SEPARATOR_OUTPUT", arg_separator_output);
     }
     if let Some(highlight_comment) = &ini.highlight_comment {
         command.env("PTN_HIGHLIGHT_COMMENT", highlight_comment);
@@ -1656,6 +1697,7 @@ fn compile_and_run(
     }
     let startup_warning_emitted = memory_limit_warning.is_some()
         || zend_script_encoding_warning.is_some()
+        || session_upload_progress_freq_warning.is_some()
         || session_save_handler_warning.is_some()
         || !session_startup_deprecations.is_empty()
         || !assert_startup_deprecations.is_empty()
@@ -1668,6 +1710,9 @@ fn compile_and_run(
         print!("{warning}");
     }
     if let Some(warning) = zend_script_encoding_warning {
+        println!("{warning}");
+    }
+    if let Some(warning) = session_upload_progress_freq_warning {
         println!("{warning}");
     }
     if let Some(warning) = session_save_handler_warning {

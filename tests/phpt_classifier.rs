@@ -2825,6 +2825,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let session_current_red_ini = classify_at_relative_path(
+        "--TEST--\nsession current red ini\n--EXTENSIONS--\nsession\n--INI--\narg_separator.output=&amp;\nerror_log=\nsession.lazy_write=0\nsession.referer_check=\nsession.trans_sid_hosts=php.net\n--FILE--\n<?php\nvar_dump(ini_get('arg_separator.output'), ini_get('session.lazy_write'), ini_get('session.trans_sid_hosts'));\n--EXPECT--\n",
+        "ext/session/tests/gh13891.phpt",
+    );
+    assert_eq!(
+        session_current_red_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let opcache_metadata_ini = classify_at_relative_path(
         "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
         "ext/opcache/tests/opcache_metadata_ini.phpt",
