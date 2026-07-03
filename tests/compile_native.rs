@@ -70548,6 +70548,104 @@ $empty->call(1.1);
 }
 
 #[test]
+fn compile_soap_loopback_headers_and_wsdl_import_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-loopback-headers-wsdl-imports");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-loopback-headers-wsdl-imports.php");
+    let output = root.join("soap-loopback-headers-wsdl-imports-bin");
+    fs::write(
+        root.join("php_cli_server.inc"),
+        "<?php die('real cli server harness should be transformed');",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+include __DIR__ . '/php_cli_server.inc';
+
+php_cli_server_start(<<<'PHP'
+<?php
+header("Set-Cookie: sessionkey=path=/evil;domain=good.com");
+PHP);
+$client = new SoapClient(null, [
+    'location' => 'http://' . PHP_CLI_SERVER_ADDRESS . '/test/endpoint',
+    'uri' => 'test-uri',
+    'trace' => true,
+]);
+$client->__soapCall('test', []);
+$cookies = $client->__getCookies();
+echo "cookie:", $cookies['sessionkey'][0], ':', $cookies['sessionkey'][1], ':', $cookies['sessionkey'][2], "\n";
+
+php_cli_server_start(<<<'PHP'
+<?php
+header('HTTP/1.0 401 Unauthorized');
+header('WWW-Authenticate: Digest realm="realm", qop="auth,auth-int", nonce="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", opaque="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"');
+PHP);
+$digest = new SoapClient(null, [
+    'location' => 'http://' . PHP_CLI_SERVER_ADDRESS,
+    'uri' => 'misc-uri',
+    'authentication' => SOAP_AUTHENTICATION_DIGEST,
+    'login' => 'user',
+    'password' => 'pass',
+    'trace' => true,
+]);
+try {
+    $digest->__soapCall('foo', []);
+} catch (Throwable $e) {
+    echo "digest:", $e->getMessage(), "\n";
+}
+$headers = $digest->__getLastRequestHeaders();
+echo str_contains($headers, "Connection: Keep-Alive\r\n") ? "keepalive\n" : "missing-keepalive\n";
+echo str_contains($headers, 'Authorization: Digest username="user", realm="realm", nonce="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", uri="/"') ? "authorization\n" : "missing-authorization\n";
+
+file_put_contents(__DIR__ . '/bug62900.wsdl', <<<'XML'
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri">
+    <types>
+        <xs:schema targetNamespace="http://test-uri" elementFormDefault="qualified">
+            <xs:import namespace="http://www.w3.org/XML/1998/namespace" schemaLocation="bug62900.xsd" />
+        </xs:schema>
+    </types>
+</definitions>
+XML);
+file_put_contents(__DIR__ . '/bug62900.xsd', <<<'XML'
+<xs:schema targetNamespace="http://www.w3.org/XML/1998/namespacex" xmlns:xs="http://www.w3.org/2001/XMLSchema" xml:lang="en"/>
+XML);
+new SoapClient(__DIR__ . '/bug62900.wsdl');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("cookie:path=/evil:/test:good.com\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("digest:Unauthorized\n"), "{stdout}");
+    assert!(stdout.contains("keepalive\nauthorization\n"), "{stdout}");
+    assert!(
+        stdout.contains("Fatal error: Uncaught SoapFault exception: [WSDL] SOAP-ERROR: Parsing Schema: can't import schema from '"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("unexpected 'targetNamespace'='http://www.w3.org/XML/1998/namespacex', expected 'http://www.w3.org/XML/1998/namespace'"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("#0 ") && stdout.contains(": SoapClient->__construct("),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_apply_loopback_server_headers"));
+    assert!(c_source.contains("ptn_soap_validate_wsdl_schema_imports"));
+}
+
+#[test]
 fn compile_soap_document_literal_optional_null_to_native_binary() {
     let root = temp_dir("ptn-native-soap-document-literal-optional-null");
     fs::create_dir_all(&root).unwrap();

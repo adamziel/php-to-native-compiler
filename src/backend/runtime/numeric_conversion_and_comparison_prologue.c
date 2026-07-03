@@ -3518,6 +3518,13 @@ static void ptn_uncaught_exception_output_printf(PtnRuntime *runtime, const char
     free(buffer);
 }
 
+static const char *ptn_uncaught_exception_display_class_name(PtnException *exception) {
+    if (exception != NULL && ptn_ascii_case_equal(exception->class_name, "SoapFault")) {
+        return "SoapFault exception";
+    }
+    return exception == NULL ? "Exception" : exception->class_name;
+}
+
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -3540,7 +3547,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
             runtime,
             "%s: Uncaught %s",
             first_label,
-            exception->class_name
+            ptn_uncaught_exception_display_class_name(exception)
         );
         if (exception->message_len != 0) {
             ptn_uncaught_exception_output_cstr(runtime, ": ");
@@ -3556,7 +3563,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
         ptn_uncaught_exception_output_printf(
             runtime,
             "\nNext %s",
-            exception->class_name
+            ptn_uncaught_exception_display_class_name(exception)
         );
         if (exception->message_len != 0) {
             ptn_uncaught_exception_output_cstr(runtime, ": ");
@@ -3661,7 +3668,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
             ptn_uncaught_exception_output_flush(runtime);
             return;
         }
-        ptn_uncaught_exception_output_cstr(runtime, exception->class_name);
+        ptn_uncaught_exception_output_cstr(runtime, ptn_uncaught_exception_display_class_name(exception));
         if (exception->message_len != 0) {
             ptn_uncaught_exception_output_cstr(runtime, ": ");
             ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
@@ -3706,7 +3713,12 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     }
 
     ptn_uncaught_exception_output_cstr(runtime, "\n");
-    ptn_uncaught_exception_output_printf(runtime, "%s: Uncaught %s", label, exception->class_name);
+    ptn_uncaught_exception_output_printf(
+        runtime,
+        "%s: Uncaught %s",
+        label,
+        ptn_uncaught_exception_display_class_name(exception)
+    );
     if (exception->message_len != 0) {
         ptn_uncaught_exception_output_cstr(runtime, ": ");
         ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);

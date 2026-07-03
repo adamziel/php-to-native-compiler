@@ -1491,6 +1491,7 @@ ptn_phpt_supported_process_boundary_row() {
     local rel=$1
 
     [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
+        [[ "$rel" == "ext/soap/tests/bugs/bug62900.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
 }
@@ -3032,7 +3033,9 @@ ptn_phpt_supported_ftp_server_harness_row() {
 }
 
 ptn_phpt_supported_php_cli_server_harness_row() {
-    [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]]
+    [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]] ||
+        [[ "$1" == "ext/soap/tests/bugs/cookie_parse_options_offset.phpt" ]] ||
+        [[ "$1" == "ext/soap/tests/bugs/bug55639.phpt" ]]
 }
 
 ptn_phpt_supported_standard_network_mail_http_residual_row() {

@@ -3186,6 +3186,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let soap_cookie_cli_server = classify_at_relative_path(
+        "--TEST--\nsoap cookie cli server\n--EXTENSIONS--\nsoap\n--SKIPIF--\n<?php\nif (!file_exists(__DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc')) echo 'skip';\n?>\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php header(\"Set-Cookie: sessionkey=path=/evil;domain=good.com\");');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS . '/test/endpoint', 'uri' => 'test-uri']);\n$client->__soapCall('test', []);\nvar_dump($client->__getCookies());\n--EXPECT--\n",
+        "ext/soap/tests/bugs/cookie_parse_options_offset.phpt",
+    );
+    assert_eq!(
+        soap_cookie_cli_server.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let soap_digest_cli_server = classify_at_relative_path(
+        "--TEST--\nsoap digest cli server\n--EXTENSIONS--\nsoap\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php header(\"HTTP/1.0 401 Unauthorized\"); header(\"WWW-Authenticate: Digest realm=\\\"realm\\\", nonce=\\\"n\\\"\");');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri', 'authentication' => SOAP_AUTHENTICATION_DIGEST]);\n$client->__soapCall('foo', []);\n--EXPECT--\n",
+        "ext/soap/tests/bugs/bug55639.phpt",
+    );
+    assert_eq!(
+        soap_digest_cli_server.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let modeled_curl_harness = classify_at_relative_path(
         "--TEST--\ncurl modeled server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/get.inc?test=post');\ncurl_exec($ch);\n--EXPECT--\n",
         "ext/curl/tests/bug79033.phpt",
@@ -4133,6 +4151,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert_eq!(
         supported_proc_environment_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let soap_wsdl_proc_row = classify_at_relative_path(
+        "--TEST--\nsoap wsdl proc\n--EXTENSIONS--\nsoap\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, __DIR__ . '/bug62900_run'], [1 => ['pipe', 'w']], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/soap/tests/bugs/bug62900.phpt",
+    );
+    assert_eq!(
+        soap_wsdl_proc_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
 
