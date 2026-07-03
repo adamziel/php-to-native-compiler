@@ -2663,6 +2663,12 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "engine diagnostic/logging mode",
         ),
         (
+            "logging diagnostics",
+            "log_errors=On",
+            "unsupported-diagnostics-ini\t",
+            "engine diagnostic/logging mode",
+        ),
+        (
             "function disabling",
             "disable_functions=assert",
             "unsupported-function-disable-ini\t",
@@ -3003,6 +3009,55 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
             "{path}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_recategorizes_standard_general_function_ini_runtime_gaps() {
+    let log_errors = classify_at_relative_path(
+        "--TEST--\nlog errors\n--INI--\nlog_errors=On\n--FILE--\n<?php\nerror_log('dummy');\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/bug60723.phpt",
+    );
+    assert!(
+        log_errors.starts_with("unsupported-diagnostics-ini\t"),
+        "{log_errors:?}"
+    );
+    assert!(log_errors.contains("log_errors"), "{log_errors:?}");
+
+    let ini_get_all = classify_at_relative_path(
+        "--TEST--\nini get all\n--INI--\nerror_append_string=FOO\n--FILE--\n<?php\n$all = ini_get_all(null, true);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/ini_get_all_builtin_default_value_null.phpt",
+    );
+    assert!(
+        ini_get_all.starts_with("unsupported-general-function-runtime\t"),
+        "{ini_get_all:?}"
+    );
+    assert!(ini_get_all.contains("ini_get_all"), "{ini_get_all:?}");
+
+    let output_add_rewrite_var = classify_at_relative_path(
+        "--TEST--\nrewrite var\n--INI--\nsession.trans_sid_tags=\"a=href\"\nurl_rewriter.tags=\"a=href\"\n--FILE--\n<?php\noutput_add_rewrite_var('<name>', '<value>');\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/output_add_rewrite_var_basic2.phpt",
+    );
+    assert!(
+        output_add_rewrite_var.starts_with("unsupported-output-rewrite-runtime\t"),
+        "{output_add_rewrite_var:?}"
+    );
+    assert!(
+        output_add_rewrite_var.contains("output URL rewrite"),
+        "{output_add_rewrite_var:?}"
+    );
+
+    let output_reset_rewrite_vars = classify_at_relative_path(
+        "--TEST--\nurl rewriting\n--INI--\nsession.trans_sid_tags=\"a=href\"\nurl_rewriter.tags=\"a=href\"\n--FILE--\n<?php\noutput_reset_rewrite_vars();\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/url_rewriting_basic3.phpt",
+    );
+    assert!(
+        output_reset_rewrite_vars.starts_with("unsupported-output-rewrite-runtime\t"),
+        "{output_reset_rewrite_vars:?}"
+    );
+    assert!(
+        output_reset_rewrite_vars.contains("output URL rewrite"),
+        "{output_reset_rewrite_vars:?}"
+    );
 }
 
 #[test]
