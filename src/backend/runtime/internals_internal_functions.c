@@ -210364,6 +210364,11 @@ static PtnValue ptn_reflection_property_mangled_name(
     return ptn_owned_string_len(mangled, len);
 }
 
+static int ptn_reflection_object_has_declared_property_display_name(
+    PtnObject *object,
+    const char *property_name
+);
+
 static int ptn_reflection_dynamic_object_property_exists(
     PtnValue target,
     const char *property_name,
@@ -210384,7 +210389,11 @@ static int ptn_reflection_dynamic_object_property_exists(
         if (entry->key.string_len != strlen(entry->key.as.string)) {
             return 1;
         }
-        return ptn_object_property_metadata(target.as.object, entry->key.as.string) == NULL;
+        return ptn_object_property_metadata(target.as.object, entry->key.as.string) == NULL &&
+            !ptn_reflection_object_has_declared_property_display_name(
+                target.as.object,
+                entry->key.as.string
+            );
     }
     return 0;
 }
@@ -213704,6 +213713,21 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
     return ptn_null();
 }
 
+static int ptn_reflection_object_has_declared_property_display_name(
+    PtnObject *object,
+    const char *property_name
+) {
+    if (object == NULL || property_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (strcmp(object->property_metadata[i].display_name, property_name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnArrayEntry *entry) {
     if (object == NULL || entry == NULL || entry->key.type != PTN_ARRAY_KEY_STRING) {
         return 0;
@@ -213711,10 +213735,29 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     if (entry->key.string_len == 0 || entry->key.as.string[0] == '\0') {
         return 0;
     }
+    if (entry->key.string_len != strlen(entry->key.as.string)) {
+        return 1;
+    }
     if (ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
         return 0;
     }
     return 1;
+}
+
+static int ptn_reflection_object_printable_dynamic_property_entry(
+    PtnObject *object,
+    PtnArrayEntry *entry
+) {
+    if (!ptn_reflection_object_dynamic_property_entry(object, entry)) {
+        return 0;
+    }
+    if (entry->key.string_len != strlen(entry->key.as.string)) {
+        return 1;
+    }
+    return !ptn_reflection_object_has_declared_property_display_name(
+        object,
+        entry->key.as.string
+    );
 }
 
 static size_t ptn_reflection_object_dynamic_property_count(PtnObject *object) {
@@ -213723,7 +213766,7 @@ static size_t ptn_reflection_object_dynamic_property_count(PtnObject *object) {
     }
     size_t count = 0;
     for (size_t i = 0; i < object->properties->len; i++) {
-        if (ptn_reflection_object_dynamic_property_entry(object, &object->properties->entries[i])) {
+        if (ptn_reflection_object_printable_dynamic_property_entry(object, &object->properties->entries[i])) {
             count++;
         }
     }
@@ -213771,7 +213814,7 @@ static void ptn_reflection_object_append_dynamic_properties(PtnStringBuffer *buf
     if (object != NULL && object->properties != NULL) {
         for (size_t i = 0; i < object->properties->len; i++) {
             PtnArrayEntry *entry = &object->properties->entries[i];
-            if (!ptn_reflection_object_dynamic_property_entry(object, entry)) {
+            if (!ptn_reflection_object_printable_dynamic_property_entry(object, entry)) {
                 continue;
             }
             ptn_string_buffer_append_format(
