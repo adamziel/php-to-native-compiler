@@ -2826,6 +2826,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let legacy_detect_unicode_ini = classify_at_relative_path(
+        "--TEST--\nsoap legacy detect unicode ini\n--EXTENSIONS--\nsoap\n--INI--\ndetect_unicode=0\nsoap.wsdl_cache_enabled=0\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n",
+        "ext/soap/tests/interop/Round4/GroupI/r4_groupI_xsd_006w.phpt",
+    );
+    assert_eq!(
+        legacy_detect_unicode_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let open_basedir_ini = classify(
         "--TEST--\nopen basedir ini\n--INI--\nopen_basedir=.\n--FILE--\n<?php\necho ini_get('open_basedir'), \"\\n\";\n--EXPECT--\n.\n",
     );
