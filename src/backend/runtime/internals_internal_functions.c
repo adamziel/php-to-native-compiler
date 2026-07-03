@@ -67364,18 +67364,76 @@ static void ptn_emit_copy_directory_argument_warning(
     ptn_emit_runtime_warning(runtime, message, line);
 }
 
-static int ptn_copy_read_source_bytes(const char *source, unsigned char **data_out, size_t *len_out) {
+#define PTN_COPY_IO_REPORTED_FAILURE -2
+
+static int ptn_copy_read_source_bytes(
+    PtnRuntime *runtime,
+    const char *source,
+    unsigned char **data_out,
+    size_t *len_out,
+    size_t line
+) {
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(source, &zlib_path)) {
         return ptn_zlib_read_path_bytes(zlib_path, data_out, len_out);
     }
+    int user_stream_result = ptn_try_read_user_stream_wrapper_bytes(
+        runtime,
+        "copy",
+        source,
+        NULL,
+        line,
+        data_out,
+        len_out
+    );
+    if (user_stream_result != 0) {
+        return user_stream_result > 0 ? user_stream_result : PTN_COPY_IO_REPORTED_FAILURE;
+    }
     return ptn_read_file_bytes(source, data_out, len_out);
 }
 
-static int ptn_copy_write_dest_bytes(const char *dest, const unsigned char *data, size_t len) {
+static int ptn_copy_write_dest_bytes(
+    PtnRuntime *runtime,
+    const char *dest,
+    const unsigned char *data,
+    size_t len,
+    size_t line
+) {
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(dest, &zlib_path)) {
         return ptn_zlib_write_path_bytes(zlib_path, data, len, -1);
+    }
+    PtnValue user_stream = ptn_null();
+    if (ptn_try_open_user_stream_wrapper(runtime, "copy", dest, "wb", NULL, line, &user_stream)) {
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            return PTN_COPY_IO_REPORTED_FAILURE;
+        }
+        PtnValue resolved_stream = ptn_value_deref(user_stream);
+        if (resolved_stream.type != PTN_RESOURCE ||
+            !ptn_stream_resource_is_open(resolved_stream.as.resource)) {
+            ptn_value_destroy(&user_stream);
+            return PTN_COPY_IO_REPORTED_FAILURE;
+        }
+        size_t written = ptn_stream_write_filtered(
+            runtime,
+            "copy",
+            resolved_stream.as.resource,
+            (const char *)data,
+            len,
+            line
+        );
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            return PTN_COPY_IO_REPORTED_FAILURE;
+        }
+        ptn_resource_close(resolved_stream.as.resource);
+        ptn_value_destroy(&user_stream);
+        return written == len ? 1 : -1;
     }
     FILE *output = fopen(dest, "wb");
     if (output == NULL) {
@@ -67391,7 +67449,8 @@ static int ptn_copy_write_dest_bytes(const char *dest, const unsigned char *data
 
 static int ptn_copy_path_uses_stream_wrapper(const char *path) {
     const char *zlib_path = NULL;
-    return ptn_zlib_uri_path(path, &zlib_path);
+    return ptn_zlib_uri_path(path, &zlib_path) ||
+        ptn_user_stream_wrapper_find_path(path) != NULL;
 }
 
 static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -67452,43 +67511,55 @@ static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnVal
     if (ptn_copy_path_uses_stream_wrapper(source) || ptn_copy_path_uses_stream_wrapper(dest)) {
         unsigned char *data = NULL;
         size_t data_len = 0;
-        int read_result = ptn_copy_read_source_bytes(source, &data, &data_len);
+        int read_result = ptn_copy_read_source_bytes(runtime, source, &data, &data_len, line);
         if (read_result <= 0) {
-            char detail[192];
-            int needed = snprintf(
-                detail,
-                sizeof(detail),
-                "%s: %s",
-                read_result == 0 ? "Failed to open stream" : "Failed to read stream",
-                strerror(errno)
-            );
-            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
-                ptn_abort_out_of_memory();
+            if (read_result != PTN_COPY_IO_REPORTED_FAILURE) {
+                char detail[192];
+                int needed = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "%s: %s",
+                    read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+                    strerror(errno)
+                );
+                if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_file_warning(runtime, "copy", source, detail, line);
             }
-            ptn_emit_file_warning(runtime, "copy", source, detail, line);
             free(data);
             free(dest);
             free(source);
-            return ptn_bool(0);
+            return runtime != NULL &&
+                runtime->exceptions != NULL &&
+                runtime->exceptions->active_exception != NULL
+                    ? ptn_null()
+                    : ptn_bool(0);
         }
-        int write_result = ptn_copy_write_dest_bytes(dest, data, data_len);
+        int write_result = ptn_copy_write_dest_bytes(runtime, dest, data, data_len, line);
         free(data);
         if (write_result <= 0) {
-            char detail[192];
-            int needed = snprintf(
-                detail,
-                sizeof(detail),
-                "%s: %s",
-                write_result == 0 ? "Failed to open stream" : "Failed to write stream",
-                strerror(errno)
-            );
-            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
-                ptn_abort_out_of_memory();
+            if (write_result != PTN_COPY_IO_REPORTED_FAILURE) {
+                char detail[192];
+                int needed = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "%s: %s",
+                    write_result == 0 ? "Failed to open stream" : "Failed to write stream",
+                    strerror(errno)
+                );
+                if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_file_warning(runtime, "copy", dest, detail, line);
             }
-            ptn_emit_file_warning(runtime, "copy", dest, detail, line);
             free(dest);
             free(source);
-            return ptn_bool(0);
+            return runtime != NULL &&
+                runtime->exceptions != NULL &&
+                runtime->exceptions->active_exception != NULL
+                    ? ptn_null()
+                    : ptn_bool(0);
         }
         free(dest);
         free(source);
@@ -202331,7 +202402,13 @@ static PtnValue ptn_phar_call_method(
                 free(target_path);
                 continue;
             }
-            int written = ptn_copy_write_dest_bytes(target_path, entry->content, entry->content_len);
+            int written = ptn_copy_write_dest_bytes(
+                runtime,
+                target_path,
+                entry->content,
+                entry->content_len,
+                line
+            );
             free(target_path);
             if (written <= 0) {
                 free(single_file);

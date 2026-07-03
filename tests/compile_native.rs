@@ -36865,6 +36865,63 @@ file_put_contents('partialwrite://file.txt', 'foobarbaz');
 }
 
 #[test]
+fn compile_copy_to_user_stream_wrapper_writes_chunks_to_native_binary() {
+    let root = temp_dir("ptn-native-copy-to-user-stream-wrapper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("copy-to-user-stream-wrapper.php");
+    let output = root.join("copy-to-user-stream-wrapper-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class CopyWrapper {
+    public $context;
+    private $file;
+    public static int $writes = 0;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        $this->file = fopen(substr($path, strlen("up://")), $mode);
+        return true;
+    }
+
+    public function stream_write($data) {
+        self::$writes++;
+        return fwrite($this->file, $data);
+    }
+
+    public function stream_close() {
+        fclose($this->file);
+    }
+}
+
+$source = __DIR__ . "/copy-source.txt";
+$dest = __DIR__ . "/copy-dest.txt";
+file_put_contents($source, str_repeat("a", 8192 * 2));
+stream_wrapper_register("up", CopyWrapper::class, STREAM_IS_URL);
+var_dump(copy($source, "up://" . $dest));
+echo "writes=", CopyWrapper::$writes, "\n";
+echo "bytes=", filesize($dest), "\n";
+@unlink($source);
+@unlink($dest);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nwrites=2\nbytes=16384\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_copy_write_dest_bytes"));
+    assert!(c_source.contains("ptn_try_open_user_stream_wrapper(runtime, \"copy\""));
+}
+
+#[test]
 fn compile_user_stream_wrapper_shutdown_close_recovers_nested_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-shutdown-close-fatal");
     fs::create_dir_all(&root).unwrap();

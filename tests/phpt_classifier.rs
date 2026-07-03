@@ -2419,6 +2419,7 @@ fn phpt_classifier_keeps_supported_typed_static_reflection_rows_runnable_by_path
         "ext/reflection/tests/ReflectionProperty_isWritable_static.phpt",
         "ext/reflection/tests/ReflectionProperty_typed_static.phpt",
         "ext/reflection/tests/gh12856.phpt",
+        "ext/standard/tests/file/gh13136.phpt",
     ];
 
     for row in rows {
