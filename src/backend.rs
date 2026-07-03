@@ -144,6 +144,7 @@ pub fn emit_c(module: &Module) -> String {
         || has_declared_methods
         || needs_direct_callable_dispatch;
     let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
+    runtime_requirements.callable_dispatch = needs_callable_dispatch;
     if needs_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
@@ -2314,6 +2315,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
 struct RuntimeRequirements {
     internal_function_dispatch: bool,
     dynamic_function_dispatch: bool,
+    callable_dispatch: bool,
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     closure_reflection_dispatch: bool,
@@ -2448,6 +2450,9 @@ fn forget_known_simple_preg_pattern_inc_dec_target(
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
+    if requirements.callable_dispatch {
+        out.push_str("#define PTN_HAS_CALLABLE_DISPATCH 1\n");
     }
     if requirements.compact_intl_helpers {
         out.push_str("#define PTN_HAS_COMPACT_INTL_HELPERS 1\n");

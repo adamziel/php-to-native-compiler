@@ -12305,6 +12305,7 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
     PtnValue sent_value,
     size_t line
 );
+#ifdef PTN_HAS_CALLABLE_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_function(
     PtnRuntime *runtime,
     const char *name,
@@ -12328,6 +12329,7 @@ static PTN_UNUSED PtnValue ptn_call_declared_method(
     const PtnValue *args,
     size_t line
 );
+#endif
 
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)runtime;
@@ -12836,6 +12838,13 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
     PtnValue sent_value,
     size_t line
 ) {
+#ifndef PTN_HAS_CALLABLE_DISPATCH
+    (void)runtime;
+    (void)generator;
+    (void)sent_value;
+    (void)line;
+    return 1;
+#else
     if (generator == NULL || generator->send_call_positions == NULL) {
         return 1;
     }
@@ -12908,6 +12917,7 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
         }
     }
     return 1;
+#endif
 }
 
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line) {
