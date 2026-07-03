@@ -31929,6 +31929,86 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_sqlite3_authorizer_bind_and_rename_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-sqlite3-authorizer-bind-rename");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sqlite3-authorizer-bind-rename.php");
+    let output = root.join("sqlite3-authorizer-bind-rename-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$db = new SQLite3(':memory:');
+$db->enableExceptions(true);
+$db->exec('CREATE TABLE s (n INTEGER); INSERT INTO s VALUES (42)');
+echo "single={$db->querySingle('SELECT n FROM s')}\n";
+
+$stmt = $db->prepare('SELECT n FROM s WHERE n = @id');
+$stmt->bindValue('@id', 42);
+$bound = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+echo "bound={$bound['n']}\n";
+
+$before = $db->prepare('SELECT * FROM s')->execute();
+$shadow = $db->prepare('SELECT * FROM s')->execute();
+echo "before=" . array_key_first($before->fetchArray(SQLITE3_ASSOC)) . "\n";
+$db->exec('ALTER TABLE s RENAME COLUMN n TO changed');
+$changed = $db->query('SELECT changed FROM s')->fetchArray(SQLITE3_ASSOC);
+echo "changed={$changed['changed']}\n";
+$before->reset();
+echo "reset=" . array_key_first($before->fetchArray(SQLITE3_ASSOC)) . "\n";
+echo "shadow=" . array_key_first($shadow->fetchArray(SQLITE3_ASSOC)) . "\n";
+
+$names = [
+    SQLite3::SELECT => 'SELECT',
+    SQLite3::READ => 'READ',
+    SQLite3::DELETE => 'DELETE',
+    SQLite3::DROP_TABLE => 'DROP_TABLE',
+    SQLite3::UPDATE => 'UPDATE',
+];
+$events = [];
+$db->setAuthorizer(function($action, $a, $b, $database, $trigger) use (&$events, $names) {
+    $events[] = $names[$action] . ':' . implode(',', [$a, $b, $database, $trigger]);
+    return SQLite3::OK;
+});
+$selected = $db->query('SELECT * FROM s WHERE changed = 42')->fetchArray(SQLITE3_ASSOC);
+echo "select={$selected['changed']}\n";
+echo implode('|', $events), "\n";
+
+$events = [];
+var_dump($db->exec('DROP TABLE s'));
+echo implode('|', $events), "\n";
+
+$db->setAuthorizer(function() { return []; });
+try {
+    $db->exec('SELECT 1');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+    echo $e->getPrevious()->getMessage(), "\n";
+}
+
+$db->setAuthorizer(function() { return 4200; });
+try {
+    $db->exec('SELECT 1');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+    echo $e->getPrevious()->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "single=42\nbound=42\nbefore=n\nchanged=42\nreset=changed\nshadow=n\nselect=42\nSELECT:,,,|READ:s,changed,main,|READ:s,changed,main,\nbool(true)\nDELETE:sqlite_master,,main,|DROP_TABLE:s,,main,|DELETE:s,,main,|DELETE:sqlite_master,,main,|READ:sqlite_master,tbl_name,main,|READ:sqlite_master,type,main,|UPDATE:sqlite_master,rootpage,main,|READ:sqlite_master,rootpage,main,\nUnable to prepare statement: not authorized\nThe authorizer callback returned an invalid type: expected int\nUnable to prepare statement: not authorized\nThe authorizer callback returned an invalid value: 4200\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_pdo_sqlite_callbacks_and_lazy_row_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-pdo-sqlite-callbacks-lazy");
     fs::create_dir_all(&root).unwrap();

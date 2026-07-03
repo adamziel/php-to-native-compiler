@@ -37454,8 +37454,26 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         if name.eq_ignore_ascii_case("IGNORE") {
             return Some("2");
         }
+        if name.eq_ignore_ascii_case("CREATE_TABLE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("DELETE") {
+            return Some("9");
+        }
+        if name.eq_ignore_ascii_case("DROP_TABLE") {
+            return Some("11");
+        }
+        if name.eq_ignore_ascii_case("INSERT") {
+            return Some("18");
+        }
+        if name.eq_ignore_ascii_case("READ") {
+            return Some("20");
+        }
         if name.eq_ignore_ascii_case("SELECT") {
             return Some("21");
+        }
+        if name.eq_ignore_ascii_case("UPDATE") {
+            return Some("23");
         }
     }
     if class_name.eq_ignore_ascii_case("SQLite3") {
@@ -37468,8 +37486,26 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         if name.eq_ignore_ascii_case("IGNORE") {
             return Some("2");
         }
+        if name.eq_ignore_ascii_case("CREATE_TABLE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("DELETE") {
+            return Some("9");
+        }
+        if name.eq_ignore_ascii_case("DROP_TABLE") {
+            return Some("11");
+        }
+        if name.eq_ignore_ascii_case("INSERT") {
+            return Some("18");
+        }
+        if name.eq_ignore_ascii_case("READ") {
+            return Some("20");
+        }
         if name.eq_ignore_ascii_case("SELECT") {
             return Some("21");
+        }
+        if name.eq_ignore_ascii_case("UPDATE") {
+            return Some("23");
         }
     }
     if class_name.eq_ignore_ascii_case("NumberFormatter") {
