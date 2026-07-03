@@ -1814,6 +1814,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(4);
         return 1;
     }
+    if (strcmp(name, "OPENSSL_KEYTYPE_RSA") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
     if (strcmp(name, "OPENSSL_KEYTYPE_DSA") == 0) {
         *out = ptn_int(1);
         return 1;
@@ -3635,6 +3639,70 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "STREAM_SERVER_LISTEN") == 0) {
         *out = ptn_int(PTN_STREAM_SERVER_LISTEN);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv2_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV2_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv3_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV3_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv23_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV23_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLS_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_0_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_1_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_2_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_3_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv2_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV2_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv3_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV3_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_SSLv23_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_SSLV23_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLS_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLS_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_0_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_0_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_1_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_2_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_TLSv1_3_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER);
         return 1;
     }
     if (strcmp(name, "DNS_A") == 0) {

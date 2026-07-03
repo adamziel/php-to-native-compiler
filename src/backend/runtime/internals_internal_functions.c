@@ -35,6 +35,7 @@ static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
 #define PTN_OPENSSL_ENCODING_DER 0
 #define PTN_OPENSSL_ENCODING_SMIME 1
 #define PTN_OPENSSL_ENCODING_PEM 2
+#define PTN_OPENSSL_KEYTYPE_RSA 0
 #define PTN_OPENSSL_KEYTYPE_DSA 1
 #define PTN_OPENSSL_CMS_NOVERIFY 32
 
@@ -85,6 +86,10 @@ static int ptn_openssl_constant_value(const char *name, PtnValue *out) {
     }
     if (strcmp(name, "OPENSSL_DONT_ZERO_PAD_KEY") == 0) {
         *out = ptn_int(PTN_OPENSSL_DONT_ZERO_PAD_KEY);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_KEYTYPE_RSA") == 0) {
+        *out = ptn_int(PTN_OPENSSL_KEYTYPE_RSA);
         return 1;
     }
     if (strcmp(name, "OPENSSL_KEYTYPE_DSA") == 0) {
@@ -1643,11 +1648,17 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "openssl_pkcs12_read")) {
             return "certificates";
         }
+        if (ptn_ascii_case_equal(name, "openssl_pkey_export")) {
+            return "output";
+        }
         if (ptn_ascii_case_equal(name, "openssl_public_encrypt")) {
             return "encrypted_data";
         }
         if (ptn_ascii_case_equal(name, "openssl_private_decrypt")) {
             return "decrypted_data";
+        }
+        if (ptn_ascii_case_equal(name, "openssl_x509_export")) {
+            return "output";
         }
     }
     if ((ptn_ascii_case_equal(name, "mb_ereg") || ptn_ascii_case_equal(name, "mb_eregi")) && index == 2) {
@@ -64430,6 +64441,17 @@ static int ptn_file_get_contents_validate_uri_parser_context(
     return 1;
 }
 
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+static int ptn_file_get_contents_https_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+);
+#endif
+
 static int ptn_try_read_user_stream_wrapper_bytes(
     PtnRuntime *runtime,
     const char *function_name,
@@ -65104,6 +65126,18 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         }
         ptn_value_destroy(&user_stream);
     }
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+    if (read_result == 0 &&
+        strlen(path) >= strlen("https://") &&
+        ptn_ascii_case_equal_n(path, "https://", strlen("https://"))) {
+        read_result = ptn_file_get_contents_https_bytes(runtime, path, context, &data, &data_len, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            free(data);
+            return ptn_null();
+        }
+    }
+#endif
     int is_zip_uri = strncmp(path, "zip://", 6) == 0;
     PtnValue zip_stream = ptn_null();
     if (read_result == 0 && is_zip_uri && ptn_try_open_zip_stream(runtime, path, "rb", &zip_stream)) {
@@ -110886,6 +110920,7 @@ typedef struct {
 } PtnOpenSslCipherList;
 
 static time_t ptn_mktime_in_utc(struct tm *parts);
+static PtnValue ptn_openssl_pem_from_bio(BIO *bio);
 
 static void ptn_openssl_resource_close_hook(PtnResource *resource, void *data) {
     (void)resource;
@@ -112244,7 +112279,7 @@ static PtnValue ptn_internal_openssl_pkey_export_to_file(PtnRuntime *runtime, si
         }
         return ptn_null();
     }
-    PtnStringOperand passphrase = argc >= 3
+    PtnStringOperand passphrase = (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL)
         ? ptn_internal_expect_string_arg(runtime, "openssl_pkey_export_to_file", 3, "passphrase", args[2], line)
         : ptn_string_operand_borrowed("");
     if (runtime->exceptions->active_exception != NULL) {
@@ -112273,6 +112308,57 @@ static PtnValue ptn_internal_openssl_pkey_export_to_file(PtnRuntime *runtime, si
         ERR_clear_error();
         return ptn_bool(0);
     }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_openssl_pkey_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int key_owned = 0;
+    EVP_PKEY *pkey = ptn_openssl_private_key_from_value(
+        runtime,
+        "openssl_pkey_export",
+        1,
+        "key",
+        args[0],
+        line,
+        &key_owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (pkey == NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand passphrase = (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL)
+        ? ptn_internal_expect_string_arg(runtime, "openssl_pkey_export", 3, "passphrase", args[2], line)
+        : ptn_string_operand_borrowed("");
+    if (runtime->exceptions->active_exception != NULL) {
+        if (key_owned) {
+            EVP_PKEY_free(pkey);
+        }
+        return ptn_null();
+    }
+
+    char *passphrase_cstr = ptn_duplicate_string_len(passphrase.data, passphrase.len);
+    ptn_string_operand_free(passphrase);
+    BIO *output = BIO_new(BIO_s_mem());
+    int ok = output != NULL && PEM_write_bio_PrivateKey(output, pkey, NULL, NULL, 0, NULL, passphrase_cstr) == 1;
+    free(passphrase_cstr);
+    if (key_owned) {
+        EVP_PKEY_free(pkey);
+    }
+    if (!ok) {
+        if (output != NULL) {
+            BIO_free(output);
+        }
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    PtnValue exported = ptn_openssl_pem_from_bio(output);
+    BIO_free(output);
+    if (!ptn_openssl_assign_reference_arg(runtime, "openssl_pkey_export", 2, "output", args[1], exported, line)) {
+        return ptn_null();
+    }
+    ERR_clear_error();
     return ptn_bool(1);
 }
 
@@ -112590,6 +112676,94 @@ static PtnValue ptn_internal_openssl_x509_read(PtnRuntime *runtime, size_t argc,
         return ptn_bool(0);
     }
     return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_X509, "OpenSSL X.509", NULL, x509, NULL);
+}
+
+static PtnValue ptn_internal_openssl_x509_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int owned = 0;
+    X509 *x509 = ptn_openssl_x509_from_value(
+        runtime,
+        "openssl_x509_export",
+        1,
+        "certificate",
+        args[0],
+        line,
+        &owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (x509 == NULL) {
+        return ptn_bool(0);
+    }
+    BIO *output = BIO_new(BIO_s_mem());
+    int ok = output != NULL && PEM_write_bio_X509(output, x509) == 1;
+    if (owned) {
+        X509_free(x509);
+    }
+    if (!ok) {
+        if (output != NULL) {
+            BIO_free(output);
+        }
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    PtnValue exported = ptn_openssl_pem_from_bio(output);
+    BIO_free(output);
+    if (!ptn_openssl_assign_reference_arg(runtime, "openssl_x509_export", 2, "output", args[1], exported, line)) {
+        return ptn_null();
+    }
+    ERR_clear_error();
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_openssl_x509_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int owned = 0;
+    X509 *x509 = ptn_openssl_x509_from_value(
+        runtime,
+        "openssl_x509_export_to_file",
+        1,
+        "certificate",
+        args[0],
+        line,
+        &owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (x509 == NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand output_operand = ptn_internal_expect_string_arg(
+        runtime,
+        "openssl_x509_export_to_file",
+        2,
+        "output_filename",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        if (owned) {
+            X509_free(x509);
+        }
+        return ptn_null();
+    }
+    char *output_path = ptn_openssl_path_from_operand(output_operand);
+    ptn_string_operand_free(output_operand);
+    BIO *output = output_path == NULL ? NULL : BIO_new_file(output_path, "wb");
+    int ok = output != NULL && PEM_write_bio_X509(output, x509) == 1;
+    if (output != NULL) {
+        BIO_free(output);
+    }
+    free(output_path);
+    if (owned) {
+        X509_free(x509);
+    }
+    if (!ok) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    ERR_clear_error();
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_openssl_bio_string_value(BIO *bio) {
@@ -113913,6 +114087,14 @@ static PtnValue ptn_internal_openssl_pkey_export_to_file(PtnRuntime *runtime, si
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_openssl_pkey_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_openssl_csr_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_array_arg(runtime, "openssl_csr_new", 1, "distinguished_names", args[0]);
@@ -113935,6 +114117,23 @@ static PtnValue ptn_internal_openssl_csr_sign(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_openssl_x509_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_string_arg(runtime, "openssl_x509_read", 1, "certificate", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_x509_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_x509_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_x509_export_to_file", 2, "output_filename", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -124122,6 +124321,7 @@ static void ptn_defined_constants_add_openssl(PtnValue table) {
         "OPENSSL_RAW_DATA",
         "OPENSSL_ZERO_PADDING",
         "OPENSSL_DONT_ZERO_PAD_KEY",
+        "OPENSSL_KEYTYPE_RSA",
         "OPENSSL_KEYTYPE_DSA",
         "OPENSSL_CMS_NOVERIFY",
         "OPENSSL_PKCS1_PADDING",
@@ -124271,6 +124471,22 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_CLIENT_CONNECT", PTN_STREAM_CLIENT_CONNECT);
     ptn_get_defined_constants_add_int(table, "STREAM_SERVER_BIND", PTN_STREAM_SERVER_BIND);
     ptn_get_defined_constants_add_int(table, "STREAM_SERVER_LISTEN", PTN_STREAM_SERVER_LISTEN);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv2_CLIENT", PTN_STREAM_CRYPTO_METHOD_SSLV2_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv3_CLIENT", PTN_STREAM_CRYPTO_METHOD_SSLV3_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv23_CLIENT", PTN_STREAM_CRYPTO_METHOD_SSLV23_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLS_CLIENT", PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT", PTN_STREAM_CRYPTO_METHOD_TLSV1_0_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT", PTN_STREAM_CRYPTO_METHOD_TLSV1_1_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT", PTN_STREAM_CRYPTO_METHOD_TLSV1_2_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT", PTN_STREAM_CRYPTO_METHOD_TLSV1_3_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv2_SERVER", PTN_STREAM_CRYPTO_METHOD_SSLV2_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv3_SERVER", PTN_STREAM_CRYPTO_METHOD_SSLV3_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_SSLv23_SERVER", PTN_STREAM_CRYPTO_METHOD_SSLV23_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLS_SERVER", PTN_STREAM_CRYPTO_METHOD_TLS_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_0_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_0_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_1_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_2_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_3_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER);
     ptn_get_defined_constants_add_int(table, "DNS_A", 1);
     ptn_get_defined_constants_add_int(table, "DNS_NS", 2);
     ptn_get_defined_constants_add_int(table, "DNS_CNAME", 16);
@@ -124877,6 +125093,22 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_CLIENT_CONNECT",
         "STREAM_SERVER_BIND",
         "STREAM_SERVER_LISTEN",
+        "STREAM_CRYPTO_METHOD_SSLv2_CLIENT",
+        "STREAM_CRYPTO_METHOD_SSLv3_CLIENT",
+        "STREAM_CRYPTO_METHOD_SSLv23_CLIENT",
+        "STREAM_CRYPTO_METHOD_TLS_CLIENT",
+        "STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT",
+        "STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT",
+        "STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT",
+        "STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT",
+        "STREAM_CRYPTO_METHOD_SSLv2_SERVER",
+        "STREAM_CRYPTO_METHOD_SSLv3_SERVER",
+        "STREAM_CRYPTO_METHOD_SSLv23_SERVER",
+        "STREAM_CRYPTO_METHOD_TLS_SERVER",
+        "STREAM_CRYPTO_METHOD_TLSv1_0_SERVER",
+        "STREAM_CRYPTO_METHOD_TLSv1_1_SERVER",
+        "STREAM_CRYPTO_METHOD_TLSv1_2_SERVER",
+        "STREAM_CRYPTO_METHOD_TLSv1_3_SERVER",
         "DNS_A",
         "DNS_NS",
         "DNS_CNAME",
@@ -169828,6 +170060,904 @@ static PtnValue ptn_stream_socket_server_open_tcp(
 #endif
 }
 
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+typedef enum {
+    PTN_STREAM_TLS_SCHEME_SSL,
+    PTN_STREAM_TLS_SCHEME_TLS,
+    PTN_STREAM_TLS_SCHEME_SSLV3,
+    PTN_STREAM_TLS_SCHEME_TLSV1_0,
+    PTN_STREAM_TLS_SCHEME_TLSV1_1,
+    PTN_STREAM_TLS_SCHEME_TLSV1_2,
+    PTN_STREAM_TLS_SCHEME_TLSV1_3
+} PtnStreamTlsScheme;
+
+typedef struct {
+    char *name;
+    SSL_CTX *ctx;
+} PtnStreamTlsSniEntry;
+
+typedef struct {
+    PtnStreamTlsSniEntry *entries;
+    size_t len;
+} PtnStreamTlsSniConfig;
+
+static int ptn_stream_socket_address_tls_scheme(
+    PtnStringOperand address,
+    PtnStreamTlsScheme *scheme_out,
+    const char **prefix_out,
+    size_t *prefix_len_out
+) {
+    static const struct {
+        const char *prefix;
+        PtnStreamTlsScheme scheme;
+    } schemes[] = {
+        { "tlsv1.0://", PTN_STREAM_TLS_SCHEME_TLSV1_0 },
+        { "tlsv1.1://", PTN_STREAM_TLS_SCHEME_TLSV1_1 },
+        { "tlsv1.2://", PTN_STREAM_TLS_SCHEME_TLSV1_2 },
+        { "tlsv1.3://", PTN_STREAM_TLS_SCHEME_TLSV1_3 },
+        { "sslv3://", PTN_STREAM_TLS_SCHEME_SSLV3 },
+        { "ssl://", PTN_STREAM_TLS_SCHEME_SSL },
+        { "tls://", PTN_STREAM_TLS_SCHEME_TLS },
+    };
+    for (size_t i = 0; i < sizeof(schemes) / sizeof(schemes[0]); i++) {
+        size_t prefix_len = strlen(schemes[i].prefix);
+        if (address.len >= prefix_len && memcmp(address.data, schemes[i].prefix, prefix_len) == 0) {
+            *scheme_out = schemes[i].scheme;
+            *prefix_out = schemes[i].prefix;
+            *prefix_len_out = prefix_len;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_stream_socket_tls_tcp_address(PtnStringOperand address, size_t prefix_len) {
+    size_t body_len = address.len - prefix_len;
+    int needed = snprintf(NULL, 0, "tcp://%.*s", (int)body_len, address.data + prefix_len);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *tcp_address = malloc((size_t)needed + 1);
+    if (tcp_address == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(tcp_address, (size_t)needed + 1, "tcp://%.*s", (int)body_len, address.data + prefix_len);
+    if (written < 0 || written != needed) {
+        free(tcp_address);
+        ptn_abort_out_of_memory();
+    }
+    return tcp_address;
+}
+
+static PtnValue *ptn_stream_context_ssl_option(PtnResource *context, const char *option_name) {
+    return ptn_stream_context_option(context, "ssl", option_name);
+}
+
+static char *ptn_stream_context_ssl_string_option(PtnResource *context, const char *option_name) {
+    PtnValue *option = ptn_stream_context_ssl_option(context, option_name);
+    if (option == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(*option);
+    if (value.type == PTN_NULL || value.type == PTN_BOOL) {
+        return NULL;
+    }
+    return ptn_value_to_string(value);
+}
+
+static int64_t ptn_stream_context_ssl_integer_option(
+    PtnResource *context,
+    const char *option_name,
+    int64_t fallback
+) {
+    PtnValue *option = ptn_stream_context_ssl_option(context, option_name);
+    return option == NULL ? fallback : ptn_value_to_integer(*option);
+}
+
+static int ptn_stream_context_ssl_bool_option(
+    PtnResource *context,
+    const char *option_name,
+    int fallback
+) {
+    PtnValue *option = ptn_stream_context_ssl_option(context, option_name);
+    return option == NULL ? fallback : ptn_is_truthy(*option);
+}
+
+static char *ptn_stream_tls_array_string_option(PtnValue value, const char *option_name) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayEntry *entry = ptn_array_entry_for_literal_string_key(value.as.array, option_name);
+    if (entry == NULL) {
+        return NULL;
+    }
+    PtnValue option = ptn_value_deref(entry->value);
+    if (option.type == PTN_NULL || option.type == PTN_BOOL) {
+        return NULL;
+    }
+    return ptn_value_to_string(option);
+}
+
+static char *ptn_stream_tls_normalize_file_url_path(char *path) {
+    if (path == NULL) {
+        return NULL;
+    }
+    const char *prefix = "file://";
+    size_t prefix_len = strlen(prefix);
+    if (strlen(path) < prefix_len || !ptn_ascii_case_equal_n(path, prefix, prefix_len)) {
+        return path;
+    }
+    char *normalized = ptn_duplicate_string(path + prefix_len);
+    free(path);
+    return normalized;
+}
+
+static int64_t ptn_stream_tls_default_crypto_method(PtnStreamTlsScheme scheme, int server) {
+    switch (scheme) {
+        case PTN_STREAM_TLS_SCHEME_SSLV3:
+            return server ? PTN_STREAM_CRYPTO_METHOD_SSLV3_SERVER : PTN_STREAM_CRYPTO_METHOD_SSLV3_CLIENT;
+        case PTN_STREAM_TLS_SCHEME_TLSV1_0:
+            return server ? PTN_STREAM_CRYPTO_METHOD_TLSV1_0_SERVER : PTN_STREAM_CRYPTO_METHOD_TLSV1_0_CLIENT;
+        case PTN_STREAM_TLS_SCHEME_TLSV1_1:
+            return server ? PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER : PTN_STREAM_CRYPTO_METHOD_TLSV1_1_CLIENT;
+        case PTN_STREAM_TLS_SCHEME_TLSV1_2:
+            return server ? PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER : PTN_STREAM_CRYPTO_METHOD_TLSV1_2_CLIENT;
+        case PTN_STREAM_TLS_SCHEME_TLSV1_3:
+            return server ? PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER : PTN_STREAM_CRYPTO_METHOD_TLSV1_3_CLIENT;
+        case PTN_STREAM_TLS_SCHEME_SSL:
+        case PTN_STREAM_TLS_SCHEME_TLS:
+            return server ? PTN_STREAM_CRYPTO_METHOD_TLS_SERVER : PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT;
+    }
+    return server ? PTN_STREAM_CRYPTO_METHOD_TLS_SERVER : PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT;
+}
+
+static int64_t ptn_stream_tls_crypto_method(PtnResource *context, PtnStreamTlsScheme scheme, int server) {
+    PtnValue *option = ptn_stream_context_ssl_option(context, "crypto_method");
+    if (option != NULL) {
+        return ptn_value_to_integer(*option);
+    }
+    return ptn_stream_tls_default_crypto_method(scheme, server);
+}
+
+static int ptn_stream_tls_protocol_bounds(int64_t method, int *min_version, int *max_version) {
+    *min_version = TLS1_VERSION;
+    *max_version = 0;
+    switch (method) {
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_0_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_0_SERVER:
+            *min_version = TLS1_VERSION;
+            *max_version = TLS1_VERSION;
+            return 1;
+#ifdef TLS1_1_VERSION
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_1_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER:
+            *min_version = TLS1_1_VERSION;
+            *max_version = TLS1_1_VERSION;
+            return 1;
+#endif
+#ifdef TLS1_2_VERSION
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_2_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER:
+            *min_version = TLS1_2_VERSION;
+            *max_version = TLS1_2_VERSION;
+            return 1;
+#endif
+#ifdef TLS1_3_VERSION
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_3_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER:
+            *min_version = TLS1_3_VERSION;
+            *max_version = TLS1_3_VERSION;
+            return 1;
+#endif
+        case PTN_STREAM_CRYPTO_METHOD_SSLV23_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_TLS_SERVER:
+            *min_version = TLS1_VERSION;
+            *max_version = 0;
+            return 1;
+#ifdef SSL3_VERSION
+        case PTN_STREAM_CRYPTO_METHOD_SSLV3_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_SSLV3_SERVER:
+            *min_version = SSL3_VERSION;
+            *max_version = SSL3_VERSION;
+            return 1;
+#endif
+        default:
+            return 0;
+    }
+}
+
+static int ptn_stream_tls_apply_protocol_bounds(SSL_CTX *ctx, int64_t method) {
+    int min_version = 0;
+    int max_version = 0;
+    if (!ptn_stream_tls_protocol_bounds(method, &min_version, &max_version)) {
+        return 0;
+    }
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    if (SSL_CTX_set_min_proto_version(ctx, min_version) != 1) {
+        return 0;
+    }
+    if (max_version != 0 && SSL_CTX_set_max_proto_version(ctx, max_version) != 1) {
+        return 0;
+    }
+#else
+    (void)ctx;
+    (void)min_version;
+    (void)max_version;
+#endif
+    return 1;
+}
+
+static int ptn_stream_tls_load_server_certificate(
+    SSL_CTX *ctx,
+    PtnResource *context,
+    const char *local_cert_override,
+    const char *local_pk_override
+) {
+    char *local_cert = local_cert_override == NULL
+        ? ptn_stream_context_ssl_string_option(context, "local_cert")
+        : ptn_duplicate_string(local_cert_override);
+    char *local_pk = local_pk_override == NULL
+        ? ptn_stream_context_ssl_string_option(context, "local_pk")
+        : ptn_duplicate_string(local_pk_override);
+    local_cert = ptn_stream_tls_normalize_file_url_path(local_cert);
+    local_pk = ptn_stream_tls_normalize_file_url_path(local_pk);
+    if (local_cert == NULL || local_cert[0] == '\0') {
+        free(local_cert);
+        free(local_pk);
+        return 1;
+    }
+    const char *private_key_path = local_pk == NULL || local_pk[0] == '\0' ? local_cert : local_pk;
+    int ok = SSL_CTX_use_certificate_chain_file(ctx, local_cert) == 1 &&
+        SSL_CTX_use_PrivateKey_file(ctx, private_key_path, SSL_FILETYPE_PEM) == 1 &&
+        SSL_CTX_check_private_key(ctx) == 1;
+    free(local_cert);
+    free(local_pk);
+    if (!ok) {
+        ERR_clear_error();
+    }
+    return ok;
+}
+
+static SSL_CTX *ptn_stream_tls_context_create(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    PtnStreamTlsScheme scheme,
+    int server,
+    const char *local_cert_override,
+    const char *local_pk_override,
+    size_t line
+) {
+    (void)runtime;
+    (void)line;
+    ptn_openssl_ensure_default_provider();
+    const SSL_METHOD *method = server ? TLS_server_method() : TLS_client_method();
+    SSL_CTX *ctx = SSL_CTX_new(method);
+    if (ctx == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    int64_t crypto_method = ptn_stream_tls_crypto_method(context, scheme, server);
+    if (!ptn_stream_tls_apply_protocol_bounds(ctx, crypto_method)) {
+        SSL_CTX_free(ctx);
+        ERR_clear_error();
+        return NULL;
+    }
+    int64_t security_level = ptn_stream_context_ssl_integer_option(context, "security_level", -1);
+    if (security_level >= 0 && security_level <= INT_MAX) {
+        SSL_CTX_set_security_level(ctx, (int)security_level);
+    }
+    char *ciphers = ptn_stream_context_ssl_string_option(context, "ciphers");
+    if (ciphers != NULL && ciphers[0] != '\0' && SSL_CTX_set_cipher_list(ctx, ciphers) != 1) {
+        free(ciphers);
+        SSL_CTX_free(ctx);
+        ERR_clear_error();
+        return NULL;
+    }
+    free(ciphers);
+    if (server) {
+        if (!ptn_stream_tls_load_server_certificate(ctx, context, local_cert_override, local_pk_override)) {
+            SSL_CTX_free(ctx);
+            return NULL;
+        }
+        return ctx;
+    }
+
+    int verify_peer = ptn_stream_context_ssl_bool_option(context, "verify_peer", 1);
+    char *cafile = ptn_stream_context_ssl_string_option(context, "cafile");
+    char *capath = ptn_stream_context_ssl_string_option(context, "capath");
+    cafile = ptn_stream_tls_normalize_file_url_path(cafile);
+    capath = ptn_stream_tls_normalize_file_url_path(capath);
+    int has_custom_ca = (cafile != NULL && cafile[0] != '\0') || (capath != NULL && capath[0] != '\0');
+    SSL_CTX_set_verify(ctx, verify_peer && !has_custom_ca ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, NULL);
+    if (has_custom_ca) {
+        if (SSL_CTX_load_verify_locations(
+                ctx,
+                cafile != NULL && cafile[0] != '\0' ? cafile : NULL,
+                capath != NULL && capath[0] != '\0' ? capath : NULL
+            ) != 1) {
+            free(cafile);
+            free(capath);
+            SSL_CTX_free(ctx);
+            ERR_clear_error();
+            return NULL;
+        }
+    } else if (verify_peer) {
+        (void)SSL_CTX_set_default_verify_paths(ctx);
+    }
+    free(cafile);
+    free(capath);
+    return ctx;
+}
+
+static int ptn_stream_tls_sni_callback(SSL *ssl, int *alert, void *raw) {
+    (void)alert;
+    PtnStreamTlsSniConfig *config = (PtnStreamTlsSniConfig *)raw;
+    const char *server_name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (server_name == NULL || config == NULL) {
+        return SSL_TLSEXT_ERR_NOACK;
+    }
+    for (size_t i = 0; i < config->len; i++) {
+        if (ptn_ascii_case_equal(server_name, config->entries[i].name)) {
+            SSL_set_SSL_CTX(ssl, config->entries[i].ctx);
+            return SSL_TLSEXT_ERR_OK;
+        }
+    }
+    return SSL_TLSEXT_ERR_NOACK;
+}
+
+static void ptn_stream_tls_sni_config_free(void *raw) {
+    PtnStreamTlsSniConfig *config = (PtnStreamTlsSniConfig *)raw;
+    if (config == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < config->len; i++) {
+        free(config->entries[i].name);
+        if (config->entries[i].ctx != NULL) {
+            SSL_CTX_free(config->entries[i].ctx);
+        }
+    }
+    free(config->entries);
+    free(config);
+}
+
+static PtnStreamTlsSniConfig *ptn_stream_tls_sni_config_create(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    PtnStreamTlsScheme scheme,
+    size_t line
+) {
+    PtnValue *option = ptn_stream_context_ssl_option(context, "SNI_server_certs");
+    if (option == NULL) {
+        return NULL;
+    }
+    PtnValue sni_certs = ptn_value_deref(*option);
+    if (sni_certs.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnStreamTlsSniConfig *config = calloc(1, sizeof(PtnStreamTlsSniConfig));
+    if (config == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < sni_certs.as.array->len; i++) {
+        PtnArrayEntry *entry = &sni_certs.as.array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        char *local_cert = ptn_stream_tls_array_string_option(entry->value, "local_cert");
+        char *local_pk = ptn_stream_tls_array_string_option(entry->value, "local_pk");
+        if (local_cert == NULL) {
+            free(local_pk);
+            continue;
+        }
+        SSL_CTX *ctx = ptn_stream_tls_context_create(
+            runtime,
+            context,
+            scheme,
+            1,
+            local_cert,
+            local_pk,
+            line
+        );
+        free(local_cert);
+        free(local_pk);
+        if (ctx == NULL) {
+            continue;
+        }
+        if (config->len == SIZE_MAX || config->len + 1 > SIZE_MAX / sizeof(PtnStreamTlsSniEntry)) {
+            SSL_CTX_free(ctx);
+            ptn_stream_tls_sni_config_free(config);
+            ptn_abort_out_of_memory();
+        }
+        PtnStreamTlsSniEntry *entries = realloc(
+            config->entries,
+            (config->len + 1) * sizeof(PtnStreamTlsSniEntry)
+        );
+        if (entries == NULL) {
+            SSL_CTX_free(ctx);
+            ptn_stream_tls_sni_config_free(config);
+            ptn_abort_out_of_memory();
+        }
+        config->entries = entries;
+        config->entries[config->len].name = ptn_duplicate_string_len(entry->key.as.string, entry->key.string_len);
+        config->entries[config->len].ctx = ctx;
+        config->len++;
+    }
+    if (config->len == 0) {
+        ptn_stream_tls_sni_config_free(config);
+        return NULL;
+    }
+    return config;
+}
+
+static void ptn_stream_context_set_ssl_option(PtnResource *context, const char *name, PtnValue value) {
+    if (context == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+    PtnValue options = ptn_value_deref(context->context_options);
+    if (options.type != PTN_ARRAY) {
+        ptn_value_destroy(&context->context_options);
+        context->context_options = ptn_array_from_literal_entries(0, NULL);
+        options = context->context_options;
+    }
+    PtnArrayEntry *ssl_entry = ptn_array_entry_for_literal_string_key(options.as.array, "ssl");
+    if (ssl_entry == NULL || ptn_value_deref(ssl_entry->value).type != PTN_ARRAY) {
+        ptn_array_set_entry(options.as.array, ptn_array_string_key("ssl"), ptn_array_from_literal_entries(0, NULL));
+        ssl_entry = ptn_array_entry_for_literal_string_key(options.as.array, "ssl");
+    }
+    if (ssl_entry == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+    PtnValue ssl_options = ptn_value_deref(ssl_entry->value);
+    ptn_array_set_entry(ssl_options.as.array, ptn_array_string_key(name), value);
+}
+
+static void ptn_stream_tls_capture_peer_certificate(PtnResource *context, SSL *ssl) {
+    if (!ptn_stream_context_ssl_bool_option(context, "capture_peer_cert", 0)) {
+        return;
+    }
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    X509 *peer = SSL_get1_peer_certificate(ssl);
+#else
+    X509 *peer = SSL_get_peer_certificate(ssl);
+#endif
+    if (peer == NULL) {
+        return;
+    }
+    ptn_stream_context_set_ssl_option(
+        context,
+        "peer_certificate",
+        ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_X509, "OpenSSL X.509", NULL, peer, NULL)
+    );
+}
+
+static int ptn_stream_tls_configure_client_name(SSL *ssl, PtnResource *context, const char *host) {
+    char *peer_name = ptn_stream_context_ssl_string_option(context, "peer_name");
+    const char *server_name = peer_name != NULL && peer_name[0] != '\0' ? peer_name : host;
+    int ok = 1;
+    if (server_name != NULL && server_name[0] != '\0') {
+        (void)SSL_set_tlsext_host_name(ssl, server_name);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+        int verify_peer = ptn_stream_context_ssl_bool_option(context, "verify_peer", 1);
+        int verify_peer_name = ptn_stream_context_ssl_bool_option(context, "verify_peer_name", 1);
+        if (verify_peer && verify_peer_name && SSL_set1_host(ssl, server_name) != 1) {
+            ok = 0;
+        }
+#endif
+    }
+    free(peer_name);
+    return ok;
+}
+
+static int ptn_stream_tls_do_handshake(SSL *ssl, int server) {
+    for (;;) {
+        int result = server ? SSL_accept(ssl) : SSL_connect(ssl);
+        if (result == 1) {
+            return 1;
+        }
+        int ssl_error = SSL_get_error(ssl, result);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            if (ptn_ssl_wait_for_io(ssl, ssl_error, 10)) {
+                continue;
+            }
+        }
+        return 0;
+    }
+}
+
+static PtnValue ptn_stream_socket_client_open_tls(
+    PtnRuntime *runtime,
+    PtnStringOperand address,
+    PtnStreamTlsScheme scheme,
+    size_t prefix_len,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    char *tcp_address = ptn_stream_socket_tls_tcp_address(address, prefix_len);
+    PtnStringOperand tcp_operand = { .data = tcp_address, .owned = NULL, .len = strlen(tcp_address) };
+    PtnValue result = ptn_stream_socket_client_open_tcp(
+        runtime,
+        "stream_socket_client",
+        tcp_operand,
+        argc >= 2 ? args[1] : ptn_null(),
+        argc >= 3 ? args[2] : ptn_null(),
+        line
+    );
+    char *host = NULL;
+    char *service = NULL;
+    (void)ptn_stream_socket_address_parse_tcp(tcp_operand, &host, &service);
+    free(tcp_address);
+    free(service);
+    if (result.type != PTN_RESOURCE || result.as.resource == NULL) {
+        free(host);
+        return result;
+    }
+    PtnResource *context = argc >= 6 ? ptn_fopen_context_arg(args[5]) : NULL;
+    SSL_CTX *ctx = ptn_stream_tls_context_create(runtime, context, scheme, 0, NULL, NULL, line);
+    SSL *ssl = ctx == NULL ? NULL : SSL_new(ctx);
+    PtnResource *resource = result.as.resource;
+    if (ctx == NULL || ssl == NULL || resource->stream == NULL || !ptn_stream_tls_configure_client_name(ssl, context, host)) {
+        free(host);
+        if (ssl != NULL) {
+            SSL_free(ssl);
+        }
+        if (ctx != NULL) {
+            SSL_CTX_free(ctx);
+        }
+        ptn_value_destroy(&result);
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string("SSL setup failed"));
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    int fd = fileno(resource->stream);
+    if (fd < 0 || SSL_set_fd(ssl, fd) != 1) {
+        free(host);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        ptn_value_destroy(&result);
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string("SSL setup failed"));
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    resource->ssl_ctx = ctx;
+    resource->ssl = ssl;
+    if (!ptn_stream_tls_do_handshake(ssl, 0)) {
+        free(host);
+        ptn_value_destroy(&result);
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string("SSL operation failed"));
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    ptn_stream_tls_capture_peer_certificate(context, ssl);
+    free(host);
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    free(resource->stream_uri);
+    resource->stream_uri = uri;
+    ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string(""));
+    return result;
+}
+
+static PtnValue ptn_stream_socket_server_open_tls(
+    PtnRuntime *runtime,
+    PtnStringOperand address,
+    PtnStreamTlsScheme scheme,
+    size_t prefix_len,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    char *tcp_address = ptn_stream_socket_tls_tcp_address(address, prefix_len);
+    PtnStringOperand tcp_operand = { .data = tcp_address, .owned = NULL, .len = strlen(tcp_address) };
+    PtnValue result = ptn_stream_socket_server_open_tcp(runtime, tcp_operand, argc, args, line);
+    free(tcp_address);
+    if (result.type != PTN_RESOURCE || result.as.resource == NULL) {
+        return result;
+    }
+    PtnResource *context = argc >= 5 ? ptn_fopen_context_arg(args[4]) : NULL;
+    SSL_CTX *ctx = ptn_stream_tls_context_create(runtime, context, scheme, 1, NULL, NULL, line);
+    if (ctx == NULL) {
+        ptn_value_destroy(&result);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "SSL setup failed");
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    PtnStreamTlsSniConfig *sni_config = ptn_stream_tls_sni_config_create(runtime, context, scheme, line);
+    if (sni_config != NULL) {
+        SSL_CTX_set_tlsext_servername_callback(ctx, ptn_stream_tls_sni_callback);
+        SSL_CTX_set_tlsext_servername_arg(ctx, sni_config);
+    }
+    PtnResource *resource = result.as.resource;
+    resource->ssl_ctx = ctx;
+    resource->ssl_extra = sni_config;
+    resource->ssl_extra_free = ptn_stream_tls_sni_config_free;
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    free(resource->stream_uri);
+    resource->stream_uri = uri;
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
+    return result;
+}
+
+static int ptn_file_get_contents_https_parse_url(
+    const char *url,
+    char **tls_address_out,
+    char **request_target_out,
+    char **host_header_out
+) {
+    const char *prefix = "https://";
+    size_t prefix_len = strlen(prefix);
+    if (strlen(url) < prefix_len || !ptn_ascii_case_equal_n(url, prefix, prefix_len)) {
+        return 0;
+    }
+
+    const char *body = url + prefix_len;
+    const char *target_start = strpbrk(body, "/?#");
+    const char *authority_end = target_start == NULL ? url + strlen(url) : target_start;
+    size_t authority_len = (size_t)(authority_end - body);
+    if (authority_len == 0) {
+        return 0;
+    }
+
+    const char *authority = body;
+    const char *host = authority;
+    size_t host_len = 0;
+    const char *port = "443";
+    size_t port_len = strlen(port);
+
+    if (authority[0] == '[') {
+        const char *end = memchr(authority, ']', authority_len);
+        if (end == NULL) {
+            return 0;
+        }
+        host_len = (size_t)(end - authority + 1);
+        if ((size_t)(end + 1 - authority) < authority_len) {
+            if (end[1] != ':' || (size_t)(end + 2 - authority) >= authority_len) {
+                return 0;
+            }
+            port = end + 2;
+            port_len = (size_t)(authority_end - port);
+        }
+    } else {
+        const char *colon = NULL;
+        for (const char *cursor = authority; cursor < authority_end; cursor++) {
+            if (*cursor == ':') {
+                colon = cursor;
+            }
+        }
+        if (colon == NULL) {
+            host_len = authority_len;
+        } else {
+            if (colon == authority || colon + 1 >= authority_end) {
+                return 0;
+            }
+            host_len = (size_t)(colon - authority);
+            port = colon + 1;
+            port_len = (size_t)(authority_end - port);
+        }
+    }
+    if (host_len == 0 || port_len == 0) {
+        return 0;
+    }
+
+    int address_len = snprintf(
+        NULL,
+        0,
+        "tls://%.*s:%.*s",
+        (int)host_len,
+        host,
+        (int)port_len,
+        port
+    );
+    if (address_len < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *tls_address = malloc((size_t)address_len + 1);
+    if (tls_address == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int address_written = snprintf(
+        tls_address,
+        (size_t)address_len + 1,
+        "tls://%.*s:%.*s",
+        (int)host_len,
+        host,
+        (int)port_len,
+        port
+    );
+    if (address_written < 0 || address_written != address_len) {
+        free(tls_address);
+        ptn_abort_out_of_memory();
+    }
+
+    char *request_target = NULL;
+    if (target_start == NULL) {
+        request_target = ptn_duplicate_string("/");
+    } else if (*target_start == '/') {
+        request_target = ptn_duplicate_string(target_start);
+    } else {
+        int target_len = snprintf(NULL, 0, "/%s", target_start);
+        if (target_len < 0) {
+            free(tls_address);
+            ptn_abort_out_of_memory();
+        }
+        request_target = malloc((size_t)target_len + 1);
+        if (request_target == NULL) {
+            free(tls_address);
+            ptn_abort_out_of_memory();
+        }
+        int target_written = snprintf(request_target, (size_t)target_len + 1, "/%s", target_start);
+        if (target_written < 0 || target_written != target_len) {
+            free(request_target);
+            free(tls_address);
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    char *host_header = ptn_duplicate_string_len(authority, authority_len);
+    *tls_address_out = tls_address;
+    *request_target_out = request_target;
+    *host_header_out = host_header;
+    return 1;
+}
+
+static int ptn_file_get_contents_https_response_body(
+    const char *bytes,
+    size_t len,
+    unsigned char **data_out,
+    size_t *data_len_out
+) {
+    size_t body_offset = 0;
+    int found_headers = 0;
+    for (size_t i = 0; i + 3 < len; i++) {
+        if (bytes[i] == '\r' && bytes[i + 1] == '\n' && bytes[i + 2] == '\r' && bytes[i + 3] == '\n') {
+            body_offset = i + 4;
+            found_headers = 1;
+            break;
+        }
+    }
+    if (!found_headers) {
+        for (size_t i = 0; i + 1 < len; i++) {
+            if (bytes[i] == '\n' && bytes[i + 1] == '\n') {
+                body_offset = i + 2;
+                found_headers = 1;
+                break;
+            }
+        }
+    }
+    if (!found_headers) {
+        return 0;
+    }
+
+    size_t body_len = len - body_offset;
+    unsigned char *copy = malloc(body_len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (body_len != 0) {
+        memcpy(copy, bytes + body_offset, body_len);
+    }
+    copy[body_len] = '\0';
+    *data_out = copy;
+    *data_len_out = body_len;
+    return 1;
+}
+
+static int ptn_file_get_contents_https_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+) {
+    const char *debug_https = getenv("PTN_DEBUG_HTTPS");
+    char *tls_address = NULL;
+    char *request_target = NULL;
+    char *host_header = NULL;
+    if (!ptn_file_get_contents_https_parse_url(path, &tls_address, &request_target, &host_header)) {
+        if (debug_https != NULL) {
+            fprintf(stderr, "PTN_DEBUG_HTTPS parse-fail path=%s\n", path);
+        }
+        return 0;
+    }
+    if (debug_https != NULL) {
+        fprintf(stderr, "PTN_DEBUG_HTTPS tls-address=%s target=%s host=%s\n", tls_address, request_target, host_header);
+    }
+
+    PtnValue tls_args[6] = {
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        context == NULL ? ptn_null() : ptn_resource(context),
+    };
+    PtnStringOperand tls_operand = {
+        .data = tls_address,
+        .owned = NULL,
+        .len = strlen(tls_address),
+    };
+    PtnValue stream = ptn_stream_socket_client_open_tls(
+        runtime,
+        tls_operand,
+        PTN_STREAM_TLS_SCHEME_TLS,
+        strlen("tls://"),
+        6,
+        tls_args,
+        line
+    );
+    if (stream.type != PTN_RESOURCE || stream.as.resource == NULL) {
+        if (debug_https != NULL) {
+            fprintf(stderr, "PTN_DEBUG_HTTPS open-fail type=%d\n", stream.type);
+        }
+        free(tls_address);
+        free(request_target);
+        free(host_header);
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    PtnStringBuffer request;
+    ptn_string_buffer_init(&request);
+    ptn_string_buffer_append_format(
+        &request,
+        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        request_target,
+        host_header
+    );
+    size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
+    free(request.data);
+    free(tls_address);
+    free(request_target);
+    free(host_header);
+    if (written == 0 || written < request.len) {
+        if (debug_https != NULL) {
+            fprintf(stderr, "PTN_DEBUG_HTTPS write-fail written=%zu wanted=%zu\n", written, request.len);
+        }
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    (void)runtime;
+    (void)line;
+    PtnStringBuffer response;
+    ptn_string_buffer_init(&response);
+    unsigned char chunk[8192];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(stream.as.resource, chunk, sizeof(chunk));
+        if (read_len == 0) {
+            break;
+        }
+        ptn_string_buffer_append_len(&response, (const char *)chunk, read_len);
+    }
+    if (debug_https != NULL) {
+        fprintf(stderr, "PTN_DEBUG_HTTPS response-len=%zu\n", response.len);
+        if (response.len != 0) {
+            fprintf(stderr, "PTN_DEBUG_HTTPS response-prefix=%.*s\n", (int)(response.len < 120 ? response.len : 120), response.data);
+        }
+    }
+    int ok = ptn_file_get_contents_https_response_body(
+        response.data == NULL ? "" : response.data,
+        response.len,
+        data_out,
+        data_len_out
+    );
+    if (debug_https != NULL) {
+        fprintf(stderr, "PTN_DEBUG_HTTPS body-ok=%d body-len=%zu\n", ok, ok ? *data_len_out : 0);
+    }
+    free(response.data);
+    ptn_value_destroy(&stream);
+    return ok ? 1 : -1;
+}
+#endif
+
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
     for (size_t i = 0; i < ptn_persistent_socket_count; i++) {
         if (strcmp(ptn_persistent_sockets[i].key, key) == 0) {
@@ -170101,6 +171231,25 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
         ptn_string_operand_free(address);
         return result;
     }
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+    PtnStreamTlsScheme tls_scheme;
+    const char *tls_prefix = NULL;
+    size_t tls_prefix_len = 0;
+    if (ptn_stream_socket_address_tls_scheme(address, &tls_scheme, &tls_prefix, &tls_prefix_len)) {
+        (void)tls_prefix;
+        PtnValue result = ptn_stream_socket_client_open_tls(
+            runtime,
+            address,
+            tls_scheme,
+            tls_prefix_len,
+            argc,
+            args,
+            line
+        );
+        ptn_string_operand_free(address);
+        return result;
+    }
+#endif
 #if !defined(_WIN32)
     const char *prefix = NULL;
     int socktype = 0;
@@ -170424,8 +171573,33 @@ static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t ar
         (void)setsockopt(accepted_fd, IPPROTO_TCP, TCP_NODELAY, &enabled, sizeof(enabled));
     }
 
+#if PTN_HAVE_OPENSSL
+    SSL *accepted_ssl = NULL;
+    if (resource->ssl_ctx != NULL) {
+        accepted_ssl = SSL_new(resource->ssl_ctx);
+        if (accepted_ssl == NULL ||
+            SSL_set_fd(accepted_ssl, accepted_fd) != 1 ||
+            !ptn_stream_tls_do_handshake(accepted_ssl, 1)) {
+            if (accepted_ssl != NULL) {
+                SSL_free(accepted_ssl);
+            }
+            close(accepted_fd);
+            ERR_clear_error();
+            if (argc >= 3) {
+                ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+            }
+            return ptn_bool(0);
+        }
+    }
+#endif
+
     FILE *stream = fdopen(accepted_fd, "r+");
     if (stream == NULL) {
+#if PTN_HAVE_OPENSSL
+        if (accepted_ssl != NULL) {
+            SSL_free(accepted_ssl);
+        }
+#endif
         close(accepted_fd);
         if (argc >= 3) {
             ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
@@ -170447,6 +171621,9 @@ static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t ar
         "r+"
     );
     accepted->stream_socket_tcp_nodelay = resource->stream_socket_tcp_nodelay;
+#if PTN_HAVE_OPENSSL
+    accepted->ssl = accepted_ssl;
+#endif
     return ptn_resource(accepted);
 #endif
 }
@@ -170648,6 +171825,25 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
         ptn_string_operand_free(address);
         return result;
     }
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+    PtnStreamTlsScheme tls_scheme;
+    const char *tls_prefix = NULL;
+    size_t tls_prefix_len = 0;
+    if (ptn_stream_socket_address_tls_scheme(address, &tls_scheme, &tls_prefix, &tls_prefix_len)) {
+        (void)tls_prefix;
+        PtnValue result = ptn_stream_socket_server_open_tls(
+            runtime,
+            address,
+            tls_scheme,
+            tls_prefix_len,
+            argc,
+            args,
+            line
+        );
+        ptn_string_operand_free(address);
+        return result;
+    }
+#endif
 #if defined(_WIN32)
     ptn_string_operand_free(address);
     ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): not supported on this platform", line);
@@ -170746,6 +171942,13 @@ static int ptn_stream_resource_is_socket_like(PtnResource *resource) {
     const char *uri = resource->stream_uri;
     return ptn_ascii_case_has_prefix(uri, "tcp://") ||
         ptn_ascii_case_has_prefix(uri, "udp://") ||
+        ptn_ascii_case_has_prefix(uri, "ssl://") ||
+        ptn_ascii_case_has_prefix(uri, "tls://") ||
+        ptn_ascii_case_has_prefix(uri, "tlsv1.0://") ||
+        ptn_ascii_case_has_prefix(uri, "tlsv1.1://") ||
+        ptn_ascii_case_has_prefix(uri, "tlsv1.2://") ||
+        ptn_ascii_case_has_prefix(uri, "tlsv1.3://") ||
+        ptn_ascii_case_has_prefix(uri, "sslv3://") ||
         ptn_ascii_case_has_prefix(uri, "unix://") ||
         ptn_ascii_case_has_prefix(uri, "udg://");
 }
@@ -202355,6 +203558,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "openssl_open", 5, 6, ptn_internal_openssl_open },
         { "openssl_pkcs12_read", 3, 3, ptn_internal_openssl_pkcs12_read },
         { "openssl_pkcs7_verify", 2, 7, ptn_internal_openssl_pkcs7_verify },
+        { "openssl_pkey_export", 2, 4, ptn_internal_openssl_pkey_export },
         { "openssl_pkey_export_to_file", 2, 4, ptn_internal_openssl_pkey_export_to_file },
         { "openssl_pkey_get_private", 1, 2, ptn_internal_openssl_pkey_get_private },
         { "openssl_pkey_new", 0, 1, ptn_internal_openssl_pkey_new },
@@ -202364,6 +203568,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "openssl_seal", 5, 6, ptn_internal_openssl_seal },
         { "openssl_spki_new", 2, 3, ptn_internal_openssl_spki_new },
         { "openssl_spki_verify", 1, 1, ptn_internal_openssl_spki_verify },
+        { "openssl_x509_export", 2, 3, ptn_internal_openssl_x509_export },
+        { "openssl_x509_export_to_file", 2, 3, ptn_internal_openssl_x509_export_to_file },
         { "openssl_x509_parse", 1, 2, ptn_internal_openssl_x509_parse },
         { "openssl_x509_read", 1, 1, ptn_internal_openssl_x509_read },
         { "ord", 1, 1, ptn_internal_ord },
@@ -247660,6 +248866,75 @@ static int ptn_eval_parse_method_call_tail(
     return consumed;
 }
 
+static int ptn_eval_parse_array_offset_tail(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *value_io
+) {
+    size_t cursor = *pos;
+    int consumed = 0;
+    while (1) {
+        size_t bracket = ptn_eval_skip_ws(code, len, cursor);
+        if (bracket >= len || code[bracket] != '[') {
+            break;
+        }
+        cursor = ptn_eval_skip_ws(code, len, bracket + 1);
+        if (cursor < len && code[cursor] == ']') {
+            break;
+        }
+        PtnValue key = ptn_null();
+        if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &key)) {
+            return 0;
+        }
+        if (!ptn_eval_consume_char(code, len, &cursor, ']')) {
+            ptn_value_destroy(&key);
+            return 0;
+        }
+        PtnLookupResult lookup = ptn_offset_lookup(
+            runtime,
+            ptn_value_deref(*value_io),
+            key,
+            line,
+            0
+        );
+        ptn_value_destroy(&key);
+        ptn_value_destroy(value_io);
+        if (lookup.exists) {
+            *value_io = lookup.value;
+        } else {
+            ptn_value_destroy(&lookup.value);
+            *value_io = ptn_null();
+        }
+        consumed = 1;
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    *pos = cursor;
+    return consumed;
+}
+
+static void ptn_eval_parse_postfix_tails(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *value_io
+) {
+    while (runtime == NULL || runtime->exceptions->active_exception == NULL) {
+        size_t before = *pos;
+        (void)ptn_eval_parse_method_call_tail(runtime, code, len, pos, line, value_io);
+        (void)ptn_eval_parse_array_offset_tail(runtime, code, len, pos, line, value_io);
+        if (*pos == before) {
+            break;
+        }
+    }
+}
+
 static int ptn_eval_parse_function_call_expression(
     PtnRuntime *runtime,
     const char *code,
@@ -247783,6 +249058,7 @@ static int ptn_eval_parse_function_call_expression(
     free(arg_names);
     free(function_name);
     *pos = cursor;
+    ptn_eval_parse_postfix_tails(runtime, code, len, pos, line, out);
     return 1;
 }
 
@@ -248628,6 +249904,22 @@ static int ptn_eval_parse_primary_expression(
     if (cursor >= len) {
         return 0;
     }
+    if (code[cursor] == '@') {
+        cursor++;
+        int64_t saved_error_reporting = runtime == NULL ? 0 : runtime->diagnostics.error_reporting;
+        if (runtime != NULL) {
+            runtime->diagnostics.error_reporting = 0;
+        }
+        int parsed = ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, out);
+        if (runtime != NULL) {
+            runtime->diagnostics.error_reporting = saved_error_reporting;
+        }
+        if (!parsed) {
+            return 0;
+        }
+        *pos = cursor;
+        return 1;
+    }
     if (ptn_eval_parse_static_set_state_call(runtime, code, len, pos, line, out)) {
         return 1;
     }
@@ -248659,9 +249951,27 @@ static int ptn_eval_parse_primary_expression(
         return 1;
     }
     if (code[cursor] == '\'' || code[cursor] == '"') {
-        return ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
+        int parsed = ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
+        if (parsed) {
+            ptn_eval_parse_postfix_tails(runtime, code, len, pos, line, out);
+        }
+        return parsed;
+    }
+    if (code[cursor] == '(') {
+        cursor++;
+        if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, out)) {
+            return 0;
+        }
+        if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
+            ptn_value_destroy(out);
+            return 0;
+        }
+        *pos = cursor;
+        ptn_eval_parse_postfix_tails(runtime, code, len, pos, line, out);
+        return 1;
     }
     if (ptn_eval_parse_array_literal(runtime, code, len, pos, line, out)) {
+        ptn_eval_parse_postfix_tails(runtime, code, len, pos, line, out);
         return 1;
     }
     if (ptn_eval_parse_function_call_expression(runtime, code, len, pos, line, out)) {
@@ -248674,7 +249984,7 @@ static int ptn_eval_parse_primary_expression(
         }
         PtnValue value = ptn_eval_read_array_path(runtime, &path, line);
         ptn_eval_array_path_free(&path);
-        (void)ptn_eval_parse_method_call_tail(runtime, code, len, &cursor, line, &value);
+        ptn_eval_parse_postfix_tails(runtime, code, len, &cursor, line, &value);
         *out = value;
         *pos = cursor;
         return 1;
@@ -249681,6 +250991,43 @@ static int ptn_dynamic_execute_phar_static_statement(
     return 1;
 }
 
+static PtnValue ptn_dynamic_concat_values(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnStringOperand left_string = ptn_value_to_string_operand_with_runtime(runtime, left, line);
+    PtnStringOperand right_string = ptn_value_to_string_operand_with_runtime(runtime, right, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        return ptn_null();
+    }
+    if (left_string.len > SIZE_MAX - right_string.len) {
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        ptn_abort_out_of_memory();
+    }
+    size_t total_len = left_string.len + right_string.len;
+    char *combined = malloc(total_len + 1);
+    if (combined == NULL) {
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        ptn_abort_out_of_memory();
+    }
+    if (left_string.len != 0) {
+        memcpy(combined, left_string.data, left_string.len);
+    }
+    if (right_string.len != 0) {
+        memcpy(combined + left_string.len, right_string.data, right_string.len);
+    }
+    combined[total_len] = '\0';
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return ptn_owned_string_len((unsigned char *)combined, total_len);
+}
+
 static int ptn_dynamic_execute_assignment_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -249695,7 +251042,9 @@ static int ptn_dynamic_execute_assignment_statement(
     }
 
     size_t operator_pos = ptn_eval_skip_ws(code, len, cursor);
-    if (operator_pos + 1 < len && code[operator_pos] == '+' && code[operator_pos + 1] == '=') {
+    int add_assign = operator_pos + 1 < len && code[operator_pos] == '+' && code[operator_pos + 1] == '=';
+    int concat_assign = operator_pos + 1 < len && code[operator_pos] == '.' && code[operator_pos + 1] == '=';
+    if (add_assign || concat_assign) {
         cursor = operator_pos + 2;
         PtnValue rhs = ptn_null();
         if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &rhs)) {
@@ -249706,7 +251055,9 @@ static int ptn_dynamic_execute_assignment_statement(
             PtnValue current = ptn_value_clone_deref(
                 ptn_eval_read_variable(runtime, target.name, line)
             );
-            PtnValue added = ptn_add(runtime, current, rhs, line);
+            PtnValue added = concat_assign
+                ? ptn_dynamic_concat_values(runtime, current, rhs, line)
+                : ptn_add(runtime, current, rhs, line);
             ptn_value_destroy(&current);
             ptn_value_destroy(&rhs);
             if (!ptn_runtime_has_active_exception(runtime)) {
@@ -249754,7 +251105,9 @@ static int ptn_dynamic_execute_assignment_statement(
                     line
                 )
                 : ptn_value_clone(base);
-            PtnValue added = ptn_add(runtime, current, rhs, line);
+            PtnValue added = concat_assign
+                ? ptn_dynamic_concat_values(runtime, current, rhs, line)
+                : ptn_add(runtime, current, rhs, line);
             ptn_value_destroy(&current);
             ptn_value_destroy(&rhs);
             if (!ptn_runtime_has_active_exception(runtime)) {
@@ -250549,6 +251902,85 @@ static int ptn_dynamic_execute_for_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_while_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "while")) {
+        return 0;
+    }
+    cursor += strlen("while");
+    if (!ptn_eval_consume_char(code, end, &cursor, '(')) {
+        return 0;
+    }
+    size_t condition_open = cursor - 1;
+    size_t condition_close = ptn_eval_find_matching_delimiter(code, end, condition_open, '(', ')');
+    if (condition_close >= end) {
+        return 0;
+    }
+    size_t condition_start = condition_open + 1;
+    size_t condition_end = condition_close;
+    size_t line = ptn_eval_line_for_pos(code, *pos, base_line);
+    cursor = ptn_eval_skip_ws(code, end, condition_close + 1);
+    if (!ptn_eval_consume_char(code, end, &cursor, '{')) {
+        return 0;
+    }
+    size_t body_start = cursor;
+    size_t body_end = ptn_eval_find_matching_brace(code, end, body_start - 1);
+    if (body_end >= end) {
+        return 0;
+    }
+
+    while (!ptn_runtime_has_active_exception(runtime)) {
+        size_t condition_cursor = ptn_eval_skip_ws(code, condition_end, condition_start);
+        PtnValue condition = ptn_null();
+        if (!ptn_eval_parse_expression(
+                runtime,
+                code,
+                condition_end,
+                &condition_cursor,
+                line,
+                &condition
+            )) {
+            return 0;
+        }
+        condition_cursor = ptn_eval_skip_ws(code, condition_end, condition_cursor);
+        if (condition_cursor < condition_end) {
+            ptn_value_destroy(&condition);
+            return 0;
+        }
+        int run_body = ptn_is_truthy(condition);
+        ptn_value_destroy(&condition);
+        if (!run_body) {
+            break;
+        }
+        size_t nested = body_start;
+        int ok = ptn_dynamic_execute_statements_range(
+            runtime,
+            code,
+            len,
+            &nested,
+            body_end,
+            base_line,
+            return_out,
+            returned
+        );
+        if (!ok || *returned || ptn_runtime_has_active_exception(runtime)) {
+            *pos = body_end + 1;
+            return ok;
+        }
+    }
+    *pos = body_end + 1;
+    return 1;
+}
+
 static int ptn_dynamic_skip_class_declaration(const char *code, size_t len, size_t *pos) {
     size_t cursor = ptn_eval_skip_ws(code, len, *pos);
     while (1) {
@@ -250639,6 +252071,22 @@ static int ptn_dynamic_execute_statements_range(
         }
         *pos = statement_pos;
         if (ptn_dynamic_execute_try_catch_statement(
+                runtime,
+                code,
+                len,
+                pos,
+                end,
+                base_line,
+                return_out,
+                returned
+            )) {
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_execute_while_statement(
                 runtime,
                 code,
                 len,

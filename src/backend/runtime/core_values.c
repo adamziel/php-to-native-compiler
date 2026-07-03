@@ -70,6 +70,7 @@
 #include <openssl/pem.h>
 #include <openssl/provider.h>
 #include <openssl/rsa.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #endif
@@ -393,6 +394,22 @@ typedef struct {
 #define PTN_STREAM_CLIENT_CONNECT 4
 #define PTN_STREAM_SERVER_BIND 4
 #define PTN_STREAM_SERVER_LISTEN 8
+#define PTN_STREAM_CRYPTO_METHOD_SSLV2_CLIENT 3
+#define PTN_STREAM_CRYPTO_METHOD_SSLV3_CLIENT 5
+#define PTN_STREAM_CRYPTO_METHOD_SSLV23_CLIENT 57
+#define PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT 121
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_0_CLIENT 9
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_1_CLIENT 17
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_2_CLIENT 33
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_3_CLIENT 65
+#define PTN_STREAM_CRYPTO_METHOD_SSLV2_SERVER 2
+#define PTN_STREAM_CRYPTO_METHOD_SSLV3_SERVER 4
+#define PTN_STREAM_CRYPTO_METHOD_SSLV23_SERVER 120
+#define PTN_STREAM_CRYPTO_METHOD_TLS_SERVER 120
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_0_SERVER 8
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER 16
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER 32
+#define PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER 64
 #define PTN_ZLIB_ENCODING_RAW -15
 #define PTN_ZLIB_ENCODING_GZIP 31
 #define PTN_ZLIB_ENCODING_DEFLATE 15
@@ -1466,6 +1483,13 @@ struct PtnResource {
     int manual_close_forbidden;
     size_t object_id;
     PtnRuntime *object_id_runtime;
+#if PTN_HAVE_OPENSSL
+    SSL *ssl;
+    SSL_CTX *ssl_ctx;
+    int ssl_stream_error;
+    void *ssl_extra;
+    PtnResourceHookDataFree ssl_extra_free;
+#endif
 };
 
 struct PtnStreamFilter {
@@ -4595,6 +4619,18 @@ static PTN_UNUSED int ptn_stream_resource_is_open(PtnResource *resource) {
     return resource->stream != NULL || resource->memory_stream != NULL;
 }
 
+static PTN_UNUSED void ptn_resource_init_tls_state(PtnResource *resource) {
+#if PTN_HAVE_OPENSSL
+    resource->ssl = NULL;
+    resource->ssl_ctx = NULL;
+    resource->ssl_stream_error = 0;
+    resource->ssl_extra = NULL;
+    resource->ssl_extra_free = NULL;
+#else
+    (void)resource;
+#endif
+}
+
 static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char *uri, const char *mode) {
     PtnResource *resource = malloc(sizeof(PtnResource));
     if (resource == NULL) {
@@ -4635,6 +4671,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    ptn_resource_init_tls_state(resource);
     return resource;
 }
 
@@ -4683,6 +4720,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    ptn_resource_init_tls_state(resource);
     return resource;
 }
 
@@ -4728,6 +4766,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    ptn_resource_init_tls_state(resource);
     return resource;
 }
 
@@ -4767,6 +4806,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    ptn_resource_init_tls_state(resource);
     ptn_resource_register(resource);
     return resource;
 }
@@ -4810,6 +4850,24 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
             errno = EBADF;
             return 0;
         }
+#if PTN_HAVE_OPENSSL
+        if (resource->ssl != NULL) {
+            int written = SSL_write(resource->ssl, data, len > (size_t)INT_MAX ? INT_MAX : (int)len);
+            if (getenv("PTN_DEBUG_TLS_IO") != NULL) {
+                int ssl_error = written <= 0 ? SSL_get_error(resource->ssl, written) : 0;
+                fprintf(stderr, "PTN_DEBUG_TLS_IO write uri=%s len=%zu written=%d ssl_error=%d errno=%d\n",
+                    resource->stream_uri == NULL ? "(null)" : resource->stream_uri,
+                    len,
+                    written,
+                    ssl_error,
+                    errno);
+            }
+            if (written <= 0) {
+                return 0;
+            }
+            return (size_t)written;
+        }
+#endif
         size_t written = fwrite(data, 1, len, resource->stream);
         if (written > 0) {
             (void)fflush(resource->stream);
@@ -4867,6 +4925,38 @@ static PTN_UNUSED int ptn_stream_errno_would_block(int error) {
 #endif
 }
 
+#if PTN_HAVE_OPENSSL && !defined(_WIN32)
+static PTN_UNUSED int ptn_ssl_wait_for_io(SSL *ssl, int ssl_error, int timeout_seconds) {
+    int fd = SSL_get_fd(ssl);
+    if (fd < 0 || fd >= FD_SETSIZE) {
+        return 0;
+    }
+    fd_set read_set;
+    fd_set write_set;
+    FD_ZERO(&read_set);
+    FD_ZERO(&write_set);
+    fd_set *read_ptr = NULL;
+    fd_set *write_ptr = NULL;
+    if (ssl_error == SSL_ERROR_WANT_READ) {
+        FD_SET(fd, &read_set);
+        read_ptr = &read_set;
+    } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+        FD_SET(fd, &write_set);
+        write_ptr = &write_set;
+    } else {
+        return 0;
+    }
+    struct timeval timeout;
+    timeout.tv_sec = timeout_seconds < 0 ? 0 : timeout_seconds;
+    timeout.tv_usec = 0;
+    int selected;
+    do {
+        selected = select(fd + 1, read_ptr, write_ptr, NULL, &timeout);
+    } while (selected < 0 && errno == EINTR);
+    return selected > 0;
+}
+#endif
+
 static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buffer, size_t len) {
     if (resource == NULL) {
         return 0;
@@ -4876,6 +4966,51 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
             errno = EBADF;
             return 0;
         }
+#if PTN_HAVE_OPENSSL
+        if (resource->ssl != NULL) {
+            resource->ssl_stream_error = 0;
+            for (;;) {
+                int read_len = SSL_read(resource->ssl, buffer, len > (size_t)INT_MAX ? INT_MAX : (int)len);
+                if (getenv("PTN_DEBUG_TLS_IO") != NULL) {
+                    int ssl_error_for_debug = read_len <= 0 ? SSL_get_error(resource->ssl, read_len) : 0;
+                    fprintf(stderr, "PTN_DEBUG_TLS_IO read uri=%s want=%zu read=%d ssl_error=%d errno=%d\n",
+                        resource->stream_uri == NULL ? "(null)" : resource->stream_uri,
+                        len,
+                        read_len,
+                        ssl_error_for_debug,
+                        errno);
+                }
+                if (read_len > 0) {
+                    resource->stream_timed_out = 0;
+                    return (size_t)read_len;
+                }
+                int ssl_error = SSL_get_error(resource->ssl, read_len);
+                if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+#if !defined(_WIN32)
+                    if (ptn_ssl_wait_for_io(resource->ssl, ssl_error, 10)) {
+                        continue;
+                    }
+#endif
+                    resource->stream_timed_out = 1;
+                    return 0;
+                }
+                if (ssl_error == SSL_ERROR_ZERO_RETURN ||
+                    (ssl_error == SSL_ERROR_SYSCALL && errno == 0)) {
+                    return 0;
+                }
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+                unsigned long ssl_reason = ERR_peek_error();
+                if (ssl_error == SSL_ERROR_SSL &&
+                    ERR_GET_REASON(ssl_reason) == SSL_R_UNEXPECTED_EOF_WHILE_READING) {
+                    ERR_clear_error();
+                    return 0;
+                }
+#endif
+                resource->ssl_stream_error = 1;
+                return 0;
+            }
+        }
+#endif
         size_t read_len = fread(buffer, 1, len, resource->stream);
         if (read_len == 0 && feof(resource->stream) && len != 0) {
             clearerr(resource->stream);
@@ -5038,6 +5173,11 @@ static PTN_UNUSED int ptn_stream_eof(PtnResource *resource) {
         if (resource->stream == NULL) {
             return 1;
         }
+#if PTN_HAVE_OPENSSL
+        if (resource->ssl != NULL) {
+            return (SSL_get_shutdown(resource->ssl) & SSL_RECEIVED_SHUTDOWN) != 0;
+        }
+#endif
         return feof(resource->stream) != 0;
     }
     return resource->memory_stream->eof != 0;
@@ -5051,6 +5191,11 @@ static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
         if (resource->stream == NULL) {
             return 1;
         }
+#if PTN_HAVE_OPENSSL
+        if (resource->ssl != NULL) {
+            return resource->ssl_stream_error != 0;
+        }
+#endif
         return ferror(resource->stream) != 0;
     }
     return resource->memory_stream->error != 0;
@@ -5064,6 +5209,9 @@ static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
         if (resource->stream == NULL) {
             return;
         }
+#if PTN_HAVE_OPENSSL
+        resource->ssl_stream_error = 0;
+#endif
         clearerr(resource->stream);
         return;
     }
@@ -5236,6 +5384,24 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     ptn_stream_filter_chain_free(resource->write_filters);
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+#if PTN_HAVE_OPENSSL
+    if (resource->ssl != NULL) {
+        SSL_shutdown(resource->ssl);
+        SSL_free(resource->ssl);
+        resource->ssl = NULL;
+    }
+    if (resource->ssl_ctx != NULL) {
+        SSL_CTX_free(resource->ssl_ctx);
+        resource->ssl_ctx = NULL;
+    }
+    if (resource->ssl_extra != NULL) {
+        if (resource->ssl_extra_free != NULL) {
+            resource->ssl_extra_free(resource->ssl_extra);
+        }
+        resource->ssl_extra = NULL;
+        resource->ssl_extra_free = NULL;
+    }
+#endif
     if (resource->stream != NULL) {
         if (resource->stream_backend != PTN_STREAM_BACKEND_OUTPUT) {
             fclose(resource->stream);

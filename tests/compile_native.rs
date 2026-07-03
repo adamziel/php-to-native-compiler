@@ -41804,6 +41804,53 @@ var_dump(openssl_error_string());
 }
 
 #[test]
+fn compile_openssl_certificate_export_primitives_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-certificate-export-primitives");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("openssl-certificate-export-primitives.php");
+    let output = root.join("openssl-certificate-export-primitives-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(OPENSSL_KEYTYPE_RSA);
+$key = openssl_pkey_new([
+    'private_key_bits' => 1024,
+    'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    'encrypt_key' => false,
+]);
+var_dump($key !== false);
+$csr = openssl_csr_new(['commonName' => 'row-pack-export'], $key);
+$cert = openssl_csr_sign($csr, null, $key, 1);
+var_dump(openssl_x509_export($cert, $certText));
+var_dump(openssl_x509_export_to_file($cert, __DIR__ . '/cert-out.pem'));
+var_dump(openssl_pkey_export($key, $keyText, null));
+var_dump(openssl_pkey_export_to_file($key, __DIR__ . '/key-out.pem', null));
+$parsed = openssl_x509_parse($certText);
+var_dump($parsed['subject']['CN']);
+var_dump(strlen(file_get_contents(__DIR__ . '/cert-out.pem')) > 0);
+var_dump(strlen($keyText) > 0);
+var_dump(strlen(file_get_contents(__DIR__ . '/key-out.pem')) > 0);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(15) \"row-pack-export\"\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hash_context_file_and_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-hash-context-file-diagnostics");
     fs::create_dir_all(&root).unwrap();
@@ -56807,6 +56854,35 @@ echo shell_exec($cmd), \"\\n\";\n",
     let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "123\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_php_binary_can_reinvoke_current_script_as_worker() {
+    let root = temp_dir("ptn-phpc-php-binary-current-script-worker");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-binary-current-script-worker.php");
+    fs::write(
+        &input,
+        "<?php\n\
+if (($argv[1] ?? '') === 'worker') {\n\
+    echo \"worker\\n\";\n\
+    var_dump($_SERVER['SCRIPT_FILENAME'] === __FILE__);\n\
+    exit;\n\
+}\n\
+$source = __FILE__;\n\
+var_dump(file_put_contents($source, '<?php syntax error') !== false);\n\
+$cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($source) . ' worker';\n\
+echo shell_exec($cmd);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nworker\nbool(true)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -93553,6 +93629,50 @@ echo strstr(get_class($object), \"\\0\", true), \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static int ptn_declared_user_classes[1] = { 0 }"));
     assert!(c_source.contains("runtime.declared_user_classes[0] = 1"));
+}
+
+#[test]
+fn compile_included_class_method_magic_file_uses_include_source_to_native_binary() {
+    let root = temp_dir("ptn-native-include-class-method-magic-file");
+    let helper_dir = root.join("helpers");
+    fs::create_dir_all(&helper_dir).unwrap();
+    let input = root.join("main.php");
+    let included = helper_dir.join("worker.inc.php");
+    let output = root.join("include-class-method-magic-file-bin");
+    fs::write(
+        &included,
+        "<?php
+class IncludedWorker {
+    public function describe(): void {
+        echo basename(__FILE__), \"\\n\";
+        echo basename(__DIR__), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+require __DIR__ . '/helpers/worker.inc.php';
+$worker = new IncludedWorker();
+$worker->describe();
+echo basename(__FILE__), \"\\n\";
+echo basename(__DIR__), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let root_name = root.file_name().unwrap().to_string_lossy();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("worker.inc.php\nhelpers\nmain.php\n{root_name}\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
