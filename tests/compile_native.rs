@@ -61044,23 +61044,24 @@ echo "Count: " . iterator_count($it) . "\n";
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "Count: 3\nCount: 3\nCount: 3\n"
-    );
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stderr.contains("Fatal error: Uncaught Error: Iterator does not support rewinding"),
-        "{stderr}"
+        stdout.starts_with("Count: 3\nCount: 3\nCount: 3\n"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("[internal function]: InternalIterator->rewind()"),
-        "{stderr}"
+        stdout.contains("Fatal error: Uncaught Error: Iterator does not support rewinding"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("[internal function]: IteratorIterator->rewind()"),
-        "{stderr}"
+        stdout.contains("[internal function]: InternalIterator->rewind()"),
+        "{stdout}"
     );
+    assert!(
+        stdout.contains("[internal function]: IteratorIterator->rewind()"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_iterator_call_method"));
