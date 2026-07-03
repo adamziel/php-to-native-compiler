@@ -3022,6 +3022,72 @@ fn phpt_classifier_keeps_fixed_lazy_raw_reflection_property_row_runnable_by_path
 }
 
 #[test]
+fn phpt_classifier_keeps_verified_metadata_rows_runnable_by_path() {
+    let cases = [
+        (
+            "Zend/tests/magic_methods/magic_methods_019.phpt",
+            "--TEST--\n__unserialize first parameter\n--FILE--\n<?php\nclass Box { public function __unserialize(array|string $data): void {} }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/magic_methods/magic_methods_serialize.phpt",
+            "--TEST--\n__serialize declaration\n--FILE--\n<?php\nclass Box { public function __serialize(): array { return []; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/magic_methods/magic_methods_sleep.phpt",
+            "--TEST--\n__sleep declaration\n--FILE--\n<?php\nclass Box { public function __sleep() { return []; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/magic_methods/magic_methods_unserialize.phpt",
+            "--TEST--\n__unserialize declaration\n--FILE--\n<?php\nclass Box { public function __unserialize(array $data): void {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/magic_interaction.phpt",
+            "--TEST--\nproperty hook magic interaction\n--FILE--\n<?php\nclass A { public $prop { get => 'prop'; set {} } }\nclass B extends A { public function __get($name) {} public function __set($name, $value) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/unserialize.phpt",
+            "--TEST--\nunserialize hooks\n--FILE--\n<?php\nclass Box { public $prop { get {} set {} } }\nunserialize('O:3:\"Box\":0:{}');\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/property_hooks/ReflectionProperty_getSetRawValue.phpt",
+            "--TEST--\nraw values\n--FILE--\n<?php\nclass Box { public $prop { get => $this->prop; set => $value; } }\n$ref = new ReflectionProperty(Box::class, 'prop');\n$box = new Box();\n$ref->setRawValue($box, 1);\nvar_dump($ref->getRawValue($box));\n--EXPECT--\nint(1)\n",
+        ),
+        (
+            "ext/reflection/tests/property_hooks/ReflectionProperty_isInitialized.phpt",
+            "--TEST--\nhooked initialized\n--FILE--\n<?php\nclass Box { public string $prop { get => $this->prop; set => $value; } }\n$ref = new ReflectionProperty(Box::class, 'prop');\nvar_dump($ref->isInitialized(new Box()));\n--EXPECT--\nbool(false)\n",
+        ),
+        (
+            "ext/reflection/tests/property_hooks/gh17713.phpt",
+            "--TEST--\nraw lazy target resolution\n--FILE--\n<?php\nclass Base { public $prop { get => 1; set {} } }\nclass Child extends Base { public $prop { get => $this->prop; set => $value; } }\n$ref = new ReflectionProperty(Base::class, 'prop');\n$ref->setRawValueWithoutLazyInitialization(new Child(), 1);\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/bug63614.phpt",
+            "--TEST--\nclass constant static local key reflection\n--FILE--\n<?php\nclass Box { const A = 0; function run() { static $a = [self::A => 'a']; } }\n$ref = new ReflectionMethod(Box::class, 'run');\nprint_r($ref->getStaticVariables());\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_leaves_lazy_is_readable_reflection_row_excluded_by_path() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nlazy isReadable remains excluded\n--FILE--\n<?php\n#[AllowDynamicProperties]\nclass Box { public function __isset($name) { return true; } }\n$lazy = (new ReflectionClass(Box::class))->newLazyProxy(fn() => new Box());\n$ref = new ReflectionProperty(new Box(), 'prop');\nvar_dump($ref->isReadable(null, $lazy));\n--EXPECT--\n",
+        "ext/reflection/tests/ReflectionProperty_isReadable_lazy_isset.phpt",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_declared_reflection_property_rows_runnable() {
     let classification = classify(
         "--TEST--\nreflection property\n--FILE--\n<?php\nclass Bag { public $value = 1; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getName(), $ref->getModifiers());\n--EXPECT--\n",
