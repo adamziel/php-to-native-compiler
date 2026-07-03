@@ -2698,6 +2698,26 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/RecursiveIteratorIterator_dtor_order.phpt",
+            "--TEST--\nrecursive dtor order\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\nforeach ($it as $value) {}\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug69970.phpt",
+            "--TEST--\nrecursive hook rewind\n--FILE--\n<?php\nclass RecursiveArrayIteratorIterator extends RecursiveIteratorIterator { function rewind(): void {} function endChildren(): void { parent::rewind(); } }\n$it = new RecursiveArrayIteratorIterator(new RecursiveArrayIterator([[1]]));\nforeach ($it as $value) {}\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/spl_classes.phpt",
+            "--TEST--\nspl classes\n--FILE--\n<?php\nvar_dump(is_array(spl_classes()));\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/DirectoryIterator_empty_constructor.phpt",
+            "--TEST--\ndirectory empty constructor\n--FILE--\n<?php\nnew DirectoryIterator('');\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/gh16588.phpt",
+            "--TEST--\nspl object storage serialize mutation\n--FILE--\n<?php\nclass C { function __serialize(): array { return []; } }\n$s = new SplObjectStorage();\n$s[new C] = new stdClass();\necho $s->serialize();\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/bug72684.phpt",
             "--TEST--\nclosed generator append iterator\n--FILE--\n<?php\nfunction createGenerator() { yield 1; }\n$generator = createGenerator();\n$appendIterator = new AppendIterator();\n$appendIterator->append($generator);\niterator_to_array($appendIterator);\ntry { iterator_to_array($appendIterator); } catch (Exception $e) { echo $e->getMessage(); }\n--EXPECT--\n",
         ),
