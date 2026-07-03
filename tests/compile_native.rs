@@ -62641,6 +62641,59 @@ try {
 }
 
 #[test]
+fn compile_dom_xml_document_xhtml_empty_element_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xml-document-xhtml-empty-element-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xml-document-xhtml-empty-element-serialization.php");
+    let output = root.join("dom-xml-document-xhtml-empty-element-serialization-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = DOM\XMLDocument::createFromString(<<<XML
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <input type="checkbox" checked="checked" />
+    <option selected="" />
+    <textarea placeholder="" />
+    <br />
+    <custom />
+</html>
+XML);
+
+foreach (['input', 'option', 'textarea', 'br', 'custom'] as $name) {
+    echo $dom->saveXML($dom->getElementsByTagName($name)[0]), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<input xmlns=\"http://www.w3.org/1999/xhtml\" type=\"checkbox\" checked=\"checked\" />\n",
+            "<option xmlns=\"http://www.w3.org/1999/xhtml\" selected=\"\"></option>\n",
+            "<textarea xmlns=\"http://www.w3.org/1999/xhtml\" placeholder=\"\"></textarea>\n",
+            "<br xmlns=\"http://www.w3.org/1999/xhtml\" />\n",
+            "<custom xmlns=\"http://www.w3.org/1999/xhtml\"></custom>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_xhtml_namespace_uri"));
+    assert!(c_source.contains("ptn_xml_html_void_element_name"));
+}
+
+#[test]
 fn compile_dom_modern_attribute_reconciliation_to_native_binary() {
     let root = temp_dir("ptn-native-dom-modern-attribute-reconciliation");
     fs::create_dir_all(&root).unwrap();

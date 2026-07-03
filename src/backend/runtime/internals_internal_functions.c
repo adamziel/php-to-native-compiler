@@ -144823,8 +144823,6 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
     }
     if (node->child_count == 0) {
         int xhtml_namespace_element =
-            document != NULL &&
-            document->html_document &&
             node->namespace_uri != NULL &&
             strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0;
         if (ptn_xml_serialize_no_empty_tag ||
