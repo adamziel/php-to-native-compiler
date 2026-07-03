@@ -10073,15 +10073,7 @@ static PTN_UNUSED void ptn_array_literal_append_entry(
 }
 
 static PTN_UNUSED void ptn_generator_end_activation(PtnGenerator *generator) {
-    if (generator == NULL || generator->activation_object_id == 0) {
-        return;
-    }
-    ptn_runtime_release_object_id(
-        generator->activation_object_id_runtime,
-        generator->activation_object_id
-    );
-    generator->activation_object_id_runtime = NULL;
-    generator->activation_object_id = 0;
+    (void)generator;
 }
 
 static PTN_UNUSED void ptn_generator_data_free(void *data) {
@@ -10181,12 +10173,8 @@ static PTN_UNUSED PtnGenerator *ptn_generator_from_value(PtnValue value) {
 }
 
 static PTN_UNUSED void ptn_generator_begin_activation(PtnRuntime *runtime, PtnGenerator *generator) {
-    if (generator == NULL || generator->activation_object_id != 0) {
-        return;
-    }
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    generator->activation_object_id_runtime = root;
-    generator->activation_object_id = ptn_runtime_alloc_object_id(root);
+    (void)runtime;
+    (void)generator;
 }
 
 static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_ref) {
