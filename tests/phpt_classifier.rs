@@ -1621,6 +1621,39 @@ fn phpt_classifier_allows_supported_generator_reference_frontier_rows() {
 }
 
 #[test]
+fn phpt_classifier_allows_generator_fiber_lifecycle_row_pack() {
+    let fiber_body = "--TEST--\nfiber lifecycle\n--FILE--\n<?php\n$fiber = new Fiber(function () {\n    Fiber::suspend();\n});\n$fiber->start();\n--EXPECT--\n";
+    let generator_body = "--TEST--\ngenerator lifecycle\n--FILE--\n<?php\nfunction gen(array $array) {\n    foreach ($array as $value) {\n        yield from [$value];\n    }\n}\n$gen = gen([1]);\n$gen->current();\n--EXPECT--\n";
+    let spl_body = "--TEST--\ngenerator spl lifecycle\n--FILE--\n<?php\nfunction dumpElement() {\n    list($value) = yield;\n    var_dump($value);\n}\n$fixedArray = new SplFixedArray(1);\n$fixedArray[0] = 'the element';\n$generator = dumpElement();\n$generator->send($fixedArray);\n--EXPECT--\nstring(11) \"the element\"\n";
+
+    let cases = [
+        ("Zend/tests/generators/bug74840.phpt", generator_body),
+        ("Zend/tests/fibers/gh9916-008.phpt", fiber_body),
+        ("Zend/tests/fibers/gh15108-006.phpt", fiber_body),
+        ("Zend/tests/fibers/gh9735-008.phpt", fiber_body),
+        ("Zend/tests/generators/bug66041.phpt", spl_body),
+        (
+            "Zend/tests/fibers/fatal-error-in-nested-fiber.phpt",
+            fiber_body,
+        ),
+        ("Zend/tests/generators/bug71013.phpt", generator_body),
+        ("Zend/tests/generators/gh15330-005.phpt", generator_body),
+        ("Zend/tests/fibers/resume.phpt", fiber_body),
+        ("Zend/tests/fibers/destructors_005.phpt", fiber_body),
+        ("Zend/tests/fibers/gh9916-003.phpt", fiber_body),
+        ("Zend/tests/fibers/gh15108-001.phpt", fiber_body),
+    ];
+
+    for (relative_path, phpt) in cases {
+        let classification = classify_at_relative_path(phpt, relative_path);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{relative_path}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_return_from_by_ref_generator_runnable() {
     let classification = classify_at_relative_path(
         "--TEST--\nreturn from by ref generator\n--FILE--\n<?php\nfunction &gen() {\n    yield;\n    $arr = [42];\n    return $arr[0];\n}\nfunction gen2() {\n    var_dump(yield from gen());\n}\ngen2()->next();\n--EXPECT--\nint(42)\n",

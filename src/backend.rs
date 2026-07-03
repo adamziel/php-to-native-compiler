@@ -42061,7 +42061,11 @@ fn direct_yield_argument_indexes(arguments: &[ValueExpr]) -> Option<Vec<usize>> 
         .iter()
         .enumerate()
         .filter_map(|(index, argument)| {
-            matches!(argument, ValueExpr::Yield { .. }).then_some(index)
+            matches!(
+                argument,
+                ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. }
+            )
+            .then_some(index)
         })
         .collect();
     if indexes.len() == 1 {
@@ -44965,7 +44969,10 @@ impl ValueEmitter {
         if !self.current_function_is_generator {
             return;
         }
-        if matches!(value, ValueExpr::Yield { .. }) {
+        if matches!(
+            value,
+            ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. }
+        ) {
             self.set_generator_yield_assignment_variable(
                 name,
                 GeneratorYieldAssignmentSource::Direct,
@@ -44988,7 +44995,10 @@ impl ValueEmitter {
         for name in &names {
             self.remove_generator_yield_assignment_variable(name);
         }
-        if !matches!(value, ValueExpr::Yield { .. }) {
+        if !matches!(
+            value,
+            ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. }
+        ) {
             return;
         }
         let mut assignments = Vec::new();
@@ -45019,7 +45029,10 @@ impl ValueEmitter {
             .iter()
             .enumerate()
             .filter_map(|(index, argument)| {
-                if matches!(argument, ValueExpr::Yield { .. }) {
+                if matches!(
+                    argument,
+                    ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. }
+                ) {
                     return Some(GeneratorSendArgument {
                         index,
                         source: GeneratorSendArgumentSource::DirectYieldExpr,

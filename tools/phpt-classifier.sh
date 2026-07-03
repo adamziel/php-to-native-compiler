@@ -1860,6 +1860,20 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_generator_by_reference_yield_from_diagnostic_row() {
             return ptn_path ~ /Zend\/tests\/generators\/yield_from_by_reference[.]phpt$/
         }
+        function ptn_supported_generator_fiber_lifecycle_row() {
+            return ptn_path ~ /Zend\/tests\/generators\/bug74840[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh9916-008[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh15108-006[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh9735-008[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/generators\/bug66041[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/fatal-error-in-nested-fiber[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/generators\/bug71013[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/generators\/gh15330-005[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/resume[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/destructors_005[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh9916-003[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh15108-001[.]phpt$/
+        }
         function ptn_has_direct_assignment_yield(line) {
             return line ~ /(^|[^=!<>])[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*yield([^[:alnum:]_]|$)/
         }
@@ -1959,7 +1973,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 override_interface_methods[method_match[1]] = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/ &&
-                !ptn_supported_fiber_surface_line(line)) {
+                !ptn_supported_fiber_surface_line(line) &&
+                !ptn_supported_generator_fiber_lifecycle_row()) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit
@@ -1970,7 +1985,9 @@ ptn_phpt_first_unsupported_language_surface() {
             if (ptn_has_generator_resume_call(line)) {
                 ptn_generator_resume_call_context = 1
             }
-            if (ptn_generator_assignment_yield_context && ptn_generator_resume_call_context) {
+            if (ptn_generator_assignment_yield_context &&
+                ptn_generator_resume_call_context &&
+                !ptn_supported_generator_fiber_lifecycle_row()) {
                 print "unsupported-generator-runtime\trequires Generator::send/next/throw continuation for yielded assignment expressions, outside PTN collected generator runtime"
                 found = 1
                 exit
@@ -2000,7 +2017,8 @@ ptn_phpt_first_unsupported_language_surface() {
                     !ptn_supported_append_iterator_surface_line(line) &&
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
                     !ptn_supported_directory_iterator_surface_line(line) &&
-                    !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
+                    !ptn_supported_recursive_directory_iterator_surface_line(line) &&
+                    !ptn_supported_generator_fiber_lifecycle_row()) ||
                 (ptn_has_unmodeled_spl_function(line) &&
                     !ptn_supported_spl_helper_function_line(line) &&
                     !ptn_supported_spl_autoload_helper_function_line(line))) {
@@ -2074,7 +2092,9 @@ ptn_phpt_first_unsupported_language_surface() {
                     ptn_defer_generator_reason("requires generator yield-from by-reference rejection, outside PTN collected generator runtime")
                 }
                 if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
-                    ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                    if (!ptn_supported_generator_fiber_lifecycle_row()) {
+                        ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                    }
                 }
                 next
             }
@@ -2086,7 +2106,9 @@ ptn_phpt_first_unsupported_language_surface() {
                     next
                 }
                 if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
-                    ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                    if (!ptn_supported_generator_fiber_lifecycle_row()) {
+                        ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                    }
                 }
                 next
             }

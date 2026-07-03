@@ -1223,6 +1223,7 @@ struct PtnGenerator {
     PtnArray *send_call_arguments;
     PtnArray *send_call_yield_indexes;
     PtnArray *send_call_yield_paths;
+    PtnArray *send_call_output_chunks;
     PtnArray *send_call_lines;
     PtnArray *send_yield_from_positions;
     PtnArray *send_yield_from_lines;
@@ -1892,6 +1893,7 @@ struct PtnRuntime {
     int generator_aborted_after_yield;
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
+    int replaying_generator_send_call;
     int owns_finally_return_suppressed_exception;
     int defer_unreferenced_destructors_for_catch;
     PtnValue deferred_yield_from_iterator_object;
@@ -2188,7 +2190,10 @@ static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
     PtnException *exception
 );
 static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out);
+static PTN_UNUSED void ptn_runtime_close_suspended_fibers(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_force_close_root_generators(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object);
