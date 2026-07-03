@@ -42147,7 +42147,13 @@ $key = openssl_pkey_new([
 var_dump($key !== false);
 $csr = openssl_csr_new(['commonName' => 'row-pack-export'], $key);
 $cert = openssl_csr_sign($csr, null, $key, 1);
+var_dump(OPENSSL_CMS_DETACHED, OPENSSL_CMS_BINARY);
+var_dump(openssl_get_privatekey($key) !== false);
+var_dump(openssl_csr_export($csr, $csrText, false));
+var_dump(strpos($csrText, 'BEGIN CERTIFICATE REQUEST') !== false);
 var_dump(openssl_x509_export($cert, $certText));
+var_dump(openssl_x509_export($cert, $certTextWithText, false));
+var_dump(strpos($certTextWithText, 'Certificate:') !== false);
 var_dump(openssl_x509_export_to_file($cert, __DIR__ . '/cert-out.pem'));
 var_dump(openssl_pkey_export($key, $keyText, null));
 var_dump(openssl_pkey_export_to_file($key, __DIR__ . '/key-out.pem', null));
@@ -42171,7 +42177,7 @@ var_dump(strlen(file_get_contents(__DIR__ . '/key-out.pem')) > 0);
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(0)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(15) \"row-pack-export\"\nbool(true)\nbool(true)\nbool(true)\n"
+        "int(0)\nbool(true)\nint(64)\nint(128)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(15) \"row-pack-export\"\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

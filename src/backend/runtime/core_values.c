@@ -61,13 +61,15 @@
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
+#include <openssl/pem.h>
 #include <openssl/cms.h>
+#include <openssl/conf.h>
+#include <openssl/dh.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/opensslv.h>
 #include <openssl/pkcs12.h>
-#include <openssl/pem.h>
 #include <openssl/provider.h>
 #include <openssl/rsa.h>
 #include <openssl/ssl.h>

@@ -38,6 +38,8 @@ static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
 #define PTN_OPENSSL_KEYTYPE_RSA 0
 #define PTN_OPENSSL_KEYTYPE_DSA 1
 #define PTN_OPENSSL_CMS_NOVERIFY 32
+#define PTN_OPENSSL_CMS_DETACHED 64
+#define PTN_OPENSSL_CMS_BINARY 128
 
 static int ptn_openssl_constant_value(const char *name, PtnValue *out) {
     if (strcmp(name, "OPENSSL_ALGO_SHA1") == 0) {
@@ -98,6 +100,14 @@ static int ptn_openssl_constant_value(const char *name, PtnValue *out) {
     }
     if (strcmp(name, "OPENSSL_CMS_NOVERIFY") == 0) {
         *out = ptn_int(PTN_OPENSSL_CMS_NOVERIFY);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_CMS_DETACHED") == 0) {
+        *out = ptn_int(PTN_OPENSSL_CMS_DETACHED);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_CMS_BINARY") == 0) {
+        *out = ptn_int(PTN_OPENSSL_CMS_BINARY);
         return 1;
     }
     if (strcmp(name, "OPENSSL_PKCS1_PADDING") == 0) {
@@ -133198,6 +133208,82 @@ static PtnValue ptn_internal_openssl_pkey_get_private(PtnRuntime *runtime, size_
     return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_PKEY, "OpenSSL key", pkey, NULL, NULL);
 }
 
+static PtnValue ptn_internal_openssl_dh_compute_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand public_key = ptn_internal_expect_string_arg(
+        runtime,
+        "openssl_dh_compute_key",
+        1,
+        "public_key",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int private_key_owned = 0;
+    EVP_PKEY *private_key = ptn_openssl_private_key_from_value(
+        runtime,
+        "openssl_dh_compute_key",
+        2,
+        "private_key",
+        args[1],
+        line,
+        &private_key_owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(public_key);
+        return ptn_null();
+    }
+    if (private_key == NULL) {
+        ptn_string_operand_free(public_key);
+        return ptn_bool(0);
+    }
+    if (public_key.len > (size_t)INT_MAX) {
+        if (private_key_owned) {
+            EVP_PKEY_free(private_key);
+        }
+        ptn_string_operand_free(public_key);
+        return ptn_bool(0);
+    }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    DH *dh = EVP_PKEY_get1_DH(private_key);
+    BIGNUM *peer_public = public_key.len == 0 ? NULL : BN_bin2bn((const unsigned char *)public_key.data, (int)public_key.len, NULL);
+    int output_capacity = dh == NULL ? 0 : DH_size(dh);
+    unsigned char *secret = output_capacity > 0 ? malloc((size_t)output_capacity + 1) : NULL;
+    if (output_capacity > 0 && secret == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int secret_len = (dh != NULL && peer_public != NULL && secret != NULL)
+        ? DH_compute_key(secret, peer_public, dh)
+        : -1;
+    if (peer_public != NULL) {
+        BN_free(peer_public);
+    }
+    if (dh != NULL) {
+        DH_free(dh);
+    }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+    if (private_key_owned) {
+        EVP_PKEY_free(private_key);
+    }
+    ptn_string_operand_free(public_key);
+    if (secret_len <= 0) {
+        free(secret);
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    secret[secret_len] = '\0';
+    ERR_clear_error();
+    return ptn_owned_string_len((char *)secret, (size_t)secret_len);
+}
+
 static PtnValue ptn_internal_openssl_pkey_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int key_owned = 0;
     EVP_PKEY *pkey = ptn_openssl_private_key_from_value(
@@ -133363,6 +133449,206 @@ static const EVP_MD *ptn_openssl_digest_from_options(PtnRuntime *runtime, PtnArr
     return digest != NULL ? digest : EVP_sha256();
 }
 
+static char *ptn_openssl_config_string_option(
+    PtnRuntime *runtime,
+    PtnArray *options,
+    const char *key,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    PtnArrayEntry *entry = ptn_openssl_array_string_entry(options, key);
+    if (entry == NULL || ptn_value_deref(entry->value).type == PTN_NULL) {
+        return NULL;
+    }
+    PtnStringOperand value = ptn_openssl_key_or_cert_string_operand(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        entry->value,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    char *copy = ptn_duplicate_string_len(value.data, value.len);
+    ptn_string_operand_free(value);
+    return copy;
+}
+
+static CONF *ptn_openssl_load_config_from_options(
+    PtnRuntime *runtime,
+    PtnArray *options,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    char *config_path = ptn_openssl_config_string_option(
+        runtime,
+        options,
+        "config",
+        function_name,
+        position,
+        argument_name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL || config_path == NULL) {
+        return NULL;
+    }
+    CONF *conf = NCONF_new(NULL);
+    long error_line = 0;
+    int ok = conf != NULL && NCONF_load(conf, config_path, &error_line) > 0;
+    free(config_path);
+    if (!ok) {
+        if (conf != NULL) {
+            NCONF_free(conf);
+        }
+        ERR_clear_error();
+        return NULL;
+    }
+    return conf;
+}
+
+static char *ptn_openssl_extension_section_name(
+    PtnRuntime *runtime,
+    CONF *conf,
+    PtnArray *options,
+    const char *option_name,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    char *section = ptn_openssl_config_string_option(
+        runtime,
+        options,
+        option_name,
+        function_name,
+        position,
+        argument_name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL || section != NULL || conf == NULL) {
+        return section;
+    }
+    const char *from_req = NCONF_get_string(conf, "req", option_name);
+    if (from_req == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    return ptn_duplicate_string(from_req);
+}
+
+static int ptn_openssl_apply_config_extensions(
+    PtnRuntime *runtime,
+    PtnArray *options,
+    X509_REQ *req,
+    X509 *cert,
+    const char *option_name,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    if (options == NULL) {
+        return 1;
+    }
+    CONF *conf = ptn_openssl_load_config_from_options(
+        runtime,
+        options,
+        function_name,
+        position,
+        argument_name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    char *section = ptn_openssl_extension_section_name(
+        runtime,
+        conf,
+        options,
+        option_name,
+        function_name,
+        position,
+        argument_name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        if (conf != NULL) {
+            NCONF_free(conf);
+        }
+        return 0;
+    }
+    if (conf == NULL || section == NULL || section[0] == '\0') {
+        free(section);
+        if (conf != NULL) {
+            NCONF_free(conf);
+        }
+        return 1;
+    }
+
+    STACK_OF(CONF_VALUE) *values = NCONF_get_section(conf, section);
+    free(section);
+    if (values == NULL) {
+        NCONF_free(conf);
+        ERR_clear_error();
+        return 1;
+    }
+
+    X509V3_CTX ctx;
+    X509V3_set_ctx(&ctx, cert, cert, req, NULL, 0);
+    X509V3_set_ctx_nodb(&ctx);
+    X509V3_set_nconf(&ctx, conf);
+
+    STACK_OF(X509_EXTENSION) *req_extensions = req != NULL ? sk_X509_EXTENSION_new_null() : NULL;
+    int ok = req == NULL || req_extensions != NULL;
+    for (int i = 0; ok && i < sk_CONF_VALUE_num(values); i++) {
+        CONF_VALUE *value = sk_CONF_VALUE_value(values, i);
+        char *name = ptn_duplicate_string(value->name != NULL ? value->name : "");
+        char *extension_value = ptn_duplicate_string(value->value != NULL ? value->value : "");
+        X509_EXTENSION *extension = X509V3_EXT_nconf(conf, &ctx, name, extension_value);
+        free(name);
+        free(extension_value);
+        if (extension == NULL) {
+            ERR_clear_error();
+            ok = 0;
+            break;
+        }
+        if (req != NULL) {
+            ok = sk_X509_EXTENSION_push(req_extensions, extension) > 0;
+            if (!ok) {
+                X509_EXTENSION_free(extension);
+            }
+        } else if (cert != NULL) {
+            ok = X509_add_ext(cert, extension, -1) == 1;
+            X509_EXTENSION_free(extension);
+        } else {
+            X509_EXTENSION_free(extension);
+        }
+    }
+    int req_extensions_added = 0;
+    if (ok && req != NULL) {
+        ok = X509_REQ_add_extensions(req, req_extensions) == 1;
+        req_extensions_added = ok;
+    }
+    if (req_extensions != NULL) {
+        if (req_extensions_added) {
+            sk_X509_EXTENSION_free(req_extensions);
+        } else {
+            sk_X509_EXTENSION_pop_free(req_extensions, X509_EXTENSION_free);
+        }
+    }
+    NCONF_free(conf);
+    if (!ok) {
+        ERR_clear_error();
+    }
+    return ok;
+}
+
 static PtnValue ptn_internal_openssl_csr_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *dn = ptn_internal_expect_array_arg(runtime, "openssl_csr_new", 1, "distinguished_names", args[0]);
     if (dn == NULL || runtime->exceptions->active_exception != NULL) {
@@ -133439,8 +133725,23 @@ static PtnValue ptn_internal_openssl_csr_new(PtnRuntime *runtime, size_t argc, c
     }
     if (ok) {
         ok = X509_REQ_set_subject_name(req, name) == 1 &&
-            X509_REQ_set_pubkey(req, pkey) == 1 &&
-            X509_REQ_sign(req, pkey, digest) > 0;
+            X509_REQ_set_pubkey(req, pkey) == 1;
+    }
+    if (ok) {
+        ok = ptn_openssl_apply_config_extensions(
+            runtime,
+            options,
+            req,
+            NULL,
+            "req_extensions",
+            "openssl_csr_new",
+            3,
+            "options",
+            line
+        );
+    }
+    if (ok) {
+        ok = X509_REQ_sign(req, pkey, digest) > 0;
     }
     if (name != NULL) {
         X509_NAME_free(name);
@@ -133586,9 +133887,23 @@ static PtnValue ptn_internal_openssl_csr_sign(PtnRuntime *runtime, size_t argc, 
     }
 
     X509 *cert = X509_REQ_to_X509(req, (int)days, pkey);
-    int ok = cert != NULL &&
-        X509_set_serialNumber(cert, serial) == 1 &&
-        X509_sign(cert, pkey, digest) > 0;
+    int ok = cert != NULL && X509_set_serialNumber(cert, serial) == 1;
+    if (ok) {
+        ok = ptn_openssl_apply_config_extensions(
+            runtime,
+            options,
+            NULL,
+            cert,
+            "x509_extensions",
+            "openssl_csr_sign",
+            5,
+            "options",
+            line
+        );
+    }
+    if (ok) {
+        ok = X509_sign(cert, pkey, digest) > 0;
+    }
     ASN1_INTEGER_free(serial);
     if (pkey_owned) {
         EVP_PKEY_free(pkey);
@@ -133601,6 +133916,36 @@ static PtnValue ptn_internal_openssl_csr_sign(PtnRuntime *runtime, size_t argc, 
         return ptn_bool(0);
     }
     return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_X509, "OpenSSLCertificate", NULL, cert, NULL);
+}
+
+static PtnValue ptn_internal_openssl_csr_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    X509_REQ *req = ptn_openssl_csr_from_value(args[0]);
+    if (req == NULL) {
+        return ptn_bool(0);
+    }
+    int no_text = argc < 3 || ptn_is_truthy(args[2]);
+    BIO *output = BIO_new(BIO_s_mem());
+    int ok = output != NULL;
+    if (ok && !no_text) {
+        ok = X509_REQ_print_ex(output, req, XN_FLAG_COMPAT, 0) == 1;
+    }
+    if (ok) {
+        ok = PEM_write_bio_X509_REQ(output, req) == 1;
+    }
+    if (!ok) {
+        if (output != NULL) {
+            BIO_free(output);
+        }
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    PtnValue exported = ptn_openssl_pem_from_bio(output);
+    BIO_free(output);
+    if (!ptn_openssl_assign_reference_arg(runtime, "openssl_csr_export", 2, "output", args[1], exported, line)) {
+        return ptn_null();
+    }
+    ERR_clear_error();
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_openssl_x509_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -133646,7 +133991,14 @@ static PtnValue ptn_internal_openssl_x509_export(PtnRuntime *runtime, size_t arg
         return ptn_bool(0);
     }
     BIO *output = BIO_new(BIO_s_mem());
-    int ok = output != NULL && PEM_write_bio_X509(output, x509) == 1;
+    int no_text = argc < 3 || ptn_is_truthy(args[2]);
+    int ok = output != NULL;
+    if (ok && !no_text) {
+        ok = X509_print_ex(output, x509, XN_FLAG_COMPAT, X509_FLAG_COMPAT) == 1;
+    }
+    if (ok) {
+        ok = PEM_write_bio_X509(output, x509) == 1;
+    }
     if (owned) {
         X509_free(x509);
     }
@@ -133787,12 +134139,17 @@ static PtnValue ptn_openssl_asn1_time_raw_value(const ASN1_TIME *time) {
     return ptn_owned_string_len(ptn_duplicate_string_len((const char *)data, (size_t)len), (size_t)len);
 }
 
-static PtnValue ptn_openssl_asn1_time_timestamp_value(const ASN1_TIME *time) {
+static PtnValue ptn_openssl_asn1_time_timestamp_value(PtnRuntime *runtime, const ASN1_TIME *time, size_t line) {
     struct tm parts;
     memset(&parts, 0, sizeof(parts));
-    if (time == NULL || ASN1_TIME_to_tm(time, &parts) != 1) {
+    if (time == NULL) {
         ERR_clear_error();
         return ptn_int(0);
+    }
+    if (ASN1_TIME_to_tm(time, &parts) != 1) {
+        ERR_clear_error();
+        ptn_emit_warning(&runtime->diagnostics, "openssl_x509_parse(): Illegal length in timestamp", line);
+        return ptn_int(-1);
     }
     parts.tm_isdst = 0;
     return ptn_int((int64_t)ptn_mktime_in_utc(&parts));
@@ -134007,8 +134364,8 @@ static PtnValue ptn_internal_openssl_x509_parse(PtnRuntime *runtime, size_t argc
     ptn_array_set_entry(result.as.array, ptn_array_string_key("serialNumberHex"), ptn_openssl_x509_serial_hex_value(x509));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("validFrom"), ptn_openssl_asn1_time_raw_value(X509_get0_notBefore(x509)));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("validTo"), ptn_openssl_asn1_time_raw_value(X509_get0_notAfter(x509)));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("validFrom_time_t"), ptn_openssl_asn1_time_timestamp_value(X509_get0_notBefore(x509)));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("validTo_time_t"), ptn_openssl_asn1_time_timestamp_value(X509_get0_notAfter(x509)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("validFrom_time_t"), ptn_openssl_asn1_time_timestamp_value(runtime, X509_get0_notBefore(x509), line));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("validTo_time_t"), ptn_openssl_asn1_time_timestamp_value(runtime, X509_get0_notAfter(x509), line));
     ptn_array_set_entry(
         result.as.array,
         ptn_array_string_key("signatureTypeSN"),
@@ -134552,6 +134909,41 @@ static PtnValue ptn_internal_openssl_cms_encrypt(PtnRuntime *runtime, size_t arg
     return ptn_bool(ok);
 }
 
+static int ptn_openssl_cms_write_encoded(
+    BIO *output,
+    CMS_ContentInfo *cms,
+    BIO *input,
+    int flags,
+    int64_t encoding
+) {
+    switch (encoding) {
+        case PTN_OPENSSL_ENCODING_SMIME:
+            return SMIME_write_CMS(output, cms, input, flags) == 1;
+        case PTN_OPENSSL_ENCODING_PEM:
+            return PEM_write_bio_CMS_stream(output, cms, input, flags) == 1;
+        case PTN_OPENSSL_ENCODING_DER:
+            return i2d_CMS_bio_stream(output, cms, input, flags) == 1;
+        default:
+            return 0;
+    }
+}
+
+static CMS_ContentInfo *ptn_openssl_cms_read_encoded(BIO *input, int64_t encoding, BIO **indata_out) {
+    if (indata_out != NULL) {
+        *indata_out = NULL;
+    }
+    switch (encoding) {
+        case PTN_OPENSSL_ENCODING_SMIME:
+            return SMIME_read_CMS(input, indata_out);
+        case PTN_OPENSSL_ENCODING_PEM:
+            return PEM_read_bio_CMS(input, NULL, NULL, NULL);
+        case PTN_OPENSSL_ENCODING_DER:
+            return d2i_CMS_bio(input, NULL);
+        default:
+            return NULL;
+    }
+}
+
 static PtnValue ptn_internal_openssl_cms_sign(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_sign", 1, "input_filename", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -134610,7 +135002,7 @@ static PtnValue ptn_internal_openssl_cms_sign(PtnRuntime *runtime, size_t argc, 
     char *output_path = ptn_openssl_path_from_operand(output_operand);
     ptn_string_operand_free(input_operand);
     ptn_string_operand_free(output_operand);
-    if (cert == NULL || pkey == NULL || input_path == NULL || output_path == NULL || encoding != PTN_OPENSSL_ENCODING_SMIME) {
+    if (cert == NULL || pkey == NULL || input_path == NULL || output_path == NULL) {
         free(input_path);
         free(output_path);
         if (cert_owned) {
@@ -134633,7 +135025,7 @@ static PtnValue ptn_internal_openssl_cms_sign(PtnRuntime *runtime, size_t argc, 
             (void)BIO_reset(input);
             output = BIO_new_file(output_path, "wb");
             if (output != NULL) {
-                ok = SMIME_write_CMS(output, cms, input, (int)flags) == 1;
+                ok = ptn_openssl_cms_write_encoded(output, cms, input, (int)flags, encoding);
             }
         }
     }
@@ -134752,27 +135144,59 @@ static PtnValue ptn_internal_openssl_cms_verify(PtnRuntime *runtime, size_t argc
         pkcs_path = ptn_openssl_path_from_operand(pkcs_operand);
         ptn_string_operand_free(pkcs_operand);
     }
+    char *signature_path = NULL;
+    if (argc >= 8 && ptn_value_deref(args[7]).type != PTN_NULL) {
+        PtnStringOperand signature_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_verify", 8, "sigfile", args[7], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(input_operand);
+            free(certs_path);
+            free(content_path);
+            free(pkcs_path);
+            return ptn_null();
+        }
+        signature_path = ptn_openssl_path_from_operand(signature_operand);
+        ptn_string_operand_free(signature_operand);
+    }
     int64_t encoding = argc >= 9 ? ptn_internal_expect_integer_arg(runtime, "openssl_cms_verify", 9, "encoding", args[8], line) : PTN_OPENSSL_ENCODING_SMIME;
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(input_operand);
         free(certs_path);
         free(content_path);
         free(pkcs_path);
+        free(signature_path);
         return ptn_null();
     }
     char *input_path = ptn_openssl_path_from_operand(input_operand);
     ptn_string_operand_free(input_operand);
-    if (input_path == NULL || encoding != PTN_OPENSSL_ENCODING_SMIME) {
+    if (input_path == NULL) {
         free(input_path);
         free(certs_path);
         free(content_path);
         free(pkcs_path);
+        free(signature_path);
+        return ptn_bool(0);
+    }
+    int detached = (flags & PTN_OPENSSL_CMS_DETACHED) != 0 && signature_path != NULL;
+    const char *cms_input_path = detached ? signature_path : input_path;
+    if (detached && !ptn_open_basedir_check_local_path(runtime, "openssl_cms_verify", signature_path, line)) {
+        free(input_path);
+        free(certs_path);
+        free(content_path);
+        free(pkcs_path);
+        free(signature_path);
+        ERR_clear_error();
         return ptn_bool(0);
     }
 
-    BIO *input = BIO_new_file(input_path, "rb");
+    BIO *input = BIO_new_file(cms_input_path, "rb");
     BIO *indata = NULL;
-    CMS_ContentInfo *cms = input == NULL ? NULL : SMIME_read_CMS(input, &indata);
+    CMS_ContentInfo *cms = input == NULL ? NULL : ptn_openssl_cms_read_encoded(input, encoding, &indata);
+    if (cms != NULL && detached) {
+        if (indata != NULL) {
+            BIO_free(indata);
+        }
+        indata = BIO_new_file(input_path, "rb");
+    }
     BIO *content = NULL;
     int ok = 0;
     if (cms != NULL) {
@@ -134783,7 +135207,7 @@ static PtnValue ptn_internal_openssl_cms_verify(PtnRuntime *runtime, size_t argc
         }
         if (ok && pkcs_path != NULL) {
             BIO *pkcs_output = BIO_new_file(pkcs_path, "wb");
-            ok = pkcs_output != NULL && PEM_write_bio_CMS_stream(pkcs_output, cms, NULL, 0) == 1;
+            ok = pkcs_output != NULL && PEM_write_bio_CMS(pkcs_output, cms) == 1;
             if (pkcs_output != NULL) {
                 BIO_free(pkcs_output);
             }
@@ -134805,6 +135229,7 @@ static PtnValue ptn_internal_openssl_cms_verify(PtnRuntime *runtime, size_t argc
     free(certs_path);
     free(content_path);
     free(pkcs_path);
+    free(signature_path);
     ERR_clear_error();
     return ptn_bool(ok);
 }
@@ -135020,6 +135445,15 @@ static PtnValue ptn_internal_openssl_pkey_get_private(PtnRuntime *runtime, size_
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_openssl_dh_compute_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_dh_compute_key", 1, "public_key", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_openssl_pkey_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -135061,6 +135495,14 @@ static PtnValue ptn_internal_openssl_csr_sign(PtnRuntime *runtime, size_t argc, 
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_csr_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
     return ptn_bool(0);
 }
 
@@ -145274,6 +145716,8 @@ static void ptn_defined_constants_add_openssl(PtnValue table) {
         "OPENSSL_KEYTYPE_RSA",
         "OPENSSL_KEYTYPE_DSA",
         "OPENSSL_CMS_NOVERIFY",
+        "OPENSSL_CMS_DETACHED",
+        "OPENSSL_CMS_BINARY",
         "OPENSSL_PKCS1_PADDING",
         "OPENSSL_SSLV23_PADDING",
         "OPENSSL_NO_PADDING",
@@ -225213,12 +225657,15 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },
         { "openssl_cms_sign", 5, 8, ptn_internal_openssl_cms_sign },
         { "openssl_cms_verify", 1, 9, ptn_internal_openssl_cms_verify },
+        { "openssl_csr_export", 2, 3, ptn_internal_openssl_csr_export },
         { "openssl_csr_new", 2, 4, ptn_internal_openssl_csr_new },
         { "openssl_csr_sign", 4, 7, ptn_internal_openssl_csr_sign },
         { "openssl_decrypt", 3, 7, ptn_internal_openssl_decrypt },
+        { "openssl_dh_compute_key", 2, 2, ptn_internal_openssl_dh_compute_key },
         { "openssl_digest", 2, 3, ptn_internal_openssl_digest },
         { "openssl_encrypt", 3, 7, ptn_internal_openssl_encrypt },
         { "openssl_error_string", 0, 0, ptn_internal_openssl_error_string },
+        { "openssl_get_privatekey", 1, 2, ptn_internal_openssl_pkey_get_private },
         { "openssl_get_cipher_methods", 0, 1, ptn_internal_openssl_get_cipher_methods },
         { "openssl_get_md_methods", 0, 1, ptn_internal_openssl_get_md_methods },
         { "openssl_open", 5, 6, ptn_internal_openssl_open },
