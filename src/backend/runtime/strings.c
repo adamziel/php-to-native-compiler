@@ -2276,6 +2276,42 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(41);
         return 1;
     }
+    if (strcmp(name, "IP_MTU_DISCOVER") == 0) {
+        *out = ptn_int(IP_MTU_DISCOVER);
+        return 1;
+    }
+    if (strcmp(name, "IP_PMTUDISC_DO") == 0) {
+        *out = ptn_int(IP_PMTUDISC_DO);
+        return 1;
+    }
+    if (strcmp(name, "AI_PASSIVE") == 0) {
+        *out = ptn_int(AI_PASSIVE);
+        return 1;
+    }
+    if (strcmp(name, "AI_CANONNAME") == 0) {
+        *out = ptn_int(AI_CANONNAME);
+        return 1;
+    }
+    if (strcmp(name, "AI_NUMERICHOST") == 0) {
+        *out = ptn_int(AI_NUMERICHOST);
+        return 1;
+    }
+    if (strcmp(name, "AI_V4MAPPED") == 0) {
+        *out = ptn_int(AI_V4MAPPED);
+        return 1;
+    }
+    if (strcmp(name, "AI_ALL") == 0) {
+        *out = ptn_int(AI_ALL);
+        return 1;
+    }
+    if (strcmp(name, "AI_ADDRCONFIG") == 0) {
+        *out = ptn_int(AI_ADDRCONFIG);
+        return 1;
+    }
+    if (strcmp(name, "AI_NUMERICSERV") == 0) {
+        *out = ptn_int(AI_NUMERICSERV);
+        return 1;
+    }
     if (strcmp(name, "MCAST_JOIN_GROUP") == 0) {
         *out = ptn_int(42);
         return 1;

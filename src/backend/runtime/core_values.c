@@ -107,6 +107,34 @@ extern char **_environ;
 #define X_OK 1
 #endif
 
+#ifndef IP_MTU_DISCOVER
+#define IP_MTU_DISCOVER 10
+#endif
+#ifndef IP_PMTUDISC_DO
+#define IP_PMTUDISC_DO 2
+#endif
+#ifndef AI_PASSIVE
+#define AI_PASSIVE 0x0001
+#endif
+#ifndef AI_CANONNAME
+#define AI_CANONNAME 0x0002
+#endif
+#ifndef AI_NUMERICHOST
+#define AI_NUMERICHOST 0x0004
+#endif
+#ifndef AI_V4MAPPED
+#define AI_V4MAPPED 0x0008
+#endif
+#ifndef AI_ALL
+#define AI_ALL 0x0010
+#endif
+#ifndef AI_ADDRCONFIG
+#define AI_ADDRCONFIG 0x0020
+#endif
+#ifndef AI_NUMERICSERV
+#define AI_NUMERICSERV 0x0400
+#endif
+
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wclobbered"
 #endif
@@ -4494,6 +4522,9 @@ static PTN_UNUSED const char *ptn_resource_object_class_name(PtnResource *resour
     }
     if (strcmp(resource->type_name, "Socket") == 0) {
         return "Socket";
+    }
+    if (strcmp(resource->type_name, "AddressInfo") == 0) {
+        return "AddressInfo";
     }
     if (strcmp(resource->type_name, "OpenSSL key") == 0) {
         return "OpenSSLAsymmetricKey";

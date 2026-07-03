@@ -123456,6 +123456,15 @@ static void ptn_defined_constants_add_sockets(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SOL_UDP", 17);
     ptn_get_defined_constants_add_int(table, "IPPROTO_IP", 0);
     ptn_get_defined_constants_add_int(table, "IPPROTO_IPV6", 41);
+    ptn_get_defined_constants_add_int(table, "IP_MTU_DISCOVER", IP_MTU_DISCOVER);
+    ptn_get_defined_constants_add_int(table, "IP_PMTUDISC_DO", IP_PMTUDISC_DO);
+    ptn_get_defined_constants_add_int(table, "AI_PASSIVE", AI_PASSIVE);
+    ptn_get_defined_constants_add_int(table, "AI_CANONNAME", AI_CANONNAME);
+    ptn_get_defined_constants_add_int(table, "AI_NUMERICHOST", AI_NUMERICHOST);
+    ptn_get_defined_constants_add_int(table, "AI_V4MAPPED", AI_V4MAPPED);
+    ptn_get_defined_constants_add_int(table, "AI_ALL", AI_ALL);
+    ptn_get_defined_constants_add_int(table, "AI_ADDRCONFIG", AI_ADDRCONFIG);
+    ptn_get_defined_constants_add_int(table, "AI_NUMERICSERV", AI_NUMERICSERV);
     ptn_get_defined_constants_add_int(table, "MCAST_JOIN_GROUP", 42);
     ptn_get_defined_constants_add_int(table, "SO_REUSEPORT", 15);
 }
@@ -124036,6 +124045,15 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
         "SOL_UDP",
         "IPPROTO_IP",
         "IPPROTO_IPV6",
+        "IP_MTU_DISCOVER",
+        "IP_PMTUDISC_DO",
+        "AI_PASSIVE",
+        "AI_CANONNAME",
+        "AI_NUMERICHOST",
+        "AI_V4MAPPED",
+        "AI_ALL",
+        "AI_ADDRCONFIG",
+        "AI_NUMERICSERV",
         "MCAST_JOIN_GROUP",
         "SO_REUSEPORT",
     };
@@ -166911,6 +166929,16 @@ typedef struct {
     int last_error;
 } PtnSocketData;
 
+typedef struct {
+    int flags;
+    int family;
+    int socktype;
+    int protocol;
+    struct sockaddr_storage addr;
+    socklen_t addr_len;
+    char *canonname;
+} PtnSocketAddrInfoData;
+
 static int ptn_socket_last_error_global = 0;
 
 static void ptn_socket_close_hook(PtnResource *resource, void *opaque) {
@@ -166935,6 +166963,30 @@ static PtnSocketData *ptn_socket_data(PtnResource *resource) {
         return NULL;
     }
     return (PtnSocketData *)resource->close_hook_data;
+}
+
+static void ptn_socket_addrinfo_close_hook(PtnResource *resource, void *opaque) {
+    (void)resource;
+    (void)opaque;
+}
+
+static void ptn_socket_addrinfo_data_free(void *opaque) {
+    PtnSocketAddrInfoData *data = opaque;
+    if (data == NULL) {
+        return;
+    }
+    free(data->canonname);
+    free(data);
+}
+
+static PtnSocketAddrInfoData *ptn_socket_addrinfo_data(PtnResource *resource) {
+    if (resource == NULL ||
+        !ptn_resource_is_open(resource) ||
+        resource->type_name == NULL ||
+        strcmp(resource->type_name, "AddressInfo") != 0) {
+        return NULL;
+    }
+    return (PtnSocketAddrInfoData *)resource->close_hook_data;
 }
 
 static PtnResource *ptn_socket_new_resource(
@@ -166964,6 +167016,40 @@ static PtnResource *ptn_socket_new_resource(
     resource->close_hook = ptn_socket_close_hook;
     resource->close_hook_data = data;
     resource->close_hook_data_free = free;
+    return resource;
+}
+
+static PtnResource *ptn_socket_addrinfo_new_resource(
+    PtnRuntime *runtime,
+    const struct addrinfo *info
+) {
+    if (info == NULL ||
+        info->ai_addr == NULL ||
+        info->ai_addrlen == 0 ||
+        info->ai_addrlen > sizeof(struct sockaddr_storage)) {
+        return NULL;
+    }
+
+    PtnSocketAddrInfoData *data = malloc(sizeof(PtnSocketAddrInfoData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->flags = info->ai_flags;
+    data->family = info->ai_family;
+    data->socktype = info->ai_socktype;
+    data->protocol = info->ai_protocol;
+    memset(&data->addr, 0, sizeof(data->addr));
+    memcpy(&data->addr, info->ai_addr, info->ai_addrlen);
+    data->addr_len = (socklen_t)info->ai_addrlen;
+    data->canonname = info->ai_canonname == NULL
+        ? NULL
+        : ptn_duplicate_string(info->ai_canonname);
+
+    PtnResource *resource = ptn_resource_new_named("AddressInfo");
+    ptn_resource_assign_object_id(runtime, resource);
+    resource->close_hook = ptn_socket_addrinfo_close_hook;
+    resource->close_hook_data = data;
+    resource->close_hook_data_free = ptn_socket_addrinfo_data_free;
     return resource;
 }
 
@@ -167097,6 +167183,262 @@ static int ptn_socket_make_inet_addr(
     int ok = inet_pton(AF_INET, address_c, &addr->sin_addr) == 1;
     free(address_c);
     return ok;
+}
+
+static int ptn_socket_addrinfo_hint_key_is_allowed(PtnArrayKey key) {
+    if (key.type != PTN_ARRAY_KEY_STRING) {
+        return 0;
+    }
+    return (key.string_len == strlen("ai_flags") &&
+            memcmp(key.as.string, "ai_flags", strlen("ai_flags")) == 0) ||
+        (key.string_len == strlen("ai_socktype") &&
+            memcmp(key.as.string, "ai_socktype", strlen("ai_socktype")) == 0) ||
+        (key.string_len == strlen("ai_protocol") &&
+            memcmp(key.as.string, "ai_protocol", strlen("ai_protocol")) == 0) ||
+        (key.string_len == strlen("ai_family") &&
+            memcmp(key.as.string, "ai_family", strlen("ai_family")) == 0);
+}
+
+static void ptn_socket_addrinfo_invalid_hints_error(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "socket_addrinfo_lookup(): Argument #3 ($hints) must only contain array keys \"ai_flags\", \"ai_socktype\", \"ai_protocol\", or \"ai_family\""
+    );
+}
+
+static int ptn_socket_addrinfo_hint_integer(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const char *key_name,
+    int *out
+) {
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 1;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_INT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_addrinfo_lookup(): Argument #3 ($hints) \"%s\" key must be of type int, %s given",
+            key_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    if (value.as.integer < 0 || value.as.integer > INT_MAX) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_addrinfo_lookup(): Argument #3 ($hints) \"%s\" key must be between 0 and %d",
+            key_name,
+            INT_MAX
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *out = (int)value.as.integer;
+    return 1;
+}
+
+static int ptn_socket_addrinfo_parse_hints(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    struct addrinfo *hints
+) {
+    if (array == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        if (!ptn_socket_addrinfo_hint_key_is_allowed(array->entries[i].key)) {
+            ptn_socket_addrinfo_invalid_hints_error(runtime);
+            return 0;
+        }
+    }
+    if (!ptn_socket_addrinfo_hint_integer(runtime, array, "ai_flags", &hints->ai_flags) ||
+        !ptn_socket_addrinfo_hint_integer(runtime, array, "ai_socktype", &hints->ai_socktype) ||
+        !ptn_socket_addrinfo_hint_integer(runtime, array, "ai_protocol", &hints->ai_protocol) ||
+        !ptn_socket_addrinfo_hint_integer(runtime, array, "ai_family", &hints->ai_family)) {
+        return 0;
+    }
+    if (hints->ai_family != 0 &&
+        hints->ai_family != AF_INET &&
+        hints->ai_family != AF_INET6 &&
+        hints->ai_family != AF_UNIX) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "socket_addrinfo_lookup(): Argument #3 ($hints) \"ai_family\" key must be AF_INET, AF_INET6, AF_UNIX, or AF_UNSPEC"
+        );
+        return 0;
+    }
+    return 1;
+}
+
+static void ptn_socket_addrinfo_assign_error_code(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    int error_code
+) {
+    if (argc < 4) {
+        return;
+    }
+    ptn_socket_assign_reference(runtime, args[3], ptn_int(error_code));
+}
+
+static PtnResource *ptn_internal_expect_socket_addrinfo_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || ptn_socket_addrinfo_data(value.as.resource) == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type AddressInfo, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    return value.as.resource;
+}
+
+static PtnValue ptn_internal_socket_addrinfo_lookup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue host_value = ptn_value_deref(args[0]);
+    char *host = NULL;
+    if (host_value.type != PTN_NULL) {
+        PtnStringOperand host_operand = ptn_internal_expect_string_arg(
+            runtime,
+            "socket_addrinfo_lookup",
+            1,
+            "host",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        host = ptn_duplicate_string_len(host_operand.data, host_operand.len);
+        ptn_string_operand_free(host_operand);
+    }
+
+    char *service = NULL;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        PtnStringOperand service_operand =
+            ptn_value_to_string_operand_with_runtime(runtime, ptn_value_deref(args[1]), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(host);
+            ptn_string_operand_free(service_operand);
+            return ptn_null();
+        }
+        service = ptn_duplicate_string_len(service_operand.data, service_operand.len);
+        ptn_string_operand_free(service_operand);
+    }
+
+    PtnArray *hint_array = NULL;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        hint_array = ptn_internal_expect_array_arg(
+            runtime,
+            "socket_addrinfo_lookup",
+            3,
+            "hints",
+            args[2]
+        );
+        if (hint_array == NULL) {
+            free(host);
+            free(service);
+            return ptn_null();
+        }
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    if (!ptn_socket_addrinfo_parse_hints(runtime, hint_array, &hints)) {
+        free(host);
+        free(service);
+        return ptn_null();
+    }
+
+    struct addrinfo *addresses = NULL;
+    int gai = getaddrinfo(host, service, &hints, &addresses);
+    free(host);
+    free(service);
+    if (gai != 0) {
+        ptn_socket_addrinfo_assign_error_code(runtime, argc, args, gai);
+        return ptn_bool(0);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        PtnResource *resource = ptn_socket_addrinfo_new_resource(runtime, candidate);
+        if (resource == NULL) {
+            continue;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)index), ptn_resource(resource));
+        index++;
+    }
+    freeaddrinfo(addresses);
+    ptn_socket_addrinfo_assign_error_code(runtime, argc, args, 0);
+    return result;
+}
+
+static PtnValue ptn_internal_socket_addrinfo_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *resource = ptn_internal_expect_socket_addrinfo_arg(
+        runtime,
+        "socket_addrinfo_bind",
+        1,
+        "address",
+        args[0]
+    );
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketAddrInfoData *data = ptn_socket_addrinfo_data(resource);
+#if defined(_WIN32)
+    (void)data;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int fd = socket(data->family, data->socktype, data->protocol);
+    if (fd < 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    if (bind(fd, (struct sockaddr *)&data->addr, data->addr_len) != 0) {
+        int error_code = errno;
+        close(fd);
+        return ptn_socket_false_with_error(NULL, error_code);
+    }
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_resource(ptn_socket_new_resource(runtime, fd, data->family, data->socktype, data->protocol));
+#endif
 }
 
 static PtnValue ptn_internal_socket_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -200505,6 +200847,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sleep", 1, 1, ptn_internal_sleep },
         { "socket_accept", 1, 1, ptn_internal_socket_accept },
+        { "socket_addrinfo_bind", 1, 1, ptn_internal_socket_addrinfo_bind },
+        { "socket_addrinfo_lookup", 1, 4, ptn_internal_socket_addrinfo_lookup },
         { "socket_bind", 2, 3, ptn_internal_socket_bind },
         { "socket_clear_error", 0, 1, ptn_internal_socket_clear_error },
         { "socket_close", 1, 1, ptn_internal_socket_close },

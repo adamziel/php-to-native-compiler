@@ -7290,6 +7290,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("socket_recvfrom") && argument_index == 5 {
         return Some("port");
     }
+    if name.eq_ignore_ascii_case("socket_addrinfo_lookup") && argument_index == 3 {
+        return Some("error_code");
+    }
     if name.eq_ignore_ascii_case("stream_socket_client") && argument_index == 1 {
         return Some("error_code");
     }

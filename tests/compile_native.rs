@@ -36190,6 +36190,43 @@ fclose($server2);
 }
 
 #[test]
+fn compile_socket_addrinfo_bind_and_mtu_option_to_native_binary() {
+    let root = temp_dir("ptn-native-socket-addrinfo-bind-mtu-option");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("socket-addrinfo-bind-mtu-option.php");
+    let output = root.join("socket-addrinfo-bind-mtu-option-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$addrinfo = socket_addrinfo_lookup('127.0.0.1', 0, [
+    'ai_family' => AF_INET,
+    'ai_socktype' => SOCK_DGRAM,
+]);
+$bound = socket_addrinfo_bind($addrinfo[0]);
+var_dump($bound);
+$socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+socket_bind($socket, '127.0.0.1', 0);
+var_dump(socket_set_option($socket, IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Socket)#2 (0) {\n}\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_socket_addrinfo_lookup"));
+    assert!(c_source.contains("IP_MTU_DISCOVER"));
+}
+
+#[test]
 fn compile_eval_worker_stream_socket_nodelay_to_native_binary() {
     let root = temp_dir("ptn-native-eval-worker-stream-socket-nodelay");
     fs::create_dir_all(&root).unwrap();

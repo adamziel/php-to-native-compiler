@@ -2930,6 +2930,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{pdo_mysql_service:?}"
     );
 
+    let socket_dontfragment = classify_at_relative_path(
+        "--TEST--\nsocket dontfragment\n--EXTENSIONS--\nsockets\n--FILE--\n<?php\n$socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);\nsocket_bind($socket, '127.0.0.1', 0);\nvar_dump(socket_set_option($socket, IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO));\n--EXPECT--\nbool(true)\n",
+        "ext/sockets/tests/socket_dontfragment.phpt",
+    );
+    assert_eq!(
+        socket_dontfragment.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let socket_addrinfo_bind = classify_at_relative_path(
+        "--TEST--\nsocket addrinfo bind\n--EXTENSIONS--\nsockets\n--FILE--\n<?php\n$addrinfo = socket_addrinfo_lookup('127.0.0.1', 0, ['ai_family' => AF_INET, 'ai_socktype' => SOCK_DGRAM]);\nvar_dump(socket_addrinfo_bind($addrinfo[0]));\n--EXPECT--\nobject(Socket)#2 (0) {\n}\n",
+        "ext/sockets/tests/socket_addrinfo_bind.phpt",
+    );
+    assert_eq!(
+        socket_addrinfo_bind.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let zip_archive_runtime = classify_at_relative_path(
         "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
         "ext/zip/tests/ZipArchive_bailout.phpt",

@@ -1367,6 +1367,12 @@ ptn_phpt_first_unsupported_standard_general_function_ini_surface() {
 ptn_phpt_has_external_service_harness() {
     local path=$1
 
+    case "$path" in
+        */ext/sockets/tests/socket_dontfragment.phpt|*/ext/sockets/tests/socket_addrinfo_bind.phpt)
+            return 1
+            ;;
+    esac
+
     grep -Eiq \
         'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
         "$path"
