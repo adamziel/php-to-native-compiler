@@ -59150,7 +59150,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
                 filter->zlib_window,
                 filter->zlib_level,
-                filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
+                filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE && !closing,
                 &transformed,
                 &transformed_len
             );
@@ -59461,6 +59461,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
     PtnResource *resource,
     size_t raw_want,
     size_t line,
+    int close_terminal_short_read,
     int *ok
 ) {
     if (ptn_stream_filter_chain_has_zlib(resource->read_filters)) {
@@ -59495,6 +59496,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
             ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
             return 0;
         }
+        int closing = ptn_stream_eof(resource);
         size_t filtered_len = 0;
         char *filtered = ptn_stream_apply_filter_chain_alloc(
             NULL,
@@ -59502,14 +59504,16 @@ static size_t ptn_stream_filtered_read_fill_pending(
             resource->read_filters,
             raw.data,
             raw.len,
-            0,
+            closing,
             0,
             &filtered_len
         );
         free(raw.data);
         ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
         free(filtered);
-        ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
+        if (!closing) {
+            ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
+        }
         return total;
     }
 
@@ -59527,6 +59531,7 @@ static size_t ptn_stream_filtered_read_fill_pending(
         ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
         return 0;
     }
+    int closing = close_terminal_short_read && read_len < want && ptn_stream_eof(resource);
     size_t filtered_len = 0;
     char *filtered = ptn_stream_apply_filter_chain_alloc(
         NULL,
@@ -59534,13 +59539,13 @@ static size_t ptn_stream_filtered_read_fill_pending(
         resource->read_filters,
         (const char *)chunk,
         read_len,
-        0,
+        closing,
         0,
         &filtered_len
     );
     ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
     free(filtered);
-    if (read_len < want) {
+    if (read_len < want && !closing) {
         ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
     }
     return read_len;
@@ -59605,6 +59610,7 @@ static char *ptn_stream_read_filtered_bytes(
             resource,
             fill_size,
             line,
+            0,
             &fill_ok
         );
         if (!fill_ok) {
@@ -59762,6 +59768,7 @@ static int ptn_stream_getc_filtered(PtnResource *resource) {
                 resource,
                 resource->chunk_size == 0 ? 8192 : resource->chunk_size,
                 user_stream == NULL ? 0 : user_stream->line,
+                0,
                 &ok
             );
             if (!ok) {
@@ -61010,6 +61017,13 @@ static int ptn_stream_read_line(
         errno = 0;
         int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
+            int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
+            if (filter_error) {
+                ptn_emit_zlib_data_notice(runtime, function_name, line);
+                free(buffer->data);
+                ptn_string_buffer_init(buffer);
+                return -1;
+            }
             if (ptn_stream_error(resource)) {
                 ptn_emit_stream_read_notice(runtime, function_name, has_max_len ? max_len : 8192, line);
                 ptn_stream_clear_error(resource);
@@ -61782,6 +61796,7 @@ static PtnValue ptn_stream_read_remaining(
             resource,
             fill_size,
             line,
+            1,
             &fill_ok
         );
         if (!fill_ok) {
@@ -61968,6 +61983,15 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
     while (length == 0 || buffer.len < (size_t)length) {
         int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
+            int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
+            if (filter_error) {
+                ptn_emit_zlib_data_notice(runtime, "stream_get_line", line);
+                free(buffer.data);
+                if (argc >= 3) {
+                    ptn_string_operand_free(delimiter);
+                }
+                return ptn_bool(0);
+            }
             if (ptn_stream_error(resource)) {
                 ptn_stream_clear_error(resource);
                 free(buffer.data);

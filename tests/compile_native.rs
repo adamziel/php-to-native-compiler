@@ -34459,6 +34459,135 @@ echo \"Done\\n\";\n",
 }
 
 #[test]
+fn compile_user_stream_filter_marks_terminal_read_closing_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-terminal-closing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-terminal-closing.php");
+    let output = root.join("stream-user-filter-terminal-closing-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ClosingTailFilter extends php_user_filter {
+    public function onCreate(): bool {
+        echo "filter onCreate\n";
+        return true;
+    }
+
+    public function onClose(): void {
+        echo "filter onClose\n";
+    }
+
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $bucket->data = strtoupper($bucket->data);
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        echo "filtered " . ($consumed ? $consumed : 0) . " bytes";
+        echo $closing ? " and closing." : ".";
+        if (feof($this->stream)) {
+            echo " Stream has reached end-of-file.";
+        }
+        echo "\n";
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("closing.tail", ClosingTailFilter::class);
+$stream = fopen("php://temp", "r+b");
+fwrite($stream, str_repeat("a", 8320));
+fseek($stream, 0, SEEK_SET);
+stream_filter_append($stream, "closing.tail", STREAM_FILTER_READ);
+var_dump(strlen(stream_get_contents($stream)));
+fclose($stream);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "filter onCreate\n\
+filtered 8192 bytes.\n\
+filtered 128 bytes and closing. Stream has reached end-of-file.\n\
+int(8320)\n\
+filter onClose\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_eof(resource)"));
+}
+
+#[test]
+fn compile_zlib_filter_line_reads_fail_on_checksum_error_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-zlib-filter-line-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-zlib-filter-line-error.php");
+    let output = root.join("stream-zlib-filter-line-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function make_bad_stream() {
+    $stream = fopen("php://memory", "r+");
+    $content = "";
+    for ($i = 0; $i < 10000; $i++) {
+        $content .= "Hello $i\n";
+    }
+    fwrite($stream, gzcompress($content));
+    fseek($stream, -1, SEEK_CUR);
+    fwrite($stream, "1");
+    rewind($stream);
+    stream_filter_append($stream, "zlib.inflate", STREAM_FILTER_READ, ["window" => 15]);
+    return $stream;
+}
+
+$stream = make_bad_stream();
+while (($line = fgets($stream)) !== false) {
+    if (error_get_last() !== null) {
+        echo "unexpected fgets line\n";
+        var_dump($line);
+    }
+}
+fclose($stream);
+error_clear_last();
+
+$stream = make_bad_stream();
+while (($line = stream_get_line($stream, 0, "\n")) !== false) {
+    if (error_get_last() !== null) {
+        echo "unexpected stream_get_line line\n";
+        var_dump($line);
+    }
+}
+fclose($stream);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Notice: fgets(): zlib: data error"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Notice: stream_get_line(): zlib: data error"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("unexpected"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_chain_take_zlib_error"));
+}
+
+#[test]
 fn compile_user_stream_filter_lifecycle_edges_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-lifecycle");
     fs::create_dir_all(&root).unwrap();
