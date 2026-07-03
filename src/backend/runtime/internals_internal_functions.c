@@ -144895,7 +144895,10 @@ static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, P
     }
     if (element != NULL && element->parent != NULL && strncmp(name, "xmlns:", 6) == 0) {
         const char *prefix = name + 6;
-        char *element_prefix = ptn_xml_prefix_dup(element->name == NULL ? "" : element->name);
+        const char *element_name = element->serialized_name != NULL
+            ? element->serialized_name
+            : (element->name == NULL ? "" : element->name);
+        char *element_prefix = ptn_xml_prefix_dup(element_name);
         int declares_element_prefix = element_prefix[0] != '\0' && strcmp(element_prefix, prefix) == 0 &&
                                       element->namespace_uri != NULL && strcmp(element->namespace_uri, value) == 0;
         const char *in_scope = declares_element_prefix ? ptn_xml_lookup_serialized_namespace_uri(prefix) : NULL;
@@ -144975,7 +144978,10 @@ static int ptn_xml_parent_serialized_default_namespace_matches(PtnXmlNode *node,
     if (strcmp(parent->namespace_uri, uri) != 0) {
         return 0;
     }
-    return !ptn_xml_name_has_prefix(parent->name == NULL ? "" : parent->name);
+    const char *parent_name = parent->serialized_name != NULL
+        ? parent->serialized_name
+        : (parent->name == NULL ? "" : parent->name);
+    return !ptn_xml_name_has_prefix(parent_name);
 }
 
 static void ptn_xml_append_serialized_element_attribute(
@@ -145259,6 +145265,9 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         ptn_xml_name_has_prefix(serialized_name)) {
         char *current_prefix = ptn_xml_prefix_dup(serialized_name);
         const char *current_binding = ptn_xml_lookup_declared_namespace_uri(node, current_prefix);
+        if (current_binding == NULL) {
+            current_binding = ptn_xml_lookup_serialized_namespace_uri(current_prefix);
+        }
         if (current_binding == NULL || strcmp(current_binding, node->namespace_uri) != 0) {
             char *nearest_prefix = ptn_dom_element_find_prefix_for_namespace(node, node->namespace_uri);
             if (nearest_prefix != NULL &&
