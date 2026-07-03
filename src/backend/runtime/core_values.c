@@ -1442,6 +1442,7 @@ struct PtnStreamFilter {
     int has_user_filter_object;
     PtnValue user_filter_object;
     PtnRuntime *user_filter_runtime;
+    PtnResource *user_filter_stream;
     size_t user_filter_line;
     PtnStreamFilter *next;
 };
