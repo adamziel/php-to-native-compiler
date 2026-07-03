@@ -154001,6 +154001,18 @@ static void ptn_dom_replace_receiver_node(PtnValue receiver, PtnValue replacemen
 
 static PtnXmlNode *ptn_dom_nodes_to_single_node(PtnRuntime *runtime, PtnXmlNode *parent, const char *method_name, size_t argc, const PtnValue *args, size_t line);
 
+static int ptn_dom_check_document_parent_insertable(PtnRuntime *runtime, const char *method_name, PtnXmlNode *parent, size_t argc, const PtnValue *args, size_t line) {
+    if (parent == NULL || parent->type != PTN_XML_NODE_DOCUMENT) {
+        return 1;
+    }
+    for (size_t i = 0; i < argc; i++) {
+        if (!ptn_xml_check_insertable(runtime, method_name, i + 1, parent, args[i], line)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PtnValue ptn_dom_append_like(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line, int prepend) {
     (void)line;
     PtnXmlNode *parent = ptn_xml_node_data(receiver);
@@ -154013,6 +154025,9 @@ static PtnValue ptn_dom_append_like(PtnRuntime *runtime, PtnValue receiver, cons
         }
     }
     size_t index = prepend ? 0 : parent->child_count;
+    if (!ptn_dom_check_document_parent_insertable(runtime, method_name, parent, argc, args, line)) {
+        return ptn_null();
+    }
     if (!ptn_xml_check_document_type_insertion(runtime, parent, argc, args, index, NULL, 0)) {
         return ptn_null();
     }
@@ -154133,6 +154148,10 @@ static PtnValue ptn_dom_child_insert_like(PtnRuntime *runtime, PtnValue receiver
         return ptn_null();
     }
     size_t insert_index = replace || !after ? index : index + 1;
+    if (!ptn_dom_check_document_parent_insertable(runtime, method_name, parent, argc, args, line)) {
+        free(arg_nodes);
+        return ptn_null();
+    }
     if (!ptn_xml_check_document_type_insertion(runtime, parent, argc, args, insert_index, replace ? node : NULL, 0)) {
         free(arg_nodes);
         return ptn_null();
