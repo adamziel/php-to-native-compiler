@@ -156584,6 +156584,85 @@ static int ptn_dom_libxml_accepts_document_source(
     return 1;
 }
 
+static int ptn_dom_load_options_need_libxml_normalized_source(int options) {
+    return (options & (PTN_LIBXML_DTDATTR | PTN_LIBXML_NOENT | PTN_LIBXML_NOCDATA | PTN_LIBXML_NOBLANKS)) != 0;
+}
+
+static int ptn_dom_libxml_normalized_document_source(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *source,
+    size_t source_len,
+    const char *url,
+    int options,
+    size_t line,
+    char **normalized_out,
+    size_t *normalized_len_out
+) {
+    *normalized_out = NULL;
+    *normalized_len_out = 0;
+    if (source_len > (size_t)INT_MAX) {
+        return 1;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL || api->xmlDocDumpMemory == NULL) {
+        return 1;
+    }
+    PtnLibxml2DomParseErrorCapture capture;
+    memset(&capture, 0, sizeof(capture));
+    capture.runtime = runtime;
+    capture.function_name = function_name;
+    capture.line = line;
+    capture.suppress_warnings = ptn_libxml_internal_errors ||
+        ((options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0);
+    capture.suppress_external_entity_resolution_warnings =
+        ptn_libxml_external_entity_loader_is_configured &&
+        ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
+    capture.parser_context_warnings = source != NULL;
+    capture.source_data = source;
+    capture.source_len = source_len;
+    capture.display_uri = url;
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    api->xmlSetStructuredErrorFunc(&capture, ptn_libxml2_dom_parse_structured_error);
+    PtnLibxml2DocPtr doc = api->xmlReadMemory(
+        source,
+        (int)source_len,
+        url,
+        NULL,
+        options
+    );
+    api->xmlSetStructuredErrorFunc(NULL, NULL);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    if (doc == NULL) {
+        return 0;
+    }
+
+    unsigned char *dumped = NULL;
+    int dumped_len = 0;
+    api->xmlDocDumpMemory(doc, &dumped, &dumped_len);
+    api->xmlFreeDoc(doc);
+    if (dumped == NULL || dumped_len < 0) {
+        ptn_libxml2_free_owned(api, dumped);
+        return 1;
+    }
+
+    char *normalized = malloc((size_t)dumped_len + 1);
+    if (normalized == NULL) {
+        ptn_libxml2_free_owned(api, dumped);
+        ptn_abort_out_of_memory();
+    }
+    memcpy(normalized, dumped, (size_t)dumped_len);
+    normalized[dumped_len] = '\0';
+    ptn_libxml2_free_owned(api, dumped);
+    *normalized_out = normalized;
+    *normalized_len_out = (size_t)dumped_len;
+    return 1;
+}
+
 static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMDocument::loadXML", "1 or 2 arguments", argc);
@@ -156613,17 +156692,35 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     if (ptn_libxml_entity_loader_disabled && (substitute_entities || resolve_externals)) {
         ptn_emit_warning(&runtime->diagnostics, "DOMDocument::loadXML(): I/O warning : failed to load external entity", line);
     }
-    if (!ptn_dom_libxml_accepts_document_source(
-        runtime,
-        "DOMDocument::loadXML",
-        source.data,
-        source.len,
-        NULL,
-        options,
-        line
-    )) {
-        ptn_string_operand_free(source);
-        return ptn_bool(0);
+    char *normalized_source = NULL;
+    size_t normalized_len = 0;
+    int use_normalized_source = ptn_dom_load_options_need_libxml_normalized_source(options);
+    if (use_normalized_source) {
+        if (!ptn_dom_libxml_normalized_document_source(
+            runtime,
+            "DOMDocument::loadXML",
+            source.data,
+            source.len,
+            NULL,
+            options,
+            line,
+            &normalized_source,
+            &normalized_len
+        )) {
+            ptn_string_operand_free(source);
+            return ptn_bool(0);
+        }
+    } else if (!ptn_dom_libxml_accepts_document_source(
+            runtime,
+            "DOMDocument::loadXML",
+            source.data,
+            source.len,
+            NULL,
+            options,
+            line
+        )) {
+            ptn_string_operand_free(source);
+            return ptn_bool(0);
     }
     ptn_xml_reset_document_for_load(document, document != NULL && document->modern_dom);
     int previous_suppress_warnings = ptn_dom_xml_parse_suppress_warnings;
@@ -156634,11 +156731,13 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     int previous_parser_substitute_entities = document->parser_substitute_entities;
     document->parser_substitute_entities =
         !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
+    const char *parse_source = normalized_source == NULL ? source.data : normalized_source;
+    size_t parse_len = normalized_source == NULL ? source.len : normalized_len;
     int ok = ptn_xml_parse_document_into_mode_with_recover(
         runtime,
         document,
-        source.data,
-        source.len,
+        parse_source,
+        parse_len,
         0,
         (options & PTN_LIBXML_RECOVER) != 0
     );
@@ -156651,6 +156750,7 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     if (ok && (options & PTN_LIBXML_DTDATTR) != 0) {
         ptn_xml_document_apply_internal_default_attributes(runtime, document);
     }
+    free(normalized_source);
     ptn_string_operand_free(source);
     return ptn_bool(ok);
 }

@@ -3622,6 +3622,31 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
 }
 
 #[test]
+fn phpt_classifier_allows_supported_dom_file_external_row() {
+    let supported = classify_at_relative_path(
+        "--TEST--\ndom external file\n--EXTENSIONS--\ndom\n--FILE_EXTERNAL--\ndomdocumentloadxml_test_method_savexml.inc\n--EXPECT--\n",
+        "ext/dom/tests/DOMDocument_loadXML_variation4.phpt",
+    );
+    assert_eq!(
+        supported,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let unsupported = classify_at_relative_path(
+        "--TEST--\nother external file\n--EXTENSIONS--\ndom\n--FILE_EXTERNAL--\nother.inc\n--EXPECT--\n",
+        "ext/dom/tests/other_file_external.phpt",
+    );
+    assert!(
+        unsupported.starts_with("sapi-behavior\t"),
+        "{unsupported:?}"
+    );
+    assert!(
+        unsupported.contains("requires unsupported PHPT section --FILE_EXTERNAL--"),
+        "{unsupported:?}"
+    );
+}
+
+#[test]
 fn phpt_baseline_full_scope_generates_all_family_manifests() {
     let root = temp_dir("ptn-full-phpt-baseline");
     let corpus = root.join("php-src");
