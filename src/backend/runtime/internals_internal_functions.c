@@ -74401,6 +74401,20 @@ static PTN_UNUSED PtnValue ptn_php_token_call_method(
     return ptn_string("UNKNOWN");
 }
 
+typedef enum {
+    PTN_HASH_LEGACY_NONE = 0,
+    PTN_HASH_LEGACY_MD2,
+    PTN_HASH_LEGACY_ADLER32,
+    PTN_HASH_LEGACY_CRC32,
+    PTN_HASH_LEGACY_CRC32B,
+    PTN_HASH_LEGACY_CRC32C,
+    PTN_HASH_LEGACY_FNV132,
+    PTN_HASH_LEGACY_FNV1A32,
+    PTN_HASH_LEGACY_FNV164,
+    PTN_HASH_LEGACY_FNV1A64,
+    PTN_HASH_LEGACY_JOAAT
+} PtnHashLegacyMode;
+
 typedef struct {
     char *algo;
     int hmac;
@@ -74413,6 +74427,10 @@ typedef struct {
     size_t data_len;
     size_t data_capacity;
     int finalized;
+    PtnHashLegacyMode legacy_mode;
+    unsigned char *legacy_context;
+    size_t legacy_context_len;
+    uint64_t legacy_state;
 } PtnHashContextData;
 
 static void ptn_hash_context_data_free(void *ptr) {
@@ -74424,6 +74442,7 @@ static void ptn_hash_context_data_free(void *ptr) {
     free(data->key);
     free(data->secret);
     free(data->data);
+    free(data->legacy_context);
     free(data);
 }
 
@@ -74465,6 +74484,10 @@ static PtnValue ptn_hash_context_object(
     data->data_len = 0;
     data->data_capacity = 0;
     data->finalized = 0;
+    data->legacy_mode = PTN_HASH_LEGACY_NONE;
+    data->legacy_context = NULL;
+    data->legacy_context_len = 0;
+    data->legacy_state = 0;
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_hash_context_data_free;
     ptn_array_set_entry(
@@ -74496,7 +74519,18 @@ static PTN_UNUSED PtnValue ptn_hash_context_clone(PtnRuntime *runtime, PtnValue 
         data->secret,
         data->secret_len
     );
-    ptn_hash_context_append((PtnHashContextData *)clone.as.object->native_data, data->data, data->data_len);
+    PtnHashContextData *clone_data = (PtnHashContextData *)clone.as.object->native_data;
+    clone_data->legacy_mode = data->legacy_mode;
+    clone_data->legacy_state = data->legacy_state;
+    if (data->legacy_context_len != 0) {
+        clone_data->legacy_context = (unsigned char *)ptn_duplicate_string_len(
+            (const char *)data->legacy_context,
+            data->legacy_context_len
+        );
+        clone_data->legacy_context_len = data->legacy_context_len;
+    } else if (data->legacy_mode == PTN_HASH_LEGACY_NONE) {
+        ptn_hash_context_append(clone_data, data->data, data->data_len);
+    }
     return clone;
 }
 
@@ -74956,6 +74990,674 @@ static void ptn_hash_context_throw_ill_formed_code(PtnRuntime *runtime, const ch
     ptn_hash_context_throw_serialize_error(runtime, message);
 }
 
+static void ptn_hash_context_array_append_value(PtnValue array, PtnValue value) {
+    ptn_array_set_entry(array.as.array, ptn_array_int_key((int64_t)array.as.array->len), value);
+}
+
+static void ptn_hash_context_array_append_i32(PtnValue array, uint32_t value) {
+    ptn_hash_context_array_append_value(array, ptn_int((int64_t)(int32_t)value));
+}
+
+static void ptn_hash_context_array_append_q(PtnValue array, uint64_t value) {
+    ptn_hash_context_array_append_i32(array, (uint32_t)(value & UINT64_C(0xffffffff)));
+    ptn_hash_context_array_append_i32(array, (uint32_t)(value >> 32));
+}
+
+static PtnValue ptn_hash_context_padded_string(
+    const unsigned char *data,
+    size_t data_len,
+    size_t padded_len
+) {
+    unsigned char *buffer = malloc(padded_len + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memset(buffer, 0, padded_len);
+    buffer[padded_len] = '\0';
+    if (data_len != 0) {
+        memcpy(buffer, data, data_len);
+    }
+    return ptn_owned_string_len((char *)buffer, padded_len);
+}
+
+static void ptn_hash_context_array_append_padded_string(
+    PtnValue array,
+    const unsigned char *data,
+    size_t data_len,
+    size_t padded_len
+) {
+    ptn_hash_context_array_append_value(
+        array,
+        ptn_hash_context_padded_string(data, data_len, padded_len)
+    );
+}
+
+static uint32_t ptn_hash_context_adler32_update(uint32_t state, const unsigned char *bytes, size_t len) {
+    uint32_t a = state & UINT32_C(0xffff);
+    uint32_t b = (state >> 16) & UINT32_C(0xffff);
+    for (size_t i = 0; i < len; i++) {
+        a = (a + bytes[i]) % UINT32_C(65521);
+        b = (b + a) % UINT32_C(65521);
+    }
+    return (b << 16) | a;
+}
+
+static uint32_t ptn_hash_context_crc32_update(uint32_t state, const unsigned char *bytes, size_t len) {
+    uint32_t crc = state;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= (uint32_t)bytes[i] << 24;
+        for (size_t bit = 0; bit < 8; bit++) {
+            if ((crc & UINT32_C(0x80000000)) != 0) {
+                crc = (crc << 1) ^ UINT32_C(0x04c11db7);
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+static uint32_t ptn_hash_context_crc32b_update(uint32_t state, const unsigned char *bytes, size_t len) {
+    uint32_t crc = state;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= (uint32_t)bytes[i];
+        for (size_t bit = 0; bit < 8; bit++) {
+            uint32_t mask = -(crc & UINT32_C(1));
+            crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & mask);
+        }
+    }
+    return crc;
+}
+
+static uint32_t ptn_hash_context_crc32c_update(uint32_t state, const unsigned char *bytes, size_t len) {
+    uint32_t crc = state;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= (uint32_t)bytes[i];
+        for (size_t bit = 0; bit < 8; bit++) {
+            uint32_t mask = -(crc & UINT32_C(1));
+            crc = (crc >> 1) ^ (UINT32_C(0x82f63b78) & mask);
+        }
+    }
+    return crc;
+}
+
+static uint32_t ptn_hash_context_fnv32_update(uint32_t state, const unsigned char *bytes, size_t len, int alternate) {
+    uint32_t hash = state;
+    for (size_t i = 0; i < len; i++) {
+        if (alternate) {
+            hash ^= (uint32_t)bytes[i];
+            hash *= UINT32_C(0x01000193);
+        } else {
+            hash *= UINT32_C(0x01000193);
+            hash ^= (uint32_t)bytes[i];
+        }
+    }
+    return hash;
+}
+
+static uint64_t ptn_hash_context_fnv64_update(uint64_t state, const unsigned char *bytes, size_t len, int alternate) {
+    uint64_t hash = state;
+    for (size_t i = 0; i < len; i++) {
+        if (alternate) {
+            hash ^= (uint64_t)bytes[i];
+            hash *= UINT64_C(0x100000001b3);
+        } else {
+            hash *= UINT64_C(0x100000001b3);
+            hash ^= (uint64_t)bytes[i];
+        }
+    }
+    return hash;
+}
+
+static uint32_t ptn_hash_context_joaat_update(uint32_t state, const unsigned char *bytes, size_t len) {
+    uint32_t hash = state;
+    for (size_t i = 0; i < len; i++) {
+        hash += bytes[i];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    return hash;
+}
+
+static uint32_t ptn_hash_context_scalar_state_for_bytes(
+    const char *algo,
+    const unsigned char *bytes,
+    size_t len
+) {
+    if (ptn_ascii_case_equal(algo, "adler32")) {
+        return ptn_hash_context_adler32_update(UINT32_C(1), bytes, len);
+    }
+    if (ptn_ascii_case_equal(algo, "crc32")) {
+        return ptn_hash_context_crc32_update(UINT32_C(0xffffffff), bytes, len);
+    }
+    if (ptn_ascii_case_equal(algo, "crc32b")) {
+        return ptn_hash_context_crc32b_update(UINT32_C(0xffffffff), bytes, len);
+    }
+    if (ptn_ascii_case_equal(algo, "crc32c")) {
+        return ptn_hash_context_crc32c_update(UINT32_C(0xffffffff), bytes, len);
+    }
+    if (ptn_ascii_case_equal(algo, "fnv132")) {
+        return ptn_hash_context_fnv32_update(UINT32_C(0x811c9dc5), bytes, len, 0);
+    }
+    if (ptn_ascii_case_equal(algo, "fnv1a32")) {
+        return ptn_hash_context_fnv32_update(UINT32_C(0x811c9dc5), bytes, len, 1);
+    }
+    return ptn_hash_context_joaat_update(UINT32_C(0), bytes, len);
+}
+
+static uint64_t ptn_hash_context_scalar64_state_for_bytes(
+    const char *algo,
+    const unsigned char *bytes,
+    size_t len
+) {
+    return ptn_hash_context_fnv64_update(
+        UINT64_C(0xcbf29ce484222325),
+        bytes,
+        len,
+        ptn_ascii_case_equal(algo, "fnv1a64")
+    );
+}
+
+static PtnValue ptn_hash_context_md2_state_for_bytes(
+    const unsigned char *bytes,
+    size_t len,
+    const PHP_MD2_CTX *existing_context
+) {
+    PHP_MD2_CTX ctx;
+    if (existing_context != NULL) {
+        memcpy(&ctx, existing_context, sizeof(ctx));
+    } else {
+        PHP_MD2InitArgs(&ctx, NULL);
+        if (len != 0) {
+            PHP_MD2Update(&ctx, bytes, len);
+        }
+    }
+
+    PtnValue state = ptn_array_from_literal_entries(0, NULL);
+    ptn_hash_context_array_append_value(
+        state,
+        ptn_owned_string_len(ptn_duplicate_string_len((const char *)ctx.state, sizeof(ctx.state)), sizeof(ctx.state))
+    );
+    ptn_hash_context_array_append_value(
+        state,
+        ptn_owned_string_len(ptn_duplicate_string_len((const char *)ctx.checksum, sizeof(ctx.checksum)), sizeof(ctx.checksum))
+    );
+    ptn_hash_context_array_append_value(
+        state,
+        ptn_owned_string_len(ptn_duplicate_string_len((const char *)ctx.buffer, sizeof(ctx.buffer)), sizeof(ctx.buffer))
+    );
+    ptn_hash_context_array_append_i32(state, ctx.in_buffer);
+    return state;
+}
+
+static int ptn_hash_context_parse_haval(const char *algo, int *bits_out, int *passes_out) {
+    int bits = 0;
+    int passes = 0;
+    if (sscanf(algo, "haval%d,%d", &bits, &passes) != 2) {
+        return 0;
+    }
+    if ((passes != 3 && passes != 4 && passes != 5) ||
+        (bits != 128 && bits != 160 && bits != 192 && bits != 224 && bits != 256)) {
+        return 0;
+    }
+    *bits_out = bits;
+    *passes_out = passes;
+    return 1;
+}
+
+static int ptn_hash_context_parse_tiger(const char *algo, int *bits_out, int *passes_out) {
+    int bits = 0;
+    int passes = 0;
+    if (sscanf(algo, "tiger%d,%d", &bits, &passes) != 2) {
+        return 0;
+    }
+    if ((passes != 3 && passes != 4) || (bits != 128 && bits != 160 && bits != 192)) {
+        return 0;
+    }
+    *bits_out = bits;
+    *passes_out = passes;
+    return 1;
+}
+
+static void ptn_hash_context_append_u32_constants(
+    PtnValue state,
+    const uint32_t *constants,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_hash_context_array_append_i32(state, constants[i]);
+    }
+}
+
+static void ptn_hash_context_append_u64_constants(
+    PtnValue state,
+    const uint64_t *constants,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_hash_context_array_append_q(state, constants[i]);
+    }
+}
+
+static int ptn_hash_context_build_php_state(
+    PtnHashContextData *data,
+    PtnValue *state_out,
+    int64_t *magic_out
+) {
+    const unsigned char *bytes = data->data;
+    size_t len = data->data_len;
+    *magic_out = 2;
+
+    if (ptn_ascii_case_equal(data->algo, "md2")) {
+        const PHP_MD2_CTX *existing = NULL;
+        if (data->legacy_mode == PTN_HASH_LEGACY_MD2 &&
+            data->legacy_context_len == sizeof(PHP_MD2_CTX)) {
+            existing = (const PHP_MD2_CTX *)data->legacy_context;
+        }
+        *state_out = ptn_hash_context_md2_state_for_bytes(bytes, len, existing);
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "adler32") ||
+        ptn_ascii_case_equal(data->algo, "crc32") ||
+        ptn_ascii_case_equal(data->algo, "crc32b") ||
+        ptn_ascii_case_equal(data->algo, "crc32c") ||
+        ptn_ascii_case_equal(data->algo, "fnv132") ||
+        ptn_ascii_case_equal(data->algo, "fnv1a32") ||
+        ptn_ascii_case_equal(data->algo, "joaat")) {
+        uint32_t state_word = data->legacy_mode == PTN_HASH_LEGACY_NONE
+            ? ptn_hash_context_scalar_state_for_bytes(data->algo, bytes, len)
+            : (uint32_t)data->legacy_state;
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_array_append_i32(state, state_word);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "fnv164") || ptn_ascii_case_equal(data->algo, "fnv1a64")) {
+        uint64_t state_word = data->legacy_mode == PTN_HASH_LEGACY_NONE
+            ? ptn_hash_context_scalar64_state_for_bytes(data->algo, bytes, len)
+            : data->legacy_state;
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_array_append_q(state, state_word);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "sha3-224") ||
+        ptn_ascii_case_equal(data->algo, "sha3-256") ||
+        ptn_ascii_case_equal(data->algo, "sha3-384") ||
+        ptn_ascii_case_equal(data->algo, "sha3-512")) {
+        if (len > 200 || data->legacy_mode != PTN_HASH_LEGACY_NONE) {
+            return 0;
+        }
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 200);
+        ptn_hash_context_array_append_value(state, ptn_int((int64_t)len));
+        *state_out = state;
+        return 1;
+    }
+
+    if (data->legacy_mode != PTN_HASH_LEGACY_NONE) {
+        return 0;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "md5")) {
+        if (len > 64) {
+            return 0;
+        }
+        static const uint32_t md_state[4] = {
+            UINT32_C(0x67452301), UINT32_C(0xefcdab89), UINT32_C(0x98badcfe), UINT32_C(0x10325476)
+        };
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_array_append_i32(state, (uint32_t)len);
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_append_u32_constants(state, md_state, 4);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        for (size_t i = 0; i < 16; i++) {
+            ptn_hash_context_array_append_i32(state, 0);
+        }
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "md4") || ptn_ascii_case_equal(data->algo, "ripemd128")) {
+        if (len > 64) {
+            return 0;
+        }
+        static const uint32_t md_state[4] = {
+            UINT32_C(0x67452301), UINT32_C(0xefcdab89), UINT32_C(0x98badcfe), UINT32_C(0x10325476)
+        };
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u32_constants(state, md_state, 4);
+        ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "sha1") || ptn_ascii_case_equal(data->algo, "ripemd160")) {
+        if (len > 64) {
+            return 0;
+        }
+        static const uint32_t sha1_state[5] = {
+            UINT32_C(0x67452301), UINT32_C(0xefcdab89), UINT32_C(0x98badcfe), UINT32_C(0x10325476),
+            UINT32_C(0xc3d2e1f0)
+        };
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u32_constants(state, sha1_state, 5);
+        ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "sha224") || ptn_ascii_case_equal(data->algo, "sha256")) {
+        if (len > 64) {
+            return 0;
+        }
+        static const uint32_t sha224_state[8] = {
+            UINT32_C(0xc1059ed8), UINT32_C(0x367cd507), UINT32_C(0x3070dd17), UINT32_C(0xf70e5939),
+            UINT32_C(0xffc00b31), UINT32_C(0x68581511), UINT32_C(0x64f98fa7), UINT32_C(0xbefa4fa4)
+        };
+        static const uint32_t sha256_state[8] = {
+            UINT32_C(0x6a09e667), UINT32_C(0xbb67ae85), UINT32_C(0x3c6ef372), UINT32_C(0xa54ff53a),
+            UINT32_C(0x510e527f), UINT32_C(0x9b05688c), UINT32_C(0x1f83d9ab), UINT32_C(0x5be0cd19)
+        };
+        const uint32_t *constants = ptn_ascii_case_equal(data->algo, "sha224") ? sha224_state : sha256_state;
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u32_constants(state, constants, 8);
+        ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "ripemd256") || ptn_ascii_case_equal(data->algo, "ripemd320")) {
+        if (len > 64) {
+            return 0;
+        }
+        static const uint32_t ripemd256_state[8] = {
+            UINT32_C(0x67452301), UINT32_C(0xefcdab89), UINT32_C(0x98badcfe), UINT32_C(0x10325476),
+            UINT32_C(0x76543210), UINT32_C(0xfedcba98), UINT32_C(0x89abcdef), UINT32_C(0x01234567)
+        };
+        static const uint32_t ripemd320_state[10] = {
+            UINT32_C(0x67452301), UINT32_C(0xefcdab89), UINT32_C(0x98badcfe), UINT32_C(0x10325476),
+            UINT32_C(0xc3d2e1f0), UINT32_C(0x76543210), UINT32_C(0xfedcba98), UINT32_C(0x89abcdef),
+            UINT32_C(0x01234567), UINT32_C(0x3c2d1e0f)
+        };
+        int is_320 = ptn_ascii_case_equal(data->algo, "ripemd320");
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u32_constants(state, is_320 ? ripemd320_state : ripemd256_state, is_320 ? 10 : 8);
+        ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "sha384") ||
+        ptn_ascii_case_equal(data->algo, "sha512/224") ||
+        ptn_ascii_case_equal(data->algo, "sha512/256") ||
+        ptn_ascii_case_equal(data->algo, "sha512")) {
+        if (len > 128) {
+            return 0;
+        }
+        static const uint64_t sha384_state[8] = {
+            UINT64_C(0xcbbb9d5dc1059ed8), UINT64_C(0x629a292a367cd507),
+            UINT64_C(0x9159015a3070dd17), UINT64_C(0x152fecd8f70e5939),
+            UINT64_C(0x67332667ffc00b31), UINT64_C(0x8eb44a8768581511),
+            UINT64_C(0xdb0c2e0d64f98fa7), UINT64_C(0x47b5481dbefa4fa4)
+        };
+        static const uint64_t sha512_224_state[8] = {
+            UINT64_C(0x8c3d37c819544da2), UINT64_C(0x73e1996689dcd4d6),
+            UINT64_C(0x1dfab7ae32ff9c82), UINT64_C(0x679dd514582f9fcf),
+            UINT64_C(0x0f6d2b697bd44da8), UINT64_C(0x77e36f7304c48942),
+            UINT64_C(0x3f9d85a86a1d36c8), UINT64_C(0x1112e6ad91d692a1)
+        };
+        static const uint64_t sha512_256_state[8] = {
+            UINT64_C(0x22312194fc2bf72c), UINT64_C(0x9f555fa3c84c64c2),
+            UINT64_C(0x2393b86b6f53b151), UINT64_C(0x963877195940eabd),
+            UINT64_C(0x96283ee2a88effe3), UINT64_C(0xbe5e1e2553863992),
+            UINT64_C(0x2b0199fc2c85b8aa), UINT64_C(0x0eb72ddc81c52ca2)
+        };
+        static const uint64_t sha512_state[8] = {
+            UINT64_C(0x6a09e667f3bcc908), UINT64_C(0xbb67ae8584caa73b),
+            UINT64_C(0x3c6ef372fe94f82b), UINT64_C(0xa54ff53a5f1d36f1),
+            UINT64_C(0x510e527fade682d1), UINT64_C(0x9b05688c2b3e6c1f),
+            UINT64_C(0x1f83d9abfb41bd6b), UINT64_C(0x5be0cd19137e2179)
+        };
+        const uint64_t *constants = sha512_state;
+        if (ptn_ascii_case_equal(data->algo, "sha384")) {
+            constants = sha384_state;
+        } else if (ptn_ascii_case_equal(data->algo, "sha512/224")) {
+            constants = sha512_224_state;
+        } else if (ptn_ascii_case_equal(data->algo, "sha512/256")) {
+            constants = sha512_256_state;
+        }
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u64_constants(state, constants, 8);
+        ptn_hash_context_array_append_q(state, (uint64_t)len * UINT64_C(8));
+        ptn_hash_context_array_append_q(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 128);
+        *state_out = state;
+        return 1;
+    }
+
+    int haval_bits = 0;
+    int haval_passes = 0;
+    if (ptn_hash_context_parse_haval(data->algo, &haval_bits, &haval_passes)) {
+        (void)haval_bits;
+        (void)haval_passes;
+        if (len > 128) {
+            return 0;
+        }
+        static const uint32_t haval_state[8] = {
+            UINT32_C(0x243f6a88), UINT32_C(0x85a308d3), UINT32_C(0x13198a2e), UINT32_C(0x03707344),
+            UINT32_C(0xa4093822), UINT32_C(0x299f31d0), UINT32_C(0x082efa98), UINT32_C(0xec4e6c89)
+        };
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_append_u32_constants(state, haval_state, 8);
+        ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        ptn_hash_context_array_append_i32(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 128);
+        *state_out = state;
+        return 1;
+    }
+
+    int tiger_bits = 0;
+    int tiger_passes = 0;
+    if (ptn_hash_context_parse_tiger(data->algo, &tiger_bits, &tiger_passes)) {
+        (void)tiger_bits;
+        if (len > 64) {
+            return 0;
+        }
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        ptn_hash_context_array_append_q(state, UINT64_C(0x0123456789abcdef));
+        ptn_hash_context_array_append_q(state, UINT64_C(0xfedcba9876543210));
+        ptn_hash_context_array_append_q(state, UINT64_C(0xf096a5b4c3b2e187));
+        ptn_hash_context_array_append_q(state, 0);
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        ptn_hash_context_array_append_value(state, ptn_int((int64_t)len));
+        (void)tiger_passes;
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "snefru") ||
+        ptn_ascii_case_equal(data->algo, "snefru256") ||
+        ptn_ascii_case_equal(data->algo, "gost") ||
+        ptn_ascii_case_equal(data->algo, "gost-crypto")) {
+        if (len > 32) {
+            return 0;
+        }
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < 16; i++) {
+            ptn_hash_context_array_append_i32(state, 0);
+        }
+        if (ptn_ascii_case_equal(data->algo, "snefru") || ptn_ascii_case_equal(data->algo, "snefru256")) {
+            ptn_hash_context_array_append_i32(state, 0);
+            ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+        } else {
+            ptn_hash_context_array_append_i32(state, (uint32_t)(len * 8));
+            ptn_hash_context_array_append_i32(state, 0);
+        }
+        ptn_hash_context_array_append_value(state, ptn_int((int64_t)len));
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 32);
+        *state_out = state;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(data->algo, "whirlpool")) {
+        if (len > 64) {
+            return 0;
+        }
+        PtnValue state = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < 8; i++) {
+            ptn_hash_context_array_append_q(state, 0);
+        }
+        unsigned char bit_length[32];
+        memset(bit_length, 0, sizeof(bit_length));
+        uint64_t bits = (uint64_t)len * UINT64_C(8);
+        bit_length[24] = (unsigned char)((bits >> 56) & 0xff);
+        bit_length[25] = (unsigned char)((bits >> 48) & 0xff);
+        bit_length[26] = (unsigned char)((bits >> 40) & 0xff);
+        bit_length[27] = (unsigned char)((bits >> 32) & 0xff);
+        bit_length[28] = (unsigned char)((bits >> 24) & 0xff);
+        bit_length[29] = (unsigned char)((bits >> 16) & 0xff);
+        bit_length[30] = (unsigned char)((bits >> 8) & 0xff);
+        bit_length[31] = (unsigned char)(bits & 0xff);
+        ptn_hash_context_array_append_value(
+            state,
+            ptn_owned_string_len(ptn_duplicate_string_len((const char *)bit_length, sizeof(bit_length)), sizeof(bit_length))
+        );
+        ptn_hash_context_array_append_value(state, ptn_int((int64_t)len));
+        ptn_hash_context_array_append_value(state, ptn_int((int64_t)bits));
+        ptn_hash_context_array_append_padded_string(state, bytes, len, 64);
+        *state_out = state;
+        return 1;
+    }
+
+    return 0;
+}
+
+static void ptn_hash_context_legacy_update(PtnHashContextData *data, const unsigned char *bytes, size_t len) {
+    if (data == NULL || len == 0 || data->legacy_mode == PTN_HASH_LEGACY_NONE) {
+        return;
+    }
+    switch (data->legacy_mode) {
+        case PTN_HASH_LEGACY_MD2:
+            if (data->legacy_context != NULL && data->legacy_context_len == sizeof(PHP_MD2_CTX)) {
+                PHP_MD2Update((PHP_MD2_CTX *)data->legacy_context, bytes, len);
+            }
+            break;
+        case PTN_HASH_LEGACY_ADLER32:
+            data->legacy_state = ptn_hash_context_adler32_update((uint32_t)data->legacy_state, bytes, len);
+            break;
+        case PTN_HASH_LEGACY_CRC32:
+            data->legacy_state = ptn_hash_context_crc32_update((uint32_t)data->legacy_state, bytes, len);
+            break;
+        case PTN_HASH_LEGACY_CRC32B:
+            data->legacy_state = ptn_hash_context_crc32b_update((uint32_t)data->legacy_state, bytes, len);
+            break;
+        case PTN_HASH_LEGACY_CRC32C:
+            data->legacy_state = ptn_hash_context_crc32c_update((uint32_t)data->legacy_state, bytes, len);
+            break;
+        case PTN_HASH_LEGACY_FNV132:
+            data->legacy_state = ptn_hash_context_fnv32_update((uint32_t)data->legacy_state, bytes, len, 0);
+            break;
+        case PTN_HASH_LEGACY_FNV1A32:
+            data->legacy_state = ptn_hash_context_fnv32_update((uint32_t)data->legacy_state, bytes, len, 1);
+            break;
+        case PTN_HASH_LEGACY_FNV164:
+            data->legacy_state = ptn_hash_context_fnv64_update(data->legacy_state, bytes, len, 0);
+            break;
+        case PTN_HASH_LEGACY_FNV1A64:
+            data->legacy_state = ptn_hash_context_fnv64_update(data->legacy_state, bytes, len, 1);
+            break;
+        case PTN_HASH_LEGACY_JOAAT:
+            data->legacy_state = ptn_hash_context_joaat_update((uint32_t)data->legacy_state, bytes, len);
+            break;
+        case PTN_HASH_LEGACY_NONE:
+            break;
+    }
+}
+
+static void ptn_hash_context_update_bytes(PtnHashContextData *data, const unsigned char *bytes, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    if (data->legacy_mode != PTN_HASH_LEGACY_NONE) {
+        ptn_hash_context_legacy_update(data, bytes, len);
+        return;
+    }
+    ptn_hash_context_append(data, bytes, len);
+}
+
+static PtnValue ptn_hash_context_legacy_final_value(PtnHashContextData *data, int raw_output) {
+    unsigned char digest[16];
+    uint32_t state32 = (uint32_t)data->legacy_state;
+    uint64_t state64 = data->legacy_state;
+    switch (data->legacy_mode) {
+        case PTN_HASH_LEGACY_MD2: {
+            PHP_MD2_CTX ctx;
+            memset(&ctx, 0, sizeof(ctx));
+            if (data->legacy_context != NULL && data->legacy_context_len == sizeof(ctx)) {
+                memcpy(&ctx, data->legacy_context, sizeof(ctx));
+            }
+            PHP_MD2Final(digest, &ctx);
+            return ptn_digest_value(digest, 16, raw_output);
+        }
+        case PTN_HASH_LEGACY_ADLER32:
+            digest[0] = (unsigned char)((state32 >> 24) & 0xff);
+            digest[1] = (unsigned char)((state32 >> 16) & 0xff);
+            digest[2] = (unsigned char)((state32 >> 8) & 0xff);
+            digest[3] = (unsigned char)(state32 & 0xff);
+            return ptn_digest_value(digest, 4, raw_output);
+        case PTN_HASH_LEGACY_CRC32:
+            state32 ^= UINT32_C(0xffffffff);
+            digest[0] = (unsigned char)(state32 & 0xff);
+            digest[1] = (unsigned char)((state32 >> 8) & 0xff);
+            digest[2] = (unsigned char)((state32 >> 16) & 0xff);
+            digest[3] = (unsigned char)((state32 >> 24) & 0xff);
+            return ptn_digest_value(digest, 4, raw_output);
+        case PTN_HASH_LEGACY_CRC32B:
+        case PTN_HASH_LEGACY_CRC32C:
+            state32 ^= UINT32_C(0xffffffff);
+            digest[0] = (unsigned char)((state32 >> 24) & 0xff);
+            digest[1] = (unsigned char)((state32 >> 16) & 0xff);
+            digest[2] = (unsigned char)((state32 >> 8) & 0xff);
+            digest[3] = (unsigned char)(state32 & 0xff);
+            return ptn_digest_value(digest, 4, raw_output);
+        case PTN_HASH_LEGACY_FNV132:
+        case PTN_HASH_LEGACY_FNV1A32:
+            digest[0] = (unsigned char)((state32 >> 24) & 0xff);
+            digest[1] = (unsigned char)((state32 >> 16) & 0xff);
+            digest[2] = (unsigned char)((state32 >> 8) & 0xff);
+            digest[3] = (unsigned char)(state32 & 0xff);
+            return ptn_digest_value(digest, 4, raw_output);
+        case PTN_HASH_LEGACY_FNV164:
+        case PTN_HASH_LEGACY_FNV1A64:
+            ptn_store_u64_be(digest, state64);
+            return ptn_digest_value(digest, 8, raw_output);
+        case PTN_HASH_LEGACY_JOAAT:
+            state32 += state32 << 3;
+            state32 ^= state32 >> 11;
+            state32 += state32 << 15;
+            digest[0] = (unsigned char)((state32 >> 24) & 0xff);
+            digest[1] = (unsigned char)((state32 >> 16) & 0xff);
+            digest[2] = (unsigned char)((state32 >> 8) & 0xff);
+            digest[3] = (unsigned char)(state32 & 0xff);
+            return ptn_digest_value(digest, 4, raw_output);
+        case PTN_HASH_LEGACY_NONE:
+            break;
+    }
+    return ptn_string("");
+}
+
 static PtnValue ptn_hash_context_serialize_payload(PtnRuntime *runtime, PtnObject *object, size_t line) {
     (void)line;
     if (object == NULL || !ptn_internal_class_name_is_hash_context(object->class_name)) {
@@ -74986,25 +75688,29 @@ static PtnValue ptn_hash_context_serialize_payload(PtnRuntime *runtime, PtnObjec
     }
 
     PtnValue state = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(state.as.array, ptn_array_int_key(0), ptn_string("ptn"));
-    ptn_array_set_entry(
-        state.as.array,
-        ptn_array_int_key(1),
-        ptn_owned_string_len(
-            ptn_duplicate_string_len((const char *)data->data, data->data_len),
-            data->data_len
-        )
-    );
+    int64_t magic = 2;
+    if (!ptn_hash_context_build_php_state(data, &state, &magic)) {
+        ptn_array_set_entry(state.as.array, ptn_array_int_key(0), ptn_string("ptn"));
+        ptn_array_set_entry(
+            state.as.array,
+            ptn_array_int_key(1),
+            ptn_owned_string_len(
+                ptn_duplicate_string_len((const char *)data->data, data->data_len),
+                data->data_len
+            )
+        );
+    }
 
     PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+    const char *serialized_algo = ptn_ascii_case_equal(data->algo, "snefru256") ? "snefru" : data->algo;
     ptn_array_set_entry(
         payload.as.array,
         ptn_array_int_key(0),
-        ptn_owned_string(ptn_duplicate_string(data->algo))
+        ptn_owned_string(ptn_duplicate_string(serialized_algo))
     );
     ptn_array_set_entry(payload.as.array, ptn_array_int_key(1), ptn_int(0));
     ptn_array_set_entry(payload.as.array, ptn_array_int_key(2), state);
-    ptn_array_set_entry(payload.as.array, ptn_array_int_key(3), ptn_int(2));
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(3), ptn_int(magic));
     ptn_array_set_entry(payload.as.array, ptn_array_int_key(4), ptn_array_from_literal_entries(0, NULL));
     return payload;
 }
@@ -75041,6 +75747,277 @@ static int ptn_hash_context_payload_int(PtnArray *payload, int64_t key, int64_t 
     }
     *int_out = value.as.integer;
     return 1;
+}
+
+static int ptn_hash_context_state_string_exact(
+    PtnArray *state,
+    int64_t key,
+    size_t len,
+    PtnStringOperand *string_out
+) {
+    if (!ptn_hash_context_payload_string(state, key, string_out)) {
+        return 0;
+    }
+    return string_out->len == len;
+}
+
+static int ptn_hash_context_byte_len_from_bits(int64_t bits, size_t *len_out) {
+    if (bits < 0 || (bits % 8) != 0) {
+        return 0;
+    }
+    uint64_t bytes = (uint64_t)(bits / 8);
+    if (bytes > SIZE_MAX) {
+        return 0;
+    }
+    *len_out = (size_t)bytes;
+    return 1;
+}
+
+static int ptn_hash_context_restore_buffer_from_state(
+    PtnHashContextData *data,
+    PtnArray *state,
+    int64_t buffer_key,
+    size_t buffer_size,
+    size_t len
+) {
+    if (len > buffer_size) {
+        return 0;
+    }
+    PtnStringOperand buffer = { 0 };
+    if (!ptn_hash_context_state_string_exact(state, buffer_key, buffer_size, &buffer)) {
+        return 0;
+    }
+    ptn_hash_context_append(data, (const unsigned char *)buffer.data, len);
+    return 1;
+}
+
+static int ptn_hash_context_state_q(PtnArray *state, int64_t key, uint64_t *value_out) {
+    int64_t low = 0;
+    int64_t high = 0;
+    if (!ptn_hash_context_payload_int(state, key, &low) ||
+        !ptn_hash_context_payload_int(state, key + 1, &high)) {
+        return 0;
+    }
+    *value_out = ((uint64_t)(uint32_t)high << 32) | (uint64_t)(uint32_t)low;
+    return 1;
+}
+
+static PtnHashContextData *ptn_hash_context_alloc_unserialized(char *algo) {
+    PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->algo = algo;
+    data->hmac = 0;
+    data->key = NULL;
+    data->key_len = 0;
+    data->seed = 0;
+    data->secret = NULL;
+    data->secret_len = 0;
+    data->data = NULL;
+    data->data_len = 0;
+    data->data_capacity = 0;
+    data->finalized = 0;
+    data->legacy_mode = PTN_HASH_LEGACY_NONE;
+    data->legacy_context = NULL;
+    data->legacy_context_len = 0;
+    data->legacy_state = 0;
+    return data;
+}
+
+static int ptn_hash_context_restore_md2(PtnHashContextData *data, PtnArray *state) {
+    PtnStringOperand md2_state = { 0 };
+    PtnStringOperand checksum = { 0 };
+    PtnStringOperand buffer = { 0 };
+    int64_t in_buffer = 0;
+    if (!ptn_hash_context_state_string_exact(state, 0, 48, &md2_state) ||
+        !ptn_hash_context_state_string_exact(state, 1, 16, &checksum) ||
+        !ptn_hash_context_state_string_exact(state, 2, 16, &buffer) ||
+        !ptn_hash_context_payload_int(state, 3, &in_buffer) ||
+        in_buffer < 0 ||
+        in_buffer > 15) {
+        return 0;
+    }
+    PHP_MD2_CTX ctx;
+    memcpy(ctx.state, md2_state.data, sizeof(ctx.state));
+    memcpy(ctx.checksum, checksum.data, sizeof(ctx.checksum));
+    memcpy(ctx.buffer, buffer.data, sizeof(ctx.buffer));
+    ctx.in_buffer = (unsigned char)in_buffer;
+    data->legacy_context = (unsigned char *)ptn_duplicate_string_len((const char *)&ctx, sizeof(ctx));
+    data->legacy_context_len = sizeof(ctx);
+    data->legacy_mode = PTN_HASH_LEGACY_MD2;
+    return 1;
+}
+
+static int ptn_hash_context_restore_scalar(PtnHashContextData *data, PtnArray *state, PtnHashLegacyMode mode) {
+    int64_t value = 0;
+    if (!ptn_hash_context_payload_int(state, 0, &value)) {
+        return 0;
+    }
+    data->legacy_mode = mode;
+    data->legacy_state = (uint32_t)value;
+    return 1;
+}
+
+static int ptn_hash_context_restore_scalar_q(PtnHashContextData *data, PtnArray *state, PtnHashLegacyMode mode) {
+    uint64_t value = 0;
+    if (!ptn_hash_context_state_q(state, 0, &value)) {
+        return 0;
+    }
+    data->legacy_mode = mode;
+    data->legacy_state = value;
+    return 1;
+}
+
+static int ptn_hash_context_restore_php_state(
+    PtnHashContextData *data,
+    PtnArray *state,
+    int64_t magic
+) {
+    if (magic != 2) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(data->algo, "md2")) {
+        return ptn_hash_context_restore_md2(data, state);
+    }
+    if (ptn_ascii_case_equal(data->algo, "adler32")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_ADLER32);
+    }
+    if (ptn_ascii_case_equal(data->algo, "crc32")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_CRC32);
+    }
+    if (ptn_ascii_case_equal(data->algo, "crc32b")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_CRC32B);
+    }
+    if (ptn_ascii_case_equal(data->algo, "crc32c")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_CRC32C);
+    }
+    if (ptn_ascii_case_equal(data->algo, "fnv132")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_FNV132);
+    }
+    if (ptn_ascii_case_equal(data->algo, "fnv1a32")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_FNV1A32);
+    }
+    if (ptn_ascii_case_equal(data->algo, "fnv164")) {
+        return ptn_hash_context_restore_scalar_q(data, state, PTN_HASH_LEGACY_FNV164);
+    }
+    if (ptn_ascii_case_equal(data->algo, "fnv1a64")) {
+        return ptn_hash_context_restore_scalar_q(data, state, PTN_HASH_LEGACY_FNV1A64);
+    }
+    if (ptn_ascii_case_equal(data->algo, "joaat")) {
+        return ptn_hash_context_restore_scalar(data, state, PTN_HASH_LEGACY_JOAAT);
+    }
+    if (ptn_ascii_case_equal(data->algo, "md5")) {
+        int64_t count = 0;
+        int64_t count_high = 0;
+        if (!ptn_hash_context_payload_int(state, 0, &count) ||
+            !ptn_hash_context_payload_int(state, 1, &count_high) ||
+            count < 0 ||
+            count_high != 0) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 6, 64, (size_t)count);
+    }
+    if (ptn_ascii_case_equal(data->algo, "md4") || ptn_ascii_case_equal(data->algo, "ripemd128")) {
+        int64_t bits = 0;
+        size_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 4, &bits) ||
+            !ptn_hash_context_byte_len_from_bits(bits, &len)) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 6, 64, len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "sha1") || ptn_ascii_case_equal(data->algo, "ripemd160")) {
+        int64_t bits = 0;
+        size_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 5, &bits) ||
+            !ptn_hash_context_byte_len_from_bits(bits, &len)) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 7, 64, len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "sha224") ||
+        ptn_ascii_case_equal(data->algo, "sha256") ||
+        ptn_ascii_case_equal(data->algo, "ripemd256")) {
+        int64_t bits = 0;
+        size_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 8, &bits) ||
+            !ptn_hash_context_byte_len_from_bits(bits, &len)) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 10, 64, len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "ripemd320")) {
+        int64_t bits = 0;
+        size_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 10, &bits) ||
+            !ptn_hash_context_byte_len_from_bits(bits, &len)) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 12, 64, len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "sha384") ||
+        ptn_ascii_case_equal(data->algo, "sha512/224") ||
+        ptn_ascii_case_equal(data->algo, "sha512/256") ||
+        ptn_ascii_case_equal(data->algo, "sha512")) {
+        uint64_t bits = 0;
+        if (!ptn_hash_context_state_q(state, 16, &bits) || (bits % 8) != 0 || bits / 8 > SIZE_MAX) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 20, 128, (size_t)(bits / 8));
+    }
+    int haval_bits = 0;
+    int haval_passes = 0;
+    if (ptn_hash_context_parse_haval(data->algo, &haval_bits, &haval_passes)) {
+        (void)haval_bits;
+        (void)haval_passes;
+        int64_t bits = 0;
+        size_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 8, &bits) ||
+            !ptn_hash_context_byte_len_from_bits(bits, &len)) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 10, 128, len);
+    }
+    int tiger_bits = 0;
+    int tiger_passes = 0;
+    if (ptn_hash_context_parse_tiger(data->algo, &tiger_bits, &tiger_passes)) {
+        (void)tiger_bits;
+        (void)tiger_passes;
+        int64_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 9, &len) || len < 0) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 8, 64, (size_t)len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "snefru") ||
+        ptn_ascii_case_equal(data->algo, "snefru256") ||
+        ptn_ascii_case_equal(data->algo, "gost") ||
+        ptn_ascii_case_equal(data->algo, "gost-crypto")) {
+        int64_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 18, &len) || len < 0) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 19, 32, (size_t)len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "whirlpool")) {
+        int64_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 17, &len) || len < 0) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 19, 64, (size_t)len);
+    }
+    if (ptn_ascii_case_equal(data->algo, "sha3-224") ||
+        ptn_ascii_case_equal(data->algo, "sha3-256") ||
+        ptn_ascii_case_equal(data->algo, "sha3-384") ||
+        ptn_ascii_case_equal(data->algo, "sha3-512")) {
+        int64_t len = 0;
+        if (!ptn_hash_context_payload_int(state, 1, &len) || len < 0) {
+            return 0;
+        }
+        return ptn_hash_context_restore_buffer_from_state(data, state, 0, 200, (size_t)len);
+    }
+    return 0;
 }
 
 static int ptn_hash_context_php_spec_array_has_ints(PtnArray *payload, size_t count) {
@@ -75170,43 +76147,28 @@ static int ptn_hash_context_unserialize_payload(
         return 0;
     }
     PtnStringOperand marker = { 0 };
-    if (!ptn_hash_context_payload_string(state.as.array, 0, &marker) ||
-        marker.len != 3 ||
-        memcmp(marker.data, "ptn", 3) != 0) {
+    PtnHashContextData *data = ptn_hash_context_alloc_unserialized(algo);
+    if (ptn_hash_context_payload_string(state.as.array, 0, &marker) &&
+        marker.len == 3 &&
+        memcmp(marker.data, "ptn", 3) == 0) {
+        PtnStringOperand buffered = { 0 };
+        if (!ptn_hash_context_payload_string(state.as.array, 1, &buffered)) {
+            ptn_hash_context_throw_ill_formed_code(runtime, algo, -1024);
+            ptn_hash_context_data_free(data);
+            return 0;
+        }
+        ptn_hash_context_append(data, (const unsigned char *)buffered.data, buffered.len);
+    } else if (!ptn_hash_context_restore_php_state(data, state.as.array, magic)) {
         ptn_hash_context_throw_ill_formed_code(runtime, algo, -1024);
-        free(algo);
+        ptn_hash_context_data_free(data);
         return 0;
     }
-    PtnStringOperand buffered = { 0 };
-    if (!ptn_hash_context_payload_string(state.as.array, 1, &buffered)) {
-        ptn_hash_context_throw_ill_formed_code(runtime, algo, -1024);
-        free(algo);
-        return 0;
-    }
-
-    PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
-    if (data == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    data->algo = algo;
-    data->hmac = 0;
-    data->key = NULL;
-    data->key_len = 0;
-    data->seed = 0;
-    data->secret = NULL;
-    data->secret_len = 0;
-    data->data = buffered.len == 0
-        ? NULL
-        : (unsigned char *)ptn_duplicate_string_len(buffered.data, buffered.len);
-    data->data_len = buffered.len;
-    data->data_capacity = buffered.len;
-    data->finalized = 0;
     receiver.as.object->native_data = data;
     receiver.as.object->native_data_free = ptn_hash_context_data_free;
     ptn_array_set_entry(
         receiver.as.object->properties,
         ptn_array_string_key("algo"),
-        ptn_owned_string(ptn_duplicate_string(algo))
+        ptn_owned_string(ptn_duplicate_string(data->algo))
     );
     return 1;
 }
@@ -75557,7 +76519,18 @@ static PtnValue ptn_internal_hash_copy(PtnRuntime *runtime, size_t argc, const P
         data->secret,
         data->secret_len
     );
-    ptn_hash_context_append(copy.as.object->native_data, data->data, data->data_len);
+    PtnHashContextData *copy_data = (PtnHashContextData *)copy.as.object->native_data;
+    copy_data->legacy_mode = data->legacy_mode;
+    copy_data->legacy_state = data->legacy_state;
+    if (data->legacy_context_len != 0) {
+        copy_data->legacy_context = (unsigned char *)ptn_duplicate_string_len(
+            (const char *)data->legacy_context,
+            data->legacy_context_len
+        );
+        copy_data->legacy_context_len = data->legacy_context_len;
+    } else if (data->legacy_mode == PTN_HASH_LEGACY_NONE) {
+        ptn_hash_context_append(copy_data, data->data, data->data_len);
+    }
     return copy;
 }
 
@@ -76041,6 +77014,9 @@ static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const 
         return ptn_digest_value(digest, digest_len, raw_output);
     }
     if (!data->hmac) {
+        if (data->legacy_mode != PTN_HASH_LEGACY_NONE) {
+            return ptn_hash_context_legacy_final_value(data, raw_output);
+        }
         if (ptn_hash_algorithm_name_is_xxhash(data->algo)) {
             return ptn_hash_xxhash_digest_value(
                 runtime,
@@ -76111,7 +77087,7 @@ static PtnValue ptn_internal_hash_update(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(input);
         return ptn_null();
     }
-    ptn_hash_context_append(data, (const unsigned char *)input.data, input.len);
+    ptn_hash_context_update_bytes(data, (const unsigned char *)input.data, input.len);
     ptn_string_operand_free(input);
     return ptn_bool(1);
 }
@@ -76149,7 +77125,7 @@ static PtnValue ptn_internal_hash_update_file(PtnRuntime *runtime, size_t argc, 
         free(bytes);
         return ptn_bool(0);
     }
-    ptn_hash_context_append(data, bytes, len);
+    ptn_hash_context_update_bytes(data, bytes, len);
     free(path);
     free(bytes);
     return ptn_bool(1);
@@ -76182,7 +77158,7 @@ static PtnValue ptn_internal_hash_update_stream(PtnRuntime *runtime, size_t argc
         if (read_len == 0) {
             break;
         }
-        ptn_hash_context_append(data, chunk, read_len);
+        ptn_hash_context_update_bytes(data, chunk, read_len);
         total += read_len;
     }
     return ptn_int((int64_t)total);
