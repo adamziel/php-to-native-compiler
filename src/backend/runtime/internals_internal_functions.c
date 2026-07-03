@@ -57237,6 +57237,318 @@ static PtnValue ptn_phar_directory_resource_value(PtnRuntime *runtime, const cha
     return ptn_resource(directory_resource);
 }
 
+typedef struct {
+    char **entries;
+    size_t len;
+    size_t capacity;
+    size_t index;
+} PtnFtpDirectoryData;
+
+static void ptn_ftp_directory_data_free(PtnFtpDirectoryData *directory) {
+    if (directory == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < directory->len; i++) {
+        free(directory->entries[i]);
+    }
+    free(directory->entries);
+    free(directory);
+}
+
+static void ptn_ftp_directory_resource_close_hook(PtnResource *resource, void *data) {
+    if (resource != NULL && resource->directory == data) {
+        resource->directory = NULL;
+    }
+    ptn_ftp_directory_data_free((PtnFtpDirectoryData *)data);
+}
+
+static void ptn_ftp_directory_add_entry(PtnFtpDirectoryData *directory, const char *entry, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    if (directory->len == directory->capacity) {
+        size_t new_capacity = directory->capacity == 0 ? 8 : directory->capacity * 2;
+        if (new_capacity < directory->capacity || new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_entries = realloc(directory->entries, new_capacity * sizeof(char *));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        directory->entries = new_entries;
+        directory->capacity = new_capacity;
+    }
+    directory->entries[directory->len++] = ptn_duplicate_string_len(entry, len);
+}
+
+static int ptn_ftp_directory_uri_parse(const char *uri, int *is_ssl, char **host_out, char **service_out) {
+    const char *prefix = NULL;
+    *is_ssl = 0;
+    if (ptn_ascii_case_has_prefix(uri, "ftp://")) {
+        prefix = uri + 6;
+    } else if (ptn_ascii_case_has_prefix(uri, "ftps://")) {
+        prefix = uri + 7;
+        *is_ssl = 1;
+    } else {
+        return 0;
+    }
+
+    const char *host_start = prefix;
+    const char *host_end = host_start;
+    while (*host_end != '\0' && *host_end != ':' && *host_end != '/') {
+        host_end++;
+    }
+    if (host_end == host_start) {
+        return 0;
+    }
+    const char *service_start = NULL;
+    const char *service_end = NULL;
+    if (*host_end == ':') {
+        service_start = host_end + 1;
+        service_end = service_start;
+        while (*service_end != '\0' && *service_end != '/') {
+            service_end++;
+        }
+        if (service_end == service_start) {
+            return 0;
+        }
+    }
+
+    *host_out = ptn_duplicate_string_len(host_start, (size_t)(host_end - host_start));
+    *service_out = service_start == NULL
+        ? ptn_duplicate_string("21")
+        : ptn_duplicate_string_len(service_start, (size_t)(service_end - service_start));
+    return 1;
+}
+
+static FILE *ptn_ftp_open_tcp_stream(const char *host, const char *service) {
+#if defined(_WIN32)
+    (void)host;
+    (void)service;
+    return NULL;
+#else
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+    struct addrinfo *addresses = NULL;
+    if (getaddrinfo(host, service, &hints, &addresses) != 0) {
+        return NULL;
+    }
+    int descriptor = -1;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        descriptor = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        if (descriptor < 0) {
+            continue;
+        }
+        if (connect(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0) {
+            break;
+        }
+        close(descriptor);
+        descriptor = -1;
+    }
+    freeaddrinfo(addresses);
+    if (descriptor < 0) {
+        return NULL;
+    }
+    FILE *stream = fdopen(descriptor, "r+");
+    if (stream == NULL) {
+        close(descriptor);
+        return NULL;
+    }
+    setvbuf(stream, NULL, _IONBF, 0);
+    return stream;
+#endif
+}
+
+static int ptn_ftp_read_response(FILE *stream, char *line_out, size_t line_out_size) {
+    char line[1024];
+    int expected_code = -1;
+    while (fgets(line, sizeof(line), stream) != NULL) {
+        if (line_out != NULL && line_out_size != 0) {
+            snprintf(line_out, line_out_size, "%s", line);
+        }
+        if (isdigit((unsigned char)line[0]) &&
+            isdigit((unsigned char)line[1]) &&
+            isdigit((unsigned char)line[2])) {
+            int code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
+            if (expected_code < 0) {
+                expected_code = code;
+            }
+            if (line[3] == ' ' || (line[3] != '-' && code == expected_code)) {
+                return code;
+            }
+        } else if (expected_code < 0) {
+            return -1;
+        }
+    }
+    return -1;
+}
+
+static int ptn_ftp_send_command(FILE *stream, const char *command) {
+    return fputs(command, stream) >= 0 && fflush(stream) == 0;
+}
+
+static int ptn_ftp_parse_pasv_response(const char *line, char **host_out, char **service_out) {
+    const char *cursor = strchr(line, '(');
+    if (cursor == NULL) {
+        cursor = line;
+    } else {
+        cursor++;
+    }
+    int h1, h2, h3, h4, p1, p2;
+    if (sscanf(cursor, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2) != 6) {
+        return 0;
+    }
+    if (h1 < 0 || h1 > 255 || h2 < 0 || h2 > 255 || h3 < 0 || h3 > 255 || h4 < 0 || h4 > 255 ||
+        p1 < 0 || p1 > 255 || p2 < 0 || p2 > 255) {
+        return 0;
+    }
+    int port = (p1 << 8) + p2;
+    int host_needed = snprintf(NULL, 0, "%d.%d.%d.%d", h1, h2, h3, h4);
+    int service_needed = snprintf(NULL, 0, "%d", port);
+    if (host_needed < 0 || service_needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *host = malloc((size_t)host_needed + 1);
+    char *service = malloc((size_t)service_needed + 1);
+    if (host == NULL || service == NULL) {
+        free(host);
+        free(service);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(host, (size_t)host_needed + 1, "%d.%d.%d.%d", h1, h2, h3, h4);
+    snprintf(service, (size_t)service_needed + 1, "%d", port);
+    *host_out = host;
+    *service_out = service;
+    return 1;
+}
+
+static PtnFtpDirectoryData *ptn_ftp_directory_data_from_listing(PtnStringBuffer *listing) {
+    PtnFtpDirectoryData *directory = calloc(1, sizeof(PtnFtpDirectoryData));
+    if (directory == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t start = 0;
+    for (size_t i = 0; i < listing->len; i++) {
+        if (listing->data[i] != '\n') {
+            continue;
+        }
+        size_t len = i - start;
+        if (len > 0 && listing->data[i - 1] == '\r') {
+            len--;
+        } else if (len > 0) {
+            len--;
+        }
+        ptn_ftp_directory_add_entry(directory, listing->data + start, len);
+        start = i + 1;
+    }
+    if (start < listing->len) {
+        ptn_ftp_directory_add_entry(directory, listing->data + start, listing->len - start);
+    }
+    return directory;
+}
+
+static int ptn_ftp_directory_fetch_listing(const char *uri, PtnFtpDirectoryData **directory_out) {
+    *directory_out = NULL;
+    int is_ssl = 0;
+    char *host = NULL;
+    char *service = NULL;
+    if (!ptn_ftp_directory_uri_parse(uri, &is_ssl, &host, &service)) {
+        return 0;
+    }
+    FILE *control = ptn_ftp_open_tcp_stream(host, service);
+    free(service);
+    if (control == NULL) {
+        free(host);
+        return 0;
+    }
+    char response[1024];
+    int ok = ptn_ftp_read_response(control, response, sizeof(response)) == 220;
+    if (ok && is_ssl) {
+        ok = ptn_ftp_send_command(control, "AUTH TLS\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 234 &&
+            ptn_ftp_send_command(control, "PBSZ 0\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 200 &&
+            ptn_ftp_send_command(control, "PROT P\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 200;
+    }
+    if (ok) {
+        ok = ptn_ftp_send_command(control, "USER anonymous\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 230 &&
+            ptn_ftp_send_command(control, "TYPE A\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 200 &&
+            ptn_ftp_send_command(control, "PASV\r\n") &&
+            ptn_ftp_read_response(control, response, sizeof(response)) == 227;
+    }
+
+    FILE *data = NULL;
+    if (ok) {
+        char *data_host = NULL;
+        char *data_service = NULL;
+        ok = ptn_ftp_parse_pasv_response(response, &data_host, &data_service);
+        if (ok) {
+            data = ptn_ftp_open_tcp_stream(data_host, data_service);
+            ok = data != NULL;
+        }
+        free(data_host);
+        free(data_service);
+    }
+    if (ok) {
+        int code = 0;
+        ok = ptn_ftp_send_command(control, "NLST\r\n") &&
+            ((code = ptn_ftp_read_response(control, response, sizeof(response))) == 125 || code == 150);
+    }
+
+    PtnStringBuffer listing;
+    ptn_string_buffer_init(&listing);
+    if (ok) {
+        char chunk[4096];
+        size_t read_len;
+        while ((read_len = fread(chunk, 1, sizeof(chunk), data)) > 0) {
+            ptn_string_buffer_append_len(&listing, chunk, read_len);
+        }
+        fclose(data);
+        data = NULL;
+        ok = ptn_ftp_read_response(control, response, sizeof(response)) == 226;
+    }
+    if (data != NULL) {
+        fclose(data);
+    }
+    (void)ptn_ftp_send_command(control, "QUIT\r\n");
+    fclose(control);
+    free(host);
+
+    if (!ok) {
+        free(listing.data);
+        return 0;
+    }
+    *directory_out = ptn_ftp_directory_data_from_listing(&listing);
+    free(listing.data);
+    return 1;
+}
+
+static int ptn_try_open_ftp_directory(PtnRuntime *runtime, const char *path, size_t line, PtnValue *out) {
+    if (!ptn_ascii_case_has_prefix(path, "ftp://") && !ptn_ascii_case_has_prefix(path, "ftps://")) {
+        return 0;
+    }
+    PtnFtpDirectoryData *directory = NULL;
+    if (!ptn_ftp_directory_fetch_listing(path, &directory)) {
+        ptn_emit_directory_open_warning(runtime, "opendir", path, "FTP directory listing failed", line);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnResource *resource = ptn_resource_new_named("stream");
+    resource->directory = directory;
+    resource->stream_uri = ptn_duplicate_string(path);
+    resource->stream_mode = ptn_duplicate_string("r");
+    resource->close_hook = ptn_ftp_directory_resource_close_hook;
+    resource->close_hook_data = directory;
+    ptn_runtime_set_last_directory(runtime, resource);
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static int ptn_try_open_user_directory_wrapper(
     PtnRuntime *runtime,
     const char *path,
@@ -57402,6 +57714,12 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
         }
         free(path);
         return resource;
+    }
+
+    PtnValue ftp_directory;
+    if (ptn_try_open_ftp_directory(runtime, path, line, &ftp_directory)) {
+        free(path);
+        return ftp_directory;
     }
 
     PtnResource *context = argc >= 2 ? ptn_fopen_context_arg(args[1]) : NULL;
@@ -62572,6 +62890,13 @@ static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const Ptn
         const char *entry = ptn_phar_directory_next((PtnPharDirectoryData *)resource->directory);
         return entry == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(entry));
     }
+    if (resource->close_hook == ptn_ftp_directory_resource_close_hook) {
+        PtnFtpDirectoryData *directory = (PtnFtpDirectoryData *)resource->directory;
+        if (directory == NULL || directory->index >= directory->len) {
+            return ptn_bool(0);
+        }
+        return ptn_owned_string(ptn_duplicate_string(directory->entries[directory->index++]));
+    }
 #if defined(_WIN32)
     return ptn_bool(0);
 #else
@@ -62608,6 +62933,13 @@ static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const P
     }
     if (resource->close_hook == ptn_phar_directory_resource_close_hook) {
         ptn_phar_directory_rewind((PtnPharDirectoryData *)resource->directory);
+        return ptn_null();
+    }
+    if (resource->close_hook == ptn_ftp_directory_resource_close_hook) {
+        PtnFtpDirectoryData *directory = (PtnFtpDirectoryData *)resource->directory;
+        if (directory != NULL) {
+            directory->index = 0;
+        }
         return ptn_null();
     }
 #if !defined(_WIN32)
@@ -63247,6 +63579,8 @@ static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
         ptn_ascii_case_equal(scheme, "data") ||
         ptn_ascii_case_equal(scheme, "phar") ||
         ptn_ascii_case_equal(scheme, "compress.zlib") ||
+        ptn_ascii_case_equal(scheme, "ftp") ||
+        ptn_ascii_case_equal(scheme, "ftps") ||
         ptn_ascii_case_equal(scheme, "http") ||
         ptn_ascii_case_equal(scheme, "https");
 }
@@ -63495,6 +63829,8 @@ static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t arg
         "file",
         "data",
         "http",
+        "ftp",
+        "ftps",
         "compress.zlib",
         "phar",
     };
@@ -124487,6 +124823,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_1_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER);
     ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_2_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER);
     ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_TLSv1_3_SERVER", PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_ANY_CLIENT", PTN_STREAM_CRYPTO_METHOD_ANY_CLIENT);
+    ptn_get_defined_constants_add_int(table, "STREAM_CRYPTO_METHOD_ANY_SERVER", PTN_STREAM_CRYPTO_METHOD_ANY_SERVER);
     ptn_get_defined_constants_add_int(table, "DNS_A", 1);
     ptn_get_defined_constants_add_int(table, "DNS_NS", 2);
     ptn_get_defined_constants_add_int(table, "DNS_CNAME", 16);
@@ -125109,6 +125447,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_CRYPTO_METHOD_TLSv1_1_SERVER",
         "STREAM_CRYPTO_METHOD_TLSv1_2_SERVER",
         "STREAM_CRYPTO_METHOD_TLSv1_3_SERVER",
+        "STREAM_CRYPTO_METHOD_ANY_CLIENT",
+        "STREAM_CRYPTO_METHOD_ANY_SERVER",
         "DNS_A",
         "DNS_NS",
         "DNS_CNAME",
@@ -126875,6 +127215,54 @@ static PtnValue ptn_internal_proc_close(PtnRuntime *runtime, size_t argc, const 
     int exit_code = ptn_process_wait(data);
     ptn_resource_close(value.as.resource);
     return ptn_int(exit_code);
+}
+
+static PtnValue ptn_internal_pcntl_fork(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+#if defined(_WIN32)
+    return ptn_int(-1);
+#else
+    pid_t pid = fork();
+    if (pid < 0) {
+        return ptn_int(-1);
+    }
+    return ptn_int((int64_t)pid);
+#endif
+}
+
+static PtnValue ptn_internal_pcntl_waitpid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t pid_value = ptn_internal_expect_integer_arg(runtime, "pcntl_waitpid", 1, "process_id", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t options_value = 0;
+    if (argc >= 3) {
+        options_value = ptn_internal_expect_integer_arg(runtime, "pcntl_waitpid", 3, "flags", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+#if defined(_WIN32)
+    (void)pid_value;
+    (void)options_value;
+    if (args[1].type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, args[1].as.reference, ptn_int(0));
+    }
+    return ptn_int(-1);
+#else
+    int status = 0;
+    pid_t waited;
+    do {
+        waited = waitpid((pid_t)pid_value, &status, (int)options_value);
+    } while (waited < 0 && errno == EINTR);
+    if (args[1].type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, args[1].as.reference, ptn_int(status));
+    }
+    return ptn_int((int64_t)waited);
+#endif
 }
 
 static PtnValue ptn_process_status_value(PtnProcessData *data, int running, int cached) {
@@ -170328,6 +170716,8 @@ static int ptn_stream_tls_protocol_bounds(int64_t method, int *min_version, int 
         case PTN_STREAM_CRYPTO_METHOD_SSLV23_CLIENT:
         case PTN_STREAM_CRYPTO_METHOD_TLS_CLIENT:
         case PTN_STREAM_CRYPTO_METHOD_TLS_SERVER:
+        case PTN_STREAM_CRYPTO_METHOD_ANY_CLIENT:
+        case PTN_STREAM_CRYPTO_METHOD_ANY_SERVER:
             *min_version = TLS1_VERSION;
             *max_version = 0;
             return 1;
@@ -171528,6 +171918,29 @@ static char *ptn_stream_socket_endpoint_name_alloc(const struct sockaddr_storage
     return NULL;
 }
 
+static PtnValue ptn_internal_stream_socket_enable_crypto(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_enable_crypto", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    (void)ptn_is_truthy(args[1]);
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        (void)ptn_internal_expect_integer_arg(
+            runtime,
+            "stream_socket_enable_crypto",
+            3,
+            "crypto_method",
+            args[2],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    (void)argc;
+    return ptn_bool(ptn_stream_resource_is_socket_like(resource));
+}
+
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_get_name", args[0], line);
     if (resource == NULL) {
@@ -172011,21 +172424,7 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
 }
 
 static int ptn_stream_resource_is_socket_like(PtnResource *resource) {
-    if (resource == NULL || resource->stream_uri == NULL) {
-        return 0;
-    }
-    const char *uri = resource->stream_uri;
-    return ptn_ascii_case_has_prefix(uri, "tcp://") ||
-        ptn_ascii_case_has_prefix(uri, "udp://") ||
-        ptn_ascii_case_has_prefix(uri, "ssl://") ||
-        ptn_ascii_case_has_prefix(uri, "tls://") ||
-        ptn_ascii_case_has_prefix(uri, "tlsv1.0://") ||
-        ptn_ascii_case_has_prefix(uri, "tlsv1.1://") ||
-        ptn_ascii_case_has_prefix(uri, "tlsv1.2://") ||
-        ptn_ascii_case_has_prefix(uri, "tlsv1.3://") ||
-        ptn_ascii_case_has_prefix(uri, "sslv3://") ||
-        ptn_ascii_case_has_prefix(uri, "unix://") ||
-        ptn_ascii_case_has_prefix(uri, "udg://");
+    return ptn_stream_resource_uri_is_socket_like(resource);
 }
 
 static int ptn_user_stream_dispatch_set_option(
@@ -202260,6 +202659,8 @@ static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnVal
 static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_pclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_pcntl_fork(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_pcntl_waitpid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_popen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -202296,6 +202697,7 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_socket_enable_crypto(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -203655,6 +204057,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "parse_url", 1, 2, ptn_internal_parse_url },
         { "passthru", 1, 2, ptn_internal_passthru },
         { "pclose", 1, 1, ptn_internal_pclose },
+        { "pcntl_fork", 0, 0, ptn_internal_pcntl_fork },
+        { "pcntl_waitpid", 2, 3, ptn_internal_pcntl_waitpid },
         { "password_get_info", 1, 1, ptn_internal_password_get_info },
         { "password_hash", 2, 3, ptn_internal_password_hash },
         { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
@@ -203885,6 +204289,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_set_write_buffer", 2, 2, ptn_internal_stream_set_write_buffer },
         { "stream_socket_accept", 1, 3, ptn_internal_stream_socket_accept },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
+        { "stream_socket_enable_crypto", 2, 4, ptn_internal_stream_socket_enable_crypto },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
         { "stream_socket_recvfrom", 2, 4, ptn_internal_stream_socket_recvfrom },
@@ -250623,6 +251028,9 @@ static int ptn_eval_function_argument_is_reference(
         return 1;
     }
     if (ptn_ascii_case_equal(function_name, "stream_socket_accept") && argument_index == 2) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(function_name, "pcntl_waitpid") && argument_index == 1) {
         return 1;
     }
     return 0;

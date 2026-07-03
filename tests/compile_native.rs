@@ -34000,7 +34000,7 @@ gzclose($h);
 unlink($path);
 
 $wrappers = stream_get_wrappers();
-var_dump(in_array("phar", $wrappers, true), in_array("compress.zlib", $wrappers, true));
+var_dump(in_array("phar", $wrappers, true), in_array("compress.zlib", $wrappers, true), in_array("ftp", $wrappers, true), in_array("ftps", $wrappers, true));
 "#,
     )
     .unwrap();
@@ -34016,7 +34016,7 @@ var_dump(in_array("phar", $wrappers, true), in_array("compress.zlib", $wrappers,
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nint(3)\nstring(3) \"abc\"\nbool(true)\nbool(true)\n"
+        "bool(true)\nbool(true)\nint(3)\nstring(3) \"abc\"\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -36671,6 +36671,11 @@ $accepted = stream_socket_accept($server, 1, $peer);
 echo "accepted=", is_resource($accepted) ? "yes" : "no", ":", is_resource($client) ? "yes" : "no", ":", is_string($peer) ? "peer" : gettype($peer), "\n";
 $meta = stream_get_meta_data($client);
 echo "meta=", (int)$meta["timed_out"], ":", $meta["stream_type"], ":", $meta["mode"], ":", (int)$meta["seekable"], ":", (int)array_key_exists("wrapper_type", $meta), "\n";
+echo "pcntl=", function_exists("pcntl_fork") ? "yes" : "no", ":", function_exists("pcntl_waitpid") ? "yes" : "no", "\n";
+echo "crypto-const=", STREAM_CRYPTO_METHOD_SSLv23_SERVER, "\n";
+echo "crypto=", stream_socket_enable_crypto($accepted, true, STREAM_CRYPTO_METHOD_SSLv23_SERVER) ? "yes" : "no", "\n";
+fwrite($client, "AUTH TLS\r\n");
+echo "server-read=", fread($accepted, 2048), "\n";
 stream_set_timeout($client, 0, 1000);
 fread($client, 1);
 echo "timeout1=", (int)stream_get_meta_data($client)["timed_out"], "\n";
@@ -36715,6 +36720,10 @@ fclose($server2);
     assert!(stdout.contains("name=1\n"), "{stdout}");
     assert!(stdout.contains("accepted=yes:yes:peer\n"), "{stdout}");
     assert!(stdout.contains("meta=0:tcp_socket:r+:0:0\n"), "{stdout}");
+    assert!(stdout.contains("pcntl=yes:yes\n"), "{stdout}");
+    assert!(stdout.contains("crypto-const=120\n"), "{stdout}");
+    assert!(stdout.contains("crypto=yes\n"), "{stdout}");
+    assert!(stdout.contains("server-read=AUTH TLS\r\n\n"), "{stdout}");
     assert!(stdout.contains("timeout1=1\n"), "{stdout}");
     assert!(stdout.contains("timeout-after-write=1\n"), "{stdout}");
     assert!(stdout.contains("read=Z:0\n"), "{stdout}");
@@ -36728,6 +36737,8 @@ fclose($server2);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_stream_socket_accept"));
+    assert!(c_source.contains("ptn_internal_stream_socket_enable_crypto"));
+    assert!(c_source.contains("ptn_stream_read_socket_bytes"));
     assert!(c_source.contains("stream_socket_tcp_nodelay"));
     assert!(c_source.contains("stream_timed_out"));
 }

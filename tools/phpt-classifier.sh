@@ -1496,7 +1496,8 @@ ptn_phpt_supported_file_external_row() {
 ptn_phpt_supported_process_boundary_row() {
     local rel=$1
 
-    [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]]
+    [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
 }
 
 ptn_phpt_supported_zlib_output_ini_row() {
@@ -3014,6 +3015,10 @@ ptn_phpt_supported_curl_server_harness_row() {
     esac
 }
 
+ptn_phpt_supported_ftp_server_harness_row() {
+    [[ "$1" == "ext/standard/tests/streams/opendir-004.phpt" ]]
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -3051,7 +3056,8 @@ ptn_phpt_classify_row() {
     fi
 
     if ptn_phpt_has_external_service_harness "$path" &&
-        ! ptn_phpt_supported_curl_server_harness_row "$rel"; then
+        ! ptn_phpt_supported_curl_server_harness_row "$rel" &&
+        ! ptn_phpt_supported_ftp_server_harness_row "$rel"; then
         printf 'external-service\trequires external service or php-src server harness\n'
         return 0
     fi

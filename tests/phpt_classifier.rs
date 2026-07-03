@@ -3052,6 +3052,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{pdo_mysql_service:?}"
     );
 
+    let supported_ftp_directory_harness = classify_at_relative_path(
+        "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (array_search('ftp', stream_get_wrappers()) === false) die('skip');\nif (!function_exists('pcntl_fork')) die('skip');\n?>\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
+        "ext/standard/tests/streams/opendir-004.phpt",
+    );
+    assert_eq!(
+        supported_ftp_directory_harness,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let unmodeled_ftp_directory_harness = classify_at_relative_path(
+        "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
+        "ext/standard/tests/streams/unmodeled-opendir-ftp.phpt",
+    );
+    assert!(
+        unmodeled_ftp_directory_harness.starts_with("external-service\t"),
+        "{unmodeled_ftp_directory_harness:?}"
+    );
+
     let socket_dontfragment = classify_at_relative_path(
         "--TEST--\nsocket dontfragment\n--EXTENSIONS--\nsockets\n--FILE--\n<?php\n$socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);\nsocket_bind($socket, '127.0.0.1', 0);\nvar_dump(socket_set_option($socket, IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO));\n--EXPECT--\nbool(true)\n",
         "ext/sockets/tests/socket_dontfragment.phpt",
@@ -4003,6 +4021,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert_eq!(
         proc_open_array,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_proc_environment_row = classify_at_relative_path(
+        "--TEST--\nproc env array\n--FILE--\n<?php\n$env = ['test' => [1, 2]];\n$proc = proc_open('printf ok', [1 => ['pipe', 'w']], $pipes, __DIR__, $env);\n--EXPECT--\n",
+        "ext/standard/tests/streams/bug60602.phpt",
+    );
+    assert_eq!(
+        supported_proc_environment_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
 
