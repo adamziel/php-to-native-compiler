@@ -35319,6 +35319,71 @@ var_dump(fstat($stream));\n",
 }
 
 #[test]
+fn compile_user_stream_wrapper_options_and_partial_write_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-options-partial-write");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-options-partial-write.php");
+    let output = root.join("user-stream-wrapper-options-partial-write-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class OptionWrapper {
+    public $context;
+    public $return_value = true;
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }
+    public function stream_set_option($option, $value, $ptrparam) {
+        echo "$option:$value:";
+        var_dump($ptrparam);
+        return $this->return_value;
+    }
+}
+class PartialWriteWrapper {
+    public $context;
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }
+    public function stream_write($data) { return strlen($data) - 2; }
+}
+stream_wrapper_register('optwrap', OptionWrapper::class);
+stream_wrapper_register('partialwrite', PartialWriteWrapper::class);
+$fp = fopen('optwrap://x', 'r');
+var_dump(stream_set_blocking($fp, false));
+var_dump(stream_set_write_buffer($fp, 4096));
+var_dump(stream_set_timeout($fp, 10, 11));
+file_put_contents('partialwrite://file.txt', 'foobarbaz');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(concat!(
+            "1:0:NULL\n",
+            "bool(true)\n",
+            "3:2:int(4096)\n",
+            "int(0)\n",
+            "4:10:int(11)\n",
+            "bool(true)\n",
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: file_put_contents(): Only 7 of 9 bytes written, possibly out of free disk space in "
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_OPTION_BLOCKING"));
+    assert!(c_source.contains("ptn_user_stream_dispatch_set_option"));
+    assert!(c_source.contains("ptn_emit_file_put_contents_partial_write_warning"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_shutdown_close_recovers_nested_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-shutdown-close-fatal");
     fs::create_dir_all(&root).unwrap();

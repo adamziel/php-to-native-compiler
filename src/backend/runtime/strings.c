@@ -3337,6 +3337,34 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_FILTER_ALL);
         return 1;
     }
+    if (strcmp(name, "STREAM_OPTION_BLOCKING") == 0) {
+        *out = ptn_int(PTN_STREAM_OPTION_BLOCKING);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_OPTION_READ_BUFFER") == 0) {
+        *out = ptn_int(PTN_STREAM_OPTION_READ_BUFFER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_OPTION_WRITE_BUFFER") == 0) {
+        *out = ptn_int(PTN_STREAM_OPTION_WRITE_BUFFER);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_OPTION_READ_TIMEOUT") == 0) {
+        *out = ptn_int(PTN_STREAM_OPTION_READ_TIMEOUT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_BUFFER_NONE") == 0) {
+        *out = ptn_int(PTN_STREAM_BUFFER_NONE);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_BUFFER_LINE") == 0) {
+        *out = ptn_int(PTN_STREAM_BUFFER_LINE);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_BUFFER_FULL") == 0) {
+        *out = ptn_int(PTN_STREAM_BUFFER_FULL);
+        return 1;
+    }
     if (strcmp(name, "DNS_A") == 0) {
         *out = ptn_int(PTN_DNS_A);
         return 1;
