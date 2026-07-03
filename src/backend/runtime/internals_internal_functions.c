@@ -8122,6 +8122,11 @@ static PtnValue ptn_output_buffer_apply_callback(
     if (root == NULL) {
         root = runtime;
     }
+    PtnException *saved_active_exception =
+        runtime->exceptions == NULL ? NULL : runtime->exceptions->active_exception;
+    if (saved_active_exception != NULL) {
+        runtime->exceptions->active_exception = NULL;
+    }
     PtnTryFrame handler_frame;
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
@@ -8158,6 +8163,17 @@ static PtnValue ptn_output_buffer_apply_callback(
         root->output_buffer_callback_output_warned = previous_callback_output_warned;
         root->output_buffer_callback_passthrough_output = previous_callback_passthrough_output;
         root->output_buffer_callback_skip_buffers = previous_callback_skip_buffers;
+        if (saved_active_exception != NULL) {
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_exception_chain_previous_if_missing(
+                    runtime->exceptions->active_exception,
+                    saved_active_exception
+                );
+                ptn_exception_free(saved_active_exception);
+            } else {
+                runtime->exceptions->active_exception = saved_active_exception;
+            }
+        }
         PtnValue original_output = ptn_value_deref(original);
         if (original_output.type == PTN_STRING) {
             ptn_output_write_trans_sid_buffer(
@@ -8193,6 +8209,17 @@ static PtnValue ptn_output_buffer_apply_callback(
     int handler_output_warned = root->output_buffer_callback_output_warned;
     if (handler_output_warned_out != NULL) {
         *handler_output_warned_out = handler_output_warned;
+    }
+    if (saved_active_exception != NULL) {
+        if (runtime->exceptions->active_exception == NULL) {
+            runtime->exceptions->active_exception = saved_active_exception;
+        } else {
+            ptn_exception_chain_previous_if_missing(
+                runtime->exceptions->active_exception,
+                saved_active_exception
+            );
+            ptn_exception_free(saved_active_exception);
+        }
     }
     root->output_buffer_callback_depth--;
     free(root->output_buffer_callback_handler_name);
@@ -128092,6 +128119,55 @@ static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     return &root->output_buffers[root->output_buffers_len - 1];
 }
 
+static void ptn_output_buffer_emit_failed_create_notice(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    int saved_passthrough_output = 0;
+    size_t saved_skip_buffers = 0;
+    int bypass_output_handler = root != NULL && root->output_buffer_callback_depth != 0;
+    if (bypass_output_handler) {
+        saved_passthrough_output = root->output_buffer_callback_passthrough_output;
+        saved_skip_buffers = root->output_buffer_callback_skip_buffers;
+        root->output_buffer_callback_passthrough_output = 1;
+        root->output_buffer_callback_skip_buffers = root->output_buffers_len;
+    }
+    ptn_emit_notice_with_handler_frame(
+        &runtime->diagnostics,
+        "ob_start(): Failed to create buffer",
+        line,
+        1,
+        1
+    );
+    if (bypass_output_handler) {
+        root->output_buffer_callback_passthrough_output = saved_passthrough_output;
+        root->output_buffer_callback_skip_buffers = saved_skip_buffers;
+    }
+}
+
+static void ptn_output_buffer_deactivate_stack_for_display_handler_fatal(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->output_buffers_len == 0) {
+        return;
+    }
+    PtnOutputBuffer *active = &root->output_buffers[root->output_buffers_len - 1];
+    PtnValue callback = active->has_callback ? ptn_value_deref(active->callback) : ptn_null();
+    if (callback.type == PTN_OBJECT) {
+        ptn_object_run_destructor_ex(callback.as.object, 1);
+    }
+    for (size_t i = 0; i < root->output_buffers_len; i++) {
+        root->output_buffers[i].flags |= PTN_PHP_OUTPUT_HANDLER_DISABLED;
+        root->output_buffers[i].buffer.len = 0;
+        if (root->output_buffers[i].buffer.data != NULL) {
+            root->output_buffers[i].buffer.data[0] = '\0';
+        }
+    }
+}
+
 static int ptn_output_buffer_forbid_display_handler_operation(
     PtnRuntime *runtime,
     const char *function_name,
@@ -128101,6 +128177,12 @@ static int ptn_output_buffer_forbid_display_handler_operation(
     if (root == NULL || root->output_buffer_callback_depth == 0) {
         return 0;
     }
+    if (root->output_buffer_display_handler_fatal_active) {
+        ptn_output_buffer_emit_failed_create_notice(runtime, line);
+        return 1;
+    }
+    root->output_buffer_display_handler_fatal_active = 1;
+    ptn_output_buffer_deactivate_stack_for_display_handler_fatal(runtime);
     char message[160];
     int written = snprintf(
         message,
@@ -128156,13 +128238,7 @@ static int ptn_internal_ob_start_callback_arg(
         leading_newline
     );
     free(message);
-    ptn_emit_notice_with_handler_frame(
-        &runtime->diagnostics,
-        "ob_start(): Failed to create buffer",
-        line,
-        1,
-        1
-    );
+    ptn_output_buffer_emit_failed_create_notice(runtime, line);
     return 0;
 }
 
@@ -128205,6 +128281,79 @@ static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const Pt
     if (has_callback) {
         ptn_value_destroy(&callback);
     }
+    return ptn_bool(1);
+}
+
+static void ptn_output_rewrite_enforce_memory_limit(
+    PtnRuntime *runtime,
+    size_t name_len,
+    size_t value_len,
+    size_t line
+) {
+    size_t limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &limit) || limit == 0) {
+        return;
+    }
+
+    if (name_len > SIZE_MAX / 2 || value_len > SIZE_MAX / 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t allocation_len = (name_len * 2) + (value_len * 2);
+    if (allocation_len <= limit) {
+        return;
+    }
+
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        limit,
+        allocation_len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+}
+
+static PtnValue ptn_internal_output_add_rewrite_var(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand name =
+        ptn_internal_expect_string_arg(runtime, "output_add_rewrite_var", 1, "name", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    PtnStringOperand value =
+        ptn_internal_expect_string_arg(runtime, "output_add_rewrite_var", 2, "value", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(value);
+        return ptn_null();
+    }
+
+    ptn_output_rewrite_enforce_memory_limit(runtime, name.len, value.len, line);
+    ptn_string_operand_free(name);
+    ptn_string_operand_free(value);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_output_reset_rewrite_vars(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
     return ptn_bool(1);
 }
 
@@ -202133,6 +202282,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_gzhandler", 2, 2, ptn_internal_ob_gzhandler },
         { "ob_iconv_handler", 2, 2, ptn_internal_ob_iconv_handler },
         { "ob_start", 0, 3, ptn_internal_ob_start },
+        { "output_add_rewrite_var", 2, 2, ptn_internal_output_add_rewrite_var },
+        { "output_reset_rewrite_vars", 0, 0, ptn_internal_output_reset_rewrite_vars },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "opcache_compile_file", 1, 1, ptn_internal_opcache_compile_file },
         { "opcache_get_configuration", 0, 0, ptn_internal_opcache_get_configuration },

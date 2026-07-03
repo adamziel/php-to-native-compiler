@@ -2227,6 +2227,60 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
     fputc('\n', stream);
 }
 
+static void ptn_emit_fatal_error_buffered_at(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t message_len,
+    const char *path,
+    size_t line
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int leading_newline = root != NULL && root->output_has_started;
+    const char *effective_path = path != NULL
+        ? path
+        : (runtime->source_path != NULL ? runtime->source_path : "ptn");
+    int needed = snprintf(
+        NULL,
+        0,
+        "%sFatal error: %.*s in %s on line %zu\n",
+        leading_newline ? "\n" : "",
+        (int)message_len,
+        message,
+        effective_path,
+        line
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        buffer,
+        (size_t)needed + 1,
+        "%sFatal error: %.*s in %s on line %zu\n",
+        leading_newline ? "\n" : "",
+        (int)message_len,
+        message,
+        effective_path,
+        line
+    );
+    if (written < 0 || written != needed) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+    ptn_output_write(runtime, buffer, (size_t)written);
+    free(buffer);
+}
+
+static int ptn_runtime_has_active_output_buffer(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL &&
+        root->output_buffers_len != 0 &&
+        root->output_buffer_callback_depth == 0;
+}
+
 static PTN_UNUSED void ptn_emit_fatal_error_at(
     PtnRuntime *runtime,
     const char *message,
@@ -2236,18 +2290,28 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
-        FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
         PtnRuntime *root = ptn_runtime_root(runtime);
-        if (root != NULL && root->output_has_started) {
+        if (ptn_runtime_has_active_output_buffer(runtime) && diagnostics->stream == NULL) {
+            ptn_emit_fatal_error_buffered_at(
+                runtime,
+                message,
+                strlen(message),
+                path,
+                line
+            );
+        } else {
+            FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+            if (root != NULL && root->output_has_started) {
+                fputc('\n', stream);
+            }
+            fputs("Fatal error: ", stream);
+            fputs(message, stream);
+            fputs(" in ", stream);
+            fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
+            fputs(" on line ", stream);
+            fprintf(stream, "%zu", line);
             fputc('\n', stream);
         }
-        fputs("Fatal error: ", stream);
-        fputs(message, stream);
-        fputs(" in ", stream);
-        fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
-        fputs(" on line ", stream);
-        fprintf(stream, "%zu", line);
-        fputc('\n', stream);
         if (root != NULL) {
             root->output_has_started = 1;
         }
@@ -2270,18 +2334,22 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
-        FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
         PtnRuntime *root = ptn_runtime_root(runtime);
-        if (root != NULL && root->output_has_started) {
+        if (ptn_runtime_has_active_output_buffer(runtime) && diagnostics->stream == NULL) {
+            ptn_emit_fatal_error_buffered_at(runtime, message, message_len, path, line);
+        } else {
+            FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+            if (root != NULL && root->output_has_started) {
+                fputc('\n', stream);
+            }
+            fputs("Fatal error: ", stream);
+            fwrite(message, 1, message_len, stream);
+            fputs(" in ", stream);
+            fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
+            fputs(" on line ", stream);
+            fprintf(stream, "%zu", line);
             fputc('\n', stream);
         }
-        fputs("Fatal error: ", stream);
-        fwrite(message, 1, message_len, stream);
-        fputs(" in ", stream);
-        fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
-        fputs(" on line ", stream);
-        fprintf(stream, "%zu", line);
-        fputc('\n', stream);
         if (root != NULL) {
             root->output_has_started = 1;
         }
@@ -3064,6 +3132,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffer_callback_output_warned = 0;
     runtime->output_buffer_callback_passthrough_output = 0;
     runtime->output_buffer_callback_skip_buffers = 0;
+    runtime->output_buffer_display_handler_fatal_active = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
     runtime->trans_sid_pending_output = NULL;

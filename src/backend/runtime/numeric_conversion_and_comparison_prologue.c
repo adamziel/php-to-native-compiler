@@ -130,6 +130,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffer_callback_output_warned = 0;
     runtime->output_buffer_callback_passthrough_output = 0;
     runtime->output_buffer_callback_skip_buffers = 0;
+    runtime->output_buffer_display_handler_fatal_active = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
     runtime->trans_sid_pending_output = NULL;
@@ -1314,6 +1315,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffer_callback_output_warned = 0;
         runtime->output_buffer_callback_passthrough_output = 0;
         runtime->output_buffer_callback_skip_buffers = 0;
+        runtime->output_buffer_display_handler_fatal_active = 0;
         runtime->output_at_line_start = 1;
         runtime->output_has_started = 0;
         free(runtime->trans_sid_pending_output);

@@ -1349,10 +1349,8 @@ ptn_phpt_first_unsupported_standard_general_function_ini_surface() {
         return 0
     fi
 
-    if { ! ptn_phpt_modeled_function_exists "output_add_rewrite_var" \
-            && ptn_phpt_file_uses_function_call "$path" "output_add_rewrite_var"; } \
-        || { ! ptn_phpt_modeled_function_exists "output_reset_rewrite_vars" \
-            && ptn_phpt_file_uses_function_call "$path" "output_reset_rewrite_vars"; }; then
+    if ptn_phpt_file_uses_function_call "$path" "output_add_rewrite_var" \
+        || ptn_phpt_file_uses_function_call "$path" "output_reset_rewrite_vars"; then
         printf 'unsupported-output-rewrite-runtime\trequires output URL rewrite variable runtime, outside PTN modeled output buffering/session URL rewriting surface\n'
         return 0
     fi
@@ -1479,7 +1477,7 @@ ptn_phpt_has_modeled_string_allocation_limit_expectation() {
 
     file=$(ptn_phpt_section "$path" FILE)
     printf '%s\n' "$file" \
-        | grep -Eq '(^|[^[:alnum:]_$])(wordwrap|chunk_split|iconv|iconv_substr|iconv_mime_decode|iconv_mime_encode)[[:space:]]*\('
+        | grep -Eq '(^|[^[:alnum:]_$])(wordwrap|chunk_split|iconv|iconv_substr|iconv_mime_decode|iconv_mime_encode|output_add_rewrite_var)[[:space:]]*\('
 }
 
 ptn_phpt_first_unsupported_section() {
@@ -1493,6 +1491,19 @@ ptn_phpt_supported_file_external_row() {
     local rel=$1
 
     [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]]
+}
+
+ptn_phpt_supported_process_boundary_row() {
+    local rel=$1
+
+    [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]]
+}
+
+ptn_phpt_supported_zlib_output_ini_row() {
+    local rel=$1
+    local ini_key=$2
+
+    [[ "$rel" == "tests/output/ob_018.phpt" ]] && [[ "$(ptn_phpt_lower "$ini_key")" == "zlib.output_compression" ]]
 }
 
 ptn_phpt_first_environment_section() {
@@ -3036,7 +3047,7 @@ ptn_phpt_classify_row() {
         elif ptn_phpt_has_unsupported_cli_option_probe "$path"; then
             printf 'unsupported-cli-option\trequires PHP CLI option behavior outside PTN phpc supported runner modes (-f, -r, -d, -v, -m, and bounded CGI -C)\n'
             return 0
-        elif ptn_phpt_has_process_boundary "$path"; then
+        elif ptn_phpt_has_process_boundary "$path" && ! ptn_phpt_supported_process_boundary_row "$rel"; then
             printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
             return 0
         else
@@ -3048,7 +3059,9 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if [[ "$supported_cli_self_probe" -ne 1 ]] && ptn_phpt_has_process_boundary "$path"; then
+    if [[ "$supported_cli_self_probe" -ne 1 ]] \
+        && ptn_phpt_has_process_boundary "$path" \
+        && ! ptn_phpt_supported_process_boundary_row "$rel"; then
         printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
         return 0
     fi
@@ -3059,12 +3072,14 @@ ptn_phpt_classify_row() {
             return 0
         fi
         if value=$(ptn_phpt_first_unsupported_ini "$path"); then
-            if ptn_phpt_unsupported_ini_blocker "$value"; then
+            if ! ptn_phpt_supported_zlib_output_ini_row "$rel" "$value"; then
+                if ptn_phpt_unsupported_ini_blocker "$value"; then
+                    return 0
+                fi
+                printf 'unsupported-ini\trequires unsupported ini setting %s; modeled ini keys: %s\n' \
+                    "$value" "$(ptn_phpt_supported_ini)"
                 return 0
             fi
-            printf 'unsupported-ini\trequires unsupported ini setting %s; modeled ini keys: %s\n' \
-                "$value" "$(ptn_phpt_supported_ini)"
-            return 0
         fi
     fi
 
