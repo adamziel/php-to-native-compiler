@@ -145401,7 +145401,7 @@ static void ptn_html_serialize_node(
         ptn_string_buffer_append_char(buffer, '\n');
     }
     if (ptn_ascii_case_equal(name, "body") &&
-        node->child_count > 0 &&
+        node->child_count == 1 &&
         ptn_xml_node_is_document_whitespace(node->children[node->child_count - 1])) {
         ptn_string_buffer_append_char(buffer, '\n');
     }
