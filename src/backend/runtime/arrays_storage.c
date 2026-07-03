@@ -1429,6 +1429,13 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     if (saved_active_exception != NULL && !preserve_active_exception) {
         root->exceptions->active_exception = NULL;
     }
+    int previous_gc_destructor_depth = root->gc_destructor_depth;
+    int previous_gc_destructor_fiber_current_requested =
+        root->gc_destructor_fiber_current_requested;
+    if (root->gc_running) {
+        root->gc_destructor_depth++;
+        root->gc_destructor_fiber_current_requested = 0;
+    }
     if (catch_destructor_exception) {
         ptn_try_frame_push(root, &destructor_frame);
         if (setjmp(destructor_frame.jump) != 0) {
@@ -1450,6 +1457,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
                 previous_suppress_user_call_frame_location;
             root->destructor_shutdown_phase = previous_shutdown_phase;
             root->current_class_name = previous_scope;
+            root->gc_destructor_depth = previous_gc_destructor_depth;
+            root->gc_destructor_fiber_current_requested =
+                previous_gc_destructor_fiber_current_requested;
             ptn_value_destroy(&result);
             return;
         }
@@ -1462,6 +1472,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         previous_suppress_user_call_frame_location;
     root->destructor_shutdown_phase = previous_shutdown_phase;
     root->current_class_name = previous_scope;
+    root->gc_destructor_depth = previous_gc_destructor_depth;
+    root->gc_destructor_fiber_current_requested =
+        previous_gc_destructor_fiber_current_requested;
     if (saved_active_exception != NULL && !preserve_active_exception) {
         if (root->exceptions->active_exception == NULL) {
             root->exceptions->active_exception = saved_active_exception;

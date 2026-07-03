@@ -25361,6 +25361,43 @@ var_dump($generator->valid());
 }
 
 #[test]
+fn compile_generator_send_into_list_yield_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-send-list-yield-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-send-list-yield-assignment.php");
+    let output = root.join("generator-send-list-yield-assignment-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dumpElement() {
+    list($value) = yield;
+    var_dump($value);
+}
+
+$fixedArray = new SplFixedArray(1);
+$fixedArray[0] = "the element";
+$generator = dumpElement();
+$generator->send($fixedArray);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(11) \"the element\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_register_send_call"));
+    assert!(c_source.contains("send_call_yield_paths"));
+}
+
+#[test]
 fn compile_generator_send_into_yield_from_yield_self_delegate_to_native_binary() {
     let root = temp_dir("ptn-native-generator-send-yield-from-yield-self");
     fs::create_dir_all(&root).unwrap();

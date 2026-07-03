@@ -2020,6 +2020,8 @@ struct PtnRuntime {
     int throw_argument_count_errors;
     int gc_enabled;
     int gc_running;
+    int gc_destructor_depth;
+    int gc_destructor_fiber_current_requested;
     size_t gc_mark_epoch;
     size_t gc_runs;
     size_t gc_collected;
@@ -2090,10 +2092,10 @@ static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtim
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_trace_args_array(PtnGenerator *generator);
 static PTN_UNUSED void ptn_generator_trace_set_file_line(PtnValue frame, const char *file, size_t line);
-static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
-static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
-static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
-static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtime, size_t line);
 static PTN_UNUSED void ptn_generator_register_throw_catch(PtnRuntime *runtime, size_t handler_id);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);

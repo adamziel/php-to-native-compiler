@@ -181953,6 +181953,17 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             if (runtime->current_fiber == NULL) {
                 return ptn_null();
             }
+            PtnRuntime *root = ptn_runtime_root(runtime);
+            if (root == NULL) {
+                root = runtime;
+            }
+            if (
+                root != NULL &&
+                root->gc_running &&
+                root->gc_destructor_depth > 0
+            ) {
+                root->gc_destructor_fiber_current_requested = 1;
+            }
             ptn_object_retain(runtime->current_fiber);
             return ptn_object(runtime->current_fiber);
         }
@@ -181970,6 +181981,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 }
                 ptn_throw_exception(runtime, "ArgumentCountError", message);
                 return ptn_null();
+            }
+            PtnRuntime *root = ptn_runtime_root(runtime);
+            if (root == NULL) {
+                root = runtime;
             }
             if (runtime->current_fiber == NULL) {
                 if (
@@ -181998,6 +182013,14 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                     line
                 );
                 return ptn_null();
+            }
+            if (
+                root != NULL &&
+                root->gc_running &&
+                root->gc_destructor_depth > 0 &&
+                !root->gc_destructor_fiber_current_requested
+            ) {
+                return argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
             }
             return ptn_fiber_capture_suspension(runtime, argc, args, line);
         }

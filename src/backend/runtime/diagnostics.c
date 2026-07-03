@@ -3534,6 +3534,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         runtime->gc_enabled = configured_zend_enable_gc ? 1 : 0;
     }
     runtime->gc_running = 0;
+    runtime->gc_destructor_depth = 0;
+    runtime->gc_destructor_fiber_current_requested = 0;
     runtime->gc_mark_epoch = 0;
     runtime->gc_runs = 0;
     runtime->gc_collected = 0;
