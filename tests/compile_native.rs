@@ -65044,6 +65044,129 @@ var_dump(curl_exec($download));\n",
 }
 
 #[test]
+fn compile_curl_modeled_localhost_server_harness_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-localhost-harness");
+    let source_dir = root.join("ext/curl/tests");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("upload.txt"), "Test.").unwrap();
+    fs::write(source_dir.join("readonly.txt"), "readonly").unwrap();
+    fs::write(
+        source_dir.join("server.inc"),
+        "<?php function curl_cli_server_start() { echo \"Server is not running\\n\"; exit(1); }\n",
+    )
+    .unwrap();
+    let input = source_dir.join("curl-localhost-harness.php");
+    let output = root.join("curl-localhost-harness-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function ptn_header($handle, $line) { echo $line; }\n\
+function ptn_closed_stream_option($host, $option) {\n\
+    $fp = fopen(__DIR__ . '/closed.tmp', 'w+');\n\
+    $ch = curl_init($host);\n\
+    if ($option === CURLOPT_STDERR) { curl_setopt($ch, CURLOPT_VERBOSE, 1); }\n\
+    if ($option === CURLOPT_INFILE) { curl_setopt($ch, CURLOPT_UPLOAD, 1); }\n\
+    curl_setopt($ch, $option, $fp);\n\
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);\n\
+    fclose($fp);\n\
+    curl_exec($ch);\n\
+}\n\
+include 'server.inc';\n\
+$host = curl_cli_server_start();\n\
+$post = curl_init();\n\
+curl_setopt_array($post, [\n\
+    CURLOPT_URL => $host . '/get.inc?test=post',\n\
+    CURLOPT_POST => true,\n\
+    CURLOPT_POSTFIELDS => [],\n\
+    CURLINFO_HEADER_OUT => true,\n\
+    CURLOPT_RETURNTRANSFER => true,\n\
+]);\n\
+var_dump(curl_exec($post));\n\
+var_dump(curl_getinfo($post)['request_header']);\n\
+var_dump(curl_getinfo($post, CURLINFO_HTTP_VERSION) === CURL_HTTP_VERSION_1_1);\n\
+$getpost = curl_init($host . '/get.inc?test=getpost&get_param=Hello%20World');\n\
+curl_setopt($getpost, CURLOPT_RETURNTRANSFER, 1);\n\
+curl_setopt($getpost, CURLOPT_POST, 1);\n\
+curl_setopt($getpost, CURLOPT_POSTFIELDS, 'Hello=World&Foo=Bar&Person=John%20Doe');\n\
+echo curl_exec($getpost);\n\
+$version = curl_init($host . '/get.inc?test=httpversion');\n\
+curl_setopt($version, CURLOPT_RETURNTRANSFER, 1);\n\
+curl_setopt($version, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);\n\
+var_dump(curl_exec($version));\n\
+$upload = curl_init($host . '/get.php?test=file');\n\
+curl_setopt($upload, CURLOPT_RETURNTRANSFER, 1);\n\
+curl_setopt($upload, CURLOPT_POSTFIELDS, ['file' => curl_file_create(__DIR__ . '/upload.txt')]);\n\
+var_dump(curl_exec($upload));\n\
+$base = curl_init($host);\n\
+curl_setopt($base, CURLOPT_RETURNTRANSFER, 1);\n\
+curl_exec($base);\n\
+$cloned = clone $base;\n\
+curl_setopt($cloned, CURLOPT_RETURNTRANSFER, 0);\n\
+var_dump(curl_getinfo($base, CURLINFO_EFFECTIVE_URL) === curl_getinfo($cloned, CURLINFO_EFFECTIVE_URL));\n\
+curl_exec($cloned);\n\
+$header = curl_init($host);\n\
+curl_setopt($header, CURLOPT_RETURNTRANSFER, 1);\n\
+curl_setopt($header, CURLOPT_HEADERFUNCTION, 'ptn_header');\n\
+curl_exec($header);\n\
+$fp = fopen(__DIR__ . '/readonly.txt', 'r');\n\
+try { curl_setopt($header, CURLOPT_FILE, $fp); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+ptn_closed_stream_option($host, CURLOPT_STDERR);\n\
+ptn_closed_stream_option($host, CURLOPT_WRITEHEADER);\n\
+ptn_closed_stream_option($host, CURLOPT_FILE);\n\
+ptn_closed_stream_option($host, CURLOPT_INFILE);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("string(13) \"array(0) {\n}\n\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("POST /get.inc?test=post HTTP/1.1\nHost: localhost:12345\nAccept: */*\nContent-Length: 0\nContent-Type: application/x-www-form-urlencoded\n\n"), "{stdout}");
+    assert!(stdout.contains("bool(true)\narray(2) {\n  [\"test\"]=>\n  string(7) \"getpost\"\n  [\"get_param\"]=>\n  string(11) \"Hello World\"\n}\narray(3) {\n  [\"Hello\"]=>\n  string(5) \"World\"\n  [\"Foo\"]=>\n  string(3) \"Bar\"\n  [\"Person\"]=>\n  string(8) \"John Doe\"\n}\n"), "{stdout}");
+    assert!(stdout.contains("string(8) \"HTTP/1.1\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(37) \"upload.txt|application/octet-stream|5\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\nHello World!\nHello World!"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("HTTP/1.1 200 OK\r\n"), "{stdout}");
+    assert!(
+        stdout.contains("curl_setopt(): The provided file handle must be writable\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("curl_exec(): CURLOPT_STDERR resource has gone away, resetting to stderr"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "curl_exec(): CURLOPT_WRITEHEADER resource has gone away, resetting to default"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("curl_exec(): CURLOPT_FILE resource has gone away, resetting to default"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("curl_exec(): CURLOPT_INFILE resource has gone away, resetting to default"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_curl_http_response"));
+    assert!(c_source.contains("CURLINFO_HEADER_OUT"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();
