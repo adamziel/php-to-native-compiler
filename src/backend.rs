@@ -745,7 +745,9 @@ fn emit_opcache_optimizer_dump_helpers(out: &mut String) {
 fn module_opcache_after_optimizer_dump(module: &Module) -> Option<String> {
     let mut function_dumps = Vec::new();
     for function in &module.functions {
-        if let Some(function_dump) = opcache_function_after_optimizer_dump(function) {
+        if let Some(function_dump) =
+            opcache_function_after_optimizer_dump(function, &module.classes)
+        {
             function_dumps.push(function_dump);
         }
     }
@@ -1288,7 +1290,10 @@ fn opcache_callback_from_callable(callable: &ValueExpr) -> Option<OpcacheCallbac
     }
 }
 
-fn opcache_function_after_optimizer_dump(function: &FunctionDecl) -> Option<String> {
+fn opcache_function_after_optimizer_dump(
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
     let function_name = function.display_name.as_str();
 
     if let Some((dump, vars, tmps)) = opcache_function_add_one_dump(function) {
@@ -1321,7 +1326,7 @@ fn opcache_function_after_optimizer_dump(function: &FunctionDecl) -> Option<Stri
             tmps,
         ));
     }
-    if let Some((dump, vars, tmps)) = opcache_function_constant_return_dump(function) {
+    if let Some((dump, vars, tmps)) = opcache_function_constant_return_dump(function, classes) {
         return Some(opcache_render_after_optimizer_function(
             function_name,
             function,
@@ -1524,6 +1529,7 @@ fn opcache_function_new_object_return_dump(
 
 fn opcache_function_constant_return_dump(
     function: &FunctionDecl,
+    classes: &[ClassDecl],
 ) -> Option<(OpcacheDump, usize, usize)> {
     if !function.parameters.is_empty() {
         return None;
@@ -1532,7 +1538,7 @@ fn opcache_function_constant_return_dump(
     for instruction in &function.body {
         match instruction {
             Instruction::Store { name, value, .. } => {
-                let resolved = opcache_eval_int(value, &values)?;
+                let resolved = opcache_eval_function_int(value, &values, function, classes)?;
                 values.insert(name.clone(), resolved);
             }
             Instruction::Expression(ValueExpr::Assign {
@@ -1544,7 +1550,7 @@ fn opcache_function_constant_return_dump(
                 value,
             }) => {
                 let current = *values.get(target_name)?;
-                let addend = opcache_eval_int(value, &values)?;
+                let addend = opcache_eval_function_int(value, &values, function, classes)?;
                 values.insert(target_name.clone(), current + addend);
             }
             Instruction::Return {
@@ -1556,10 +1562,76 @@ fn opcache_function_constant_return_dump(
                 dump.opcode(format!("RETURN int({result})"));
                 return Some((dump, 0, 0));
             }
+            Instruction::Return {
+                value: Some(value), ..
+            } => {
+                let result = opcache_eval_function_int(value, &values, function, classes)?;
+                let mut dump = OpcacheDump::default();
+                dump.opcode(format!("RETURN int({result})"));
+                return Some((dump, 0, 0));
+            }
             _ => return None,
         }
     }
     None
+}
+
+fn opcache_eval_function_int(
+    value: &ValueExpr,
+    values: &HashMap<String, i64>,
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> Option<i64> {
+    match value {
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => opcache_class_constant_int(class_name, name, function, classes),
+        ValueExpr::Binary {
+            op: BinaryOp::Add,
+            left,
+            right,
+            ..
+        } => Some(
+            opcache_eval_function_int(left, values, function, classes)?
+                + opcache_eval_function_int(right, values, function, classes)?,
+        ),
+        ValueExpr::Binary {
+            op: BinaryOp::Multiply,
+            left,
+            right,
+            ..
+        } => Some(
+            opcache_eval_function_int(left, values, function, classes)?
+                * opcache_eval_function_int(right, values, function, classes)?,
+        ),
+        _ => opcache_eval_int(value, values),
+    }
+}
+
+fn opcache_class_constant_int(
+    class_name: &str,
+    name: &str,
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> Option<i64> {
+    let resolved_class_name =
+        if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
+            function.class_name.as_deref()?
+        } else if class_name.eq_ignore_ascii_case("parent") {
+            let current = class_by_name(classes, function.class_name.as_deref()?)?;
+            current.parent_name.as_deref()?
+        } else {
+            class_name
+        };
+    let class = class_by_name(classes, resolved_class_name)?;
+    let constant = class
+        .constants
+        .iter()
+        .find(|constant| constant.name.eq_ignore_ascii_case(name))?;
+    match &constant.value {
+        ValueExpr::Int(value) => Some(*value),
+        _ => None,
+    }
 }
 
 fn opcache_function_match_default_echo_dump(
@@ -5959,6 +6031,10 @@ fn emit_user_functions(
         out.push_str("    (void)line;\n");
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+        out.push_str("    const char *ptn_call_site_source_path = runtime.source_path;\n");
+        out.push_str("    runtime.source_path = \"");
+        out.push_str(&c_string(&function.source_file));
+        out.push_str("\";\n");
         out.push_str("    runtime.current_function_name = \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("\";\n");
@@ -5986,6 +6062,7 @@ fn emit_user_functions(
             out.push_str(";\n");
         }
         out.push_str("    runtime.call_site_line = line;\n");
+        out.push_str("    int ptn_call_frame_has_location = !runtime.suppress_user_call_frame_location && runtime.call_site_line != 0;\n");
         out.push_str(
             "    const char *const *ptn_call_arg_names = caller_runtime->next_call_arg_names;\n",
         );
@@ -6066,6 +6143,9 @@ fn emit_user_functions(
             out.push_str(&sensitive_variadic_position_expr);
             out.push_str(");\n");
         }
+        out.push_str("    if (ptn_call_frame_has_location) {\n");
+        out.push_str("        runtime.owned_trace_frame.file = ptn_call_site_source_path;\n");
+        out.push_str("    }\n");
         if function.is_anonymous {
             out.push_str("    if (receiver.type == PTN_CLOSURE) {\n");
             out.push_str("        runtime.owned_call_frame.has_current_closure = 1;\n");

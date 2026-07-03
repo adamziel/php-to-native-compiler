@@ -47,6 +47,7 @@ struct IncludeSourceKey {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum IncludeSourceTransform {
     CurlCliServerHarness,
+    PhpCliServerHarness,
     PhpFilter(Vec<PhpFilterReadFilter>),
 }
 
@@ -2564,8 +2565,13 @@ fn resolve_include_candidate_path(path: &str, source_dir: &str) -> ResolvedInclu
         return filter_path;
     }
     let resource_path = resolve_include_path(path, source_dir);
-    let transform = is_curl_cli_server_harness_path(&resource_path)
-        .then_some(IncludeSourceTransform::CurlCliServerHarness);
+    let transform = if is_curl_cli_server_harness_path(&resource_path) {
+        Some(IncludeSourceTransform::CurlCliServerHarness)
+    } else if is_php_cli_server_harness_path(&resource_path) {
+        Some(IncludeSourceTransform::PhpCliServerHarness)
+    } else {
+        None
+    };
     ResolvedIncludeCandidate {
         path_aliases: Vec::new(),
         resource_path,
@@ -2633,6 +2639,11 @@ fn is_curl_cli_server_harness_path(path: &Path) -> bool {
             .is_some_and(|name| name == "ext")
 }
 
+fn is_php_cli_server_harness_path(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name == "php_cli_server.inc")
+}
+
 fn apply_include_source_transform(
     source_bytes: &mut Vec<u8>,
     transform: Option<&IncludeSourceTransform>,
@@ -2643,6 +2654,9 @@ fn apply_include_source_transform(
     match transform {
         IncludeSourceTransform::CurlCliServerHarness => {
             *source_bytes = b"<?php declare(strict_types=1);\nfunction curl_cli_server_start() {\n    return 'http://localhost:12345';\n}\n".to_vec();
+        }
+        IncludeSourceTransform::PhpCliServerHarness => {
+            *source_bytes = b"<?php declare(strict_types=1);\nif (!defined('PHP_CLI_SERVER_ADDRESS')) {\n    define('PHP_CLI_SERVER_ADDRESS', '127.0.0.1:12345');\n}\nfunction php_cli_server_start($ini = '', $router = null, $workers = 1) {\n    return true;\n}\n".to_vec();
         }
         IncludeSourceTransform::PhpFilter(filters) => {
             for filter in filters {

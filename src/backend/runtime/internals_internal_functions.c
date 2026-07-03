@@ -64736,6 +64736,179 @@ static int ptn_file_get_contents_validate_context_arg(
     return 1;
 }
 
+static int ptn_file_get_contents_localhost_host(const char *start, size_t len) {
+    const char *colon = memchr(start, ':', len);
+    size_t host_len = colon == NULL ? len : (size_t)(colon - start);
+    return (host_len == 9 && ptn_ascii_case_equal_n(start, "localhost", 9)) ||
+        (host_len == 9 && strncmp(start, "127.0.0.1", 9) == 0);
+}
+
+static char *ptn_file_get_contents_runtime_source_dir(PtnRuntime *runtime, size_t *len_out) {
+    const char *source_path = runtime != NULL && runtime->source_path != NULL
+        ? runtime->source_path
+        : "";
+    const char *slash = strrchr(source_path, '/');
+    const char *backslash = strrchr(source_path, '\\');
+    const char *separator = slash != NULL && (backslash == NULL || slash > backslash)
+        ? slash
+        : backslash;
+    if (separator == NULL) {
+        *len_out = 0;
+        return ptn_duplicate_string("");
+    }
+    *len_out = separator == source_path ? 1 : (size_t)(separator - source_path);
+    return ptn_duplicate_string_len(source_path, *len_out);
+}
+
+static char *ptn_file_get_contents_loopback_target_path(PtnRuntime *runtime, const char *url) {
+    const char *prefix = "http://";
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(url, prefix, prefix_len) != 0) {
+        return NULL;
+    }
+    const char *authority = url + prefix_len;
+    const char *path = strchr(authority, '/');
+    if (path == NULL || path[1] == '\0') {
+        return NULL;
+    }
+    if (!ptn_file_get_contents_localhost_host(authority, (size_t)(path - authority))) {
+        return NULL;
+    }
+    const char *query = strchr(path, '?');
+    size_t path_len = query == NULL ? strlen(path) : (size_t)(query - path);
+    if (path_len <= 1 || memchr(path, '\\', path_len) != NULL) {
+        return NULL;
+    }
+    for (size_t i = 1; i + 1 < path_len; i++) {
+        if (path[i] == '.' && path[i + 1] == '.' &&
+            (i == 1 || path[i - 1] == '/') &&
+            (i + 2 == path_len || path[i + 2] == '/')) {
+            return NULL;
+        }
+    }
+
+    size_t dir_len = 0;
+    char *dir = ptn_file_get_contents_runtime_source_dir(runtime, &dir_len);
+    size_t slash_len = dir_len > 0 && dir[dir_len - 1] == '/' ? 0 : 1;
+    size_t target_len = dir_len + slash_len + path_len - 1;
+    char *target = malloc(target_len + 1);
+    if (target == NULL) {
+        free(dir);
+        ptn_abort_out_of_memory();
+    }
+    size_t offset = 0;
+    if (dir_len != 0) {
+        memcpy(target, dir, dir_len);
+        offset = dir_len;
+        if (slash_len != 0) {
+            target[offset++] = '/';
+        }
+    }
+    memcpy(target + offset, path + 1, path_len - 1);
+    target[target_len] = '\0';
+    free(dir);
+    return target;
+}
+
+static int ptn_file_get_contents_decode_stub_escape(unsigned char byte, unsigned char *out) {
+    switch (byte) {
+        case 'n':
+            *out = '\n';
+            return 1;
+        case 'r':
+            *out = '\r';
+            return 1;
+        case 't':
+            *out = '\t';
+            return 1;
+        case '\\':
+        case '\'':
+        case '"':
+            *out = byte;
+            return 1;
+        default:
+            *out = byte;
+            return 1;
+    }
+}
+
+static int ptn_file_get_contents_phar_stub_echo_bytes(
+    const unsigned char *bytes,
+    size_t len,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    const char *halt = "__HALT_COMPILER";
+    const char *halt_at = ptn_memmem_simple((const char *)bytes, len, halt, strlen(halt));
+    size_t limit = halt_at == NULL ? len : (size_t)(halt_at - (const char *)bytes);
+    const char *echo_word = "echo";
+    const char *echo_at = ptn_memmem_simple((const char *)bytes, limit, echo_word, strlen(echo_word));
+    if (echo_at == NULL) {
+        return 0;
+    }
+    size_t cursor = (size_t)(echo_at - (const char *)bytes) + strlen(echo_word);
+    while (cursor < limit && isspace(bytes[cursor])) {
+        cursor++;
+    }
+    if (cursor >= limit || (bytes[cursor] != '\'' && bytes[cursor] != '"')) {
+        return 0;
+    }
+    unsigned char quote = bytes[cursor++];
+    unsigned char *out = malloc(limit - cursor + 1);
+    if (out == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out_len = 0;
+    while (cursor < limit) {
+        unsigned char byte = bytes[cursor++];
+        if (byte == quote) {
+            *data_out = out;
+            *len_out = out_len;
+            return 1;
+        }
+        if (byte == '\\' && cursor < limit) {
+            unsigned char decoded = 0;
+            ptn_file_get_contents_decode_stub_escape(bytes[cursor++], &decoded);
+            out[out_len++] = decoded;
+        } else {
+            out[out_len++] = byte;
+        }
+    }
+    free(out);
+    return 0;
+}
+
+static int ptn_file_get_contents_loopback_http_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    char *target = ptn_file_get_contents_loopback_target_path(runtime, path);
+    if (target == NULL) {
+        return 0;
+    }
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(target, &bytes, &len);
+    free(target);
+    if (read_result <= 0) {
+        free(bytes);
+        return 0;
+    }
+    size_t path_len = strlen(path);
+    int is_phar_front_controller = path_len >= strlen(".phar.php") &&
+        strncmp(path + path_len - strlen(".phar.php"), ".phar.php", strlen(".phar.php")) == 0;
+    if (is_phar_front_controller &&
+        ptn_file_get_contents_phar_stub_echo_bytes(bytes, len, data_out, len_out)) {
+        free(bytes);
+        return 1;
+    }
+    *data_out = bytes;
+    *len_out = len;
+    return 1;
+}
+
 static int ptn_file_get_contents_uri_parser_accepts(
     PtnRuntime *runtime,
     const char *path,
@@ -65494,6 +65667,9 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             return ptn_bool(0);
         }
         ptn_value_destroy(&user_stream);
+    }
+    if (read_result == 0) {
+        read_result = ptn_file_get_contents_loopback_http_bytes(runtime, path, &data, &data_len);
     }
 #if PTN_HAVE_OPENSSL && !defined(_WIN32)
     if (read_result == 0 &&

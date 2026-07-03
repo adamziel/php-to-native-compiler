@@ -2972,7 +2972,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     let opcache_metadata_ini = classify_at_relative_path(
-        "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
+        "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache={PWD}\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
         "ext/opcache/tests/opcache_metadata_ini.phpt",
     );
     assert_eq!(
@@ -2986,6 +2986,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         opcache_opt_jit_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let opcache_php_cli_server = classify_at_relative_path(
+        "--TEST--\nopcache phar cli server\n--EXTENSIONS--\nopcache\nphar\n--CONFLICTS--\nserver\n--FILE--\n<?php\ninclude \"php_cli_server.inc\";\nphp_cli_server_start('-d opcache.enable=1');\necho file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php');\n--EXPECT--\nOK\n",
+        "ext/opcache/tests/issue0149.phpt",
+    );
+    assert_eq!(
+        opcache_php_cli_server.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 
