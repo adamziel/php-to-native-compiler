@@ -144,6 +144,7 @@ pub fn emit_c(module: &Module) -> String {
         || has_declared_methods
         || needs_direct_callable_dispatch;
     let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
+    runtime_requirements.callable_dispatch = needs_callable_dispatch;
     if needs_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
@@ -2314,6 +2315,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
 struct RuntimeRequirements {
     internal_function_dispatch: bool,
     dynamic_function_dispatch: bool,
+    callable_dispatch: bool,
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     closure_reflection_dispatch: bool,
@@ -2448,6 +2450,9 @@ fn forget_known_simple_preg_pattern_inc_dec_target(
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
+    if requirements.callable_dispatch {
+        out.push_str("#define PTN_HAS_CALLABLE_DISPATCH 1\n");
     }
     if requirements.compact_intl_helpers {
         out.push_str("#define PTN_HAS_COMPACT_INTL_HELPERS 1\n");
@@ -41540,7 +41545,7 @@ struct ValueEmitter {
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
-    generator_yield_assignment_variables: Vec<String>,
+    generator_yield_assignment_variables: Vec<GeneratorYieldAssignment>,
     generator_throw_catch_stack: Vec<Vec<GeneratorThrowCatchRegistration>>,
     generator_throw_catch_next_try_index: usize,
     exceptional_finally_saved_exception: Option<String>,
@@ -41607,6 +41612,31 @@ struct DirectUserCall {
     display_name: String,
     class_name: Option<String>,
     method_name: Option<String>,
+}
+
+#[derive(Clone)]
+enum GeneratorYieldAssignmentSource {
+    Direct,
+    ListPath(Vec<ValueExpr>),
+}
+
+#[derive(Clone)]
+struct GeneratorYieldAssignment {
+    name: String,
+    source: GeneratorYieldAssignmentSource,
+}
+
+#[derive(Clone)]
+enum GeneratorSendArgumentSource {
+    DirectYieldExpr,
+    AssignedDirect,
+    AssignedPath(Vec<ValueExpr>),
+}
+
+#[derive(Clone)]
+struct GeneratorSendArgument {
+    index: usize,
+    source: GeneratorSendArgumentSource,
 }
 
 fn direct_yield_argument_indexes(arguments: &[ValueExpr]) -> Option<Vec<usize>> {
@@ -41725,6 +41755,52 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::DynamicStaticPropertyName { .. } => false,
         },
     })
+}
+
+fn collect_list_assignment_variable_names(target: &ListAssignmentTarget, names: &mut Vec<String>) {
+    for element in &target.elements {
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => match target.as_ref() {
+                AssignmentTarget::Variable { name, .. } => {
+                    if !names.iter().any(|candidate| candidate == name) {
+                        names.push(name.clone());
+                    }
+                }
+                AssignmentTarget::List(target) => {
+                    collect_list_assignment_variable_names(target, names)
+                }
+                _ => {}
+            },
+            ListAssignmentElementTarget::Reference(ReferenceTarget::Variable { name, .. }) => {
+                if !names.iter().any(|candidate| candidate == name) {
+                    names.push(name.clone());
+                }
+            }
+            ListAssignmentElementTarget::Reference(_) => {}
+        }
+    }
+}
+
+fn collect_list_assignment_yield_paths(
+    target: &ListAssignmentTarget,
+    prefix: Vec<ValueExpr>,
+    assignments: &mut Vec<(String, Vec<ValueExpr>)>,
+) {
+    for (index, element) in target.elements.iter().enumerate() {
+        let mut path = prefix.clone();
+        path.push(element.key.clone().unwrap_or(ValueExpr::Int(index as i64)));
+        if let ListAssignmentElementTarget::Value(target) = &element.target {
+            match target.as_ref() {
+                AssignmentTarget::Variable { name, .. } => {
+                    assignments.push((name.clone(), path));
+                }
+                AssignmentTarget::List(target) => {
+                    collect_list_assignment_yield_paths(target, path, assignments);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 fn list_reference_source_warns_non_referenceable(value: &ValueExpr) -> bool {
@@ -44437,22 +44513,113 @@ impl ValueEmitter {
         self.emit_materialized_value(out, value)
     }
 
+    fn set_generator_yield_assignment_variable(
+        &mut self,
+        name: &str,
+        source: GeneratorYieldAssignmentSource,
+    ) {
+        if let Some(assignment) = self
+            .generator_yield_assignment_variables
+            .iter_mut()
+            .find(|assignment| assignment.name == name)
+        {
+            assignment.source = source;
+            return;
+        }
+        self.generator_yield_assignment_variables
+            .push(GeneratorYieldAssignment {
+                name: name.to_string(),
+                source,
+            });
+    }
+
+    fn remove_generator_yield_assignment_variable(&mut self, name: &str) {
+        self.generator_yield_assignment_variables
+            .retain(|assignment| assignment.name != name);
+    }
+
     fn update_generator_yield_assignment_variable(&mut self, name: &str, value: &ValueExpr) {
         if !self.current_function_is_generator {
             return;
         }
         if matches!(value, ValueExpr::Yield { .. }) {
-            if !self
-                .generator_yield_assignment_variables
-                .iter()
-                .any(|candidate| candidate == name)
-            {
-                self.generator_yield_assignment_variables
-                    .push(name.to_string());
-            }
+            self.set_generator_yield_assignment_variable(
+                name,
+                GeneratorYieldAssignmentSource::Direct,
+            );
         } else {
-            self.generator_yield_assignment_variables
-                .retain(|candidate| candidate != name);
+            self.remove_generator_yield_assignment_variable(name);
+        }
+    }
+
+    fn update_generator_yield_assignment_list_variables(
+        &mut self,
+        target: &ListAssignmentTarget,
+        value: &ValueExpr,
+    ) {
+        if !self.current_function_is_generator {
+            return;
+        }
+        let mut names = Vec::new();
+        collect_list_assignment_variable_names(target, &mut names);
+        for name in &names {
+            self.remove_generator_yield_assignment_variable(name);
+        }
+        if !matches!(value, ValueExpr::Yield { .. }) {
+            return;
+        }
+        let mut assignments = Vec::new();
+        collect_list_assignment_yield_paths(target, Vec::new(), &mut assignments);
+        for (name, path) in assignments {
+            self.set_generator_yield_assignment_variable(
+                &name,
+                GeneratorYieldAssignmentSource::ListPath(path),
+            );
+        }
+    }
+
+    fn generator_yield_assignment_source(
+        &self,
+        name: &str,
+    ) -> Option<&GeneratorYieldAssignmentSource> {
+        self.generator_yield_assignment_variables
+            .iter()
+            .find(|assignment| assignment.name == name)
+            .map(|assignment| &assignment.source)
+    }
+
+    fn generator_send_argument_sources(
+        &self,
+        arguments: &[ValueExpr],
+    ) -> Option<Vec<GeneratorSendArgument>> {
+        let sources: Vec<_> = arguments
+            .iter()
+            .enumerate()
+            .filter_map(|(index, argument)| {
+                if matches!(argument, ValueExpr::Yield { .. }) {
+                    return Some(GeneratorSendArgument {
+                        index,
+                        source: GeneratorSendArgumentSource::DirectYieldExpr,
+                    });
+                }
+                let ValueExpr::Load { name, .. } = argument else {
+                    return None;
+                };
+                let source = match self.generator_yield_assignment_source(name)? {
+                    GeneratorYieldAssignmentSource::Direct => {
+                        GeneratorSendArgumentSource::AssignedDirect
+                    }
+                    GeneratorYieldAssignmentSource::ListPath(path) => {
+                        GeneratorSendArgumentSource::AssignedPath(path.clone())
+                    }
+                };
+                Some(GeneratorSendArgument { index, source })
+            })
+            .collect();
+        if sources.len() == 1 {
+            Some(sources)
+        } else {
+            None
         }
     }
 
@@ -44467,9 +44634,10 @@ impl ValueEmitter {
         let ValueExpr::Load { name, .. } = receiver else {
             return false;
         };
-        self.generator_yield_assignment_variables
-            .iter()
-            .any(|candidate| candidate == name)
+        matches!(
+            self.generator_yield_assignment_source(name),
+            Some(GeneratorYieldAssignmentSource::Direct)
+        )
     }
 
     fn emit_generator_resume_receiver_if_needed(
@@ -44691,6 +44859,7 @@ impl ValueEmitter {
         }
 
         if let AssignmentTarget::List(target) = target {
+            self.update_generator_yield_assignment_list_variables(target, value);
             return self.emit_list_assignment(out, target, value);
         }
 
@@ -60359,11 +60528,28 @@ impl ValueEmitter {
                 line,
             );
         }
-        let yield_indexes = direct_yield_argument_indexes(arguments)?;
+        let yield_sources = self.generator_send_argument_sources(arguments)?;
+        let yield_indexes: Vec<_> = yield_sources.iter().map(|source| source.index).collect();
         let resolved_name = self.resolved_function_call_name(name);
         let mut temps = Vec::with_capacity(arguments.len());
         for (argument_index, argument) in arguments.iter().enumerate() {
-            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            let assigned_source = yield_sources
+                .iter()
+                .find(|source| source.index == argument_index)
+                .map(|source| &source.source);
+            match assigned_source {
+                Some(GeneratorSendArgumentSource::AssignedDirect) => {
+                    let temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_null();\n");
+                    temps.push(temp);
+                }
+                Some(GeneratorSendArgumentSource::AssignedPath(path)) => {
+                    temps.push(self.emit_generator_yield_path_array(out, path));
+                }
+                _ => temps.push(self.emit_call_argument(out, name, argument_index, argument)),
+            }
         }
         let args_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -60380,6 +60566,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
 
         let yield_indexes_temp = self.emit_yield_indexes_array(out, &yield_indexes, "    ");
+        let yield_paths_temp = self.emit_yield_paths_array(out, &yield_sources, "    ");
 
         out.push_str("    ptn_generator_register_send_call(&runtime, \"");
         out.push_str(&c_string(&resolved_name));
@@ -60392,9 +60579,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&yield_indexes_temp);
         out.push_str(", ");
+        out.push_str(&yield_paths_temp);
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        for index in 0..yield_sources.len() {
+            emit_value_cleanup(out, "    ", &format!("{yield_paths_temp}[{index}]"));
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -60430,6 +60622,100 @@ impl ValueEmitter {
         yield_indexes_temp
     }
 
+    fn emit_generator_yield_path_array(&mut self, out: &mut String, path: &[ValueExpr]) -> String {
+        let mut key_temps = Vec::with_capacity(path.len());
+        for segment in path {
+            key_temps.push(self.emit_materialized_value(out, segment));
+        }
+        let path_temp = self.next_temp();
+        if key_temps.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&path_temp);
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+        } else {
+            let entries_temp = self.next_temp();
+            out.push_str("    PtnArrayLiteralEntry ");
+            out.push_str(&entries_temp);
+            out.push_str("[] = { ");
+            for (index, key_temp) in key_temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("{ 1, ptn_int(");
+                out.push_str(&index.to_string());
+                out.push_str("), ");
+                out.push_str(key_temp);
+                out.push_str(" }");
+            }
+            out.push_str(" };\n");
+            out.push_str("    PtnValue ");
+            out.push_str(&path_temp);
+            out.push_str(" = ptn_array_from_literal_entries(");
+            out.push_str(&key_temps.len().to_string());
+            out.push_str(", ");
+            out.push_str(&entries_temp);
+            out.push_str(");\n");
+        }
+        for key_temp in key_temps {
+            emit_value_cleanup(out, "    ", &key_temp);
+        }
+        path_temp
+    }
+
+    fn emit_yield_paths_array(
+        &mut self,
+        out: &mut String,
+        yield_sources: &[GeneratorSendArgument],
+        indent: &str,
+    ) -> String {
+        let mut path_temps = Vec::with_capacity(yield_sources.len());
+        for source in yield_sources {
+            match &source.source {
+                GeneratorSendArgumentSource::AssignedPath(path) => {
+                    path_temps.push(self.emit_generator_yield_path_array(out, path));
+                }
+                GeneratorSendArgumentSource::DirectYieldExpr
+                | GeneratorSendArgumentSource::AssignedDirect => {
+                    path_temps.push("ptn_null()".to_string());
+                }
+            }
+        }
+        let yield_paths_temp = self.next_temp();
+        out.push_str(indent);
+        out.push_str("PtnValue ");
+        out.push_str(&yield_paths_temp);
+        out.push_str("[] = { ");
+        for (index, path_temp) in path_temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(path_temp);
+        }
+        out.push_str(" };\n");
+        yield_paths_temp
+    }
+
+    fn emit_null_yield_paths_array(
+        &mut self,
+        out: &mut String,
+        yield_count: usize,
+        indent: &str,
+    ) -> String {
+        let yield_paths_temp = self.next_temp();
+        out.push_str(indent);
+        out.push_str("PtnValue ");
+        out.push_str(&yield_paths_temp);
+        out.push_str("[] = { ");
+        for index in 0..yield_count {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_null()");
+        }
+        out.push_str(" };\n");
+        yield_paths_temp
+    }
+
     fn emit_generator_send_deferred_nested_internal_call(
         &mut self,
         out: &mut String,
@@ -60460,6 +60746,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
 
         let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+        let yield_paths_temp = self.emit_null_yield_paths_array(out, yield_indexes.len(), "    ");
 
         out.push_str("    ptn_generator_register_send_nested_call(&runtime, \"");
         out.push_str(&c_string(&resolved_outer_name));
@@ -60474,9 +60761,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&yield_indexes_temp);
         out.push_str(", ");
+        out.push_str(&yield_paths_temp);
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        for index in 0..yield_indexes.len() {
+            emit_value_cleanup(out, "    ", &format!("{yield_paths_temp}[{index}]"));
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -60520,6 +60812,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
 
         let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+        let yield_paths_temp = self.emit_null_yield_paths_array(out, yield_indexes.len(), "    ");
 
         out.push_str("    ptn_generator_register_send_method(&runtime, ");
         out.push_str(&receiver_temp);
@@ -60534,9 +60827,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&yield_indexes_temp);
         out.push_str(", ");
+        out.push_str(&yield_paths_temp);
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        for index in 0..yield_indexes.len() {
+            emit_value_cleanup(out, "    ", &format!("{yield_paths_temp}[{index}]"));
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -60587,6 +60885,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
 
         let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+        let yield_paths_temp = self.emit_null_yield_paths_array(out, yield_indexes.len(), "    ");
 
         out.push_str("    ptn_generator_register_send_callable(&runtime, ");
         out.push_str(&callee_temp);
@@ -60599,9 +60898,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&yield_indexes_temp);
         out.push_str(", ");
+        out.push_str(&yield_paths_temp);
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        for index in 0..yield_indexes.len() {
+            emit_value_cleanup(out, "    ", &format!("{yield_paths_temp}[{index}]"));
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }

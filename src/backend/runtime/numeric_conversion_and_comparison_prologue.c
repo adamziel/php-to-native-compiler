@@ -9309,6 +9309,9 @@ static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *typ
         return 0;
     }
     const char *class_name = runtime->exceptions->active_exception->class_name;
+    if (ptn_exception_name_equal(class_name, "__PTN_FiberExit")) {
+        return 0;
+    }
     if (ptn_exception_type_matches_name(class_name, type_name)) {
         return 1;
     }

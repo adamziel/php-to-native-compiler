@@ -107903,6 +107903,54 @@ static size_t ptn_gc_destructed_object_count(PtnObject *object) {
     return 1;
 }
 
+static int ptn_gc_object_pending_destructor_candidate(PtnObject *object, size_t epoch) {
+    return object != NULL &&
+        object->refcount > 0 &&
+        !ptn_gc_object_has_opaque_native_data(object) &&
+        object->gc_mark_epoch != epoch &&
+        ptn_object_has_pending_declared_destructor(object);
+}
+
+static void ptn_gc_run_unreachable_object_destructor(
+    PtnRuntime *root,
+    PtnObject *object,
+    size_t epoch,
+    PtnObject ***destructed_objects,
+    size_t *destructed_objects_len,
+    size_t *destructed_objects_capacity
+) {
+    (void)destructed_objects;
+    (void)destructed_objects_len;
+    (void)destructed_objects_capacity;
+    (void)epoch;
+    if (object == NULL) {
+        return;
+    }
+    ptn_object_retain(object);
+    ptn_object_run_destructor_ex(object, 1);
+    size_t post_destructor_epoch = root == NULL ? 0 : ptn_runtime_mark_gc_roots(root, root);
+    if (
+        root == NULL ||
+        object->refcount == 0 ||
+        object->gc_mark_epoch == post_destructor_epoch ||
+        ptn_object_has_pending_declared_destructor(object)
+    ) {
+        ptn_object_release(object);
+        return;
+    }
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        if (root->live_objects[i] != object) {
+            continue;
+        }
+        ptn_runtime_remove_live_object_at(root, i);
+        object->defer_object_id_release_once = 1;
+        object->refcount = 1;
+        ptn_object_release(object);
+        return;
+    }
+    ptn_object_release(object);
+}
+
 static size_t ptn_runtime_collect_unreachable_objects(
     PtnRuntime *runtime,
     size_t *destructor_component_epoch_out,
@@ -107936,25 +107984,41 @@ static size_t ptn_runtime_collect_unreachable_objects(
     size_t destructed_objects_capacity = 0;
 
     size_t initial_live_objects_len = root->live_objects_len;
-    for (size_t i = 0; i < initial_live_objects_len; i++) {
-        PtnObject *object = root->live_objects[i];
-        if (
-            object == NULL ||
-            object->refcount == 0 ||
-            ptn_gc_object_has_opaque_native_data(object) ||
-            object->gc_mark_epoch == epoch ||
-            !ptn_object_has_pending_declared_destructor(object)
-        ) {
+    size_t primed_destructor_index = (size_t)-1;
+    size_t reverse_index = initial_live_objects_len;
+    while (reverse_index > 0) {
+        reverse_index--;
+        PtnObject *object = root->live_objects[reverse_index];
+        if (!ptn_gc_object_pending_destructor_candidate(object, epoch)) {
             continue;
         }
-        ptn_object_retain(object);
-        ptn_gc_collected_object_push(
+        primed_destructor_index = reverse_index;
+        ptn_gc_run_unreachable_object_destructor(
+            root,
+            object,
+            epoch,
             &destructed_objects,
             &destructed_objects_len,
-            &destructed_objects_capacity,
-            object
+            &destructed_objects_capacity
         );
-        ptn_object_run_destructor_ex(object, 1);
+        break;
+    }
+    for (size_t i = 0; i < initial_live_objects_len; i++) {
+        if (i == primed_destructor_index) {
+            continue;
+        }
+        PtnObject *object = root->live_objects[i];
+        if (!ptn_gc_object_pending_destructor_candidate(object, epoch)) {
+            continue;
+        }
+        ptn_gc_run_unreachable_object_destructor(
+            root,
+            object,
+            epoch,
+            &destructed_objects,
+            &destructed_objects_len,
+            &destructed_objects_capacity
+        );
     }
 
     epoch = ptn_runtime_mark_gc_roots(runtime, root);
@@ -182640,6 +182704,17 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             if (runtime->current_fiber == NULL) {
                 return ptn_null();
             }
+            PtnRuntime *root = ptn_runtime_root(runtime);
+            if (root == NULL) {
+                root = runtime;
+            }
+            if (
+                root != NULL &&
+                root->gc_running &&
+                root->gc_destructor_depth > 0
+            ) {
+                root->gc_destructor_fiber_current_requested = 1;
+            }
             ptn_object_retain(runtime->current_fiber);
             return ptn_object(runtime->current_fiber);
         }
@@ -182658,7 +182733,29 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 ptn_throw_exception(runtime, "ArgumentCountError", message);
                 return ptn_null();
             }
+            PtnRuntime *root = ptn_runtime_root(runtime);
+            if (root == NULL) {
+                root = runtime;
+            }
             if (runtime->current_fiber == NULL) {
+                if (
+                    runtime->current_generator != NULL &&
+                    runtime->current_generator->executing &&
+                    runtime->current_generator->values != NULL &&
+                    runtime->current_generator->values->len > 0
+                ) {
+                    ptn_generator_register_send_call(
+                        runtime,
+                        "Fiber::suspend",
+                        argc,
+                        args,
+                        0,
+                        NULL,
+                        NULL,
+                        line
+                    );
+                    return ptn_null();
+                }
                 ptn_throw_exception_at(
                     runtime,
                     "FiberError",
@@ -182667,6 +182764,14 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                     line
                 );
                 return ptn_null();
+            }
+            if (
+                root != NULL &&
+                root->gc_running &&
+                root->gc_destructor_depth > 0 &&
+                !root->gc_destructor_fiber_current_requested
+            ) {
+                return argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
             }
             return ptn_fiber_capture_suspension(runtime, argc, args, line);
         }
@@ -182997,6 +183102,11 @@ static void ptn_fiber_restore_suspended_runtime(PtnRuntime *runtime, PtnFiberDat
     runtime->current_generator = data->suspended_generator;
 }
 
+static int ptn_fiber_is_close_unwind_exception(PtnException *exception) {
+    return exception != NULL &&
+        ptn_ascii_case_equal(exception->class_name, "__PTN_FiberExit");
+}
+
 static int ptn_fiber_call_callback_capturing_exception(
     PtnRuntime *runtime,
     PtnFiberData *data,
@@ -183211,7 +183321,64 @@ static void ptn_fiber_release_suspended_runtimes(PtnFiberData *data) {
     data->suspended_trace_frame = NULL;
     data->suspended_generator = NULL;
 }
+
+static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
+    if (
+        data == NULL ||
+        !data->context_initialized ||
+        data->context_finished ||
+        !data->resume_credit ||
+        data->context_runtime == NULL
+    ) {
+        return;
+    }
+    PtnRuntime *runtime = data->context_runtime;
+    ptn_value_destroy(&data->resume_value);
+    data->resume_value = ptn_null();
+    ptn_value_destroy(&data->resume_exception);
+    data->resume_exception = ptn_null();
+    data->resume_throw = 0;
+    data->resume_throw_line = 0;
+    data->close_requested = 1;
+    ptn_fiber_prepare_runtime_entry(runtime, data, NULL);
+    data->running = 1;
+    if (swapcontext(&data->caller_context, &data->fiber_context) != 0) {
+        data->running = 0;
+        data->close_requested = 0;
+        ptn_fiber_detach_active_method_frame(runtime, data);
+        ptn_fiber_restore_caller_runtime(runtime, data);
+        return;
+    }
+    if (
+        runtime->exceptions != NULL &&
+        ptn_fiber_is_close_unwind_exception(runtime->exceptions->active_exception)
+    ) {
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = NULL;
+        data->threw = 0;
+    }
+    data->close_requested = 0;
+    data->resume_credit = 0;
+    data->completed = 1;
+    ptn_fiber_detach_active_method_frame(runtime, data);
+    ptn_fiber_restore_caller_runtime(runtime, data);
+}
 #endif
+
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object) {
+#if !defined(_WIN32)
+    if (
+        object == NULL ||
+        !ptn_internal_class_name_is_fiber(object->class_name) ||
+        object->native_data == NULL
+    ) {
+        return;
+    }
+    ptn_fiber_close_suspended_context((PtnFiberData *)object->native_data);
+#else
+    (void)object;
+#endif
+}
 
 static void ptn_fiber_data_free(void *opaque) {
     PtnFiberData *data = (PtnFiberData *)opaque;
@@ -183219,6 +183386,7 @@ static void ptn_fiber_data_free(void *opaque) {
         return;
     }
 #if !defined(_WIN32)
+    ptn_fiber_close_suspended_context(data);
     ptn_fiber_release_suspended_runtimes(data);
 #endif
     ptn_value_destroy(&data->callback);
@@ -183351,6 +183519,23 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
         }
         ptn_fiber_restore_suspended_runtime(runtime, data);
         data->running = 1;
+        if (data->close_requested) {
+            data->resume_credit = 0;
+            ptn_value_destroy(&data->resume_value);
+            data->resume_value = ptn_null();
+            ptn_value_destroy(&data->resume_exception);
+            data->resume_exception = ptn_null();
+            data->resume_throw = 0;
+            data->resume_throw_line = 0;
+            ptn_throw_exception_at(
+                runtime,
+                "__PTN_FiberExit",
+                "",
+                runtime == NULL ? NULL : runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
         PtnValue resumed = ptn_value_clone_deref(data->resume_value);
         ptn_value_destroy(&data->resume_value);
         data->resume_value = ptn_null();
@@ -183473,6 +183658,7 @@ static int ptn_fiber_init_object(
     data->threw = 0;
     data->resume_credit = 0;
     data->resume_throw = 0;
+    data->close_requested = 0;
 #if !defined(_WIN32)
     data->fiber_stack = NULL;
     data->fiber_stack_size = 0;

@@ -550,6 +550,10 @@ impl<'a> Lexer<'a> {
         self.source
             .get(cursor..cursor.saturating_add(5))
             .is_some_and(|tag| tag.eq_ignore_ascii_case("<?php"))
+            || self
+                .source
+                .get(cursor..cursor.saturating_add(3))
+                .is_some_and(|tag| tag == "<?=")
     }
 
     fn source_starts_with_short_echo_tag_at(&self, cursor: usize) -> bool {
@@ -2230,7 +2234,22 @@ impl<'a> Lexer<'a> {
     }
 
     fn push_open_tag(&mut self) {
-        self.push_fixed(TokenKind::OpenTag, 5);
+        if self.rest().starts_with("<?=") {
+            let open_span = self.current_span(3);
+            self.bump_char();
+            self.bump_char();
+            self.bump_char();
+            self.tokens.push(Token {
+                kind: TokenKind::OpenTag,
+                span: open_span,
+            });
+            self.tokens.push(Token {
+                kind: TokenKind::Echo,
+                span: open_span,
+            });
+        } else {
+            self.push_fixed(TokenKind::OpenTag, 5);
+        }
         self.seen_open_tag = true;
         self.closed_php = false;
     }

@@ -154,6 +154,7 @@ typedef struct PtnFiberData {
     int threw;
     int resume_credit;
     int resume_throw;
+    int close_requested;
 #if !defined(_WIN32)
     ucontext_t caller_context;
     ucontext_t fiber_context;
@@ -173,6 +174,12 @@ typedef struct PtnFiberData {
     PtnGenerator *suspended_generator;
 #endif
 } PtnFiberData;
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object) {
+    (void)object;
+}
+#endif
 
 static PtnException *ptn_exception_previous_exception(PtnException *exception) {
     if (exception == NULL) {
@@ -1429,6 +1436,13 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     if (saved_active_exception != NULL && !preserve_active_exception) {
         root->exceptions->active_exception = NULL;
     }
+    int previous_gc_destructor_depth = root->gc_destructor_depth;
+    int previous_gc_destructor_fiber_current_requested =
+        root->gc_destructor_fiber_current_requested;
+    if (root->gc_running) {
+        root->gc_destructor_depth++;
+        root->gc_destructor_fiber_current_requested = 0;
+    }
     if (catch_destructor_exception) {
         ptn_try_frame_push(root, &destructor_frame);
         if (setjmp(destructor_frame.jump) != 0) {
@@ -1450,6 +1464,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
                 previous_suppress_user_call_frame_location;
             root->destructor_shutdown_phase = previous_shutdown_phase;
             root->current_class_name = previous_scope;
+            root->gc_destructor_depth = previous_gc_destructor_depth;
+            root->gc_destructor_fiber_current_requested =
+                previous_gc_destructor_fiber_current_requested;
             ptn_value_destroy(&result);
             return;
         }
@@ -1462,6 +1479,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         previous_suppress_user_call_frame_location;
     root->destructor_shutdown_phase = previous_shutdown_phase;
     root->current_class_name = previous_scope;
+    root->gc_destructor_depth = previous_gc_destructor_depth;
+    root->gc_destructor_fiber_current_requested =
+        previous_gc_destructor_fiber_current_requested;
     if (saved_active_exception != NULL && !preserve_active_exception) {
         if (root->exceptions->active_exception == NULL) {
             root->exceptions->active_exception = saved_active_exception;
@@ -1784,6 +1804,9 @@ static void ptn_runtime_run_object_destructors_matching(
             continue;
         }
         ptn_object_retain(object);
+        if (during_shutdown) {
+            ptn_runtime_close_suspended_fiber_object(object);
+        }
         ptn_object_run_destructor_ex(object, during_shutdown);
         ptn_object_release(object);
     }
@@ -1812,6 +1835,7 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
             continue;
         }
         ptn_object_retain(object);
+        ptn_runtime_close_suspended_fiber_object(object);
         ptn_object_run_destructor_ex(object, 1);
         ptn_object_release(object);
         if (root->output_buffers_len > initial_output_buffers_len) {
