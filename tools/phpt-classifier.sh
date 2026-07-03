@@ -1340,6 +1340,12 @@ ptn_phpt_first_unsupported_section() {
     ptn_phpt_first_section_in_csv "$path" "$unsupported"
 }
 
+ptn_phpt_supported_file_external_row() {
+    local rel=$1
+
+    [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]]
+}
+
 ptn_phpt_first_environment_section() {
     local path=$1
     local sections
@@ -2903,8 +2909,10 @@ ptn_phpt_classify_row() {
     fi
 
     if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_unsupported_sections)"); then
-        printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
-        return 0
+        if [[ "$value" != "FILE_EXTERNAL" ]] || ! ptn_phpt_supported_file_external_row "$rel"; then
+            printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
+            return 0
+        fi
     fi
 
     if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_environment_sections)"); then

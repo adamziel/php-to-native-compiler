@@ -61069,6 +61069,61 @@ echo "Count: " . iterator_count($it) . "\n";
 }
 
 #[test]
+fn compile_dom_document_loadxml_normalizes_libxml_tree_flags_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-loadxml-normalized-libxml-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-loadxml-normalized-libxml-flags.php");
+    let output = root.join("dom-loadxml-normalized-libxml-flags-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE books [
+<!ENTITY entitest "entity is only for test purposes">
+<!ATTLIST title default CDATA "default title">
+<!ELEMENT books (book*)>
+<!ELEMENT book (title, author)>
+<!ELEMENT title (#PCDATA)>
+<!ELEMENT author (#PCDATA)>
+]>
+<books>
+    <book>
+    <title>The Grapes of Wrath</title>
+    <author>John Steinbeck</author>
+    </book>
+    <book>
+    <title>The Pearl</title>
+    <author>John Steinbeck</author>
+    </book>
+    <book>
+    <title>&entitest;</title>
+    <author><![CDATA[data for test]]></author>
+    </book>
+</books>
+XML;
+$doc = new DOMDocument();
+var_dump($doc->loadXML($xml, LIBXML_DTDATTR | LIBXML_NOCDATA | LIBXML_NOENT | LIBXML_NOBLANKS));
+echo $doc->saveXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE books [\n<!ENTITY entitest \"entity is only for test purposes\">\n<!ATTLIST title default CDATA \"default title\">\n<!ELEMENT books (book)*>\n<!ELEMENT book (title , author)>\n<!ELEMENT title (#PCDATA)>\n<!ELEMENT author (#PCDATA)>\n]>\n<books><book><title default=\"default title\">The Grapes of Wrath</title><author>John Steinbeck</author></book><book><title default=\"default title\">The Pearl</title><author>John Steinbeck</author></book><book><title default=\"default title\">entity is only for test purposes</title><author>data for test</author></book></books>\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_libxml_normalized_document_source"));
+}
+
+#[test]
 fn compile_dom_token_list_dtd_entities_and_live_iterators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-token-list-dtd-entities-iterators");
     fs::create_dir_all(&root).unwrap();
