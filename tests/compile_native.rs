@@ -1205,6 +1205,103 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_file_object_fgetcsv_skip_empty_multiline_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-file-object-fgetcsv-skip-empty-multiline");
+    fs::create_dir_all(&root).unwrap();
+    let csv_path = root.join("bug69181.csv");
+    let blank_csv_path = root.join("blank-line.csv");
+    let input = root.join("spl-file-object-fgetcsv-skip-empty-multiline.php");
+    let output = root.join("spl-file-object-fgetcsv-skip-empty-multiline-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$csv = \"\\\"foo\\n\\nbar\\nbaz\\\",qux\\n\\n\\\"foo\\nbar\\nbaz\\\",qux\";\n\
+file_put_contents({}, $csv);\n\
+$file = new SplFileObject({});\n\
+$file->setCsvControl(escape: '');\n\
+$file->setFlags(SplFileObject::SKIP_EMPTY | SplFileObject::DROP_NEW_LINE | SplFileObject::READ_CSV);\n\
+while (($record = $file->fgetcsv())) {{\n\
+    var_dump($record);\n\
+}}\n\
+file_put_contents({}, \"a,b\\n\\nc,d\\n\");\n\
+$plain = new SplFileObject({});\n\
+$plain->setCsvControl(escape: '');\n\
+$plain->setFlags(SplFileObject::SKIP_EMPTY | SplFileObject::READ_CSV);\n\
+var_dump($plain->fgetcsv());\n\
+var_dump($plain->fgetcsv());\n\
+var_dump($plain->fgetcsv());\n\
+$explicit = new SplFileObject({});\n\
+$explicit->setFlags(SplFileObject::SKIP_EMPTY | SplFileObject::DROP_NEW_LINE | SplFileObject::READ_CSV);\n\
+var_dump($explicit->fgetcsv(',', '\"', ''));\n\
+var_dump($explicit->fgetcsv(',', '\"', ''));\n",
+            php_string_literal(&csv_path),
+            php_string_literal(&csv_path),
+            php_string_literal(&blank_csv_path),
+            php_string_literal(&blank_csv_path),
+            php_string_literal(&blank_csv_path)
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(12) \"foo\n\nbar\nbaz\"\n",
+            "  [1]=>\n",
+            "  string(3) \"qux\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(11) \"foo\nbar\nbaz\"\n",
+            "  [1]=>\n",
+            "  string(3) \"qux\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"c\"\n",
+            "  [1]=>\n",
+            "  string(1) \"d\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"c\"\n",
+            "  [1]=>\n",
+            "  string(1) \"d\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_constructor_and_autoload_residual_errors_to_native_binary() {
     let root = temp_dir("ptn-native-spl-constructor-autoload-residuals");
     fs::create_dir_all(&root).unwrap();
