@@ -107350,8 +107350,12 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
-        size_t skip_array_count_depth =
-            ptn_object_metadata_is_spl_object_storage_storage(metadata) ? 2 : 0;
+        size_t skip_array_count_depth = 0;
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            skip_array_count_depth = 2;
+        } else if (ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            skip_array_count_depth = 1;
+        }
         size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
             entry->value,
             root_epoch,
@@ -107378,6 +107382,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
     }
     PtnValue values[7] = { ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null() };
     size_t values_len = 0;
+    size_t skip_array_count_depth = 0;
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
         PtnFiberData *data = (PtnFiberData *)object->native_data;
         values[values_len++] = data->callback;
@@ -107398,6 +107403,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
     } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
         PtnSplFixedArrayData *data = (PtnSplFixedArrayData *)object->native_data;
         values[values_len++] = data->storage;
+        skip_array_count_depth = 1;
     } else {
         return 0;
     }
@@ -107408,7 +107414,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
             root_epoch,
             counted_epoch,
             depth + 1,
-            0
+            skip_array_count_depth
         );
         if (count > SIZE_MAX - nested) {
             ptn_abort_out_of_memory();
