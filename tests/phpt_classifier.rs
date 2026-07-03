@@ -1065,6 +1065,21 @@ fn phpt_classifier_allows_datetimezone_var_export_eval_row_by_path() {
 }
 
 #[test]
+fn phpt_classifier_allows_zend_trait_autoload_eval_row_by_path() {
+    let phpt = "--TEST--\ntrait autoload eval\n--FILE--\n<?php\nspl_autoload_register(function ($name) {\n    if ($name == \"B\") {\n        eval (\"abstract class B extends A { }\");\n    } else if ($name == \"A\") {\n        eval (\"abstract class A { use T { T::__construct as __asconstruct; }}\");\n    } else if ($name == \"T\") {\n        eval (\"trait T { public function __construct() { } }\");\n    }\n    return TRUE;\n});\nclass C extends B {}\necho \"okey\";\n--EXPECT--\nokey\n";
+
+    assert_eq!(
+        classify_at_relative_path(phpt, "Zend/tests/traits/bug62907.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    let unrelated = classify_at_relative_path(phpt, "Zend/tests/traits/other_eval_trait.phpt");
+    assert!(
+        unrelated.starts_with("unsupported-dynamic-eval\t"),
+        "{unrelated:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (
@@ -2710,6 +2725,27 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "{path}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_allows_reflection_tentative_return_spl_metadata_row_by_path() {
+    let phpt = "--TEST--\nreflection tentative return spl metadata\n--FILE--\n<?php\nprintInfo(new ReflectionMethod(FileSystemIterator::class, 'current'));\n--EXPECT--\n";
+
+    assert_eq!(
+        classify_at_relative_path(
+            phpt,
+            "ext/reflection/tests/ReflectionMethod_tentative_return_type.phpt"
+        ),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    let unrelated = classify_at_relative_path(
+        phpt,
+        "ext/reflection/tests/ReflectionMethod_other_spl_surface.phpt",
+    );
+    assert!(
+        unrelated.starts_with("unsupported-spl-surface\t"),
+        "{unrelated:?}"
+    );
 }
 
 #[test]

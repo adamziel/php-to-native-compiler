@@ -25004,6 +25004,48 @@ var_dump(class_exists('defclass', false));
 }
 
 #[test]
+fn compile_eval_autoload_trait_dependency_declared_later_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-autoload-late-trait");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-autoload-late-trait.php");
+    let output = root.join("eval-autoload-late-trait-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($name) {
+    if ($name == "B") {
+        eval("abstract class B extends A { }");
+    } else if ($name == "A") {
+        eval("abstract class A { use T { T::__construct as __asconstruct; }}");
+    } else if ($name == "T") {
+        eval("trait T { public function __construct() { } }");
+    }
+    return true;
+});
+
+class C extends B {
+    public function __construct() {
+    }
+}
+
+echo "okey";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "okey");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_trait_"));
+    assert!(c_source.contains("ptn_runtime_autoload_class"));
+}
+
+#[test]
 fn compile_literal_eval_typed_class_properties_to_native_binary() {
     let root = temp_dir("ptn-native-literal-eval-typed-class-properties");
     fs::create_dir_all(&root).unwrap();

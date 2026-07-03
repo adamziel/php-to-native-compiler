@@ -1782,6 +1782,10 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ &&
                 line ~ /(^|[^[:alnum:]_$\\])(filesystemiterator|recursivedirectoryiterator)([^[:alnum:]_]|$)/
         }
+        function ptn_supported_reflection_tentative_return_spl_surface_line(line) {
+            return ptn_path ~ /ext\/reflection\/tests\/ReflectionMethod_tentative_return_type[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])filesystemiterator([^[:alnum:]_]|$)/
+        }
         function ptn_supported_directory_iterator_surface_line(line) {
             return ptn_path ~ /ext\/spl\/tests\/dit_004[.]phpt$/ &&
                 line ~ /(^|[^[:alnum:]_$\\])directoryiterator([^[:alnum:]_]|$)/
@@ -1840,6 +1844,9 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_spl_autoload_eval_row() {
             return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_bug48541[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/autoloading\/bug74372[.]phpt$/
+        }
+        function ptn_supported_zend_trait_autoload_eval_row() {
+            return ptn_path ~ /Zend\/tests\/traits\/bug62907[.]phpt$/
         }
         function ptn_supported_tokenizer_eval_row() {
             return ptn_path ~ /ext\/tokenizer\/tests\/gh19507_eval[.]phpt$/ ||
@@ -2021,6 +2028,7 @@ ptn_phpt_first_unsupported_language_surface() {
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
                     !ptn_supported_directory_iterator_surface_line(line) &&
                     !ptn_supported_recursive_directory_iterator_surface_line(line) &&
+                    !ptn_supported_reflection_tentative_return_spl_surface_line(line) &&
                     !ptn_supported_generator_fiber_lifecycle_row()) ||
                 (ptn_has_unmodeled_spl_function(line) &&
                     !ptn_supported_spl_helper_function_line(line) &&
@@ -2140,6 +2148,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 !ptn_supported_eval_class_declaration_raw($0) &&
                 !ptn_supported_eval_static_variable_dynamic_function_row() &&
                 !ptn_supported_spl_autoload_eval_row() &&
+                !ptn_supported_zend_trait_autoload_eval_row() &&
                 !ptn_supported_tokenizer_eval_row() &&
                 !ptn_supported_zend_constexpr_lazy_eval_row() &&
                 !ptn_supported_date_timezone_var_export_eval_row()) {

@@ -70,14 +70,14 @@ pub(crate) fn parse_for_include_collection(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], false, false)
+    parse_with_options(source, runtime_class_aliases, &[], &[], false, false, false)
 }
 
 pub(crate) fn parse_with_runtime_class_aliases(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], true, true)
+    parse_with_options(source, runtime_class_aliases, &[], &[], true, true, false)
 }
 
 pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
@@ -93,6 +93,7 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
         external_traits,
         true,
         true,
+        false,
     )
 }
 
@@ -109,6 +110,7 @@ pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols(
         external_traits,
         true,
         false,
+        false,
     )
 }
 
@@ -119,6 +121,7 @@ fn parse_with_options(
     external_traits: &[TraitDecl],
     validate_method_signatures: bool,
     validate_function_names: bool,
+    force_top_level_declarations_conditional: bool,
 ) -> Result<Program> {
     let lexed = lex_with_warnings(source)?;
     let tokens = lexed.tokens;
@@ -171,6 +174,7 @@ fn parse_with_options(
         compile_warnings: lexed.compile_warnings,
         validate_method_signatures,
         validate_function_names,
+        force_top_level_declarations_conditional,
         current_statement_doc_comment: None,
     };
     parser.parse_program().map_err(|error| {
@@ -249,6 +253,7 @@ struct Parser<'a> {
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
     validate_function_names: bool,
+    force_top_level_declarations_conditional: bool,
     current_statement_doc_comment: Option<String>,
 }
 
@@ -764,7 +769,11 @@ impl Parser<'_> {
             } else if self.peek_starts_class_decl() {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                let class = self.parse_class_decl(attributes)?;
+                let mut class = self.parse_class_decl(attributes)?;
+                if self.force_top_level_declarations_conditional {
+                    class.is_conditionally_declared = true;
+                    class.is_syntactically_conditionally_declared = true;
+                }
                 self.register_declared_class_name(&class)?;
                 let name = class.name.clone();
                 let span = class.span;
@@ -6747,6 +6756,7 @@ impl Parser<'_> {
             &self.eval_visible_traits,
             false,
             true,
+            true,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -6897,6 +6907,7 @@ impl Parser<'_> {
             &self.eval_visible_traits,
             false,
             true,
+            true,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -6947,6 +6958,7 @@ impl Parser<'_> {
             &self.eval_visible_classes,
             &self.eval_visible_traits,
             false,
+            true,
             true,
         ) {
             Ok(program) => program,
@@ -9438,6 +9450,7 @@ impl Parser<'_> {
             compile_warnings: Vec::new(),
             validate_method_signatures: false,
             validate_function_names: true,
+            force_top_level_declarations_conditional: false,
             current_statement_doc_comment: None,
         };
         parser.expect_open_tag()?;
@@ -14781,12 +14794,18 @@ fn compose_class_traits(
                 .iter()
                 .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
             else {
+                let lowered_trait_name = trait_use.name.to_ascii_lowercase();
                 if trait_use.adaptations.is_empty()
                     && internal_trait_available_for_runtime_use(&trait_use.name)
                 {
                     continue;
                 }
-                let lowered_trait_name = trait_use.name.to_ascii_lowercase();
+                if class.is_conditionally_declared
+                    && reserved_class_name_segment(&lowered_trait_name).is_none()
+                    && !non_trait_names.contains(&lowered_trait_name)
+                {
+                    continue;
+                }
                 let message =
                     if let Some(reserved_name) = reserved_class_name_segment(&lowered_trait_name) {
                         format!("Cannot use \"{reserved_name}\" as trait name, as it is reserved")
@@ -14811,20 +14830,26 @@ fn compose_class_traits(
             class.trait_uses.clear();
             continue;
         }
+        let resolved_trait_uses = used_trait_pairs
+            .iter()
+            .map(|(trait_use, _)| (*trait_use).clone())
+            .collect::<Vec<_>>();
         let used_traits = used_trait_pairs
             .iter()
             .map(|(_, trait_decl)| *trait_decl)
             .collect::<Vec<_>>();
-        if let Err(diagnostic) = validate_trait_use_adaptations(
-            &class.name,
-            &trait_uses,
-            traits,
-            &used_traits,
-            Some(&non_trait_names),
-        ) {
-            defer_class_declaration_fatal(class, diagnostic);
-            class.trait_uses.clear();
-            continue;
+        if !resolved_trait_uses.is_empty() {
+            if let Err(diagnostic) = validate_trait_use_adaptations(
+                &class.name,
+                &resolved_trait_uses,
+                traits,
+                &used_traits,
+                Some(&non_trait_names),
+            ) {
+                defer_class_declaration_fatal(class, diagnostic);
+                class.trait_uses.clear();
+                continue;
+            }
         }
         for (trait_use, trait_decl) in used_trait_pairs {
             if let Err(diagnostic) = import_trait_members_into_class(

@@ -22569,7 +22569,10 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Constant { name, .. }) => name.clone(),
         Some(ValueExpr::ClassConstantFetch {
             class_name, name, ..
-        }) => format!("{}::{name}", reflection_default_class_name_repr(class_name)),
+        }) => format!(
+            "{}::{name}",
+            reflection_default_class_constant_class_name_repr(class_name)
+        ),
         Some(ValueExpr::Unary { op, expr, .. }) => {
             format!(
                 "{}{}",
@@ -22679,6 +22682,17 @@ fn reflection_default_class_name_repr(class_name: &str) -> String {
         class_name.to_string()
     } else {
         format!("\\{}", class_name.trim_start_matches('\\'))
+    }
+}
+
+fn reflection_default_class_constant_class_name_repr(class_name: &str) -> String {
+    if class_name.eq_ignore_ascii_case("self")
+        || class_name.eq_ignore_ascii_case("parent")
+        || class_name.eq_ignore_ascii_case("static")
+    {
+        class_name.to_string()
+    } else {
+        class_name.trim_start_matches('\\').to_string()
     }
 }
 
