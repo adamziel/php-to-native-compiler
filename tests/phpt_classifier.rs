@@ -3533,6 +3533,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
         fiber_get_return_after_bailout.starts_with("runnable\t"),
         "{fiber_get_return_after_bailout:?}"
     );
+
+    let recursive_destructor_memory_limit = classify_at_relative_path(
+        "--TEST--\nrecursive destructor allocation fatal\n--INI--\nmemory_limit=8M\n--FILE--\n<?php\nclass DestructableObject {\n    public function __destruct() { DestructableObject::__destruct(); }\n}\nclass DestructorCreator {\n    public $test;\n    public function __destruct() { $this->test = new DestructableObject; }\n}\nclass Test { public static $mystatic; }\n$x = new Test();\nTest::$mystatic = new DestructorCreator();\n--EXPECTF--\nFatal error: Allowed memory size of %s bytes exhausted%s(tried to allocate %s bytes) in %s on line %d\n",
+        "Zend/tests/class_alias/bug54268.phpt",
+    );
+    assert!(
+        recursive_destructor_memory_limit.starts_with("runnable\t"),
+        "{recursive_destructor_memory_limit:?}"
+    );
 }
 
 #[test]
