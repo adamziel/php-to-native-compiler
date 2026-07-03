@@ -65561,6 +65561,63 @@ try {
 }
 
 #[test]
+fn compile_ziparchive_encryption_stream_lifetime_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-encryption-stream-lifetime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-encryption-stream-lifetime.php");
+    let output = root.join("ziparchive-encryption-stream-lifetime-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$file = __DIR__ . '/encrypted.zip';
+$zip = new ZipArchive;
+var_dump(method_exists('ZipArchive', 'setEncryptionName'), ZipArchive::EM_AES_256);
+$zip->open($file, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+var_dump($zip->setPassword('default'));
+$zip->addFromString('test.txt', 'contents');
+var_dump($zip->setEncryptionName('test.txt', ZipArchive::EM_AES_256, 'secret'));
+$stat = $zip->statName('test.txt');
+var_dump($stat['encryption_method']);
+$stream = $zip->getStream('test.txt');
+$zip->close();
+var_dump(stream_get_contents($stream));
+var_dump(file_get_contents('zip://' . $file . '#test.txt'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nint(259)\n"), "{stdout}");
+    assert!(
+        stdout.contains("bool(true)\nbool(true)\nint(259)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: stream_get_contents(): Zip stream error: Containing zip archive was closed"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(0) \"\"\n"), "{stdout}");
+    assert!(stdout.ends_with("string(8) \"contents\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_set_encryption_name"));
+    assert!(c_source.contains("PTN_STREAM_BACKEND_ZIP"));
+}
+
+#[test]
 fn compile_ziparchive_rename_entries_to_native_binary() {
     let root = temp_dir("ptn-native-ziparchive-rename-entries");
     fs::create_dir_all(&root).unwrap();

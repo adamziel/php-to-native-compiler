@@ -2966,13 +2966,22 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{unmodeled_curl_harness:?}"
     );
 
-    let zip_archive_runtime = classify_at_relative_path(
-        "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
-        "ext/zip/tests/ZipArchive_bailout.phpt",
+    let zip_archive_unmodeled_mutation = classify_at_relative_path(
+        "--TEST--\nzip archive unmodeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->deleteName('test');\n--EXPECT--\n",
+        "ext/zip/tests/delete_name.phpt",
     );
     assert!(
-        zip_archive_runtime.starts_with("unsupported-zip-archive-runtime\t"),
-        "{zip_archive_runtime:?}"
+        zip_archive_unmodeled_mutation.starts_with("unsupported-zip-archive-runtime\t"),
+        "{zip_archive_unmodeled_mutation:?}"
+    );
+
+    let zip_archive_modeled_mutation = classify_at_relative_path(
+        "--TEST--\nzip archive modeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n$zip->setPassword('secret');\n--EXPECT--\n",
+        "ext/zip/tests/oo_cancel_trampoline.phpt",
+    );
+    assert_eq!(
+        zip_archive_modeled_mutation.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let xmlwriter_extension = classify(

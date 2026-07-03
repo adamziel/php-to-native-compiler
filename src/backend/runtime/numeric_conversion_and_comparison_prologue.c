@@ -6174,6 +6174,11 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "CM_BZIP2") == 0) { *out = ptn_int(PTN_ZIP_CM_BZIP2); return 1; }
         if (strcmp(constant, "CM_LZMA") == 0) { *out = ptn_int(PTN_ZIP_CM_LZMA); return 1; }
         if (strcmp(constant, "CM_PPMD") == 0) { *out = ptn_int(PTN_ZIP_CM_PPMD); return 1; }
+        if (strcmp(constant, "EM_NONE") == 0) { *out = ptn_int(PTN_ZIP_EM_NONE); return 1; }
+        if (strcmp(constant, "EM_TRAD_PKWARE") == 0) { *out = ptn_int(PTN_ZIP_EM_TRAD_PKWARE); return 1; }
+        if (strcmp(constant, "EM_AES_128") == 0) { *out = ptn_int(PTN_ZIP_EM_AES_128); return 1; }
+        if (strcmp(constant, "EM_AES_192") == 0) { *out = ptn_int(PTN_ZIP_EM_AES_192); return 1; }
+        if (strcmp(constant, "EM_AES_256") == 0) { *out = ptn_int(PTN_ZIP_EM_AES_256); return 1; }
         if (strcmp(constant, "AFL_IS_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_IS_TORRENTZIP); return 1; }
         if (strcmp(constant, "AFL_WANT_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_WANT_TORRENTZIP); return 1; }
         if (strcmp(constant, "LIBZIP_VERSION") == 0) { *out = ptn_string(PTN_ZIP_LIBZIP_VERSION); return 1; }
