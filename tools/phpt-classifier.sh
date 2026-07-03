@@ -1362,7 +1362,7 @@ ptn_phpt_has_external_service_harness() {
     local path=$1
 
     case "$path" in
-        */ext/sockets/tests/socket_dontfragment.phpt|*/ext/sockets/tests/socket_addrinfo_bind.phpt|*/ext/soap/tests/custom_content_type.phpt)
+        */ext/sockets/tests/socket_dontfragment.phpt|*/ext/sockets/tests/socket_addrinfo_bind.phpt|*/ext/soap/tests/custom_content_type.phpt|*/ext/openssl/tests/bug68879.phpt)
             return 1
             ;;
     esac

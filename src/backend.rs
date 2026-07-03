@@ -7643,6 +7643,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_pkey_export") && argument_index == 1 {
         return Some("output");
     }
+    if name.eq_ignore_ascii_case("openssl_csr_export") && argument_index == 1 {
+        return Some("output");
+    }
     if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
         return Some("encrypted_data");
     }
@@ -39727,6 +39730,40 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static OPENSSL_CSR_EXPORT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "csr",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "no_text",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static OPENSSL_DH_COMPUTE_KEY_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "public_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+    ];
+    static OPENSSL_PKEY_GET_PRIVATE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
     static OPENSSL_PKCS12_READ_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "pkcs12",
@@ -40227,6 +40264,14 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_CSR_NEW_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_csr_sign") {
         Some(&OPENSSL_CSR_SIGN_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_csr_export") {
+        Some(&OPENSSL_CSR_EXPORT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_dh_compute_key") {
+        Some(&OPENSSL_DH_COMPUTE_KEY_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkey_get_private")
+        || name.eq_ignore_ascii_case("openssl_get_privatekey")
+    {
+        Some(&OPENSSL_PKEY_GET_PRIVATE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkcs12_read") {
         Some(&OPENSSL_PKCS12_READ_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_public_encrypt") {
