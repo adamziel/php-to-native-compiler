@@ -3863,6 +3863,7 @@ fn ast_known_internal_class(class_name: &str) -> bool {
         "RecursiveCachingIterator",
         "RecursiveCallbackFilterIterator",
         "RecursiveIteratorIterator",
+        "RecursiveTreeIterator",
         "RecursiveRegexIterator",
         "ReflectionClass",
         "ReflectionConstant",

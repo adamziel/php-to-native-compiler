@@ -1053,6 +1053,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_random_engine(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_tree_iterator(const char *class_name);
 static PTN_UNUSED PtnValue ptn_phar_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1061,6 +1062,12 @@ static PTN_UNUSED PtnValue ptn_phar_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_curl_file_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_recursive_tree_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -1367,6 +1374,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
         return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_tree_iterator(lookup_class_name)) {
+        return ptn_recursive_tree_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_limit_iterator(lookup_class_name)) {
         return ptn_limit_iterator_new(runtime, argc, args, line);

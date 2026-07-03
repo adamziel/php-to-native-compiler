@@ -4676,7 +4676,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"MultipleIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"NoRewindIterator\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveTreeIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            (!ptn_ascii_case_equal(class_name, \"MultipleIterator\") && ptn_ascii_case_equal(interface_name, \"OuterIterator\")) ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
@@ -11530,6 +11531,7 @@ fn emit_class_metadata_helpers(
         "RecursiveCachingIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
+        "RecursiveTreeIterator",
         "FilterIterator",
         "CallbackFilterIterator",
         "RecursiveCallbackFilterIterator",
@@ -12458,6 +12460,7 @@ fn emit_class_metadata_helpers(
         "InfiniteIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
+        "RecursiveTreeIterator",
         "SplObjectStorage",
         "LimitIterator",
         "MultipleIterator",
@@ -24477,6 +24480,7 @@ fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str)
         || candidate_name.eq_ignore_ascii_case("LimitIterator")
         || candidate_name.eq_ignore_ascii_case("NoRewindIterator")
         || candidate_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
+        || candidate_name.eq_ignore_ascii_case("RecursiveTreeIterator")
     {
         &["Iterator", "OuterIterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("RecursiveCachingIterator")
@@ -26166,6 +26170,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "recursivecachingiterator" => Some("RecursiveCachingIterator"),
         "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
+        "recursivetreeiterator" => Some("RecursiveTreeIterator"),
         "recursiveregexiterator" => Some("RecursiveRegexIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
@@ -27748,6 +27753,11 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("#endif\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_spl_uninitialized_internal_parent_method_guard(runtime, resolved, method_name, line)) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     if needs_closure_reflection_dispatch {
         out.push_str("    PtnValue ptn_closure_reflection_result;\n");
         out.push_str("    if (ptn_closure_reflection_try_call_method(runtime, resolved, method_name, argc, args, line, &ptn_closure_reflection_result)) {\n");
@@ -37473,6 +37483,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("RecursiveCachingIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveTreeIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveRegexIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
