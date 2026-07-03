@@ -74374,6 +74374,52 @@ string:9\n",
 }
 
 #[test]
+fn compile_zend_call_method_if_exists_by_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-call-method-if-exists-by-ref-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-call-method-if-exists-by-ref-return.php");
+    let output = root.join("zend-call-method-if-exists-by-ref-return-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Foo {\n\
+    public function &test() {\n\
+        return 42;\n\
+    }\n\
+    public function value($suffix) {\n\
+        return \"ok\" . $suffix;\n\
+    }\n\
+}\n\
+var_dump(function_exists('zend_call_method_if_exists'));\n\
+var_dump(zend_call_method_if_exists(new Foo, 'missing'));\n\
+var_dump(zend_call_method_if_exists(new Foo, 'value', '!'));\n\
+zend_call_method_if_exists(new Foo, 'test');\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "bool(true)\n\
+NULL\n\
+string(3) \"ok!\"\n\
+\n\
+Notice: Only variable references should be returned by reference in {} on line 4\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_call_method_if_exists"));
+    assert!(c_source.contains("runtime.method_dispatch = ptn_call_declared_method"));
+}
+
+#[test]
 fn compile_by_reference_array_return_type_error_precedes_notice_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-array-return-type-error");
     fs::create_dir_all(&root).unwrap();

@@ -37158,6 +37158,9 @@ fn collect_call_runtime_requirements(
     {
         requirements.method_dispatch = true;
     }
+    if name.eq_ignore_ascii_case("zend_call_method_if_exists") {
+        requirements.method_dispatch = true;
+    }
     if is_uri_whatwg_url_static_call_name(name) {
         requirements.ada_url = true;
         requirements.method_dispatch = true;
