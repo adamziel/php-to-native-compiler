@@ -216,6 +216,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         }
     }
     runtime->source_path = caller_runtime->source_path;
+    runtime->call_site_source_path = caller_runtime->source_path;
     runtime->source_snapshot_data = caller_runtime->source_snapshot_data;
     runtime->source_snapshot_len = caller_runtime->source_snapshot_len;
     runtime->compiled_include_depth = caller_runtime->compiled_include_depth;
@@ -441,8 +442,12 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->call_frame = &runtime->owned_call_frame;
     runtime->owned_trace_frame.runtime = runtime;
     runtime->owned_trace_frame.function_name = runtime->current_function_name;
+    const char *call_site_source_path =
+        runtime->call_site_source_path != NULL
+            ? runtime->call_site_source_path
+            : runtime->source_path;
     runtime->owned_trace_frame.file =
-        runtime->suppress_user_call_frame_location ? NULL : runtime->source_path;
+        runtime->suppress_user_call_frame_location ? NULL : call_site_source_path;
     runtime->owned_trace_frame.line =
         runtime->suppress_user_call_frame_location ? 0 : runtime->call_site_line;
     runtime->owned_trace_frame.argc = argc;

@@ -91527,6 +91527,16 @@ fn phpc_opcache_opt_jit_row_pack_dumps_bounded_optimizer_shapes() {
         "<?php\n\
 #[AllowDynamicProperties]\n\
 class A {}\n\
+class ConstSource {\n\
+    public const FOO = 42;\n\
+    public final const BAR = 42;\n\
+    public const int BAZ = 42;\n\
+}\n\
+class ConstReturner {\n\
+    public function getFoo(): int { return ConstSource::FOO; }\n\
+    public function getBar(): int { return ConstSource::BAR; }\n\
+    public function getBaz(): int { return ConstSource::BAZ; }\n\
+}\n\
 function sccp_array_param(int $x) {\n\
     if ($x) {\n\
         $a = [0, 1];\n\
@@ -91594,6 +91604,152 @@ function constant_array_echo() {\n\
         stdout.contains("0000 ECHO string(\"1\")\n0001 ECHO string(\"1\")\n0002 RETURN null\n"),
         "{stdout}"
     );
+    assert!(stdout.contains("ConstReturner::getFoo:\n"), "{stdout}");
+    assert!(stdout.contains("ConstReturner::getBar:\n"), "{stdout}");
+    assert!(stdout.contains("ConstReturner::getBaz:\n"), "{stdout}");
+    assert!(
+        stdout.matches("0000 RETURN int(42)\n").count() >= 3,
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_file_cache_writes_script_artifact() {
+    let root = temp_dir("ptn-phpc-opcache-file-cache");
+    fs::create_dir_all(&root).unwrap();
+    let cache_root = root.join("cache");
+    let input = root.join("bug78185.php");
+    fs::write(&input, "<?php echo \"ok\\n\";").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg(format!("opcache.file_cache={}", cache_root.display()))
+        .arg("-d")
+        .arg("opcache.file_cache_only=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+
+    let mut artifact = cache_root.join("ptn");
+    for component in fs::canonicalize(&input).unwrap().components() {
+        match component {
+            std::path::Component::Normal(part) => artifact.push(part),
+            std::path::Component::ParentDir => artifact.push("__parent"),
+            std::path::Component::CurDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {}
+        }
+    }
+    let mut cache_file_name = artifact.file_name().unwrap().to_os_string();
+    cache_file_name.push(".bin");
+    artifact.set_file_name(cache_file_name);
+    assert!(artifact.exists(), "missing {}", artifact.display());
+}
+
+#[test]
+fn phpc_opcache_preload_method_errors_use_preload_source() {
+    let root = temp_dir("ptn-phpc-opcache-preload-method-source");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload_bug80634.inc");
+    let input = root.join("bug80634.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+class SomeClass extends \\DatePeriod {\n\
+    public ?DateTimeInterface $current;\n\
+\n\
+    public function __construct(int $v) {\n\
+        parent::__construct(new \\DateTime('2020-12-31'), new \\DateInterval('P1Y'), 1);\n\
+        $this->current = $v;\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+    fs::write(&input, "<?php\n$v = new SomeClass(5);\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Cannot modify readonly property DatePeriod::$current"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{} on line 7", preload.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "{}(2): SomeClass->__construct(5)",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains(&format!("{} on line 7", input.display())),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_cli_server_include_transform_reads_loopback_phar_stub() {
+    let root = temp_dir("ptn-native-php-cli-server-loopback-phar-stub");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("issue0149.php");
+    let output = root.join("issue0149-bin");
+    let include = root.join("php_cli_server.inc");
+    fs::write(
+        &include,
+        "<?php die('real server harness should be transformed');",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$archive = __DIR__ . '/issue0149.phar.php';\n\
+file_put_contents($archive, \"<?php header('Content-Type: text/plain;');\\nPhar::mount('this.file', 'source.php');\\necho 'OK\\\\n';\\n__HALT_COMPILER(); ?>\");\n\
+include \"php_cli_server.inc\";\n\
+php_cli_server_start('-d opcache.enable=1');\n\
+echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php');\n\
+echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php');\n\
+@unlink($archive);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\nOK\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

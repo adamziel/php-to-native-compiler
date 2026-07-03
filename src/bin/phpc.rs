@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -956,6 +956,7 @@ fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
         "opcache.enable" => Some("opcache.enable"),
         "opcache.enable_cli" => Some("opcache.enable_cli"),
         "opcache.fast_shutdown" => Some("opcache.fast_shutdown"),
+        "opcache.file_cache" => Some("opcache.file_cache"),
         "opcache.file_cache_only" => Some("opcache.file_cache_only"),
         "opcache.file_update_protection" => Some("opcache.file_update_protection"),
         "opcache.interned_strings_buffer" => Some("opcache.interned_strings_buffer"),
@@ -996,6 +997,57 @@ fn opcache_preload_files(ini: &RuntimeIni, script: &Path) -> Vec<PathBuf> {
         }
     }
     files
+}
+
+fn opcache_ini_value<'a>(ini: &'a RuntimeIni, name: &str) -> Option<&'a str> {
+    ini.opcache
+        .iter()
+        .rev()
+        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn write_opcache_file_cache_artifact(ini: &RuntimeIni, script: &Path) -> Result<(), PhpcError> {
+    let Some(root) = opcache_ini_value(ini, "opcache.file_cache") else {
+        return Ok(());
+    };
+    if root.is_empty() {
+        return Ok(());
+    }
+
+    let script_path = fs::canonicalize(script).unwrap_or_else(|_| script.to_path_buf());
+    let mut artifact = PathBuf::from(root);
+    artifact.push("ptn");
+    for component in script_path.components() {
+        match component {
+            Component::Normal(part) => artifact.push(part),
+            Component::ParentDir => artifact.push("__parent"),
+            Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+
+    let Some(file_name) = artifact.file_name().map(|name| name.to_os_string()) else {
+        return Ok(());
+    };
+    let mut cache_file_name = file_name;
+    cache_file_name.push(".bin");
+    artifact.set_file_name(cache_file_name);
+
+    if let Some(parent) = artifact.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            PhpcError::Message(format!(
+                "failed to create OPcache file cache directory {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    fs::write(&artifact, b"PTN OPcache file cache artifact\n").map_err(|error| {
+        PhpcError::Message(format!(
+            "failed to write OPcache file cache artifact {}: {error}",
+            artifact.display()
+        ))
+    })?;
+    Ok(())
 }
 
 fn normalize_ini_scalar(raw_value: &str) -> String {
@@ -1665,6 +1717,7 @@ fn compile_and_run(
             PhpcError::Message(error.to_string())
         }
     })?;
+    write_opcache_file_cache_artifact(&ini, script)?;
 
     let php_binary = std::env::current_exe()
         .ok()
