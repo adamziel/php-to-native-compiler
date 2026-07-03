@@ -107284,6 +107284,7 @@ static void ptn_gc_run_unreachable_object_destructor(
             continue;
         }
         ptn_runtime_remove_live_object_at(root, i);
+        object->defer_object_id_release_once = 1;
         object->refcount = 1;
         ptn_object_release(object);
         return;
@@ -182414,6 +182415,11 @@ static void ptn_fiber_restore_suspended_runtime(PtnRuntime *runtime, PtnFiberDat
     runtime->current_generator = data->suspended_generator;
 }
 
+static int ptn_fiber_is_close_unwind_exception(PtnException *exception) {
+    return exception != NULL &&
+        ptn_ascii_case_equal(exception->class_name, "__PTN_FiberExit");
+}
+
 static int ptn_fiber_call_callback_capturing_exception(
     PtnRuntime *runtime,
     PtnFiberData *data,
@@ -182642,19 +182648,50 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
     PtnRuntime *runtime = data->context_runtime;
     ptn_value_destroy(&data->resume_value);
     data->resume_value = ptn_null();
+    ptn_value_destroy(&data->resume_exception);
+    data->resume_exception = ptn_null();
     data->resume_throw = 0;
+    data->resume_throw_line = 0;
+    data->close_requested = 1;
     ptn_fiber_prepare_runtime_entry(runtime, data, NULL);
     data->running = 1;
     if (swapcontext(&data->caller_context, &data->fiber_context) != 0) {
         data->running = 0;
+        data->close_requested = 0;
         ptn_fiber_detach_active_method_frame(runtime, data);
         ptn_fiber_restore_caller_runtime(runtime, data);
         return;
     }
+    if (
+        runtime->exceptions != NULL &&
+        ptn_fiber_is_close_unwind_exception(runtime->exceptions->active_exception)
+    ) {
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = NULL;
+        data->threw = 0;
+    }
+    data->close_requested = 0;
+    data->resume_credit = 0;
+    data->completed = 1;
     ptn_fiber_detach_active_method_frame(runtime, data);
     ptn_fiber_restore_caller_runtime(runtime, data);
 }
 #endif
+
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object) {
+#if !defined(_WIN32)
+    if (
+        object == NULL ||
+        !ptn_internal_class_name_is_fiber(object->class_name) ||
+        object->native_data == NULL
+    ) {
+        return;
+    }
+    ptn_fiber_close_suspended_context((PtnFiberData *)object->native_data);
+#else
+    (void)object;
+#endif
+}
 
 static void ptn_fiber_data_free(void *opaque) {
     PtnFiberData *data = (PtnFiberData *)opaque;
@@ -182795,6 +182832,23 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
         }
         ptn_fiber_restore_suspended_runtime(runtime, data);
         data->running = 1;
+        if (data->close_requested) {
+            data->resume_credit = 0;
+            ptn_value_destroy(&data->resume_value);
+            data->resume_value = ptn_null();
+            ptn_value_destroy(&data->resume_exception);
+            data->resume_exception = ptn_null();
+            data->resume_throw = 0;
+            data->resume_throw_line = 0;
+            ptn_throw_exception_at(
+                runtime,
+                "__PTN_FiberExit",
+                "",
+                runtime == NULL ? NULL : runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
         PtnValue resumed = ptn_value_clone_deref(data->resume_value);
         ptn_value_destroy(&data->resume_value);
         data->resume_value = ptn_null();
@@ -182917,6 +182971,7 @@ static int ptn_fiber_init_object(
     data->threw = 0;
     data->resume_credit = 0;
     data->resume_throw = 0;
+    data->close_requested = 0;
 #if !defined(_WIN32)
     data->fiber_stack = NULL;
     data->fiber_stack_size = 0;

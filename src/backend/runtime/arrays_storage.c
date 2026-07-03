@@ -154,6 +154,7 @@ typedef struct PtnFiberData {
     int threw;
     int resume_credit;
     int resume_throw;
+    int close_requested;
 #if !defined(_WIN32)
     ucontext_t caller_context;
     ucontext_t fiber_context;
@@ -173,6 +174,12 @@ typedef struct PtnFiberData {
     PtnGenerator *suspended_generator;
 #endif
 } PtnFiberData;
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object) {
+    (void)object;
+}
+#endif
 
 static PtnException *ptn_exception_previous_exception(PtnException *exception) {
     if (exception == NULL) {
@@ -1797,6 +1804,9 @@ static void ptn_runtime_run_object_destructors_matching(
             continue;
         }
         ptn_object_retain(object);
+        if (during_shutdown) {
+            ptn_runtime_close_suspended_fiber_object(object);
+        }
         ptn_object_run_destructor_ex(object, during_shutdown);
         ptn_object_release(object);
     }
@@ -1825,6 +1835,7 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
             continue;
         }
         ptn_object_retain(object);
+        ptn_runtime_close_suspended_fiber_object(object);
         ptn_object_run_destructor_ex(object, 1);
         ptn_object_release(object);
         if (root->output_buffers_len > initial_output_buffers_len) {

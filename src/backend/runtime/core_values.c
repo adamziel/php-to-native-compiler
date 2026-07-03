@@ -2179,6 +2179,7 @@ static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object);
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name
