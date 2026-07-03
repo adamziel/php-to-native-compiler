@@ -183,6 +183,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->static_property_initializer = caller_runtime->static_property_initializer;
     runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
+    runtime->generator_throw_catch_dispatch = caller_runtime->generator_throw_catch_dispatch;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->active_spl_object_storage_get_hash_depth = 0;
     runtime->magic_property_frames = NULL;

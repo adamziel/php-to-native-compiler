@@ -1179,6 +1179,8 @@ struct PtnGenerator {
     PtnArray *send_call_lines;
     PtnArray *send_yield_from_positions;
     PtnArray *send_yield_from_lines;
+    PtnArray *throw_catch_positions;
+    PtnArray *throw_catch_handler_ids;
     PtnValue pending_exception;
     size_t pending_exception_position;
     int has_pending_exception;
@@ -1656,6 +1658,13 @@ typedef PtnValue (*PtnNewInstanceWithoutConstructorHandler)(
     const char *class_name,
     size_t line
 );
+typedef PtnValue (*PtnGeneratorThrowCatchDispatchHandler)(
+    PtnRuntime *runtime,
+    size_t handler_id,
+    PtnValue exception,
+    size_t line,
+    int *handled_out
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -1799,6 +1808,7 @@ struct PtnRuntime {
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnStaticPropertyInitializerHandler static_property_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
+    PtnGeneratorThrowCatchDispatchHandler generator_throw_catch_dispatch;
     int in_magic_property_dispatch;
     size_t active_spl_object_storage_get_hash_depth;
     PtnMagicPropertyFrame *magic_property_frames;
@@ -2033,6 +2043,7 @@ static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime,
 static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtime, size_t line);
+static PTN_UNUSED void ptn_generator_register_throw_catch(PtnRuntime *runtime, size_t handler_id);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);

@@ -10095,6 +10095,12 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->send_yield_from_lines != NULL) {
         ptn_array_free(generator->send_yield_from_lines);
     }
+    if (generator->throw_catch_positions != NULL) {
+        ptn_array_free(generator->throw_catch_positions);
+    }
+    if (generator->throw_catch_handler_ids != NULL) {
+        ptn_array_free(generator->throw_catch_handler_ids);
+    }
     ptn_value_destroy(&generator->pending_exception);
     free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
@@ -10160,6 +10166,8 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue send_call_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_positions = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_lines = ptn_array_from_literal_entries(0, NULL);
+    PtnValue throw_catch_positions = ptn_array_from_literal_entries(0, NULL);
+    PtnValue throw_catch_handler_ids = ptn_array_from_literal_entries(0, NULL);
     generator->values = values.as.array;
     generator->keys = keys.as.array;
     generator->object = NULL;
@@ -10178,6 +10186,8 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->send_call_lines = send_call_lines.as.array;
     generator->send_yield_from_positions = send_yield_from_positions.as.array;
     generator->send_yield_from_lines = send_yield_from_lines.as.array;
+    generator->throw_catch_positions = throw_catch_positions.as.array;
+    generator->throw_catch_handler_ids = throw_catch_handler_ids.as.array;
     generator->pending_exception = ptn_null();
     generator->pending_exception_position = 0;
     generator->has_pending_exception = 0;
@@ -11785,6 +11795,112 @@ static PTN_UNUSED const char *ptn_generator_throw_given_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
+static PTN_UNUSED void ptn_generator_register_throw_catch(PtnRuntime *runtime, size_t handler_id) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (
+        generator == NULL ||
+        generator->values == NULL ||
+        generator->throw_catch_positions == NULL ||
+        generator->throw_catch_handler_ids == NULL ||
+        generator->values->len == 0
+    ) {
+        return;
+    }
+    if (
+        !ptn_array_append_key_available(runtime, generator->throw_catch_positions) ||
+        !ptn_array_append_key_available(runtime, generator->throw_catch_handler_ids)
+    ) {
+        return;
+    }
+    ptn_array_set_entry(
+        generator->throw_catch_positions,
+        ptn_array_int_key(generator->throw_catch_positions->next_auto_key),
+        ptn_int((int64_t)(generator->values->len - 1))
+    );
+    ptn_array_set_entry(
+        generator->throw_catch_handler_ids,
+        ptn_array_int_key(generator->throw_catch_handler_ids->next_auto_key),
+        ptn_int((int64_t)handler_id)
+    );
+}
+
+static PTN_UNUSED int ptn_generator_throw_catch_position_matches(
+    PtnArray *positions,
+    size_t index,
+    size_t position
+) {
+    if (positions == NULL || index >= positions->len) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(positions->entries[index].value);
+    return value.type == PTN_INT && value.as.integer >= 0 && (size_t)value.as.integer == position;
+}
+
+static PTN_UNUSED int ptn_generator_try_throw_catch(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnGenerator *generator,
+    PtnValue thrown,
+    size_t line,
+    PtnValue *result_out
+) {
+    if (
+        runtime == NULL ||
+        result_out == NULL ||
+        generator == NULL ||
+        !ptn_generator_position_valid(generator) ||
+        generator->throw_catch_positions == NULL ||
+        generator->throw_catch_handler_ids == NULL
+    ) {
+        return 0;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->generator_throw_catch_dispatch == NULL) {
+        return 0;
+    }
+
+    size_t position = generator->position;
+    int flushed_output = 0;
+    for (size_t i = 0; i < generator->throw_catch_positions->len; i++) {
+        if (!ptn_generator_throw_catch_position_matches(generator->throw_catch_positions, i, position)) {
+            continue;
+        }
+        if (i >= generator->throw_catch_handler_ids->len) {
+            continue;
+        }
+        PtnValue handler_id_value = ptn_value_deref(generator->throw_catch_handler_ids->entries[i].value);
+        if (handler_id_value.type != PTN_INT || handler_id_value.as.integer < 0) {
+            continue;
+        }
+        if (!flushed_output) {
+            ptn_generator_flush_output_chunk(runtime, generator, position);
+            flushed_output = 1;
+        }
+        int handled = 0;
+        PtnValue handler_result = root->generator_throw_catch_dispatch(
+            runtime,
+            (size_t)handler_id_value.as.integer,
+            thrown,
+            line,
+            &handled
+        );
+        ptn_value_destroy(&handler_result);
+        if (runtime->exceptions->active_exception != NULL) {
+            *result_out = ptn_null();
+            return 1;
+        }
+        if (!handled) {
+            continue;
+        }
+        ptn_generator_release_consumed_reference(generator, position);
+        generator->position++;
+        ptn_generator_skip_exhausted_delegates(generator);
+        *result_out = ptn_generator_current(runtime, receiver, line);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -11837,6 +11953,14 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
     }
 
     PtnValue thrown = ptn_value_clone_deref(resolved_exception);
+    if (generator != NULL) {
+        generator->started = 1;
+    }
+    PtnValue caught_result = ptn_null();
+    if (ptn_generator_try_throw_catch(runtime, receiver, generator, thrown, line, &caught_result)) {
+        ptn_value_destroy(&thrown);
+        return caught_result;
+    }
     ptn_generator_close_for_throw(runtime, generator);
     return ptn_throw_value(
         runtime,
