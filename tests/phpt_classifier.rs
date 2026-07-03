@@ -4043,6 +4043,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let proc_open_wrong_resource_type = classify_at_relative_path(
+        "--TEST--\nproc wrong resource\n--FILE--\n<?php\n$context = stream_context_create();\nproc_open('missing', [0 => $context], $pipes);\n--EXPECT--\n",
+        "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt",
+    );
+    assert_eq!(
+        proc_open_wrong_resource_type,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
     let supported_proc_environment_row = classify_at_relative_path(
         "--TEST--\nproc env array\n--FILE--\n<?php\n$env = ['test' => [1, 2]];\n$proc = proc_open('printf ok', [1 => ['pipe', 'w']], $pipes, __DIR__, $env);\n--EXPECT--\n",
         "ext/standard/tests/streams/bug60602.phpt",

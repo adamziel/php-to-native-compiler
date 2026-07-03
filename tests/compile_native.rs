@@ -34941,6 +34941,99 @@ touch(): Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an int
 }
 
 #[test]
+fn compile_file_fnmatch_realpath_and_stream_truncate_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-file-fnmatch-realpath-stream-truncate");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-fnmatch-realpath-stream-truncate.php");
+    let output = root.join("file-fnmatch-realpath-stream-truncate-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try { fnmatch("a" . chr(0), "abc"); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { fnmatch("abc", "a" . chr(0)); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+var_dump(fnmatch("blah", str_pad("blah", PHP_MAXPATHLEN)));
+var_dump(fnmatch(str_pad("blah", PHP_MAXPATHLEN), "blah"));
+
+$old = getcwd();
+$gone = __DIR__ . "/gone";
+mkdir($gone);
+chdir($gone);
+rmdir($gone);
+var_dump(getcwd());
+var_dump(realpath(""));
+var_dump(realpath("."));
+var_dump(realpath("./"));
+chdir($old);
+
+class TruncBase {
+    public $context;
+    public function stream_open($path, $mode, $openedpath) { return true; }
+    public function stream_eof() { return false; }
+}
+class TruncOk extends TruncBase {
+    public function stream_truncate($size) { echo "truncate:$size\n"; return true; }
+}
+class TruncBad extends TruncBase {
+    public function stream_truncate($size) { echo "bad:$size\n"; return "not-bool"; }
+}
+stream_wrapper_register("truncnone", TruncBase::class);
+stream_wrapper_register("truncok", TruncOk::class);
+stream_wrapper_register("truncbad", TruncBad::class);
+$none = fopen("truncnone://x", "r");
+$ok = fopen("truncok://x", "r");
+$bad = fopen("truncbad://x", "r");
+var_dump(ftruncate($none, 0));
+var_dump(ftruncate($ok, 10));
+var_dump(ftruncate($bad, 0));
+
+$context = stream_context_create();
+try {
+    proc_open("not_a_real_command_but_I_dont_care", [0 => $context], $pipes);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("fnmatch(): Argument #1 ($pattern) must not contain any null bytes\n"));
+    assert!(stdout.contains("fnmatch(): Argument #2 ($filename) must not contain any null bytes\n"));
+    assert!(stdout.contains("Warning: fnmatch(): Filename exceeds the maximum allowed length of "));
+    assert!(stdout.contains("Warning: fnmatch(): Pattern exceeds the maximum allowed length of "));
+    assert!(stdout.contains("bool(false)\nbool(false)\n"));
+    assert!(
+        stdout.contains("bool(false)\nbool(false)\nstring(1) \".\"\nstring(1) \".\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: ftruncate(): Can't truncate this stream!"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("truncate:10\nbool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "bad:0\n\nWarning: ftruncate(): TruncBad::stream_truncate value must be of type bool, string given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("proc_open(): supplied resource is not a valid stream resource\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_fnmatch"));
+    assert!(c_source.contains("stream_truncate"));
+    assert!(c_source.contains("ptn_internal_proc_open"));
+}
+
+#[test]
 fn compile_standard_uri_stream_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-standard-uri-stream-wrappers");
     fs::create_dir_all(&root).unwrap();
