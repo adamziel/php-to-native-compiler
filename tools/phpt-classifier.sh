@@ -523,6 +523,31 @@ ptn_phpt_run_perf_sensitive_tests() {
     ptn_phpt_php_truthy "${PTN_PHPT_RUN_PERF_SENSITIVE:-0}"
 }
 
+ptn_phpt_default_runnable_resource_limit_skipif() {
+    local rel=$1
+    local env_var=$2
+
+    case "$env_var:$rel" in
+        SKIP_SLOW_TESTS:ext/standard/tests/file/001.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/bug36365.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/file_get_contents_error001.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_basic.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation10.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation11.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation13.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation16.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation21.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation4.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation5.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation8.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/touch_basic.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 ptn_phpt_php_constant_defined() {
     local constant=$1
 
@@ -605,6 +630,7 @@ ptn_phpt_skipif_locale_candidates() {
 
 ptn_phpt_modeled_skipif_precondition() {
     local path=$1
+    local rel=${2:-$1}
     local code
     local code_without_strings
     local code_for_identifiers
@@ -699,13 +725,15 @@ ptn_phpt_modeled_skipif_precondition() {
             local env_is_modeled_resource_limit=0
             case "$env_var" in
                 SKIP_PERF_SENSITIVE)
-                    if ! ptn_phpt_run_perf_sensitive_tests; then
+                    if ! ptn_phpt_run_perf_sensitive_tests \
+                        && ! ptn_phpt_default_runnable_resource_limit_skipif "$rel" "$env_var"; then
                         env_is_truthy=1
                         env_is_modeled_resource_limit=1
                     fi
                     ;;
                 SKIP_SLOW_TESTS)
-                    if ! ptn_phpt_run_slow_tests; then
+                    if ! ptn_phpt_run_slow_tests \
+                        && ! ptn_phpt_default_runnable_resource_limit_skipif "$rel" "$env_var"; then
                         env_is_truthy=1
                         env_is_modeled_resource_limit=1
                     fi
@@ -2838,7 +2866,7 @@ ptn_phpt_classify_row() {
     if [[ "$supported_cli_self_probe" -ne 1 ]] \
         && ptn_phpt_classify_harness_programs \
         && ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
-        if value=$(ptn_phpt_modeled_skipif_precondition "$path"); then
+        if value=$(ptn_phpt_modeled_skipif_precondition "$path" "$rel"); then
             local skipif_category=${value%%$'\t'*}
             local skipif_reason=${value#*$'\t'}
             if [[ "$skipif_category" == "modeled-skipif" ]]; then
