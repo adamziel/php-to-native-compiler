@@ -131036,6 +131036,10 @@ static int ptn_date_interval_tail_is_space(const char *input, int consumed) {
     return 1;
 }
 
+static int ptn_date_interval_tail_has_non_space(const char *input, int consumed) {
+    return consumed >= 0 && !ptn_date_interval_tail_is_space(input, consumed);
+}
+
 static int ptn_date_interval_set_relative_unit(
     PtnDateIntervalData *data,
     long long amount,
@@ -131073,6 +131077,144 @@ static int ptn_date_interval_set_relative_unit(
     }
     if (ptn_ascii_case_equal_n(unit, "year", 4)) {
         data->years += amount;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_date_weekday_number_from_name(const char *name, int *weekday_out);
+static int ptn_date_ordinal_from_token(const char *token, int *ordinal_out);
+static int ptn_date_month_delta_from_token(const char *token, int *delta_out);
+
+static int ptn_date_interval_relative_terms_prefix_consumed(const char *spec, int *consumed_out) {
+    const char *cursor = spec;
+    int saw_term = 0;
+    while (cursor != NULL) {
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            *consumed_out = (int)(cursor - spec);
+            return saw_term;
+        }
+        if (saw_term && ptn_ascii_case_equal_n(cursor, "ago", 3)) {
+            cursor += 3;
+            *consumed_out = (int)(cursor - spec);
+            return 1;
+        }
+        const char *term_start = cursor;
+        int sign = 1;
+        if (*cursor == '+' || *cursor == '-') {
+            sign = *cursor == '-' ? -1 : 1;
+            cursor++;
+            while (isspace((unsigned char)*cursor)) {
+                cursor++;
+            }
+        }
+        char *end = NULL;
+        long long amount = strtoll(cursor, &end, 10);
+        if (end == cursor) {
+            *consumed_out = (int)(term_start - spec);
+            return saw_term;
+        }
+        amount *= sign;
+        cursor = end;
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        char unit[32];
+        size_t unit_len = 0;
+        while ((isalpha((unsigned char)*cursor) || *cursor == '_') && unit_len + 1 < sizeof(unit)) {
+            unit[unit_len++] = *cursor++;
+        }
+        unit[unit_len] = '\0';
+        PtnDateIntervalData ignored;
+        memset(&ignored, 0, sizeof(ignored));
+        if (unit_len == 0 || !ptn_date_interval_set_relative_unit(&ignored, amount, unit)) {
+            *consumed_out = (int)(term_start - spec);
+            return saw_term;
+        }
+        saw_term = 1;
+    }
+    return 0;
+}
+
+static int ptn_date_interval_special_relative_prefix_consumed(const char *spec, int *consumed_out) {
+    char ordinal_token[16];
+    char subject[32];
+    char of_word[8];
+    char direction[16];
+    char month_word[16];
+    int consumed = 0;
+    if (sscanf(
+            spec,
+            " %15s %31s %7s %15s %15s %n",
+            ordinal_token,
+            subject,
+            of_word,
+            direction,
+            month_word,
+            &consumed
+        ) == 5 &&
+        ptn_ascii_case_equal(of_word, "of") &&
+        ptn_ascii_case_equal(month_word, "month")) {
+        int ordinal = 0;
+        int month_delta = 0;
+        int weekday = 0;
+        if (ptn_date_ordinal_from_token(ordinal_token, &ordinal) &&
+            ptn_date_month_delta_from_token(direction, &month_delta) &&
+            (ptn_ascii_case_equal(subject, "day") ||
+             ptn_ascii_case_equal(subject, "weekday") ||
+             ptn_date_weekday_number_from_name(subject, &weekday))) {
+            *consumed_out = consumed;
+            return 1;
+        }
+    }
+
+    char first[16];
+    char second[32];
+    consumed = 0;
+    if (sscanf(spec, " %15s %31s %n", first, second, &consumed) == 2) {
+        int weekday = 0;
+        int ordinal = 0;
+        if ((ptn_ascii_case_equal(first, "next") ||
+             ptn_ascii_case_equal(first, "last") ||
+             ptn_ascii_case_equal(first, "previous")) &&
+            (ptn_ascii_case_equal(second, "weekday") ||
+             ptn_date_weekday_number_from_name(second, &weekday))) {
+            *consumed_out = consumed;
+            return 1;
+        }
+        if (ptn_date_ordinal_from_token(first, &ordinal) &&
+            ordinal > 0 &&
+            (ptn_ascii_case_equal(second, "weekday") ||
+             ptn_date_weekday_number_from_name(second, &weekday))) {
+            *consumed_out = consumed;
+            return 1;
+        }
+        PtnDateIntervalData ignored;
+        memset(&ignored, 0, sizeof(ignored));
+        if ((ptn_ascii_case_equal(first, "next") ||
+             ptn_ascii_case_equal(first, "last") ||
+             ptn_ascii_case_equal(first, "previous")) &&
+            ptn_date_interval_set_relative_unit(&ignored, 1, second)) {
+            *consumed_out = consumed;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int ptn_date_interval_contains_non_relative_elements(const char *spec) {
+    int consumed = 0;
+    if (ptn_date_interval_relative_terms_prefix_consumed(spec, &consumed) &&
+        ptn_date_interval_tail_has_non_space(spec, consumed)) {
+        return 1;
+    }
+    consumed = 0;
+    if (ptn_date_interval_special_relative_prefix_consumed(spec, &consumed) &&
+        ptn_date_interval_tail_has_non_space(spec, consumed)) {
         return 1;
     }
     return 0;
@@ -131491,8 +131633,10 @@ static PtnValue ptn_date_interval_from_state(PtnRuntime *runtime, size_t argc, c
     return object;
 }
 
-static PtnValue ptn_date_interval_create_from_date_string(
+static PtnValue ptn_date_interval_create_from_date_string_named(
     PtnRuntime *runtime,
+    const char *function_name,
+    int warn_on_non_relative,
     size_t argc,
     const PtnValue *args,
     size_t line
@@ -131502,7 +131646,8 @@ static PtnValue ptn_date_interval_create_from_date_string(
         int written = snprintf(
             message,
             sizeof(message),
-            "DateInterval::createFromDateString() expects exactly 1 argument, %zu given",
+            "%s() expects exactly 1 argument, %zu given",
+            function_name,
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -131513,7 +131658,7 @@ static PtnValue ptn_date_interval_create_from_date_string(
     }
     PtnStringOperand spec = ptn_internal_expect_string_arg(
         runtime,
-        "DateInterval::createFromDateString",
+        function_name,
         1,
         "datetime",
         args[0],
@@ -131525,6 +131670,34 @@ static PtnValue ptn_date_interval_create_from_date_string(
     char *spec_string = ptn_duplicate_string_len(spec.data, spec.len);
     PtnDateIntervalData parsed;
     if (!ptn_date_interval_parse_relative_spec(spec_string, &parsed)) {
+        if (ptn_date_interval_contains_non_relative_elements(spec_string)) {
+            char message[320];
+            int written = warn_on_non_relative
+                ? snprintf(
+                    message,
+                    sizeof(message),
+                    "%s(): String '%s' contains non-relative elements",
+                    function_name,
+                    spec_string
+                )
+                : snprintf(
+                    message,
+                    sizeof(message),
+                    "String '%s' contains non-relative elements",
+                    spec_string
+                );
+            free(spec_string);
+            ptn_string_operand_free(spec);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            if (warn_on_non_relative) {
+                ptn_emit_runtime_warning(runtime, message, line);
+                return ptn_bool(0);
+            }
+            ptn_throw_exception(runtime, "DateMalformedIntervalStringException", message);
+            return ptn_null();
+        }
         size_t position = 0;
         char unexpected = spec_string[0] == '\0' ? ' ' : spec_string[0];
         char message[320];
@@ -131558,6 +131731,22 @@ static PtnValue ptn_date_interval_create_from_date_string(
     ptn_date_interval_sync_properties(runtime, object, line);
     ptn_string_operand_free(spec);
     return object;
+}
+
+static PtnValue ptn_date_interval_create_from_date_string(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_date_interval_create_from_date_string_named(
+        runtime,
+        "DateInterval::createFromDateString",
+        0,
+        argc,
+        args,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_date_interval_new(
@@ -135219,7 +135408,14 @@ static PtnValue ptn_internal_date_create_immutable(PtnRuntime *runtime, size_t a
 }
 
 static PtnValue ptn_internal_date_interval_create_from_date_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_date_interval_create_from_date_string(runtime, argc, args, line);
+    return ptn_date_interval_create_from_date_string_named(
+        runtime,
+        "date_interval_create_from_date_string",
+        1,
+        argc,
+        args,
+        line
+    );
 }
 
 static PtnValue ptn_internal_date_timestamp_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
