@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -58150,6 +58150,56 @@ echo shell_exec($cmd);\n",
         "bool(true)\nworker\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_php_binary_current_script_worker_survives_source_unlink() {
+    let root = temp_dir("ptn-phpc-php-binary-worker-unlink");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-binary-worker-unlink.php");
+    fs::write(
+        &input,
+        "<?php\n\
+if (($argv[1] ?? '') === 'worker') {\n\
+    echo $argv[1], '/', $argv[2], \"\\n\";\n\
+    exit;\n\
+}\n\
+echo \"ready\\n\";\n\
+fgets(STDIN);\n\
+$cmd = escapeshellarg(PHP_BINARY) . ' -d display_errors=1 ' . escapeshellarg(__FILE__) . ' worker alpha';\n\
+passthru($cmd, $status);\n\
+echo \"status=$status\\n\";\n",
+    )
+    .unwrap();
+
+    let mut child = Command::new(phpc_bin())
+        .arg(&input)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut first_line = String::new();
+    stdout.read_line(&mut first_line).unwrap();
+    assert_eq!(first_line, "ready\n");
+    fs::remove_file(&input).unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"\n").unwrap();
+    drop(stdin);
+
+    let mut stdout_tail = String::new();
+    stdout.read_to_string(&mut stdout_tail).unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let status = child.wait().unwrap();
+    let mut stderr_output = String::new();
+    stderr.read_to_string(&mut stderr_output).unwrap();
+    assert!(status.success());
+    assert_eq!(
+        format!("{first_line}{stdout_tail}"),
+        "ready\nworker/alpha\nstatus=0\n"
+    );
+    assert_eq!(stderr_output, "");
 }
 
 #[test]

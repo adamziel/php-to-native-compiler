@@ -1496,8 +1496,18 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|class| self.lower_class(class))
             .collect();
+        let include_source_file = include.source_file.clone();
         for class in &mut classes {
+            class.source_file = include_source_file.clone();
             class.initially_declared = false;
+            for method in &mut class.methods {
+                if let Some(function) = self.functions.get_mut(method.function_index) {
+                    if function.trait_name.is_none() {
+                        function.source_file = include_source_file.clone();
+                    }
+                    method.source_file = function.source_file.clone();
+                }
+            }
         }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
