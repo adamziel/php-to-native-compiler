@@ -2861,6 +2861,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let zlib_output_buffer_ini = classify_at_relative_path(
+        "--TEST--\nzlib output buffering\n--EXTENSIONS--\nzlib\n--INI--\nzlib.output_compression=Off\n--FILE--\n<?php\nvar_dump(ob_gzhandler('data', PHP_OUTPUT_HANDLER_START));\n--EXPECT--\n",
+        "tests/output/ob_018.phpt",
+    );
+    assert_eq!(
+        zlib_output_buffer_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let opcache_metadata_ini = classify_at_relative_path(
         "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
         "ext/opcache/tests/opcache_metadata_ini.phpt",
@@ -3148,6 +3157,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     assert!(
         iconv_memory_limit.starts_with("runnable\t"),
         "{iconv_memory_limit:?}"
+    );
+
+    let output_rewrite_memory_limit = classify_at_relative_path(
+        "--TEST--\noutput rewrite allocation fatal\n--INI--\nmemory_limit=64M\n--FILE--\n<?php\n$var = str_repeat('A', 20 * 1024 * 1024);\noutput_add_rewrite_var($var, $var);\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
+        "tests/output/gh15179.phpt",
+    );
+    assert!(
+        output_rewrite_memory_limit.starts_with("runnable\t"),
+        "{output_rewrite_memory_limit:?}"
     );
 }
 
@@ -3861,6 +3879,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "sapi/cli/tests/022.phpt",
     );
     assert!(process.starts_with("process-boundary\t"), "{process:?}");
+
+    let proc_open_array = classify_at_relative_path(
+        "--TEST--\nproc open array command\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, '-r', 'echo 1;'], [], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_array.phpt",
+    );
+    assert_eq!(
+        proc_open_array,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
 
     let sqlite_method_exec = classify_at_relative_path(
         "--TEST--\nsqlite method exec\n--EXTENSIONS--\nsqlite3\n--FILE--\n<?php\n$db = new SQLite3(':memory:');\nvar_dump($db->exec('CREATE TABLE test (id STRING)'));\n--EXPECT--\nbool(true)\n",

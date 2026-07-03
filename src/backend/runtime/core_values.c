@@ -1808,6 +1808,7 @@ struct PtnRuntime {
     int output_buffer_callback_output_warned;
     int output_buffer_callback_passthrough_output;
     size_t output_buffer_callback_skip_buffers;
+    int output_buffer_display_handler_fatal_active;
     int output_at_line_start;
     int output_has_started;
     char *trans_sid_pending_output;

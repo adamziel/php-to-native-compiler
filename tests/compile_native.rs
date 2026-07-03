@@ -17022,6 +17022,31 @@ var_dump(str_starts_with($captured, \"\\nWarning:\"));\n",
 }
 
 #[test]
+fn compile_output_buffer_filters_fatal_error_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-fatal.php");
+    let output = root.join("output-buffer-fatal-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start(function ($output) { return \"filtered fatal\"; });\n\
+missing_function();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "filtered fatal"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_output_buffer_chunk_size_flushes_warning_callback_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-chunk-warning");
     fs::create_dir_all(&root).unwrap();
@@ -27963,6 +27988,36 @@ echo \"after\\n\";\n",
     assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
     assert!(stderr.contains("tried to allocate 2081 bytes"));
     assert!(stderr.contains("wordwrap-memory-limit.php on line 5"));
+}
+
+#[test]
+fn compile_output_add_rewrite_var_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-output-rewrite-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-rewrite-memory-limit.php");
+    let output = root.join("output-rewrite-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+$name = str_repeat('a', 600);\n\
+output_add_rewrite_var($name, 'b');\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "1K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 1202 bytes"));
+    assert!(stderr.contains("output-rewrite-memory-limit.php on line 4"));
 }
 
 #[test]
