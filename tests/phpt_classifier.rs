@@ -926,6 +926,12 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+
+    let missing_param = classify_at_relative_path(
+        "--TEST--\nRequired parameter not passed\n--FILE--\n<?php\nfunction test($a, $b, $c, $d) {}\ntry {\n    test(a: 'a', d: 'd');\n} catch (ArgumentCountError $e) {\n    echo $e->getMessage(), \"\\n\";\n}\ntry {\n    array_keys(strict: true);\n} catch (ArgumentCountError $e) {\n    echo $e->getMessage(), \"\\n\";\n}\ntry {\n    array_keys([], strict: true);\n} catch (ArgumentCountError $e) {\n    echo $e->getMessage(), \"\\n\";\n}\nvar_dump(array_keys([41, 42], filter_value: 42, strict: true));\n?>\n--EXPECT--\ntest(): Argument #2 ($b) not passed\narray_keys(): Argument #1 ($array) not passed\narray_keys(): Argument #2 ($filter_value) must be passed explicitly, because the default value is not known\narray(1) {\n  [0]=>\n  int(1)\n}\n",
+        "Zend/tests/named_params/missing_param.phpt",
+    );
+    assert!(missing_param.starts_with("runnable\t"), "{missing_param:?}");
 }
 
 #[test]
@@ -3303,6 +3309,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     assert!(
         bcmath_memory_limit.starts_with("runnable\t"),
         "{bcmath_memory_limit:?}"
+    );
+
+    let recursive_fiber_memory_limit = classify_at_relative_path(
+        "--TEST--\nOut of Memory from recursive fiber creation\n--INI--\nmemory_limit=2M\n--SKIPIF--\n<?php\nif (getenv(\"USE_ZEND_ALLOC\") === \"0\") {\n    die(\"skip Zend MM disabled\");\n}\n?>\n--FILE--\n<?php\nfunction create_fiber(): Fiber\n{\n    $fiber = new Fiber('create_fiber');\n    $fiber->start();\n    return $fiber;\n}\n$fiber = new Fiber('create_fiber');\n$fiber->start();\n?>\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s(tried to allocate %d bytes) in %sout-of-memory-in-recursive-fiber.php on line %d\n",
+        "Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt",
+    );
+    assert!(
+        recursive_fiber_memory_limit.starts_with("runnable\t"),
+        "{recursive_fiber_memory_limit:?}"
     );
 }
 
