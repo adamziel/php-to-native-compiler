@@ -436,10 +436,15 @@ impl<'a> Lexer<'a> {
                 }
                 c if is_ident_start(c) => self.lex_word()?,
                 _ => {
-                    return Err(Diagnostic::new(
-                        format!("unsupported PHP token {:?}", ch),
+                    let message = if ch == '\u{7f}' {
+                        "syntax error, unexpected character 0x7F".to_string()
+                    } else {
+                        format!("unsupported PHP token {:?}", ch)
+                    };
+                    return Err(Diagnostic::parse_error(
+                        message,
                         Some(self.current_char_span()),
-                    ))
+                    ));
                 }
             }
             if self.ends_with_halt_compiler_statement() {
@@ -1324,8 +1329,8 @@ impl<'a> Lexer<'a> {
         }
         self.skip_interpolation_whitespace();
         if !matches!(self.peek_char(), Some('}')) {
-            return Err(Diagnostic::new(
-                "complex string interpolation is unsupported",
+            return Err(Diagnostic::parse_error(
+                "syntax error, unexpected string content, expecting \"-\" or identifier or variable or number",
                 Some(self.current_char_span()),
             ));
         }
@@ -1378,8 +1383,8 @@ impl<'a> Lexer<'a> {
                 }
                 Ok(StringInterpolationIndex::String(key))
             }
-            Some(_) => Err(Diagnostic::new(
-                "complex string interpolation is unsupported",
+            Some(_) => Err(Diagnostic::parse_error(
+                "syntax error, unexpected string content, expecting \"-\" or identifier or variable or number",
                 Some(self.current_char_span()),
             )),
             None => Err(Diagnostic::new(
@@ -1403,8 +1408,8 @@ impl<'a> Lexer<'a> {
                 ))
             }
             Some('-') | Some('0'..='9') => self.lex_interpolation_index_int(),
-            Some(_) => Err(Diagnostic::new(
-                "complex string interpolation is unsupported",
+            Some(_) => Err(Diagnostic::parse_error(
+                "syntax error, unexpected string content, expecting \"-\" or identifier or variable or number",
                 Some(self.current_char_span()),
             )),
             None => Err(Diagnostic::new(
@@ -1672,8 +1677,8 @@ impl<'a> Lexer<'a> {
                         .trim()
                         .to_string();
                     if expr.is_empty() {
-                        return Err(Diagnostic::new(
-                            "complex string interpolation is unsupported",
+                        return Err(Diagnostic::parse_error(
+                            "syntax error, unexpected string content, expecting \"-\" or identifier or variable or number",
                             Some(span),
                         ));
                     }
