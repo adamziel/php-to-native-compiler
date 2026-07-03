@@ -1477,7 +1477,7 @@ ptn_phpt_has_modeled_string_allocation_limit_expectation() {
 
     file=$(ptn_phpt_section "$path" FILE)
     printf '%s\n' "$file" \
-        | grep -Eq '(^|[^[:alnum:]_$])(wordwrap|chunk_split|iconv|iconv_substr|iconv_mime_decode|iconv_mime_encode|output_add_rewrite_var)[[:space:]]*\('
+        | grep -Eq '(^|[^[:alnum:]_$])(wordwrap|chunk_split|iconv|iconv_substr|iconv_mime_decode|iconv_mime_encode|output_add_rewrite_var|bcmul)[[:space:]]*\('
 }
 
 ptn_phpt_first_unsupported_section() {

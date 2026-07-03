@@ -976,6 +976,116 @@ try {
 }
 
 #[test]
+fn compile_bcmath_number_null_scale_round_bounds_and_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-bcmath-number-null-scale-round-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bcmath-number-null-scale-round-bounds.php");
+    let output = root.join("bcmath-number-null-scale-round-bounds-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$one = new BcMath\\Number('1');\n\
+var_dump($one->div('1000', null), $one->div('2000', null));\n\
+try { bcround('1', PHP_INT_MAX); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $one->round(PHP_INT_MAX); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(5) \"0.001\""), "{stdout}");
+    assert!(stdout.contains("[\"scale\"]=>\n  int(3)"), "{stdout}");
+    assert!(stdout.contains("string(6) \"0.0005\""), "{stdout}");
+    assert!(stdout.contains("[\"scale\"]=>\n  int(4)"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "bcround(): Argument #2 ($precision) must be between -2147483648 and 2147483647"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("BcMath\\Number::round(): Argument #1 ($precision) must be between -2147483648 and 2147483647"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let fatal_input = root.join("bcmath-scale-memory-limit.php");
+    let fatal_output = root.join("bcmath-scale-memory-limit-bin");
+    fs::write(&fatal_input, "<?php\nbcmul('0', '0', 2147483647);\n").unwrap();
+    compile_file(
+        &fatal_input,
+        &fatal_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let fatal = Command::new(&fatal_output).output().unwrap();
+    assert!(!fatal.status.success());
+    assert_eq!(String::from_utf8(fatal.stdout).unwrap(), "");
+    let stderr = String::from_utf8(fatal.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Allowed memory size of 134217728 bytes exhausted"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("tried to allocate 2147483650 bytes"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn compile_calendar_jewish_hebrew_and_range_bounds_to_native_binary() {
+    let root = temp_dir("ptn-native-calendar-jewish-hebrew-range-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("calendar-jewish-hebrew-range-bounds.php");
+    let output = root.join("calendar-jewish-hebrew-range-bounds-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo bin2hex(jdtojewish(jewishtojd(1, 1, 5000), true)), \"\\n\";\n\
+echo bin2hex(jdtojewish(jewishtojd(6, 1, 5000), true)), \"\\n\";\n\
+echo bin2hex(jdtojewish(jewishtojd(6, 1, 5001), true)), \"\\n\";\n\
+echo bin2hex(jdtojewish(gregoriantojd(10, 28, 2002), true, CAL_JEWISH_ADD_GERESHAYIM)), \"\\n\";\n\
+try { jewishtojd(10, 6, PHP_INT_MIN); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { cal_days_in_month(CAL_GREGORIAN, 12, PHP_INT_MAX); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { cal_to_jd(CAL_GREGORIAN, 1, PHP_INT_MAX, 1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { jdtojewish(gregoriantojd(1, 1, 9998), true); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "e020faf9f8e920e4\n\
+e020e0e3f820e02720e4\n\
+e020e0e3f820e4e0\n\
+eb22e120e7f9e5ef20e4faf9f122e2\n\
+jewishtojd(): Argument #3 ($year) must be between 1 and 2147483646\n\
+cal_days_in_month(): Argument #3 ($year) must be less than 2147483646\n\
+cal_to_jd(): Argument #3 ($day) must be between -2147483648 and 2147483647\n\
+Year out of range (0-9999)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_fixed_array_object_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-object-surfaces");
     fs::create_dir_all(&root).unwrap();

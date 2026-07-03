@@ -3286,6 +3286,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
         output_rewrite_memory_limit.starts_with("runnable\t"),
         "{output_rewrite_memory_limit:?}"
     );
+
+    let bcmath_memory_limit = classify_at_relative_path(
+        "--TEST--\nGH-17398 bcmath allocation fatal\n--EXTENSIONS--\nbcmath\n--FILE--\n<?php\nbcmul('0', '0', 2147483647);\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s(tried to allocate %d bytes) in %s on line %d\n",
+        "ext/bcmath/tests/gh17398.phpt",
+    );
+    assert!(
+        bcmath_memory_limit.starts_with("runnable\t"),
+        "{bcmath_memory_limit:?}"
+    );
 }
 
 #[test]

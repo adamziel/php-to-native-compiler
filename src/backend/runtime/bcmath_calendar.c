@@ -477,6 +477,50 @@ static char *ptn_bc_truncate_or_pad_abs(const char *digits, size_t current_scale
     return ptn_bc_normalize_digits_owned(out);
 }
 
+static size_t ptn_bc_format_output_length(const char *digits, int sign, size_t current_scale, size_t out_scale) {
+    int zero = ptn_bc_digits_is_zero(digits);
+    size_t scaled_len = zero ? 1 : strlen(digits);
+    if (!zero && current_scale < out_scale) {
+        size_t padding = out_scale - current_scale;
+        if (scaled_len > SIZE_MAX - padding) {
+            return SIZE_MAX;
+        }
+        scaled_len += padding;
+    } else if (!zero && current_scale > out_scale) {
+        size_t drop = current_scale - out_scale;
+        scaled_len = drop >= scaled_len ? 1 : scaled_len - drop;
+    }
+
+    size_t integer_len = scaled_len > out_scale ? scaled_len - out_scale : 0;
+    size_t out_len = 0;
+    if (sign < 0 && !zero) {
+        out_len++;
+    }
+    out_len += integer_len == 0 ? 1 : integer_len;
+    if (out_scale != 0) {
+        if (out_len > SIZE_MAX - 1 || out_len + 1 > SIZE_MAX - out_scale) {
+            return SIZE_MAX;
+        }
+        out_len += 1 + out_scale;
+    }
+    return out_len;
+}
+
+static void ptn_bc_enforce_format_memory_limit(
+    PtnRuntime *runtime,
+    const char *digits,
+    int sign,
+    size_t current_scale,
+    size_t out_scale,
+    size_t line
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    size_t output_len = ptn_bc_format_output_length(digits, sign, current_scale, out_scale);
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
+}
+
 static PtnValue ptn_bc_format_digits_value(
     const char *digits,
     int sign,
@@ -529,6 +573,18 @@ static PtnValue ptn_bc_format_digits_value(
     return ptn_owned_string_len(out, out_len);
 }
 
+static PtnValue ptn_bc_format_digits_value_checked(
+    PtnRuntime *runtime,
+    const char *digits,
+    int sign,
+    size_t current_scale,
+    size_t out_scale,
+    size_t line
+) {
+    ptn_bc_enforce_format_memory_limit(runtime, digits, sign, current_scale, out_scale, line);
+    return ptn_bc_format_digits_value(digits, sign, current_scale, out_scale);
+}
+
 static void ptn_bc_align_numbers(
     const PtnBcNumber *left,
     const PtnBcNumber *right,
@@ -542,7 +598,14 @@ static void ptn_bc_align_numbers(
     *scale_out = scale;
 }
 
-static PtnValue ptn_bc_add_or_sub_values(const PtnBcNumber *left, const PtnBcNumber *right, int negate_right, int scale) {
+static PtnValue ptn_bc_add_or_sub_values(
+    PtnRuntime *runtime,
+    const PtnBcNumber *left,
+    const PtnBcNumber *right,
+    int negate_right,
+    int scale,
+    size_t line
+) {
     char *left_digits;
     char *right_digits;
     size_t aligned_scale;
@@ -575,17 +638,31 @@ static PtnValue ptn_bc_add_or_sub_values(const PtnBcNumber *left, const PtnBcNum
     if (ptn_bc_digits_is_zero(result_digits)) {
         result_sign = 0;
     }
-    PtnValue result = ptn_bc_format_digits_value(result_digits, result_sign, aligned_scale, (size_t)scale);
+    PtnValue result = ptn_bc_format_digits_value_checked(
+        runtime,
+        result_digits,
+        result_sign,
+        aligned_scale,
+        (size_t)scale,
+        line
+    );
     free(left_digits);
     free(right_digits);
     free(result_digits);
     return result;
 }
 
-static PtnValue ptn_bc_mul_value(const PtnBcNumber *left, const PtnBcNumber *right, int scale) {
+static PtnValue ptn_bc_mul_value(PtnRuntime *runtime, const PtnBcNumber *left, const PtnBcNumber *right, int scale, size_t line) {
     char *digits = ptn_bc_mul_digits(left->digits, right->digits);
     int sign = (left->sign == 0 || right->sign == 0) ? 0 : left->sign * right->sign;
-    PtnValue result = ptn_bc_format_digits_value(digits, sign, left->scale + right->scale, (size_t)scale);
+    PtnValue result = ptn_bc_format_digits_value_checked(
+        runtime,
+        digits,
+        sign,
+        left->scale + right->scale,
+        (size_t)scale,
+        line
+    );
     free(digits);
     return result;
 }
@@ -602,7 +679,14 @@ static char *ptn_bc_div_abs_digits(const PtnBcNumber *left, const PtnBcNumber *r
     return quotient;
 }
 
-static PtnValue ptn_bc_div_value(PtnRuntime *runtime, const char *function_name, const PtnBcNumber *left, const PtnBcNumber *right, int scale) {
+static PtnValue ptn_bc_div_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const PtnBcNumber *left,
+    const PtnBcNumber *right,
+    int scale,
+    size_t line
+) {
     if (right->sign == 0) {
         ptn_throw_exception(runtime, "DivisionByZeroError", "Division by zero");
         return ptn_null();
@@ -610,7 +694,7 @@ static PtnValue ptn_bc_div_value(PtnRuntime *runtime, const char *function_name,
     char *quotient = ptn_bc_div_abs_digits(left, right, (size_t)scale);
     int sign = (left->sign == 0 || ptn_bc_digits_is_zero(quotient)) ? 0 : left->sign * right->sign;
     (void)function_name;
-    PtnValue result = ptn_bc_format_digits_value(quotient, sign, (size_t)scale, (size_t)scale);
+    PtnValue result = ptn_bc_format_digits_value_checked(runtime, quotient, sign, (size_t)scale, (size_t)scale, line);
     free(quotient);
     return result;
 }
@@ -659,7 +743,13 @@ static PtnBcNumber ptn_bc_number_sub_exact(const PtnBcNumber *left, const PtnBcN
     return result;
 }
 
-static PtnValue ptn_bc_mod_value(PtnRuntime *runtime, const PtnBcNumber *left, const PtnBcNumber *right, int scale) {
+static PtnValue ptn_bc_mod_value(
+    PtnRuntime *runtime,
+    const PtnBcNumber *left,
+    const PtnBcNumber *right,
+    int scale,
+    size_t line
+) {
     if (right->sign == 0) {
         ptn_throw_exception(runtime, "DivisionByZeroError", "Modulo by zero");
         return ptn_null();
@@ -668,7 +758,14 @@ static PtnValue ptn_bc_mod_value(PtnRuntime *runtime, const PtnBcNumber *left, c
     PtnBcNumber quotient = ptn_bc_number_from_owned(quot_digits, left->sign == 0 ? 0 : left->sign * right->sign, 0);
     PtnBcNumber product = ptn_bc_number_mul_exact(&quotient, right);
     PtnBcNumber remainder = ptn_bc_number_sub_exact(left, &product);
-    PtnValue result = ptn_bc_format_digits_value(remainder.digits, remainder.sign, remainder.scale, (size_t)scale);
+    PtnValue result = ptn_bc_format_digits_value_checked(
+        runtime,
+        remainder.digits,
+        remainder.sign,
+        remainder.scale,
+        (size_t)scale,
+        line
+    );
     ptn_bc_number_free(&quotient);
     ptn_bc_number_free(&product);
     ptn_bc_number_free(&remainder);
@@ -795,10 +892,17 @@ static PtnBcNumber ptn_bc_pow_nonnegative(const PtnBcNumber *base, int64_t expon
     return result;
 }
 
-static PtnValue ptn_bc_pow_value(PtnRuntime *runtime, const PtnBcNumber *base, int64_t exponent, int scale) {
+static PtnValue ptn_bc_pow_value(PtnRuntime *runtime, const PtnBcNumber *base, int64_t exponent, int scale, size_t line) {
     if (exponent >= 0) {
         PtnBcNumber result = ptn_bc_pow_nonnegative(base, exponent);
-        PtnValue value = ptn_bc_format_digits_value(result.digits, result.sign, result.scale, (size_t)scale);
+        PtnValue value = ptn_bc_format_digits_value_checked(
+            runtime,
+            result.digits,
+            result.sign,
+            result.scale,
+            (size_t)scale,
+            line
+        );
         ptn_bc_number_free(&result);
         return value;
     }
@@ -808,7 +912,7 @@ static PtnValue ptn_bc_pow_value(PtnRuntime *runtime, const PtnBcNumber *base, i
     }
     PtnBcNumber positive = ptn_bc_pow_nonnegative(base, -exponent);
     PtnBcNumber one = ptn_bc_number_from_owned(ptn_bc_duplicate_range("1", 1), 1, 0);
-    PtnValue value = ptn_bc_div_value(runtime, "bcpow", &one, &positive, scale);
+    PtnValue value = ptn_bc_div_value(runtime, "bcpow", &one, &positive, scale, line);
     ptn_bc_number_free(&positive);
     ptn_bc_number_free(&one);
     return value;
@@ -822,7 +926,14 @@ static char *ptn_bc_mod_abs_digits(const char *left, const char *right) {
     return remainder;
 }
 
-static PtnValue ptn_bc_powmod_value(PtnRuntime *runtime, const PtnBcNumber *base, const PtnBcNumber *exponent, const PtnBcNumber *modulus, int scale) {
+static PtnValue ptn_bc_powmod_value(
+    PtnRuntime *runtime,
+    const PtnBcNumber *base,
+    const PtnBcNumber *exponent,
+    const PtnBcNumber *modulus,
+    int scale,
+    size_t line
+) {
     if (modulus->sign == 0) {
         ptn_throw_exception(runtime, "DivisionByZeroError", "Modulo by zero");
         return ptn_null();
@@ -840,7 +951,7 @@ static PtnValue ptn_bc_powmod_value(PtnRuntime *runtime, const PtnBcNumber *base
         return ptn_null();
     }
     if (ptn_bc_cmp_digits(modulus->digits, "1") == 0) {
-        return ptn_bc_format_digits_value("0", 0, 0, (size_t)scale);
+        return ptn_bc_format_digits_value_checked(runtime, "0", 0, 0, (size_t)scale, line);
     }
     int64_t exp_value = 0;
     if (!ptn_bc_parse_exponent(runtime, "bcpowmod", 2, "exponent", exponent, 0, &exp_value)) {
@@ -869,7 +980,7 @@ static PtnValue ptn_bc_powmod_value(PtnRuntime *runtime, const PtnBcNumber *base
     if (!ptn_bc_digits_is_zero(result)) {
         sign = base->sign < 0 && (exp_value % 2) != 0 ? -1 : 1;
     }
-    PtnValue value = ptn_bc_format_digits_value(result, sign, 0, (size_t)scale);
+    PtnValue value = ptn_bc_format_digits_value_checked(runtime, result, sign, 0, (size_t)scale, line);
     free(mod_abs);
     free(result);
     free(factor);
@@ -920,7 +1031,7 @@ static char *ptn_bc_isqrt_digits(const char *digits) {
     return answer;
 }
 
-static PtnValue ptn_bc_sqrt_value(PtnRuntime *runtime, const PtnBcNumber *number, int scale) {
+static PtnValue ptn_bc_sqrt_value(PtnRuntime *runtime, const PtnBcNumber *number, int scale, size_t line) {
     if (number->sign < 0) {
         ptn_throw_exception(runtime, "ValueError", "bcsqrt(): Argument #1 ($num) must be greater than or equal to 0");
         return ptn_null();
@@ -936,7 +1047,14 @@ static PtnValue ptn_bc_sqrt_value(PtnRuntime *runtime, const PtnBcNumber *number
         radicand = ptn_bc_normalize_digits_owned(radicand);
     }
     char *root = ptn_bc_isqrt_digits(radicand);
-    PtnValue value = ptn_bc_format_digits_value(root, ptn_bc_digits_is_zero(root) ? 0 : 1, (size_t)scale, (size_t)scale);
+    PtnValue value = ptn_bc_format_digits_value_checked(
+        runtime,
+        root,
+        ptn_bc_digits_is_zero(root) ? 0 : 1,
+        (size_t)scale,
+        (size_t)scale,
+        line
+    );
     free(radicand);
     free(root);
     return value;
@@ -1671,17 +1789,17 @@ static PtnValue ptn_bcmath_number_binary_result(
     int object_scale = scale;
     if (strcmp(operator, "+") == 0) {
         object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
-        value = ptn_bc_add_or_sub_values(left, right, 0, object_scale);
+        value = ptn_bc_add_or_sub_values(runtime, left, right, 0, object_scale, line);
     } else if (strcmp(operator, "-") == 0) {
         object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
-        value = ptn_bc_add_or_sub_values(left, right, 1, object_scale);
+        value = ptn_bc_add_or_sub_values(runtime, left, right, 1, object_scale, line);
     } else if (strcmp(operator, "*") == 0) {
         object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
-        value = ptn_bc_mul_value(left, right, object_scale);
+        value = ptn_bc_mul_value(runtime, left, right, object_scale, line);
     } else if (strcmp(operator, "/") == 0) {
         if (!explicit_scale) {
             int high_scale = (int)left->scale + 10;
-            value = ptn_bc_div_value(runtime, function_name, left, right, high_scale);
+            value = ptn_bc_div_value(runtime, function_name, left, right, high_scale, line);
             if (runtime->exceptions->active_exception != NULL) {
                 return ptn_null();
             }
@@ -1690,11 +1808,11 @@ static PtnValue ptn_bcmath_number_binary_result(
             value = trimmed;
         } else {
             object_scale = scale;
-            value = ptn_bc_div_value(runtime, function_name, left, right, object_scale);
+            value = ptn_bc_div_value(runtime, function_name, left, right, object_scale, line);
         }
     } else if (strcmp(operator, "%") == 0) {
         object_scale = explicit_scale ? scale : (int)left->scale;
-        value = ptn_bc_mod_value(runtime, left, right, object_scale);
+        value = ptn_bc_mod_value(runtime, left, right, object_scale, line);
     } else if (strcmp(operator, "**") == 0) {
         int64_t exponent = 0;
         if (!ptn_bc_parse_exponent(runtime, function_name, 1, "exponent", right, 1, &exponent)) {
@@ -1703,10 +1821,10 @@ static PtnValue ptn_bcmath_number_binary_result(
         if (!explicit_scale) {
             if (exponent >= 0) {
                 object_scale = (int)(left->scale * (size_t)exponent);
-                value = ptn_bc_pow_value(runtime, left, exponent, object_scale);
+                value = ptn_bc_pow_value(runtime, left, exponent, object_scale, line);
             } else {
                 int high_scale = (int)left->scale + 10;
-                value = ptn_bc_pow_value(runtime, left, exponent, high_scale);
+                value = ptn_bc_pow_value(runtime, left, exponent, high_scale, line);
                 if (runtime->exceptions->active_exception != NULL) {
                     return ptn_null();
                 }
@@ -1716,7 +1834,7 @@ static PtnValue ptn_bcmath_number_binary_result(
             }
         } else {
             object_scale = scale;
-            value = ptn_bc_pow_value(runtime, left, exponent, object_scale);
+            value = ptn_bc_pow_value(runtime, left, exponent, object_scale, line);
         }
     }
     if (runtime->exceptions->active_exception != NULL) {
@@ -1811,7 +1929,7 @@ static PtnValue ptn_bcmath_number_divmod_result(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnValue remainder_value = ptn_bc_mod_value(runtime, left, right, scale);
+    PtnValue remainder_value = ptn_bc_mod_value(runtime, left, right, scale, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&quotient_object);
         return ptn_null();
@@ -1982,8 +2100,8 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
             return ptn_null();
         }
         int scale = 0;
-        int explicit_scale = argc >= 2;
-        if (explicit_scale &&
+        int explicit_scale = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL;
+        if (argc >= 2 &&
             !ptn_bcmath_number_expect_scale(runtime, function_name, 2, args[1], line, 0, &scale)) {
             ptn_bc_number_free(&left);
             ptn_bc_number_free(&right);
@@ -2054,7 +2172,7 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
             ptn_bc_number_free(&modulus);
             return ptn_null();
         }
-        PtnValue value = ptn_bc_powmod_value(runtime, &left, &exponent, &modulus, scale);
+        PtnValue value = ptn_bc_powmod_value(runtime, &left, &exponent, &modulus, scale, line);
         ptn_bc_number_free(&left);
         ptn_bc_number_free(&exponent);
         ptn_bc_number_free(&modulus);
@@ -2076,7 +2194,7 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
             ptn_bc_number_free(&left);
             return ptn_null();
         }
-        PtnValue value = ptn_bc_sqrt_value(runtime, &left, scale);
+        PtnValue value = ptn_bc_sqrt_value(runtime, &left, scale, line);
         ptn_bc_number_free(&left);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
@@ -2114,8 +2232,19 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
                 return ptn_null();
             }
             if (precision_value < INT_MIN || precision_value > INT_MAX) {
+                char message[160];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "BcMath\\Number::round(): Argument #1 ($precision) must be between %d and %d",
+                    INT_MIN,
+                    INT_MAX
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
                 ptn_bc_number_free(&left);
-                ptn_throw_exception(runtime, "ValueError", "BcMath\\Number::round(): Argument #1 ($precision) is out of range");
+                ptn_throw_exception(runtime, "ValueError", message);
                 return ptn_null();
             }
         }
@@ -2374,7 +2503,14 @@ static PTN_UNUSED int ptn_bcmath_number_inc_dec(
     }
     PtnBcNumber one;
     ptn_bcmath_number_parse_int64(1, &one);
-    PtnValue result_value = ptn_bc_add_or_sub_values(&number, &one, increment ? 0 : 1, (int)number.scale);
+    PtnValue result_value = ptn_bc_add_or_sub_values(
+        runtime,
+        &number,
+        &one,
+        increment ? 0 : 1,
+        (int)number.scale,
+        line
+    );
     int scale = (int)number.scale;
     ptn_bc_number_free(&one);
     ptn_bc_number_free(&number);
@@ -2389,7 +2525,7 @@ static PtnValue ptn_internal_bcadd(PtnRuntime *runtime, size_t argc, const PtnVa
     if (!ptn_bc_expect_number(runtime, "bcadd", 1, "num1", args[0], line, &left)) return ptn_null();
     if (!ptn_bc_expect_number(runtime, "bcadd", 2, "num2", args[1], line, &right)) { ptn_bc_number_free(&left); return ptn_null(); }
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcadd", 3, args[2], line, &scale)) { ptn_bc_number_free(&left); ptn_bc_number_free(&right); return ptn_null(); }
-    PtnValue result = ptn_bc_add_or_sub_values(&left, &right, 0, scale);
+    PtnValue result = ptn_bc_add_or_sub_values(runtime, &left, &right, 0, scale, line);
     ptn_bc_number_free(&left);
     ptn_bc_number_free(&right);
     return result;
@@ -2401,7 +2537,7 @@ static PtnValue ptn_internal_bcsub(PtnRuntime *runtime, size_t argc, const PtnVa
     if (!ptn_bc_expect_number(runtime, "bcsub", 1, "num1", args[0], line, &left)) return ptn_null();
     if (!ptn_bc_expect_number(runtime, "bcsub", 2, "num2", args[1], line, &right)) { ptn_bc_number_free(&left); return ptn_null(); }
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcsub", 3, args[2], line, &scale)) { ptn_bc_number_free(&left); ptn_bc_number_free(&right); return ptn_null(); }
-    PtnValue result = ptn_bc_add_or_sub_values(&left, &right, 1, scale);
+    PtnValue result = ptn_bc_add_or_sub_values(runtime, &left, &right, 1, scale, line);
     ptn_bc_number_free(&left);
     ptn_bc_number_free(&right);
     return result;
@@ -2413,7 +2549,7 @@ static PtnValue ptn_internal_bcmul(PtnRuntime *runtime, size_t argc, const PtnVa
     if (!ptn_bc_expect_number(runtime, "bcmul", 1, "num1", args[0], line, &left)) return ptn_null();
     if (!ptn_bc_expect_number(runtime, "bcmul", 2, "num2", args[1], line, &right)) { ptn_bc_number_free(&left); return ptn_null(); }
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcmul", 3, args[2], line, &scale)) { ptn_bc_number_free(&left); ptn_bc_number_free(&right); return ptn_null(); }
-    PtnValue result = ptn_bc_mul_value(&left, &right, scale);
+    PtnValue result = ptn_bc_mul_value(runtime, &left, &right, scale, line);
     ptn_bc_number_free(&left);
     ptn_bc_number_free(&right);
     return result;
@@ -2425,7 +2561,7 @@ static PtnValue ptn_internal_bcdiv(PtnRuntime *runtime, size_t argc, const PtnVa
     if (!ptn_bc_expect_number(runtime, "bcdiv", 1, "num1", args[0], line, &left)) return ptn_null();
     if (!ptn_bc_expect_number(runtime, "bcdiv", 2, "num2", args[1], line, &right)) { ptn_bc_number_free(&left); return ptn_null(); }
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcdiv", 3, args[2], line, &scale)) { ptn_bc_number_free(&left); ptn_bc_number_free(&right); return ptn_null(); }
-    PtnValue result = ptn_bc_div_value(runtime, "bcdiv", &left, &right, scale);
+    PtnValue result = ptn_bc_div_value(runtime, "bcdiv", &left, &right, scale, line);
     ptn_bc_number_free(&left);
     ptn_bc_number_free(&right);
     return result;
@@ -2449,7 +2585,7 @@ static PtnValue ptn_internal_bcmod(PtnRuntime *runtime, size_t argc, const PtnVa
     if (!ptn_bc_expect_number(runtime, "bcmod", 1, "num1", args[0], line, &left)) return ptn_null();
     if (!ptn_bc_expect_number(runtime, "bcmod", 2, "num2", args[1], line, &right)) { ptn_bc_number_free(&left); return ptn_null(); }
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcmod", 3, args[2], line, &scale)) { ptn_bc_number_free(&left); ptn_bc_number_free(&right); return ptn_null(); }
-    PtnValue result = ptn_bc_mod_value(runtime, &left, &right, scale);
+    PtnValue result = ptn_bc_mod_value(runtime, &left, &right, scale, line);
     ptn_bc_number_free(&left);
     ptn_bc_number_free(&right);
     return result;
@@ -2471,7 +2607,7 @@ static PtnValue ptn_internal_bcdivmod(PtnRuntime *runtime, size_t argc, const Pt
     int q_sign = left.sign == 0 || ptn_bc_digits_is_zero(quotient) ? 0 : left.sign * right.sign;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_bc_format_digits_value(quotient, q_sign, 0, 0));
-    PtnValue remainder = ptn_bc_mod_value(runtime, &left, &right, scale);
+    PtnValue remainder = ptn_bc_mod_value(runtime, &left, &right, scale, line);
     ptn_array_set_entry(result.as.array, ptn_array_int_key(1), remainder);
     free(quotient);
     ptn_bc_number_free(&left);
@@ -2487,7 +2623,7 @@ static PtnValue ptn_internal_bcpow(PtnRuntime *runtime, size_t argc, const PtnVa
     if (argc >= 3 && !ptn_bc_optional_scale(runtime, "bcpow", 3, args[2], line, &scale)) { ptn_bc_number_free(&base); ptn_bc_number_free(&exponent); return ptn_null(); }
     int64_t exp_value = 0;
     if (!ptn_bc_parse_exponent(runtime, "bcpow", 2, "exponent", &exponent, 1, &exp_value)) { ptn_bc_number_free(&base); ptn_bc_number_free(&exponent); return ptn_null(); }
-    PtnValue result = ptn_bc_pow_value(runtime, &base, exp_value, scale);
+    PtnValue result = ptn_bc_pow_value(runtime, &base, exp_value, scale, line);
     ptn_bc_number_free(&base);
     ptn_bc_number_free(&exponent);
     return result;
@@ -2500,7 +2636,7 @@ static PtnValue ptn_internal_bcpowmod(PtnRuntime *runtime, size_t argc, const Pt
     if (!ptn_bc_expect_number(runtime, "bcpowmod", 2, "exponent", args[1], line, &exponent)) { ptn_bc_number_free(&base); return ptn_null(); }
     if (!ptn_bc_expect_number(runtime, "bcpowmod", 3, "modulus", args[2], line, &modulus)) { ptn_bc_number_free(&base); ptn_bc_number_free(&exponent); return ptn_null(); }
     if (argc >= 4 && !ptn_bc_optional_scale(runtime, "bcpowmod", 4, args[3], line, &scale)) { ptn_bc_number_free(&base); ptn_bc_number_free(&exponent); ptn_bc_number_free(&modulus); return ptn_null(); }
-    PtnValue result = ptn_bc_powmod_value(runtime, &base, &exponent, &modulus, scale);
+    PtnValue result = ptn_bc_powmod_value(runtime, &base, &exponent, &modulus, scale, line);
     ptn_bc_number_free(&base);
     ptn_bc_number_free(&exponent);
     ptn_bc_number_free(&modulus);
@@ -2512,7 +2648,7 @@ static PtnValue ptn_internal_bcsqrt(PtnRuntime *runtime, size_t argc, const PtnV
     int scale = ptn_bc_current_scale(runtime);
     if (!ptn_bc_expect_number(runtime, "bcsqrt", 1, "num", args[0], line, &number)) return ptn_null();
     if (argc >= 2 && !ptn_bc_optional_scale(runtime, "bcsqrt", 2, args[1], line, &scale)) { ptn_bc_number_free(&number); return ptn_null(); }
-    PtnValue result = ptn_bc_sqrt_value(runtime, &number, scale);
+    PtnValue result = ptn_bc_sqrt_value(runtime, &number, scale, line);
     ptn_bc_number_free(&number);
     return result;
 }
@@ -2546,8 +2682,19 @@ static PtnValue ptn_internal_bcround(PtnRuntime *runtime, size_t argc, const Ptn
             return ptn_null();
         }
         if (precision_value < INT_MIN || precision_value > INT_MAX) {
+            char message[144];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "bcround(): Argument #2 ($precision) must be between %d and %d",
+                INT_MIN,
+                INT_MAX
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
             ptn_bc_number_free(&number);
-            ptn_throw_exception(runtime, "ValueError", "bcround(): Argument #2 ($precision) is out of range");
+            ptn_throw_exception(runtime, "ValueError", message);
             return ptn_null();
         }
     }
@@ -2641,6 +2788,38 @@ static const char *const PTN_CAL_JEWISH_MONTHS_REGULAR[] = {
     "", "Tishri", "Heshvan", "Kislev", "Tevet", "Shevat", "",
     "Adar", "Nisan", "Iyyar", "Sivan", "Tammuz", "Av", "Elul"
 };
+static const char *const PTN_CAL_JEWISH_HEBREW_MONTHS_NORMAL[] = {
+    "",
+    "\xfa\xf9\xf8\xe9",
+    "\xe7\xf9\xe5\xef",
+    "\xeb\xf1\xec\xe5",
+    "\xe8\xe1\xfa",
+    "\xf9\xe1\xe8",
+    "\xe0\xe3\xf8 \xe0'",
+    "\xe0\xe3\xf8 \xe1'",
+    "\xf0\xe9\xf1\xef",
+    "\xe0\xe9\xe9\xf8",
+    "\xf1\xe9\xe5\xef",
+    "\xfa\xee\xe5\xe6",
+    "\xe0\xe1",
+    "\xe0\xec\xe5\xec"
+};
+static const char *const PTN_CAL_JEWISH_HEBREW_MONTHS_LEAP[] = {
+    "",
+    "\xfa\xf9\xf8\xe9",
+    "\xe7\xf9\xe5\xef",
+    "\xeb\xf1\xec\xe5",
+    "\xe8\xe1\xfa",
+    "\xf9\xe1\xe8",
+    "\xe0\xe3\xf8",
+    "\xe0\xe3\xf8",
+    "\xf0\xe9\xf1\xef",
+    "\xe0\xe9\xe9\xf8",
+    "\xf1\xe9\xe5\xef",
+    "\xfa\xee\xe5\xe6",
+    "\xe0\xe1",
+    "\xe0\xec\xe5\xec"
+};
 static const char *const PTN_CAL_FRENCH_MONTHS[] = {
     "", "Vendemiaire", "Brumaire", "Frimaire", "Nivose", "Pluviose", "Ventose",
     "Germinal", "Floreal", "Prairial", "Messidor", "Thermidor", "Fructidor", "Extra"
@@ -2654,6 +2833,106 @@ static const char *const PTN_CAL_ABBREV_DAY_NAMES[] = {
 
 static int ptn_cal_valid_calendar(int64_t calendar) {
     return calendar >= 0 && calendar < PTN_CAL_NUM_CALS;
+}
+
+static void ptn_cal_throw_range_between(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    int64_t min,
+    int64_t max
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be between %lld and %lld",
+        function_name,
+        position,
+        argument_name,
+        (long long)min,
+        (long long)max
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_cal_throw_range_less_than(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    int64_t max_exclusive
+) {
+    char message[176];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be less than %lld",
+        function_name,
+        position,
+        argument_name,
+        (long long)max_exclusive
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_cal_validate_month_argument(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    int64_t month
+) {
+    if (month < 1 || month >= INT_MAX - 1) {
+        ptn_cal_throw_range_between(runtime, function_name, position, "month", 1, (int64_t)INT_MAX - 1);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_cal_validate_day_argument(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    int64_t day
+) {
+    if (day < INT_MIN || day > INT_MAX) {
+        ptn_cal_throw_range_between(runtime, function_name, position, "day", INT_MIN, INT_MAX);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_cal_validate_year_less_than_max(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    int64_t year
+) {
+    if (year >= INT_MAX - 1) {
+        ptn_cal_throw_range_less_than(runtime, function_name, position, "year", (int64_t)INT_MAX - 1);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_cal_validate_jewish_year_argument(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    int64_t year
+) {
+    if (year < 1 || year >= INT_MAX - 1) {
+        ptn_cal_throw_range_between(runtime, function_name, position, "year", 1, (int64_t)INT_MAX - 1);
+        return 0;
+    }
+    return 1;
 }
 
 static int ptn_cal_day_of_week(int64_t jd) {
@@ -2984,6 +3263,118 @@ static PtnValue ptn_cal_date_string(int64_t month, int64_t day, int64_t year) {
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static void ptn_cal_hebrew_append_byte(char *buffer, size_t *pos, unsigned char byte) {
+    buffer[(*pos)++] = (char)byte;
+}
+
+static void ptn_cal_hebrew_append_bytes(char *buffer, size_t *pos, const char *bytes) {
+    for (const unsigned char *p = (const unsigned char *)bytes; *p != '\0'; p++) {
+        ptn_cal_hebrew_append_byte(buffer, pos, *p);
+    }
+}
+
+static size_t ptn_cal_hebrew_under_1000_bytes(int value, char *out) {
+    static const char *const units[] = {
+        "", "\xe0", "\xe1", "\xe2", "\xe3", "\xe4", "\xe5", "\xe6", "\xe7", "\xe8"
+    };
+    static const char *const tens[] = {
+        "", "\xe9", "\xeb", "\xec", "\xee", "\xf0", "\xf1", "\xf2", "\xf4", "\xf6"
+    };
+    static const char *const hundreds[] = {
+        "", "\xf7", "\xf8", "\xf9"
+    };
+    size_t pos = 0;
+    while (value >= 400) {
+        ptn_cal_hebrew_append_bytes(out, &pos, "\xfa");
+        value -= 400;
+    }
+    if (value >= 100) {
+        int hundred = value / 100;
+        ptn_cal_hebrew_append_bytes(out, &pos, hundreds[hundred]);
+        value %= 100;
+    }
+    if (value == 15) {
+        ptn_cal_hebrew_append_bytes(out, &pos, "\xe8\xe5");
+    } else if (value == 16) {
+        ptn_cal_hebrew_append_bytes(out, &pos, "\xe8\xe6");
+    } else {
+        if (value >= 10) {
+            int ten = value / 10;
+            ptn_cal_hebrew_append_bytes(out, &pos, tens[ten]);
+            value %= 10;
+        }
+        if (value > 0) {
+            ptn_cal_hebrew_append_bytes(out, &pos, units[value]);
+        }
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
+static void ptn_cal_hebrew_append_numeral(char *buffer, size_t *pos, int value, int add_gereshayim) {
+    char numeral[32];
+    size_t len = ptn_cal_hebrew_under_1000_bytes(value, numeral);
+    if (len == 0) {
+        return;
+    }
+    if (!add_gereshayim) {
+        memcpy(buffer + *pos, numeral, len);
+        *pos += len;
+        return;
+    }
+    if (len == 1) {
+        memcpy(buffer + *pos, numeral, len);
+        *pos += len;
+        ptn_cal_hebrew_append_byte(buffer, pos, '\'');
+        return;
+    }
+    memcpy(buffer + *pos, numeral, len - 1);
+    *pos += len - 1;
+    ptn_cal_hebrew_append_byte(buffer, pos, '"');
+    ptn_cal_hebrew_append_byte(buffer, pos, (unsigned char)numeral[len - 1]);
+}
+
+static void ptn_cal_hebrew_append_year(char *buffer, size_t *pos, int year, int flags) {
+    int thousands = year / 1000;
+    int remainder = year % 1000;
+    int add_alafim = (flags & PTN_CAL_JEWISH_ADD_ALAFIM) != 0;
+    int add_alafim_geresh = (flags & PTN_CAL_JEWISH_ADD_ALAFIM_GERESH) != 0;
+    int add_gereshayim = (flags & PTN_CAL_JEWISH_ADD_GERESHAYIM) != 0;
+    if (thousands > 0) {
+        ptn_cal_hebrew_append_numeral(buffer, pos, thousands, 0);
+        if (add_alafim_geresh) {
+            ptn_cal_hebrew_append_byte(buffer, pos, '\'');
+        }
+        if (add_alafim) {
+            ptn_cal_hebrew_append_byte(buffer, pos, ' ');
+            ptn_cal_hebrew_append_bytes(buffer, pos, "\xe0\xec\xf4\xe9\xed");
+            if (remainder > 0) {
+                ptn_cal_hebrew_append_byte(buffer, pos, ' ');
+            }
+        }
+    }
+    if (remainder > 0 || thousands == 0) {
+        ptn_cal_hebrew_append_numeral(buffer, pos, remainder, add_gereshayim);
+    }
+}
+
+static PtnValue ptn_cal_jewish_hebrew_date_string(int64_t month, int64_t day, int64_t year, int flags) {
+    char buffer[256];
+    size_t pos = 0;
+    ptn_cal_hebrew_append_numeral(buffer, &pos, (int)day, (flags & PTN_CAL_JEWISH_ADD_GERESHAYIM) != 0);
+    ptn_cal_hebrew_append_byte(buffer, &pos, ' ');
+    const char *const *month_names = ptn_cal_hebrew_leap(year)
+        ? PTN_CAL_JEWISH_HEBREW_MONTHS_NORMAL
+        : PTN_CAL_JEWISH_HEBREW_MONTHS_LEAP;
+    if (month >= 1 && month <= 13) {
+        ptn_cal_hebrew_append_bytes(buffer, &pos, month_names[month]);
+    }
+    ptn_cal_hebrew_append_byte(buffer, &pos, ' ');
+    ptn_cal_hebrew_append_year(buffer, &pos, (int)year, flags);
+    buffer[pos] = '\0';
+    return ptn_owned_string_len(ptn_bc_duplicate_range(buffer, pos), pos);
+}
+
 static PtnValue ptn_cal_info_for_calendar(int calendar) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnValue months = ptn_array_from_literal_entries(0, NULL);
@@ -3062,7 +3453,9 @@ static PtnValue ptn_internal_jewishtojd(PtnRuntime *runtime, size_t argc, const 
     int64_t month = ptn_internal_expect_integer_arg(runtime, "jewishtojd", 1, "month", args[0], line);
     int64_t day = ptn_internal_expect_integer_arg(runtime, "jewishtojd", 2, "day", args[1], line);
     int64_t year = ptn_internal_expect_integer_arg(runtime, "jewishtojd", 3, "year", args[2], line);
-    return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(ptn_cal_jewish_to_jd(month, day, year));
+    if (runtime->exceptions->active_exception != NULL) return ptn_null();
+    if (!ptn_cal_validate_jewish_year_argument(runtime, "jewishtojd", 3, year)) return ptn_null();
+    return ptn_int(ptn_cal_jewish_to_jd(month, day, year));
 }
 
 static PtnValue ptn_internal_frenchtojd(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3093,10 +3486,21 @@ static PtnValue ptn_internal_jdtojulian(PtnRuntime *runtime, size_t argc, const 
 
 static PtnValue ptn_internal_jdtojewish(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t jd = ptn_internal_expect_integer_arg(runtime, "jdtojewish", 1, "julian_day", args[0], line);
-    (void)argc;
+    if (runtime->exceptions->active_exception != NULL) return ptn_null();
+    int hebrew = argc >= 2 && ptn_is_truthy(ptn_value_deref(args[1]));
+    int64_t flags_value = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "jdtojewish", 3, "flags", args[2], line)
+        : 0;
     if (runtime->exceptions->active_exception != NULL) return ptn_null();
     int64_t m, d, y;
     ptn_cal_jd_to_jewish(jd, &m, &d, &y);
+    if (hebrew) {
+        if (y < 0 || y > 9999) {
+            ptn_throw_exception(runtime, "ValueError", "Year out of range (0-9999)");
+            return ptn_null();
+        }
+        return ptn_cal_jewish_hebrew_date_string(m, d, y, (int)flags_value);
+    }
     return ptn_cal_date_string(m, d, y);
 }
 
@@ -3205,6 +3609,9 @@ static PtnValue ptn_internal_cal_to_jd(PtnRuntime *runtime, size_t argc, const P
         ptn_throw_exception(runtime, "ValueError", "cal_to_jd(): Argument #1 ($calendar) must be a valid calendar ID");
         return ptn_null();
     }
+    if (!ptn_cal_validate_month_argument(runtime, "cal_to_jd", 2, month)) return ptn_null();
+    if (!ptn_cal_validate_day_argument(runtime, "cal_to_jd", 3, day)) return ptn_null();
+    if (!ptn_cal_validate_year_less_than_max(runtime, "cal_to_jd", 4, year)) return ptn_null();
     if (calendar == PTN_CAL_GREGORIAN) return ptn_int(ptn_cal_gregorian_to_jd(month, day, year));
     if (calendar == PTN_CAL_JULIAN) return ptn_int(ptn_cal_julian_to_jd(month, day, year));
     if (calendar == PTN_CAL_JEWISH) return ptn_int(ptn_cal_jewish_to_jd(month, day, year));
@@ -3228,10 +3635,8 @@ static PtnValue ptn_internal_cal_days_in_month(PtnRuntime *runtime, size_t argc,
         ptn_throw_exception(runtime, "ValueError", "cal_days_in_month(): Argument #1 ($calendar) must be a valid calendar ID");
         return ptn_null();
     }
-    if (month <= 0 || month > INT_MAX - 1) {
-        ptn_throw_exception(runtime, "ValueError", "Invalid date");
-        return ptn_null();
-    }
+    if (!ptn_cal_validate_month_argument(runtime, "cal_days_in_month", 2, month)) return ptn_null();
+    if (!ptn_cal_validate_year_less_than_max(runtime, "cal_days_in_month", 3, year)) return ptn_null();
     int64_t start = ptn_cal_to_jd_by_calendar(calendar, month, 1, year);
     if (start == 0) {
         ptn_throw_exception(runtime, "ValueError", "Invalid date");
