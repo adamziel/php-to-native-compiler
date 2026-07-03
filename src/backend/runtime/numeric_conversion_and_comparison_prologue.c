@@ -3564,9 +3564,24 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         display_line = frame->line;
     }
     if (display_path == NULL) {
+        if (ptn_ascii_case_equal(exception->class_name, "ParseError")) {
+            ptn_uncaught_exception_output_cstr(runtime, "Parse error: ");
+            ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
+            ptn_uncaught_exception_output_cstr(runtime, " in [no active file] on line 1\n");
+            ptn_uncaught_exception_output_flush(runtime);
+            return;
+        }
         ptn_uncaught_exception_output_printf(runtime, "%s: ", label);
         ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
         ptn_uncaught_exception_output_cstr(runtime, "\n");
+        ptn_uncaught_exception_output_flush(runtime);
+        return;
+    }
+
+    if (ptn_ascii_case_equal(exception->class_name, "ParseError")) {
+        ptn_uncaught_exception_output_cstr(runtime, "Parse error: ");
+        ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
+        ptn_uncaught_exception_output_printf(runtime, " in %s on line %zu\n", display_path, display_line == 0 ? 1 : display_line);
         ptn_uncaught_exception_output_flush(runtime);
         return;
     }
@@ -5336,7 +5351,8 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
     const char *class_name,
     const char *parent_name,
     int allows_dynamic_properties,
-    PtnValue interfaces
+    PtnValue interfaces,
+    const char *constructor_body
 ) {
     if (class_name == NULL || *class_name == '\0') {
         return;
@@ -5349,6 +5365,9 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
     PtnValue parent_value = parent_name == NULL || *parent_name == '\0'
         ? ptn_null()
         : ptn_owned_string(ptn_duplicate_string(parent_name));
+    PtnValue constructor_value = constructor_body == NULL
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(constructor_body));
     PtnValue interfaces_value = ptn_value_deref(interfaces);
     int owns_interfaces_value = 0;
     if (interfaces_value.type != PTN_ARRAY) {
@@ -5359,20 +5378,22 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
         { 1, ptn_string("parent"), parent_value },
         { 1, ptn_string("allow_dynamic"), ptn_bool(allows_dynamic_properties) },
         { 1, ptn_string("interfaces"), interfaces_value },
+        { 1, ptn_string("constructor"), constructor_value },
     };
-    PtnValue marker = ptn_array_from_literal_entries(3, entries);
+    PtnValue marker = ptn_array_from_literal_entries(4, entries);
     ptn_symbols_set(classes, key, marker);
     ptn_value_destroy(&marker);
     if (owns_interfaces_value) {
         ptn_value_destroy(&interfaces_value);
     }
+    ptn_value_destroy(&constructor_value);
     ptn_value_destroy(&parent_value);
     free(key);
 }
 
 static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
     PtnValue interfaces = ptn_array_from_literal_entries(0, NULL);
-    ptn_runtime_register_dynamic_class_ex(runtime, class_name, NULL, 0, interfaces);
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, NULL, 0, interfaces, NULL);
     ptn_value_destroy(&interfaces);
 }
 
@@ -5382,8 +5403,251 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
     const char *parent_name
 ) {
     PtnValue interfaces = ptn_array_from_literal_entries(0, NULL);
-    ptn_runtime_register_dynamic_class_ex(runtime, class_name, parent_name, 0, interfaces);
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, parent_name, 0, interfaces, NULL);
     ptn_value_destroy(&interfaces);
+}
+
+static PTN_UNUSED const char *ptn_runtime_dynamic_class_constructor_body(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL || class_name == NULL) {
+        return NULL;
+    }
+    char *key = ptn_class_alias_key(class_name);
+    PtnValue marker;
+    int found = ptn_symbols_get(classes, key, &marker);
+    free(key);
+    if (!found) {
+        return NULL;
+    }
+    PtnValue constructor = ptn_runtime_dynamic_class_marker_field(marker, "constructor");
+    return constructor.type == PTN_STRING ? (const char *)constructor.as.string.data : NULL;
+}
+
+static int ptn_dynamic_constructor_identifier_start(unsigned char ch) {
+    return ch == '_' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        ch >= 0x80;
+}
+
+static int ptn_dynamic_constructor_identifier_part(unsigned char ch) {
+    return ptn_dynamic_constructor_identifier_start(ch) || (ch >= '0' && ch <= '9');
+}
+
+static size_t ptn_dynamic_constructor_skip_ws(const char *code, size_t len, size_t pos) {
+    while (pos < len) {
+        unsigned char ch = (unsigned char)code[pos];
+        if (isspace(ch)) {
+            pos++;
+            continue;
+        }
+        if (pos + 1 < len && code[pos] == '/' && code[pos + 1] == '/') {
+            pos += 2;
+            while (pos < len && code[pos] != '\n') {
+                pos++;
+            }
+            continue;
+        }
+        if (pos + 1 < len && code[pos] == '/' && code[pos + 1] == '*') {
+            pos += 2;
+            while (pos + 1 < len && !(code[pos] == '*' && code[pos + 1] == '/')) {
+                pos++;
+            }
+            pos = pos + 1 < len ? pos + 2 : len;
+            continue;
+        }
+        if (code[pos] == '#') {
+            pos++;
+            while (pos < len && code[pos] != '\n') {
+                pos++;
+            }
+            continue;
+        }
+        break;
+    }
+    return pos;
+}
+
+static int ptn_dynamic_constructor_keyword_at(
+    const char *code,
+    size_t len,
+    size_t pos,
+    const char *keyword
+) {
+    size_t keyword_len = strlen(keyword);
+    if (pos + keyword_len > len || memcmp(code + pos, keyword, keyword_len) != 0) {
+        return 0;
+    }
+    if (pos > 0 && ptn_dynamic_constructor_identifier_part((unsigned char)code[pos - 1])) {
+        return 0;
+    }
+    if (pos + keyword_len < len &&
+        ptn_dynamic_constructor_identifier_part((unsigned char)code[pos + keyword_len])) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_dynamic_constructor_parse_quoted_literal(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    char **out,
+    size_t *out_len
+) {
+    if (*pos >= len || (code[*pos] != '\'' && code[*pos] != '"')) {
+        return 0;
+    }
+    char quote = code[*pos];
+    size_t cursor = *pos + 1;
+    char *buffer = malloc(len - *pos + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t used = 0;
+    while (cursor < len) {
+        char ch = code[cursor++];
+        if (ch == quote) {
+            buffer[used] = '\0';
+            *pos = cursor;
+            *out = buffer;
+            *out_len = used;
+            return 1;
+        }
+        if (ch == '\\' && cursor < len) {
+            char escaped = code[cursor++];
+            if (quote == '\'') {
+                if (escaped == '\'' || escaped == '\\') {
+                    buffer[used++] = escaped;
+                } else {
+                    buffer[used++] = '\\';
+                    buffer[used++] = escaped;
+                }
+                continue;
+            }
+            switch (escaped) {
+                case 'n':
+                    buffer[used++] = '\n';
+                    break;
+                case 'r':
+                    buffer[used++] = '\r';
+                    break;
+                case 't':
+                    buffer[used++] = '\t';
+                    break;
+                case 'v':
+                    buffer[used++] = '\v';
+                    break;
+                case 'f':
+                    buffer[used++] = '\f';
+                    break;
+                case 'e':
+                    buffer[used++] = '\x1b';
+                    break;
+                case '\\':
+                case '$':
+                case '"':
+                    buffer[used++] = escaped;
+                    break;
+                default:
+                    buffer[used++] = '\\';
+                    buffer[used++] = escaped;
+                    break;
+            }
+            continue;
+        }
+        buffer[used++] = ch;
+    }
+    free(buffer);
+    return 0;
+}
+
+static void ptn_runtime_write_dynamic_constructor_output(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    size_t line
+) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    const char *previous_output_source_path =
+        runtime == NULL ? NULL : runtime->current_output_source_path;
+    size_t previous_output_line = runtime == NULL ? 0 : runtime->current_output_line;
+    int assigned_output_location =
+        runtime != NULL &&
+        runtime->current_output_source_path == NULL &&
+        runtime->current_output_line == 0;
+    if (assigned_output_location) {
+        runtime->current_output_source_path = runtime->source_path;
+        runtime->current_output_line = line;
+    }
+    ptn_output_write(runtime, data, len);
+    if (assigned_output_location) {
+        runtime->current_output_source_path = previous_output_source_path;
+        runtime->current_output_line = previous_output_line;
+    }
+#else
+    (void)line;
+    fwrite(data, 1, len, stdout);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        root->output_has_started = 1;
+        root->output_at_line_start = data[len - 1] == '\n';
+    }
+#endif
+}
+
+static PTN_UNUSED int ptn_runtime_execute_dynamic_class_constructor_body(
+    PtnRuntime *runtime,
+    const char *body,
+    size_t line
+) {
+    if (body == NULL || *body == '\0') {
+        return 1;
+    }
+    size_t len = strlen(body);
+    size_t pos = 0;
+    while (1) {
+        pos = ptn_dynamic_constructor_skip_ws(body, len, pos);
+        if (pos >= len) {
+            return 1;
+        }
+        if (body[pos] == ';') {
+            pos++;
+            continue;
+        }
+        if (!ptn_dynamic_constructor_keyword_at(body, len, pos, "echo")) {
+            return 0;
+        }
+        pos += 4;
+        while (1) {
+            pos = ptn_dynamic_constructor_skip_ws(body, len, pos);
+            char *literal = NULL;
+            size_t literal_len = 0;
+            if (!ptn_dynamic_constructor_parse_quoted_literal(body, len, &pos, &literal, &literal_len)) {
+                return 0;
+            }
+            ptn_runtime_write_dynamic_constructor_output(runtime, literal, literal_len, line);
+            free(literal);
+            pos = ptn_dynamic_constructor_skip_ws(body, len, pos);
+            if (pos < len && body[pos] == ',') {
+                pos++;
+                continue;
+            }
+            break;
+        }
+        pos = ptn_dynamic_constructor_skip_ws(body, len, pos);
+        if (pos < len && body[pos] == ';') {
+            pos++;
+            continue;
+        }
+        return pos >= len;
+    }
 }
 
 static PTN_UNUSED const char *ptn_runtime_dynamic_class_parent_name(

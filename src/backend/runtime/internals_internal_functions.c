@@ -232183,19 +232183,41 @@ static PtnValue ptn_spl_object_storage_call_method(
         parsed.start = 0;
         PtnSplObjectStorageData *new_data = NULL;
         PtnValue members = ptn_null();
-        int ok = ptn_unserialize_spl_object_storage_legacy_payload(
-            runtime,
-            &state,
-            "SplObjectStorage",
-            payload.data,
-            payload.len,
-            line,
-            0,
-            receiver,
-            &new_data,
-            &members,
-            &parsed
-        );
+        int ok = 0;
+        int caught_unserialize_exception = 0;
+        PtnTryFrame unserialize_frame;
+        ptn_try_frame_push(runtime, &unserialize_frame);
+        if (setjmp(unserialize_frame.jump) != 0) {
+            caught_unserialize_exception = 1;
+        }
+        if (!caught_unserialize_exception) {
+            ok = ptn_unserialize_spl_object_storage_legacy_payload(
+                runtime,
+                &state,
+                "SplObjectStorage",
+                payload.data,
+                payload.len,
+                line,
+                0,
+                receiver,
+                &new_data,
+                &members,
+                &parsed
+            );
+        }
+        ptn_try_frame_pop(runtime, &unserialize_frame);
+        if (caught_unserialize_exception) {
+            if (new_data != NULL) {
+                ptn_spl_object_storage_data_free(new_data);
+            }
+            ptn_value_destroy(&members);
+            ptn_value_destroy(&parsed.value);
+            ptn_unserialize_state_free(&state);
+            ptn_string_operand_free(payload);
+            ptn_value_destroy(&receiver);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
         if (ok && runtime != NULL && runtime->exceptions->active_exception == NULL) {
             PtnValue resolved_receiver = ptn_value_deref(receiver);
             if (new_data != NULL && resolved_receiver.type == PTN_OBJECT) {
@@ -235195,6 +235217,10 @@ static void ptn_spl_file_object_load_current(
     PtnSplFileObjectData *data,
     size_t line
 );
+static int ptn_spl_file_object_take_buffered_line(
+    PtnSplFileObjectData *data,
+    PtnValue *out
+);
 
 static void ptn_spl_file_object_ensure_current(
     PtnRuntime *runtime,
@@ -235254,6 +235280,23 @@ static void ptn_spl_file_object_load_current(
         ? ptn_spl_file_object_read_csv(runtime, data, line)
         : ptn_spl_file_object_read_line(runtime, data, line);
     data->has_current = 1;
+}
+
+static int ptn_spl_file_object_take_buffered_line(
+    PtnSplFileObjectData *data,
+    PtnValue *out
+) {
+    if (data == NULL || !data->has_current) {
+        return 0;
+    }
+    PtnValue current = ptn_value_deref(data->current);
+    if (!(current.type == PTN_STRING ||
+          (current.type == PTN_BOOL && current.as.boolean == 0))) {
+        return 0;
+    }
+    *out = ptn_value_clone_deref(data->current);
+    ptn_spl_file_object_clear_current(data);
+    return 1;
 }
 
 static void ptn_spl_file_object_seek_to_line(
@@ -235814,8 +235857,11 @@ static PtnValue ptn_spl_file_object_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        ptn_spl_file_object_clear_current(data);
-        PtnValue result = ptn_spl_file_object_read_line(runtime, data, line);
+        PtnValue result = ptn_null();
+        if (!ptn_spl_file_object_take_buffered_line(data, &result)) {
+            ptn_spl_file_object_clear_current(data);
+            result = ptn_spl_file_object_read_line(runtime, data, line);
+        }
         if (!(ptn_value_deref(result).type == PTN_BOOL && ptn_value_deref(result).as.boolean == 0)) {
             data->key++;
         }
@@ -242417,6 +242463,60 @@ static void ptn_eval_emit_reserved_class_declaration_fatal(
     );
 }
 
+static char *ptn_eval_class_constructor_body(
+    const char *code,
+    size_t body_start,
+    size_t body_end
+) {
+    for (size_t pos = body_start; pos < body_end; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, body_end, pos);
+            continue;
+        }
+        if (!ptn_eval_keyword_at(code, body_end, pos, "function")) {
+            continue;
+        }
+        size_t cursor = ptn_eval_skip_ws(code, body_end, pos + strlen("function"));
+        if (cursor < body_end && code[cursor] == '&') {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor + 1);
+        }
+        if (cursor >= body_end || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            continue;
+        }
+        size_t method_start = cursor;
+        while (cursor < body_end && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        char *method_name = ptn_duplicate_string_len(code + method_start, cursor - method_start);
+        int is_constructor = ptn_ascii_case_equal(method_name, "__construct");
+        free(method_name);
+        if (!is_constructor) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, cursor);
+        if (cursor >= body_end || code[cursor] != '(') {
+            continue;
+        }
+        size_t params_close = ptn_eval_find_matching_delimiter(code, body_end, cursor, '(', ')');
+        if (params_close >= body_end) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, params_close + 1);
+        if (cursor >= body_end || code[cursor] != '{') {
+            continue;
+        }
+        size_t constructor_close = ptn_eval_find_matching_brace(code, body_end, cursor);
+        if (constructor_close > body_end) {
+            continue;
+        }
+        return ptn_duplicate_string_len(
+            code + cursor + 1,
+            constructor_close - cursor - 1
+        );
+    }
+    return NULL;
+}
+
 static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
     size_t len = strlen(code);
     for (size_t pos = 0; pos < len; pos++) {
@@ -242483,17 +242583,6 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
                 metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + 1);
             }
         }
-        ptn_runtime_register_dynamic_class_ex(
-            runtime,
-            class_name,
-            parent_name,
-            allows_dynamic_properties,
-            interface_names
-        );
-        ptn_value_destroy(&interface_names);
-        if (ptn_eval_class_uses_deprecated_serializable(runtime, class_name)) {
-            ptn_eval_emit_serializable_deprecation(runtime, class_name, line);
-        }
         size_t body_open = cursor;
         while (body_open < len && code[body_open] != '{' && code[body_open] != ';') {
             if (code[body_open] == '\'' || code[body_open] == '"') {
@@ -242502,8 +242591,30 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
             }
             body_open++;
         }
+        size_t body_close = body_open;
+        char *constructor_body = NULL;
         if (body_open < len && code[body_open] == '{') {
-            size_t body_close = ptn_eval_find_matching_brace(code, len, body_open);
+            body_close = ptn_eval_find_matching_brace(code, len, body_open);
+            constructor_body = ptn_eval_class_constructor_body(
+                code,
+                body_open + 1,
+                body_close
+            );
+        }
+        ptn_runtime_register_dynamic_class_ex(
+            runtime,
+            class_name,
+            parent_name,
+            allows_dynamic_properties,
+            interface_names,
+            constructor_body
+        );
+        free(constructor_body);
+        ptn_value_destroy(&interface_names);
+        if (ptn_eval_class_uses_deprecated_serializable(runtime, class_name)) {
+            ptn_eval_emit_serializable_deprecation(runtime, class_name, line);
+        }
+        if (body_open < len && code[body_open] == '{') {
             if (!ptn_eval_class_declaration_prefix_has_keyword(code, pos, "abstract")) {
                 char *abstract_method_name = ptn_eval_first_abstract_method_name(
                     code,
@@ -247613,7 +247724,13 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     char *parse_error_message = ptn_eval_dynamic_parse_error_message(code);
     if (parse_error_message != NULL) {
         free(code);
-        ptn_throw_exception_owned_message(runtime, "ParseError", parse_error_message);
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "ParseError",
+            parse_error_message,
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
         return ptn_null();
     }
     free(code);

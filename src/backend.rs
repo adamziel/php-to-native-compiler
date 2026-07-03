@@ -27605,6 +27605,26 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("#endif\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if ((ptn_ascii_case_equal(class_name, \"SplObjectStorage\") || ptn_declared_class_is_same_or_descendant(class_name, \"SplObjectStorage\")) && ptn_ascii_case_equal(method_name, \"unserialize\")) {\n");
+    out.push_str("        PtnValue ptn_spl_object_storage_unserialize_result = ptn_null();\n");
+    out.push_str("        PtnTryFrame ptn_spl_object_storage_unserialize_frame;\n");
+    out.push_str(
+        "        ptn_try_frame_push(runtime, &ptn_spl_object_storage_unserialize_frame);\n",
+    );
+    out.push_str("        if (setjmp(ptn_spl_object_storage_unserialize_frame.jump) != 0) {\n");
+    out.push_str(
+        "            ptn_try_frame_pop(runtime, &ptn_spl_object_storage_unserialize_frame);\n",
+    );
+    out.push_str("            ptn_value_destroy(&receiver);\n");
+    out.push_str("            ptn_rethrow_exception(runtime);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_spl_object_storage_unserialize_result = ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str(
+        "        ptn_try_frame_pop(runtime, &ptn_spl_object_storage_unserialize_frame);\n",
+    );
+    out.push_str("        return ptn_spl_object_storage_unserialize_result;\n");
+    out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_OBJECT && ptn_dom_effective_class_is_modeled(class_name) && ptn_internal_class_method_exists(class_name, method_name)) {\n");
     out.push_str(
         "        return ptn_dom_call_method(runtime, resolved, method_name, argc, args, line);\n",

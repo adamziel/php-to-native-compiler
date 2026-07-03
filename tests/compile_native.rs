@@ -23589,6 +23589,90 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_unserialize_exception_releases_temporary_objects_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-unserialize-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-unserialize-cleanup.php");
+    let output = root.join("spl-object-storage-unserialize-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$storage = new SplObjectStorage();
+$bad = 'x:i:3;O:8:"stdClass":0:{},O:8:"stdClass":0:{};R:2;,i:1;;O:8:"stdClass":0:{},r:2;;m:a:0:{}';
+try {
+    $storage->unserialize($bad);
+} catch (UnexpectedValueException $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(new stdClass());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error at offset 46 of 89 bytes\n",
+            "object(stdClass)#2 (0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_object_storage_unserialize_exception_releases_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-unserialize-receiver-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-unserialize-receiver-cleanup.php");
+    let output = root.join("spl-object-storage-unserialize-receiver-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$storage = new SplObjectStorage();
+$bad = 'x:i:2;i:0;,i:1;;i:0;,i:2;;m:a:0:{}';
+try {
+    $storage->unserialize($bad);
+} catch (UnexpectedValueException $e) {
+    echo $e->getMessage(), "\n";
+}
+unset($storage);
+unset($e);
+$objects = [];
+for ($i = 0; $i < 2; $i++) {
+    $objects[$i] = new stdClass();
+    var_dump(spl_object_id($objects[$i]));
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("Error at offset 6 of 34 bytes\n", "int(2)\n", "int(1)\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_unserialize_key_reference_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-unserialize-key-reference");
     fs::create_dir_all(&root).unwrap();
@@ -24366,7 +24450,7 @@ fn compile_eval_class_declaration_autoload_to_native_binary() {
         r#"<?php
 spl_autoload_register(function ($class) {
     $GLOBALS['include'][] = $class;
-    eval("class DefClass{}");
+    eval("class DefClass { function __construct() { echo \"foo\\n\"; } }");
 });
 $a = new DefClass;
 echo get_class($a), "\n";
@@ -24383,6 +24467,7 @@ var_dump(class_exists('defclass', false));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "foo\n",
             "DefClass\n",
             "Array\n",
             "(\n",
