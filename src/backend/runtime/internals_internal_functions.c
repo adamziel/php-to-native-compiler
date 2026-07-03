@@ -233030,21 +233030,33 @@ static PtnValue ptn_spl_file_object_call_method(
                 line
             );
         }
-        if (argc == 0) {
-            return ptn_spl_file_object_read_csv(runtime, data, line);
-        }
-        PtnValue forwarded[5] = {
-            ptn_value_clone_deref(data->stream),
-            ptn_null(),
-            argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1),
-            argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1),
-            argc >= 3 ? ptn_value_clone_deref(args[2]) : (data->escape_enabled ? ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1) : ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0))
-        };
-        PtnValue result = ptn_internal_fgetcsv(runtime, 5, forwarded, line);
-        for (size_t i = 0; i < 5; i++) {
-            ptn_value_destroy(&forwarded[i]);
-        }
-        return result;
+        do {
+            PtnValue result;
+            if (argc == 0) {
+                result = ptn_spl_file_object_read_csv(runtime, data, line);
+            } else {
+                PtnValue forwarded[5] = {
+                    ptn_value_clone_deref(data->stream),
+                    ptn_null(),
+                    argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1),
+                    argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1),
+                    argc >= 3 ? ptn_value_clone_deref(args[2]) : (data->escape_enabled ? ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1) : ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0))
+                };
+                result = ptn_internal_fgetcsv(runtime, 5, forwarded, line);
+                for (size_t i = 0; i < 5; i++) {
+                    ptn_value_destroy(&forwarded[i]);
+                }
+            }
+            if (runtime->exceptions->active_exception != NULL ||
+                (data->flags & PTN_SPL_FILE_OBJECT_SKIP_EMPTY) == 0 ||
+                (data->flags & PTN_SPL_FILE_OBJECT_DROP_NEW_LINE) == 0 ||
+                (data->flags & PTN_SPL_FILE_OBJECT_READ_CSV) == 0 ||
+                !ptn_spl_file_object_value_is_empty_line(result)) {
+                return result;
+            }
+            ptn_value_destroy(&result);
+            data->key++;
+        } while (1);
     }
     if (ptn_ascii_case_equal(name, "fputcsv")) {
         if (argc < 1 || argc > 5) {
