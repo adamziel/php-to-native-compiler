@@ -52070,6 +52070,40 @@ show_access(\"child-dynamic-protected\", function() { return ConstScopeChild::dy
 }
 
 #[test]
+fn compile_keyword_spelled_class_constant_names_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-spelled-class-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-spelled-class-constant.php");
+    let output = root.join("keyword-spelled-class-constant-bin");
+    fs::write(
+        &input,
+        "<?php
+class KeywordConstBox {
+    private const CONTINUE = -1;
+
+    public function value() {
+        return self::CONTINUE;
+    }
+}
+
+var_dump((new KeywordConstBox)->value());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(-1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source
+        .contains("ptn_runtime_define_class_constant(&runtime, \"KeywordConstBox\", \"CONTINUE\""));
+}
+
+#[test]
 fn compile_lazy_class_metadata_initializers_across_eval_inheritance_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-class-metadata-eval-inheritance");
     fs::create_dir_all(&root).unwrap();
@@ -90608,6 +90642,123 @@ function constant_array_echo() {\n\
 }
 
 #[test]
+fn phpc_opcache_residual_row_pack_dumps_bounded_optimizer_shapes() {
+    let root = temp_dir("ptn-phpc-opcache-residual-row-pack-dumps");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-residual-row-pack-dumps.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function dce_func_get_args(int $a) {\n\
+    $a = 10;\n\
+    $b = 20;\n\
+    $x = func_get_args();\n\
+    $a = 30;\n\
+    $b = 40;\n\
+    return $x;\n\
+}\n\
+function nullsafe_fold() {\n\
+    $null = null;\n\
+    var_dump($null?->foo);\n\
+    var_dump(isset($null?->foo));\n\
+    var_dump(empty($null?->foo));\n\
+}\n\
+function nullsafe_object(object $obj) {\n\
+    var_dump($obj?->foo);\n\
+    var_dump(isset($obj?->foo));\n\
+    var_dump(empty($obj?->foo));\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("dce_func_get_args:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0001 CV0($a) = QM_ASSIGN int(10)\n0002 CV1($x) = FUNC_GET_ARGS\n0003 CV0($a) = QM_ASSIGN int(30)\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("nullsafe_fold:\n"), "{stdout}");
+    assert!(stdout.contains("0001 SEND_VAL null 1\n"), "{stdout}");
+    assert!(stdout.contains("0004 SEND_VAL bool(false) 1\n"), "{stdout}");
+    assert!(stdout.contains("0007 SEND_VAL bool(true) 1\n"), "{stdout}");
+    assert!(stdout.contains("nullsafe_object:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0002 T1 = JMP_NULL CV0($obj) 0004\n0003 T1 = FETCH_OBJ_R CV0($obj) string(\"foo\")\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_try_finally_exception_table_dump_precedes_fatal() {
+    let root = temp_dir("ptn-phpc-opcache-try-finally-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-try-finally-dump.php");
+    fs::write(
+        &input,
+        "<?php\n\
+if (!isset($badvar)) {\n\
+    throw new Exception(\"Should happen\");\n\
+}\n\
+try {\n\
+    goto foo;\n\
+} catch (Throwable $e) {\n\
+    echo \"foo\";\n\
+    foo:;\n\
+} finally {\n\
+    throw new Exception(\"Should not happen\");\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=0x10")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(
+        combined.contains("EXCEPTION TABLE:\n     0006, 0006, 0010, 0014\n"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Fatal error: Uncaught Exception: Should happen"),
+        "{combined}"
+    );
+}
+
+#[test]
 fn phpc_opcache_invalidated_runtime_rewrite_uses_current_include_source() {
     let root = temp_dir("ptn-phpc-opcache-invalidated-runtime-rewrite");
     fs::create_dir_all(&root).unwrap();
@@ -108894,8 +109045,8 @@ try { @var_dump(~$missing); } catch (\\TypeError $e) { echo \"suppressed: \", $e
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Cannot perform bitwise not on null\n\
-Cannot perform bitwise not on bool\n\
-Cannot perform bitwise not on bool\n\
+Cannot perform bitwise not on false\n\
+Cannot perform bitwise not on true\n\
 suppressed: Cannot perform bitwise not on null\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

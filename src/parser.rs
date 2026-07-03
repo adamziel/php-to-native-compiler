@@ -3001,7 +3001,7 @@ impl Parser<'_> {
         doc_comment: Option<String>,
     ) -> Result<ClassConstantDecl> {
         let token = self.advance().clone();
-        let Some(name) = name_segment_from_token(&token.kind) else {
+        let Some(name) = name_segment_from_source_token(self.source, &token) else {
             return Err(Diagnostic::new(
                 "expected class constant name",
                 Some(token.span),
