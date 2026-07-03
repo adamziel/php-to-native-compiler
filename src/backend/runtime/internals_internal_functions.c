@@ -90570,13 +90570,24 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     return ptn_null();
 }
 
-static int ptn_intl_option_subst_is_invalid(PtnArray *options, const char *key_name) {
-    PtnArrayEntry *entry = ptn_intl_array_entry(options, key_name);
+static int ptn_intl_transcode_from_subst_is_invalid(PtnArray *options) {
+    PtnArrayEntry *entry = ptn_intl_array_entry(options, "from_subst");
     if (entry == NULL) {
         return 0;
     }
     PtnStringOperand subst = ptn_value_to_string_operand(entry->value);
-    int invalid = subst.len > 1;
+    int invalid = subst.len > SCHAR_MAX;
+    ptn_string_operand_free(subst);
+    return invalid;
+}
+
+static int ptn_intl_transcode_to_subst_is_invalid(PtnArray *options) {
+    PtnArrayEntry *entry = ptn_intl_array_entry(options, "to_subst");
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnStringOperand subst = ptn_value_to_string_operand(entry->value);
+    int invalid = subst.len != 1;
     ptn_string_operand_free(subst);
     return invalid;
 }
@@ -90586,8 +90597,8 @@ static int ptn_intl_options_subst_is_invalid(PtnValue options_value) {
     if (options_value.type != PTN_ARRAY) {
         return 0;
     }
-    return ptn_intl_option_subst_is_invalid(options_value.as.array, "to_subst") ||
-        ptn_intl_option_subst_is_invalid(options_value.as.array, "from_subst");
+    return ptn_intl_transcode_to_subst_is_invalid(options_value.as.array) ||
+        ptn_intl_transcode_from_subst_is_invalid(options_value.as.array);
 }
 
 typedef struct {
