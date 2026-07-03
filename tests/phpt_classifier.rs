@@ -3178,6 +3178,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let stream_socket_metadata_row = classify_at_relative_path(
+        "--TEST--\nstream socket metadata\n--FILE--\n<?php\n$server = stream_socket_server('tcp://127.0.0.1:31332');\n$client = fsockopen('tcp://127.0.0.1:31332');\nvar_dump(stream_get_meta_data($client));\n--EXPECT--\n",
+        "ext/standard/tests/streams/stream_get_meta_data_socket_variation2.phpt",
+    );
+    assert_eq!(
+        stream_socket_metadata_row.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let soap_custom_content_type = classify_at_relative_path(
         "--TEST--\nsoap custom content type\n--EXTENSIONS--\nsoap\n--FILE--\n<?php\ninclude __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri']);\n--EXPECT--\n",
         "ext/soap/tests/custom_content_type.phpt",
@@ -4152,6 +4161,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert_eq!(
         supported_proc_environment_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_stream_pipe_blocking_row = classify_at_relative_path(
+        "--TEST--\nstream pipe blocking\n--FILE--\n<?php\n$p = proc_open('ls', [1 => ['pipe', 'w']], $pipes);\nstream_set_blocking($pipes[1], false);\nvar_dump(stream_get_meta_data($pipes[1]));\nproc_close($p);\n--EXPECT--\n",
+        "ext/standard/tests/streams/bug72853.phpt",
+    );
+    assert_eq!(
+        supported_stream_pipe_blocking_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
 

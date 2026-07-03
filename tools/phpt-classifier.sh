@@ -1493,6 +1493,7 @@ ptn_phpt_supported_process_boundary_row() {
     [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
         [[ "$rel" == "ext/soap/tests/bugs/bug62900.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/streams/bug72853.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
 }
 
@@ -3046,7 +3047,8 @@ ptn_phpt_supported_standard_network_mail_http_residual_row() {
         ext/standard/tests/mail/mail_variation3.phpt|\
         ext/standard/tests/http/ghsa-v8xr-gpvj-cx9g-004.phpt|\
         ext/standard/tests/network/so_reuseport.phpt|\
-        ext/standard/tests/http/ghsa-52jp-hrpf-2jff-002.phpt)
+        ext/standard/tests/http/ghsa-52jp-hrpf-2jff-002.phpt|\
+        ext/standard/tests/streams/stream_get_meta_data_socket_variation2.phpt)
             return 0
             ;;
         *)
