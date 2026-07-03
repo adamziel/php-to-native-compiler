@@ -6069,6 +6069,7 @@ fn emit_user_functions(
             out.push_str(";\n");
         }
         out.push_str("    runtime.call_site_line = line;\n");
+        out.push_str("    int ptn_call_frame_has_location = !runtime.suppress_user_call_frame_location && runtime.call_site_line != 0;\n");
         out.push_str(
             "    const char *const *ptn_call_arg_names = caller_runtime->next_call_arg_names;\n",
         );
@@ -6149,6 +6150,9 @@ fn emit_user_functions(
             out.push_str(&sensitive_variadic_position_expr);
             out.push_str(");\n");
         }
+        out.push_str("    if (ptn_call_frame_has_location) {\n");
+        out.push_str("        runtime.owned_trace_frame.file = runtime.call_site_source_path;\n");
+        out.push_str("    }\n");
         if function.is_anonymous {
             out.push_str("    if (receiver.type == PTN_CLOSURE) {\n");
             out.push_str("        runtime.owned_call_frame.has_current_closure = 1;\n");
