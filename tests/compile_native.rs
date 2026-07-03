@@ -39953,6 +39953,60 @@ Incomplete or ill-formed serialization data (\"xxh64\" code -2000)\n"
 }
 
 #[test]
+fn compile_hash_context_serializes_php_state_to_native_binary() {
+    let root = temp_dir("ptn-native-hash-context-php-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hash-context-php-state.php");
+    let output = root.join("hash-context-php-state-bin");
+    fs::write(
+        &input,
+        "<?php
+$first = \"I can't remember anything\";
+$second = 'Can tell if this is true or dream';
+foreach (['md2', 'md5', 'sha1', 'sha512', 'sha3-256', 'snefru', 'snefru256', 'adler32', 'crc32', 'fnv164', 'joaat'] as $algo) {
+    $ctx = hash_init($algo);
+    hash_update($ctx, $first);
+    $serialized = serialize($ctx);
+    echo $algo, ':', strpos($serialized, 's:3:\"ptn\"') === false ? 'php' : 'ptn', ':';
+    if ($algo === 'snefru256') {
+        echo strpos($serialized, 's:6:\"snefru\"') !== false && strpos($serialized, 's:9:\"snefru256\"') === false ? 'canon' : 'namebad';
+        echo ':';
+    }
+    $restored = unserialize($serialized);
+    hash_update($restored, $second);
+    echo hash_final($restored) === hash($algo, $first . $second) ? 'ok' : 'bad', \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "md2:php:ok\n\
+md5:php:ok\n\
+sha1:php:ok\n\
+sha512:php:ok\n\
+sha3-256:php:ok\n\
+snefru:php:ok\n\
+snefru256:php:canon:ok\n\
+adler32:php:ok\n\
+crc32:php:ok\n\
+fnv164:php:ok\n\
+joaat:php:ok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hash_extra_algorithm_vectors_to_native_binary() {
     let root = temp_dir("ptn-native-hash-extra-algorithm-vectors");
     fs::create_dir_all(&root).unwrap();
