@@ -24403,6 +24403,42 @@ echo "unreached\n";
 }
 
 #[test]
+fn compile_eval_reserved_class_name_fatals_during_silence_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-reserved-class-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-reserved-class-fatal.php");
+    let output = root.join("eval-reserved-class-fatal-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump($undef_var);
+@eval('class self {}');
+echo "unreached\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}NULL\n",
+            undefined_variable_warnings(&input, &[("undef_var", 2)])
+        )
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Cannot use \"self\" as a class name as it is reserved in "),
+        "{stderr}"
+    );
+    assert!(stderr.contains("eval()'d code on line 1"), "{stderr}");
+    assert!(!stderr.contains("unreached"), "{stderr}");
+}
+
+#[test]
 fn compile_eval_trait_declarations_compose_with_classes_to_native_binary() {
     let root = temp_dir("ptn-native-eval-trait-composition");
     fs::create_dir_all(&root).unwrap();
@@ -26034,6 +26070,47 @@ var_dump(return_still_wins());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "destructor\n1\nnested\n2\n1\nouter\n2\n1\ncaught\n1\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_finally_return_type_error_chains_suppressed_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-return-type-error-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-return-type-error-chain.php");
+    let output = root.join("finally-return-type-error-chain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo(): array {
+    try {
+        throw new Exception("xxxx");
+    } finally {
+        return null;
+    }
+}
+
+try {
+    foo();
+} catch (TypeError $e) {
+    echo get_class($e), "\n";
+    echo $e->getMessage(), "\n";
+    $previous = $e->getPrevious();
+    echo get_class($previous), "\n";
+    echo $previous->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TypeError\nfoo(): Return value must be of type array, null returned\nException\nxxxx\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -46774,6 +46851,56 @@ var_dump(Worker::countIt());
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_trait_exists"));
     assert!(c_source.contains("ptn_string(\"Greets\")"));
+}
+
+#[test]
+fn compile_internal_zend_test_trait_use_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-trait-use");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-trait-use.php");
+    let output = root.join("internal-zend-test-trait-use-bin");
+    fs::write(
+        &input,
+        "<?php
+class InternalTraitUser {
+    use _ZendTestTrait;
+}
+
+class InternalTraitOverride {
+    use _ZendTestTrait;
+    public function testMethod(): string {
+        return 'override';
+    }
+}
+
+$user = new InternalTraitUser();
+$override = new InternalTraitOverride();
+var_dump(trait_exists('_ZendTestTrait'));
+var_dump(method_exists($user, 'testMethod'));
+var_dump($user->testMethod());
+var_dump($override->testMethod());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nstring(8) \"override\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_trait_exists_name"));
+    assert!(c_source.contains("_ZendTestTrait::testMethod"));
 }
 
 #[test]

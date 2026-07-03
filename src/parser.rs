@@ -14780,6 +14780,11 @@ fn compose_class_traits(
                 .iter()
                 .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
             else {
+                if trait_use.adaptations.is_empty()
+                    && internal_trait_available_for_runtime_use(&trait_use.name)
+                {
+                    continue;
+                }
                 let lowered_trait_name = trait_use.name.to_ascii_lowercase();
                 let message =
                     if let Some(reserved_name) = reserved_class_name_segment(&lowered_trait_name) {
@@ -14840,6 +14845,10 @@ fn compose_class_traits(
         }
     }
     Ok(())
+}
+
+fn internal_trait_available_for_runtime_use(name: &str) -> bool {
+    name.eq_ignore_ascii_case("_ZendTestTrait")
 }
 
 fn defer_class_declaration_fatal(class: &mut ClassDecl, diagnostic: Diagnostic) {

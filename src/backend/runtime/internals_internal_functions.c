@@ -1642,6 +1642,7 @@ static PtnArrayEntry *ptn_object_property_entry_for_metadata(
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static int ptn_internal_class_exists_name(const char *class_name);
+static int ptn_internal_trait_exists_name(const char *name);
 static int ptn_runtime_function_disabled(PtnRuntime *runtime, const char *name);
 static const PtnInternalFunction *ptn_find_internal_function(const char *name);
 static PtnValue ptn_random_engine_debug_info_payload(PtnRuntime *runtime, PtnObject *object);
@@ -2245,6 +2246,11 @@ static PTN_UNUSED int ptn_internal_class_exists_name(const char *class_name) {
 
 static PTN_UNUSED int ptn_internal_interface_exists_name(const char *class_name) {
     (void)class_name;
+    return 0;
+}
+
+static PTN_UNUSED int ptn_internal_trait_exists_name(const char *name) {
+    (void)name;
     return 0;
 }
 
@@ -201314,6 +201320,10 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "Serializable");
 }
 
+static int ptn_internal_trait_exists_name(const char *name) {
+    return ptn_ascii_case_equal(name, "_ZendTestTrait");
+}
+
 static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
@@ -241882,6 +241892,102 @@ static void ptn_eval_emit_serializable_deprecation(
     free(message);
 }
 
+static const char *ptn_eval_reserved_class_declaration_name(const char *class_name) {
+    const char *segment = strrchr(class_name, '\\');
+    segment = segment == NULL ? class_name : segment + 1;
+    if (ptn_ascii_case_equal(segment, "array")) {
+        return "array";
+    }
+    if (ptn_ascii_case_equal(segment, "bool")) {
+        return "bool";
+    }
+    if (ptn_ascii_case_equal(segment, "callable")) {
+        return "callable";
+    }
+    if (ptn_ascii_case_equal(segment, "false")) {
+        return "false";
+    }
+    if (ptn_ascii_case_equal(segment, "float")) {
+        return "float";
+    }
+    if (ptn_ascii_case_equal(segment, "int")) {
+        return "int";
+    }
+    if (ptn_ascii_case_equal(segment, "iterable")) {
+        return "iterable";
+    }
+    if (ptn_ascii_case_equal(segment, "mixed")) {
+        return "mixed";
+    }
+    if (ptn_ascii_case_equal(segment, "never")) {
+        return "never";
+    }
+    if (ptn_ascii_case_equal(segment, "null")) {
+        return "null";
+    }
+    if (ptn_ascii_case_equal(segment, "object")) {
+        return "object";
+    }
+    if (ptn_ascii_case_equal(segment, "parent")) {
+        return "parent";
+    }
+    if (ptn_ascii_case_equal(segment, "self")) {
+        return "self";
+    }
+    if (ptn_ascii_case_equal(segment, "static")) {
+        return "static";
+    }
+    if (ptn_ascii_case_equal(segment, "string")) {
+        return "string";
+    }
+    if (ptn_ascii_case_equal(segment, "true")) {
+        return "true";
+    }
+    if (ptn_ascii_case_equal(segment, "void")) {
+        return "void";
+    }
+    return NULL;
+}
+
+static void ptn_eval_emit_reserved_class_declaration_fatal(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *code,
+    size_t class_pos,
+    size_t call_line
+) {
+    const char *reserved_name = ptn_eval_reserved_class_declaration_name(class_name);
+    if (reserved_name == NULL) {
+        return;
+    }
+    int needed = snprintf(
+        NULL,
+        0,
+        "Cannot use \"%s\" as a class name as it is reserved",
+        reserved_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Cannot use \"%s\" as a class name as it is reserved",
+        reserved_name
+    );
+    char *path = ptn_eval_source_path(runtime, call_line);
+    ptn_emit_fatal_error_at(
+        runtime,
+        message,
+        path,
+        ptn_eval_line_for_pos(code, class_pos, 1)
+    );
+}
+
 static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
     size_t len = strlen(code);
     for (size_t pos = 0; pos < len; pos++) {
@@ -241901,6 +242007,7 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
             cursor++;
         }
         char *class_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+        ptn_eval_emit_reserved_class_declaration_fatal(runtime, class_name, code, pos, line);
         int allows_dynamic_properties =
             ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(code, pos);
         char *parent_name = NULL;
