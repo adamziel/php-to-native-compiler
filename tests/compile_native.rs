@@ -55052,6 +55052,41 @@ IntlException: UConverter::transcode(): returned error 1: U_ILLEGAL_ARGUMENT_ERR
 }
 
 #[test]
+fn compile_intl_uconverter_transcode_reference_substitutions_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-uconverter-transcode-reference-substitutions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-uconverter-transcode-reference-substitutions.php");
+    let output = root.join("intl-uconverter-transcode-reference-substitutions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$subst = '??';\n\
+$opts = array('from_subst' => '?', 'to_subst' => &$subst);\n\
+var_dump(UConverter::transcode('This is an ascii string', 'ascii', 'utf-8', $opts));\n\
+$opts = array('from_subst' => &$subst, 'to_subst' => '?');\n\
+var_dump(UConverter::transcode('This is an ascii string', 'ascii', 'utf-8', $opts));\n\
+$opts = array('from_subst' => '?', 'to_subst' => '??');\n\
+var_dump(UConverter::transcode('This is an ascii string', 'ascii', 'utf-8', $opts));\n\
+$opts = array('from_subst' => '??', 'to_subst' => '?');\n\
+var_dump(UConverter::transcode('This is an ascii string', 'ascii', 'utf-8', $opts));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+string(23) \"This is an ascii string\"\n\
+bool(false)\n\
+string(23) \"This is an ascii string\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_timezone_identity_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-intl-timezone-identity-offsets");
     fs::create_dir_all(&root).unwrap();
