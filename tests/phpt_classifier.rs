@@ -60,6 +60,32 @@ fn classify_at_relative_path_with_options_and_files(
     }
 
     let mut command = Command::new("bash");
+    for key in [
+        "PTN_PHPT_AVAILABLE_LOCALES",
+        "PTN_PHPT_PHP_INT_SIZE",
+        "PTN_PHPT_PHP_OS_FAMILY",
+        "PTN_PHPT_PHP_OS",
+        "PTN_PHPT_PHP_DEBUG",
+        "PTN_PHPT_PHP_ZTS",
+        "PTN_PHPT_EFFECTIVE_UID",
+        "PTN_PHPT_DEFINED_CONSTANTS",
+        "PTN_PHPT_RUN_SLOW_TESTS",
+        "PTN_PHPT_RUN_PERF_SENSITIVE",
+        "SKIP_ASAN",
+        "SKIP_MSAN",
+        "SKIP_UBSAN",
+        "SKIP_PERF_SENSITIVE",
+        "SKIP_SLOW_TESTS",
+        "SKIP_PRELOAD",
+        "SKIP_IO_CAPTURE_TESTS",
+        "USE_ZEND_ALLOC",
+        "USE_TRACKED_ALLOC",
+        "RUN_RESOURCE_HEAVY_TESTS",
+        "STACK_LIMIT_DEFAULTS_CHECK",
+        "CIRRUS_CI",
+    ] {
+        command.env_remove(key);
+    }
     if harness_programs {
         command.env("PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS", "1");
     }
@@ -630,6 +656,38 @@ fn phpt_classifier_models_common_environment_skipif_preconditions() {
     let classification = classify_with_harness_programs(assigned, true);
     assert!(
         classification.starts_with("runnable\t") && classification.contains("environment"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_unlocks_verified_bounded_slow_skipif_rows() {
+    let slow = "--TEST--\nverified slow row\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    let classification = classify_at_relative_path_with_harness_programs(
+        slow,
+        "ext/standard/tests/file/lstat_stat_variation16.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("resource-limit"),
+        "{classification:?}"
+    );
+
+    let classification = classify_at_relative_path_with_harness_programs(
+        slow,
+        "ext/standard/tests/file/lstat_stat_variation17.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
+        "{classification:?}"
+    );
+
+    let classification =
+        classify_at_relative_path_with_harness_programs(slow, "ext/standard/tests/file/new.phpt");
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
         "{classification:?}"
     );
 }
