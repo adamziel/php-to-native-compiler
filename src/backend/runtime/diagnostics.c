@@ -3165,6 +3165,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->realpath_cache = NULL;
+    runtime->realpath_cache_len = 0;
+    runtime->realpath_cache_capacity = 0;
     runtime->autoload_callbacks = NULL;
     runtime->autoload_callback_scope_class_names = NULL;
     runtime->autoload_callback_called_class_names = NULL;

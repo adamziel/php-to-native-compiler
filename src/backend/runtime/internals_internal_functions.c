@@ -66826,11 +66826,113 @@ static PtnValue ptn_internal_filesize(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_internal_file_stat_field(runtime, "filesize", args[0], line, 0, "stat", PTN_STAT_FIELD_SIZE);
 }
 
+static PtnRuntime *ptn_realpath_cache_root(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return NULL;
+    }
+    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static void ptn_realpath_cache_remove_at(PtnRuntime *root, size_t index) {
+    free(root->realpath_cache[index].path);
+    free(root->realpath_cache[index].resolved_path);
+    if (index + 1 < root->realpath_cache_len) {
+        memmove(
+            &root->realpath_cache[index],
+            &root->realpath_cache[index + 1],
+            (root->realpath_cache_len - index - 1) * sizeof(root->realpath_cache[0])
+        );
+    }
+    root->realpath_cache_len--;
+}
+
+static void ptn_realpath_cache_clear(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_realpath_cache_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (path == NULL || path[0] == '\0') {
+        while (root->realpath_cache_len != 0) {
+            ptn_realpath_cache_remove_at(root, root->realpath_cache_len - 1);
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < root->realpath_cache_len;) {
+        if (strcmp(root->realpath_cache[i].path, path) == 0 ||
+            strcmp(root->realpath_cache[i].resolved_path, path) == 0) {
+            ptn_realpath_cache_remove_at(root, i);
+            continue;
+        }
+        i++;
+    }
+}
+
+static const char *ptn_realpath_cache_find(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_realpath_cache_root(runtime);
+    if (root == NULL || path == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < root->realpath_cache_len; i++) {
+        if (strcmp(root->realpath_cache[i].path, path) == 0) {
+            return root->realpath_cache[i].resolved_path;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_realpath_cache_store(PtnRuntime *runtime, const char *path, const char *resolved_path) {
+    PtnRuntime *root = ptn_realpath_cache_root(runtime);
+    if (root == NULL || path == NULL || resolved_path == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->realpath_cache_len; i++) {
+        if (strcmp(root->realpath_cache[i].path, path) == 0) {
+            char *copy = ptn_duplicate_string(resolved_path);
+            free(root->realpath_cache[i].resolved_path);
+            root->realpath_cache[i].resolved_path = copy;
+            return;
+        }
+    }
+    if (root->realpath_cache_len == root->realpath_cache_capacity) {
+        size_t new_capacity = root->realpath_cache_capacity == 0 ? 8 : root->realpath_cache_capacity * 2;
+        if (new_capacity < root->realpath_cache_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnRealpathCacheEntry *entries = realloc(
+            root->realpath_cache,
+            new_capacity * sizeof(root->realpath_cache[0])
+        );
+        if (entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->realpath_cache = entries;
+        root->realpath_cache_capacity = new_capacity;
+    }
+    root->realpath_cache[root->realpath_cache_len].path = ptn_duplicate_string(path);
+    root->realpath_cache[root->realpath_cache_len].resolved_path = ptn_duplicate_string(resolved_path);
+    root->realpath_cache_len++;
+}
+
 static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
-    (void)line;
+    if (argc >= 1 && ptn_is_truthy(args[0])) {
+        char *path = NULL;
+        if (argc >= 2) {
+            PtnStringOperand path_operand =
+                ptn_internal_expect_string_arg(runtime, "clearstatcache", 2, "filename", args[1], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            path = ptn_path_operand_to_c_string(path_operand);
+            ptn_string_operand_free(path_operand);
+            if (path == NULL) {
+                ptn_emit_warning(&runtime->diagnostics, "clearstatcache(): Filename contains null byte", line);
+                return ptn_null();
+            }
+        }
+        ptn_realpath_cache_clear(runtime, path);
+        free(path);
+    }
     return ptn_null();
 }
 
@@ -67276,15 +67378,23 @@ static PtnValue ptn_internal_realpath(PtnRuntime *runtime, size_t argc, const Pt
         return ptn_owned_string(cwd);
     }
 
+    const char *cached = ptn_realpath_cache_find(runtime, path);
+    if (cached != NULL) {
+        free(path);
+        return ptn_owned_string(ptn_duplicate_string(cached));
+    }
+
 #if defined(_WIN32)
     char *resolved = _fullpath(NULL, path, 0);
 #else
     char *resolved = realpath(path, NULL);
 #endif
-    free(path);
     if (resolved == NULL) {
+        free(path);
         return ptn_bool(0);
     }
+    ptn_realpath_cache_store(runtime, path, resolved);
+    free(path);
     return ptn_owned_string(resolved);
 }
 
@@ -69777,6 +69887,21 @@ static char *ptn_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {
     return ptn_dirname_string_levels(source_path, strlen(source_path), 1, dir_len);
 }
 
+static PtnValue ptn_realpath_cache_entry_value(const char *resolved_path) {
+    struct stat st;
+    int is_dir = resolved_path != NULL && stat(resolved_path, &st) == 0 && S_ISDIR(st.st_mode);
+    PtnValue entry = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("key"), ptn_float((double)time(NULL)));
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("is_dir"), ptn_bool(is_dir));
+    ptn_array_set_entry(
+        entry.as.array,
+        ptn_array_string_key("realpath"),
+        ptn_owned_string(ptn_duplicate_string(resolved_path == NULL ? "" : resolved_path))
+    );
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("expires"), ptn_int((int64_t)time(NULL) + 120));
+    return entry;
+}
+
 static PtnValue ptn_internal_realpath_cache_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -69785,6 +69910,13 @@ static PtnValue ptn_internal_realpath_cache_size(PtnRuntime *runtime, size_t arg
     char *dir = ptn_runtime_source_dir(runtime, &dir_len);
     int64_t size = dir_len == 0 ? 0 : (int64_t)(dir_len + 128);
     free(dir);
+    PtnRuntime *root = ptn_realpath_cache_root(runtime);
+    if (root != NULL) {
+        for (size_t i = 0; i < root->realpath_cache_len; i++) {
+            size += (int64_t)(strlen(root->realpath_cache[i].path) +
+                strlen(root->realpath_cache[i].resolved_path) + 128);
+        }
+    }
     return ptn_int(size);
 }
 
@@ -69808,12 +69940,17 @@ static PtnValue ptn_internal_realpath_cache_get(PtnRuntime *runtime, size_t argc
     }
 #endif
 
-    PtnValue entry = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(entry.as.array, ptn_array_string_key("key"), ptn_float((double)time(NULL)));
-    ptn_array_set_entry(entry.as.array, ptn_array_string_key("is_dir"), ptn_bool(1));
-    ptn_array_set_entry(entry.as.array, ptn_array_string_key("realpath"), ptn_owned_string(ptn_duplicate_string(real_dir)));
-    ptn_array_set_entry(entry.as.array, ptn_array_string_key("expires"), ptn_int((int64_t)time(NULL) + 120));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key(real_dir), entry);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key(real_dir), ptn_realpath_cache_entry_value(real_dir));
+    PtnRuntime *root = ptn_realpath_cache_root(runtime);
+    if (root != NULL) {
+        for (size_t i = 0; i < root->realpath_cache_len; i++) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key(root->realpath_cache[i].path),
+                ptn_realpath_cache_entry_value(root->realpath_cache[i].resolved_path)
+            );
+        }
+    }
     free(dir);
     return result;
 }
@@ -123644,6 +123781,11 @@ static int ptn_platform_pclose(FILE *stream) {
 #endif
 }
 
+static void ptn_flush_inherited_process_stdio(void) {
+    fflush(stdout);
+    fflush(stderr);
+}
+
 static int ptn_shell_status_code(int status) {
     if (status == -1) {
         return -1;
@@ -123762,6 +123904,7 @@ static PtnValue ptn_internal_popen(PtnRuntime *runtime, size_t argc, const PtnVa
 
     char *command_c = ptn_duplicate_string_len(command.data, command.len);
     ptn_string_operand_free(command);
+    ptn_flush_inherited_process_stdio();
     FILE *stream = ptn_platform_popen(command_c, mode);
     free(command_c);
     if (stream == NULL) {
@@ -123807,6 +123950,7 @@ static PtnValue ptn_internal_pclose(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_emit_warning(&runtime->diagnostics, "pclose(): supplied resource is not a valid stream resource", line);
         return ptn_int(-1);
     }
+    ptn_flush_inherited_process_stdio();
     return ptn_int((int64_t)ptn_popen_close_resource(value.as.resource));
 }
 
@@ -123825,6 +123969,7 @@ static int ptn_shell_run_command(
     }
 
     char *command_c = ptn_duplicate_string_len(command.data, command.len);
+    ptn_flush_inherited_process_stdio();
     FILE *pipe = ptn_platform_popen(command_c, "r");
     free(command_c);
     if (pipe == NULL) {
@@ -124913,6 +125058,7 @@ static PtnValue ptn_internal_proc_open(PtnRuntime *runtime, size_t argc, const P
         }
     }
 
+    ptn_flush_inherited_process_stdio();
     pid_t child = fork();
     if (child < 0) {
         ptn_emit_warning(&runtime->diagnostics, "proc_open(): unable to fork child process", line);

@@ -3409,6 +3409,33 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "sapi/cli/tests/022.phpt",
     );
     assert!(process.starts_with("process-boundary\t"), "{process:?}");
+
+    let modeled_popen = classify_at_relative_path(
+        "--TEST--\npopen\n--FILE--\n<?php\n$pipe = popen('sort', 'w');\nfwrite($pipe, \"b\\na\\n\");\npclose($pipe);\n--EXPECT--\na\nb\n",
+        "ext/standard/tests/file/popen_basic.phpt",
+    );
+    assert_eq!(
+        modeled_popen,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let modeled_passthru = classify_at_relative_path(
+        "--TEST--\npassthru\n--FILE--\n<?php\npassthru('printf ok');\n--EXPECT--\nok",
+        "ext/standard/tests/file/passthru_basic.phpt",
+    );
+    assert_eq!(
+        modeled_passthru,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let outside_owned_surface = classify_at_relative_path(
+        "--TEST--\nshell exec\n--FILE--\n<?php\necho shell_exec('printf ok');\n--EXPECT--\nok",
+        "tests/basic/shell_exec_basic.phpt",
+    );
+    assert!(
+        outside_owned_surface.starts_with("process-boundary\t"),
+        "{outside_owned_surface:?}"
+    );
 }
 
 #[test]

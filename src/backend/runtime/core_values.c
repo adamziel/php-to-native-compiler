@@ -789,6 +789,11 @@ typedef struct PtnStreamFilter PtnStreamFilter;
 typedef struct PtnTraceFrame PtnTraceFrame;
 typedef struct PtnTryFrame PtnTryFrame;
 
+typedef struct {
+    char *path;
+    char *resolved_path;
+} PtnRealpathCacheEntry;
+
 static int ptn_builtin_class_implements_interface(const char *class_name, const char *interface_name);
 
 typedef enum {
@@ -1862,6 +1867,9 @@ struct PtnRuntime {
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;
+    PtnRealpathCacheEntry *realpath_cache;
+    size_t realpath_cache_len;
+    size_t realpath_cache_capacity;
     PtnValue *autoload_callbacks;
     char **autoload_callback_scope_class_names;
     char **autoload_callback_called_class_names;
