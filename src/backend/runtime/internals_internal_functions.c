@@ -144768,37 +144768,29 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         free(xmlns_name);
         free(element_prefix);
     }
-    for (size_t i = 0; i < node->attribute_count; i++) {
-        ptn_xml_append_attribute_namespace_declaration(
-            buffer,
-            node,
-            node->attributes[i],
-            document,
-            ascii_only,
-            emitted_element_namespace_prefix,
-            emitted_element_namespace_uri
-        );
-    }
     if (document != NULL && document->modern_dom && !document->html_document) {
         for (size_t i = 0; i < node->attribute_count; i++) {
             PtnXmlNode *attr = node->attributes[i];
-            if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
-                continue;
-            }
-            if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
-                continue;
-            }
-            ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
-            ptn_xml_serialize_namespace_binding_push_attribute(attr);
-        }
-        for (size_t i = 0; i < node->attribute_count; i++) {
-            PtnXmlNode *attr = node->attributes[i];
             if (ptn_xml_attribute_is_namespace_declaration(attr)) {
+                if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
+                    continue;
+                }
+                ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
+                ptn_xml_serialize_namespace_binding_push_attribute(attr);
                 continue;
             }
             if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
                 continue;
             }
+            ptn_xml_append_attribute_namespace_declaration(
+                buffer,
+                node,
+                attr,
+                document,
+                ascii_only,
+                emitted_element_namespace_prefix,
+                emitted_element_namespace_uri
+            );
             ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
         }
     } else {
@@ -144810,6 +144802,17 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
                 }
                 if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
                     continue;
+                }
+                if (!namespace_pass) {
+                    ptn_xml_append_attribute_namespace_declaration(
+                        buffer,
+                        node,
+                        attr,
+                        document,
+                        ascii_only,
+                        emitted_element_namespace_prefix,
+                        emitted_element_namespace_uri
+                    );
                 }
                 ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
                 if (namespace_pass) {
@@ -149233,20 +149236,6 @@ static void ptn_dom_element_ensure_prefixed_namespace(PtnRuntime *runtime, PtnXm
         if (attr != NULL && may_hide_declaration) {
             attr->synthetic_namespace_declaration = 1;
         }
-    }
-    free(xmlns_name);
-}
-
-static void ptn_dom_element_mark_prefixed_namespace_explicit(PtnXmlNode *element, const char *prefix, const char *uri) {
-    if (element == NULL || prefix == NULL || prefix[0] == '\0' || uri == NULL || uri[0] == '\0') {
-        return;
-    }
-    char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
-    PtnXmlNode *attr = ptn_xml_element_find_attribute(element, xmlns_name);
-    if (attr != NULL &&
-        ptn_xml_attribute_is_namespace_declaration(attr) &&
-        strcmp(attr->value == NULL ? "" : attr->value, uri) == 0) {
-        attr->synthetic_namespace_declaration = 0;
     }
     free(xmlns_name);
 }
@@ -155643,16 +155632,6 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
         attr->id_attribute_state = replace->id_attribute_state;
     }
     ptn_dom_element_attach_attribute(runtime, element, attr, replace, 0);
-    PtnXmlNode *document = ptn_xml_document_for_node(element);
-    if (ns &&
-        attr->namespace_uri != NULL &&
-        attr->namespace_uri[0] != '\0' &&
-        !ptn_xml_attribute_is_namespace_declaration(attr) &&
-        !(document != NULL && document->modern_dom && document->html_document)) {
-        char *prefix = ptn_xml_prefix_dup(attr->name == NULL ? "" : attr->name);
-        ptn_dom_element_mark_prefixed_namespace_explicit(element, prefix, attr->namespace_uri);
-        free(prefix);
-    }
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(name);
     ptn_string_operand_free(value);
