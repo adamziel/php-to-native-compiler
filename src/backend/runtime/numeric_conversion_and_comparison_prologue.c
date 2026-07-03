@@ -149,6 +149,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->fatal_error_recovery_frame = caller_runtime->fatal_error_recovery_frame;
     runtime->tick_enabled = caller_runtime->tick_enabled;
     runtime->tick_functions = NULL;
     runtime->tick_functions_len = 0;
@@ -998,6 +999,14 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
 }
 #endif
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static void ptn_runtime_close_user_stream_resources(PtnRuntime *runtime);
+#else
+static void ptn_runtime_close_user_stream_resources(PtnRuntime *runtime) {
+    (void)runtime;
+}
+#endif
+
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         if (runtime->shutdown_in_progress) {
@@ -1022,6 +1031,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_run_static_local_destructors(runtime);
         ptn_runtime_run_symbol_value_destructors(&runtime->symbols);
         ptn_runtime_run_object_destructors_until_output_buffer(runtime);
+        ptn_runtime_close_user_stream_resources(runtime);
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
         ptn_runtime_run_object_destructors(runtime);

@@ -1776,6 +1776,7 @@ struct PtnRuntime {
     int shutdown_functions_running;
     int shutdown_functions_completed;
     int shutdown_in_progress;
+    PtnTryFrame *fatal_error_recovery_frame;
     int tick_enabled;
     PtnTickFunction *tick_functions;
     size_t tick_functions_len;

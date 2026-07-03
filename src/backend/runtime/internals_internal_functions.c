@@ -55623,6 +55623,40 @@ static PtnUserStreamResourceData *ptn_user_stream_resource_data(PtnResource *res
     return (PtnUserStreamResourceData *)resource->close_hook_data;
 }
 
+static PtnRuntime *ptn_user_stream_callback_runtime(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? runtime : root;
+}
+
+static void ptn_runtime_close_user_stream_resources(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    for (size_t guard = 0; guard < 1024; guard++) {
+        PtnResource *target = NULL;
+        for (PtnResource *resource = ptn_resource_registry_tail;
+             resource != NULL;
+             resource = resource->registry_prev) {
+            if (ptn_user_stream_resource_data(resource) != NULL) {
+                target = resource;
+                break;
+            }
+        }
+        if (target == NULL) {
+            return;
+        }
+
+        PtnTryFrame frame;
+        PtnTryFrame *previous_frame = root->fatal_error_recovery_frame;
+        root->fatal_error_recovery_frame = &frame;
+        if (setjmp(frame.jump) == 0) {
+            ptn_resource_close(target);
+        }
+        root->fatal_error_recovery_frame = previous_frame;
+    }
+}
+
 static PtnUserStreamResourceData *ptn_user_directory_resource_data(PtnResource *resource) {
     PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
     if (data == NULL || !data->is_directory || resource->closed) {
@@ -56653,7 +56687,7 @@ static int ptn_try_open_user_stream_wrapper(
         ptn_resource_release(resource);
         ptn_abort_out_of_memory();
     }
-    resource_data->runtime = runtime;
+    resource_data->runtime = ptn_user_stream_callback_runtime(runtime);
     resource_data->wrapper_object = ptn_value_clone(object);
     resource_data->line = line;
     resource_data->read_buffer = NULL;
@@ -57065,7 +57099,7 @@ static int ptn_try_open_user_directory_wrapper(
         ptn_resource_release(resource);
         ptn_abort_out_of_memory();
     }
-    resource_data->runtime = runtime;
+    resource_data->runtime = ptn_user_stream_callback_runtime(runtime);
     resource_data->wrapper_object = ptn_value_clone(object);
     resource_data->line = line;
     resource_data->read_buffer = NULL;
@@ -66461,6 +66495,32 @@ static PtnValue ptn_internal_fstat(PtnRuntime *runtime, size_t argc, const PtnVa
     }
     if (value.as.resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
         return ptn_bool(0);
+    }
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(value.as.resource);
+    if (user_stream != NULL && !user_stream->is_directory) {
+        if (user_stream->runtime == NULL ||
+            user_stream->runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_stat")) {
+            return ptn_bool(0);
+        }
+        PtnValue stat_result = user_stream->runtime->method_dispatch(
+            user_stream->runtime,
+            user_stream->wrapper_object,
+            "stream_stat",
+            0,
+            NULL,
+            line
+        );
+        if (user_stream->runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&stat_result);
+            return ptn_null();
+        }
+        PtnValue resolved_stat = ptn_value_deref(stat_result);
+        if (resolved_stat.type != PTN_ARRAY) {
+            ptn_value_destroy(&stat_result);
+            return ptn_bool(0);
+        }
+        return stat_result;
     }
     if (value.as.resource->memory_stream != NULL) {
         return ptn_stat_array_from_memory_stream(value.as.resource->memory_stream);
