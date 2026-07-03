@@ -58830,6 +58830,15 @@ echo "NS=", $namespaces->saveHtml(), "\n";
 $full = Dom\HTMLDocument::createFromString('<!DOCTYPE HTML><html><head><style>x < y && y > z</style><script>if (x < y && y > z) {}</script><meta></head><body><img src="x"><br><test:test xmlns:test="urn:test">T</test:test></body></html>');
 echo "FULL=", $full->saveHtml(), "\n";
 
+$bodyText = Dom\HTMLDocument::createEmpty();
+$body = $bodyText->appendChild($bodyText->createElement("body"));
+foreach (["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"] as $tag) {
+    $element = $body->appendChild($bodyText->createElement($tag));
+    $element->textContent = "&\"<>" . hex2bin("c2a0") . " foobar";
+    $body->append("\n");
+}
+echo "BODY=", $bodyText->saveHtml(), "\n";
+
 $foreignText = Dom\HTMLDocument::createEmpty();
 foreach (["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"] as $tag) {
     $element = $foreignText->createElementNS("some:ns", $tag);
@@ -58865,6 +58874,15 @@ echo "VOID=", $voids->saveHtml($foreignVoid), "\n";
             "CDATA=<container>foobaré\"&lt;&gt;-&amp;</container>\n",
             "NS=<root><noprefix></noprefix><with:prefix></with:prefix><br><svg></svg><math></math></root>\n",
             "FULL=<!DOCTYPE html><html><head><style>x < y && y > z</style><script>if (x < y && y > z) {}</script><meta></head><body><img src=\"x\"><br><test:test xmlns:test=\"urn:test\">T</test:test></body></html>\n",
+            "BODY=<body><style>&\"<>\u{a0} foobar</style>\n",
+            "<script>&\"<>\u{a0} foobar</script>\n",
+            "<xmp>&\"<>\u{a0} foobar</xmp>\n",
+            "<iframe>&\"<>\u{a0} foobar</iframe>\n",
+            "<noembed>&\"<>\u{a0} foobar</noembed>\n",
+            "<noframes>&\"<>\u{a0} foobar</noframes>\n",
+            "<plaintext>&\"<>\u{a0} foobar</plaintext>\n",
+            "<noscript>&amp;\"&lt;&gt;&nbsp; foobar</noscript>\n",
+            "</body>\n",
             "TEXT=<style>&amp;\"&lt;&gt;&nbsp;foobar</style>\n",
             "TEXT=<script>&amp;\"&lt;&gt;&nbsp;foobar</script>\n",
             "TEXT=<xmp>&amp;\"&lt;&gt;&nbsp;foobar</xmp>\n",
