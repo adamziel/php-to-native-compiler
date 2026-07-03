@@ -72183,16 +72183,14 @@ fn compile_array_literal_unpack_runtime_scalar_error_to_native_binary() {
     assert!(!execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        undefined_variable_warning(&input, "missing", 2)
-    );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "\nFatal error: Uncaught Error: Only arrays and Traversables can be unpacked, null given in {}:2\nStack trace:\n#0 {{main}}\n  thrown in {} on line 2\n",
+            "{}\nFatal error: Uncaught Error: Only arrays and Traversables can be unpacked, null given in {}:2\nStack trace:\n#0 {{main}}\n  thrown in {} on line 2\n",
+            undefined_variable_warning(&input, "missing", 2),
             input.display(),
             input.display()
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
