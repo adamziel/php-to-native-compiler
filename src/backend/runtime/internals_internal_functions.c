@@ -6453,6 +6453,7 @@ static int ptn_dynamic_execute_php_source(PtnRuntime *runtime, const char *code,
 static int ptn_runtime_ini_bool(const char *value, int default_value);
 static const char *ptn_runtime_phar_readonly(PtnRuntime *runtime);
 static char *ptn_duplicate_open_stream_detail(const char *detail);
+static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 typedef struct PtnPharArchiveState PtnPharArchiveState;
 typedef struct PtnPharDirectoryData PtnPharDirectoryData;
 static void ptn_phar_archive_clone_path(const char *source_path, const char *dest_path);
@@ -246478,6 +246479,230 @@ static PTN_UNUSED PtnValue ptn_dynamic_closure_call(
     return result;
 }
 
+static size_t ptn_dynamic_php_source_body_start(const char *code, size_t len) {
+    size_t pos = ptn_eval_skip_ws(code, len, 0);
+    if (pos + 5 <= len && memcmp(code + pos, "<?php", 5) == 0) {
+        pos += 5;
+    } else if (pos + 2 <= len && memcmp(code + pos, "<?", 2) == 0) {
+        pos += 2;
+    }
+    return pos;
+}
+
+static int ptn_dynamic_php_skip_comment(const char *code, size_t len, size_t *pos) {
+    size_t cursor = *pos;
+    if (cursor + 1 < len && code[cursor] == '/' && code[cursor + 1] == '/') {
+        cursor += 2;
+        while (cursor < len && code[cursor] != '\n') {
+            cursor++;
+        }
+        if (cursor < len) {
+            cursor++;
+        }
+        *pos = cursor;
+        return 1;
+    }
+    if (cursor < len && code[cursor] == '#') {
+        cursor++;
+        while (cursor < len && code[cursor] != '\n') {
+            cursor++;
+        }
+        if (cursor < len) {
+            cursor++;
+        }
+        *pos = cursor;
+        return 1;
+    }
+    if (cursor + 1 < len && code[cursor] == '/' && code[cursor + 1] == '*') {
+        cursor += 2;
+        while (cursor + 1 < len && !(code[cursor] == '*' && code[cursor + 1] == '/')) {
+            cursor++;
+        }
+        if (cursor + 1 < len) {
+            cursor += 2;
+        }
+        *pos = cursor;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_dynamic_php_hex_value(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return (int)(byte - '0');
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return (int)(byte - 'a') + 10;
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return (int)(byte - 'A') + 10;
+    }
+    return -1;
+}
+
+static int ptn_dynamic_php_double_string_parse_error(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t *line_out,
+    char **message_out
+) {
+    size_t cursor = *pos + 1;
+    while (cursor < len) {
+        if (code[cursor] == '"') {
+            *pos = cursor + 1;
+            return 0;
+        }
+        if (code[cursor] != '\\' || cursor + 1 >= len) {
+            cursor++;
+            continue;
+        }
+        if (code[cursor + 1] != 'u' || cursor + 2 >= len || code[cursor + 2] != '{') {
+            cursor += 2;
+            continue;
+        }
+
+        size_t escape_start = cursor;
+        cursor += 3;
+        int saw_hex = 0;
+        int too_large = 0;
+        uint64_t codepoint = 0;
+        while (cursor < len && code[cursor] != '}') {
+            int hex = ptn_dynamic_php_hex_value((unsigned char)code[cursor]);
+            if (hex < 0) {
+                *line_out = ptn_eval_line_for_pos(code, escape_start, 1);
+                *message_out = ptn_duplicate_string("Invalid UTF-8 codepoint escape sequence");
+                return 1;
+            }
+            saw_hex = 1;
+            if (codepoint <= 0x110000) {
+                codepoint = (codepoint << 4) | (uint64_t)hex;
+                if (codepoint > 0x10ffff) {
+                    too_large = 1;
+                }
+            } else {
+                too_large = 1;
+            }
+            cursor++;
+        }
+        if (!saw_hex || cursor >= len || code[cursor] != '}') {
+            *line_out = ptn_eval_line_for_pos(code, escape_start, 1);
+            *message_out = ptn_duplicate_string("Invalid UTF-8 codepoint escape sequence");
+            return 1;
+        }
+        if (too_large) {
+            *line_out = ptn_eval_line_for_pos(code, escape_start, 1);
+            *message_out = ptn_duplicate_string("Invalid UTF-8 codepoint escape sequence: Codepoint too large");
+            return 1;
+        }
+        cursor++;
+    }
+    *pos = cursor;
+    return 0;
+}
+
+static char *ptn_dynamic_php_source_parse_error_message(
+    const char *code,
+    size_t len,
+    size_t *line_out
+) {
+    size_t pos = ptn_dynamic_php_source_body_start(code, len);
+    size_t *brace_lines = NULL;
+    size_t brace_count = 0;
+    size_t brace_capacity = 0;
+    while (pos < len) {
+        if (isspace((unsigned char)code[pos])) {
+            pos++;
+            continue;
+        }
+        if (ptn_dynamic_php_skip_comment(code, len, &pos)) {
+            continue;
+        }
+        if (code[pos] == '\'') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            continue;
+        }
+        if (code[pos] == '"') {
+            char *message = NULL;
+            if (ptn_dynamic_php_double_string_parse_error(code, len, &pos, line_out, &message)) {
+                free(brace_lines);
+                return message;
+            }
+            continue;
+        }
+        if (code[pos] == '{') {
+            if (brace_count == brace_capacity) {
+                size_t new_capacity = brace_capacity == 0 ? 8 : brace_capacity * 2;
+                if (new_capacity < brace_capacity) {
+                    ptn_abort_out_of_memory();
+                }
+                size_t *new_lines = realloc(brace_lines, new_capacity * sizeof(size_t));
+                if (new_lines == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                brace_lines = new_lines;
+                brace_capacity = new_capacity;
+            }
+            brace_lines[brace_count++] = ptn_eval_line_for_pos(code, pos, 1);
+            pos++;
+            continue;
+        }
+        if (code[pos] == '}') {
+            if (brace_count != 0) {
+                brace_count--;
+            }
+            pos++;
+            continue;
+        }
+        if (code[pos] == '0') {
+            size_t digit = pos + 1;
+            while (digit < len && (isdigit((unsigned char)code[digit]) || code[digit] == '_')) {
+                if (code[digit] == '8' || code[digit] == '9') {
+                    *line_out = ptn_eval_line_for_pos(code, pos, 1);
+                    free(brace_lines);
+                    return ptn_duplicate_string("Invalid numeric literal");
+                }
+                digit++;
+            }
+            pos++;
+            continue;
+        }
+        if (ptn_eval_identifier_start((unsigned char)code[pos])) {
+            size_t name_start = pos;
+            pos++;
+            while (pos < len && ptn_eval_identifier_part((unsigned char)code[pos])) {
+                pos++;
+            }
+            if (pos - name_start == strlen("empty") &&
+                ptn_ascii_lower_char(code[name_start]) == 'e' &&
+                ptn_ascii_lower_char(code[name_start + 1]) == 'm' &&
+                ptn_ascii_lower_char(code[name_start + 2]) == 'p' &&
+                ptn_ascii_lower_char(code[name_start + 3]) == 't' &&
+                ptn_ascii_lower_char(code[name_start + 4]) == 'y') {
+                size_t after = ptn_eval_skip_ws(code, len, pos);
+                if (after >= len ||
+                    (after + 2 <= len && code[after] == '?' && code[after + 1] == '>')) {
+                    *line_out = ptn_eval_line_for_pos(code, name_start, 1);
+                    free(brace_lines);
+                    return ptn_duplicate_string(
+                        "syntax error, unexpected end of file, expecting \"(\""
+                    );
+                }
+            }
+            continue;
+        }
+        pos++;
+    }
+    if (brace_count != 0) {
+        size_t line = brace_lines[brace_count - 1];
+        *line_out = line;
+        free(brace_lines);
+        return ptn_duplicate_string("Unclosed '{'");
+    }
+    free(brace_lines);
+    return NULL;
+}
+
 static int ptn_dynamic_execute_php_source(
     PtnRuntime *runtime,
     const char *code,
@@ -246485,12 +246710,7 @@ static int ptn_dynamic_execute_php_source(
     PtnValue *result_out
 ) {
     ptn_eval_scan_class_declarations(runtime, code, 1);
-    size_t pos = ptn_eval_skip_ws(code, len, 0);
-    if (pos + 5 <= len && memcmp(code + pos, "<?php", 5) == 0) {
-        pos += 5;
-    } else if (pos + 2 <= len && memcmp(code + pos, "<?", 2) == 0) {
-        pos += 2;
-    }
+    size_t pos = ptn_dynamic_php_source_body_start(code, len);
     PtnValue result = ptn_null();
     int returned = 0;
     if (!ptn_dynamic_execute_statements_range(runtime, code, len, &pos, len, 1, &result, &returned)) {
@@ -246508,6 +246728,32 @@ static int ptn_dynamic_read_file(const char *path, char **contents_out, size_t *
     *contents_out = NULL;
     *len_out = 0;
     if (path == NULL) {
+        return 0;
+    }
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int data_url_result = ptn_try_read_data_url_bytes(path, &data, &data_len);
+    if (data_url_result > 0) {
+        if (data_len == SIZE_MAX) {
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        char *contents = malloc(data_len + 1);
+        if (contents == NULL) {
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        if (data_len != 0) {
+            memcpy(contents, data, data_len);
+        }
+        contents[data_len] = '\0';
+        free(data);
+        *contents_out = contents;
+        *len_out = data_len;
+        return 1;
+    }
+    if (data_url_result < 0) {
+        free(data);
         return 0;
     }
     if (strncmp(path, "phar://", 7) == 0) {
@@ -246797,6 +247043,25 @@ static PTN_UNUSED int ptn_dynamic_include_php_file_resolved(
         }
         free(code);
         *result_out = ptn_int(1);
+        return 1;
+    }
+    size_t parse_error_line = 1;
+    char *parse_error_message =
+        ptn_dynamic_php_source_parse_error_message(code, code_len, &parse_error_line);
+    if (parse_error_message != NULL) {
+        const char *exception_path = runtime != NULL ? runtime->source_path : path;
+        if (runtime != NULL) {
+            runtime->source_path = saved_source_path;
+        }
+        free(code);
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "ParseError",
+            parse_error_message,
+            exception_path,
+            parse_error_line
+        );
+        *result_out = ptn_null();
         return 1;
     }
     PtnValue result = ptn_null();
