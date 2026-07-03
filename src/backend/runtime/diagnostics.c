@@ -2248,6 +2248,13 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
         fputs(" on line ", stream);
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
+        if (root != NULL) {
+            root->output_has_started = 1;
+        }
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->fatal_error_recovery_frame != NULL) {
+        longjmp(root->fatal_error_recovery_frame->jump, 1);
     }
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
@@ -2275,6 +2282,13 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
         fputs(" on line ", stream);
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
+        if (root != NULL) {
+            root->output_has_started = 1;
+        }
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->fatal_error_recovery_frame != NULL) {
+        longjmp(root->fatal_error_recovery_frame->jump, 1);
     }
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
@@ -3069,6 +3083,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->fatal_error_recovery_frame = NULL;
     runtime->tick_enabled = 0;
     runtime->tick_functions = NULL;
     runtime->tick_functions_len = 0;

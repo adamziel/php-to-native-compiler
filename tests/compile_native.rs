@@ -35278,6 +35278,106 @@ try { fopen('strictctx://x', 'r'); } catch (TypeError $e) { echo \"strict contex
 }
 
 #[test]
+fn compile_user_stream_wrapper_fstat_dispatches_stream_stat_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-fstat");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-fstat.php");
+    let output = root.join("user-stream-wrapper-fstat-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class StatWrapper {\n\
+    public $context;\n\
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }\n\
+    public function stream_stat() { echo \"stat\\n\"; return ['size' => $this->missing]; }\n\
+}\n\
+stream_wrapper_register('statwrap', StatWrapper::class);\n\
+$stream = fopen('statwrap://x', 'r');\n\
+var_dump(fstat($stream));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("stat\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: Undefined property: StatWrapper::$missing"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("array(1) {\n  [\"size\"]=>\n  NULL\n}\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("stream_stat"));
+    assert!(c_source.contains("ptn_user_stream_resource_data"));
+}
+
+#[test]
+fn compile_user_stream_wrapper_shutdown_close_recovers_nested_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-shutdown-close-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-shutdown-close-fatal.php");
+    let output = root.join("user-stream-wrapper-shutdown-close-fatal-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BailWrapper {
+    public $context;
+    public function stream_open() { return true; }
+    public function stream_read($count) {
+        function stream_close_redeclare_marker() {}
+        include('bail://');
+    }
+    public function stream_close() {
+        static $count = 0;
+        if ($count++ < 3) {
+            include('bail://');
+        }
+    }
+}
+stream_wrapper_register('bail', BailWrapper::class);
+include('bail://test.php');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert_eq!(
+        combined
+            .matches("Fatal error: Cannot redeclare function stream_close_redeclare_marker()")
+            .count(),
+        4,
+        "{combined}"
+    );
+    assert_eq!(
+        combined
+            .matches("\n\nFatal error: Cannot redeclare function stream_close_redeclare_marker()")
+            .count(),
+        3,
+        "{combined}"
+    );
+    assert!(!combined.contains("Allowed memory size"), "{combined}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_callback_runtime"));
+    assert!(c_source.contains("ptn_runtime_close_user_stream_resources"));
+}
+
+#[test]
 fn compile_proc_pipe_blocking_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-proc-pipe-blocking-metadata");
     fs::create_dir_all(&root).unwrap();
