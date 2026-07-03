@@ -58679,6 +58679,96 @@ var_dump($doc->validate());
 }
 
 #[test]
+fn compile_dom_libxml_stream_close_open_basedir_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-libxml-stream-close-open-basedir");
+    let base = root.join("base");
+    fs::create_dir_all(&base).unwrap();
+    fs::write(root.join("bad"), "secret").unwrap();
+    let input = root.join("dom-libxml-stream-close-open-basedir.php");
+    let output = root.join("dom-libxml-stream-close-open-basedir-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('open_basedir', '.');
+chdir({});
+
+class ReadCloseWrapper {{
+    public $context;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {{
+        return true;
+    }}
+
+    public function stream_close() {{
+        echo "--read-close--\n";
+        $doc = new DOMDocument();
+        $doc->resolveExternals = true;
+        $doc->substituteEntities = true;
+        $dir = str_replace('\\', '/', dirname(getcwd()));
+        $doc->loadXML('<!DOCTYPE doc [<!ENTITY file SYSTEM "file:///' . $dir . '/bad">]><doc>&file;</doc>');
+        var_dump($doc->documentElement->firstChild);
+    }}
+}}
+
+class WriteCloseWrapper {{
+    public $context;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {{
+        return true;
+    }}
+
+    public function stream_close() {{
+        echo "--write-close--\n";
+        $doc = new DOMDocument();
+        $doc->appendChild($doc->createTextNode('hello'));
+        var_dump($doc->save(dirname(getcwd()) . '/bad'));
+    }}
+}}
+
+stream_wrapper_register('readclose', ReadCloseWrapper::class);
+$read = fopen('readclose://', 'r');
+fclose($read);
+
+stream_wrapper_register('writeclose', WriteCloseWrapper::class);
+$write = fopen('writeclose://', 'r');
+fclose($write);
+"#,
+            php_string_literal(&base)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).current_dir(&root).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("--read-close--\n"), "{stdout}");
+    assert!(
+        stdout.contains("DOMDocument::loadXML(): open_basedir restriction in effect."),
+        "{stdout}"
+    );
+    assert!(stdout.contains("NULL\n--write-close--\n"), "{stdout}");
+    assert!(
+        stdout.contains("DOMDocument::save(): open_basedir restriction in effect."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("DOMDocument::save(")
+            && stdout.contains("Failed to open stream: Operation not permitted"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert!(!stdout.contains("secret"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_external_entity_local_path"));
+    assert!(c_source.contains("ptn_dom_write_serialized_file"));
+}
+
+#[test]
 fn compile_xmlreader_default_attributes_to_native_binary() {
     let root = temp_dir("ptn-native-xmlreader-default-attributes");
     fs::create_dir_all(&root).unwrap();
