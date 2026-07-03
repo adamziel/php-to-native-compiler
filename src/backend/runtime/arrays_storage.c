@@ -1820,6 +1820,37 @@ static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwin
     ptn_runtime_run_object_destructors_matching(runtime, 1, 0);
 }
 
+static PTN_UNUSED void ptn_runtime_close_suspended_fibers(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->live_objects_len == 0) {
+        return;
+    }
+
+    size_t len = root->live_objects_len;
+    PtnObject **objects = malloc(len * sizeof(PtnObject *));
+    if (objects == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t object_count = 0;
+    for (size_t i = 0; i < len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (object == NULL || object->refcount == 0) {
+            continue;
+        }
+        ptn_object_retain(object);
+        objects[object_count++] = object;
+    }
+
+    for (size_t i = 0; i < object_count; i++) {
+        ptn_runtime_close_suspended_fiber_object(objects[i]);
+        ptn_object_release(objects[i]);
+    }
+    free(objects);
+}
+
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime) {
     if (runtime == NULL) {
         return;
@@ -1847,6 +1878,43 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
     }
 }
 
+static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->live_objects_len == 0) {
+        return;
+    }
+
+    size_t len = root->live_objects_len;
+    PtnObject **generators = malloc(len * sizeof(PtnObject *));
+    if (generators == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t generator_count = 0;
+    for (size_t i = 0; i < len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (object == NULL || object->refcount == 0 || !ptn_object_is_generator(object)) {
+            continue;
+        }
+        ptn_object_retain(object);
+        generators[generator_count++] = object;
+    }
+
+    for (size_t i = 0; i < generator_count; i++) {
+        PtnObject *object = generators[i];
+        if (object->refcount != 0 && object->native_data != NULL) {
+            PtnRuntime *owner = object->lifecycle_runtime == NULL
+                ? root
+                : object->lifecycle_runtime;
+            ptn_generator_force_close(owner, (PtnGenerator *)object->native_data);
+        }
+        ptn_object_release(object);
+    }
+    free(generators);
+}
+
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
     ptn_runtime_run_object_destructors_matching(runtime, 0, 1);
 }
@@ -1858,6 +1926,12 @@ typedef struct {
     PtnReference **references;
     size_t references_len;
     size_t references_capacity;
+    PtnClosure **closures;
+    size_t closures_len;
+    size_t closures_capacity;
+    PtnObject **objects;
+    size_t objects_len;
+    size_t objects_capacity;
 } PtnShutdownDestructorScan;
 
 static void ptn_shutdown_destructor_scan_free(PtnShutdownDestructorScan *scan) {
@@ -1872,6 +1946,14 @@ static void ptn_shutdown_destructor_scan_free(PtnShutdownDestructorScan *scan) {
     scan->references = NULL;
     scan->references_len = 0;
     scan->references_capacity = 0;
+    free(scan->closures);
+    scan->closures = NULL;
+    scan->closures_len = 0;
+    scan->closures_capacity = 0;
+    free(scan->objects);
+    scan->objects = NULL;
+    scan->objects_len = 0;
+    scan->objects_capacity = 0;
 }
 
 static int ptn_shutdown_destructor_scan_note_array(
@@ -1935,6 +2017,276 @@ static int ptn_shutdown_destructor_scan_note_reference(
     }
     scan->references[scan->references_len++] = reference;
     return 1;
+}
+
+static int ptn_shutdown_destructor_scan_note_closure(
+    PtnShutdownDestructorScan *scan,
+    PtnClosure *closure
+) {
+    if (scan == NULL || closure == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->closures_len; i++) {
+        if (scan->closures[i] == closure) {
+            return 0;
+        }
+    }
+    if (scan->closures_len == scan->closures_capacity) {
+        size_t new_capacity = scan->closures_capacity == 0
+            ? 8
+            : scan->closures_capacity * 2;
+        if (new_capacity < scan->closures_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnClosure *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnClosure **new_closures = realloc(
+            scan->closures,
+            new_capacity * sizeof(PtnClosure *)
+        );
+        if (new_closures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->closures = new_closures;
+        scan->closures_capacity = new_capacity;
+    }
+    scan->closures[scan->closures_len++] = closure;
+    return 1;
+}
+
+static int ptn_shutdown_destructor_scan_note_object(
+    PtnShutdownDestructorScan *scan,
+    PtnObject *object
+) {
+    if (scan == NULL || object == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->objects_len; i++) {
+        if (scan->objects[i] == object) {
+            return 0;
+        }
+    }
+    if (scan->objects_len == scan->objects_capacity) {
+        size_t new_capacity = scan->objects_capacity == 0
+            ? 8
+            : scan->objects_capacity * 2;
+        if (new_capacity < scan->objects_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObject **new_objects = realloc(
+            scan->objects,
+            new_capacity * sizeof(PtnObject *)
+        );
+        if (new_objects == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->objects = new_objects;
+        scan->objects_capacity = new_capacity;
+    }
+    scan->objects[scan->objects_len++] = object;
+    return 1;
+}
+
+static void ptn_runtime_force_close_generator_value_impl(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+);
+
+static void ptn_runtime_force_close_generator_symbol_table_impl(
+    PtnRuntime *runtime,
+    PtnSymbolTable *symbols,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+) {
+    if (symbols == NULL || depth > 1024) {
+        return;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        ptn_runtime_force_close_generator_value_impl(
+            runtime,
+            symbols->items[i].value,
+            depth + 1,
+            scan
+        );
+    }
+}
+
+static void ptn_runtime_force_close_generator_exception_impl(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+) {
+    if (exception == NULL || depth > 1024) {
+        return;
+    }
+    ptn_runtime_force_close_generator_value_impl(runtime, exception->trace, depth + 1, scan);
+    ptn_runtime_force_close_generator_value_impl(runtime, exception->previous, depth + 1, scan);
+    ptn_runtime_force_close_generator_value_impl(runtime, exception->dynamic_properties, depth + 1, scan);
+    ptn_runtime_force_close_generator_value_impl(runtime, exception->errors, depth + 1, scan);
+    ptn_runtime_force_close_generator_value_impl(runtime, exception->soap_fault_headerfault, depth + 1, scan);
+}
+
+static void ptn_runtime_force_close_generator_object_native_values_impl(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+) {
+    if (object == NULL || object->native_data == NULL || depth > 1024) {
+        return;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "SensitiveParameterValue")) {
+        typedef struct {
+            PtnValue value;
+        } PtnNativeSensitiveParameterValueData;
+        PtnNativeSensitiveParameterValueData *data =
+            (PtnNativeSensitiveParameterValueData *)object->native_data;
+        ptn_runtime_force_close_generator_value_impl(runtime, data->value, depth + 1, scan);
+        return;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Fiber")) {
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        ptn_runtime_force_close_generator_value_impl(runtime, data->callback, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, data->return_value, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, data->suspension_trace, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, data->suspend_value, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, data->resume_value, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, data->resume_exception, depth + 1, scan);
+        for (size_t i = 0; i < data->entry_argc; i++) {
+            ptn_runtime_force_close_generator_value_impl(runtime, data->entry_args[i], depth + 1, scan);
+        }
+    }
+}
+
+static void ptn_runtime_force_close_generator_value_impl(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+) {
+    if (depth > 1024) {
+        return;
+    }
+    if (value.type == PTN_REFERENCE) {
+        if (value.as.reference == NULL ||
+            !ptn_shutdown_destructor_scan_note_reference(scan, value.as.reference)) {
+            return;
+        }
+        PtnValue retained = ptn_value_share(value);
+        ptn_runtime_force_close_generator_value_impl(
+            runtime,
+            retained.as.reference->value,
+            depth + 1,
+            scan
+        );
+        ptn_value_destroy(&retained);
+        return;
+    }
+
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        PtnObject *object = value.as.object;
+        if (!ptn_shutdown_destructor_scan_note_object(scan, object)) {
+            return;
+        }
+        PtnValue retained = ptn_value_share(value);
+        object = retained.as.object;
+        if (ptn_object_is_generator(object) && object->native_data != NULL) {
+            PtnRuntime *owner = object->lifecycle_runtime == NULL
+                ? runtime
+                : object->lifecycle_runtime;
+            ptn_generator_force_close(owner, (PtnGenerator *)object->native_data);
+        }
+        ptn_runtime_force_close_generator_value_impl(
+            runtime,
+            ptn_array(object->properties),
+            depth + 1,
+            scan
+        );
+        ptn_runtime_force_close_generator_value_impl(runtime, object->lazy_initializer, depth + 1, scan);
+        ptn_runtime_force_close_generator_value_impl(runtime, object->lazy_proxy_instance, depth + 1, scan);
+        ptn_runtime_force_close_generator_object_native_values_impl(runtime, object, depth + 1, scan);
+        ptn_value_destroy(&retained);
+        return;
+    }
+
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        PtnArray *array = value.as.array;
+        if (!ptn_shutdown_destructor_scan_note_array(scan, array)) {
+            return;
+        }
+        PtnValue retained = ptn_value_share(value);
+        array = retained.as.array;
+        for (size_t i = 0; i < array->len; i++) {
+            ptn_runtime_force_close_generator_value_impl(
+                runtime,
+                array->entries[i].value,
+                depth + 1,
+                scan
+            );
+        }
+        ptn_value_destroy(&retained);
+        return;
+    }
+
+    if (value.type == PTN_CLOSURE && value.as.closure != NULL) {
+        PtnClosure *closure = value.as.closure;
+        if (!ptn_shutdown_destructor_scan_note_closure(scan, closure)) {
+            return;
+        }
+        PtnValue retained = ptn_value_share(value);
+        closure = retained.as.closure;
+        ptn_runtime_force_close_generator_symbol_table_impl(
+            runtime,
+            &closure->captures,
+            depth + 1,
+            scan
+        );
+        if (closure->has_wrapped_callable) {
+            ptn_runtime_force_close_generator_value_impl(
+                runtime,
+                closure->wrapped_callable,
+                depth + 1,
+                scan
+            );
+        }
+        ptn_value_destroy(&retained);
+        return;
+    }
+
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL) {
+        ptn_runtime_force_close_generator_exception_impl(
+            runtime,
+            value.as.exception,
+            depth + 1,
+            scan
+        );
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_force_close_root_generators(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    PtnShutdownDestructorScan scan = {0};
+
+    ptn_runtime_force_close_generator_symbol_table_impl(root, &root->symbols, 0, &scan);
+    if (root->global_symbols != NULL && root->global_symbols != &root->symbols) {
+        ptn_runtime_force_close_generator_symbol_table_impl(root, root->global_symbols, 0, &scan);
+    }
+    PtnSymbolTable *static_properties = root->static_properties == NULL
+        ? &root->owned_static_properties
+        : root->static_properties;
+    ptn_runtime_force_close_generator_symbol_table_impl(root, static_properties, 0, &scan);
+    for (size_t i = 0; i < root->temporary_roots_len; i++) {
+        ptn_runtime_force_close_generator_value_impl(root, root->temporary_roots[i], 0, &scan);
+    }
+
+    ptn_shutdown_destructor_scan_free(&scan);
 }
 
 static size_t ptn_runtime_run_static_property_value_destructors_impl(

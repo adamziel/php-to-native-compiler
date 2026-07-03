@@ -26038,6 +26038,157 @@ try {
 }
 
 #[test]
+fn compile_generator_yield_from_iteratoraggregate_suspends_on_next_in_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-iteratoraggregate-fiber-next");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-iteratoraggregate-fiber-next.php");
+    let output = root.join("generator-iteratoraggregate-fiber-next-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate {
+    public function getIterator(): Generator {
+        yield 'foo';
+        Fiber::suspend();
+        var_dump("not executed");
+    }
+}
+
+function f() {
+    yield from new It();
+}
+
+$iterable = f();
+
+$fiber = new Fiber(function () use ($iterable) {
+    var_dump($iterable->current());
+    $iterable->next();
+    var_dump("not executed");
+});
+
+$fiber->start();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"foo\"\n==DONE==\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_force_close_nested_yield_from_suspended_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-suspended-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-suspended-fiber.php");
+    let output = root.join("generator-force-close-suspended-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$gen = (function() {
+    try {
+        yield from (function () {
+            try {
+                print "Before suspend\n";
+                Fiber::suspend();
+                print "Not executed\n";
+                yield;
+            } finally {
+                print "Finally (inner)\n";
+            }
+        })();
+        print "Not executed\n";
+        yield;
+    } finally {
+        print "Finally\n";
+    }
+})();
+
+$fiber = new Fiber(function() use ($gen) {
+    $gen->current();
+    print "Not executed";
+});
+
+$fiber->start();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Before suspend\n==DONE==\nFinally (inner)\nFinally\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_yield_from_internal_call_defers_cycle_close_output_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-call-cycle-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-call-cycle-close.php");
+    let output = root.join("generator-yield-from-call-cycle-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Canary {
+    public mixed $value = null;
+    public function __destruct() {
+        echo "destroy\n";
+    }
+}
+
+function g() {
+    yield "foo";
+    Fiber::suspend();
+}
+
+function f() {
+    var_dump(yield from g());
+}
+
+$canary = new Canary();
+$iterable = f();
+$fiber = new Fiber(function () use ($iterable, $canary) {
+    var_dump($iterable->current());
+    $next = $iterable->next(...);
+    $next();
+});
+$canary->value = $fiber;
+$fiber->start();
+$iterable->current();
+$fiber = $iterable = $canary = null;
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"foo\"\ndestroy\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_throw_closes_current_chain_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-close");
     fs::create_dir_all(&root).unwrap();

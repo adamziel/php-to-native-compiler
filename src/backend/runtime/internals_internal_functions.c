@@ -183023,25 +183023,32 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             if (root == NULL) {
                 root = runtime;
             }
+            if (
+                runtime->current_generator != NULL &&
+                runtime->current_generator->executing &&
+                runtime->current_generator->values != NULL &&
+                !runtime->replaying_generator_send_call
+            ) {
+                ptn_generator_register_send_call(
+                    runtime,
+                    "Fiber::suspend",
+                    argc,
+                    args,
+                    0,
+                    NULL,
+                    NULL,
+                    line
+                );
+                ptn_throw_exception_at(
+                    runtime,
+                    "__PTN_GeneratorDeferredCall",
+                    "",
+                    runtime->source_path,
+                    line
+                );
+                return ptn_null();
+            }
             if (runtime->current_fiber == NULL) {
-                if (
-                    runtime->current_generator != NULL &&
-                    runtime->current_generator->executing &&
-                    runtime->current_generator->values != NULL &&
-                    runtime->current_generator->values->len > 0
-                ) {
-                    ptn_generator_register_send_call(
-                        runtime,
-                        "Fiber::suspend",
-                        argc,
-                        args,
-                        0,
-                        NULL,
-                        NULL,
-                        line
-                    );
-                    return ptn_null();
-                }
                 ptn_throw_exception_at(
                     runtime,
                     "FiberError",

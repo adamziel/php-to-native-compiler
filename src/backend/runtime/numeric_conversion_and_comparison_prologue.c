@@ -242,6 +242,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->replaying_generator_send_call = 0;
     runtime->owns_finally_return_suppressed_exception = 0;
     runtime->defer_unreferenced_destructors_for_catch = 0;
     runtime->deferred_yield_from_iterator_object = ptn_null();
@@ -1036,6 +1037,9 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
         ptn_runtime_run_symbol_value_destructors(&runtime->symbols);
+        ptn_runtime_close_suspended_fibers(runtime);
+        ptn_runtime_force_close_root_generators(runtime);
+        ptn_runtime_force_close_live_generators(runtime);
         ptn_runtime_run_object_destructors_until_output_buffer(runtime);
         ptn_runtime_close_user_stream_resources(runtime);
         ptn_runtime_release_static_locals(runtime);
