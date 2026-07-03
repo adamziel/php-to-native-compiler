@@ -15,6 +15,9 @@ pub(crate) fn decode_php_source_bytes_with_encoding(
         return decoded;
     }
     let bytes = strip_utf8_bom(bytes);
+    if source_encoding.is_some_and(is_utf8_encoding_name) {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
     if source_encoding.is_some_and(is_shift_jis_encoding_name) {
         return decode_shift_jis_source_bytes(bytes);
     }
@@ -84,6 +87,15 @@ fn is_shift_jis_encoding_name(name: &str) -> bool {
         normalized.as_slice(),
         b"sjis" | b"shiftjis" | b"cp932" | b"ms932" | b"windows31j"
     )
+}
+
+fn is_utf8_encoding_name(name: &str) -> bool {
+    let normalized = name
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    matches!(normalized.as_slice(), b"utf8")
 }
 
 fn is_shift_jis_lead_byte(byte: u8) -> bool {
