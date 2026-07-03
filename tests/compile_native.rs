@@ -25046,6 +25046,47 @@ echo "okey";
 }
 
 #[test]
+fn compile_eval_named_function_declaration_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-named-function-declaration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-named-function-declaration.php");
+    let output = root.join("eval-named-function-declaration-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval('function eval_named_callback($value) { return $value; }');
+eval('function eval_switch_callback($code) { switch($code) { case 4: return "mime"; default: return "other"; } }');
+var_dump(is_callable("eval_named_callback"));
+var_dump(eval_named_callback("direct"));
+var_dump(call_user_func("eval_named_callback", "callback"));
+var_dump(call_user_func("eval_switch_callback", 4));
+var_dump(eval_switch_callback(99));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(6) \"direct\"\n",
+            "string(8) \"callback\"\n",
+            "string(4) \"mime\"\n",
+            "string(5) \"other\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_register_dynamic_function"));
+    assert!(c_source.contains("ptn_runtime_call_dynamic_function"));
+}
+
+#[test]
 fn compile_literal_eval_typed_class_properties_to_native_binary() {
     let root = temp_dir("ptn-native-literal-eval-typed-class-properties");
     fs::create_dir_all(&root).unwrap();
@@ -37023,6 +37064,96 @@ fclose($server2);
     assert!(c_source.contains("ptn_stream_read_socket_bytes"));
     assert!(c_source.contains("stream_socket_tcp_nodelay"));
     assert!(c_source.contains("stream_timed_out"));
+}
+
+#[test]
+fn compile_stream_socket_server_so_reuseport_context_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-server-so-reuseport");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-server-so-reuseport.php");
+    let output = root.join("stream-socket-server-so-reuseport-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$context1 = stream_context_create(["socket" => ["so_reuseport" => true]]);
+$errno = 0;
+$errstr = "";
+$server1 = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context1);
+$address = stream_socket_get_name($server1, false);
+$port = (int)substr(strrchr($address, ":"), 1);
+$client1 = stream_socket_client("tcp://127.0.0.1:$port");
+$accepted1 = stream_socket_accept($server1, 1);
+fwrite($client1, "test");
+fread($accepted1, 4);
+fwrite($accepted1, "response");
+fread($client1, 8);
+
+$context2 = stream_context_create(["socket" => ["so_reuseport" => true]]);
+$server2 = stream_socket_server("tcp://127.0.0.1:$port", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context2);
+echo "reuseport=", is_resource($server2) ? "yes" : "no", ":", $errno, ":", $errstr, "\n";
+if ($server2) {
+    fclose($server2);
+}
+fclose($accepted1);
+fclose($client1);
+fclose($server1);
+
+$server3 = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN);
+$address = stream_socket_get_name($server3, false);
+$port = (int)substr(strrchr($address, ":"), 1);
+$client3 = stream_socket_client("tcp://127.0.0.1:$port");
+$accepted3 = stream_socket_accept($server3, 1);
+fwrite($client3, "test");
+fread($accepted3, 4);
+fwrite($accepted3, "response");
+fread($client3, 8);
+$server4 = @stream_socket_server("tcp://127.0.0.1:$port", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN);
+echo "default=", is_resource($server4) ? "yes" : "no", ":", $errno, "\n";
+if ($server4) {
+    fclose($server4);
+}
+fclose($accepted3);
+fclose($client3);
+fclose($server3);
+
+$context5 = stream_context_create(["socket" => ["so_reuseport" => false]]);
+$server5 = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context5);
+$address = stream_socket_get_name($server5, false);
+$port = (int)substr(strrchr($address, ":"), 1);
+$client5 = stream_socket_client("tcp://127.0.0.1:$port");
+$accepted5 = stream_socket_accept($server5, 1);
+fwrite($client5, "test");
+fread($accepted5, 4);
+fwrite($accepted5, "response");
+fread($client5, 8);
+$context6 = stream_context_create(["socket" => ["so_reuseport" => false]]);
+$server6 = @stream_socket_server("tcp://127.0.0.1:$port", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context6);
+echo "false=", is_resource($server6) ? "yes" : "no", ":", $errno, "\n";
+if ($server6) {
+    fclose($server6);
+}
+fclose($accepted5);
+fclose($client5);
+fclose($server5);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "reuseport=yes:0:\n\
+default=no:98\n\
+false=no:98\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_context_arg_from_call"));
+    assert!(c_source.contains("SO_REUSEPORT"));
 }
 
 #[test]

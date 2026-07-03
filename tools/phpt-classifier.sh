@@ -3027,6 +3027,41 @@ ptn_phpt_supported_php_cli_server_harness_row() {
     [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]]
 }
 
+ptn_phpt_supported_standard_network_mail_http_residual_row() {
+    case "$1" in
+        ext/standard/tests/mail/gh20257.phpt|\
+        ext/standard/tests/mail/gh19188_mixed_mode.phpt|\
+        ext/standard/tests/mail/mail_variation3.phpt|\
+        ext/standard/tests/http/ghsa-v8xr-gpvj-cx9g-004.phpt|\
+        ext/standard/tests/network/so_reuseport.phpt|\
+        ext/standard/tests/http/ghsa-52jp-hrpf-2jff-002.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
+    local rel=$1
+    local key
+    key=$(ptn_phpt_lower "$(ptn_phpt_trim "$2")")
+
+    case "$rel:$key" in
+        ext/standard/tests/mail/gh20257.phpt:sendmail_path|\
+        ext/standard/tests/mail/gh20257.phpt:mail.cr_lf_mode|\
+        ext/standard/tests/mail/gh19188_mixed_mode.phpt:sendmail_path|\
+        ext/standard/tests/mail/gh19188_mixed_mode.phpt:mail.cr_lf_mode|\
+        ext/standard/tests/mail/mail_variation3.phpt:sendmail_path)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -3066,7 +3101,8 @@ ptn_phpt_classify_row() {
     if ptn_phpt_has_external_service_harness "$path" &&
         ! ptn_phpt_supported_curl_server_harness_row "$rel" &&
         ! ptn_phpt_supported_ftp_server_harness_row "$rel" &&
-        ! ptn_phpt_supported_php_cli_server_harness_row "$rel"; then
+        ! ptn_phpt_supported_php_cli_server_harness_row "$rel" &&
+        ! ptn_phpt_supported_standard_network_mail_http_residual_row "$rel"; then
         printf 'external-service\trequires external service or php-src server harness\n'
         return 0
     fi
@@ -3126,7 +3162,9 @@ ptn_phpt_classify_row() {
             return 0
         fi
         if value=$(ptn_phpt_first_unsupported_ini "$path"); then
-            if ! ptn_phpt_supported_zlib_output_ini_row "$rel" "$value"; then
+            if ptn_phpt_supported_standard_network_mail_http_residual_ini_row "$rel" "$value"; then
+                :
+            elif ! ptn_phpt_supported_zlib_output_ini_row "$rel" "$value"; then
                 if ptn_phpt_unsupported_ini_blocker "$value"; then
                     return 0
                 fi

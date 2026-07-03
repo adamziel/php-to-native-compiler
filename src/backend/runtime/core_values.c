@@ -1,3 +1,6 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE 1
+#endif
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -372,6 +375,19 @@ typedef struct {
 #define PTN_STREAM_BUFFER_FULL 2
 #define PTN_STREAM_IS_URL 1
 #define PTN_STREAM_REPORT_ERRORS 8
+#define PTN_STREAM_NOTIFY_RESOLVE 1
+#define PTN_STREAM_NOTIFY_CONNECT 2
+#define PTN_STREAM_NOTIFY_AUTH_REQUIRED 3
+#define PTN_STREAM_NOTIFY_MIME_TYPE_IS 4
+#define PTN_STREAM_NOTIFY_FILE_SIZE_IS 5
+#define PTN_STREAM_NOTIFY_REDIRECTED 6
+#define PTN_STREAM_NOTIFY_PROGRESS 7
+#define PTN_STREAM_NOTIFY_COMPLETED 8
+#define PTN_STREAM_NOTIFY_FAILURE 9
+#define PTN_STREAM_NOTIFY_AUTH_RESULT 10
+#define PTN_STREAM_NOTIFY_SEVERITY_INFO 0
+#define PTN_STREAM_NOTIFY_SEVERITY_WARN 1
+#define PTN_STREAM_NOTIFY_SEVERITY_ERR 2
 #define PTN_DNS_A 1
 #define PTN_DNS_NS 2
 #define PTN_DNS_CNAME 16
@@ -1771,6 +1787,8 @@ struct PtnRuntime {
     PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_dynamic_classes;
     PtnSymbolTable *dynamic_classes;
+    PtnSymbolTable owned_dynamic_functions;
+    PtnSymbolTable *dynamic_functions;
     PtnSymbolTable owned_class_constants;
     PtnSymbolTable *class_constants;
     PtnSymbolTable owned_class_constant_deprecations;
@@ -1865,6 +1883,7 @@ struct PtnRuntime {
     size_t output_started_line;
     int http_response_code_initialized;
     int64_t http_response_code;
+    PtnValue http_last_response_headers;
     int header_callback_registered;
     int header_callback_running;
     int header_callback_completed;
@@ -2255,6 +2274,22 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
 );
 static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime);
 static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED PtnFunctionMetadata ptn_runtime_dynamic_function_metadata(PtnRuntime *runtime, const char *function_name);
+static PTN_UNUSED int ptn_runtime_call_dynamic_function(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue *result_out
+);
+static PTN_UNUSED PtnValue ptn_dynamic_closure_call(
+    PtnRuntime *caller_runtime,
+    PtnValue closure_value,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name);
 static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
     PtnRuntime *runtime,
