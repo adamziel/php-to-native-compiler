@@ -40051,7 +40051,7 @@ fn compile_hex2bin_invalid_input_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Warning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
+        "\nWarning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\n\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
