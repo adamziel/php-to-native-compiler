@@ -135,6 +135,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_has_started = 0;
     runtime->trans_sid_pending_output = NULL;
     runtime->trans_sid_pending_output_len = 0;
+    runtime->output_rewrite_vars = NULL;
+    runtime->output_rewrite_vars_len = 0;
+    runtime->output_rewrite_vars_capacity = 0;
+    runtime->url_rewriter_hosts = NULL;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;
     runtime->output_started_source_path = NULL;
@@ -284,6 +288,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->default_charset = NULL;
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;
+    runtime->error_append_string = NULL;
     runtime->output_handler = NULL;
     runtime->filter_default = NULL;
     runtime->internal_encoding = NULL;
@@ -1144,6 +1149,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->arg_separator_input = NULL;
         free(runtime->arg_separator_output);
         runtime->arg_separator_output = NULL;
+        free(runtime->error_append_string);
+        runtime->error_append_string = NULL;
         free(runtime->output_handler);
         runtime->output_handler = NULL;
         free(runtime->filter_default);
@@ -1330,6 +1337,16 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         free(runtime->trans_sid_pending_output);
         runtime->trans_sid_pending_output = NULL;
         runtime->trans_sid_pending_output_len = 0;
+        for (size_t i = 0; i < runtime->output_rewrite_vars_len; i++) {
+            free(runtime->output_rewrite_vars[i].name);
+            free(runtime->output_rewrite_vars[i].value);
+        }
+        free(runtime->output_rewrite_vars);
+        runtime->output_rewrite_vars = NULL;
+        runtime->output_rewrite_vars_len = 0;
+        runtime->output_rewrite_vars_capacity = 0;
+        free(runtime->url_rewriter_hosts);
+        runtime->url_rewriter_hosts = NULL;
         runtime->current_output_source_path = NULL;
         runtime->current_output_line = 0;
         free(runtime->output_started_source_path);

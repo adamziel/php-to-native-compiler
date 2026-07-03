@@ -481,10 +481,12 @@ struct RuntimeIni {
     disable_functions: Option<String>,
     display_errors: Option<String>,
     html_errors: Option<String>,
+    error_append_string: Option<String>,
     error_reporting: Option<i64>,
     ignore_repeated_errors: Option<String>,
     ignore_repeated_source: Option<String>,
     output_handler: Option<String>,
+    url_rewriter_hosts: Option<String>,
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
     pcre_recursion_limit: Option<String>,
@@ -738,6 +740,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("html_errors") {
         ini.html_errors = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("error_append_string") {
+        ini.error_append_string = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.comment") {
         ini.highlight_comment = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.default") {
@@ -798,6 +802,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.mail_add_x_header = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("url_rewriter.hosts") {
+        ini.url_rewriter_hosts = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
         ini.internal_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("input_encoding") {
@@ -1591,10 +1597,12 @@ fn compile_and_run(
         disable_functions: ini.disable_functions.clone(),
         display_errors: ini.display_errors.clone(),
         html_errors: ini.html_errors.clone(),
+        error_append_string: ini.error_append_string.clone(),
         error_reporting: ini.error_reporting,
         ignore_repeated_errors: ini.ignore_repeated_errors.clone(),
         ignore_repeated_source: ini.ignore_repeated_source.clone(),
         output_handler: ini.output_handler.clone(),
+        url_rewriter_hosts: ini.url_rewriter_hosts.clone(),
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
@@ -1797,6 +1805,9 @@ fn compile_and_run(
     if let Some(html_errors) = &ini.html_errors {
         command.env("PTN_PHP_HTML_ERRORS", html_errors);
     }
+    if let Some(error_append_string) = &ini.error_append_string {
+        command.env("PTN_ERROR_APPEND_STRING", error_append_string);
+    }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
     }
@@ -1808,6 +1819,9 @@ fn compile_and_run(
     }
     if let Some(output_handler) = &ini.output_handler {
         command.env("PTN_OUTPUT_HANDLER", output_handler);
+    }
+    if let Some(url_rewriter_hosts) = &ini.url_rewriter_hosts {
+        command.env("PTN_URL_REWRITER_HOSTS", url_rewriter_hosts);
     }
     if let Some(filter_default) = &ini.filter_default {
         command.env("PTN_FILTER_DEFAULT", filter_default);

@@ -206,6 +206,7 @@ typedef struct {
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
 #define PTN_ARRAY_MAX_ALLOC_ENTRIES 1048576ULL
+#define PTN_RANGE_MAX_ALLOC_ENTRIES (PTN_ARRAY_MAX_ALLOC_ENTRIES + 1ULL)
 #define PTN_E_ERROR 1
 #define PTN_E_WARNING 2
 #define PTN_E_PARSE 4
@@ -1354,6 +1355,13 @@ typedef struct {
 } PtnOutputBuffer;
 
 typedef struct {
+    char *name;
+    size_t name_len;
+    char *value;
+    size_t value_len;
+} PtnOutputRewriteVar;
+
+typedef struct {
     PtnValue callback;
     PtnValue *args;
     size_t argc;
@@ -1847,6 +1855,10 @@ struct PtnRuntime {
     int output_has_started;
     char *trans_sid_pending_output;
     size_t trans_sid_pending_output_len;
+    PtnOutputRewriteVar *output_rewrite_vars;
+    size_t output_rewrite_vars_len;
+    size_t output_rewrite_vars_capacity;
+    char *url_rewriter_hosts;
     const char *current_output_source_path;
     size_t current_output_line;
     char *output_started_source_path;
@@ -1972,6 +1984,7 @@ struct PtnRuntime {
     char *highlight_html;
     char *highlight_keyword;
     char *highlight_string;
+    char *error_append_string;
     char *output_handler;
     char *filter_default;
     char *pcre_backtrack_limit;
