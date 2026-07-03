@@ -1052,6 +1052,19 @@ fn phpt_classifier_allows_zend_constexpr_lazy_eval_rows_by_path() {
 }
 
 #[test]
+fn phpt_classifier_allows_datetimezone_var_export_eval_row_by_path() {
+    let phpt = "--TEST--\nDateTimeZone set_state\n--FILE--\n<?php\n$datetimezoneObject = new DateTimezone('UTC');\n$datetimezoneState = var_export($datetimezoneObject, true);\neval(\"\\$datetimezoneObjectNew = {$datetimezoneState};\");\nvar_dump($datetimezoneObjectNew);\n--EXPECTF--\n";
+    assert_eq!(
+        classify_at_relative_path(phpt, "ext/date/tests/DateTimeZone_set_state.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    assert!(
+        classify(phpt).starts_with("unsupported-dynamic-eval\t"),
+        "generic var_export eval rows stay classified until their path is known supported"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (

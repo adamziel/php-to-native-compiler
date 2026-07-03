@@ -1849,6 +1849,9 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /Zend\/tests\/constexpr\/new[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/lazy_objects\/init_fatal[.]phpt$/
         }
+        function ptn_supported_date_timezone_var_export_eval_row() {
+            return ptn_path ~ /ext\/date\/tests\/DateTimeZone_set_state[.]phpt$/
+        }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
@@ -2138,7 +2141,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 !ptn_supported_eval_static_variable_dynamic_function_row() &&
                 !ptn_supported_spl_autoload_eval_row() &&
                 !ptn_supported_tokenizer_eval_row() &&
-                !ptn_supported_zend_constexpr_lazy_eval_row()) {
+                !ptn_supported_zend_constexpr_lazy_eval_row() &&
+                !ptn_supported_date_timezone_var_export_eval_row()) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit
