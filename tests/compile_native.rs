@@ -29351,6 +29351,52 @@ try {\n\
 }
 
 #[test]
+fn compile_date_interval_non_relative_elements_to_native_binary() {
+    let root = temp_dir("ptn-native-date-interval-non-relative-elements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-interval-non-relative-elements.php");
+    let output = root.join("date-interval-non-relative-elements-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([\"next weekday 15:30\", \"+5 hours noon\"] as $text) {\n\
+    try {\n\
+        DateInterval::createFromDateString($text);\n\
+    } catch (DateMalformedIntervalStringException $e) {\n\
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+var_dump(date_interval_create_from_date_string('+72 seconds UTC'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("DateMalformedIntervalStringException: String 'next weekday 15:30' contains non-relative elements"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("DateMalformedIntervalStringException: String '+5 hours noon' contains non-relative elements"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: date_interval_create_from_date_string(): String '+72 seconds UTC' contains non-relative elements"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_period_iso_z_serialize_and_subclass_properties_to_native_binary() {
     let root = temp_dir("ptn-native-date-period-iso-z-subclass-properties");
     fs::create_dir_all(&root).unwrap();
