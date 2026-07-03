@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-03T13:55:11Z |
+| last refresh | 2026-07-03T14:00:12Z |
 | source commit | `1d096be3444d` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,29 +21,28 @@
 
 | field | value |
 | --- | --- |
-| source commit | `f1181a47ddcc` |
-| statused tests | 5 |
-| passed tests | 2 |
-| failed tests | 1 |
-| skipped tests | 2 |
+| source commit | `5bdc5f9e01d0` |
+| statused tests | 0 |
+| passed tests | 0 |
+| failed tests | 0 |
+| skipped tests | 0 |
 | warned tests | 0 |
-| unknown tests | 21862 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260703T135118Z` |
+| unknown tests | 21867 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260703T135759Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-03T13:00Z) | 0 |
-| last 24 hours (2026-07-02T14:00Z - 2026-07-03T13:00Z) | 0 |
-| last 7 days (2026-06-26T14:00Z - 2026-07-03T13:00Z) | 66 |
+| latest hour (2026-07-03T14:00Z) | 0 |
+| last 24 hours (2026-07-02T15:00Z - 2026-07-03T14:00Z) | 0 |
+| last 7 days (2026-06-26T15:00Z - 2026-07-03T14:00Z) | 66 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 13975 | 21867 |
-| hourly history retained 2026-06-26T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-26T15:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-26T16:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-26T17:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-03T10:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-03T11:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-03T12:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-03T13:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-26T14:00Z | 0 | 13909 |
 | 2026-06-26T15:00Z | 0 | 13909 |
 | 2026-06-26T16:00Z | 0 | 13909 |
 | 2026-06-26T17:00Z | 0 | 13909 |
@@ -352,3 +351,4 @@
 | 2026-07-03T11:00Z | 0 | 13975 |
 | 2026-07-03T12:00Z | 0 | 13975 |
 | 2026-07-03T13:00Z | 0 | 13975 |
+| 2026-07-03T14:00Z | 0 | 13975 |
