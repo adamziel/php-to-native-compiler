@@ -7860,6 +7860,18 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             goto done;
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(runtime, receiver, property, line, &date_interval_value)) {
+        result = ptn_lookup_found(date_interval_value);
+        goto done;
+    }
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_xml_value)) {
+        result = ptn_lookup_found(internal_xml_value);
+        goto done;
+    }
+#endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,

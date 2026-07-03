@@ -62473,6 +62473,139 @@ fn compile_dom_html_document_create_from_missing_file_warns_and_throws_to_native
 }
 
 #[test]
+fn compile_dom_modern_spec_node_residual_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-modern-spec-node-residual-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-modern-spec-node-residual-pack.php");
+    let output = root.join("dom-modern-spec-node-residual-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo "--quiet-properties--\n";
+$doc = new DOMDocument();
+$xpath = new DOMXPath($doc);
+$nodes = $xpath->query('*');
+echo get_class($nodes), "\n";
+var_dump($nodes->length);
+$length = $nodes->length;
+var_dump(empty($nodes->length), empty($length));
+$doc->loadXML("<element></element>");
+var_dump($doc->firstChild->nodeValue, empty($doc->firstChild->nodeValue), isset($doc->firstChild->nodeValue));
+var_dump(empty($doc->nodeType), empty($doc->firstChild->nodeType));
+
+echo "--namespace-removal--\n";
+$doc = new DOMDocument;
+$doc->loadXML(<<<XML
+<container xmlns:foo="some:ns">
+    <foo:first/>
+    <second>
+        <foo:child1/>
+        <foo:child2/>
+        <!-- comment -->
+        <child3>
+            <foo:child4/>
+            <foo:child5>
+                <p xmlns:foo="other:ns">
+                    <span foo:foo="bar"/>
+                    <span foo:foo="bar"/>
+                </p>
+                <foo:child6 foo:foo="bar">
+                    <span foo:foo="bar"/>
+                    <span foo:foo="bar"/>
+                </foo:child6>
+            </foo:child5>
+        </child3>
+        <child7 foo:foo="bar">
+            <foo:child8/>
+        </child7>
+    </second>
+</container>
+XML);
+var_dump($doc->documentElement->removeAttribute("xmlns:foo"));
+echo $doc->saveXML();
+
+echo "--dom-exception--\n";
+$dom = new DOMDocument();
+$dom->loadXML('<root><child/></root>');
+$rootNode = $dom->documentElement;
+try {
+    $rootNode->appendChild($rootNode);
+} catch (DOMException $e) {
+    var_dump($e->getCode(), $e->getMessage());
+    $trace = $e->getTrace()[0];
+    var_dump($trace["function"], $trace["class"], $trace["type"], get_class($trace["args"][0]));
+    ob_start();
+    var_dump($e);
+    $dump = ob_get_clean();
+    var_dump(str_contains($dump, "[\"code\"]=>"), str_contains($dump, "[\"code\":protected]=>"));
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(concat!(
+            "--quiet-properties--\n",
+            "DOMNodeList\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(0) \"\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<foo:child5 xmlns:foo=\"some:ns\">"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("<foo:child6 foo:foo=\"bar\">"), "{stdout}");
+    assert!(
+        stdout.contains("<child7 xmlns:foo=\"some:ns\" foo:foo=\"bar\">"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<foo:child6 xmlns:foo=\"some:ns\""),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("<foo:child8 xmlns:foo"), "{stdout}");
+    assert!(
+        stdout.contains(concat!(
+            "--dom-exception--\n",
+            "int(3)\n",
+            "string(23) \"Hierarchy Request Error\"\n",
+            "string(11) \"appendChild\"\n",
+            "string(7) \"DOMNode\"\n",
+            "string(2) \"->\"\n",
+            "string(10) \"DOMElement\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_property_probe_quiet"));
+    assert!(c_source.contains("ptn_xml_append_attribute_namespace_declaration"));
+    assert!(c_source.contains("ptn_dom_throw_exception_code_for_method"));
+}
+
+#[test]
 fn compile_dom_xpath_nodelist_handle_sequence_to_native_binary() {
     let root = temp_dir("ptn-native-dom-xpath-nodelist-handles");
     fs::create_dir_all(&root).unwrap();
