@@ -89189,6 +89189,34 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_inline_run_tests_extension_probes_use_cli_fast_path() {
+    let extension_dir = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("display_errors=0")
+        .arg("-r")
+        .arg("echo ini_get('extension_dir');")
+        .output()
+        .unwrap();
+    assert!(extension_dir.status.success());
+    assert_eq!(String::from_utf8(extension_dir.stdout).unwrap(), ".");
+    assert_eq!(String::from_utf8(extension_dir.stderr).unwrap(), "");
+
+    let loaded_extensions = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("display_errors=0")
+        .arg("-r")
+        .arg("echo implode(',', get_loaded_extensions());")
+        .output()
+        .unwrap();
+    assert!(loaded_extensions.status.success());
+    assert_eq!(
+        String::from_utf8(loaded_extensions.stdout).unwrap(),
+        "Core,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zend_test,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache,session,simplexml"
+    );
+    assert_eq!(String::from_utf8(loaded_extensions.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_error_get_last_tracks_last_runtime_warning_to_native_binary() {
     let root = temp_dir("ptn-phpc-error-get-last");
     fs::create_dir_all(&root).unwrap();

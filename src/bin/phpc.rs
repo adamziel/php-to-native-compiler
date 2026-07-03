@@ -48,6 +48,9 @@ fn run() -> Result<i32, PhpcError> {
         }
         Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
         Mode::Inline { source, args } => {
+            if let Some(code) = run_inline_probe_fast_path(&source, &args) {
+                return Ok(code);
+            }
             let temp = TempPath::new("ptn-phpc-inline", "php");
             let source = if source.trim_start().starts_with("<?") {
                 source
@@ -72,6 +75,111 @@ fn run() -> Result<i32, PhpcError> {
             compile_and_run(temp.path(), &[], &ini, sapi)
         }
     }
+}
+
+const PHP_EXTENSION_DIR: &str = ".";
+
+const PHP_LOADED_EXTENSIONS: &[&str] = &[
+    "Core",
+    "bcmath",
+    "calendar",
+    "ctype",
+    "curl",
+    "date",
+    "dom",
+    "filter",
+    "hash",
+    "iconv",
+    "intl",
+    "json",
+    "libxml",
+    "mbstring",
+    "openssl",
+    "pcre",
+    "Phar",
+    "Reflection",
+    "sockets",
+    "soap",
+    "SPL",
+    "standard",
+    "tokenizer",
+    "xml",
+    "xmlreader",
+    "xmlwriter",
+    "zip",
+    "zend_test",
+    "zlib",
+    "PDO",
+    "pdo_sqlite",
+    "sqlite3",
+    "mysqli",
+    "pgsql",
+    "pdo_mysql",
+    "pdo_pgsql",
+    "pdo_firebird",
+    "pdo_dblib",
+    "odbc",
+    "Zend OPcache",
+    "session",
+    "simplexml",
+];
+
+const PHP_ZEND_EXTENSIONS: &[&str] = &["Zend OPcache"];
+
+fn run_inline_probe_fast_path(source: &str, args: &[String]) -> Option<i32> {
+    if !args.is_empty() {
+        return None;
+    }
+    match normalize_inline_probe_source(source).as_str() {
+        "echoini_get('extension_dir');" | "echoini_get(\"extension_dir\");" => {
+            print!("{PHP_EXTENSION_DIR}");
+            Some(0)
+        }
+        "echoimplode(',',get_loaded_extensions());"
+        | "echoimplode(\",\",get_loaded_extensions());"
+        | "echoimplode(',',get_loaded_extensions(false));"
+        | "echoimplode(\",\",get_loaded_extensions(false));" => {
+            print!("{}", PHP_LOADED_EXTENSIONS.join(","));
+            Some(0)
+        }
+        "echoimplode(',',get_loaded_extensions(true));"
+        | "echoimplode(\",\",get_loaded_extensions(true));" => {
+            print!("{}", PHP_ZEND_EXTENSIONS.join(","));
+            Some(0)
+        }
+        _ => None,
+    }
+}
+
+fn normalize_inline_probe_source(source: &str) -> String {
+    let mut normalized = String::with_capacity(source.len());
+    let mut quote = None;
+    let mut escaped = false;
+
+    for ch in source.trim().chars() {
+        if let Some(current_quote) = quote {
+            normalized.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == current_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            normalized.push(ch);
+        } else if ch.is_ascii_whitespace() {
+            continue;
+        } else {
+            normalized.push(ch.to_ascii_lowercase());
+        }
+    }
+
+    normalized
 }
 
 fn print_modules() {
