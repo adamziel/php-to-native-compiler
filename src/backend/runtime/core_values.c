@@ -410,6 +410,8 @@ typedef struct {
 #define PTN_STREAM_CRYPTO_METHOD_TLSV1_1_SERVER 16
 #define PTN_STREAM_CRYPTO_METHOD_TLSV1_2_SERVER 32
 #define PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER 64
+#define PTN_STREAM_CRYPTO_METHOD_ANY_CLIENT 127
+#define PTN_STREAM_CRYPTO_METHOD_ANY_SERVER 126
 #define PTN_ZLIB_ENCODING_RAW -15
 #define PTN_ZLIB_ENCODING_GZIP 31
 #define PTN_ZLIB_ENCODING_DEFLATE 15
@@ -1469,6 +1471,8 @@ struct PtnResource {
     size_t filtered_read_buffer_offset;
     size_t chunk_size;
     int stream_timed_out;
+    int stream_eof;
+    int stream_error;
     int stream_socket_tcp_nodelay;
     PtnResourceCloseHook close_hook;
     void *close_hook_data;
@@ -4658,6 +4662,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
     resource->stream_timed_out = 0;
+    resource->stream_eof = 0;
+    resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
@@ -4707,6 +4713,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
     resource->stream_timed_out = 0;
+    resource->stream_eof = 0;
+    resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
@@ -4753,6 +4761,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
     resource->stream_timed_out = 0;
+    resource->stream_eof = 0;
+    resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
@@ -4794,6 +4804,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
     resource->stream_timed_out = 0;
+    resource->stream_eof = 0;
+    resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
@@ -4957,6 +4969,83 @@ static PTN_UNUSED int ptn_ssl_wait_for_io(SSL *ssl, int ssl_error, int timeout_s
 }
 #endif
 
+static PTN_UNUSED int ptn_stream_uri_has_ascii_case_prefix(const char *uri, const char *prefix) {
+    if (uri == NULL || prefix == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; prefix[i] != '\0'; i++) {
+        if (uri[i] == '\0' ||
+            tolower((unsigned char)uri[i]) != tolower((unsigned char)prefix[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_stream_resource_uri_is_socket_like(PtnResource *resource) {
+    if (resource == NULL || resource->stream_uri == NULL) {
+        return 0;
+    }
+    const char *uri = resource->stream_uri;
+    return ptn_stream_uri_has_ascii_case_prefix(uri, "tcp://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "udp://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "ssl://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "tls://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "tlsv1.0://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "tlsv1.1://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "tlsv1.2://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "tlsv1.3://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "sslv3://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "unix://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "udg://");
+}
+
+static PTN_UNUSED size_t ptn_stream_read_socket_bytes(PtnResource *resource, void *buffer, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+#if defined(_WIN32)
+    size_t read_len = fread(buffer, 1, len, resource->stream);
+    if (read_len != 0) {
+        resource->stream_timed_out = 0;
+        resource->stream_eof = 0;
+        resource->stream_error = 0;
+    }
+    return read_len;
+#else
+    int descriptor = fileno(resource->stream);
+    if (descriptor < 0) {
+        errno = EBADF;
+        resource->stream_error = 1;
+        return 0;
+    }
+    ssize_t read_len;
+    do {
+        read_len = read(descriptor, buffer, len);
+    } while (read_len < 0 && errno == EINTR);
+    if (read_len > 0) {
+        resource->stream_timed_out = 0;
+        resource->stream_eof = 0;
+        resource->stream_error = 0;
+        return (size_t)read_len;
+    }
+    if (read_len == 0) {
+        resource->stream_timed_out = 0;
+        resource->stream_eof = 1;
+        resource->stream_error = 0;
+        return 0;
+    }
+    if (ptn_stream_errno_would_block(errno)) {
+        resource->stream_timed_out = 1;
+        resource->stream_error = 0;
+        return 0;
+    }
+    resource->stream_timed_out = 0;
+    resource->stream_error = 1;
+    return 0;
+#endif
+}
+
 static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buffer, size_t len) {
     if (resource == NULL) {
         return 0;
@@ -5011,6 +5100,9 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
             }
         }
 #endif
+        if (ptn_stream_resource_uri_is_socket_like(resource)) {
+            return ptn_stream_read_socket_bytes(resource, buffer, len);
+        }
         size_t read_len = fread(buffer, 1, len, resource->stream);
         if (read_len == 0 && feof(resource->stream) && len != 0) {
             clearerr(resource->stream);
@@ -5051,6 +5143,16 @@ static PTN_UNUSED int ptn_stream_get_byte(PtnResource *resource) {
         if (resource->stream == NULL) {
             errno = EBADF;
             return EOF;
+        }
+#if PTN_HAVE_OPENSSL
+        if (resource->ssl != NULL) {
+            unsigned char byte = 0;
+            return ptn_stream_read_bytes(resource, &byte, 1) == 1 ? (int)byte : EOF;
+        }
+#endif
+        if (ptn_stream_resource_uri_is_socket_like(resource)) {
+            unsigned char byte = 0;
+            return ptn_stream_read_socket_bytes(resource, &byte, 1) == 1 ? (int)byte : EOF;
         }
         int byte = fgetc(resource->stream);
         if (byte != EOF) {
@@ -5178,6 +5280,9 @@ static PTN_UNUSED int ptn_stream_eof(PtnResource *resource) {
             return (SSL_get_shutdown(resource->ssl) & SSL_RECEIVED_SHUTDOWN) != 0;
         }
 #endif
+        if (ptn_stream_resource_uri_is_socket_like(resource)) {
+            return resource->stream_eof != 0;
+        }
         return feof(resource->stream) != 0;
     }
     return resource->memory_stream->eof != 0;
@@ -5196,6 +5301,9 @@ static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
             return resource->ssl_stream_error != 0;
         }
 #endif
+        if (ptn_stream_resource_uri_is_socket_like(resource)) {
+            return resource->stream_error != 0 || ferror(resource->stream) != 0;
+        }
         return ferror(resource->stream) != 0;
     }
     return resource->memory_stream->error != 0;
@@ -5213,6 +5321,9 @@ static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
         resource->ssl_stream_error = 0;
 #endif
         clearerr(resource->stream);
+        resource->stream_timed_out = 0;
+        resource->stream_eof = 0;
+        resource->stream_error = 0;
         return;
     }
     resource->memory_stream->eof = 0;
@@ -5482,6 +5593,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         8192,
         0,
         0,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -5508,6 +5621,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         8192,
         0,
         0,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -5532,6 +5647,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         8192,
+        0,
+        0,
         0,
         0,
         NULL,

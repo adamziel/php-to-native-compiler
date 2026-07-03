@@ -7643,6 +7643,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("proc_open") && argument_index == 2 {
         return Some("pipes");
     }
+    if name.eq_ignore_ascii_case("pcntl_waitpid") && argument_index == 1 {
+        return Some("status");
+    }
     if name.eq_ignore_ascii_case("stream_select") && argument_index == 0 {
         return Some("read");
     }

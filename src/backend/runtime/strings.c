@@ -3705,6 +3705,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_TLSV1_3_SERVER);
         return 1;
     }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_ANY_CLIENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_ANY_CLIENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CRYPTO_METHOD_ANY_SERVER") == 0) {
+        *out = ptn_int(PTN_STREAM_CRYPTO_METHOD_ANY_SERVER);
+        return 1;
+    }
     if (strcmp(name, "DNS_A") == 0) {
         *out = ptn_int(1);
         return 1;
