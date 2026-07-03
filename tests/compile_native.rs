@@ -69514,6 +69514,16 @@ file_put_contents($wsdl, <<<'WSDL'
           <element name="varArray" type="s:ArrayOfstring"/>
         </all>
       </complexType>
+      <complexType name="SOAPStruct">
+        <all>
+          <element name="varString" type="string"/>
+          <element name="varInt" type="int"/>
+          <element name="varFloat" type="float"/>
+        </all>
+      </complexType>
+      <complexType name="ArrayOfSOAPStruct">
+        <complexContent><restriction base="SOAP-ENC:Array"><attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="s:SOAPStruct[]"/></restriction></complexContent>
+      </complexType>
     </schema>
   </types>
   <message name="echoBase64Request"><part name="inputBase64" type="xsd:base64Binary"/></message>
@@ -69526,12 +69536,15 @@ file_put_contents($wsdl, <<<'WSDL'
   <message name="echo2DStringArrayResponse"><part name="return" type="s:ArrayOfString2D"/></message>
   <message name="echoNestedArrayRequest"><part name="inputStruct" type="s:SOAPArrayStruct"/></message>
   <message name="echoNestedArrayResponse"><part name="return" type="s:SOAPArrayStruct"/></message>
+  <message name="echoStructArrayRequest"><part name="inputStructArray" type="s:ArrayOfSOAPStruct"/></message>
+  <message name="echoStructArrayResponse"><part name="outputStructArray" type="s:ArrayOfSOAPStruct"/></message>
   <portType name="InteropTestPortType">
     <operation name="echoBase64"><input message="tns:echoBase64Request"/><output message="tns:echoBase64Response"/></operation>
     <operation name="echoHexBinary"><input message="tns:echoHexBinaryRequest"/><output message="tns:echoHexBinaryResponse"/></operation>
     <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
     <operation name="echo2DStringArray"><input message="tns:echo2DStringArrayRequest"/><output message="tns:echo2DStringArrayResponse"/></operation>
     <operation name="echoNestedArray"><input message="tns:echoNestedArrayRequest"/><output message="tns:echoNestedArrayResponse"/></operation>
+    <operation name="echoStructArray"><input message="tns:echoStructArrayRequest"/><output message="tns:echoStructArrayResponse"/></operation>
   </portType>
   <binding name="InteropTestBinding" type="tns:InteropTestPortType">
     <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
@@ -69540,9 +69553,17 @@ file_put_contents($wsdl, <<<'WSDL'
     <operation name="echoDecimal"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echo2DStringArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoNestedArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoStructArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
   </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding"><soap:address location="test://round2"/></port>
+  </service>
 </definitions>
 WSDL);
+
+class SOAPStruct {
+    function __construct(public $varString, public $varInt, public $varFloat) {}
+}
 
 class Round2Service {
     function echoBase64($value) { return $value; }
@@ -69550,6 +69571,7 @@ class Round2Service {
     function echoDecimal($value) { return $value; }
     function echo2DStringArray($value) { return $value; }
     function echoNestedArray($value) { return $value; }
+    function echoStructArray($value) { return $value; }
 }
 
 function round2_server_response($wsdl, $request) {
@@ -69587,6 +69609,11 @@ $nested = new SoapParam(new SoapVar([
 $client->__soapCall('echoNestedArray', [$nested], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
 echo $client->__getLastRequest();
 echo round2_server_response($wsdl, $client->__getLastRequest());
+
+$wsdlClient = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$wsdlClient->echoStructArray([new SOAPStruct('arg', 34, 325.325), new SOAPStruct('arg', 34, 325.325)]);
+echo $wsdlClient->__getLastRequest();
+echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
 "#,
     )
     .unwrap();
@@ -69632,6 +69659,14 @@ echo round2_server_response($wsdl, $client->__getLastRequest());
     );
     assert!(
         stdout.contains("<return xsi:type=\"ns2:SOAPArrayStruct\"><varString xsi:type=\"xsd:string\">arg</varString><varInt xsi:type=\"xsd:int\">34</varInt><varFloat xsi:type=\"xsd:float\">325.325</varFloat><varArray SOAP-ENC:arrayType=\"xsd:string[2]\" xsi:type=\"ns2:ArrayOfstring\"><item xsi:type=\"xsd:string\">red</item><item xsi:type=\"xsd:string\">blue</item></varArray></return>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:ns2=\"http://soapinterop.org/xsd\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoStructArray>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputStructArray SOAP-ENC:arrayType=\"ns2:SOAPStruct[2]\" xsi:type=\"ns2:ArrayOfSOAPStruct\"><item xsi:type=\"ns2:SOAPStruct\"><varString xsi:type=\"xsd:string\">arg</varString><varInt xsi:type=\"xsd:int\">34</varInt><varFloat xsi:type=\"xsd:float\">325.325</varFloat></item><item xsi:type=\"ns2:SOAPStruct\"><varString xsi:type=\"xsd:string\">arg</varString><varInt xsi:type=\"xsd:int\">34</varInt><varFloat xsi:type=\"xsd:float\">325.325</varFloat></item></inputStructArray>"),
         "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

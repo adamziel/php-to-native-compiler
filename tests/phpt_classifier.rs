@@ -3376,6 +3376,7 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
         "Zend/tests/enum/debugInfo/visibility_validation.phpt",
         "ext/reflection/tests/ReflectionClassConstant_isEnumCase.phpt",
         "ext/reflection/tests/ReflectionClass_isEnum.phpt",
+        "ext/soap/tests/gh15711.phpt",
         "ext/spl/tests/ArrayObject/ArrayObject_enum.phpt",
     ] {
         let classification = classify_at_relative_path(enum_row, path);
