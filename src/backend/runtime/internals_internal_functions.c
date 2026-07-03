@@ -211749,11 +211749,6 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     if (ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
         return 0;
     }
-    const PtnObjectPropertyMetadata *display_metadata =
-        ptn_object_metadata_for_display_name(object, entry->key.as.string);
-    if (display_metadata != NULL) {
-        return 0;
-    }
     return 1;
 }
 
