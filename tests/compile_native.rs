@@ -40279,7 +40279,7 @@ echo addcslashes(\"zoo['.']\", \"z..A\"), \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Warning: addcslashes(): Invalid '..'-range, '..'-range needs to be incrementing in ptn on line 2\n\
+        "\nWarning: addcslashes(): Invalid '..'-range, '..'-range needs to be incrementing in ptn on line 2\n\
 \\zoo['\\.']\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
