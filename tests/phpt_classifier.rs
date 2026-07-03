@@ -3778,6 +3778,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert!(process.starts_with("process-boundary\t"), "{process:?}");
 
+    let sqlite_method_exec = classify_at_relative_path(
+        "--TEST--\nsqlite method exec\n--EXTENSIONS--\nsqlite3\n--FILE--\n<?php\n$db = new SQLite3(':memory:');\nvar_dump($db->exec('CREATE TABLE test (id STRING)'));\n--EXPECT--\nbool(true)\n",
+        "ext/sqlite3/tests/sqlite_method_exec.phpt",
+    );
+    assert_eq!(
+        sqlite_method_exec,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
     let modeled_popen = classify_at_relative_path(
         "--TEST--\npopen\n--FILE--\n<?php\n$pipe = popen('sort', 'w');\nfwrite($pipe, \"b\\na\\n\");\npclose($pipe);\n--EXPECT--\na\nb\n",
         "ext/standard/tests/file/popen_basic.phpt",

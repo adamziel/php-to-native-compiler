@@ -205245,6 +205245,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_sqlite3_result(class_name)) {
         return ptn_ascii_case_equal(method_name, "fetchArray")
             || ptn_ascii_case_equal(method_name, "finalize")
+            || ptn_ascii_case_equal(method_name, "reset")
             || ptn_ascii_case_equal(method_name, "numColumns")
             || ptn_ascii_case_equal(method_name, "columnName");
     }
@@ -207152,9 +207153,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__construct",
             "exec",
             "query",
+            "querySingle",
             "prepare",
             "close",
+            "changes",
+            "enableExceptions",
+            "setAuthorizer",
+            "createFunction",
             "lastErrorCode",
+            "lastExtendedErrorCode",
             "lastErrorMsg",
             "version",
         };
@@ -207177,6 +207184,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "fetchArray",
             "finalize",
+            "reset",
             "numColumns",
             "columnName",
         };
@@ -215260,6 +215268,30 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_CLONE"), ptn_int(PTN_UCONVERTER_REASON_CLONE));
         return;
     }
+    if (ptn_internal_class_name_is_sqlite3(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ASSOC"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NUM"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("BOTH"), ptn_int(3));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("INTEGER"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FLOAT"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("TEXT"), ptn_int(3));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("BLOB"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NULL"), ptn_int(5));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OPEN_READONLY"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OPEN_READWRITE"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OPEN_CREATE"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("OK"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DENY"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IGNORE"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE_TABLE"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DELETE"), ptn_int(9));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DROP_TABLE"), ptn_int(11));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("INSERT"), ptn_int(18));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("READ"), ptn_int(20));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SELECT"), ptn_int(21));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("UPDATE"), ptn_int(23));
+        return;
+    }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_IMPLICIT_ABSTRACT"), ptn_int(16));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_EXPLICIT_ABSTRACT"), ptn_int(64));
@@ -217510,6 +217542,7 @@ typedef struct {
     int extended_result_codes;
     int has_authorizer;
     PtnValue authorizer_callback;
+    char *authorizer_error_message;
     PtnValue sqlite_functions;
     PtnValue sqlite_collations;
     PtnValue last_error_info;
@@ -217554,6 +217587,9 @@ typedef struct {
     PtnValue rows;
     PtnValue columns;
     PtnValue column_tables;
+    PtnValue db;
+    char *sql;
+    PtnValue bound_values;
     size_t cursor;
     int finalized;
     char *fetch_error_message;
@@ -217577,7 +217613,17 @@ enum {
     PTN_PDO_SQLITE_ATTR_READONLY_STATEMENT = 1001,
     PTN_SQLITE3_ASSOC = 1,
     PTN_SQLITE3_NUM = 2,
-    PTN_SQLITE3_BOTH = 3
+    PTN_SQLITE3_BOTH = 3,
+    PTN_SQLITE_AUTHORIZE_OK = 0,
+    PTN_SQLITE_AUTHORIZE_DENY = 1,
+    PTN_SQLITE_AUTHORIZE_IGNORE = 2,
+    PTN_SQLITE_AUTHORIZE_CREATE_TABLE = 2,
+    PTN_SQLITE_AUTHORIZE_DELETE = 9,
+    PTN_SQLITE_AUTHORIZE_DROP_TABLE = 11,
+    PTN_SQLITE_AUTHORIZE_INSERT = 18,
+    PTN_SQLITE_AUTHORIZE_READ = 20,
+    PTN_SQLITE_AUTHORIZE_SELECT = 21,
+    PTN_SQLITE_AUTHORIZE_UPDATE = 23
 };
 
 static void ptn_db_table_free(PtnDbTable *table) {
@@ -217615,6 +217661,8 @@ static void ptn_db_connection_data_clear(PtnDbConnectionData *data) {
     data->statement_ctor_args = ptn_null();
     ptn_value_destroy(&data->authorizer_callback);
     data->authorizer_callback = ptn_null();
+    free(data->authorizer_error_message);
+    data->authorizer_error_message = NULL;
     ptn_value_destroy(&data->sqlite_functions);
     data->sqlite_functions = ptn_null();
     data->sqlite_collations = ptn_null();
@@ -217673,6 +217721,9 @@ static void ptn_sqlite3_result_data_free(void *data) {
     ptn_value_destroy(&result->rows);
     ptn_value_destroy(&result->columns);
     ptn_value_destroy(&result->column_tables);
+    ptn_value_destroy(&result->db);
+    free(result->sql);
+    ptn_value_destroy(&result->bound_values);
     free(result->fetch_error_message);
     free(result);
 }
@@ -217820,6 +217871,44 @@ static void ptn_db_table_add_column(PtnDbTable *table, const char *column) {
             ptn_array_set_entry(row.as.array, ptn_array_string_key(column), ptn_null());
         }
     }
+}
+
+static PtnArrayEntry *ptn_db_array_entry_string(PtnValue array_value, const char *key);
+
+static int ptn_db_table_rename_column(PtnDbTable *table, const char *old_column, const char *new_column) {
+    if (table == NULL || old_column == NULL || new_column == NULL || new_column[0] == '\0') {
+        return 0;
+    }
+    int found = 0;
+    for (size_t i = 0; i < table->column_count; i++) {
+        if (ptn_ascii_case_equal(table->columns[i], old_column)) {
+            free(table->columns[i]);
+            table->columns[i] = ptn_duplicate_string(new_column);
+            found = 1;
+            break;
+        }
+    }
+    if (!found) {
+        return 0;
+    }
+    if (table->primary_key_column != NULL && ptn_ascii_case_equal(table->primary_key_column, old_column)) {
+        free(table->primary_key_column);
+        table->primary_key_column = ptn_duplicate_string(new_column);
+    }
+    for (size_t i = 0; i < table->rows.as.array->len; i++) {
+        PtnValue row = ptn_value_deref(table->rows.as.array->entries[i].value);
+        if (row.type != PTN_ARRAY) {
+            continue;
+        }
+        PtnArrayEntry *old_entry = ptn_db_array_entry_string(row, old_column);
+        if (old_entry != NULL) {
+            ptn_array_set_entry(row.as.array, ptn_array_string_key(new_column), ptn_value_clone_deref(old_entry->value));
+            if (!ptn_ascii_case_equal(old_column, new_column)) {
+                (void)ptn_array_unset_entry(row.as.array, ptn_array_string_key(old_column));
+            }
+        }
+    }
+    return 1;
 }
 
 static PtnArrayEntry *ptn_db_array_entry_string(PtnValue array_value, const char *key) {
@@ -218032,7 +218121,7 @@ static PtnValue ptn_db_bound_value_for_token(PtnValue bound_values, const char *
         }
         return entry != NULL ? ptn_value_clone_deref(entry->value) : ptn_null();
     }
-    if (token[0] == ':') {
+    if (token[0] == ':' || token[0] == '@' || token[0] == '$') {
         PtnArrayEntry *entry = ptn_db_array_entry_string(values, token);
         if (entry == NULL) {
             entry = ptn_db_array_entry_string(values, token + 1);
@@ -218044,7 +218133,7 @@ static PtnValue ptn_db_bound_value_for_token(PtnValue bound_values, const char *
 
 static PtnValue ptn_db_parse_sql_literal(PtnValue bound_values, const char *token, size_t *position_inout) {
     char *trimmed = ptn_db_trimmed_copy(token);
-    if (trimmed[0] == '?' || trimmed[0] == ':') {
+    if (trimmed[0] == '?' || trimmed[0] == ':' || trimmed[0] == '@' || trimmed[0] == '$') {
         PtnValue result = ptn_db_bound_value_for_token(bound_values, trimmed, position_inout);
         free(trimmed);
         return result;
@@ -218502,6 +218591,39 @@ static int ptn_db_exec_alter_table(PtnDbConnectionData *db, const char *sql) {
     while (isspace((unsigned char)*cursor)) {
         cursor++;
     }
+    if (ptn_db_ascii_case_starts_with(cursor, "rename")) {
+        cursor += 6;
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (ptn_db_ascii_case_starts_with(cursor, "column")) {
+            cursor += 6;
+        }
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        size_t old_consumed = 0;
+        char *old_column = ptn_db_identifier_copy(cursor, &old_consumed);
+        cursor += old_consumed;
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (ptn_db_ascii_case_starts_with(cursor, "to")) {
+            cursor += 2;
+        }
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        char *new_column = ptn_db_identifier_copy(cursor, NULL);
+        PtnDbTable *table = ptn_db_find_table(db, name);
+        if (table != NULL) {
+            (void)ptn_db_table_rename_column(table, old_column, new_column);
+        }
+        free(old_column);
+        free(new_column);
+        free(name);
+        return 0;
+    }
     if (!ptn_db_ascii_case_starts_with(cursor, "add")) {
         free(name);
         return 0;
@@ -218702,10 +218824,22 @@ static int ptn_db_exec_update(PtnDbConnectionData *db, const char *sql, PtnValue
     return row_count;
 }
 
+static int ptn_db_authorizer_call(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    int action,
+    const char *arg1,
+    const char *arg2,
+    const char *db_name,
+    const char *trigger,
+    size_t line
+);
+
 static int ptn_db_select_where_matches(
     PtnRuntime *runtime,
     PtnDbConnectionData *db,
     PtnValue row,
+    const char *table_name,
     const char *where_clause,
     PtnValue bound_values,
     size_t line
@@ -218730,6 +218864,12 @@ static int ptn_db_select_where_matches(
     *equals = '\0';
     char *column = ptn_db_trimmed_copy(where);
     char *expr = ptn_db_trimmed_copy(equals + 1);
+    if (!ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_READ, table_name, column, "main", NULL, line)) {
+        free(column);
+        free(expr);
+        free(where);
+        return -1;
+    }
     size_t position = 1;
     PtnValue left = ptn_db_row_column_value(row, column);
     PtnValue right = ptn_db_eval_select_expr(runtime, db, bound_values, row, expr, &position, line);
@@ -218914,7 +219054,7 @@ static void ptn_db_sort_rows_by_order_clause(
     free(collation);
 }
 
-static void ptn_db_select_from_table(
+static int ptn_db_select_from_table(
     PtnRuntime *runtime,
     PtnDbConnectionData *db,
     const char *select_list,
@@ -218937,7 +219077,7 @@ static void ptn_db_select_from_table(
         *column_tables_out = ptn_array_from_literal_entries(0, NULL);
         free(table_name);
         free(from_copy);
-        return;
+        return 1;
     }
 
     char **columns = NULL;
@@ -218971,8 +219111,27 @@ static void ptn_db_select_from_table(
 
     for (size_t i = 0; i < table->rows.as.array->len; i++) {
         PtnValue source_row = ptn_value_deref(table->rows.as.array->entries[i].value);
-        if (source_row.type != PTN_ARRAY ||
-            !ptn_db_select_where_matches(runtime, db, source_row, where_clause, bound_values, line)) {
+        if (source_row.type != PTN_ARRAY) {
+            continue;
+        }
+        int where_matches = ptn_db_select_where_matches(
+            runtime,
+            db,
+            source_row,
+            table->name,
+            where_clause,
+            bound_values,
+            line
+        );
+        if (where_matches < 0) {
+            ptn_value_destroy(&rows);
+            ptn_db_free_string_list(columns, column_count);
+            ptn_db_free_string_list(exprs, column_count);
+            free(table_name);
+            free(from_copy);
+            return 0;
+        }
+        if (!where_matches) {
             continue;
         }
         PtnValue row = ptn_array_from_literal_entries(0, NULL);
@@ -218984,6 +219143,16 @@ static void ptn_db_select_from_table(
             } else {
                 char *value_expr = ptn_db_select_expr_value_copy(exprs[column_index]);
                 if (ptn_db_array_entry_string(source_row, value_expr) != NULL) {
+                    if (!ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_READ, table->name, value_expr, "main", NULL, line)) {
+                        free(value_expr);
+                        ptn_value_destroy(&row);
+                        ptn_value_destroy(&rows);
+                        ptn_db_free_string_list(columns, column_count);
+                        ptn_db_free_string_list(exprs, column_count);
+                        free(table_name);
+                        free(from_copy);
+                        return 0;
+                    }
                     value = ptn_db_row_column_value(source_row, value_expr);
                 } else {
                     value = ptn_db_eval_select_expr(runtime, db, bound_values, source_row, value_expr, &position, line);
@@ -219002,38 +219171,64 @@ static void ptn_db_select_from_table(
     ptn_db_free_string_list(exprs, column_count);
     free(table_name);
     free(from_copy);
+    return 1;
+}
+
+static void ptn_db_authorizer_clear_error(PtnDbConnectionData *db) {
+    if (db == NULL) {
+        return;
+    }
+    free(db->authorizer_error_message);
+    db->authorizer_error_message = NULL;
+}
+
+static void ptn_db_authorizer_set_error(PtnDbConnectionData *db, const char *message) {
+    if (db == NULL) {
+        return;
+    }
+    ptn_db_authorizer_clear_error(db);
+    db->authorizer_error_message = message == NULL ? NULL : ptn_duplicate_string(message);
+    ptn_db_set_error_info(db, "HY000", 23, "not authorized");
 }
 
 static int ptn_db_authorizer_action_for_sql(const char *trimmed) {
     if (ptn_db_ascii_case_starts_with(trimmed, "select")) {
-        return 21;
+        return PTN_SQLITE_AUTHORIZE_SELECT;
     }
     if (ptn_db_ascii_case_starts_with(trimmed, "create table")) {
-        return 2;
+        return PTN_SQLITE_AUTHORIZE_CREATE_TABLE;
     }
     if (ptn_db_ascii_case_starts_with(trimmed, "drop table")) {
-        return 11;
+        return PTN_SQLITE_AUTHORIZE_DROP_TABLE;
     }
     if (ptn_db_ascii_case_starts_with(trimmed, "insert")) {
-        return 18;
+        return PTN_SQLITE_AUTHORIZE_INSERT;
     }
     if (ptn_db_ascii_case_starts_with(trimmed, "update")) {
-        return 23;
+        return PTN_SQLITE_AUTHORIZE_UPDATE;
     }
     return 0;
 }
 
-static int ptn_db_authorizer_allows(PtnRuntime *runtime, PtnDbConnectionData *db, const char *trimmed, size_t line) {
+static int ptn_db_authorizer_call(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    int action,
+    const char *arg1,
+    const char *arg2,
+    const char *db_name,
+    const char *trigger,
+    size_t line
+) {
     if (db == NULL || !db->has_authorizer) {
         return 1;
     }
-    int action = ptn_db_authorizer_action_for_sql(trimmed);
     PtnValue callback_args[5] = {
         ptn_int(action),
-        ptn_null(),
-        ptn_null(),
-        ptn_string("main"),
-        ptn_null(),
+        arg1 != NULL ? ptn_string(arg1) : ptn_null(),
+        arg2 != NULL ? ptn_string(arg2) : ptn_null(),
+        db_name != NULL ? ptn_string(db_name) : ptn_null(),
+        trigger != NULL ? ptn_string(trigger) : ptn_null(),
     };
     PtnValue result = ptn_call_callable(runtime, db->authorizer_callback, 5, callback_args, line, 0);
     for (size_t i = 0; i < 5; i++) {
@@ -219041,15 +219236,81 @@ static int ptn_db_authorizer_allows(PtnRuntime *runtime, PtnDbConnectionData *db
     }
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&result);
+        ptn_db_authorizer_set_error(db, NULL);
         return 0;
     }
     PtnValue resolved = ptn_value_deref(result);
-    int allowed = !(resolved.type == PTN_INT && resolved.as.integer == 1);
-    ptn_value_destroy(&result);
-    if (!allowed) {
-        ptn_db_set_error_info(db, "HY000", 23, "not authorized");
+    if (resolved.type != PTN_INT) {
+        ptn_value_destroy(&result);
+        ptn_db_authorizer_set_error(db, "The authorizer callback returned an invalid type: expected int");
+        return 0;
     }
+    int64_t response = resolved.as.integer;
+    ptn_value_destroy(&result);
+    if (response == PTN_SQLITE_AUTHORIZE_OK || response == PTN_SQLITE_AUTHORIZE_IGNORE) {
+        return 1;
+    }
+    if (response == PTN_SQLITE_AUTHORIZE_DENY) {
+        ptn_db_authorizer_set_error(db, NULL);
+        return 0;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The authorizer callback returned an invalid value: %lld",
+        (long long)response
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_db_authorizer_set_error(db, message);
+    return 0;
+}
+
+static int ptn_db_authorizer_allows_drop_table(PtnRuntime *runtime, PtnDbConnectionData *db, const char *trimmed, size_t line) {
+    const char *cursor = trimmed + strlen("drop table");
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (ptn_db_ascii_case_starts_with(cursor, "if exists")) {
+        cursor += strlen("if exists");
+    }
+    char *table_name = ptn_db_identifier_copy(cursor, NULL);
+    int allowed =
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_DELETE, "sqlite_master", NULL, "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_DROP_TABLE, table_name, NULL, "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_DELETE, table_name, NULL, "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_DELETE, "sqlite_master", NULL, "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_READ, "sqlite_master", "tbl_name", "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_READ, "sqlite_master", "type", "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_UPDATE, "sqlite_master", "rootpage", "main", NULL, line) &&
+        ptn_db_authorizer_call(runtime, db, PTN_SQLITE_AUTHORIZE_READ, "sqlite_master", "rootpage", "main", NULL, line);
+    free(table_name);
     return allowed;
+}
+
+static int ptn_db_authorizer_allows_query(PtnRuntime *runtime, PtnDbConnectionData *db, const char *trimmed, size_t line) {
+    if (db == NULL || !db->has_authorizer) {
+        return 1;
+    }
+    if (ptn_db_ascii_case_starts_with(trimmed, "drop table")) {
+        return ptn_db_authorizer_allows_drop_table(runtime, db, trimmed, line);
+    }
+    int action = ptn_db_authorizer_action_for_sql(trimmed);
+    if (action == 0) {
+        return 1;
+    }
+    return ptn_db_authorizer_call(
+        runtime,
+        db,
+        action,
+        NULL,
+        NULL,
+        action == PTN_SQLITE_AUTHORIZE_SELECT ? NULL : "main",
+        NULL,
+        line
+    );
 }
 
 static int ptn_db_query(
@@ -219075,9 +219336,10 @@ static int ptn_db_query(
     *rows_out = ptn_array_from_literal_entries(0, NULL);
     *columns_out = ptn_array_from_literal_entries(0, NULL);
     *column_tables_out = ptn_array_from_literal_entries(0, NULL);
-    if (!ptn_db_authorizer_allows(runtime, db, trimmed, line)) {
-        if (runtime->exceptions->active_exception == NULL && error_out != NULL) {
-            *error_out = ptn_duplicate_string("not authorized");
+    ptn_db_authorizer_clear_error(db);
+    if (!ptn_db_authorizer_allows_query(runtime, db, trimmed, line)) {
+        if (error_out != NULL) {
+            *error_out = ptn_duplicate_string(db->last_error_message != NULL ? db->last_error_message : "not authorized");
         }
         free(trimmed);
         return -1;
@@ -219191,7 +219453,20 @@ static int ptn_db_query(
             }
             free(table_name);
             free(from_copy);
-            ptn_db_select_from_table(runtime, db, select_list, from_clause, where_clause, bound_values, rows_out, columns_out, column_tables_out, line);
+            if (!ptn_db_select_from_table(runtime, db, select_list, from_clause, where_clause, bound_values, rows_out, columns_out, column_tables_out, line)) {
+                if (error_out != NULL) {
+                    *error_out = ptn_duplicate_string(db->last_error_message != NULL ? db->last_error_message : "not authorized");
+                }
+                free(select_list);
+                free(from_clause);
+                free(where_clause);
+                free(order_clause);
+                free(trimmed);
+                *rows_out = ptn_array_from_literal_entries(0, NULL);
+                *columns_out = ptn_array_from_literal_entries(0, NULL);
+                *column_tables_out = ptn_array_from_literal_entries(0, NULL);
+                return -1;
+            }
         } else {
             ptn_db_select_no_table(runtime, db, select_list, where_clause, bound_values, rows_out, columns_out, column_tables_out, line);
         }
@@ -219214,6 +219489,87 @@ static int ptn_db_query(
     }
     free(trimmed);
     return row_count;
+}
+
+static int ptn_db_query_batch(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    const char *sql,
+    char **error_out,
+    size_t line
+) {
+    if (error_out != NULL) {
+        *error_out = NULL;
+    }
+    int last_row_count = 0;
+    int ran_statement = 0;
+    const char *statement_start = sql;
+    int quote = 0;
+    for (const char *cursor = sql; ; cursor++) {
+        char ch = *cursor;
+        if (quote != 0) {
+            if (ch == quote) {
+                if (quote == '\'' && cursor[1] == '\'') {
+                    cursor++;
+                } else {
+                    quote = 0;
+                }
+            }
+        } else if (ch == '\'' || ch == '"') {
+            quote = ch;
+        }
+        if ((ch == ';' && quote == 0) || ch == '\0') {
+            char *statement = ptn_db_trimmed_copy_len(statement_start, (size_t)(cursor - statement_start));
+            if (statement[0] != '\0') {
+                PtnValue rows = ptn_array_from_literal_entries(0, NULL);
+                PtnValue columns = ptn_array_from_literal_entries(0, NULL);
+                PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
+                PtnValue bound_values = ptn_array_from_literal_entries(0, NULL);
+                char *statement_error = NULL;
+                int row_count = ptn_db_query(
+                    runtime,
+                    db,
+                    statement,
+                    bound_values,
+                    &rows,
+                    &columns,
+                    &column_tables,
+                    &statement_error,
+                    line
+                );
+                ptn_value_destroy(&bound_values);
+                if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
+                    if (error_out != NULL) {
+                        *error_out = statement_error != NULL
+                            ? statement_error
+                            : ptn_duplicate_string(db->last_error_message != NULL ? db->last_error_message : "not an error");
+                    } else {
+                        free(statement_error);
+                    }
+                    ptn_value_destroy(&rows);
+                    ptn_value_destroy(&columns);
+                    ptn_value_destroy(&column_tables);
+                    free(statement);
+                    return -1;
+                }
+                free(statement_error);
+                ptn_value_destroy(&rows);
+                ptn_value_destroy(&columns);
+                ptn_value_destroy(&column_tables);
+                last_row_count = row_count;
+                ran_statement = 1;
+            }
+            free(statement);
+            if (ch == '\0') {
+                break;
+            }
+            statement_start = cursor + 1;
+        }
+        if (ch == '\0') {
+            break;
+        }
+    }
+    return ran_statement ? last_row_count : 0;
 }
 
 static PtnDbConnectionData *ptn_pdo_connection_data(PtnValue receiver) {
@@ -219826,6 +220182,7 @@ static void ptn_db_initialize_connection(PtnDbConnectionData *data, const char *
     data->extended_result_codes = 0;
     data->has_authorizer = 0;
     data->authorizer_callback = ptn_null();
+    data->authorizer_error_message = NULL;
     data->sqlite_functions = ptn_array_from_literal_entries(0, NULL);
     data->sqlite_collations = ptn_array_from_literal_entries(0, NULL);
     data->last_error_info = ptn_array_from_literal_entries(0, NULL);
@@ -219930,6 +220287,8 @@ static PtnValue ptn_sqlite3_result_object_with_fetch_error(
     data->rows = rows;
     data->columns = columns;
     data->column_tables = column_tables;
+    data->db = ptn_null();
+    data->bound_values = ptn_null();
     data->fetch_error_message = fetch_error_message == NULL ? NULL : ptn_duplicate_string(fetch_error_message);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_sqlite3_result_data_free;
@@ -219938,6 +220297,21 @@ static PtnValue ptn_sqlite3_result_object_with_fetch_error(
 
 static PtnValue ptn_sqlite3_result_object(PtnRuntime *runtime, PtnValue rows, PtnValue columns, PtnValue column_tables) {
     return ptn_sqlite3_result_object_with_fetch_error(runtime, rows, columns, column_tables, NULL);
+}
+
+static PtnValue ptn_sqlite3_result_object_for_statement(
+    PtnRuntime *runtime,
+    PtnSqlite3StmtData *statement,
+    PtnValue rows,
+    PtnValue columns,
+    PtnValue column_tables
+) {
+    PtnValue object = ptn_sqlite3_result_object(runtime, rows, columns, column_tables);
+    PtnSqlite3ResultData *data = (PtnSqlite3ResultData *)object.as.object->native_data;
+    data->db = ptn_value_clone_deref(statement->db);
+    data->sql = ptn_duplicate_string(statement->sql);
+    data->bound_values = ptn_value_clone_deref(statement->bound_values);
+    return object;
 }
 
 static PtnValue ptn_sqlite3_stmt_object(PtnRuntime *runtime, PtnValue db, const char *sql) {
@@ -220102,6 +220476,34 @@ static PtnValue ptn_sqlite3_handle_query_error(
     if (sqlite != NULL && sqlite->exceptions_enabled) {
         if (strcmp(effective, "not authorized") == 0) {
             free(owned_effective);
+            if (sqlite->db.authorizer_error_message != NULL) {
+                char *previous_message = sqlite->db.authorizer_error_message;
+                sqlite->db.authorizer_error_message = NULL;
+                PtnValue previous = ptn_exception_value(
+                    ptn_exception_new(runtime, "Exception", previous_message, runtime->source_path, line)
+                );
+                free(previous_message);
+                PtnException *exception = ptn_exception_new_owned(
+                    runtime,
+                    "Exception",
+                    ptn_duplicate_string("Unable to prepare statement: not authorized"),
+                    strlen("Unable to prepare statement: not authorized"),
+                    0,
+                    previous,
+                    PTN_E_ERROR,
+                    runtime->source_path,
+                    line
+                );
+                ptn_value_destroy(&previous);
+                ptn_exception_free(runtime->exceptions->active_exception);
+                runtime->exceptions->active_exception = exception;
+                if (runtime->exceptions->try_frame != NULL) {
+                    longjmp(runtime->exceptions->try_frame->jump, 1);
+                }
+                ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+                ptn_runtime_shutdown_before_exit(runtime);
+                exit(255);
+            }
             ptn_throw_exception(runtime, "Exception", "Unable to prepare statement: not authorized");
             return ptn_bool(0);
         }
@@ -220539,24 +220941,15 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
         PtnStringOperand sql = ptn_internal_expect_string_arg(runtime, "SQLite3::exec", 1, "query", args[0], line);
         char *sql_copy = ptn_duplicate_string_len(sql.data, sql.len);
         ptn_string_operand_free(sql);
-        PtnValue rows = ptn_array_from_literal_entries(0, NULL);
-        PtnValue columns = ptn_array_from_literal_entries(0, NULL);
-        PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, &sqlite->db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, line);
+        int row_count = ptn_db_query_batch(runtime, &sqlite->db, sql_copy, &error_message, line);
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             PtnValue result = ptn_sqlite3_handle_query_error(runtime, sqlite, "exec", error_message, line);
             free(error_message);
-            ptn_value_destroy(&rows);
-            ptn_value_destroy(&columns);
-            ptn_value_destroy(&column_tables);
             free(sql_copy);
             return result;
         }
         free(error_message);
-        ptn_value_destroy(&rows);
-        ptn_value_destroy(&columns);
-        ptn_value_destroy(&column_tables);
         free(sql_copy);
         return ptn_bool(1);
     }
@@ -220793,7 +221186,7 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
             return result;
         }
         free(error_message);
-        return ptn_sqlite3_result_object(runtime, rows, columns, column_tables);
+        return ptn_sqlite3_result_object_for_statement(runtime, statement, rows, columns, column_tables);
     }
     if (ptn_ascii_case_equal(name, "close")) {
         statement->closed = 1;
@@ -220853,6 +221246,45 @@ static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     }
     if (ptn_ascii_case_equal(name, "finalize")) {
         result_data->finalized = 1;
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "reset")) {
+        if (result_data->sql != NULL) {
+            PtnSqlite3Data *sqlite = ptn_sqlite3_data(result_data->db);
+            if (sqlite != NULL) {
+                PtnValue rows = ptn_array_from_literal_entries(0, NULL);
+                PtnValue columns = ptn_array_from_literal_entries(0, NULL);
+                PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
+                char *error_message = NULL;
+                int row_count = ptn_db_query(
+                    runtime,
+                    &sqlite->db,
+                    result_data->sql,
+                    result_data->bound_values,
+                    &rows,
+                    &columns,
+                    &column_tables,
+                    &error_message,
+                    line
+                );
+                if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
+                    PtnValue handled = ptn_sqlite3_handle_query_error(runtime, sqlite, "reset", error_message, line);
+                    free(error_message);
+                    ptn_value_destroy(&rows);
+                    ptn_value_destroy(&columns);
+                    ptn_value_destroy(&column_tables);
+                    return handled;
+                }
+                free(error_message);
+                ptn_value_destroy(&result_data->rows);
+                ptn_value_destroy(&result_data->columns);
+                ptn_value_destroy(&result_data->column_tables);
+                result_data->rows = rows;
+                result_data->columns = columns;
+                result_data->column_tables = column_tables;
+            }
+        }
+        result_data->cursor = 0;
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "numColumns")) {

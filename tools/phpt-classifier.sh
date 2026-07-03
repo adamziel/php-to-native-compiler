@@ -1385,7 +1385,7 @@ ptn_phpt_has_process_boundary() {
             active = section == "FILE" || section == "CLEAN" || section == "SKIPIF"
             next
         }
-        active && /(^|[^[:alnum:]_\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice)[[:space:]]*\(/ {
+        active && /(^|[^[:alnum:]_\$>:])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice)[[:space:]]*\(/ {
             found = 1
             exit
         }
@@ -1401,7 +1401,7 @@ ptn_phpt_has_process_boundary() {
             active = section == "FILE" || section == "CLEAN" || section == "SKIPIF"
             next
         }
-        active && /(^|[^[:alnum:]_\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\(/ {
+        active && /(^|[^[:alnum:]_\$>:])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\(/ {
             found = 1
             exit
         }
