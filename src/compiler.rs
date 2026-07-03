@@ -1835,6 +1835,26 @@ fn bounded_static_include_paths(
             }
             Some(resolved)
         }
+        Expr::Call {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } if name.eq_ignore_ascii_case("sprintf")
+            && !arguments.is_empty()
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !unpack) =>
+        {
+            let format = compile_time_string_literal(&arguments[0])?;
+            bounded_sprintf_include_paths(
+                format,
+                &arguments[1..],
+                source_file,
+                source_dir,
+                path_env,
+            )
+        }
         Expr::Binary {
             op: BinaryOp::Concat,
             left,
@@ -1928,6 +1948,60 @@ fn compile_time_string_literal(expr: &Expr) -> Option<&str> {
         Expr::Grouped { expr, .. } => compile_time_string_literal(expr),
         _ => None,
     }
+}
+
+fn bounded_sprintf_include_paths(
+    format: &str,
+    arguments: &[Expr],
+    source_file: &str,
+    source_dir: &str,
+    path_env: &IncludePathEnv,
+) -> Option<Vec<String>> {
+    let mut paths = vec![String::new()];
+    let mut chars = format.chars();
+    let mut argument_index = 0;
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            for path in &mut paths {
+                path.push(ch);
+            }
+            continue;
+        }
+
+        match chars.next()? {
+            '%' => {
+                for path in &mut paths {
+                    path.push('%');
+                }
+            }
+            's' => {
+                let values = bounded_static_include_paths(
+                    arguments.get(argument_index)?,
+                    source_file,
+                    source_dir,
+                    path_env,
+                )?;
+                if paths.len().saturating_mul(values.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                    return None;
+                }
+                let mut expanded = Vec::new();
+                for path in &paths {
+                    for value in &values {
+                        let mut next = path.clone();
+                        next.push_str(value);
+                        push_unique_string(&mut expanded, next);
+                    }
+                }
+                paths = expanded;
+                argument_index += 1;
+            }
+            _ => return None,
+        }
+    }
+    if argument_index != arguments.len() {
+        return None;
+    }
+    Some(paths)
 }
 
 fn include_collection_known_internal_class(class_name: &str) -> bool {

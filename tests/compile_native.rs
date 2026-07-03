@@ -35913,6 +35913,147 @@ string(1) \"r\"\n"
 }
 
 #[test]
+fn compile_stream_socket_accept_metadata_proc_env_and_nodelay_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-accept-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-accept-metadata.php");
+    let output = root.join("stream-socket-accept-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$descs = [1 => ["pipe", "w"]];
+$environment = ["test" => [1, 2, 3], "PATH" => getenv("PATH")];
+$process = proc_open("printf proc-ok", $descs, $pipes, __DIR__, $environment);
+$procOutput = is_resource($process) ? stream_get_contents($pipes[1]) : "no-proc";
+if (is_resource($process)) {
+    fclose($pipes[1]);
+    proc_close($process);
+}
+echo "proc=$procOutput:", is_array($environment["test"]) ? "array" : "not-array", "\n";
+
+$server = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
+$name = stream_socket_get_name($server, false);
+echo "name=", preg_match("/:(\d+)$/", $name, $matches), "\n";
+$client = stream_socket_client("tcp://127.0.0.1:" . $matches[1]);
+$accepted = stream_socket_accept($server, 1, $peer);
+echo "accepted=", is_resource($accepted) ? "yes" : "no", ":", is_resource($client) ? "yes" : "no", ":", is_string($peer) ? "peer" : gettype($peer), "\n";
+$meta = stream_get_meta_data($client);
+echo "meta=", (int)$meta["timed_out"], ":", $meta["stream_type"], ":", $meta["mode"], ":", (int)$meta["seekable"], ":", (int)array_key_exists("wrapper_type", $meta), "\n";
+stream_set_timeout($client, 0, 1000);
+fread($client, 1);
+echo "timeout1=", (int)stream_get_meta_data($client)["timed_out"], "\n";
+fwrite($accepted, "Z");
+echo "timeout-after-write=", (int)stream_get_meta_data($client)["timed_out"], "\n";
+echo "read=", fread($client, 1), ":", (int)stream_get_meta_data($client)["timed_out"], "\n";
+
+$bad = "tcp://localhost" . chr(0) . ".example.com:" . $matches[1];
+$badClient = stream_socket_client($bad);
+echo "bad=", is_resource($badClient) ? "resource" : "false", "\n";
+
+fclose($client);
+fclose($accepted);
+fclose($server);
+
+$context = stream_context_create(["socket" => ["tcp_nodelay" => true]]);
+$server2 = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+$name2 = stream_socket_get_name($server2, false);
+preg_match("/:(\d+)$/", $name2, $matches2);
+$client2 = stream_socket_client("tcp://127.0.0.1:" . $matches2[1]);
+$accepted2 = stream_socket_accept($server2);
+$serverNodelay = socket_get_option(socket_import_stream($server2), SOL_TCP, TCP_NODELAY) > 0;
+$acceptedNodelay = socket_get_option(socket_import_stream($accepted2), SOL_TCP, TCP_NODELAY) > 0;
+echo "nodelay=", $serverNodelay ? "server-on" : "server-off", ":", $acceptedNodelay ? "conn-on" : "conn-off", "\n";
+fclose($client2);
+fclose($accepted2);
+fclose($server2);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: Array to string conversion"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("proc=proc-ok:array\n"), "{stdout}");
+    assert!(stdout.contains("name=1\n"), "{stdout}");
+    assert!(stdout.contains("accepted=yes:yes:peer\n"), "{stdout}");
+    assert!(stdout.contains("meta=0:tcp_socket:r+:0:0\n"), "{stdout}");
+    assert!(stdout.contains("timeout1=1\n"), "{stdout}");
+    assert!(stdout.contains("timeout-after-write=1\n"), "{stdout}");
+    assert!(stdout.contains("read=Z:0\n"), "{stdout}");
+    assert!(
+        stdout.contains("The hostname must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bad=false\n"), "{stdout}");
+    assert!(stdout.contains("nodelay=server-off:conn-on\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_socket_accept"));
+    assert!(c_source.contains("stream_socket_tcp_nodelay"));
+    assert!(c_source.contains("stream_timed_out"));
+}
+
+#[test]
+fn compile_eval_worker_stream_socket_nodelay_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-worker-stream-socket-nodelay");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-worker-stream-socket-nodelay.php");
+    let output = root.join("eval-worker-stream-socket-nodelay-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function phpt_notify(string $worker = "server", string $message = ""): void {
+    fwrite(STDOUT, "$message\n");
+}
+
+$linkStreamSocketInternals = false;
+if ($linkStreamSocketInternals) {
+    $unusedContext = stream_context_create(["socket" => ["tcp_nodelay" => true]]);
+    $unusedServer = stream_socket_server("tcp://127.0.0.1:0", $unusedErrno, $unusedErrstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $unusedContext);
+    stream_socket_client("tcp://127.0.0.1:0", $unusedErrno, $unusedErrstr, 0);
+    stream_socket_accept($unusedServer, 0, $unusedPeer);
+    socket_get_option(socket_import_stream($unusedServer), SOL_TCP, TCP_NODELAY);
+}
+
+$serverCode = <<<'CODE'
+$ctxt = stream_context_create(["socket" => ["tcp_nodelay" => true]]);
+$server = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $ctxt);
+$addr = stream_socket_get_name($server, false);
+$client = stream_socket_client("tcp://$addr", $errno, $errstr, 10);
+$conn = stream_socket_accept($server);
+$si = socket_get_option(socket_import_stream($server), SOL_TCP, TCP_NODELAY) > 0 ? "nodelay" : "delay";
+$ci = socket_get_option(socket_import_stream($conn), SOL_TCP, TCP_NODELAY) > 0 ? "nodelay" : "delay";
+phpt_notify(message: "server-$si:conn-$ci");
+CODE;
+
+eval($serverCode);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "server-delay:conn-nodelay\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_eval_function_argument_is_reference"));
+    assert!(c_source.contains("fflush(stdout);"));
+}
+
+#[test]
 fn compile_pfsockopen_persistent_udp_alias_to_native_binary() {
     let root = temp_dir("ptn-native-pfsockopen-persistent-udp");
     fs::create_dir_all(&root).unwrap();
@@ -92295,6 +92436,41 @@ var_dump($value);\n",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+}
+
+#[test]
+fn compile_include_path_folds_sprintf_directory_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-directory-include");
+    let nested = root.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let input = root.join("main.php");
+    let included = nested.join("callbacks.inc");
+    let output = root.join("sprintf-directory-include-bin");
+    fs::write(
+        &included,
+        "<?php\n\
+function included_label() {\n\
+    return \"included\";\n\
+}\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+include sprintf(\"%s/%s\", __DIR__ . \"/nested\", \"callbacks.inc\");\n\
+echo included_label(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "included\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("included_label"));
 }
 
 #[test]

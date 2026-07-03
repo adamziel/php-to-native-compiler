@@ -34,6 +34,7 @@
 #include <iconv.h>
 #include <langinfo.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <regex.h>
@@ -1414,6 +1415,8 @@ struct PtnResource {
     size_t filtered_read_buffer_len;
     size_t filtered_read_buffer_offset;
     size_t chunk_size;
+    int stream_timed_out;
+    int stream_socket_tcp_nodelay;
     PtnResourceCloseHook close_hook;
     void *close_hook_data;
     PtnResourceHookDataFree close_hook_data_free;
@@ -4566,6 +4569,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
+    resource->stream_timed_out = 0;
+    resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4612,6 +4617,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
+    resource->stream_timed_out = 0;
+    resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4655,6 +4662,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
+    resource->stream_timed_out = 0;
+    resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4693,6 +4702,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->filtered_read_buffer_len = 0;
     resource->filtered_read_buffer_offset = 0;
     resource->chunk_size = 8192;
+    resource->stream_timed_out = 0;
+    resource->stream_socket_tcp_nodelay = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4818,7 +4829,11 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
             clearerr(resource->stream);
             read_len = fread(buffer, 1, len, resource->stream);
         }
+        if (read_len != 0) {
+            resource->stream_timed_out = 0;
+        }
         if (read_len == 0 && ferror(resource->stream) && ptn_stream_errno_would_block(errno)) {
+            resource->stream_timed_out = 1;
             clearerr(resource->stream);
         }
         return read_len;
@@ -4851,7 +4866,11 @@ static PTN_UNUSED int ptn_stream_get_byte(PtnResource *resource) {
             return EOF;
         }
         int byte = fgetc(resource->stream);
+        if (byte != EOF) {
+            resource->stream_timed_out = 0;
+        }
         if (byte == EOF && ferror(resource->stream) && ptn_stream_errno_would_block(errno)) {
+            resource->stream_timed_out = 1;
             clearerr(resource->stream);
         }
         return byte;
@@ -5243,6 +5262,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         8192,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -5267,6 +5288,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         8192,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -5291,6 +5314,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         8192,
+        0,
+        0,
         NULL,
         NULL,
         NULL,

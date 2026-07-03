@@ -895,6 +895,7 @@ static void ptn_output_write_raw(PtnRuntime *runtime, PtnRuntime *root, const ch
         return;
     }
     fwrite(data, 1, len, stdout);
+    fflush(stdout);
     if (root != NULL) {
         if (!root->output_has_started) {
             const char *output_source_path =
@@ -56500,6 +56501,11 @@ static int64_t ptn_stream_context_zlib_level(PtnResource *context) {
     return level >= -1 && level <= 9 ? level : -1;
 }
 
+static int ptn_stream_context_socket_tcp_nodelay(PtnResource *context) {
+    PtnValue *option = ptn_stream_context_option(context, "socket", "tcp_nodelay");
+    return option != NULL && ptn_is_truthy(*option);
+}
+
 static int ptn_stream_context_error_mode(PtnRuntime *runtime, PtnResource *context, size_t line) {
     PtnValue *option = ptn_stream_context_option(context, "stream", "error_mode");
     if (option == NULL) {
@@ -63445,6 +63451,8 @@ static int64_t ptn_stream_regular_file_unread_bytes(PtnResource *resource) {
 #endif
 }
 
+static int ptn_stream_resource_is_socket_like(PtnResource *resource);
+
 static int ptn_stream_resource_is_blocked(PtnResource *resource) {
 #if defined(_WIN32)
     (void)resource;
@@ -63499,6 +63507,34 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         return ptn_data_url_stream_metadata(resource);
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_stream_resource_is_socket_like(resource)) {
+        const char *stream_type = "tcp_socket";
+        if (resource->stream_uri != NULL) {
+            if (ptn_ascii_case_has_prefix(resource->stream_uri, "udp://") ||
+                ptn_ascii_case_has_prefix(resource->stream_uri, "udg://")) {
+                stream_type = "udp_socket";
+            } else if (ptn_ascii_case_has_prefix(resource->stream_uri, "unix://")) {
+                stream_type = "unix_socket";
+            }
+        }
+        ptn_stream_meta_set(result.as.array, "timed_out", ptn_bool(resource->stream_timed_out));
+        ptn_stream_meta_set(result.as.array, "blocked", ptn_bool(ptn_stream_resource_is_blocked(resource)));
+        ptn_stream_meta_set(result.as.array, "eof", ptn_bool(ptn_stream_eof(resource)));
+        ptn_stream_meta_set(result.as.array, "stream_type", ptn_string(stream_type));
+        ptn_stream_meta_set(
+            result.as.array,
+            "mode",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+        );
+        ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+        ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(0));
+        ptn_stream_meta_set(
+            result.as.array,
+            "uri",
+            ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+        );
+        return result;
+    }
     if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
         const char *wrapped_path = NULL;
         int has_zlib_wrapper = ptn_zlib_uri_path(resource->stream_uri, &wrapped_path);
@@ -124989,6 +125025,9 @@ static char **ptn_process_build_envp(PtnRuntime *runtime, PtnValue env_value, si
     }
     for (size_t i = 0; i < array->len; i++) {
         char *key = ptn_process_env_key(array->entries[i].key);
+        if (ptn_value_deref(array->entries[i].value).type == PTN_ARRAY) {
+            ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
         PtnStringOperand value =
             ptn_value_to_string_operand_with_runtime(runtime, array->entries[i].value, line);
         if (runtime->exceptions->active_exception != NULL) {
@@ -167353,6 +167392,33 @@ static int ptn_stream_socket_address_parse_tcp(
     return 1;
 }
 
+static char *ptn_stream_socket_address_display_alloc(PtnStringOperand address) {
+    size_t extra = 0;
+    for (size_t i = 0; i < address.len; i++) {
+        if (address.data[i] == '\0') {
+            extra++;
+        }
+    }
+    if (address.len > SIZE_MAX - extra - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *display = malloc(address.len + extra + 1);
+    if (display == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    for (size_t i = 0; i < address.len; i++) {
+        if (address.data[i] == '\0') {
+            display[out++] = '\\';
+            display[out++] = '0';
+        } else {
+            display[out++] = address.data[i];
+        }
+    }
+    display[out] = '\0';
+    return display;
+}
+
 static PtnValue ptn_stream_socket_client_open_tcp(
     PtnRuntime *runtime,
     const char *function_name,
@@ -167369,6 +167435,46 @@ static PtnValue ptn_stream_socket_client_open_tcp(
     ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string("not supported on this platform"));
     return ptn_bool(0);
 #else
+    if (memchr(address.data, '\0', address.len) != NULL) {
+        char *display = ptn_stream_socket_address_display_alloc(address);
+        const char *message = "The hostname must not contain null bytes";
+        int warning_needed = snprintf(
+            NULL,
+            0,
+            "%s(): Unable to connect to %s (%s)",
+            function_name,
+            display,
+            message
+        );
+        if (warning_needed < 0) {
+            free(display);
+            ptn_abort_out_of_memory();
+        }
+        char *warning = malloc((size_t)warning_needed + 1);
+        if (warning == NULL) {
+            free(display);
+            ptn_abort_out_of_memory();
+        }
+        int warning_written = snprintf(
+            warning,
+            (size_t)warning_needed + 1,
+            "%s(): Unable to connect to %s (%s)",
+            function_name,
+            display,
+            message
+        );
+        if (warning_written < 0 || warning_written != warning_needed) {
+            free(warning);
+            free(display);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        free(warning);
+        free(display);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(message));
+        return ptn_bool(0);
+    }
     char *host = NULL;
     char *service = NULL;
     if (!ptn_stream_socket_address_parse_tcp(address, &host, &service)) {
@@ -167525,6 +167631,8 @@ static PtnValue ptn_stream_socket_server_open_tcp(
         ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "failed to parse address");
         return ptn_bool(0);
     }
+    PtnResource *context = argc >= 5 ? ptn_fopen_context_arg(args[4]) : NULL;
+    int tcp_nodelay = ptn_stream_context_socket_tcp_nodelay(context);
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -167588,7 +167696,9 @@ static PtnValue ptn_stream_socket_server_open_tcp(
         return ptn_bool(0);
     }
     char *uri = ptn_duplicate_string_len(address.data, address.len);
-    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
+    resource->stream_socket_tcp_nodelay = tcp_nodelay;
+    PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
     free(host);
@@ -168024,15 +168134,200 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
     return ptn_bool(0);
 }
 
+static char *ptn_stream_socket_endpoint_name_alloc(const struct sockaddr_storage *addr, socklen_t addr_len) {
+    (void)addr_len;
+    if (addr->ss_family == AF_INET) {
+        char host[INET_ADDRSTRLEN];
+        const struct sockaddr_in *inet_addr = (const struct sockaddr_in *)addr;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, host, sizeof(host));
+        if (formatted == NULL) {
+            return NULL;
+        }
+        int needed = snprintf(NULL, 0, "%s:%u", host, (unsigned)ntohs(inet_addr->sin_port));
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *name = malloc((size_t)needed + 1);
+        if (name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(name, (size_t)needed + 1, "%s:%u", host, (unsigned)ntohs(inet_addr->sin_port));
+        if (written < 0 || written != needed) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        return name;
+    }
+    if (addr->ss_family == AF_INET6) {
+        char host[INET6_ADDRSTRLEN];
+        const struct sockaddr_in6 *inet_addr = (const struct sockaddr_in6 *)addr;
+        const char *formatted = inet_ntop(AF_INET6, &inet_addr->sin6_addr, host, sizeof(host));
+        if (formatted == NULL) {
+            return NULL;
+        }
+        int needed = snprintf(NULL, 0, "[%s]:%u", host, (unsigned)ntohs(inet_addr->sin6_port));
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *name = malloc((size_t)needed + 1);
+        if (name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(name, (size_t)needed + 1, "[%s]:%u", host, (unsigned)ntohs(inet_addr->sin6_port));
+        if (written < 0 || written != needed) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        return name;
+    }
+    return NULL;
+}
+
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_get_name", args[0], line);
     if (resource == NULL) {
         return ptn_null();
     }
-    if (argc >= 2) {
-        (void)ptn_is_truthy(args[1]);
-    }
+    int want_peer = argc >= 2 && ptn_is_truthy(args[1]);
+#if defined(_WIN32)
+    (void)resource;
+    (void)want_peer;
     return ptn_bool(0);
+#else
+    if (resource->stream == NULL || !ptn_stream_resource_is_socket_like(resource)) {
+        return ptn_bool(0);
+    }
+    int fd = fileno(resource->stream);
+    if (fd < 0) {
+        return ptn_bool(0);
+    }
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    int result = want_peer
+        ? getpeername(fd, (struct sockaddr *)&addr, &addr_len)
+        : getsockname(fd, (struct sockaddr *)&addr, &addr_len);
+    if (result != 0) {
+        return ptn_bool(0);
+    }
+    char *name = ptn_stream_socket_endpoint_name_alloc(&addr, addr_len);
+    if (name == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(name);
+#endif
+}
+
+static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_accept", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)argc;
+    (void)args;
+    (void)resource;
+    return ptn_bool(0);
+#else
+    if (resource->stream == NULL || !ptn_stream_resource_is_socket_like(resource)) {
+        if (argc >= 3) {
+            ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_bool(0);
+    }
+    int fd = fileno(resource->stream);
+    if (fd < 0) {
+        if (argc >= 3) {
+            ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_bool(0);
+    }
+
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        double timeout_seconds = ptn_internal_expect_float_arg(
+            runtime,
+            "stream_socket_accept",
+            2,
+            "timeout",
+            args[1],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (timeout_seconds < 0.0) {
+            ptn_throw_exception(runtime, "ValueError", "stream_socket_accept(): Argument #2 ($timeout) must be greater than or equal to 0");
+            return ptn_null();
+        }
+        time_t seconds = (time_t)timeout_seconds;
+        double fractional = timeout_seconds - (double)seconds;
+        if (fractional < 0.0) {
+            fractional = 0.0;
+        }
+        struct timeval timeout;
+        timeout.tv_sec = seconds;
+        timeout.tv_usec = (suseconds_t)(fractional * 1000000.0);
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        if (fd >= FD_SETSIZE) {
+            return ptn_bool(0);
+        }
+        FD_SET(fd, &read_set);
+        int selected;
+        do {
+            selected = select(fd + 1, &read_set, NULL, NULL, &timeout);
+        } while (selected < 0 && errno == EINTR);
+        if (selected <= 0) {
+            if (argc >= 3) {
+                ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+            }
+            return ptn_bool(0);
+        }
+    }
+
+    struct sockaddr_storage peer_addr;
+    socklen_t peer_len = sizeof(peer_addr);
+    int accepted_fd;
+    do {
+        accepted_fd = accept(fd, (struct sockaddr *)&peer_addr, &peer_len);
+    } while (accepted_fd < 0 && errno == EINTR);
+    if (accepted_fd < 0) {
+        if (argc >= 3) {
+            ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_bool(0);
+    }
+
+    if (resource->stream_socket_tcp_nodelay &&
+        (peer_addr.ss_family == AF_INET || peer_addr.ss_family == AF_INET6)) {
+        int enabled = 1;
+        (void)setsockopt(accepted_fd, IPPROTO_TCP, TCP_NODELAY, &enabled, sizeof(enabled));
+    }
+
+    FILE *stream = fdopen(accepted_fd, "r+");
+    if (stream == NULL) {
+        close(accepted_fd);
+        if (argc >= 3) {
+            ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_bool(0);
+    }
+
+    if (argc >= 3) {
+        char *peer_name = ptn_stream_socket_endpoint_name_alloc(&peer_addr, peer_len);
+        ptn_stream_socket_client_assign_reference(
+            runtime,
+            args[2],
+            peer_name == NULL ? ptn_null() : ptn_owned_string(peer_name)
+        );
+    }
+    PtnResource *accepted = ptn_resource_new_stream(
+        stream,
+        resource->stream_uri == NULL ? "php://fd/socket" : resource->stream_uri,
+        "r+"
+    );
+    accepted->stream_socket_tcp_nodelay = resource->stream_socket_tcp_nodelay;
+    return ptn_resource(accepted);
+#endif
 }
 
 static void ptn_stream_socket_recvfrom_assign_address(PtnRuntime *runtime, size_t argc, const PtnValue *args, PtnValue value) {
@@ -197950,6 +198245,7 @@ static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, si
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -199528,6 +199824,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_set_chunk_size", 2, 2, ptn_internal_stream_set_chunk_size },
         { "stream_set_timeout", 2, 3, ptn_internal_stream_set_timeout },
         { "stream_set_write_buffer", 2, 2, ptn_internal_stream_set_write_buffer },
+        { "stream_socket_accept", 1, 3, ptn_internal_stream_socket_accept },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
@@ -242861,6 +243158,18 @@ static int ptn_eval_parse_call_name(
     size_t *pos,
     char **name_out
 );
+static PTN_UNUSED PtnValue ptn_call_function_named(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    const char *const *arg_names,
+    size_t line
+);
+static int ptn_eval_function_argument_is_reference(
+    const char *function_name,
+    size_t argument_index
+);
 static int ptn_dynamic_execute_statements_range(
     PtnRuntime *runtime,
     const char *code,
@@ -244056,8 +244365,10 @@ static int ptn_eval_parse_function_call_expression(
     }
 
     PtnValue *args = NULL;
+    char **arg_names = NULL;
     size_t argc = 0;
     size_t capacity = 0;
+    int has_named_arg = 0;
     cursor = ptn_eval_skip_ws(code, len, cursor);
     if (cursor >= len) {
         free(function_name);
@@ -244076,17 +244387,57 @@ static int ptn_eval_parse_function_call_expression(
                     free(function_name);
                     ptn_abort_out_of_memory();
                 }
+                char **new_arg_names = realloc(arg_names, new_capacity * sizeof(char *));
+                if (new_arg_names == NULL) {
+                    free(new_args);
+                    free(function_name);
+                    ptn_abort_out_of_memory();
+                }
+                for (size_t i = capacity; i < new_capacity; i++) {
+                    new_arg_names[i] = NULL;
+                }
                 args = new_args;
+                arg_names = new_arg_names;
                 capacity = new_capacity;
             }
-            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
+            size_t argument_start = ptn_eval_skip_ws(code, len, cursor);
+            char *argument_name = NULL;
+            if (argument_start < len && ptn_eval_identifier_start((unsigned char)code[argument_start])) {
+                size_t name_cursor = argument_start;
+                while (name_cursor < len && ptn_eval_identifier_part((unsigned char)code[name_cursor])) {
+                    name_cursor++;
+                }
+                size_t after_name = ptn_eval_skip_ws(code, len, name_cursor);
+                if (after_name < len && code[after_name] == ':' &&
+                    (after_name + 1 >= len || code[after_name + 1] != ':')) {
+                    argument_name = ptn_duplicate_string_len(
+                        code + argument_start,
+                        name_cursor - argument_start
+                    );
+                    cursor = ptn_eval_skip_ws(code, len, after_name + 1);
+                    has_named_arg = 1;
+                }
+            }
+            char *reference_name = NULL;
+            size_t reference_cursor = cursor;
+            if (ptn_eval_function_argument_is_reference(function_name, argc) &&
+                ptn_eval_parse_variable_name(code, len, &reference_cursor, &reference_name)) {
+                args[argc] = ptn_runtime_reference_for_variable(runtime, reference_name);
+                free(reference_name);
+                cursor = reference_cursor;
+            } else if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
                 for (size_t i = 0; i < argc; i++) {
                     ptn_value_destroy(&args[i]);
+                    free(arg_names[i]);
                 }
                 free(args);
+                free(arg_names);
+                free(argument_name);
+                free(reference_name);
                 free(function_name);
                 return 0;
             }
+            arg_names[argc] = argument_name;
             argc++;
             cursor = ptn_eval_skip_ws(code, len, cursor);
             if (cursor < len && code[cursor] == ',') {
@@ -244099,17 +244450,23 @@ static int ptn_eval_parse_function_call_expression(
     if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
         for (size_t i = 0; i < argc; i++) {
             ptn_value_destroy(&args[i]);
+            free(arg_names[i]);
         }
         free(args);
+        free(arg_names);
         free(function_name);
         return 0;
     }
 
-    *out = ptn_call_function(runtime, function_name, argc, args, line);
+    *out = has_named_arg
+        ? ptn_call_function_named(runtime, function_name, argc, args, (const char *const *)arg_names, line)
+        : ptn_call_function(runtime, function_name, argc, args, line);
     for (size_t i = 0; i < argc; i++) {
         ptn_value_destroy(&args[i]);
+        free(arg_names[i]);
     }
     free(args);
+    free(arg_names);
     free(function_name);
     *pos = cursor;
     return 1;
@@ -244905,6 +245262,77 @@ static int ptn_eval_parse_expression(
         *pos = cursor;
     }
 
+    while (1) {
+        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+        if (cursor >= len || code[cursor] != '|') {
+            break;
+        }
+        cursor++;
+        PtnValue right = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
+            ptn_value_destroy(&left);
+            return 0;
+        }
+        PtnValue combined = ptn_bitwise_or(runtime, left, right, line);
+        ptn_value_destroy(&left);
+        ptn_value_destroy(&right);
+        left = combined;
+        *pos = cursor;
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            *out = left;
+            return 1;
+        }
+    }
+
+    {
+        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+        if (cursor < len && code[cursor] == '>' && (cursor + 1 >= len || code[cursor + 1] != '=')) {
+            cursor++;
+            PtnValue right = ptn_null();
+            if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
+                ptn_value_destroy(&left);
+                return 0;
+            }
+            int result = ptn_compare_greater(runtime, left, right, line);
+            ptn_value_destroy(&left);
+            ptn_value_destroy(&right);
+            left = ptn_bool(result);
+            *pos = cursor;
+        }
+    }
+
+    {
+        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+        if (cursor < len && code[cursor] == '?' && (cursor + 1 >= len || code[cursor + 1] != '?')) {
+            cursor++;
+            PtnValue true_value = ptn_null();
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &true_value)) {
+                ptn_value_destroy(&left);
+                return 0;
+            }
+            if (!ptn_eval_consume_char(code, len, &cursor, ':')) {
+                ptn_value_destroy(&left);
+                ptn_value_destroy(&true_value);
+                return 0;
+            }
+            PtnValue false_value = ptn_null();
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &false_value)) {
+                ptn_value_destroy(&left);
+                ptn_value_destroy(&true_value);
+                return 0;
+            }
+            int truthy = ptn_is_truthy(left);
+            ptn_value_destroy(&left);
+            left = truthy ? true_value : false_value;
+            if (truthy) {
+                ptn_value_destroy(&false_value);
+            } else {
+                ptn_value_destroy(&true_value);
+            }
+            *pos = cursor;
+        }
+    }
+
     *out = left;
     return 1;
 }
@@ -245055,6 +245483,24 @@ static int ptn_eval_parse_call_name(
     *name_out = ptn_duplicate_string_len(code + name_start, cursor - name_start);
     *pos = cursor;
     return 1;
+}
+
+static int ptn_eval_function_argument_is_reference(
+    const char *function_name,
+    size_t argument_index
+) {
+    if (ptn_ascii_case_equal(function_name, "stream_socket_client") &&
+        (argument_index == 1 || argument_index == 2)) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(function_name, "stream_socket_server") &&
+        (argument_index == 1 || argument_index == 2)) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(function_name, "stream_socket_accept") && argument_index == 2) {
+        return 1;
+    }
+    return 0;
 }
 
 static int ptn_dynamic_execute_static_call_statement(
@@ -247595,7 +248041,8 @@ static int ptn_eval_execute_supported_statements(
             ptn_dynamic_execute_var_dump_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_assignment_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_unset_statement(runtime, code, len, &pos, line) ||
-            ptn_eval_execute_array_mutator_statement(runtime, code, len, &pos, line)
+            ptn_eval_execute_array_mutator_statement(runtime, code, len, &pos, line) ||
+            ptn_dynamic_execute_expression_statement(runtime, code, len, &pos, line)
         ) {
             continue;
         }
