@@ -107790,12 +107790,13 @@ static PtnValue ptn_internal_srand(PtnRuntime *runtime, size_t argc, const PtnVa
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    int64_t mode = PTN_MT_RAND_MT19937;
+    uint8_t mode = PTN_MT_RAND_MT19937;
     if (argc >= 2) {
-        mode = ptn_internal_expect_integer_arg(runtime, "mt_srand", 2, "mode", args[1], line);
+        int64_t raw_mode = ptn_internal_expect_integer_arg(runtime, "mt_srand", 2, "mode", args[1], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        mode = (uint8_t)raw_mode;
     }
     if (mode == PTN_MT_RAND_PHP) {
         ptn_emit_deprecation(
@@ -107803,9 +107804,6 @@ static PtnValue ptn_internal_srand(PtnRuntime *runtime, size_t argc, const PtnVa
             "The MT_RAND_PHP variant of Mt19937 is deprecated",
             line
         );
-    } else if (mode != PTN_MT_RAND_MT19937) {
-        ptn_throw_exception(runtime, "ValueError", "mt_srand(): Argument #2 ($mode) must be either MT_RAND_MT19937 or MT_RAND_PHP");
-        return ptn_null();
     }
     ptn_random_seed(seed, mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937);
     return ptn_null();
