@@ -540,7 +540,15 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation4.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation5.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation8.phpt|\
-        SKIP_SLOW_TESTS:ext/standard/tests/file/touch_basic.phpt)
+        SKIP_SLOW_TESTS:ext/standard/tests/file/touch_basic.phpt|\
+        SKIP_SLOW_TESTS:ext/date/tests/bug73837.phpt|\
+        SKIP_SLOW_TESTS:ext/pcre/tests/bug69864.phpt|\
+        SKIP_SLOW_TESTS:ext/pcre/tests/cache_limit.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/general_functions/sleep_basic.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/general_functions/usleep_basic.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/network/gethostbyname_basic001.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/password/password_hash.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/password/password_removed_salt_option.phpt)
             return 0
             ;;
     esac
