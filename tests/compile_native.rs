@@ -1532,7 +1532,8 @@ foreach ([[\"ChildBox\", \"multi\"], [\"ChildBox\", \"oneLine\"], [\"ReflectionP
     var_dump($method->getFileName());\n\
     var_dump($method->getStartLine());\n\
     var_dump($method->getEndLine());\n\
-}\n",
+}\n\
+unset($fp);\n",
     )
     .unwrap();
 
@@ -34833,6 +34834,255 @@ fwrite(STDOUT, \"Hello\\n\");\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_stream_filter_keep_after_user_init_failure"));
+}
+
+#[test]
+fn compile_user_stream_filter_runtime_validation_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-runtime-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-runtime-validation.php");
+    let output = root.join("stream-user-filter-runtime-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class FatalFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        stream_bucket_make_writeable($in);
+        return PSFS_ERR_FATAL;
+    }
+}
+
+class CloseFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        if ($closing) {
+            echo "closed\n";
+        }
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+class SeekFilter extends php_user_filter {
+    private int $count = 0;
+
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $next = '';
+            for ($i = 0; $i < strlen($bucket->data); $i++) {
+                $next .= $bucket->data[$i] . $this->count++;
+            }
+            $bucket->data = $next;
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+
+    public function seek(int $offset, int $whence, int $chain): bool {
+        if ($offset === 0 && $whence === SEEK_SET) {
+            $this->count = 0;
+            return true;
+        }
+        return false;
+    }
+}
+
+stream_filter_register('fatal.filter', FatalFilter::class);
+$source = fopen('php://memory', 'w+');
+fwrite($source, 'abc');
+rewind($source);
+stream_filter_append($source, 'fatal.filter', STREAM_FILTER_READ);
+var_dump(stream_copy_to_stream($source, fopen('php://memory', 'w+')));
+
+stream_filter_register('close.filter', CloseFilter::class);
+$write = fopen('php://memory', 'w+');
+$close = stream_filter_append($write, 'close.filter', STREAM_FILTER_WRITE);
+fwrite($write, 'x');
+stream_filter_remove($close);
+
+stream_filter_register('seek.filter', SeekFilter::class);
+$path = __DIR__ . '/seek-filter.txt';
+file_put_contents($path, 'ABC');
+$read = fopen($path, 'r');
+stream_filter_append($read, 'seek.filter', STREAM_FILTER_READ);
+echo fread($read, 10), "\n";
+var_dump(fseek($read, 0, SEEK_SET));
+echo fread($read, 10), "\n";
+var_dump(fseek($read, 1, SEEK_SET));
+fclose($read);
+unlink($path);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("closed\n"), "{stdout}");
+    assert!(stdout.contains("A0B1C2\nint(0)\nA0B1C2\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: fseek(): Stream filter seeking for user-filter failed"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\nint(-1)\n"), "{stdout}");
+    assert!(
+        !stdout.contains("Unprocessed filter buckets remaining on input brigade"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_chain_has_failed_user"));
+    assert!(c_source.contains("ptn_stream_filter_flush_single_closing"));
+    assert!(c_source.contains("Stream filter seeking for user-filter failed"));
+}
+
+#[test]
+fn compile_user_stream_filter_private_filtername_uses_external_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-private-filtername");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-private-filtername.php");
+    let output = root.join("stream-user-filter-private-filtername-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class foo {\n\
+    private $filtername;\n\
+}\n\
+var_dump(stream_filter_register('invalid_filter', 'foo'));\n\
+var_dump(stream_filter_append(STDOUT, 'invalid_filter'));\n\
+fwrite(STDOUT, \"Hello\\n\");\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(combined.contains("bool(true)\n"), "{combined}");
+    assert!(
+        combined.contains("Deprecated: Creation of dynamic property foo::$params is deprecated"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains(
+            "Fatal error: Uncaught Error: Cannot access private property foo::$filtername"
+        ),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Fatal error: Invalid callback foo::filter, class foo does not have a method \"filter\" in Unknown on line 0"),
+        "{combined}"
+    );
+}
+
+#[test]
+fn compile_user_stream_filter_internal_no_dynamic_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-internal-no-dynamic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-internal-no-dynamic.php");
+    let output = root.join("stream-user-filter-internal-no-dynamic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(stream_filter_register('invalid_filter', 'SensitiveParameter'));\n\
+var_dump(stream_filter_append(STDOUT, 'invalid_filter'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(combined.contains("bool(true)\n"), "{combined}");
+    assert!(
+        combined.contains(
+            "Fatal error: Uncaught Error: Cannot create dynamic property SensitiveParameter::$filtername"
+        ),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Next Error: Cannot create dynamic property SensitiveParameter::$params"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Fatal error: Invalid callback SensitiveParameter::filter, class SensitiveParameter does not have a method \"filter\" in Unknown on line 0"),
+        "{combined}"
+    );
+}
+
+#[test]
+fn compile_user_stream_filter_mock_public_typed_stream_property_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-public-typed-stream");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-public-typed-stream.php");
+    let output = root.join("stream-user-filter-public-typed-stream-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class pass_filter {\n\
+    public $filtername;\n\
+    public $params;\n\
+    public int $stream = 1;\n\
+    public function filter($in, $out, &$consumed, $closing): int {\n\
+        while ($bucket = stream_bucket_make_writeable($in)) {\n\
+            $consumed += $bucket->datalen;\n\
+            stream_bucket_append($out, $bucket);\n\
+        }\n\
+        return PSFS_PASS_ON;\n\
+    }\n\
+}\n\
+stream_filter_register('pass', 'pass_filter');\n\
+$fp = fopen('php://memory', 'w');\n\
+stream_filter_append($fp, 'pass');\n\
+try {\n\
+    fwrite($fp, 'data');\n\
+} catch (TypeError $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    fclose($fp);\n\
+} catch (TypeError $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+unset($fp);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fwrite(): Unprocessed filter buckets remaining on input brigade"),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches(
+                "TypeError: Cannot assign resource to property pass_filter::$stream of type int"
+            )
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_assign_declared_public_stream_property"));
 }
 
 #[test]

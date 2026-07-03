@@ -5032,7 +5032,8 @@ static PTN_UNUSED int ptn_object_class_forbids_dynamic_properties(
         return 0;
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_internal_class_name_is_random_engine(class_name)) {
+    if (ptn_internal_class_name_is_random_engine(class_name) ||
+        ptn_internal_class_name_is_sensitive_parameter(class_name)) {
         return 1;
     }
 #endif
