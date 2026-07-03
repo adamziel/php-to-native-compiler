@@ -1454,6 +1454,32 @@ ptn_phpt_has_resource_limit_expectation() {
     ' "$path"
 }
 
+ptn_phpt_has_modeled_string_allocation_limit_expectation() {
+    local path=$1
+    local file
+
+    if ! awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "EXPECT" || section == "EXPECTF" || section == "EXPECTREGEX"
+            next
+        }
+        active && /Allowed memory size/ {
+            found = 1
+            exit
+        }
+        END { exit found ? 0 : 1 }
+    ' "$path"; then
+        return 1
+    fi
+
+    file=$(ptn_phpt_section "$path" FILE)
+    printf '%s\n' "$file" \
+        | grep -Eq '(^|[^[:alnum:]_$])(wordwrap|chunk_split)[[:space:]]*\('
+}
+
 ptn_phpt_first_unsupported_section() {
     local path=$1
     local unsupported
@@ -1465,19 +1491,6 @@ ptn_phpt_supported_file_external_row() {
     local rel=$1
 
     [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]]
-}
-
-ptn_phpt_supported_string_allocation_limit_row() {
-    local rel=$1
-
-    case "$rel" in
-        ext/standard/tests/strings/wordwrap_memory_limit.phpt|\
-        ext/standard/tests/strings/chunk_split_variation3.phpt)
-            return 0
-            ;;
-    esac
-
-    return 1
 }
 
 ptn_phpt_first_environment_section() {
@@ -3034,7 +3047,7 @@ ptn_phpt_classify_row() {
     fi
 
     if ptn_phpt_has_resource_limit_expectation "$path" \
-        && ! ptn_phpt_supported_string_allocation_limit_row "$rel"; then
+        && ! ptn_phpt_has_modeled_string_allocation_limit_expectation "$path"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
         return 0
     fi
