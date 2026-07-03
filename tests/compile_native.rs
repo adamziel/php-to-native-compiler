@@ -89961,6 +89961,60 @@ var_dump(Loader::load('missing-file.php'));
 }
 
 #[test]
+fn compile_include_stream_wrapper_failure_backtrace_to_native_binary() {
+    let root = temp_dir("ptn-native-include-wrapper-failure-backtrace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("include-wrapper-failure-backtrace-bin");
+    fs::write(
+        &input,
+        "<?php
+class CLWrapper {
+    public $context;
+
+    public function stream_open($path, $mode, $options, $opened_path) {
+        return false;
+    }
+}
+
+class CL {
+    public function load($class) {
+        if (!include($class)) {
+            throw new Exception('Failed loading ' . $class);
+        }
+    }
+}
+
+stream_wrapper_register('class', 'CLWrapper');
+set_error_handler(function($code, $msg, $file, $line) {
+    $bt = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+    $function = isset($bt[1]['function']) ? $bt[1]['function'] : 'missing';
+    echo 'ERR#', $code, ':', $msg, '@', $function, \"\\n\";
+});
+
+try {
+    (new CL())->load('class://missing');
+} catch (Exception $e) {
+    echo 'caught:', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "ERR#2:include(class://missing): Failed to open stream: \"CLWrapper::stream_open\" call failed@include\nERR#2:include(): Failed opening 'class://missing' for inclusion (include_path='.')@include\ncaught:Failed loading class://missing\n"
+    );
+    assert!(!stdout.contains("No such file or directory"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_missing_require_once_warning_handler_can_throw_to_native_binary() {
     let root = temp_dir("ptn-native-missing-require-once-warning-handler");
     fs::create_dir_all(&root).unwrap();

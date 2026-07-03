@@ -2077,7 +2077,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_linking_class_static_subtype(PtnRuntime *runtime, const char *candidate_name, const char *target_name);\n");
     out.push_str("static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index);\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
+    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, int *suppress_open_stream_warning_out, PtnValue *result_out);\n");
     out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
     out.push_str("    if ((path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) || (path.len >= 6 && strncmp(path.data, \"php://\", 6) == 0)) {\n");
@@ -2232,13 +2232,29 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    return ptn_bool(0);\n");
     out.push_str("}\n");
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_failure(PtnRuntime *runtime, const char *kind, const char *path, size_t line, int required) {\n",
+        "\nstatic PTN_UNUSED void ptn_emit_compile_warning_with_trace_frame(PtnRuntime *runtime, const char *frame_name, const char *display_path, const char *message, const char *path, size_t line) {\n",
+    );
+    out.push_str("    if (runtime == NULL || frame_name == NULL) {\n");
+    out.push_str("        ptn_emit_compile_warning(runtime, message, path, line);\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue trace_arg = ptn_owned_string(ptn_duplicate_string(display_path != NULL ? display_path : \"\"));\n");
+    out.push_str("    PtnValue trace_args[1] = { trace_arg };\n");
+    out.push_str("    PtnTraceFrame trace_frame;\n");
+    out.push_str("    ptn_runtime_push_trace_frame(runtime, &trace_frame, frame_name, path, line, 1, trace_args);\n");
+    out.push_str("    ptn_emit_compile_warning(runtime, message, path, line);\n");
+    out.push_str("    ptn_runtime_pop_trace_frame(runtime, &trace_frame);\n");
+    out.push_str("    ptn_value_destroy(&trace_arg);\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_failure(PtnRuntime *runtime, const char *kind, const char *path, size_t line, int required, int suppress_open_stream_warning) {\n",
     );
     out.push_str("    const char *display_path = path != NULL ? path : \"\";\n");
     out.push_str("    const char *include_path = runtime != NULL && runtime->include_path != NULL ? runtime->include_path : \".\";\n");
     out.push_str("    int needed = 0;\n");
     out.push_str("    char *message = NULL;\n");
     out.push_str("    int written = 0;\n");
+    out.push_str("    if (!suppress_open_stream_warning) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
@@ -2252,8 +2268,9 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("        free(message);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("    ptn_emit_compile_warning_with_trace_frame(runtime, kind, display_path, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
     out.push_str("    free(message);\n");
+    out.push_str("    }\n");
     out.push_str("    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
@@ -2287,7 +2304,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("        free(message);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("    ptn_emit_compile_warning_with_trace_frame(runtime, kind, display_path, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
     out.push_str("    free(message);\n");
     out.push_str("    return ptn_bool(0);\n");
     out.push_str("}\n");
@@ -49680,6 +49697,10 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_bool(0);\n");
+        let dynamic_include_suppressed_open_warning_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&dynamic_include_suppressed_open_warning_temp);
+        out.push_str(" = 0;\n");
         out.push_str("    if (");
         out.push_str(&resolved_temp);
         out.push_str(" == NULL) {\n");
@@ -49861,6 +49882,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", &");
+        out.push_str(&dynamic_include_suppressed_open_warning_temp);
+        out.push_str(", &");
         out.push_str(&result_temp);
         out.push_str(")) {\n");
         out.push_str("#endif\n");
@@ -49879,6 +49902,8 @@ impl ValueEmitter {
         } else {
             "0"
         });
+        out.push_str(", ");
+        out.push_str(&dynamic_include_suppressed_open_warning_temp);
         out.push_str(");\n");
         out.push_str("    }\n");
         out.push_str("    if (");

@@ -53707,6 +53707,14 @@ static char *ptn_fopen_path_operand_to_c_string(PtnStringOperand path) {
     return ptn_duplicate_string_len(path.data, path.len);
 }
 
+static int ptn_file_warning_uses_include_trace_frame(const char *function_name) {
+    return function_name != NULL &&
+        (strcmp(function_name, "include") == 0 ||
+         strcmp(function_name, "include_once") == 0 ||
+         strcmp(function_name, "require") == 0 ||
+         strcmp(function_name, "require_once") == 0);
+}
+
 static void ptn_emit_file_warning(
     PtnRuntime *runtime,
     const char *function_name,
@@ -53727,7 +53735,25 @@ static void ptn_emit_file_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    ptn_emit_runtime_warning(runtime, message, line);
+    if (ptn_file_warning_uses_include_trace_frame(function_name) && runtime != NULL) {
+        PtnValue trace_arg = ptn_owned_string(ptn_duplicate_string(path != NULL ? path : ""));
+        PtnValue trace_args[1] = { trace_arg };
+        PtnTraceFrame trace_frame;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &trace_frame,
+            function_name,
+            runtime->source_path,
+            line,
+            1,
+            trace_args
+        );
+        ptn_emit_runtime_warning(runtime, message, line);
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        ptn_value_destroy(&trace_arg);
+    } else {
+        ptn_emit_runtime_warning(runtime, message, line);
+    }
     free(message);
 }
 
@@ -239855,6 +239881,7 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     const char *path,
     const char *display_path,
     size_t line,
+    int *suppress_open_stream_warning_out,
     PtnValue *result_out
 );
 
@@ -242224,7 +242251,15 @@ static int ptn_dynamic_execute_include_statement(
             );
         }
     } else {
-        handled = ptn_dynamic_include_php_file(runtime, resolved, path, line, &include_result);
+        int suppress_open_stream_warning = 0;
+        handled = ptn_dynamic_include_php_file(
+            runtime,
+            resolved,
+            path,
+            line,
+            &suppress_open_stream_warning,
+            &include_result
+        );
     }
 
     free(path);
@@ -244053,10 +244088,14 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     const char *path,
     const char *display_path,
     size_t line,
+    int *suppress_open_stream_warning_out,
     PtnValue *result_out
 ) {
     (void)display_path;
     (void)line;
+    if (suppress_open_stream_warning_out != NULL) {
+        *suppress_open_stream_warning_out = 0;
+    }
     if (path != NULL &&
         (ptn_phar_path_looks_like_archive(path) || ptn_phar_file_looks_like_archive(path))) {
         PtnPharArchiveState *archive = ptn_phar_archive_find_path_len(path, strlen(path));
@@ -244135,6 +244174,9 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
             "Failed to open stream: no suitable wrapper could be found",
             line
         );
+        if (suppress_open_stream_warning_out != NULL) {
+            *suppress_open_stream_warning_out = 1;
+        }
         return 0;
     }
     unsigned char *user_stream_code = NULL;
@@ -244151,6 +244193,9 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
         code = (char *)user_stream_code;
     } else if (user_stream_result < 0) {
         free(user_stream_code);
+        if (suppress_open_stream_warning_out != NULL) {
+            *suppress_open_stream_warning_out = 1;
+        }
         return 0;
     }
     unsigned char *filtered_data = NULL;
@@ -244844,7 +244889,15 @@ static int ptn_spl_autoload_try_candidate(PtnRuntime *runtime, const char *candi
         return 1;
     }
     PtnValue include_result = ptn_null();
-    int ok = ptn_dynamic_include_php_file(runtime, resolved_path, candidate, line, &include_result);
+    int suppress_open_stream_warning = 0;
+    int ok = ptn_dynamic_include_php_file(
+        runtime,
+        resolved_path,
+        candidate,
+        line,
+        &suppress_open_stream_warning,
+        &include_result
+    );
     ptn_value_destroy(&include_result);
     free(resolved_path);
     return ok;
