@@ -43205,9 +43205,22 @@ impl ValueEmitter {
             .return_type
             .as_ref()
             .or(implicit_magic_return_type.as_ref());
+        let effective_source_file = if function.source_file.is_empty() {
+            source_file
+        } else {
+            function.source_file.as_str()
+        };
+        let effective_source_dir = if effective_source_file == source_file {
+            source_dir.to_string()
+        } else {
+            Path::new(effective_source_file)
+                .parent()
+                .map(|parent| parent.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
         Self::new_with_scope(
-            source_file,
-            source_dir,
+            effective_source_file,
+            &effective_source_dir,
             functions,
             classes,
             includes,
