@@ -89916,6 +89916,35 @@ fn compile_bounded_dynamic_include_paths_to_native_binary() {
 }
 
 #[test]
+fn compile_dynamic_include_without_internal_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-no-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let part = root.join("part.php");
+    let output = root.join("dynamic-include-no-internals-bin");
+    fs::write(&part, "<?php echo \"included\\n\"; return 42;").unwrap();
+    fs::write(
+        &input,
+        "<?php $path = 'part.php'; $value = include $path; echo \"value=$value\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "included\nvalue=42\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_resolve_path"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH"));
+}
+
+#[test]
 fn compile_missing_include_deferred_to_runtime_warning_to_native_binary() {
     let root = temp_dir("ptn-native-missing-include-runtime-warning");
     fs::create_dir_all(&root).unwrap();
@@ -90632,6 +90661,87 @@ echo file_get_contents('include.txt', true), \"\\n\";\n",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_read_file_bytes_with_search"));
+}
+
+#[test]
+fn compile_include_path_user_stream_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-include-path-user-stream");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("include-path-user-stream-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data3 = $data5 = '<?php echo __FILE__, "\n"; ?>';
+$data4 = $data6 = '<?php echo __FILE__, "\n"; ?>';
+
+class mystream {
+    public $context;
+    public $position = 0;
+    public $varname = '';
+
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        $split = parse_url($path);
+        if ($split['host'] !== 'GLOBALS' || empty($split['path'])) {
+            return false;
+        }
+        $this->varname = substr($split['path'], 1);
+        if (empty($GLOBALS[$this->varname])) {
+            return false;
+        }
+        $this->position = 0;
+        return true;
+    }
+
+    public function stream_read($count) {
+        $value = $GLOBALS[$this->varname];
+        $chunk = substr($value, $this->position, $count);
+        $this->position += strlen($chunk);
+        return $chunk;
+    }
+
+    public function stream_tell() {
+        return $this->position;
+    }
+
+    public function stream_eof() {
+        return $this->position >= strlen($GLOBALS[$this->varname]);
+    }
+}
+
+stream_wrapper_register('test', 'mystream');
+set_include_path(get_include_path() . PATH_SEPARATOR . 'test://GLOBALS');
+echo file_get_contents('data3', true), "\n";
+include 'data3';
+include_once 'data4';
+include_once 'data4';
+set_include_path('test://GLOBALS' . PATH_SEPARATOR . get_include_path());
+echo file_get_contents('data5', true), "\n";
+include 'data5';
+include_once 'data6';
+include_once 'data6';
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "<?php echo __FILE__, \"\\n\"; ?>\n\
+test://GLOBALS/data3\n\
+test://GLOBALS/data4\n\
+<?php echo __FILE__, \"\\n\"; ?>\n\
+test://GLOBALS/data5\n\
+test://GLOBALS/data6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_read_user_stream_include_path_bytes"));
+    assert!(c_source.contains("ptn_resolve_existing_include_path(runtime"));
 }
 
 #[test]

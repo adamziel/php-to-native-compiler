@@ -61191,6 +61191,11 @@ static int ptn_existing_file_or_current_source_snapshot(PtnRuntime *runtime, con
         ptn_current_source_snapshot_matches(runtime, path);
 }
 
+static int ptn_existing_include_path_candidate(PtnRuntime *runtime, const char *path) {
+    return ptn_existing_file_or_current_source_snapshot(runtime, path) ||
+        ptn_user_stream_wrapper_find_path(path) != NULL;
+}
+
 static const char *ptn_include_path_segment_end(const char *segment, char separator) {
     for (const char *cursor = segment; cursor != NULL && *cursor != '\0'; cursor++) {
         if (*cursor != separator) {
@@ -61229,7 +61234,7 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
         char *directory = ptn_duplicate_string_len(segment, segment_len);
         char *candidate = ptn_path_join_alloc(directory, path);
         free(directory);
-        if (ptn_existing_file_or_current_source_snapshot(runtime, candidate)) {
+        if (ptn_existing_include_path_candidate(runtime, candidate)) {
             return candidate;
         }
         free(candidate);
@@ -61240,13 +61245,13 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
     if (source_dir != NULL) {
         char *candidate = ptn_path_join_alloc(source_dir, path);
         free(source_dir);
-        if (ptn_existing_file_or_current_source_snapshot(runtime, candidate)) {
+        if (ptn_existing_include_path_candidate(runtime, candidate)) {
             return candidate;
         }
         free(candidate);
     }
 
-    if (ptn_existing_file_or_current_source_snapshot(runtime, path)) {
+    if (ptn_existing_include_path_candidate(runtime, path)) {
         return ptn_duplicate_string(path);
     }
 
@@ -61460,7 +61465,7 @@ static int ptn_read_file_bytes_with_search(
 #endif
     const char *segment = include_path;
     while (segment != NULL && *segment != '\0') {
-        const char *end = strchr(segment, separator);
+        const char *end = ptn_include_path_segment_end(segment, separator);
         size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
         char *directory = ptn_duplicate_string_len(segment, segment_len);
         char *candidate = ptn_path_join_alloc(directory, path);
@@ -63783,6 +63788,62 @@ static int ptn_try_read_user_stream_wrapper_bytes(
     size_t *len_out
 );
 
+static int ptn_try_read_user_stream_include_path_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    size_t line,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **opened_path_out
+) {
+    if (path == NULL ||
+        path[0] == '\0' ||
+        ptn_path_string_is_absolute(path) ||
+        ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return 0;
+    }
+
+    const char *include_path = ptn_runtime_current_include_path(runtime);
+    const char separator =
+#if defined(_WIN32)
+        ';';
+#else
+        ':';
+#endif
+    const char *segment = include_path;
+    while (segment != NULL && *segment != '\0') {
+        const char *end = ptn_include_path_segment_end(segment, separator);
+        size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
+        char *directory = ptn_duplicate_string_len(segment, segment_len);
+        char *candidate = ptn_path_join_alloc(directory, path);
+        free(directory);
+        if (ptn_user_stream_wrapper_find_path(candidate) != NULL) {
+            int result = ptn_try_read_user_stream_wrapper_bytes(
+                runtime,
+                function_name,
+                candidate,
+                context,
+                line,
+                data_out,
+                len_out
+            );
+            if (result != 0) {
+                if (result > 0 && opened_path_out != NULL) {
+                    *opened_path_out = candidate;
+                } else {
+                    free(candidate);
+                }
+                return result;
+            }
+        }
+        free(candidate);
+        segment = end == NULL ? NULL : end + 1;
+    }
+    return 0;
+}
+
 static int ptn_file_get_contents_read_non_filter_source_bytes(
     PtnRuntime *runtime,
     const char *path,
@@ -63817,6 +63878,22 @@ static int ptn_file_get_contents_read_non_filter_source_bytes(
     );
     if (user_stream_result != 0) {
         return user_stream_result;
+    }
+
+    if (use_include_path) {
+        int include_stream_result = ptn_try_read_user_stream_include_path_bytes(
+            runtime,
+            "file_get_contents",
+            path,
+            context,
+            line,
+            data_out,
+            len_out,
+            opened_path_out
+        );
+        if (include_stream_result != 0) {
+            return include_stream_result;
+        }
     }
 
     const char *zlib_path = NULL;
@@ -239881,6 +239958,7 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     const char *path,
     const char *display_path,
     size_t line,
+    int once,
     int *suppress_open_stream_warning_out,
     PtnValue *result_out
 );
@@ -242173,11 +242251,14 @@ static int ptn_dynamic_execute_include_statement(
 ) {
     size_t cursor = ptn_eval_skip_ws(code, len, *pos);
     int required = 0;
+    int once = 0;
     if (ptn_eval_keyword_at(code, len, cursor, "include_once")) {
         cursor += strlen("include_once");
+        once = 1;
     } else if (ptn_eval_keyword_at(code, len, cursor, "require_once")) {
         cursor += strlen("require_once");
         required = 1;
+        once = 1;
     } else if (ptn_eval_keyword_at(code, len, cursor, "include")) {
         cursor += strlen("include");
     } else if (ptn_eval_keyword_at(code, len, cursor, "require")) {
@@ -242257,6 +242338,7 @@ static int ptn_dynamic_execute_include_statement(
             resolved,
             path,
             line,
+            once,
             &suppress_open_stream_warning,
             &include_result
         );
@@ -244083,7 +244165,7 @@ static int ptn_try_read_user_stream_wrapper_bytes(
     return 1;
 }
 
-static PTN_UNUSED int ptn_dynamic_include_php_file(
+static PTN_UNUSED int ptn_dynamic_include_php_file_resolved(
     PtnRuntime *runtime,
     const char *path,
     const char *display_path,
@@ -244268,6 +244350,43 @@ static PTN_UNUSED int ptn_dynamic_include_php_file(
     }
     *result_out = result;
     return 1;
+}
+
+static PTN_UNUSED int ptn_dynamic_include_php_file(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *display_path,
+    size_t line,
+    int once,
+    int *suppress_open_stream_warning_out,
+    PtnValue *result_out
+) {
+    char *include_path_resolved = NULL;
+    if (display_path != NULL &&
+        display_path[0] != '\0' &&
+        !ptn_path_string_is_absolute(display_path) &&
+        !ptn_path_contains_scheme_separator(display_path, strlen(display_path))) {
+        include_path_resolved = ptn_resolve_existing_include_path(runtime, display_path);
+    }
+    const char *resolved_path = include_path_resolved == NULL ? path : include_path_resolved;
+    if (once && ptn_runtime_has_included_file(runtime, resolved_path)) {
+        if (suppress_open_stream_warning_out != NULL) {
+            *suppress_open_stream_warning_out = 0;
+        }
+        *result_out = ptn_bool(1);
+        free(include_path_resolved);
+        return 1;
+    }
+    int handled = ptn_dynamic_include_php_file_resolved(
+        runtime,
+        resolved_path,
+        display_path,
+        line,
+        suppress_open_stream_warning_out,
+        result_out
+    );
+    free(include_path_resolved);
+    return handled;
 }
 
 static int ptn_eval_execute_supported_statements(
@@ -244895,6 +245014,7 @@ static int ptn_spl_autoload_try_candidate(PtnRuntime *runtime, const char *candi
         resolved_path,
         candidate,
         line,
+        0,
         &suppress_open_stream_warning,
         &include_result
     );

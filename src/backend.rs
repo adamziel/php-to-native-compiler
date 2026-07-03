@@ -2077,7 +2077,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_linking_class_static_subtype(PtnRuntime *runtime, const char *candidate_name, const char *target_name);\n");
     out.push_str("static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index);\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, int *suppress_open_stream_warning_out, PtnValue *result_out);\n");
+    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, int once, int *suppress_open_stream_warning_out, PtnValue *result_out);\n");
     out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
     out.push_str("    if ((path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) || (path.len >= 6 && strncmp(path.data, \"php://\", 6) == 0)) {\n");
@@ -49881,6 +49881,8 @@ impl ValueEmitter {
         out.push_str(&display_path_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(if include_kind_is_once(kind) { "1" } else { "0" });
         out.push_str(", &");
         out.push_str(&dynamic_include_suppressed_open_warning_temp);
         out.push_str(", &");
