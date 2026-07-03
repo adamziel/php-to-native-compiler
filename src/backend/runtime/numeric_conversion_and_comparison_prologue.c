@@ -12,6 +12,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_dynamic_classes);
     runtime->dynamic_classes = caller_runtime->dynamic_classes;
+    ptn_symbols_init(&runtime->owned_dynamic_functions);
+    runtime->dynamic_functions = caller_runtime->dynamic_functions;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = caller_runtime->class_constants;
     ptn_symbols_init(&runtime->owned_class_constant_deprecations);
@@ -145,6 +147,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_started_line = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
+    runtime->http_last_response_headers = ptn_null();
     runtime->header_callback_registered = 0;
     runtime->header_callback_running = 0;
     runtime->header_callback_completed = 0;
@@ -1074,6 +1077,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constant_initializing, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constant_deprecations, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constants, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_functions, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_classes, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_aliases, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constant_sources, runtime);
@@ -1352,6 +1356,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         free(runtime->output_started_source_path);
         runtime->output_started_source_path = NULL;
         runtime->output_started_line = 0;
+        ptn_value_destroy(&runtime->http_last_response_headers);
+        runtime->http_last_response_headers = ptn_null();
         if (runtime->header_callback_registered) {
             ptn_value_destroy(&runtime->header_callback);
         }
@@ -5366,6 +5372,95 @@ static PtnSymbolTable *ptn_runtime_dynamic_class_table(PtnRuntime *runtime) {
         return root->dynamic_classes;
     }
     return runtime == NULL ? NULL : runtime->dynamic_classes;
+}
+
+static PtnSymbolTable *ptn_runtime_dynamic_function_table(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->dynamic_functions != NULL) {
+        return root->dynamic_functions;
+    }
+    return runtime == NULL ? NULL : runtime->dynamic_functions;
+}
+
+static PTN_UNUSED void ptn_runtime_register_dynamic_function(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue closure
+) {
+    if (function_name == NULL || *function_name == '\0') {
+        return;
+    }
+    PtnSymbolTable *functions = ptn_runtime_dynamic_function_table(runtime);
+    if (functions == NULL) {
+        return;
+    }
+    char *key = ptn_class_alias_key(function_name);
+    ptn_symbols_set(functions, key, closure);
+    free(key);
+}
+
+static PTN_UNUSED int ptn_runtime_dynamic_function_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue *out
+) {
+    if (function_name == NULL || out == NULL) {
+        return 0;
+    }
+    PtnSymbolTable *functions = ptn_runtime_dynamic_function_table(runtime);
+    if (functions == NULL) {
+        return 0;
+    }
+    char *key = ptn_class_alias_key(function_name);
+    int found = ptn_symbols_get(functions, key, out);
+    free(key);
+    return found;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_runtime_dynamic_function_metadata(
+    PtnRuntime *runtime,
+    const char *function_name
+) {
+    PtnValue function = ptn_null();
+    if (!ptn_runtime_dynamic_function_value(runtime, function_name, &function)) {
+        return ptn_function_metadata_not_found();
+    }
+    function = ptn_value_deref(function);
+    if (function.type != PTN_CLOSURE || function.as.closure == NULL) {
+        return ptn_function_metadata_not_found();
+    }
+    return function.as.closure->metadata;
+}
+
+static PTN_UNUSED int ptn_runtime_call_dynamic_function(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue *result_out
+) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue function = ptn_null();
+    if (result_out == NULL ||
+        !ptn_runtime_dynamic_function_value(runtime, function_name, &function)) {
+        return 0;
+    }
+    function = ptn_value_deref(function);
+    if (function.type != PTN_CLOSURE || function.as.closure == NULL) {
+        return 0;
+    }
+    *result_out = ptn_dynamic_closure_call(runtime, function, argc, args, line);
+    return 1;
+#else
+    (void)runtime;
+    (void)function_name;
+    (void)argc;
+    (void)args;
+    (void)line;
+    (void)result_out;
+    return 0;
+#endif
 }
 
 static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, const char *class_name) {

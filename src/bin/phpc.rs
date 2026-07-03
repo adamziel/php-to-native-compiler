@@ -501,6 +501,7 @@ struct RuntimeIni {
     bcmath_scale: Option<String>,
     sendmail_path: Option<String>,
     mail_add_x_header: Option<String>,
+    mail_cr_lf_mode: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
@@ -800,6 +801,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.sendmail_path = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("mail.add_x_header") {
         ini.mail_add_x_header = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mail.cr_lf_mode") {
+        ini.mail_cr_lf_mode = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("url_rewriter.hosts") {
@@ -1617,6 +1620,7 @@ fn compile_and_run(
         bcmath_scale: ini.bcmath_scale.clone(),
         sendmail_path: ini.sendmail_path.clone(),
         mail_add_x_header: ini.mail_add_x_header.clone(),
+        mail_cr_lf_mode: ini.mail_cr_lf_mode.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
@@ -1868,6 +1872,9 @@ fn compile_and_run(
     }
     if let Some(mail_add_x_header) = &ini.mail_add_x_header {
         command.env("PTN_MAIL_ADD_X_HEADER", mail_add_x_header);
+    }
+    if let Some(mail_cr_lf_mode) = &ini.mail_cr_lf_mode {
+        command.env("PTN_MAIL_CR_LF_MODE", mail_cr_lf_mode);
     }
     if let Some(internal_encoding) = &ini.internal_encoding {
         command.env("PTN_INTERNAL_ENCODING", internal_encoding);

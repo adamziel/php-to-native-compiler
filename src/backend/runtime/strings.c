@@ -3517,6 +3517,58 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_REPORT_ERRORS);
         return 1;
     }
+    if (strcmp(name, "STREAM_NOTIFY_RESOLVE") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_RESOLVE);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_CONNECT") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_CONNECT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_AUTH_REQUIRED") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_AUTH_REQUIRED);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_MIME_TYPE_IS") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_MIME_TYPE_IS);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_FILE_SIZE_IS") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_FILE_SIZE_IS);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_REDIRECTED") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_REDIRECTED);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_PROGRESS") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_PROGRESS);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_COMPLETED") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_COMPLETED);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_FAILURE") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_FAILURE);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_AUTH_RESULT") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_AUTH_RESULT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_SEVERITY_INFO") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_SEVERITY_INFO);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_SEVERITY_WARN") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_SEVERITY_WARN);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_NOTIFY_SEVERITY_ERR") == 0) {
+        *out = ptn_int(PTN_STREAM_NOTIFY_SEVERITY_ERR);
+        return 1;
+    }
     if (strcmp(name, "PSFS_ERR_FATAL") == 0) {
         *out = ptn_int(PTN_PSFS_ERR_FATAL);
         return 1;

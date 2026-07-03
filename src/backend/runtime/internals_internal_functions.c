@@ -6755,6 +6755,7 @@ static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue calla
 static PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PtnFunctionMetadata ptn_find_function_metadata(const char *name);
+static PtnFunctionMetadata ptn_find_runtime_function_metadata(PtnRuntime *runtime, const char *name);
 static void ptn_throw_internal_argument_count_error(PtnRuntime *runtime, const char *name, const char *mode, size_t expected, size_t actual, size_t line, const PtnValue *args);
 static void ptn_throw_internal_argument_count_error_with_actual(PtnRuntime *runtime, const char *name, const char *mode, size_t expected, size_t actual, size_t trace_argc, size_t line, const PtnValue *args);
 static PtnValue ptn_declared_class_new_instance(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
@@ -8006,7 +8007,7 @@ static PtnFunctionMetadata ptn_named_call_callable_metadata(PtnRuntime *runtime,
     if (resolved.type == PTN_STRING) {
         char *name = ptn_value_to_string(resolved);
         const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-        PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);
+        PtnFunctionMetadata metadata = ptn_find_runtime_function_metadata(runtime, lookup_name);
         free(name);
         return metadata;
     }
@@ -31528,12 +31529,109 @@ static PtnValue ptn_internal_http_response_code(PtnRuntime *runtime, size_t argc
     return ptn_bool(1);
 }
 
+static void ptn_http_last_response_headers_set(PtnRuntime *runtime, PtnValue headers) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        ptn_value_destroy(&headers);
+        return;
+    }
+    ptn_value_destroy(&root->http_last_response_headers);
+    root->http_last_response_headers = headers;
+}
+
+static PtnValue ptn_internal_http_get_last_response_headers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue headers = ptn_value_deref(root->http_last_response_headers);
+    if (headers.type != PTN_ARRAY) {
+        return ptn_bool(0);
+    }
+    return ptn_value_clone(headers);
+}
+
 static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_ip2long(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand ip = ptn_internal_expect_string_arg(runtime, "ip2long", 1, "ip", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(ip);
+        return ptn_null();
+    }
+    if (ip.len == 0) {
+        ptn_string_operand_free(ip);
+        return ptn_bool(0);
+    }
+
+    uint32_t parts[4] = { 0, 0, 0, 0 };
+    size_t part = 0;
+    size_t digit_count = 0;
+    uint32_t current = 0;
+    for (size_t i = 0; i < ip.len; i++) {
+        unsigned char ch = (unsigned char)ip.data[i];
+        if (isdigit(ch)) {
+            if (digit_count == 3) {
+                ptn_string_operand_free(ip);
+                return ptn_bool(0);
+            }
+            current = current * 10 + (uint32_t)(ch - '0');
+            if (current > 255) {
+                ptn_string_operand_free(ip);
+                return ptn_bool(0);
+            }
+            digit_count++;
+            continue;
+        }
+        if (ch != '.' || digit_count == 0 || part >= 3) {
+            ptn_string_operand_free(ip);
+            return ptn_bool(0);
+        }
+        parts[part++] = current;
+        current = 0;
+        digit_count = 0;
+    }
+    if (digit_count == 0 || part != 3) {
+        ptn_string_operand_free(ip);
+        return ptn_bool(0);
+    }
+    parts[3] = current;
+    uint32_t packed = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    ptn_string_operand_free(ip);
+    return ptn_int((int64_t)packed);
+}
+
+static PtnValue ptn_internal_long2ip(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t value = ptn_internal_expect_integer_arg(runtime, "long2ip", 1, "ip", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    uint32_t packed = (uint32_t)value;
+    char buffer[16];
+    int written = snprintf(
+        buffer,
+        sizeof(buffer),
+        "%u.%u.%u.%u",
+        (unsigned)((packed >> 24) & 0xffu),
+        (unsigned)((packed >> 16) & 0xffu),
+        (unsigned)((packed >> 8) & 0xffu),
+        (unsigned)(packed & 0xffu)
+    );
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
 static int ptn_internal_mail_validate_header_array(PtnRuntime *runtime, PtnArray *headers, size_t line) {
@@ -31602,6 +31700,173 @@ static int ptn_internal_mail_validate_headers(
     return 1;
 }
 
+static char *ptn_mail_ini_setting_unquoted_alloc(const char *setting) {
+    if (setting == NULL) {
+        return NULL;
+    }
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    size_t len = strlen(setting);
+    while (len > 0 && isspace((unsigned char)setting[len - 1])) {
+        len--;
+    }
+    if (len >= 2 &&
+        ((setting[0] == '"' && setting[len - 1] == '"') ||
+            (setting[0] == '\'' && setting[len - 1] == '\''))) {
+        setting++;
+        len -= 2;
+    }
+    return ptn_duplicate_string_len(setting, len);
+}
+
+static int ptn_mail_sendmail_exit_code(const char *setting, int *code_out) {
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    if (strncmp(setting, "exit", 4) != 0 || (setting[4] != '\0' && !isspace((unsigned char)setting[4]))) {
+        return 0;
+    }
+    setting += 4;
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    if (*setting == '\0') {
+        *code_out = 0;
+        return 1;
+    }
+    char *end = NULL;
+    long parsed = strtol(setting, &end, 10);
+    if (end == setting) {
+        return 0;
+    }
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (*end != '\0') {
+        return 0;
+    }
+    *code_out = (int)parsed;
+    return 1;
+}
+
+static char *ptn_mail_sendmail_path_from_ini_alloc(const char *setting) {
+    const char *marker = setting == NULL ? NULL : strstr(setting, "{MAIL:");
+    if (marker == NULL) {
+        return NULL;
+    }
+    const char *start = marker + strlen("{MAIL:");
+    const char *end = strchr(start, '}');
+    if (end == NULL || end <= start) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(start, (size_t)(end - start));
+}
+
+static char *ptn_mail_sendmail_path_from_tee_alloc(const char *setting) {
+    if (setting == NULL) {
+        return NULL;
+    }
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    if (strncmp(setting, "tee", 3) != 0 || (setting[3] != '\0' && !isspace((unsigned char)setting[3]))) {
+        return NULL;
+    }
+    const char *start = setting + 3;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        return NULL;
+    }
+    const char *end = start;
+    while (*end != '\0' && !isspace((unsigned char)*end)) {
+        end++;
+    }
+    return end > start ? ptn_duplicate_string_len(start, (size_t)(end - start)) : NULL;
+}
+
+static PtnStringOperand ptn_internal_mail_headers_string(
+    PtnRuntime *runtime,
+    PtnValue headers_value,
+    size_t line
+) {
+    PtnValue headers = ptn_value_deref(headers_value);
+    if (headers.type == PTN_NULL) {
+        return ptn_string_operand_borrowed("");
+    }
+    if (headers.type != PTN_ARRAY) {
+        return ptn_value_to_string_operand_with_runtime(runtime, headers, line);
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < headers.as.array->len; i++) {
+        PtnArrayEntry *entry = &headers.as.array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, ptn_value_deref(entry->value), line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(buffer.data);
+            ptn_string_operand_free(value);
+            return ptn_string_operand_borrowed("");
+        }
+        ptn_string_buffer_append_len(&buffer, entry->key.as.string, entry->key.string_len);
+        ptn_string_buffer_append(&buffer, ": ");
+        ptn_string_buffer_append_len(&buffer, value.data, value.len);
+        ptn_string_buffer_append_char(&buffer, '\n');
+        ptn_string_operand_free(value);
+    }
+    if (buffer.data == NULL) {
+        return ptn_string_operand_borrowed("");
+    }
+    PtnStringOperand operand = {
+        .data = buffer.data,
+        .owned = buffer.data,
+        .len = buffer.len,
+    };
+    return operand;
+}
+
+static int ptn_internal_mail_write_file(
+    PtnStringOperand to,
+    PtnStringOperand subject,
+    PtnStringOperand message,
+    PtnStringOperand headers,
+    const char *path
+) {
+    const char *mode = getenv("PTN_MAIL_CR_LF_MODE");
+    const char *newline = (mode != NULL && ptn_ascii_case_equal(mode, "crlf")) ? "\r\n" : "\n";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    ptn_string_buffer_append(&output, "To: ");
+    ptn_string_buffer_append_len(&output, to.data, to.len);
+    ptn_string_buffer_append(&output, newline);
+    ptn_string_buffer_append(&output, "Subject: ");
+    ptn_string_buffer_append_len(&output, subject.data, subject.len);
+    ptn_string_buffer_append(&output, newline);
+    if (headers.len != 0) {
+        ptn_string_buffer_append_len(&output, headers.data, headers.len);
+        if (headers.data[headers.len - 1] != '\n') {
+            ptn_string_buffer_append(&output, newline);
+        }
+    }
+    ptn_string_buffer_append(&output, newline);
+    ptn_string_buffer_append_len(&output, message.data, message.len);
+    ptn_string_buffer_append(&output, newline);
+
+    FILE *file = fopen(path, "wb");
+    int ok = 0;
+    if (file != NULL) {
+        ok = fwrite(output.data, 1, output.len, file) == output.len;
+        ok = fclose(file) == 0 && ok;
+    }
+    free(output.data);
+    return ok;
+}
+
 static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "mail", 1, "to", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -31621,12 +31886,23 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
         ptn_string_operand_free(message);
         return ptn_null();
     }
+    PtnStringOperand headers = ptn_string_operand_borrowed("");
     if (argc >= 4 &&
         !ptn_internal_mail_validate_headers(runtime, "mail", args[3], line)) {
         ptn_string_operand_free(to);
         ptn_string_operand_free(subject);
         ptn_string_operand_free(message);
         return ptn_null();
+    }
+    if (argc >= 4) {
+        headers = ptn_internal_mail_headers_string(runtime, args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            return ptn_null();
+        }
     }
     if (argc >= 5) {
         PtnStringOperand params = ptn_internal_expect_string_arg(
@@ -31642,12 +31918,55 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
             ptn_string_operand_free(to);
             ptn_string_operand_free(subject);
             ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
             return ptn_null();
         }
+    }
+    char *setting = ptn_mail_ini_setting_unquoted_alloc(getenv("PTN_SENDMAIL_PATH"));
+    if (setting != NULL) {
+        int exit_code = 0;
+        if (ptn_mail_sendmail_exit_code(setting, &exit_code)) {
+            free(setting);
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            if (exit_code == 0 || exit_code == 75) {
+                return ptn_bool(1);
+            }
+            char warning[112];
+            int written = snprintf(
+                warning,
+                sizeof(warning),
+                "mail(): Sendmail exited with non-zero exit code %d",
+                exit_code
+            );
+            if (written < 0 || (size_t)written >= sizeof(warning)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, warning, line);
+            return ptn_bool(0);
+        }
+        char *mail_path = ptn_mail_sendmail_path_from_ini_alloc(setting);
+        if (mail_path == NULL) {
+            mail_path = ptn_mail_sendmail_path_from_tee_alloc(setting);
+        }
+        if (mail_path != NULL) {
+            int ok = ptn_internal_mail_write_file(to, subject, message, headers, mail_path);
+            free(mail_path);
+            free(setting);
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            return ptn_bool(ok);
+        }
+        free(setting);
     }
     ptn_string_operand_free(to);
     ptn_string_operand_free(subject);
     ptn_string_operand_free(message);
+    ptn_string_operand_free(headers);
     return ptn_bool(0);
 }
 
@@ -56540,9 +56859,36 @@ static PtnResource *ptn_fopen_context_arg(PtnValue value) {
     return value.as.resource;
 }
 
+static PtnResource *ptn_stream_context_arg_from_call(
+    size_t argc,
+    const PtnValue *args,
+    size_t preferred_index
+) {
+    if (args == NULL) {
+        return NULL;
+    }
+    if (preferred_index < argc) {
+        PtnResource *context = ptn_fopen_context_arg(args[preferred_index]);
+        if (context != NULL) {
+            return context;
+        }
+    }
+    for (size_t i = argc; i > 0; i--) {
+        size_t index = i - 1;
+        if (index == preferred_index) {
+            continue;
+        }
+        PtnResource *context = ptn_fopen_context_arg(args[index]);
+        if (context != NULL) {
+            return context;
+        }
+    }
+    return NULL;
+}
+
 static PtnResource *ptn_effective_stream_context(size_t argc, const PtnValue *args) {
     if (argc >= 4 && args != NULL) {
-        PtnResource *context = ptn_fopen_context_arg(args[3]);
+        PtnResource *context = ptn_stream_context_arg_from_call(argc, args, 3);
         if (context != NULL) {
             return context;
         }
@@ -56875,6 +57221,11 @@ static int64_t ptn_stream_context_zlib_level(PtnResource *context) {
 
 static int ptn_stream_context_socket_tcp_nodelay(PtnResource *context) {
     PtnValue *option = ptn_stream_context_option(context, "socket", "tcp_nodelay");
+    return option != NULL && ptn_is_truthy(*option);
+}
+
+static int ptn_stream_context_socket_so_reuseport(PtnResource *context) {
+    PtnValue *option = ptn_stream_context_option(context, "socket", "so_reuseport");
     return option != NULL && ptn_is_truthy(*option);
 }
 
@@ -64213,6 +64564,30 @@ static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t arg
     return result;
 }
 
+static PtnValue ptn_internal_stream_get_transports(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    static const char *transports[] = {
+        "tcp",
+        "udp",
+        "unix",
+        "udg",
+        "ssl",
+        "tls",
+        "tlsv1.0",
+        "tlsv1.1",
+        "tlsv1.2",
+        "tlsv1.3",
+    };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(transports) / sizeof(transports[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_string(transports[i]));
+    }
+    return result;
+}
+
 static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value) {
     ptn_array_set_entry(array, ptn_array_string_key(key), value);
 }
@@ -65348,6 +65723,15 @@ static int ptn_file_get_contents_https_bytes(
 );
 #endif
 
+static int ptn_file_get_contents_http_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+);
+
 static int ptn_try_read_user_stream_wrapper_bytes(
     PtnRuntime *runtime,
     const char *function_name,
@@ -66025,6 +66409,16 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     if (read_result == 0) {
         read_result = ptn_file_get_contents_loopback_http_bytes(runtime, path, &data, &data_len);
     }
+    if (read_result == 0 &&
+        strlen(path) >= strlen("http://") &&
+        ptn_ascii_case_equal_n(path, "http://", strlen("http://"))) {
+        read_result = ptn_file_get_contents_http_bytes(runtime, path, context, &data, &data_len, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            free(data);
+            return ptn_null();
+        }
+    }
 #if PTN_HAVE_OPENSSL && !defined(_WIN32)
     if (read_result == 0 &&
         strlen(path) >= strlen("https://") &&
@@ -66127,6 +66521,14 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             &opened_path,
             line
         );
+    if (read_result == -2) {
+        free(data_url_detail);
+        free(opened_path);
+        free(fallback_path);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
     if (read_result <= 0) {
         if (data_url_detail != NULL) {
             ptn_emit_file_warning(runtime, "file_get_contents", path, data_url_detail, line);
@@ -146287,6 +146689,19 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
     ptn_get_defined_constants_add_int(table, "STREAM_IS_URL", PTN_STREAM_IS_URL);
     ptn_get_defined_constants_add_int(table, "STREAM_REPORT_ERRORS", PTN_STREAM_REPORT_ERRORS);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_RESOLVE", PTN_STREAM_NOTIFY_RESOLVE);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_CONNECT", PTN_STREAM_NOTIFY_CONNECT);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_AUTH_REQUIRED", PTN_STREAM_NOTIFY_AUTH_REQUIRED);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_MIME_TYPE_IS", PTN_STREAM_NOTIFY_MIME_TYPE_IS);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_FILE_SIZE_IS", PTN_STREAM_NOTIFY_FILE_SIZE_IS);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_REDIRECTED", PTN_STREAM_NOTIFY_REDIRECTED);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_PROGRESS", PTN_STREAM_NOTIFY_PROGRESS);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_COMPLETED", PTN_STREAM_NOTIFY_COMPLETED);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_FAILURE", PTN_STREAM_NOTIFY_FAILURE);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_AUTH_RESULT", PTN_STREAM_NOTIFY_AUTH_RESULT);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_SEVERITY_INFO", PTN_STREAM_NOTIFY_SEVERITY_INFO);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_SEVERITY_WARN", PTN_STREAM_NOTIFY_SEVERITY_WARN);
+    ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_SEVERITY_ERR", PTN_STREAM_NOTIFY_SEVERITY_ERR);
     ptn_get_defined_constants_add_int(table, "DNS_A", PTN_DNS_A);
     ptn_get_defined_constants_add_int(table, "DNS_NS", PTN_DNS_NS);
     ptn_get_defined_constants_add_int(table, "DNS_CNAME", PTN_DNS_CNAME);
@@ -146911,6 +147326,19 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_ALL",
         "STREAM_IS_URL",
         "STREAM_REPORT_ERRORS",
+        "STREAM_NOTIFY_RESOLVE",
+        "STREAM_NOTIFY_CONNECT",
+        "STREAM_NOTIFY_AUTH_REQUIRED",
+        "STREAM_NOTIFY_MIME_TYPE_IS",
+        "STREAM_NOTIFY_FILE_SIZE_IS",
+        "STREAM_NOTIFY_REDIRECTED",
+        "STREAM_NOTIFY_PROGRESS",
+        "STREAM_NOTIFY_COMPLETED",
+        "STREAM_NOTIFY_FAILURE",
+        "STREAM_NOTIFY_AUTH_RESULT",
+        "STREAM_NOTIFY_SEVERITY_INFO",
+        "STREAM_NOTIFY_SEVERITY_WARN",
+        "STREAM_NOTIFY_SEVERITY_ERR",
         "DNS_A",
         "DNS_NS",
         "DNS_CNAME",
@@ -191768,7 +192196,11 @@ static int ptn_stream_socket_address_parse_tcp(
         host = body + 1;
         host_len = (size_t)(end - host);
         service = end + 2;
-        service_len = (size_t)((body + body_len) - service);
+        const char *service_end = memchr(service, '/', (size_t)((body + body_len) - service));
+        if (service_end == NULL) {
+            service_end = body + body_len;
+        }
+        service_len = (size_t)(service_end - service);
     } else {
         const char *colon = NULL;
         for (size_t i = 0; i < body_len; i++) {
@@ -191781,7 +192213,11 @@ static int ptn_stream_socket_address_parse_tcp(
         }
         host_len = (size_t)(colon - body);
         service = colon + 1;
-        service_len = (size_t)((body + body_len) - service);
+        const char *service_end = memchr(service, '/', (size_t)((body + body_len) - service));
+        if (service_end == NULL) {
+            service_end = body + body_len;
+        }
+        service_len = (size_t)(service_end - service);
     }
 
     if (host_len == 0 || service_len == 0) {
@@ -192031,8 +192467,9 @@ static PtnValue ptn_stream_socket_server_open_tcp(
         ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "failed to parse address");
         return ptn_bool(0);
     }
-    PtnResource *context = argc >= 5 ? ptn_fopen_context_arg(args[4]) : NULL;
+    PtnResource *context = ptn_stream_context_arg_from_call(argc, args, 4);
     int tcp_nodelay = ptn_stream_context_socket_tcp_nodelay(context);
+    int so_reuseport = ptn_stream_context_socket_so_reuseport(context);
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -192059,6 +192496,11 @@ static PtnValue ptn_stream_socket_server_open_tcp(
         }
         int reuse = 1;
         (void)setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#if defined(SO_REUSEPORT)
+        if (so_reuseport) {
+            (void)setsockopt(descriptor, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
+        }
+#endif
         if (bind(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0 &&
             listen(descriptor, 32) == 0) {
             error_code = 0;
@@ -192710,7 +193152,7 @@ static PtnValue ptn_stream_socket_server_open_tls(
     if (result.type != PTN_RESOURCE || result.as.resource == NULL) {
         return result;
     }
-    PtnResource *context = argc >= 5 ? ptn_fopen_context_arg(args[4]) : NULL;
+    PtnResource *context = ptn_stream_context_arg_from_call(argc, args, 4);
     SSL_CTX *ctx = ptn_stream_tls_context_create(runtime, context, scheme, 1, NULL, NULL, line);
     if (ctx == NULL) {
         ptn_value_destroy(&result);
@@ -193006,6 +193448,387 @@ static int ptn_file_get_contents_https_bytes(
     return ok ? 1 : -1;
 }
 #endif
+
+static int ptn_file_get_contents_http_parse_url(
+    const char *url,
+    char **tcp_address_out,
+    char **request_target_out,
+    char **host_header_out
+) {
+    const char *prefix = "http://";
+    size_t prefix_len = strlen(prefix);
+    if (strlen(url) < prefix_len || !ptn_ascii_case_equal_n(url, prefix, prefix_len)) {
+        return 0;
+    }
+
+    const char *body = url + prefix_len;
+    const char *target_start = strpbrk(body, "/?#");
+    const char *authority_end = target_start == NULL ? url + strlen(url) : target_start;
+    size_t authority_len = (size_t)(authority_end - body);
+    if (authority_len == 0) {
+        return 0;
+    }
+
+    const char *authority = body;
+    const char *host = authority;
+    size_t host_len = 0;
+    const char *port = "80";
+    size_t port_len = strlen(port);
+
+    if (authority[0] == '[') {
+        const char *end = memchr(authority, ']', authority_len);
+        if (end == NULL) {
+            return 0;
+        }
+        host_len = (size_t)(end - authority + 1);
+        if ((size_t)(end + 1 - authority) < authority_len) {
+            if (end[1] != ':' || (size_t)(end + 2 - authority) >= authority_len) {
+                return 0;
+            }
+            port = end + 2;
+            port_len = (size_t)(authority_end - port);
+        }
+    } else {
+        const char *colon = NULL;
+        for (const char *cursor = authority; cursor < authority_end; cursor++) {
+            if (*cursor == ':') {
+                colon = cursor;
+            }
+        }
+        if (colon == NULL) {
+            host_len = authority_len;
+        } else {
+            if (colon == authority || colon + 1 >= authority_end) {
+                return 0;
+            }
+            host_len = (size_t)(colon - authority);
+            port = colon + 1;
+            port_len = (size_t)(authority_end - port);
+        }
+    }
+    if (host_len == 0 || port_len == 0) {
+        return 0;
+    }
+
+    int address_len = snprintf(
+        NULL,
+        0,
+        "tcp://%.*s:%.*s",
+        (int)host_len,
+        host,
+        (int)port_len,
+        port
+    );
+    if (address_len < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *tcp_address = malloc((size_t)address_len + 1);
+    if (tcp_address == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int address_written = snprintf(
+        tcp_address,
+        (size_t)address_len + 1,
+        "tcp://%.*s:%.*s",
+        (int)host_len,
+        host,
+        (int)port_len,
+        port
+    );
+    if (address_written < 0 || address_written != address_len) {
+        free(tcp_address);
+        ptn_abort_out_of_memory();
+    }
+
+    char *request_target = NULL;
+    if (target_start == NULL) {
+        request_target = ptn_duplicate_string("/");
+    } else if (*target_start == '/') {
+        request_target = ptn_duplicate_string(target_start);
+    } else {
+        int target_len = snprintf(NULL, 0, "/%s", target_start);
+        if (target_len < 0) {
+            free(tcp_address);
+            ptn_abort_out_of_memory();
+        }
+        request_target = malloc((size_t)target_len + 1);
+        if (request_target == NULL) {
+            free(tcp_address);
+            ptn_abort_out_of_memory();
+        }
+        int target_written = snprintf(request_target, (size_t)target_len + 1, "/%s", target_start);
+        if (target_written < 0 || target_written != target_len) {
+            free(request_target);
+            free(tcp_address);
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    char *host_header = ptn_duplicate_string_len(authority, authority_len);
+    *tcp_address_out = tcp_address;
+    *request_target_out = request_target;
+    *host_header_out = host_header;
+    return 1;
+}
+
+static int ptn_http_next_line(
+    const char *bytes,
+    size_t len,
+    size_t *offset_io,
+    const char **line_out,
+    size_t *line_len_out
+) {
+    if (*offset_io >= len) {
+        return 0;
+    }
+    size_t start = *offset_io;
+    size_t end = start;
+    while (end < len && bytes[end] != '\n') {
+        end++;
+    }
+    size_t line_len = end - start;
+    if (line_len > 0 && bytes[start + line_len - 1] == '\r') {
+        line_len--;
+    }
+    *line_out = bytes + start;
+    *line_len_out = line_len;
+    *offset_io = end < len ? end + 1 : end;
+    return 1;
+}
+
+static int ptn_http_header_name_equal(const char *line, size_t line_len, const char *name, size_t *value_offset_out) {
+    size_t name_len = strlen(name);
+    if (line_len <= name_len || line[name_len] != ':' || !ptn_ascii_case_equal_n(line, name, name_len)) {
+        return 0;
+    }
+    size_t offset = name_len + 1;
+    while (offset < line_len && (line[offset] == ' ' || line[offset] == '\t')) {
+        offset++;
+    }
+    *value_offset_out = offset;
+    return 1;
+}
+
+static void ptn_http_notify(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    int64_t notification_code,
+    int64_t severity,
+    const char *message,
+    size_t message_len,
+    size_t line
+) {
+    if (context == NULL) {
+        return;
+    }
+    PtnValue params = ptn_value_deref(context->context_params);
+    if (params.type != PTN_ARRAY) {
+        return;
+    }
+    PtnArrayEntry *entry = ptn_stream_context_params_literal_entry(params.as.array, "notification");
+    if (entry == NULL) {
+        return;
+    }
+    PtnValue callback = ptn_value_deref(entry->value);
+    if (!ptn_callable_is_valid(runtime, callback, 0)) {
+        return;
+    }
+    PtnValue callback_args[6] = {
+        ptn_int(notification_code),
+        ptn_int(severity),
+        ptn_owned_string_len(ptn_duplicate_string_len(message, message_len), message_len),
+        ptn_int(0),
+        ptn_int(0),
+        ptn_int(0),
+    };
+    PtnValue result = ptn_internal_call_callback(runtime, callback, 6, callback_args, line);
+    ptn_value_destroy(&result);
+    for (size_t i = 0; i < sizeof(callback_args) / sizeof(callback_args[0]); i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+}
+
+static void ptn_http_headers_append(PtnValue headers, const char *line, size_t line_len, int64_t *index_io) {
+    ptn_array_set_entry(
+        headers.as.array,
+        ptn_array_int_key((*index_io)++),
+        ptn_owned_string_len(ptn_duplicate_string_len(line, line_len), line_len)
+    );
+}
+
+static int ptn_http_response_body(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    const char *bytes,
+    size_t len,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+) {
+    const char *header_line = NULL;
+    size_t header_line_len = 0;
+    size_t offset = 0;
+    if (!ptn_http_next_line(bytes, len, &offset, &header_line, &header_line_len)) {
+        return -1;
+    }
+
+    PtnValue headers = ptn_array_from_literal_entries(0, NULL);
+    int64_t header_index = 0;
+    ptn_http_headers_append(headers, header_line, header_line_len, &header_index);
+    int accepted_field_count = 0;
+
+    while (ptn_http_next_line(bytes, len, &offset, &header_line, &header_line_len)) {
+        if (header_line_len == 0) {
+            break;
+        }
+        if ((header_line[0] == ' ' || header_line[0] == '\t') && accepted_field_count == 0) {
+            ptn_http_last_response_headers_set(runtime, headers);
+            char detail[192];
+            int written = snprintf(
+                detail,
+                sizeof(detail),
+                "Failed to open stream: HTTP invalid response format (folding header at the start)!"
+            );
+            if (written < 0 || (size_t)written >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
+            return -2;
+        }
+
+        size_t value_offset = 0;
+        if (ptn_http_header_name_equal(header_line, header_line_len, "Location", &value_offset)) {
+            if (header_line_len - value_offset > 8182) {
+                ptn_http_last_response_headers_set(runtime, headers);
+                char detail[192];
+                int written = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "Failed to open stream: HTTP Location header size is over the limit of 8182 bytes"
+                );
+                if (written < 0 || (size_t)written >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
+                return -2;
+            }
+        }
+
+        ptn_http_headers_append(headers, header_line, header_line_len, &header_index);
+        accepted_field_count++;
+
+        if (ptn_http_header_name_equal(header_line, header_line_len, "Content-Type", &value_offset)) {
+            ptn_http_notify(
+                runtime,
+                context,
+                PTN_STREAM_NOTIFY_MIME_TYPE_IS,
+                PTN_STREAM_NOTIFY_SEVERITY_INFO,
+                header_line + value_offset,
+                header_line_len - value_offset,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&headers);
+                return -2;
+            }
+        }
+    }
+
+    ptn_http_last_response_headers_set(runtime, headers);
+    size_t body_len = len - offset;
+    unsigned char *copy = malloc(body_len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (body_len != 0) {
+        memcpy(copy, bytes + offset, body_len);
+    }
+    copy[body_len] = '\0';
+    *data_out = copy;
+    *data_len_out = body_len;
+    return 1;
+}
+
+static int ptn_file_get_contents_http_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+) {
+    char *tcp_address = NULL;
+    char *request_target = NULL;
+    char *host_header = NULL;
+    if (!ptn_file_get_contents_http_parse_url(path, &tcp_address, &request_target, &host_header)) {
+        return 0;
+    }
+
+    PtnValue tcp_args[3] = { ptn_null(), ptn_null(), ptn_null() };
+    PtnStringOperand tcp_operand = {
+        .data = tcp_address,
+        .owned = NULL,
+        .len = strlen(tcp_address),
+    };
+    PtnValue stream = ptn_stream_socket_client_open_tcp(
+        runtime,
+        "file_get_contents",
+        tcp_operand,
+        tcp_args[1],
+        tcp_args[2],
+        line
+    );
+    if (stream.type != PTN_RESOURCE || stream.as.resource == NULL) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    PtnStringBuffer request;
+    ptn_string_buffer_init(&request);
+    ptn_string_buffer_append_format(
+        &request,
+        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        request_target,
+        host_header
+    );
+    size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
+    free(request.data);
+    free(tcp_address);
+    free(request_target);
+    free(host_header);
+    if (written == 0 || written < request.len) {
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    PtnStringBuffer response;
+    ptn_string_buffer_init(&response);
+    unsigned char chunk[8192];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(stream.as.resource, chunk, sizeof(chunk));
+        if (read_len == 0) {
+            break;
+        }
+        ptn_string_buffer_append_len(&response, (const char *)chunk, read_len);
+    }
+    int result = ptn_http_response_body(
+        runtime,
+        path,
+        context,
+        response.data == NULL ? "" : response.data,
+        response.len,
+        data_out,
+        data_len_out,
+        line
+    );
+    free(response.data);
+    ptn_value_destroy(&stream);
+    return result;
+}
 
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
     for (size_t i = 0; i < ptn_persistent_socket_count; i++) {
@@ -225845,6 +226668,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
         { "header", 1, 3, ptn_internal_header },
         { "header_register_callback", 1, 1, ptn_internal_header_register_callback },
+        { "http_get_last_response_headers", 0, 0, ptn_internal_http_get_last_response_headers },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },
         { "hypot", 2, 2, ptn_internal_hypot },
@@ -225861,6 +226685,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "idate", 1, 2, ptn_internal_idate },
         { "image_type_to_extension", 1, 2, ptn_internal_image_type_to_extension },
         { "image_type_to_mime_type", 1, 1, ptn_internal_image_type_to_mime_type },
+        { "ip2long", 1, 1, ptn_internal_ip2long },
         { "iptcembed", 2, 3, ptn_internal_iptcembed },
         { "iptcparse", 1, 1, ptn_internal_iptcparse },
         { "implode", 1, 2, ptn_internal_implode },
@@ -226023,6 +226848,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "libxml_use_internal_errors", 0, 1, ptn_internal_libxml_use_internal_errors },
         { "link", 2, 2, ptn_internal_link },
         { "linkinfo", 1, 1, ptn_internal_linkinfo },
+        { "long2ip", 1, 1, ptn_internal_long2ip },
         { "locale_accept_from_http", 1, 1, ptn_internal_locale_accept_from_http },
         { "locale_canonicalize", 1, 1, ptn_internal_locale_canonicalize },
         { "locale_compose", 1, 1, ptn_internal_locale_compose },
@@ -226439,6 +227265,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_get_transports", 0, 0, ptn_internal_stream_get_transports },
         { "stream_get_wrappers", 0, 0, ptn_internal_stream_get_wrappers },
         { "stream_is_local", 1, 1, ptn_internal_stream_is_local },
         { "stream_isatty", 1, 1, ptn_internal_stream_isatty },
@@ -227522,6 +228349,10 @@ static PtnFunctionMetadata ptn_find_runtime_function_metadata(PtnRuntime *runtim
     if (metadata.found) {
         return metadata;
     }
+    metadata = ptn_runtime_dynamic_function_metadata(runtime, name);
+    if (metadata.found) {
+        return metadata;
+    }
     if (ptn_runtime_function_disabled(runtime, name)) {
         return ptn_function_metadata_not_found();
     }
@@ -227607,10 +228438,10 @@ static PtnFunctionMetadata ptn_find_function_or_method_metadata(
             return metadata;
         }
         free(owned_name);
-        return ptn_find_function_metadata(name);
+        return ptn_find_runtime_function_metadata(runtime, name);
     }
     free(owned_name);
-    return ptn_find_function_metadata(name);
+    return ptn_find_runtime_function_metadata(runtime, name);
 }
 
 static PtnFunctionMetadata ptn_find_callable_metadata(PtnRuntime *runtime, PtnValue callable) {
@@ -227678,7 +228509,7 @@ static PtnFunctionMetadata ptn_find_callable_metadata(PtnRuntime *runtime, PtnVa
                         return metadata;
                     }
                     char *name = ptn_callable_output_name(resolved);
-                    metadata = ptn_find_function_metadata(name);
+                    metadata = ptn_find_runtime_function_metadata(runtime, name);
                     free(name);
                     return metadata;
                 }
@@ -227697,7 +228528,7 @@ static PtnFunctionMetadata ptn_find_callable_metadata(PtnRuntime *runtime, PtnVa
                         return metadata;
                     }
                     char *name = ptn_callable_output_name(resolved);
-                    metadata = ptn_find_function_metadata(name);
+                    metadata = ptn_find_runtime_function_metadata(runtime, name);
                     free(name);
                     return metadata;
                 }
@@ -272574,6 +273405,145 @@ static PtnValue ptn_eval_create_dynamic_method_closure(
     return closure;
 }
 
+static PtnValue ptn_eval_create_dynamic_function_closure(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t body_start,
+    size_t body_close,
+    const char *function_name,
+    char **parameter_names,
+    PtnParameterMetadata *parameter_metadata,
+    size_t parameter_count,
+    size_t line
+) {
+    size_t body_len = body_close - body_start;
+    size_t body_line = ptn_eval_line_for_pos(code, body_start, line);
+    char *display_name = ptn_duplicate_string(function_name);
+
+    PtnFunctionMetadata metadata = ptn_function_metadata_with_source(
+        ptn_function_metadata_found(
+            display_name,
+            0,
+            parameter_count,
+            parameter_count,
+            0,
+            parameter_metadata,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        ),
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        ptn_eval_line_for_pos(code, body_close, line),
+        NULL,
+        NULL
+    );
+    PtnValue closure = ptn_closure(runtime, (size_t)-1, display_name, metadata, 0, 0);
+    closure.as.closure->owns_metadata_name = 1;
+    closure.as.closure->owns_metadata_parameters = parameter_metadata != NULL;
+    closure.as.closure->has_dynamic_body = 1;
+    closure.as.closure->dynamic_body = ptn_duplicate_string_len(code + body_start, body_len);
+    closure.as.closure->dynamic_body_len = body_len;
+    closure.as.closure->dynamic_body_base_line = body_line;
+    closure.as.closure->dynamic_parameter_names = parameter_names;
+    closure.as.closure->dynamic_parameter_count = parameter_count;
+    return closure;
+}
+
+static int ptn_dynamic_execute_function_declaration_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (!ptn_eval_keyword_at(code, len, cursor, "function")) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor + strlen("function"));
+    if (cursor < len && code[cursor] == '&') {
+        cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+    }
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    size_t name_start = cursor;
+    while (cursor < len &&
+        (ptn_eval_identifier_part((unsigned char)code[cursor]) || code[cursor] == '\\')) {
+        cursor++;
+    }
+    char *function_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len || code[cursor] != '(') {
+        free(function_name);
+        return 0;
+    }
+    size_t parameters_open = cursor;
+    size_t parameters_close =
+        ptn_eval_find_matching_delimiter(code, len, parameters_open, '(', ')');
+    if (parameters_close >= len) {
+        free(function_name);
+        return 0;
+    }
+    char **parameter_names = NULL;
+    PtnParameterMetadata *parameter_metadata = NULL;
+    size_t parameter_count = 0;
+    if (!ptn_eval_parse_dynamic_parameters(
+            code,
+            parameters_open + 1,
+            parameters_close,
+            &parameter_names,
+            &parameter_metadata,
+            &parameter_count
+        )) {
+        free(function_name);
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, parameters_close + 1);
+    if (cursor < len && code[cursor] == ':') {
+        cursor++;
+        while (cursor < len && code[cursor] != '{' && code[cursor] != ';') {
+            if (code[cursor] == '\'' || code[cursor] == '"') {
+                cursor = ptn_eval_skip_quoted_string(code, len, cursor);
+                continue;
+            }
+            cursor++;
+        }
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len || code[cursor] != '{') {
+        ptn_eval_free_dynamic_parameters(parameter_names, parameter_metadata, parameter_count);
+        free(function_name);
+        return 0;
+    }
+    size_t body_open = cursor;
+    size_t body_close = ptn_eval_find_matching_brace(code, len, body_open);
+    if (body_close >= len) {
+        ptn_eval_free_dynamic_parameters(parameter_names, parameter_metadata, parameter_count);
+        free(function_name);
+        return 0;
+    }
+    PtnValue closure = ptn_eval_create_dynamic_function_closure(
+        runtime,
+        code,
+        body_open + 1,
+        body_close,
+        function_name,
+        parameter_names,
+        parameter_metadata,
+        parameter_count,
+        line
+    );
+    ptn_runtime_register_dynamic_function(runtime, function_name, closure);
+    ptn_value_destroy(&closure);
+    free(function_name);
+    *pos = body_close + 1;
+    return 1;
+}
+
 static PtnValue ptn_eval_scan_dynamic_class_methods(
     PtnRuntime *runtime,
     const char *code,
@@ -274416,6 +275386,312 @@ static int ptn_dynamic_execute_if_statement(
     return ok;
 }
 
+static size_t ptn_dynamic_switch_find_top_level_colon(const char *code, size_t start, size_t end) {
+    size_t depth = 0;
+    for (size_t cursor = start; cursor < end; cursor++) {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, end, cursor);
+            if (cursor == 0) {
+                return end;
+            }
+            cursor--;
+            continue;
+        }
+        if (ptn_eval_skip_comment(code, end, &cursor)) {
+            if (cursor == 0) {
+                return end;
+            }
+            cursor--;
+            continue;
+        }
+        if (code[cursor] == '(' || code[cursor] == '[' || code[cursor] == '{') {
+            depth++;
+            continue;
+        }
+        if ((code[cursor] == ')' || code[cursor] == ']' || code[cursor] == '}') && depth != 0) {
+            depth--;
+            continue;
+        }
+        if (depth == 0 && code[cursor] == ':') {
+            return cursor;
+        }
+    }
+    return end;
+}
+
+static size_t ptn_dynamic_switch_find_next_label(const char *code, size_t start, size_t end) {
+    size_t depth = 0;
+    for (size_t cursor = start; cursor < end; cursor++) {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, end, cursor);
+            if (cursor == 0) {
+                return end;
+            }
+            cursor--;
+            continue;
+        }
+        if (ptn_eval_skip_comment(code, end, &cursor)) {
+            if (cursor == 0) {
+                return end;
+            }
+            cursor--;
+            continue;
+        }
+        if (code[cursor] == '{') {
+            depth++;
+            continue;
+        }
+        if (code[cursor] == '}' && depth != 0) {
+            depth--;
+            continue;
+        }
+        if (depth == 0 &&
+            (ptn_eval_keyword_at(code, end, cursor, "case") ||
+                ptn_eval_keyword_at(code, end, cursor, "default"))) {
+            return cursor;
+        }
+    }
+    return end;
+}
+
+static size_t ptn_dynamic_switch_find_top_level_break(const char *code, size_t start, size_t end, size_t *after_break_out) {
+    size_t depth = 0;
+    for (size_t cursor = start; cursor < end; cursor++) {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, end, cursor);
+            if (cursor == 0) {
+                break;
+            }
+            cursor--;
+            continue;
+        }
+        if (ptn_eval_skip_comment(code, end, &cursor)) {
+            if (cursor == 0) {
+                break;
+            }
+            cursor--;
+            continue;
+        }
+        if (code[cursor] == '{') {
+            depth++;
+            continue;
+        }
+        if (code[cursor] == '}' && depth != 0) {
+            depth--;
+            continue;
+        }
+        if (depth != 0 || !ptn_eval_keyword_at(code, end, cursor, "break")) {
+            continue;
+        }
+        size_t after = ptn_eval_skip_ws(code, end, cursor + strlen("break"));
+        while (after < end && code[after] != ';') {
+            if (code[after] == '\'' || code[after] == '"') {
+                after = ptn_eval_skip_quoted_string(code, end, after);
+                continue;
+            }
+            after++;
+        }
+        if (after < end) {
+            after++;
+        }
+        if (after_break_out != NULL) {
+            *after_break_out = after;
+        }
+        return cursor;
+    }
+    if (after_break_out != NULL) {
+        *after_break_out = end;
+    }
+    return end;
+}
+
+static int ptn_dynamic_switch_label_bounds(
+    const char *code,
+    size_t end,
+    size_t label_pos,
+    int *is_default_out,
+    size_t *case_expr_start_out,
+    size_t *case_expr_end_out,
+    size_t *body_start_out,
+    size_t *body_end_out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, label_pos);
+    int is_default = ptn_eval_keyword_at(code, end, cursor, "default");
+    if (is_default) {
+        cursor += strlen("default");
+    } else if (ptn_eval_keyword_at(code, end, cursor, "case")) {
+        cursor += strlen("case");
+    } else {
+        return 0;
+    }
+    size_t colon = ptn_dynamic_switch_find_top_level_colon(code, cursor, end);
+    if (colon >= end) {
+        return 0;
+    }
+    size_t body_start = colon + 1;
+    size_t body_end = ptn_dynamic_switch_find_next_label(code, body_start, end);
+    *is_default_out = is_default;
+    *case_expr_start_out = is_default ? colon : cursor;
+    *case_expr_end_out = colon;
+    *body_start_out = body_start;
+    *body_end_out = body_end;
+    return 1;
+}
+
+static int ptn_dynamic_execute_switch_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "switch")) {
+        return 0;
+    }
+    cursor += strlen("switch");
+    cursor = ptn_eval_skip_ws(code, end, cursor);
+    if (cursor >= end || code[cursor] != '(') {
+        return 0;
+    }
+    size_t header_open = cursor;
+    size_t header_close = ptn_eval_find_matching_delimiter(code, end, header_open, '(', ')');
+    if (header_close >= end) {
+        return 0;
+    }
+    size_t expression_pos = header_open + 1;
+    size_t line = ptn_eval_line_for_pos(code, *pos, base_line);
+    PtnValue switch_value = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, header_close, &expression_pos, line, &switch_value)) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, end, header_close + 1);
+    if (cursor >= end || code[cursor] != '{') {
+        ptn_value_destroy(&switch_value);
+        return 0;
+    }
+    size_t body_open = cursor;
+    size_t body_close = ptn_eval_find_matching_brace(code, end, body_open);
+    if (body_close >= end) {
+        ptn_value_destroy(&switch_value);
+        return 0;
+    }
+
+    size_t selected_body_start = body_close;
+    size_t default_body_start = body_close;
+    size_t scan = ptn_dynamic_switch_find_next_label(code, body_open + 1, body_close);
+    while (scan < body_close) {
+        int is_default = 0;
+        size_t case_expr_start = 0;
+        size_t case_expr_end = 0;
+        size_t body_start = 0;
+        size_t body_end = 0;
+        if (!ptn_dynamic_switch_label_bounds(
+                code,
+                body_close,
+                scan,
+                &is_default,
+                &case_expr_start,
+                &case_expr_end,
+                &body_start,
+                &body_end
+            )) {
+            ptn_value_destroy(&switch_value);
+            return 0;
+        }
+        if (is_default) {
+            if (default_body_start == body_close) {
+                default_body_start = body_start;
+            }
+        } else if (selected_body_start == body_close) {
+            size_t case_pos = ptn_eval_skip_ws(code, case_expr_end, case_expr_start);
+            PtnValue case_value = ptn_null();
+            if (!ptn_eval_parse_expression(runtime, code, case_expr_end, &case_pos, line, &case_value)) {
+                ptn_value_destroy(&switch_value);
+                return 0;
+            }
+            int matches = ptn_compare_equal(runtime, switch_value, case_value, line);
+            ptn_value_destroy(&case_value);
+            if (ptn_runtime_has_active_exception(runtime)) {
+                ptn_value_destroy(&switch_value);
+                *pos = body_close + 1;
+                return 1;
+            }
+            if (matches) {
+                selected_body_start = body_start;
+            }
+        }
+        scan = body_end;
+    }
+    if (selected_body_start == body_close) {
+        selected_body_start = default_body_start;
+    }
+    ptn_value_destroy(&switch_value);
+    if (selected_body_start == body_close) {
+        *pos = body_close + 1;
+        return 1;
+    }
+
+    int executing = 0;
+    scan = ptn_dynamic_switch_find_next_label(code, body_open + 1, body_close);
+    while (scan < body_close) {
+        int is_default = 0;
+        size_t case_expr_start = 0;
+        size_t case_expr_end = 0;
+        size_t body_start = 0;
+        size_t body_end = 0;
+        if (!ptn_dynamic_switch_label_bounds(
+                code,
+                body_close,
+                scan,
+                &is_default,
+                &case_expr_start,
+                &case_expr_end,
+                &body_start,
+                &body_end
+            )) {
+            return 0;
+        }
+        (void)is_default;
+        (void)case_expr_start;
+        (void)case_expr_end;
+        if (!executing && body_start == selected_body_start) {
+            executing = 1;
+        }
+        if (executing) {
+            size_t break_pos =
+                ptn_dynamic_switch_find_top_level_break(code, body_start, body_end, NULL);
+            size_t nested = body_start;
+            if (!ptn_dynamic_execute_statements_range(
+                    runtime,
+                    code,
+                    len,
+                    &nested,
+                    break_pos,
+                    base_line,
+                    return_out,
+                    returned
+                )) {
+                return 0;
+            }
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                *pos = body_close + 1;
+                return 1;
+            }
+            if (break_pos < body_end) {
+                *pos = body_close + 1;
+                return 1;
+            }
+        }
+        scan = body_end;
+    }
+    *pos = body_close + 1;
+    return 1;
+}
+
 static int ptn_dynamic_execute_return_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -274952,7 +276228,27 @@ static int ptn_dynamic_execute_statements_range(
             continue;
         }
         *pos = statement_pos;
+        if (ptn_dynamic_execute_switch_statement(
+                runtime,
+                code,
+                len,
+                pos,
+                end,
+                base_line,
+                return_out,
+                returned
+            )) {
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
+        }
+        *pos = statement_pos;
         if (ptn_dynamic_skip_class_declaration(code, end, pos)) {
+            continue;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_execute_function_declaration_statement(runtime, code, end, pos, line)) {
             continue;
         }
         *pos = statement_pos;

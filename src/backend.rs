@@ -10776,13 +10776,6 @@ fn emit_user_function_dispatch(
     out.push_str(
         "\nstatic int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
     );
-    if functions
-        .iter()
-        .all(|function| function.is_anonymous || function.class_name.is_some())
-    {
-        out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)name;\n");
-    }
     for (index, function) in functions.iter().enumerate() {
         if function.is_anonymous || function.class_name.is_some() {
             continue;
@@ -10795,7 +10788,8 @@ fn emit_user_function_dispatch(
         out.push_str("];\n");
         out.push_str("    }\n");
     }
-    out.push_str("    return 0;\n");
+    out.push_str("    PtnFunctionMetadata ptn_dynamic_metadata = ptn_runtime_dynamic_function_metadata(runtime, name);\n");
+    out.push_str("    return ptn_dynamic_metadata.found;\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PtnValue ptn_user_function_names(PtnRuntime *runtime) {\n");
@@ -11389,6 +11383,12 @@ fn emit_user_function_dispatch(
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
     out.push_str("    }\n");
+    if full_internal_dispatch {
+        out.push_str("    PtnValue ptn_dynamic_function_result;\n");
+        out.push_str("    if (ptn_runtime_call_dynamic_function(runtime, lookup_name, argc, args, line, &ptn_dynamic_function_result)) {\n");
+        out.push_str("        return ptn_dynamic_function_result;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    if (ptn_static_call_separator != NULL && ptn_static_call_separator != lookup_name && ptn_static_call_separator[2] != '\\0') {\n");
     out.push_str("        size_t ptn_static_call_class_len = (size_t)(ptn_static_call_separator - lookup_name);\n");
     out.push_str("        char *ptn_static_call_class = malloc(ptn_static_call_class_len + 1);\n");
