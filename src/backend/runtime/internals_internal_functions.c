@@ -162522,6 +162522,33 @@ static int ptn_xml_parser_validate_object_swap(PtnRuntime *runtime, PtnXmlParser
         ptn_xml_parser_validate_object_swap_handler(runtime, object, data->unparsed_entity_decl_handler, data->has_unparsed_entity_decl_handler, data->unparsed_entity_decl_handler_deferred_object_binding, "xml_set_unparsed_entity_decl_handler");
 }
 
+static int ptn_xml_parser_has_deferred_object_binding(PtnXmlParserData *data) {
+    return data->start_handler_deferred_object_binding ||
+        data->end_handler_deferred_object_binding ||
+        data->character_handler_deferred_object_binding ||
+        data->processing_instruction_handler_deferred_object_binding ||
+        data->default_handler_deferred_object_binding ||
+        data->external_entity_ref_handler_deferred_object_binding ||
+        data->start_namespace_decl_handler_deferred_object_binding ||
+        data->end_namespace_decl_handler_deferred_object_binding ||
+        data->notation_decl_handler_deferred_object_binding ||
+        data->unparsed_entity_decl_handler_deferred_object_binding;
+}
+
+static int ptn_xml_parser_deferred_current_receiver_binding(PtnRuntime *runtime, PtnXmlParserData *data, PtnValue object) {
+    if (data->has_callback_object || !ptn_xml_parser_has_deferred_object_binding(data)) {
+        return 0;
+    }
+    if (runtime == NULL || !runtime->has_current_receiver) {
+        return 0;
+    }
+    PtnValue receiver = ptn_value_deref(runtime->current_receiver);
+    PtnValue resolved_object = ptn_value_deref(object);
+    return receiver.type == PTN_OBJECT &&
+        resolved_object.type == PTN_OBJECT &&
+        receiver.as.object == resolved_object.as.object;
+}
+
 static PtnValue ptn_internal_xml_set_element_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnXmlParserData *data = ptn_xml_parser_expect_arg(runtime, "xml_set_element_handler", args[0], line);
@@ -162648,11 +162675,13 @@ static PtnValue ptn_internal_xml_set_object(PtnRuntime *runtime, size_t argc, co
     if (data == NULL) {
         return ptn_null();
     }
-    ptn_emit_deprecation(
-        &runtime->diagnostics,
-        "Function xml_set_object() is deprecated since 8.4, provide a proper method callable to xml_set_*_handler() functions",
-        line
-    );
+    if (!ptn_xml_parser_deferred_current_receiver_binding(runtime, data, args[1])) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Function xml_set_object() is deprecated since 8.4, provide a proper method callable to xml_set_*_handler() functions",
+            line
+        );
+    }
     if (data->has_callback_object) {
         ptn_value_destroy(&data->callback_object);
         data->has_callback_object = 0;

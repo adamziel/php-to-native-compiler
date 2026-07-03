@@ -25643,10 +25643,24 @@ fn class_constructor_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<ClassMethodLookupEntry<'a>> {
-    class_method_lookup_chain(class, classes)
+    let methods = class_method_lookup_chain(class, classes);
+    methods
         .iter()
         .copied()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+        .or_else(|| {
+            methods
+                .iter()
+                .copied()
+                .find(|method| legacy_constructor_method_matches(method))
+        })
+}
+
+fn legacy_constructor_method_matches(method: &ClassMethodLookupEntry<'_>) -> bool {
+    if method.is_static || method.declaring_class.contains('\\') {
+        return false;
+    }
+    method.name.eq_ignore_ascii_case(method.declaring_class)
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
