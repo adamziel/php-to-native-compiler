@@ -62416,6 +62416,116 @@ try {
 }
 
 #[test]
+fn compile_dom_html_document_create_from_missing_file_warns_and_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-create-from-missing-file");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-html-create-from-missing-file.php");
+    let output = root.join("dom-html-create-from-missing-file-bin");
+    let missing = root.join("does-not-exist.html");
+    fs::write(
+        &input,
+        format!(
+            "<?php\nDom\\HTMLDocument::createFromFile({});\necho \"unreachable\\n\";\n",
+            php_string_literal(&missing)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let missing_display = missing.display().to_string();
+    assert!(
+        stdout.contains(&format!(
+            "Warning: Dom\\HTMLDocument::createFromFile({missing_display}): Failed to open stream: No such file or directory"
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Fatal error: Uncaught Exception: Cannot open file '{missing_display}'"
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "#0 {}(2): Dom\\HTMLDocument::createFromFile(",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#1 {main}"), "{stdout}");
+    assert!(stdout.contains("thrown in "), "{stdout}");
+    assert!(!stdout.contains("unreachable"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_create_from_file_probe_readable"));
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+}
+
+#[test]
+fn compile_dom_xpath_nodelist_handle_sequence_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xpath-nodelist-handles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xpath-nodelist-handles.php");
+    let output = root.join("dom-xpath-nodelist-handles-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createFromString('<?xml version="1.0"?><root><p>hi</p></root>');
+$xpath = new Dom\XPath($dom);
+$result = $xpath->query("//p");
+var_dump($result);
+var_dump($result->item(0)->textContent);
+$result = $xpath->evaluate("//p");
+var_dump($result);
+var_dump($result->item(0)->textContent);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Dom\\NodeList)#4 (1) {\n",
+            "  [\"length\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "string(2) \"hi\"\n",
+            "object(Dom\\NodeList)#5 (1) {\n",
+            "  [\"length\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "string(2) \"hi\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("context_node_object"));
+    assert!(c_source.contains("ptn_dom_xpath_simple_path_list_value"));
+}
+
+#[test]
 fn compile_dom_namespace_lookup_and_xmlns_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-dom-namespace-lookup-xmlns-serialization");
     fs::create_dir_all(&root).unwrap();

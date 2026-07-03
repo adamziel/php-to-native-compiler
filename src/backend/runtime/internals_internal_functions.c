@@ -138909,6 +138909,7 @@ typedef struct {
 
 typedef struct {
     PtnObject *document_object;
+    PtnObject *context_node_object;
     int functions_registered;
     int allow_all_functions;
     PtnDomXPathCallback *callbacks;
@@ -151879,6 +151880,10 @@ static void ptn_dom_xpath_data_free(void *raw) {
     if (data == NULL) {
         return;
     }
+    if (data->context_node_object != NULL) {
+        ptn_object_release(data->context_node_object);
+        data->context_node_object = NULL;
+    }
     if (data->document_object != NULL) {
         ptn_object_release(data->document_object);
         data->document_object = NULL;
@@ -152011,12 +152016,24 @@ static PtnDomXPathData *ptn_dom_xpath_data_new(PtnRuntime *runtime, const PtnVal
     }
     data->document_object = document_value.as.object;
     ptn_object_retain(data->document_object);
+    if (document->modern_dom) {
+        PtnXmlNode *context_node = ptn_xml_document_element(document);
+        if (context_node != NULL) {
+            PtnObject *existing_object = context_node->object;
+            ptn_xml_node_ensure_object(runtime, context_node);
+            if (context_node->object != NULL) {
+                data->context_node_object = context_node->object;
+                if (existing_object == context_node->object) {
+                    ptn_object_retain(data->context_node_object);
+                }
+            }
+        }
+    }
     data->namespace_nodes[0] = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "namespace", ptn_dom_xml_namespace_uri());
     data->namespace_nodes[1] = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "namespace", "");
     for (size_t i = 0; i < 2; i++) {
         data->namespace_nodes[i]->owner_document = document;
     }
-    (void)runtime;
     (void)line;
     return data;
 }
@@ -156089,6 +156106,88 @@ static void ptn_dom_html_document_ensure_skeleton(PtnRuntime *runtime, PtnXmlNod
 }
 
 static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line);
+static char *ptn_dom_path_arg_c_string_or_value_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static int ptn_dom_create_from_file_probe_readable(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue filename,
+    size_t line
+) {
+    char *path = ptn_dom_path_arg_c_string_or_value_error(runtime, method_name, 1, "filename", filename, line);
+    if (path == NULL) {
+        return 0;
+    }
+    if (strlen(path) > PTN_PHP_MAXPATHLEN) {
+        free(path);
+        return 1;
+    }
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    errno = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result > 0) {
+        free(data);
+        free(path);
+        return 1;
+    }
+
+    const char *reason = errno == 0 ? "operation failed" : strerror(errno);
+    char detail[256];
+    int detail_written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", reason);
+    if (detail_written < 0 || (size_t)detail_written >= sizeof(detail)) {
+        free(data);
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_file_warning(runtime, method_name, path, detail, line);
+
+    int message_len = snprintf(NULL, 0, "Cannot open file '%s'", path);
+    if (message_len < 0) {
+        free(data);
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)message_len + 1);
+    if (message == NULL) {
+        free(data);
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    int message_written = snprintf(message, (size_t)message_len + 1, "Cannot open file '%s'", path);
+    if (message_written < 0 || message_written != message_len) {
+        free(message);
+        free(data);
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+
+    PtnValue trace_arg = ptn_owned_string(ptn_duplicate_string(path));
+    PtnValue trace_args[1] = { trace_arg };
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "Exception",
+        message,
+        runtime->source_path,
+        line,
+        method_name,
+        runtime->source_path,
+        line,
+        1,
+        trace_args
+    );
+    ptn_value_destroy(&trace_arg);
+    free(data);
+    free(path);
+    return 0;
+}
 
 static int ptn_dom_html_document_validate_options(PtnRuntime *runtime, const char *method_name, int64_t options) {
     const uint64_t allowed = (uint64_t)PTN_LIBXML_NOERROR |
@@ -156185,6 +156284,7 @@ static PtnValue ptn_dom_document_create_empty(PtnRuntime *runtime, const char *c
 
 static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
     int html_document = ptn_dom_class_name_is_html_document(class_name);
+    const char *method_name = html_document ? "Dom\\HTMLDocument::createFromFile" : "Dom\\XMLDocument::createFromFile";
     size_t max_args = html_document ? 3 : 2;
     if (argc < 1 || argc > max_args) {
         char message[176];
@@ -156199,7 +156299,10 @@ static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const cha
     }
     int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     if (html_document &&
-        !ptn_dom_html_document_validate_options(runtime, "Dom\\HTMLDocument::createFromFile", options)) {
+        !ptn_dom_html_document_validate_options(runtime, method_name, options)) {
+        return ptn_null();
+    }
+    if (!ptn_dom_create_from_file_probe_readable(runtime, method_name, args[0], line)) {
         return ptn_null();
     }
     PtnValue document_value = ptn_xml_document_new_for_class(runtime, class_name, 0, NULL, line);
@@ -156209,7 +156312,7 @@ static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const cha
     if (html_document && argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
         PtnStringOperand encoding = ptn_internal_expect_string_arg(
             runtime,
-            "Dom\\HTMLDocument::createFromFile",
+            method_name,
             3,
             "overrideEncoding",
             args[2],
@@ -156222,7 +156325,7 @@ static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const cha
         }
         char *canonical = ptn_dom_html_canonical_encoding_from_operand_alloc(
             runtime,
-            "Dom\\HTMLDocument::createFromFile",
+            method_name,
             3,
             "overrideEncoding",
             encoding
