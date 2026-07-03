@@ -133,8 +133,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffer_display_handler_fatal_active = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
+    runtime->trans_sid_session_rewrite_enabled = 0;
+    runtime->trans_sid_rewrite_suppressed = 0;
     runtime->trans_sid_pending_output = NULL;
     runtime->trans_sid_pending_output_len = 0;
+    runtime->output_rewrite_vars = NULL;
+    runtime->output_rewrite_vars_len = 0;
+    runtime->output_rewrite_vars_capacity = 0;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;
     runtime->output_started_source_path = NULL;
@@ -1327,9 +1332,19 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffer_display_handler_fatal_active = 0;
         runtime->output_at_line_start = 1;
         runtime->output_has_started = 0;
+        runtime->trans_sid_session_rewrite_enabled = 0;
+        runtime->trans_sid_rewrite_suppressed = 0;
         free(runtime->trans_sid_pending_output);
         runtime->trans_sid_pending_output = NULL;
         runtime->trans_sid_pending_output_len = 0;
+        for (size_t i = 0; i < runtime->output_rewrite_vars_len; i++) {
+            free(runtime->output_rewrite_vars[i].name);
+            free(runtime->output_rewrite_vars[i].value);
+        }
+        free(runtime->output_rewrite_vars);
+        runtime->output_rewrite_vars = NULL;
+        runtime->output_rewrite_vars_len = 0;
+        runtime->output_rewrite_vars_capacity = 0;
         runtime->current_output_source_path = NULL;
         runtime->current_output_line = 0;
         free(runtime->output_started_source_path);

@@ -3456,6 +3456,15 @@ fn phpt_classifier_recategorizes_standard_general_function_ini_runtime_gaps() {
         output_reset_rewrite_vars.contains("output URL rewrite"),
         "{output_reset_rewrite_vars:?}"
     );
+
+    let session_trans_sid_tags = classify_at_relative_path(
+        "--TEST--\nsession trans sid tags\n--EXTENSIONS--\nsession\n--INI--\nsession.use_only_cookies=0\nsession.use_trans_sid=1\nsession.trans_sid_tags=\"a=href,area=href,frame=src,form=\"\nurl_rewriter.tags=\"a=href,area=href,frame=src,form=\"\n--FILE--\n<?php\nob_start();\noutput_add_rewrite_var('testvar1', 'testvalue1');\nsession_id('test1');\nsession_start();\necho '<a href=\"/\">';\n--EXPECT--\n",
+        "ext/session/tests/session_basic4.phpt",
+    );
+    assert!(
+        session_trans_sid_tags.starts_with("runnable\t"),
+        "{session_trans_sid_tags:?}"
+    );
 }
 
 #[test]

@@ -1339,6 +1339,13 @@ typedef struct {
 } PtnArrayLiteralEntry;
 
 typedef struct {
+    char *name;
+    size_t name_len;
+    char *value;
+    size_t value_len;
+} PtnOutputRewriteVar;
+
+typedef struct {
     PtnStringBuffer buffer;
     int has_callback;
     PtnValue callback;
@@ -1843,8 +1850,13 @@ struct PtnRuntime {
     int output_buffer_display_handler_fatal_active;
     int output_at_line_start;
     int output_has_started;
+    int trans_sid_session_rewrite_enabled;
+    int trans_sid_rewrite_suppressed;
     char *trans_sid_pending_output;
     size_t trans_sid_pending_output_len;
+    PtnOutputRewriteVar *output_rewrite_vars;
+    size_t output_rewrite_vars_len;
+    size_t output_rewrite_vars_capacity;
     const char *current_output_source_path;
     size_t current_output_line;
     char *output_started_source_path;

@@ -920,6 +920,7 @@ fn canonical_session_ini_name(name: &str) -> Option<&'static str> {
         "session.sid_bits_per_character" => Some("session.sid_bits_per_character"),
         "session.sid_length" => Some("session.sid_length"),
         "session.trans_sid_hosts" => Some("session.trans_sid_hosts"),
+        "session.trans_sid_tags" => Some("session.trans_sid_tags"),
         "session.upload_progress.cleanup" => Some("session.upload_progress.cleanup"),
         "session.upload_progress.enabled" => Some("session.upload_progress.enabled"),
         "session.upload_progress.freq" => Some("session.upload_progress.freq"),

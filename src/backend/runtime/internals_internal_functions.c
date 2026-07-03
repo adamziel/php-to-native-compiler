@@ -412,11 +412,15 @@ typedef struct {
     const char *session_id;
     const char *trans_sid_hosts;
     const char *arg_separator_output;
+    int include_session;
+    const PtnOutputRewriteVar *rewrite_vars;
+    size_t rewrite_vars_len;
 } PtnSessionTransSidRewriteState;
 
 static const PtnOutputSessionIniDefinition PTN_OUTPUT_SESSION_INI_DEFINITIONS[] = {
     { "session.name", "PTN_SESSION_NAME", "PHPSESSID" },
     { "session.trans_sid_hosts", "PTN_SESSION_TRANS_SID_HOSTS", "" },
+    { "session.trans_sid_tags", "PTN_SESSION_TRANS_SID_TAGS", "a=href,area=href,frame=src,form=" },
     { "session.use_only_cookies", "PTN_SESSION_USE_ONLY_COOKIES", "1" },
     { "session.use_trans_sid", "PTN_SESSION_USE_TRANS_SID", "0" },
 };
@@ -492,21 +496,35 @@ static const char *ptn_output_session_id(PtnRuntime *runtime) {
     return root == NULL || root->session_id == NULL ? "" : root->session_id;
 }
 
-static int ptn_output_session_active(PtnRuntime *runtime) {
+static PtnRuntime *ptn_output_rewrite_root(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root == NULL) {
-        root = runtime;
+    return root == NULL ? runtime : root;
+}
+
+static int ptn_session_trans_sid_session_rewrite_enabled(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    if (root == NULL || !root->trans_sid_session_rewrite_enabled) {
+        return 0;
     }
-    return root != NULL && root->session_active;
+    const char *session_id = ptn_output_session_id(runtime);
+    return session_id != NULL && session_id[0] != '\0';
 }
 
 static PtnSessionTransSidRewriteState ptn_session_trans_sid_current_state(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
     PtnSessionTransSidRewriteState state;
     state.session_name = ptn_output_session_ini(runtime, "session.name");
     state.session_id = ptn_output_session_id(runtime);
     state.trans_sid_hosts = ptn_output_session_ini(runtime, "session.trans_sid_hosts");
     state.arg_separator_output = ptn_output_arg_separator_output(runtime);
+    state.include_session = ptn_session_trans_sid_session_rewrite_enabled(runtime);
+    state.rewrite_vars = root == NULL ? NULL : root->output_rewrite_vars;
+    state.rewrite_vars_len = root == NULL ? 0 : root->output_rewrite_vars_len;
     return state;
+}
+
+static int ptn_session_trans_sid_has_rewrite_params(const PtnSessionTransSidRewriteState *state) {
+    return state != NULL && (state->include_session || state->rewrite_vars_len != 0);
 }
 
 static int ptn_session_html_name_char(unsigned char byte) {
@@ -755,6 +773,86 @@ static int ptn_session_trans_sid_url_allowed(
     return 1;
 }
 
+static void ptn_session_append_urlencoded(PtnStringBuffer *output, const char *data, size_t len) {
+    static const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (isalnum(byte) || byte == '-' || byte == '_' || byte == '.') {
+            ptn_string_buffer_append_char(output, (char)byte);
+        } else if (byte == ' ') {
+            ptn_string_buffer_append_char(output, '+');
+        } else {
+            ptn_string_buffer_append_char(output, '%');
+            ptn_string_buffer_append_char(output, hex[byte >> 4]);
+            ptn_string_buffer_append_char(output, hex[byte & 0x0f]);
+        }
+    }
+}
+
+static void ptn_session_append_html_attribute(PtnStringBuffer *output, const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        switch (data[i]) {
+            case '&':
+                ptn_string_buffer_append(output, "&amp;");
+                break;
+            case '"':
+                ptn_string_buffer_append(output, "&quot;");
+                break;
+            case '\'':
+                ptn_string_buffer_append(output, "&#039;");
+                break;
+            case '<':
+                ptn_string_buffer_append(output, "&lt;");
+                break;
+            case '>':
+                ptn_string_buffer_append(output, "&gt;");
+                break;
+            default:
+                ptn_string_buffer_append_char(output, data[i]);
+                break;
+        }
+    }
+}
+
+static const char *ptn_session_trans_sid_separator(const PtnSessionTransSidRewriteState *state) {
+    const char *separator = state == NULL ? NULL : state->arg_separator_output;
+    return separator == NULL || separator[0] == '\0' ? "&" : separator;
+}
+
+static void ptn_session_append_url_pair(
+    const PtnSessionTransSidRewriteState *state,
+    PtnStringBuffer *output,
+    const char *name,
+    size_t name_len,
+    const char *value,
+    size_t value_len,
+    int *first
+) {
+    if (first != NULL && !*first) {
+        ptn_string_buffer_append(output, ptn_session_trans_sid_separator(state));
+    }
+    ptn_session_append_urlencoded(output, name == NULL ? "" : name, name == NULL ? 0 : name_len);
+    ptn_string_buffer_append_char(output, '=');
+    ptn_session_append_urlencoded(output, value == NULL ? "" : value, value == NULL ? 0 : value_len);
+    if (first != NULL) {
+        *first = 0;
+    }
+}
+
+static void ptn_session_append_hidden_input(
+    PtnStringBuffer *output,
+    const char *name,
+    size_t name_len,
+    const char *value,
+    size_t value_len
+) {
+    ptn_string_buffer_append(output, "<input type=\"hidden\" name=\"");
+    ptn_session_append_html_attribute(output, name == NULL ? "" : name, name == NULL ? 0 : name_len);
+    ptn_string_buffer_append(output, "\" value=\"");
+    ptn_session_append_html_attribute(output, value == NULL ? "" : value, value == NULL ? 0 : value_len);
+    ptn_string_buffer_append(output, "\" />");
+}
+
 static void ptn_session_append_rewritten_url(
     const PtnSessionTransSidRewriteState *state,
     PtnStringBuffer *output,
@@ -763,12 +861,17 @@ static void ptn_session_append_rewritten_url(
 ) {
     size_t host_end = 0;
     int external = 0;
-    if (!ptn_session_trans_sid_url_allowed(state, url, url_len, &host_end, &external)) {
+    if (
+        !ptn_session_trans_sid_has_rewrite_params(state) ||
+        !ptn_session_trans_sid_url_allowed(state, url, url_len, &host_end, &external)
+    ) {
         ptn_string_buffer_append_len(output, url, url_len);
         return;
     }
     const char *session_name = state == NULL ? NULL : state->session_name;
     const char *session_id = state == NULL ? NULL : state->session_id;
+    const char *effective_session_name =
+        session_name == NULL || session_name[0] == '\0' ? "PHPSESSID" : session_name;
     size_t fragment = url_len;
     for (size_t i = 0; i < url_len; i++) {
         if (url[i] == '#') {
@@ -788,31 +891,44 @@ static void ptn_session_append_rewritten_url(
         ptn_string_buffer_append_char(output, '/');
     }
     if (has_query) {
-        const char *separator = state == NULL ? NULL : state->arg_separator_output;
-        ptn_string_buffer_append(output, separator == NULL || separator[0] == '\0' ? "&" : separator);
+        ptn_string_buffer_append(output, ptn_session_trans_sid_separator(state));
     } else {
         ptn_string_buffer_append_char(output, '?');
     }
-    ptn_string_buffer_append(output, session_name == NULL || session_name[0] == '\0' ? "PHPSESSID" : session_name);
-    ptn_string_buffer_append_char(output, '=');
-    ptn_string_buffer_append(output, session_id == NULL ? "" : session_id);
+    int first = 1;
+    if (state != NULL && state->include_session) {
+        ptn_session_append_url_pair(
+            state,
+            output,
+            effective_session_name,
+            strlen(effective_session_name),
+            session_id == NULL ? "" : session_id,
+            session_id == NULL ? 0 : strlen(session_id),
+            &first
+        );
+    }
+    if (state != NULL) {
+        for (size_t i = 0; i < state->rewrite_vars_len; i++) {
+            ptn_session_append_url_pair(
+                state,
+                output,
+                state->rewrite_vars[i].name,
+                state->rewrite_vars[i].name_len,
+                state->rewrite_vars[i].value,
+                state->rewrite_vars[i].value_len,
+                &first
+            );
+        }
+    }
     if (fragment < url_len) {
         ptn_string_buffer_append_len(output, url + fragment, url_len - fragment);
     }
 }
 
 static int ptn_session_trans_sid_output_enabled(PtnRuntime *runtime) {
-    if (!ptn_output_session_active(runtime)) {
-        return 0;
-    }
-    if (!ptn_output_ini_bool(ptn_output_session_ini(runtime, "session.use_trans_sid"), 0)) {
-        return 0;
-    }
-    if (ptn_output_ini_bool(ptn_output_session_ini(runtime, "session.use_only_cookies"), 1)) {
-        return 0;
-    }
-    const char *session_id = ptn_output_session_id(runtime);
-    return session_id != NULL && session_id[0] != '\0';
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    return ptn_session_trans_sid_session_rewrite_enabled(runtime) ||
+        (root != NULL && root->output_rewrite_vars_len != 0);
 }
 
 static char *ptn_session_rewrite_trans_sid_output(
@@ -866,7 +982,7 @@ static char *ptn_session_rewrite_trans_sid_output(
             int allowed = 1;
             if (ptn_session_html_find_attr(data + tag_start, tag_len, "action", 6, &attr_start, &attr_len)) {
                 size_t absolute_attr_start = tag_start + attr_start;
-                allowed = ptn_session_trans_sid_url_allowed(
+                allowed = attr_len == 0 || ptn_session_trans_sid_url_allowed(
                     state,
                     data + absolute_attr_start,
                     attr_len,
@@ -875,14 +991,31 @@ static char *ptn_session_rewrite_trans_sid_output(
                 );
             }
             ptn_string_buffer_append_len(&output, data + tag_start, tag_len);
-            if (allowed) {
+            if (allowed && ptn_session_trans_sid_has_rewrite_params(state)) {
                 const char *session_name = state == NULL ? NULL : state->session_name;
                 const char *session_id = state == NULL ? NULL : state->session_id;
-                ptn_string_buffer_append(&output, "<input type=\"hidden\" name=\"");
-                ptn_string_buffer_append(&output, session_name == NULL || session_name[0] == '\0' ? "PHPSESSID" : session_name);
-                ptn_string_buffer_append(&output, "\" value=\"");
-                ptn_string_buffer_append(&output, session_id == NULL ? "" : session_id);
-                ptn_string_buffer_append(&output, "\" />");
+                const char *effective_session_name =
+                    session_name == NULL || session_name[0] == '\0' ? "PHPSESSID" : session_name;
+                if (state != NULL) {
+                    for (size_t i = 0; i < state->rewrite_vars_len; i++) {
+                        ptn_session_append_hidden_input(
+                            &output,
+                            state->rewrite_vars[i].name,
+                            state->rewrite_vars[i].name_len,
+                            state->rewrite_vars[i].value,
+                            state->rewrite_vars[i].value_len
+                        );
+                    }
+                }
+                if (state != NULL && state->include_session) {
+                    ptn_session_append_hidden_input(
+                        &output,
+                        effective_session_name,
+                        strlen(effective_session_name),
+                        session_id == NULL ? "" : session_id,
+                        session_id == NULL ? 0 : strlen(session_id)
+                    );
+                }
             }
         } else {
             ptn_string_buffer_append_len(&output, data + tag_start, tag_len);
@@ -997,7 +1130,10 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     }
     if (output_buffers_len != 0) {
         PtnOutputBuffer *buffer = &root->output_buffers[output_buffers_len - 1];
-        if (ptn_session_trans_sid_output_enabled(runtime)) {
+        if (
+            (root == NULL || !root->trans_sid_rewrite_suppressed) &&
+            ptn_session_trans_sid_output_enabled(runtime)
+        ) {
             ptn_output_buffer_capture_trans_sid_snapshot(runtime, buffer);
         }
         ptn_string_buffer_append_len(&buffer->buffer, data, len);
@@ -1015,7 +1151,10 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     char *combined = NULL;
     size_t rewritten_len = len;
     const char *output_data = data;
-    if (ptn_session_trans_sid_output_enabled(runtime)) {
+    if (
+        (root == NULL || !root->trans_sid_rewrite_suppressed) &&
+        ptn_session_trans_sid_output_enabled(runtime)
+    ) {
         PtnRuntime *rewrite_root = root == NULL ? runtime : root;
         const char *rewrite_input = data;
         size_t rewrite_len = len;
@@ -1074,34 +1213,42 @@ static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) 
 }
 
 static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer) {
-    if (buffer == NULL || buffer->trans_sid_rewrite) {
+    (void)runtime;
+    if (buffer == NULL) {
         return;
     }
-    PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
-    buffer->trans_sid_session_name = ptn_duplicate_string(
-        state.session_name == NULL || state.session_name[0] == '\0' ? "PHPSESSID" : state.session_name
-    );
-    buffer->trans_sid_session_id = ptn_duplicate_string(state.session_id == NULL ? "" : state.session_id);
-    buffer->trans_sid_hosts = ptn_duplicate_string(state.trans_sid_hosts == NULL ? "" : state.trans_sid_hosts);
-    buffer->trans_sid_arg_separator_output = ptn_duplicate_string(
-        state.arg_separator_output == NULL || state.arg_separator_output[0] == '\0' ? "&" : state.arg_separator_output
-    );
     buffer->trans_sid_rewrite = 1;
 }
 
-static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuffer *buffer, const char *data, size_t len) {
-    if (buffer == NULL || !buffer->trans_sid_rewrite || data == NULL || len == 0) {
+static void ptn_output_write_with_trans_sid_suppressed(PtnRuntime *runtime, const char *data, size_t len) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    if (root == NULL) {
         ptn_output_write(runtime, data, len);
         return;
     }
-    PtnSessionTransSidRewriteState state;
-    state.session_name = buffer->trans_sid_session_name;
-    state.session_id = buffer->trans_sid_session_id;
-    state.trans_sid_hosts = buffer->trans_sid_hosts;
-    state.arg_separator_output = buffer->trans_sid_arg_separator_output;
+    int previous = root->trans_sid_rewrite_suppressed;
+    root->trans_sid_rewrite_suppressed = 1;
+    ptn_output_write(runtime, data, len);
+    root->trans_sid_rewrite_suppressed = previous;
+}
+
+static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuffer *buffer, const char *data, size_t len) {
+    if (buffer == NULL || data == NULL || len == 0) {
+        ptn_output_write(runtime, data, len);
+        return;
+    }
+    if (!buffer->trans_sid_rewrite && !ptn_session_trans_sid_output_enabled(runtime)) {
+        ptn_output_write(runtime, data, len);
+        return;
+    }
+    PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
+    if (!ptn_session_trans_sid_has_rewrite_params(&state)) {
+        ptn_output_write(runtime, data, len);
+        return;
+    }
     size_t rewritten_len = len;
     char *rewritten = ptn_session_rewrite_trans_sid_output(runtime, &state, data, len, &rewritten_len);
-    ptn_output_write(runtime, rewritten, rewritten_len);
+    ptn_output_write_with_trans_sid_suppressed(runtime, rewritten, rewritten_len);
     free(rewritten);
 }
 
@@ -139012,6 +139159,7 @@ static const PtnSessionIniDefinition PTN_SESSION_INI_DEFINITIONS[] = {
     { "session.sid_bits_per_character", "PTN_SESSION_SID_BITS_PER_CHARACTER", "5" },
     { "session.sid_length", "PTN_SESSION_SID_LENGTH", "32" },
     { "session.trans_sid_hosts", "PTN_SESSION_TRANS_SID_HOSTS", "" },
+    { "session.trans_sid_tags", "PTN_SESSION_TRANS_SID_TAGS", "a=href,area=href,frame=src,form=" },
     { "session.upload_progress.cleanup", "PTN_SESSION_UPLOAD_PROGRESS_CLEANUP", "1" },
     { "session.upload_progress.enabled", "PTN_SESSION_UPLOAD_PROGRESS_ENABLED", "1" },
     { "session.upload_progress.freq", "PTN_SESSION_UPLOAD_PROGRESS_FREQ", "1%" },
@@ -141474,6 +141622,14 @@ static void ptn_session_set_active(PtnRuntime *runtime, int active) {
     PtnRuntime *root = ptn_session_root(runtime);
     if (root != NULL) {
         root->session_active = active ? 1 : 0;
+        if (active) {
+            const char *session_id = ptn_session_id_current(runtime);
+            root->trans_sid_session_rewrite_enabled =
+                ptn_output_ini_bool(ptn_output_session_ini(runtime, "session.use_trans_sid"), 0) &&
+                !ptn_output_ini_bool(ptn_output_session_ini(runtime, "session.use_only_cookies"), 1) &&
+                session_id != NULL &&
+                session_id[0] != '\0';
+        }
     }
 }
 
@@ -141498,6 +141654,7 @@ static void ptn_session_mark_uninitialized(PtnRuntime *runtime) {
     root->session_auto_started = 0;
     root->session_start_path = NULL;
     root->session_start_line = 0;
+    root->trans_sid_session_rewrite_enabled = 0;
 }
 
 static int64_t ptn_session_ini_integer(PtnRuntime *runtime, const char *name, int64_t fallback) {
@@ -149551,6 +149708,60 @@ static void ptn_output_rewrite_enforce_memory_limit(
     ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
 }
 
+static void ptn_output_rewrite_vars_clear(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->output_rewrite_vars_len; i++) {
+        free(root->output_rewrite_vars[i].name);
+        free(root->output_rewrite_vars[i].value);
+        root->output_rewrite_vars[i].name = NULL;
+        root->output_rewrite_vars[i].value = NULL;
+        root->output_rewrite_vars[i].name_len = 0;
+        root->output_rewrite_vars[i].value_len = 0;
+    }
+    root->output_rewrite_vars_len = 0;
+}
+
+static void ptn_output_rewrite_vars_add(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    const char *value,
+    size_t value_len
+) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (root->output_rewrite_vars_len == root->output_rewrite_vars_capacity) {
+        size_t new_capacity = root->output_rewrite_vars_capacity == 0
+            ? 4
+            : root->output_rewrite_vars_capacity * 2;
+        if (
+            new_capacity < root->output_rewrite_vars_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnOutputRewriteVar)
+        ) {
+            ptn_abort_out_of_memory();
+        }
+        PtnOutputRewriteVar *new_vars = realloc(
+            root->output_rewrite_vars,
+            new_capacity * sizeof(PtnOutputRewriteVar)
+        );
+        if (new_vars == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->output_rewrite_vars = new_vars;
+        root->output_rewrite_vars_capacity = new_capacity;
+    }
+    PtnOutputRewriteVar *entry = &root->output_rewrite_vars[root->output_rewrite_vars_len++];
+    entry->name = ptn_duplicate_string_len(name, name_len);
+    entry->name_len = name_len;
+    entry->value = ptn_duplicate_string_len(value, value_len);
+    entry->value_len = value_len;
+}
+
 static PtnValue ptn_internal_output_add_rewrite_var(
     PtnRuntime *runtime,
     size_t argc,
@@ -149573,6 +149784,7 @@ static PtnValue ptn_internal_output_add_rewrite_var(
     }
 
     ptn_output_rewrite_enforce_memory_limit(runtime, name.len, value.len, line);
+    ptn_output_rewrite_vars_add(runtime, name.data, name.len, value.data, value.len);
     ptn_string_operand_free(name);
     ptn_string_operand_free(value);
     return ptn_bool(1);
@@ -149584,10 +149796,10 @@ static PtnValue ptn_internal_output_reset_rewrite_vars(
     const PtnValue *args,
     size_t line
 ) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
+    ptn_output_rewrite_vars_clear(runtime);
     return ptn_bool(1);
 }
 
