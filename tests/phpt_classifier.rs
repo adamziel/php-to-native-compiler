@@ -1026,6 +1026,31 @@ fn phpt_classifier_allows_tokenizer_eval_rows() {
 }
 
 #[test]
+fn phpt_classifier_allows_zend_constexpr_lazy_eval_rows_by_path() {
+    let new_constexpr = "--TEST--\nnew in constant expressions\n--FILE--\n<?php\ntry { eval('static $a = new DoesNotExist;'); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\nstatic $b = new stdClass;\n--EXPECT--\n";
+    assert_eq!(
+        classify_at_relative_path(new_constexpr, "Zend/tests/constexpr/new.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let init_fatal = "--TEST--\nlazy init eval fatal\n--FILE--\n<?php\nclass C { public function __construct() { eval('{'); } }\n--EXPECTF--\n";
+    assert_eq!(
+        classify_at_relative_path(init_fatal, "Zend/tests/lazy_objects/init_fatal.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    assert!(
+        classify(new_constexpr).starts_with("unsupported-dynamic-eval\t"),
+        "generic static eval rows stay classified until the path is known supported"
+    );
+    let static_local_new = "--TEST--\nstatic new\n--FILE--\n<?php\nstatic $b = new stdClass;\n--EXPECT--\n";
+    assert!(
+        classify(static_local_new).starts_with("unsupported-constant-expression\t"),
+        "generic static-local new rows stay classified until the path is known supported"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (
@@ -3480,6 +3505,22 @@ fn phpt_classifier_keeps_verified_metadata_rows_runnable_by_path() {
         (
             "Zend/tests/property_hooks/magic_interaction.phpt",
             "--TEST--\nproperty hook magic interaction\n--FILE--\n<?php\nclass A { public $prop { get => 'prop'; set {} } }\nclass B extends A { public function __get($name) {} public function __set($name, $value) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_attribute_backed.phpt",
+            "--TEST--\nproperty hook override attribute backed\n--FILE--\n<?php\nclass A { public $prop { get => 1; set {} } }\nclass B extends A { #[Override] public $prop { get => 2; set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_by_plain_prop.phpt",
+            "--TEST--\nproperty hook override by plain prop\n--FILE--\n<?php\nclass A { public $prop { get => 1; set {} } }\nclass B extends A { public $prop; }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/lazy_objects/unset_hook.phpt",
+            "--TEST--\nlazy unset hook\n--FILE--\n<?php\nclass Box { public $prop { get => $this->prop; set => $value; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/lazy_objects/isset_hooked_may_not_initialize.phpt",
+            "--TEST--\nlazy hooked isset\n--FILE--\n<?php\nclass Box { public $prop { get { return 1; } set($value) {} } }\n--EXPECT--\n",
         ),
         (
             "Zend/tests/property_hooks/unserialize.phpt",

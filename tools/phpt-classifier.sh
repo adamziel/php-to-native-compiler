@@ -1849,6 +1849,10 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/tokenizer\/tests\/gh19507_eval[.]phpt$/ ||
                 ptn_path ~ /ext\/tokenizer\/tests\/token_get_all_variation19[.]phpt$/
         }
+        function ptn_supported_zend_constexpr_lazy_eval_row() {
+            return ptn_path ~ /Zend\/tests\/constexpr\/new[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/lazy_objects\/init_fatal[.]phpt$/
+        }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
@@ -2137,7 +2141,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 !ptn_supported_eval_class_declaration_raw($0) &&
                 !ptn_supported_eval_static_variable_dynamic_function_row() &&
                 !ptn_supported_spl_autoload_eval_row() &&
-                !ptn_supported_tokenizer_eval_row()) {
+                !ptn_supported_tokenizer_eval_row() &&
+                !ptn_supported_zend_constexpr_lazy_eval_row()) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit
@@ -2299,6 +2304,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/property_hooks\/(bug006|final|gh(15456|15644|16185|16725|17234|18000|18268|20270)|gh19044-[1-6]|inheritance|invalid_abstract|override_(add_(get|set|get_contravariant|set_covariant)|attribute_(fail|plain|virtual)|default_value)|protected_to_public|set_value_parameter_type_variance_00[12357]|traits(_conflict)?|type_compatibility(_invalid(_2)?)?)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/parent_(get(_ci)?|set_plain_zpp|superfluous_args|syntax)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(magic_interaction|unserialize)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/override_(attribute_backed|by_plain_prop)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/lazy_objects\/(unset_hook|isset_hooked_may_not_initialize)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(abstract_get_set_readonly|abstract_hook(_in_non_abstract_class|_not_implemented)?|abstract_prop_(final|hooks|not_implemented|without_hooks)|backed_invariant|bug00[1248]|cpp|default_on_virtual(_with_inheritance)?|duplicate_hook|final_private_prop|final_prop(_2|_promoted_[1234])?|gh154(19|38)_[12]|interface(_explicit_abstract|_final_hook|_final_prop|_get_only|_get_set_readonly|_invalid_explicitly_abstract|_not_implemented|_not_public)?|invalid_(abstract_(body|final|indirect(_2)?|private)|empty_hooks|final_private|hook_visibility|static|static_prop)|no_get_parameters|parent_get_not_in_class|parent_outside_property|private_prop_final_hook|property_promotion|readonly|set_by_ref|set_shorthand|set_variadic|syntax|traits_abstract|unknown_hook(_private)?|var_property)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_getProperties_003[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_isIterable_gh20217[.]phpt$/ ||
@@ -2327,6 +2334,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         function ptn_supported_class_constant_static_local_metadata_row() {
             return ptn_path ~ /ext\/reflection\/tests\/bug63614[.]phpt$/
         }
+        function ptn_supported_static_local_new_constant_expression_row() {
+            return ptn_path ~ /Zend\/tests\/constexpr\/new[.]phpt$/
+        }
         function ptn_supported_readonly_indirect_mutation_row() {
             return ptn_path ~ /Zend\/tests\/readonly_props\/(cache_slot|readonly_clone_error[237]|readonly_clone_success1|readonly_modification)[.]phpt$/
         }
@@ -2337,6 +2347,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])static[[:space:]]+[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*new[[:space:]]+/ ||
                 line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[[:space:]]*new[[:space:]]+/) {
+                if (ptn_supported_static_local_new_constant_expression_row()) {
+                    next
+                }
                 print "unsupported-constant-expression\trequires object construction in constant-expression initializers, outside PTN modeled constant expression subset"
                 found = 1
                 exit

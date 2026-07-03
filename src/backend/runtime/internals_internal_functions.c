@@ -248656,6 +248656,67 @@ static int ptn_eval_parse_new_expression(
     if (!ptn_eval_parse_identifier_name(code, len, &cursor, &class_name)) {
         return 0;
     }
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    const char *resolved_class_name = runtime == NULL
+        ? class_name
+        : ptn_runtime_resolve_class_alias(
+            runtime,
+            ptn_symbol_name_without_leading_slash(class_name)
+        );
+    int has_argument_list = cursor < len && code[cursor] == '(';
+    int declared_constructor_new =
+        runtime != NULL &&
+        runtime->new_instance_without_constructor != NULL &&
+        runtime->declared_method_exists != NULL &&
+        ptn_declared_class_exists(resolved_class_name) &&
+        runtime->declared_method_exists(resolved_class_name, "__construct");
+    int preconstruct_shell =
+        declared_constructor_new ||
+        (has_argument_list && ptn_class_name_is_stdclass(resolved_class_name));
+    PtnValue preconstructed = ptn_null();
+    int preconstructed_rooted = 0;
+    if (preconstruct_shell) {
+        preconstructed = declared_constructor_new
+            ? runtime->new_instance_without_constructor(runtime, resolved_class_name, line)
+            : ptn_object_new_shell_at(runtime, "stdClass", line);
+        if (ptn_runtime_has_active_exception(runtime) ||
+            ptn_value_deref(preconstructed).type != PTN_OBJECT) {
+            *out = preconstructed;
+            free(class_name);
+            *pos = cursor;
+            return 1;
+        }
+        ptn_runtime_push_owned_temporary_root(runtime, &preconstructed);
+        preconstructed_rooted = 1;
+    }
+    if (cursor >= len || code[cursor] != '(') {
+        if (preconstructed_rooted) {
+            if (declared_constructor_new) {
+                PtnValue constructor_result = ptn_call_declared_method(
+                    runtime,
+                    preconstructed,
+                    "__construct",
+                    0,
+                    NULL,
+                    line
+                );
+                ptn_value_destroy(&constructor_result);
+                if (ptn_runtime_has_active_exception(runtime)) {
+                    *out = ptn_null();
+                    free(class_name);
+                    *pos = cursor;
+                    return 1;
+                }
+            }
+            *out = ptn_value_clone(preconstructed);
+            ptn_runtime_pop_temporary_root(runtime);
+        } else {
+            *out = ptn_new_object(runtime, class_name, 0, NULL, line);
+        }
+        free(class_name);
+        *pos = cursor;
+        return 1;
+    }
     if (!ptn_eval_consume_char(code, len, &cursor, '(')) {
         free(class_name);
         return 0;
@@ -248683,9 +248744,29 @@ static int ptn_eval_parse_new_expression(
                 for (size_t i = 0; i < argc; i++) {
                     ptn_value_destroy(&args[i]);
                 }
+                if (preconstructed_rooted) {
+                    ptn_runtime_pop_temporary_root(runtime);
+                }
                 free(args);
                 free(class_name);
                 return 0;
+            }
+            if (ptn_runtime_has_active_exception(runtime)) {
+                if (preconstructed_rooted) {
+                    for (size_t i = 0; i <= argc; i++) {
+                        ptn_runtime_push_owned_temporary_root(runtime, &args[i]);
+                    }
+                } else {
+                    ptn_value_destroy(&args[argc]);
+                    for (size_t i = 0; i < argc; i++) {
+                        ptn_value_destroy(&args[i]);
+                    }
+                }
+                free(args);
+                free(class_name);
+                *out = ptn_null();
+                *pos = cursor;
+                return 1;
             }
             argc++;
             cursor = ptn_eval_skip_ws(code, len, cursor);
@@ -248700,12 +248781,44 @@ static int ptn_eval_parse_new_expression(
         for (size_t i = 0; i < argc; i++) {
             ptn_value_destroy(&args[i]);
         }
+        if (preconstructed_rooted) {
+            ptn_runtime_pop_temporary_root(runtime);
+        }
         free(args);
         free(class_name);
         return 0;
     }
 
-    *out = ptn_new_object(runtime, class_name, argc, args, line);
+    if (preconstructed_rooted) {
+        for (size_t i = 0; i < argc; i++) {
+            ptn_runtime_push_owned_temporary_root(runtime, &args[i]);
+        }
+        if (declared_constructor_new) {
+            PtnValue constructor_result = ptn_call_declared_method(
+                runtime,
+                preconstructed,
+                "__construct",
+                argc,
+                args,
+                line
+            );
+            ptn_value_destroy(&constructor_result);
+        }
+        if (ptn_runtime_has_active_exception(runtime)) {
+            free(args);
+            free(class_name);
+            *out = ptn_null();
+            *pos = cursor;
+            return 1;
+        }
+        for (size_t i = 0; i < argc; i++) {
+            ptn_runtime_pop_temporary_root(runtime);
+        }
+        *out = ptn_value_clone(preconstructed);
+        ptn_runtime_pop_temporary_root(runtime);
+    } else {
+        *out = ptn_new_object(runtime, class_name, argc, args, line);
+    }
     for (size_t i = 0; i < argc; i++) {
         ptn_value_destroy(&args[i]);
     }
@@ -250101,6 +250214,28 @@ static int ptn_eval_parse_expression(
 
     while (1) {
         size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+        if (cursor >= len || code[cursor] != '+') {
+            break;
+        }
+        cursor++;
+        PtnValue right = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
+            ptn_value_destroy(&left);
+            return 0;
+        }
+        PtnValue added = ptn_add(runtime, left, right, line);
+        ptn_value_destroy(&left);
+        ptn_value_destroy(&right);
+        left = added;
+        *pos = cursor;
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            *out = left;
+            return 1;
+        }
+    }
+
+    while (1) {
+        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
         if (cursor >= len || code[cursor] != '|') {
             break;
         }
@@ -250650,6 +250785,12 @@ static int ptn_dynamic_execute_static_statement(
                 free(name);
                 return 0;
             }
+        }
+        if (ptn_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&value);
+            free(name);
+            *pos = cursor;
+            return 1;
         }
         PtnLookupResult lookup = ptn_runtime_read_variable_quiet(runtime, name);
         if (!lookup.exists) {
@@ -253664,6 +253805,13 @@ static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t
 }
 
 static char *ptn_eval_dynamic_parse_error_message(const char *code) {
+    size_t parse_error_line = 1;
+    char *source_error =
+        ptn_dynamic_php_source_parse_error_message(code, strlen(code), &parse_error_line);
+    if (source_error != NULL) {
+        return source_error;
+    }
+
     size_t len = strlen(code);
     size_t pos = 0;
     int previous_can_end_expression = 0;

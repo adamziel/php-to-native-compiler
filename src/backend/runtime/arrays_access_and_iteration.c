@@ -6514,7 +6514,24 @@ static PTN_UNUSED int ptn_lazy_object_property_isset_needs_initialization(
             PTN_PROPERTY_ACCESS_READ,
             line,
             &metadata
-        )) {
+    )) {
+        return 0;
+    }
+
+    const char *hook_declaring_class = ptn_property_hook_get_declaring_class(metadata);
+    if (metadata != NULL &&
+        metadata->hook_has_get &&
+        !metadata->lazy_skip &&
+        !ptn_active_property_hook_matches(
+            runtime,
+            receiver.as.object,
+            metadata,
+            hook_declaring_class,
+            access_scope,
+            property
+        ) &&
+        runtime != NULL &&
+        runtime->property_hook_get != NULL) {
         return 0;
     }
 
