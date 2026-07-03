@@ -18655,6 +18655,36 @@ echo \"ok\\n\";
 }
 
 #[test]
+fn compile_gc_collects_spl_fixed_array_cycle_without_counting_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-spl-fixed-array-cycle-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-spl-fixed-array-cycle-count.php");
+    let output = root.join("gc-spl-fixed-array-cycle-count-bin");
+    fs::write(
+        &input,
+        "<?php
+function dummy() {
+    $a = new SplFixedArray(1);
+    $b = new SplFixedArray(1);
+    $a[0] = $b;
+    $b[0] = $a;
+}
+
+dummy();
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_destructor_array_root_flush_preserves_object_count_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-root-buffer-flush");
     fs::create_dir_all(&root).unwrap();
