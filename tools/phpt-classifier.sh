@@ -1563,6 +1563,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009a[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/bug73209[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/iterator_028[.]phpt$/ ||
+                ptn_path ~ /ext\/simplexml\/tests\/gh15837[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/
         }
@@ -1575,7 +1576,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])appenditerator([^[:alnum:]_]|$)/
         }
         function ptn_supported_spl_helper_function_line(line) {
-            return ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ &&
+            return (ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ ||
+                    ptn_path ~ /ext\/dom\/tests\/bug79852[.]phpt$/) &&
                 line ~ /(^|[^[:alnum:]_$\\])iterator_count[[:space:]]*\(/
         }
         function ptn_supported_spl_temp_file_object_surface_line(line) {

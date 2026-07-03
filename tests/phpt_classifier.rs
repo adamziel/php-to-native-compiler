@@ -2493,6 +2493,37 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_dom_simplexml_spl_surface_rows_runnable() {
+    let cases = [
+        (
+            "ext/dom/tests/bug79852.phpt",
+            "--TEST--\ndom nodelist iterator count\n--FILE--\n<?php\n$dom = new DOMDocument();\n$dom->loadXML('<root><item/></root>');\n$items = $dom->getElementsByTagName('item');\necho iterator_count($items->getIterator());\n--EXPECT--\n",
+        ),
+        (
+            "ext/simplexml/tests/gh15837.phpt",
+            "--TEST--\nsimplexml recursive iterator\n--FILE--\n<?php\n$sxe = new SimpleXMLIterator('<xml><fieldset1/></xml>');\n$rit = new RecursiveIteratorIterator($sxe, RecursiveIteratorIterator::LEAVES_ONLY);\nforeach ($rit as $child) {}\nvar_dump($rit->valid());\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+
+    let unsupported = classify_at_relative_path(
+        "--TEST--\nunbounded iterator count\n--FILE--\n<?php\nvar_dump(iterator_count(new ArrayIterator([1])));\n--EXPECT--\n",
+        "ext/dom/tests/unbounded_iterator_count.phpt",
+    );
+    assert!(
+        unsupported.starts_with("unsupported-spl-surface\t"),
+        "{unsupported:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
     let cases = [
         (
