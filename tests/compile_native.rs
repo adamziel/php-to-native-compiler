@@ -30889,6 +30889,18 @@ var_dump($fraction['fraction']);
 var_dump($fraction['error_count']);
 var_dump($fraction['errors']);
 var_dump(function_exists('date_parse_from_format'));
+
+$tz = new DateTimeZone('UTC');
+$clean = date_create_from_format('m/d/y+', '06/08/04', $tz);
+echo $clean->setTime(0, 0)->format('Y-m-d H:i:s e'), "\n";
+var_dump(date_get_last_errors());
+$lenient = date_create_from_format('+m/d/y', '06/08/04 12:00', $tz);
+echo $lenient->setTime(0, 0)->format('Y-m-d H:i:s e'), "\n";
+$errors = date_get_last_errors();
+echo $errors['warning_count'], ' ', $errors['warnings'][8], ' ', $errors['error_count'], "\n";
+DateTime::createFromFormat('s', '0');
+$errors = DateTime::getLastErrors();
+echo $errors['errors'][0], "\n";
 "#,
     )
     .unwrap();
@@ -30929,12 +30941,109 @@ var_dump(function_exists('date_parse_from_format'));
             "  string(13) \"Trailing data\"\n",
             "}\n",
             "bool(true)\n",
+            "2004-06-08 00:00:00 UTC\n",
+            "bool(false)\n",
+            "2004-06-08 00:00:00 UTC\n",
+            "1 Trailing data 0\n",
+            "A two digit second could not be found\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_date_parse_from_format"));
+}
+
+#[test]
+fn compile_date_timelib_row_pack_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-date-timelib-row-pack-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-timelib-row-pack-edges.php");
+    let output = root.join("date-timelib-row-pack-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('America/New_York');
+echo (new DateTime('16 Jan 08 13:04:59'))->format('Y-m-d H:i:s e T O U'), "\n";
+echo (new DateTime('16 Jan 08 13:04:59 America/Chicago'))->format('Y-m-d H:i:s e T O U'), "\n";
+
+date_default_timezone_set('Europe/London');
+echo (new DateTime('1985-102'))->format('Y-m-d H:i:s e'), "\n";
+
+date_default_timezone_set('UTC');
+foreach (['1 Monday December 2008', '2 Monday December 2008', '3 Monday December 2008', 'first Monday December 2008', 'second Monday December 2008', 'third Monday December 2008'] as $source) {
+    echo date('Y-m-d', strtotime($source)), "\n";
+}
+
+$bad = date_parse('2006-12--12');
+echo $bad['day'], ' ', $bad['error_count'], ' ', $bad['errors'][7], ' ', $bad['zone'], "\n";
+$invalid = date_parse('2006-02-30');
+echo $invalid['warning_count'], ' ', $invalid['warnings'][11], "\n";
+$short = date_parse('03-03');
+echo $short['error_count'], ' ', $short['zone'], "\n";
+$empty = date_parse('');
+echo $empty['error_count'], ' ', $empty['errors'][0], "\n";
+
+date_default_timezone_set('America/Mendoza');
+$t = mktime(17, 17, 17, 1, 8327, 1970);
+echo date('Y-m-d H:i:s T I', $t), "\n";
+echo date('Y-m-d H:i:s T I', strtotime('next Sunday', $t)), "\n";
+
+class I extends DateTimeImmutable
+{
+    private int $var1 = 1;
+    private $var2 = 0;
+    protected int $var3 = 3;
+    protected $var4;
+
+    function __construct()
+    {
+        parent::__construct('2020-01-02 03:04:05', new DateTimeZone('UTC'));
+        $this->var2 = 2;
+        $this->var4 = 4;
+    }
+}
+echo str_replace(chr(0), '!', serialize(new I)), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2008-01-16 13:04:59 America/New_York EST -0500 1200506699\n",
+            "2008-01-16 13:04:59 America/Chicago CST -0600 1200510299\n",
+            "1985-04-12 00:00:00 Europe/London\n",
+            "2008-12-01\n",
+            "2008-12-08\n",
+            "2008-12-15\n",
+            "2008-12-08\n",
+            "2008-12-15\n",
+            "2008-12-22\n",
+            "1 1 Unexpected character -43200\n",
+            "1 The parsed date was invalid\n",
+            "2 -10800\n",
+            "1 Empty string\n",
+            "1992-10-18 17:17:17 -02 1\n",
+            "1992-10-25 00:00:00 -02 1\n",
+            "O:1:\"I\":7:{s:4:\"date\";s:26:\"2020-01-02 03:04:05.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_strtotime"));
+    assert!(c_source.contains("ptn_internal_date_parse"));
+    assert!(c_source.contains("ptn_serialize_append_object_payload"));
 }
 
 #[test]
