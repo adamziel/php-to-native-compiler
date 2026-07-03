@@ -60758,6 +60758,63 @@ var_dump(
 }
 
 #[test]
+fn compile_dom_legacy_xmlns_attribute_namespace_uri_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-legacy-xmlns-attribute-namespace-uri");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-legacy-xmlns-attribute-namespace-uri.php");
+    let output = root.join("dom-legacy-xmlns-attribute-namespace-uri-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$root = $doc->appendChild($doc->createElement('root'));
+
+$default = $doc->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns');
+$root->setAttributeNodeNS($default);
+
+$prefixed = $doc->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xmlns');
+$root->setAttributeNodeNS($prefixed);
+
+var_dump($default->prefix, $default->namespaceURI, $default->value);
+var_dump($prefixed->prefix, $prefixed->namespaceURI, $prefixed->value);
+
+$parsed = new DOMDocument();
+$parsed->loadXML('<foo xmlns="urn:parsed"/>');
+$parsedAttr = $parsed->documentElement->getAttributeNode('xmlns');
+var_dump(get_class($parsedAttr), $parsedAttr->namespaceURI);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(29) \"http://www.w3.org/2000/xmlns/\"\n",
+            "string(0) \"\"\n",
+            "string(5) \"xmlns\"\n",
+            "string(29) \"http://www.w3.org/2000/xmlns/\"\n",
+            "string(0) \"\"\n",
+            "string(16) \"DOMNameSpaceNode\"\n",
+            "string(10) \"urn:parsed\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("namespace_declaration_reports_xmlns_uri"));
+}
+
+#[test]
 fn compile_dom_html_document_parser_interactions_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-document-parser-interactions");
     fs::create_dir_all(&root).unwrap();
