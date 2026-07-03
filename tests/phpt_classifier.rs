@@ -2972,6 +2972,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         serialize_precision.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
+
+    let iconv_ini = classify(
+        "--TEST--\niconv ini\n--EXTENSIONS--\niconv\n--INI--\niconv.internal_charset=iso-8859-1\niconv.input_encoding=UTF-8\niconv.output_encoding=UTF-8\n--FILE--\n<?php\necho ini_get('iconv.internal_encoding'), \"\\n\";\n--EXPECT--\niso-8859-1\n",
+    );
+    assert_eq!(
+        iconv_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]
@@ -3023,6 +3031,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     assert!(
         chunk_split_memory_limit.starts_with("runnable\t"),
         "{chunk_split_memory_limit:?}"
+    );
+
+    let iconv_memory_limit = classify_at_relative_path(
+        "--TEST--\niconv allocation fatal\n--INI--\nmemory_limit=2M\n--FILE--\n<?php\n$str = str_repeat('a', 1024 * 1024);\niconv('UTF-8', 'ISO-8859-1', $str);\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
+        "ext/iconv/tests/gh17399_iconv.phpt",
+    );
+    assert!(
+        iconv_memory_limit.starts_with("runnable\t"),
+        "{iconv_memory_limit:?}"
     );
 }
 

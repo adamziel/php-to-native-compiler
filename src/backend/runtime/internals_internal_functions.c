@@ -78884,6 +78884,12 @@ static char *ptn_mb_iconv_convert_alloc(
     const char *to_encoding,
     size_t *output_len
 );
+static void ptn_iconv_enforce_live_string_memory_limit(
+    PtnRuntime *runtime,
+    size_t live_len,
+    size_t allocated_len,
+    size_t line
+);
 
 static int ptn_iconv_optional_encoding_is_utf8(
     PtnRuntime *runtime,
@@ -79260,6 +79266,7 @@ static PtnValue ptn_internal_iconv_substr(PtnRuntime *runtime, size_t argc, cons
     }
     size_t utf8_len = 0;
     char *utf8 = ptn_iconv_operand_to_utf8_alloc(string, encoding, &utf8_len);
+    ptn_iconv_enforce_live_string_memory_limit(runtime, string.len, utf8_len, line);
     PtnStringOperand utf8_operand = ptn_string_operand_borrowed_len(utf8, utf8_len);
     PtnValue utf8_result = ptn_iconv_substr_units(utf8_operand, offset, has_length, length, 1);
     size_t output_len = 0;
@@ -79270,6 +79277,7 @@ static PtnValue ptn_internal_iconv_substr(PtnRuntime *runtime, size_t argc, cons
         encoding,
         &output_len
     );
+    ptn_iconv_enforce_live_string_memory_limit(runtime, string.len, output_len, line);
     PtnValue result = ptn_owned_string_len(output, output_len);
     ptn_value_destroy(&utf8_result);
     free(utf8);
@@ -79447,6 +79455,40 @@ static void ptn_iconv_emit_conversion_notice(PtnRuntime *runtime, const char *me
     ptn_emit_notice_with_path(&runtime->diagnostics, message, NULL, line, leading_newline);
 }
 
+static void ptn_iconv_enforce_live_string_memory_limit(
+    PtnRuntime *runtime,
+    size_t live_len,
+    size_t allocated_len,
+    size_t line
+) {
+    if (live_len > SIZE_MAX - allocated_len - 1) {
+        ptn_emit_memory_allocation_overflow_error(runtime, live_len, 1, allocated_len + 1, line);
+        return;
+    }
+    size_t memory_limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &memory_limit) || memory_limit == 0) {
+        return;
+    }
+
+    size_t allocation_len = live_len + allocated_len + 1;
+    if (allocation_len <= memory_limit) {
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        memory_limit,
+        allocation_len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+}
+
 static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand from = ptn_internal_expect_string_arg(runtime, "iconv", 1, "from_encoding", args[0], line);
@@ -79509,6 +79551,7 @@ static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnVa
     if (output == NULL) {
         return ptn_bool(0);
     }
+    ptn_iconv_enforce_live_string_memory_limit(runtime, input.len, output_len, line);
     return ptn_owned_string_len(output, output_len);
 }
 
@@ -103986,6 +104029,9 @@ static int ptn_iconv_mime_parse_encoded_word(
             *end_offset = body_end + 2;
             return 1;
         }
+        if (data[body_end] == '?') {
+            return 0;
+        }
         body_end++;
     }
     return 0;
@@ -104194,7 +104240,8 @@ static int ptn_iconv_mime_decode_operand(
                     &next_text_len,
                     &next_end_offset
                 )) {
-                if (word_result != PTN_ICONV_MIME_WORD_SKIPPED) {
+                int next_starts_encoded_word = i + 1 < input.len && input.data[i] == '=' && input.data[i + 1] == '?';
+                if (word_result != PTN_ICONV_MIME_WORD_SKIPPED && !next_starts_encoded_word) {
                     ptn_string_buffer_append_len(output, input.data + whitespace_start, i - whitespace_start);
                 }
             }
@@ -104243,6 +104290,7 @@ static PtnValue ptn_internal_iconv_mime_decode(PtnRuntime *runtime, size_t argc,
         free(output.data);
         return ptn_bool(0);
     }
+    ptn_iconv_enforce_live_string_memory_limit(runtime, input.len, output.len, line);
     return ptn_owned_string_len(output.data, output.len);
 }
 
@@ -104428,6 +104476,19 @@ static size_t ptn_iconv_mime_q_source_unit_len(const char *data, size_t len, siz
     return 1;
 }
 
+static size_t ptn_iconv_mime_b_encoded_len(size_t len) {
+    if (len > (SIZE_MAX / 4u) * 3u) {
+        return SIZE_MAX;
+    }
+    return 4u * ((len + 2u) / 3u);
+}
+
+static size_t ptn_iconv_mime_encoded_len(char scheme, const char *data, size_t len) {
+    return scheme == 'Q'
+        ? ptn_iconv_mime_q_encoded_unit_len(data, len)
+        : ptn_iconv_mime_b_encoded_len(len);
+}
+
 static void ptn_iconv_mime_append_encoded_word_prefix(
     PtnStringBuffer *output,
     const char *output_charset,
@@ -104440,15 +104501,93 @@ static void ptn_iconv_mime_append_encoded_word_prefix(
     ptn_string_buffer_append_char(output, '?');
 }
 
-static void ptn_iconv_mime_append_encoded_words(
+static char *ptn_iconv_mime_convert_utf8_chunk_alloc(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *utf8,
+    size_t utf8_len,
+    const char *output_charset,
+    size_t line,
+    size_t *converted_len
+) {
+    int status = PTN_ICONV_CONVERT_OK;
+    char *converted = ptn_iconv_convert_alloc(
+        utf8,
+        utf8_len,
+        "UTF-8",
+        output_charset,
+        &status,
+        converted_len
+    );
+    if (converted != NULL) {
+        return converted;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Detected an %s multibyte character in input string",
+        function_name,
+        status == PTN_ICONV_CONVERT_INCOMPLETE ? "incomplete" : "illegal"
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_iconv_emit_conversion_notice(runtime, message, line);
+    return NULL;
+}
+
+static int ptn_iconv_mime_minimum_line_length(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *field_name,
+    size_t field_name_len,
+    const char *output_charset,
+    char scheme,
+    const char *utf8,
+    size_t utf8_len,
+    size_t line,
+    size_t *minimum_out
+) {
+    size_t prefix_len = field_name_len + 2;
+    size_t word_prefix_len = 2 + strlen(output_charset) + 3;
+    size_t word_suffix_len = 2;
+    size_t unit_len = utf8_len == 0 ? 0 : ptn_iconv_mime_q_source_unit_len(utf8, utf8_len, 0);
+    size_t converted_len = 0;
+    char *converted = ptn_iconv_mime_convert_utf8_chunk_alloc(
+        runtime,
+        function_name,
+        utf8,
+        unit_len,
+        output_charset,
+        line,
+        &converted_len
+    );
+    if (converted == NULL) {
+        return 0;
+    }
+    size_t encoded_len = ptn_iconv_mime_encoded_len(scheme, converted, converted_len);
+    free(converted);
+    if (encoded_len == SIZE_MAX ||
+        prefix_len > SIZE_MAX - word_prefix_len ||
+        prefix_len + word_prefix_len > SIZE_MAX - word_suffix_len ||
+        prefix_len + word_prefix_len + word_suffix_len > SIZE_MAX - encoded_len) {
+        ptn_emit_memory_allocation_overflow_error(runtime, prefix_len, 1, word_prefix_len + word_suffix_len, line);
+        return 0;
+    }
+    *minimum_out = prefix_len + word_prefix_len + word_suffix_len + encoded_len;
+    return 1;
+}
+
+static int ptn_iconv_mime_append_encoded_words(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
     const char *field_name,
     size_t field_name_len,
     const char *output_charset,
     char scheme,
-    const char *converted,
-    size_t converted_len,
+    const char *utf8,
+    size_t utf8_len,
     int64_t line_length,
     PtnStringOperand line_break,
     size_t line
@@ -104460,7 +104599,7 @@ static void ptn_iconv_mime_append_encoded_words(
     size_t offset = 0;
     int first_line = 1;
 
-    while (first_line || offset < converted_len) {
+    while (first_line || offset < utf8_len) {
         size_t line_prefix_len = first_line ? prefix_len : 1u;
         if (!first_line) {
             ptn_string_buffer_append_len(output, line_break.data, line_break.len);
@@ -104476,35 +104615,72 @@ static void ptn_iconv_mime_append_encoded_words(
         if (limit > line_prefix_len + word_prefix_len + word_suffix_len) {
             available = limit - line_prefix_len - word_prefix_len - word_suffix_len;
         }
-        if (available == 0) {
-            available = SIZE_MAX;
-        }
 
         size_t chunk_start = offset;
-        size_t chunk_encoded_len = 0;
-        while (offset < converted_len) {
-            size_t unit_len = scheme == 'Q'
-                ? ptn_iconv_mime_q_source_unit_len(converted, converted_len, offset)
-                : 1u;
-            size_t unit_encoded_len = scheme == 'Q'
-                ? ptn_iconv_mime_q_encoded_unit_len(converted + offset, unit_len)
-                : 4u * ((unit_len + 2u) / 3u);
-            if (offset > chunk_start && chunk_encoded_len + unit_encoded_len > available) {
+        size_t chunk_end = offset;
+        size_t scan_offset = offset;
+        char *chunk_converted = NULL;
+        size_t chunk_converted_len = 0;
+        while (scan_offset < utf8_len) {
+            size_t unit_len = ptn_iconv_mime_q_source_unit_len(utf8, utf8_len, scan_offset);
+            size_t next_offset = scan_offset + unit_len;
+            size_t candidate_len = 0;
+            char *candidate = ptn_iconv_mime_convert_utf8_chunk_alloc(
+                runtime,
+                "iconv_mime_encode",
+                utf8 + chunk_start,
+                next_offset - chunk_start,
+                output_charset,
+                line,
+                &candidate_len
+            );
+            if (candidate == NULL) {
+                free(chunk_converted);
+                return 0;
+            }
+            size_t candidate_encoded_len = ptn_iconv_mime_encoded_len(scheme, candidate, candidate_len);
+            if (chunk_end > chunk_start && candidate_encoded_len > available) {
+                free(candidate);
                 break;
             }
-            offset += unit_len;
-            chunk_encoded_len += unit_encoded_len;
-            if (chunk_encoded_len >= available) {
+            int non_final_unpadded_b_word =
+                scheme != 'Q' && candidate_len % 3u == 0 && next_offset < utf8_len;
+            if (chunk_end > chunk_start && non_final_unpadded_b_word) {
+                free(candidate);
+                scan_offset = next_offset;
+                continue;
+            }
+            free(chunk_converted);
+            chunk_converted = candidate;
+            chunk_converted_len = candidate_len;
+            chunk_end = next_offset;
+            scan_offset = next_offset;
+            if (candidate_encoded_len >= available) {
                 break;
+            }
+        }
+        offset = chunk_end;
+        if (chunk_converted == NULL) {
+            chunk_converted = ptn_iconv_mime_convert_utf8_chunk_alloc(
+                runtime,
+                "iconv_mime_encode",
+                utf8 + chunk_start,
+                0,
+                output_charset,
+                line,
+                &chunk_converted_len
+            );
+            if (chunk_converted == NULL) {
+                return 0;
             }
         }
 
         if (scheme == 'Q') {
-            ptn_iconv_mime_append_q_encoded(output, converted + chunk_start, offset - chunk_start);
+            ptn_iconv_mime_append_q_encoded(output, chunk_converted, chunk_converted_len);
         } else {
             PtnValue temp = ptn_owned_string_len(
-                ptn_duplicate_string_len(converted + chunk_start, offset - chunk_start),
-                offset - chunk_start
+                ptn_duplicate_string_len(chunk_converted, chunk_converted_len),
+                chunk_converted_len
             );
             PtnValue encoded = ptn_internal_base64_encode(runtime, 1, &temp, line);
             PtnStringOperand encoded_string = ptn_value_to_string_operand(encoded);
@@ -104513,9 +104689,11 @@ static void ptn_iconv_mime_append_encoded_words(
             ptn_value_destroy(&encoded);
             ptn_value_destroy(&temp);
         }
+        free(chunk_converted);
         ptn_string_buffer_append(output, "?=");
         first_line = 0;
     }
+    return 1;
 }
 
 static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -104532,6 +104710,7 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
     char *input_charset = ptn_duplicate_string(ptn_iconv_effective_internal_encoding(runtime));
     char *output_charset = ptn_duplicate_string(ptn_iconv_effective_internal_encoding(runtime));
     int64_t line_length = 76;
+    int has_line_length = 0;
     PtnStringOperand line_break = ptn_string_operand_borrowed_len("\n", 1);
     char scheme = 'B';
     if (argc >= 3) {
@@ -104581,6 +104760,7 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
                 }
                 if (ptn_string_operand_ascii_case_equal(preference_key, "line-length")) {
                     line_length = ptn_value_to_integer(entry->value);
+                    has_line_length = 1;
                     continue;
                 }
                 if (ptn_string_operand_ascii_case_equal(preference_key, "line-break-chars")) {
@@ -104594,17 +104774,21 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
         }
     }
 
-    size_t converted_len = 0;
+    if (has_line_length && line_length > 0) {
+        ptn_string_result_enforce_memory_limit(runtime, (size_t)line_length, line);
+    }
+
+    size_t utf8_len = 0;
     int status = PTN_ICONV_CONVERT_OK;
-    char *converted = ptn_iconv_convert_alloc(
+    char *utf8 = ptn_iconv_convert_alloc(
         field_value.data,
         field_value.len,
         input_charset,
-        output_charset,
+        "UTF-8",
         &status,
-        &converted_len
+        &utf8_len
     );
-    if (converted == NULL) {
+    if (utf8 == NULL) {
         ptn_iconv_emit_conversion_notice(
             runtime,
             status == PTN_ICONV_CONVERT_INCOMPLETE
@@ -104621,22 +104805,65 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
         ptn_string_operand_free(field_value);
         return ptn_bool(0);
     }
+
+    if (has_line_length) {
+        size_t minimum_line_length = 0;
+        if (!ptn_iconv_mime_minimum_line_length(
+                runtime,
+                "iconv_mime_encode",
+                field_name.data,
+                field_name.len,
+                output_charset,
+                scheme,
+                utf8,
+                utf8_len,
+                line,
+                &minimum_line_length
+            )) {
+            free(utf8);
+            free(input_charset);
+            free(output_charset);
+            if (line_break.owned != NULL) {
+                ptn_string_operand_free(line_break);
+            }
+            ptn_string_operand_free(field_name);
+            ptn_string_operand_free(field_value);
+            return ptn_bool(0);
+        }
+        if (line_length <= 0 || (uint64_t)line_length < (uint64_t)minimum_line_length) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "iconv_mime_encode(): Specified line length is too short",
+                line
+            );
+            free(utf8);
+            free(input_charset);
+            free(output_charset);
+            if (line_break.owned != NULL) {
+                ptn_string_operand_free(line_break);
+            }
+            ptn_string_operand_free(field_name);
+            ptn_string_operand_free(field_value);
+            return ptn_bool(0);
+        }
+    }
+
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-    ptn_iconv_mime_append_encoded_words(
+    int encoded = ptn_iconv_mime_append_encoded_words(
         runtime,
         &output,
         field_name.data,
         field_name.len,
         output_charset,
         scheme,
-        converted,
-        converted_len,
+        utf8,
+        utf8_len,
         line_length,
         line_break,
         line
     );
-    free(converted);
+    free(utf8);
     free(input_charset);
     free(output_charset);
     if (line_break.owned != NULL) {
@@ -104644,6 +104871,10 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
     }
     ptn_string_operand_free(field_name);
     ptn_string_operand_free(field_value);
+    if (!encoded) {
+        free(output.data);
+        return ptn_bool(0);
+    }
     return ptn_owned_string_len(output.data, output.len);
 }
 

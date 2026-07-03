@@ -38939,6 +38939,77 @@ var_dump(iconv_mime_decode_headers($headers, 0, 'UTF-8'));\n",
 }
 
 #[test]
+fn compile_iconv_mime_decode_malformed_words_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-mime-decode-malformed");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-mime-decode-malformed.php");
+    let output = root.join("iconv-mime-decode-malformed-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function($errno, $errmsg) { echo \"$errno: $errmsg\\n\"; });\n\
+$header = 'Subject: =?ISO-8859-1?Q?Pr=FCfung?= =?ISO-8859-1*de_DE?Q?Pr=FCfung??   =?ISO-8859-2?X?k=F9=D4=F1=D3let?=';\n\
+var_dump(iconv_mime_decode($header, 0, 'UTF-8'));\n\
+var_dump(iconv_mime_decode($header, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2: iconv_mime_decode(): Malformed string\n",
+            "bool(false)\n",
+            "string(85) \"Subject: Prüfung=?ISO-8859-1*de_DE?Q?Pr=FCfung??   =?ISO-8859-2?X?k=F9=D4=F1=D3let?=\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_iconv_mime_encode_iso2022jp_folds_source_characters_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-mime-encode-folds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-mime-encode-folds.php");
+    let output = root.join("iconv-mime-encode-folds-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function($errno, $errmsg) { echo \"$errno: $errmsg\\n\"; });\n\
+$options = [\n\
+    'scheme' => 'B',\n\
+    'output-charset' => 'ISO-2022-JP',\n\
+    'input-charset' => 'EUC-JP',\n\
+    'line-break-chars' => \"\\n\",\n\
+    'line-length' => 36,\n\
+];\n\
+$value = \"\\xA5\\xB5\\xA5\\xF3\\xA5\\xD7\";\n\
+var_dump(iconv_mime_encode('From', $value, $options));\n\
+$options['line-length'] = 35;\n\
+var_dump(iconv_mime_encode('From', $value, $options));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(72) \"From: =?ISO-2022-JP?B?GyRCJTUbKEI=?=\n",
+            " =?ISO-2022-JP?B?GyRCJXMlVxsoQg==?=\"\n",
+            "2: iconv_mime_encode(): Specified line length is too short\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iconv_mime_charset_length_guards_to_native_binary() {
     let root = temp_dir("ptn-native-iconv-mime-charset-length");
     fs::create_dir_all(&root).unwrap();
