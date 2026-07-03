@@ -10139,6 +10139,9 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->send_call_yield_indexes != NULL) {
         ptn_array_free(generator->send_call_yield_indexes);
     }
+    if (generator->send_call_yield_paths != NULL) {
+        ptn_array_free(generator->send_call_yield_paths);
+    }
     if (generator->send_call_lines != NULL) {
         ptn_array_free(generator->send_call_lines);
     }
@@ -10212,6 +10215,7 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue send_call_receivers = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_arguments = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_yield_indexes = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_yield_paths = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_positions = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_lines = ptn_array_from_literal_entries(0, NULL);
@@ -10232,6 +10236,7 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->send_call_receivers = send_call_receivers.as.array;
     generator->send_call_arguments = send_call_arguments.as.array;
     generator->send_call_yield_indexes = send_call_yield_indexes.as.array;
+    generator->send_call_yield_paths = send_call_yield_paths.as.array;
     generator->send_call_lines = send_call_lines.as.array;
     generator->send_yield_from_positions = send_yield_from_positions.as.array;
     generator->send_yield_from_lines = send_yield_from_lines.as.array;
@@ -12473,6 +12478,7 @@ static PTN_UNUSED void ptn_generator_register_send_call_entry(
     const PtnValue *args,
     size_t yield_argc,
     const size_t *yield_indexes,
+    const PtnValue *yield_paths,
     size_t line
 ) {
     PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
@@ -12485,6 +12491,7 @@ static PTN_UNUSED void ptn_generator_register_send_call_entry(
         generator->send_call_receivers == NULL ||
         generator->send_call_arguments == NULL ||
         generator->send_call_yield_indexes == NULL ||
+        generator->send_call_yield_paths == NULL ||
         generator->send_call_lines == NULL ||
         generator->values->len == 0
     ) {
@@ -12497,6 +12504,7 @@ static PTN_UNUSED void ptn_generator_register_send_call_entry(
         !ptn_array_append_key_available(runtime, generator->send_call_receivers) ||
         !ptn_array_append_key_available(runtime, generator->send_call_arguments) ||
         !ptn_array_append_key_available(runtime, generator->send_call_yield_indexes) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_yield_paths) ||
         !ptn_array_append_key_available(runtime, generator->send_call_lines)
     ) {
         return;
@@ -12509,6 +12517,11 @@ static PTN_UNUSED void ptn_generator_register_send_call_entry(
     PtnValue indexes = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < yield_argc; i++) {
         ptn_array_set_entry(indexes.as.array, ptn_array_int_key((int64_t)i), ptn_int((int64_t)yield_indexes[i]));
+    }
+    PtnValue paths = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < yield_argc; i++) {
+        PtnValue path = yield_paths == NULL ? ptn_null() : yield_paths[i];
+        ptn_array_set_entry(paths.as.array, ptn_array_int_key((int64_t)i), ptn_value_clone(path));
     }
 
     PtnArrayKey key = ptn_array_int_key(generator->send_call_positions->next_auto_key);
@@ -12543,6 +12556,11 @@ static PTN_UNUSED void ptn_generator_register_send_call_entry(
         indexes
     );
     ptn_array_set_entry(
+        generator->send_call_yield_paths,
+        ptn_array_int_key(generator->send_call_yield_paths->next_auto_key),
+        paths
+    );
+    ptn_array_set_entry(
         generator->send_call_lines,
         ptn_array_int_key(generator->send_call_lines->next_auto_key),
         ptn_int((int64_t)line)
@@ -12556,6 +12574,7 @@ static PTN_UNUSED void ptn_generator_register_send_call(
     const PtnValue *args,
     size_t yield_argc,
     const size_t *yield_indexes,
+    const PtnValue *yield_paths,
     size_t line
 ) {
     ptn_generator_register_send_call_entry(
@@ -12567,6 +12586,7 @@ static PTN_UNUSED void ptn_generator_register_send_call(
         args,
         yield_argc,
         yield_indexes,
+        yield_paths,
         line
     );
 }
@@ -12578,6 +12598,7 @@ static PTN_UNUSED void ptn_generator_register_send_callable(
     const PtnValue *args,
     size_t yield_argc,
     const size_t *yield_indexes,
+    const PtnValue *yield_paths,
     size_t line
 ) {
     ptn_generator_register_send_call_entry(
@@ -12589,6 +12610,7 @@ static PTN_UNUSED void ptn_generator_register_send_callable(
         args,
         yield_argc,
         yield_indexes,
+        yield_paths,
         line
     );
 }
@@ -12601,6 +12623,7 @@ static PTN_UNUSED void ptn_generator_register_send_method(
     const PtnValue *args,
     size_t yield_argc,
     const size_t *yield_indexes,
+    const PtnValue *yield_paths,
     size_t line
 ) {
     ptn_generator_register_send_call_entry(
@@ -12612,6 +12635,7 @@ static PTN_UNUSED void ptn_generator_register_send_method(
         args,
         yield_argc,
         yield_indexes,
+        yield_paths,
         line
     );
 }
@@ -12624,6 +12648,7 @@ static PTN_UNUSED void ptn_generator_register_send_nested_call(
     const PtnValue *args,
     size_t yield_argc,
     const size_t *yield_indexes,
+    const PtnValue *yield_paths,
     size_t line
 ) {
     PtnValue inner_name = ptn_string(inner_function_name == NULL ? "" : inner_function_name);
@@ -12636,6 +12661,7 @@ static PTN_UNUSED void ptn_generator_register_send_nested_call(
         args,
         yield_argc,
         yield_indexes,
+        yield_paths,
         line
     );
     ptn_value_destroy(&inner_name);
@@ -12802,7 +12828,19 @@ static PTN_UNUSED void ptn_generator_apply_sent_value_to_call_args(
     }
 }
 
-static PTN_UNUSED int ptn_generator_yield_indexes_contains(PtnArray *yield_indexes, size_t argument_index) {
+static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+);
+
+static PTN_UNUSED int ptn_generator_yield_argument_path(
+    PtnArray *yield_indexes,
+    PtnArray *yield_paths,
+    size_t argument_index,
+    PtnValue *path_out
+) {
     if (yield_indexes == NULL) {
         return 0;
     }
@@ -12813,10 +12851,47 @@ static PTN_UNUSED int ptn_generator_yield_indexes_contains(PtnArray *yield_index
             index_value.as.integer >= 0 &&
             (size_t)index_value.as.integer == argument_index
         ) {
+            if (
+                path_out != NULL &&
+                yield_paths != NULL &&
+                i < yield_paths->len
+            ) {
+                *path_out = ptn_value_deref(yield_paths->entries[i].value);
+            }
             return 1;
         }
     }
     return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_sent_argument_value(
+    PtnRuntime *runtime,
+    PtnArray *yield_indexes,
+    PtnArray *yield_paths,
+    size_t argument_index,
+    PtnValue sent_value,
+    size_t line
+) {
+    PtnValue path_value = ptn_null();
+    if (!ptn_generator_yield_argument_path(yield_indexes, yield_paths, argument_index, &path_value)) {
+        return ptn_null();
+    }
+    PtnValue resolved_path = ptn_value_deref(path_value);
+    if (resolved_path.type != PTN_ARRAY || resolved_path.as.array == NULL) {
+        return ptn_value_share(sent_value);
+    }
+    PtnArray *path = resolved_path.as.array;
+    PtnValue current = ptn_value_clone_deref(sent_value);
+    for (size_t i = 0; i < path->len; i++) {
+        PtnValue key = ptn_value_deref(path->entries[i].value);
+        PtnValue next = ptn_array_read_for_list_destructure(runtime, current, key, line);
+        ptn_value_destroy(&current);
+        current = next;
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    return current;
 }
 
 static PTN_UNUSED void ptn_generator_mark_send_call_consumed(PtnGenerator *generator, size_t index) {
@@ -12857,8 +12932,13 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
         PtnValue receiver_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_receivers, i));
         PtnValue arguments_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_arguments, i));
         PtnValue indexes_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_yield_indexes, i));
+        PtnValue paths_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_yield_paths, i));
         PtnValue line_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_lines, i));
-        if (name_value.type != PTN_STRING || arguments_value.type != PTN_ARRAY || indexes_value.type != PTN_ARRAY) {
+        if (
+            name_value.type != PTN_STRING ||
+            arguments_value.type != PTN_ARRAY ||
+            indexes_value.type != PTN_ARRAY
+        ) {
             continue;
         }
         int kind = PTN_GENERATOR_SEND_CALL_FUNCTION;
@@ -12871,6 +12951,7 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
         }
         PtnArray *arguments = arguments_value.as.array;
         PtnArray *yield_indexes = indexes_value.as.array;
+        PtnArray *yield_paths = paths_value.type == PTN_ARRAY ? paths_value.as.array : NULL;
         size_t argc = arguments == NULL ? 0 : arguments->len;
         PtnValue *call_args = NULL;
         if (argc > 0) {
@@ -12879,9 +12960,18 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
                 ptn_abort_out_of_memory();
             }
             for (size_t arg_index = 0; arg_index < argc; arg_index++) {
-                call_args[arg_index] = ptn_generator_yield_indexes_contains(yield_indexes, arg_index)
-                    ? ptn_value_share(sent_value)
-                    : ptn_value_share(arguments->entries[arg_index].value);
+                if (ptn_generator_yield_argument_path(yield_indexes, yield_paths, arg_index, NULL)) {
+                    call_args[arg_index] = ptn_generator_sent_argument_value(
+                        runtime,
+                        yield_indexes,
+                        yield_paths,
+                        arg_index,
+                        sent_value,
+                        call_line
+                    );
+                } else {
+                    call_args[arg_index] = ptn_value_share(arguments->entries[arg_index].value);
+                }
             }
         }
 

@@ -181985,6 +181985,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                         args,
                         0,
                         NULL,
+                        NULL,
                         line
                     );
                     return ptn_null();

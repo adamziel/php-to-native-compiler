@@ -1217,6 +1217,7 @@ struct PtnGenerator {
     PtnArray *send_call_receivers;
     PtnArray *send_call_arguments;
     PtnArray *send_call_yield_indexes;
+    PtnArray *send_call_yield_paths;
     PtnArray *send_call_lines;
     PtnArray *send_yield_from_positions;
     PtnArray *send_yield_from_lines;
