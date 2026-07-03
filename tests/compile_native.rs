@@ -58457,6 +58457,106 @@ echo '/n:foo/n:bar=', count($xpath->query('/n:foo/n:bar')), "\n";
 }
 
 #[test]
+fn compile_dom_legacy_null_comment_and_direct_namespace_insertion_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-legacy-null-comment-direct-namespace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-legacy-null-comment-direct-namespace.php");
+    let output = root.join("dom-legacy-null-comment-direct-namespace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$root = $doc->appendChild($doc->createElement("r"));
+$nullComment = new DOMComment();
+$emptyComment = $doc->createComment("");
+$root->appendChild($nullComment);
+$root->appendChild($doc->createTextNode("|"));
+$root->appendChild($emptyComment);
+echo $doc->saveXML();
+
+$doc = new DOMDocument();
+$root = $doc->appendChild($doc->createElement("r"));
+$mutatedComment = new DOMComment();
+$mutatedComment->appendData("");
+$root->appendChild($mutatedComment);
+echo $doc->saveXML();
+
+$ref = new DOMEntityReference("G");
+$com = new DOMComment();
+$doc = new DOMDocument();
+$elem = new DOMElement("Rj", "o");
+$com2 = new DOMComment();
+$elem2 = new DOMElement("kx", null, "r");
+
+$elem2->prepend($com);
+$com->before("Z");
+$com->before($com2);
+$com2->after($elem);
+$doc->insertBefore($elem2);
+$elem->insertBefore($ref);
+
+echo $doc->saveXML();
+
+function ptn_dom_wrong_document_variation($method) {
+    $otherDoc = new DOMDocument();
+    $otherDoc->loadXML('<other/>');
+    $otherElement = $otherDoc->documentElement;
+
+    $doc = new DOMDocument();
+    $doc->loadXML('<container><alone/><child><testelement/></child></container>');
+    $testElement = $doc->documentElement->firstElementChild->nextElementSibling->firstElementChild;
+
+    try {
+        $doc->documentElement->firstElementChild->$method($testElement, $otherElement);
+    } catch (DOMException $e) {
+        echo $method, ':', $e->getMessage(), "\n";
+    }
+    echo $doc->saveXML($doc->documentElement), "\n";
+}
+
+foreach (['prepend', 'append', 'before', 'after', 'replaceWith'] as $method) {
+    ptn_dom_wrong_document_variation($method);
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n<r>|<!----></r>\n",
+            "<?xml version=\"1.0\"?>\n<r><!----></r>\n",
+            "<?xml version=\"1.0\"?>\n<kx xmlns=\"r\">Z<Rj>o&G;</Rj></kx>\n",
+            "prepend:Wrong Document Error\n",
+            "<container><alone/><child/></container>\n",
+            "append:Wrong Document Error\n",
+            "<container><alone/><child/></container>\n",
+            "before:Wrong Document Error\n",
+            "<container><alone/><child/></container>\n",
+            "after:Wrong Document Error\n",
+            "<container><alone/><child/></container>\n",
+            "replaceWith:Wrong Document Error\n",
+            "<container><alone/><child/></container>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("null_content"));
+    assert!(c_source.contains("ptn_dom_nodes_to_single_node"));
+    assert!(c_source.contains("ptn_dom_materialize_empty_default_namespace"));
+}
+
+#[test]
 fn compile_libxml_recover_dom_xml_parse_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-recover-dom-xml-parse");
     fs::create_dir_all(&root).unwrap();

@@ -138821,6 +138821,7 @@ struct PtnXmlNode {
     char *serialized_value;
     char *value;
     size_t value_len;
+    int null_content;
     char *namespace_uri;
     char *public_id;
     char *system_id;
@@ -138849,6 +138850,7 @@ struct PtnXmlNode {
     int html_document;
     int simplexml_imported_legacy_dom;
     int simplexml_imported_modern_dom;
+    int explicit_empty_namespace;
     int namespace_declaration;
     int synthetic_namespace_declaration;
     int allow_empty_prefixed_namespace_declaration;
@@ -139825,6 +139827,10 @@ static int ptn_xml_check_insertable(PtnRuntime *runtime, const char *method_name
     return ptn_xml_check_insertable_ex(runtime, method_name, position, parent, value, 0);
 }
 
+static int ptn_xml_check_insertable_allow_cross_document(PtnRuntime *runtime, const char *method_name, size_t position, PtnXmlNode *parent, PtnValue value) {
+    return ptn_xml_check_insertable_ex(runtime, method_name, position, parent, value, 1);
+}
+
 static int ptn_xml_node_would_insert_text_into_document(PtnXmlNode *node) {
     if (node == NULL) {
         return 0;
@@ -139997,6 +140003,7 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     free(clone->value);
     clone->value = ptn_duplicate_string_len(node->value == NULL ? "" : node->value, node->value_len);
     clone->value_len = node->value_len;
+    clone->null_content = node->null_content;
     clone->serialized_name = node->serialized_name == NULL ? NULL : ptn_duplicate_string(node->serialized_name);
     clone->serialized_value = node->serialized_value == NULL ? NULL : ptn_duplicate_string(node->serialized_value);
     free(clone->namespace_uri);
@@ -140018,6 +140025,7 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     clone->html_document = node->html_document;
     clone->simplexml_imported_legacy_dom = node->simplexml_imported_legacy_dom;
     clone->simplexml_imported_modern_dom = node->simplexml_imported_modern_dom;
+    clone->explicit_empty_namespace = node->explicit_empty_namespace;
     clone->namespace_declaration = node->namespace_declaration;
     clone->synthetic_namespace_declaration = node->synthetic_namespace_declaration;
     clone->allow_empty_prefixed_namespace_declaration = node->allow_empty_prefixed_namespace_declaration;
@@ -144446,6 +144454,9 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
             ptn_string_buffer_append(buffer, "?>");
             return;
         case PTN_XML_NODE_COMMENT:
+            if (node->null_content) {
+                return;
+            }
             ptn_string_buffer_append(buffer, "<!--");
             ptn_string_buffer_append(buffer, node->value == NULL ? "" : node->value);
             ptn_string_buffer_append(buffer, "-->");
@@ -149138,6 +149149,10 @@ static void ptn_dom_materialize_empty_default_namespace(PtnRuntime *runtime, Ptn
         return;
     }
     if (node->type == PTN_XML_NODE_ELEMENT) {
+        PtnXmlNode *document = ptn_xml_document_for_node(parent);
+        if (document == NULL || !document->modern_dom) {
+            return;
+        }
         const char *node_uri = node->namespace_uri == NULL ? "" : node->namespace_uri;
         const char *parent_default = ptn_dom_parent_default_namespace(parent);
         if (node_uri[0] == '\0' &&
@@ -149492,6 +149507,10 @@ static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node) {
             uri = preserved_uri;
         } else if (ptn_ascii_case_equal(prefix, "xml")) {
             uri = ptn_dom_xml_namespace_uri();
+        } else if (node->type == PTN_XML_NODE_ELEMENT &&
+            node->explicit_empty_namespace &&
+            prefix[0] == '\0') {
+            uri = NULL;
         } else {
             uri = ptn_xml_lookup_namespace_uri(node, prefix);
         }
@@ -151548,6 +151567,12 @@ static PtnValue ptn_dom_construct_character(PtnRuntime *runtime, const char *cla
     free(node->value);
     node->value = ptn_duplicate_string_len(data.data, data.len);
     node->value_len = data.len;
+    if (type == PTN_XML_NODE_COMMENT && argc == 0) {
+        free(node->value);
+        node->value = NULL;
+        node->value_len = 0;
+        node->null_content = 1;
+    }
     ptn_string_operand_free(data);
     return ptn_xml_node_value_for_runtime(runtime, node);
 }
@@ -153153,9 +153178,11 @@ static PTN_UNUSED PtnValue ptn_dom_new(
         char *name_copy = ptn_duplicate_string_len(name.data, name.len);
         char *value_copy = ptn_duplicate_string_len(value.data, value.len);
         PtnXmlNode *element = ptn_xml_create_element(runtime, NULL, name_copy, value_copy);
+        element->explicit_empty_namespace = namespace_uri.len == 0;
         if (namespace_uri.len > 0) {
             free(element->namespace_uri);
             element->namespace_uri = ptn_duplicate_string_len(namespace_uri.data, namespace_uri.len);
+            element->explicit_empty_namespace = 0;
             char *prefix = ptn_xml_prefix_dup(element->name == NULL ? "" : element->name);
             if (prefix[0] == '\0') {
                 ptn_xml_element_set_attribute_string(runtime, element, "xmlns", element->namespace_uri);
@@ -153284,6 +153311,8 @@ static void ptn_dom_replace_receiver_node(PtnValue receiver, PtnValue replacemen
     replacement.as.object->native_data_free = NULL;
 }
 
+static PtnXmlNode *ptn_dom_nodes_to_single_node(PtnRuntime *runtime, PtnXmlNode *parent, const char *method_name, size_t argc, const PtnValue *args);
+
 static PtnValue ptn_dom_append_like(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line, int prepend) {
     (void)line;
     PtnXmlNode *parent = ptn_xml_node_data(receiver);
@@ -153291,7 +153320,7 @@ static PtnValue ptn_dom_append_like(PtnRuntime *runtime, PtnValue receiver, cons
         return ptn_null();
     }
     for (size_t i = 0; i < argc; i++) {
-        if (!ptn_xml_check_insertable(runtime, method_name, i + 1, parent, args[i])) {
+        if (!ptn_xml_check_insertable_allow_cross_document(runtime, method_name, i + 1, parent, args[i])) {
             return ptn_null();
         }
     }
@@ -153305,13 +153334,15 @@ static PtnValue ptn_dom_append_like(PtnRuntime *runtime, PtnValue receiver, cons
     if (!ptn_xml_check_document_text_insertion(runtime, parent, argc, args)) {
         return ptn_null();
     }
-    for (size_t i = 0; i < argc; i++) {
-        PtnXmlNode *child = ptn_xml_insert_arg_node(runtime, parent, args[i]);
-        size_t inserted_count = ptn_xml_inserted_child_count(child);
-        PtnXmlNode *inserted = ptn_xml_insert_child_at(parent, child, index);
-        ptn_xml_materialize_adopted_default_namespace(runtime, parent != NULL && parent->type == PTN_XML_NODE_DOCUMENT ? inserted : parent);
-        index += inserted_count;
+    if (argc == 0) {
+        return ptn_null();
     }
+    PtnXmlNode *child = ptn_dom_nodes_to_single_node(runtime, parent, method_name, argc, args);
+    if (child == NULL) {
+        return ptn_null();
+    }
+    PtnXmlNode *inserted = ptn_xml_insert_child_at(parent, child, index);
+    ptn_xml_materialize_adopted_default_namespace(runtime, parent != NULL && parent->type == PTN_XML_NODE_DOCUMENT ? inserted : parent);
     return ptn_null();
 }
 
@@ -153354,13 +153385,38 @@ static PtnXmlNode *ptn_dom_next_viable_sibling(PtnXmlNode *parent, size_t index,
     return NULL;
 }
 
-static PtnXmlNode *ptn_dom_nodes_to_fragment(PtnRuntime *runtime, PtnXmlNode *parent, size_t argc, const PtnValue *args) {
+static void ptn_dom_fragment_detach_children(PtnXmlNode *fragment) {
+    while (fragment != NULL && fragment->child_count > 0) {
+        ptn_xml_detach_child(fragment->children[0]);
+    }
+}
+
+static PtnXmlNode *ptn_dom_fragment_arg_node(PtnValue value, PtnXmlNode *owner_document) {
+    PtnXmlNode *node = ptn_xml_node_data(value);
+    if (node != NULL) {
+        return node;
+    }
+    return ptn_xml_text_node_from_value(value, owner_document);
+}
+
+static PtnXmlNode *ptn_dom_nodes_to_single_node(PtnRuntime *runtime, PtnXmlNode *parent, const char *method_name, size_t argc, const PtnValue *args) {
+    if (argc == 1) {
+        if (!ptn_xml_check_insertable(runtime, method_name, 1, parent, args[0])) {
+            return NULL;
+        }
+        return ptn_xml_insert_arg_node(runtime, parent, args[0]);
+    }
     PtnXmlNode *fragment = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT_FRAGMENT, NULL, "");
     fragment->owner_document = ptn_xml_document_for_node(parent);
     for (size_t i = 0; i < argc; i++) {
-        PtnXmlNode *child = ptn_xml_insert_arg_node(runtime, parent, args[i]);
+        if (!ptn_xml_check_insertable(runtime, method_name, i + 1, fragment, args[i])) {
+            ptn_dom_fragment_detach_children(fragment);
+            return NULL;
+        }
+        PtnXmlNode *child = ptn_dom_fragment_arg_node(args[i], fragment->owner_document);
         ptn_xml_insert_child_at(fragment, child, fragment->child_count);
     }
+    ptn_dom_materialize_empty_default_namespace(runtime, parent, fragment);
     return fragment;
 }
 
@@ -153377,7 +153433,7 @@ static PtnValue ptn_dom_child_insert_like(PtnRuntime *runtime, PtnValue receiver
     }
     for (size_t i = 0; i < argc; i++) {
         arg_nodes[i] = ptn_xml_node_data(args[i]);
-        if (!ptn_xml_check_insertable(runtime, method_name, i + 1, parent, args[i])) {
+        if (!ptn_xml_check_insertable_allow_cross_document(runtime, method_name, i + 1, parent, args[i])) {
             free(arg_nodes);
             return ptn_null();
         }
@@ -153411,8 +153467,11 @@ static PtnValue ptn_dom_child_insert_like(PtnRuntime *runtime, PtnValue receiver
     } else {
         previous_viable = ptn_dom_previous_viable_sibling(parent, index, arg_nodes, argc);
     }
-    PtnXmlNode *fragment = ptn_dom_nodes_to_fragment(runtime, parent, argc, args);
+    PtnXmlNode *fragment = ptn_dom_nodes_to_single_node(runtime, parent, method_name, argc, args);
     free(arg_nodes);
+    if (fragment == NULL) {
+        return ptn_null();
+    }
 
     PtnXmlNode *inserted = NULL;
     if (replace && node->parent == parent) {
@@ -154584,9 +154643,11 @@ static PtnValue ptn_dom_create_element_method(PtnRuntime *runtime, PtnValue rece
     if (!ns) {
         ptn_dom_apply_html_parser_namespace(element);
     }
+    element->explicit_empty_namespace = element->namespace_uri == NULL || element->namespace_uri[0] == '\0';
     if (ns && uri.len > 0) {
         free(element->namespace_uri);
         element->namespace_uri = ptn_duplicate_string_len(uri.data, uri.len);
+        element->explicit_empty_namespace = 0;
         char *requested_prefix = ptn_xml_prefix_dup(element->name);
         if (requested_prefix[0] != '\0') {
             ptn_dom_element_ensure_prefixed_namespace(runtime, element, requested_prefix, element->namespace_uri);
@@ -156899,6 +156960,7 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         free(node->value);
         node->value = next;
         node->value_len = old_len + data.len;
+        node->null_content = 0;
         ptn_string_operand_free(data);
         return ptn_null();
     }
@@ -156917,17 +156979,19 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
             ptn_string_operand_free(data);
             return ptn_null();
         }
+        const char *old_value = node->value == NULL ? "" : node->value;
         char *next = malloc(old_len + data.len + 1);
         if (next == NULL) {
             ptn_abort_out_of_memory();
         }
-        memcpy(next, node->value, (size_t)offset);
+        memcpy(next, old_value, (size_t)offset);
         memcpy(next + offset, data.data, data.len);
-        memcpy(next + offset + data.len, node->value + offset, old_len - (size_t)offset);
+        memcpy(next + offset + data.len, old_value + offset, old_len - (size_t)offset);
         next[old_len + data.len] = '\0';
         free(node->value);
         node->value = next;
         node->value_len = old_len + data.len;
+        node->null_content = 0;
         ptn_string_operand_free(data);
         return ptn_null();
     }
@@ -156950,8 +157014,12 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (remove_len > old_len - offset) {
             remove_len = old_len - offset;
         }
+        if (node->value == NULL) {
+            node->value = ptn_duplicate_string("");
+        }
         memmove(node->value + offset, node->value + offset + remove_len, old_len - offset - remove_len + 1);
         node->value_len = old_len - remove_len;
+        node->null_content = 0;
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "replaceData")) {
@@ -156992,6 +157060,7 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         free(node->value);
         node->value = next;
         node->value_len = new_len;
+        node->null_content = 0;
         ptn_string_operand_free(data);
         return ptn_null();
     }
@@ -157014,7 +157083,8 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (out_len > old_len - offset) {
             out_len = old_len - offset;
         }
-        return ptn_owned_string_len(ptn_duplicate_string_len(node->value + offset, out_len), out_len);
+        const char *value = node->value == NULL ? "" : node->value;
+        return ptn_owned_string_len(ptn_duplicate_string_len(value + offset, out_len), out_len);
     }
     (void)class_name;
     return ptn_null();
@@ -158433,6 +158503,7 @@ static void ptn_xml_set_text_content(PtnRuntime *runtime, PtnXmlNode *node, cons
         free(node->value);
         node->value = ptn_duplicate_string_len(data, len);
         node->value_len = len;
+        node->null_content = 0;
         return;
     }
     node->child_count = 0;
@@ -159437,6 +159508,7 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
             free(node->value);
             node->value = ptn_duplicate_string_len(string.data, string.len);
             node->value_len = string.len;
+            node->null_content = 0;
         } else if (ptn_ascii_case_equal(property, "textContent") ||
             (ptn_ascii_case_equal(property, "nodeValue") && node->type == PTN_XML_NODE_ELEMENT)) {
             ptn_xml_set_text_content(runtime, node, string.data, string.len);
