@@ -2975,6 +2975,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{unmodeled_curl_harness:?}"
     );
 
+    let filter_loopback_validation_fixture = classify_at_relative_path(
+        "--TEST--\nfilter loopback validation fixture\n--EXTENSIONS--\nfilter\n--FILE--\n<?php\nvar_dump(filter_var('127.0.0.1', FILTER_VALIDATE_IP));\nvar_dump(filter_var('::1', FILTER_VALIDATE_IP));\nvar_dump(filter_var('http://test@[::1]', FILTER_VALIDATE_URL));\n--EXPECT--\n",
+        "ext/filter/tests/loopback_validation_fixture.phpt",
+    );
+    assert_eq!(
+        filter_loopback_validation_fixture.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let http_server_harness = classify_at_relative_path(
+        "--TEST--\nhttp server harness\n--FILE--\n<?php\nrequire __DIR__ . '/server.inc';\nhttp_server('tcp://127.0.0.1:12345', []);\n--EXPECT--\n",
+        "ext/standard/tests/http/server_harness.phpt",
+    );
+    assert!(
+        http_server_harness.starts_with("external-service\t"),
+        "{http_server_harness:?}"
+    );
+
     let zip_archive_unmodeled_mutation = classify_at_relative_path(
         "--TEST--\nzip archive unmodeled mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->deleteName('test');\n--EXPECT--\n",
         "ext/zip/tests/delete_name.phpt",
