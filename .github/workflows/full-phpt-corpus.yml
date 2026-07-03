@@ -1,0 +1,128 @@
+name: Full PHPT Corpus
+
+on:
+  workflow_dispatch:
+    inputs:
+      php_src_ref:
+        description: php/php-src ref to test
+        required: true
+        default: 8c63ec400ce8e07c57a8d9499317b96a8beafb8b
+      timeout_seconds:
+        description: Per-PHPT timeout passed to run-tests.php
+        required: true
+        default: "180"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-phpt-corpus-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-phpt-shard:
+    name: shard ${{ matrix.shard }}/14
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+    steps:
+      - name: Checkout compiler
+        uses: actions/checkout@v4
+
+      - name: Checkout PHPT corpus
+        uses: actions/checkout@v4
+        with:
+          repository: php/php-src
+          ref: ${{ inputs.php_src_ref }}
+          path: .runtime/php-src-phpt
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld pkg-config php-cli
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Generate full-corpus shard
+        env:
+          PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+        run: |
+          tools/phpt-full-corpus-shard.sh \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 15 \
+            --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
+
+      - name: Run full-corpus shard
+        env:
+          PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+          PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
+          PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
+        run: |
+          tools/run-bounded-phpt.sh \
+            --classify-harness-programs \
+            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
+
+      - name: Upload shard artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpt-full-corpus-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          path: |
+            .runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt
+            .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
+
+  compose-full-phpt-number:
+    name: compose full PHPT number
+    runs-on: ubuntu-latest
+    needs: [full-phpt-shard]
+    if: always()
+
+    steps:
+      - name: Checkout compiler
+        uses: actions/checkout@v4
+
+      - name: Download shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: phpt-full-corpus-shard-*
+          path: .runtime/full-phpt-artifacts
+          merge-multiple: false
+
+      - name: Compose full-corpus result
+        run: |
+          tools/compose-phpt-full-corpus-results.py \
+            --expected-shards 15 \
+            --out-dir .runtime/full-phpt-composed \
+            .runtime/full-phpt-artifacts
+
+      - name: Add composed result to job summary
+        if: always()
+        run: |
+          if [[ -f .runtime/full-phpt-composed/summary.md ]]; then
+            cat .runtime/full-phpt-composed/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload composed result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpt-full-corpus-summary
+          if-no-files-found: error
+          path: .runtime/full-phpt-composed/**
