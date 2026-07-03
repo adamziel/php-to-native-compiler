@@ -45811,6 +45811,45 @@ function dumpTrace(ReflectionGenerator $ref) {
 }
 
 #[test]
+fn compile_reflection_generator_active_function_object_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-generator-active-function-object-ids");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-generator-active-function-object-ids.php");
+    let output = root.join("reflection-generator-active-function-object-ids-bin");
+    fs::write(
+        &input,
+        "<?php
+function dumpGeneratorFunction(ReflectionGenerator $ref) {
+    var_dump($ref->getExecutingGenerator());
+    var_dump($ref->getFunction());
+}
+
+($gen = (function() use (&$gen) {
+    $ref = new ReflectionGenerator($gen);
+    dumpGeneratorFunction($ref);
+
+    yield from (function() use ($ref) {
+        dumpGeneratorFunction($ref);
+        yield;
+    })();
+})())->next();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Generator)#2"), "{stdout}");
+    assert!(stdout.contains("object(ReflectionFunction)#4"), "{stdout}");
+    assert!(stdout.contains("object(Generator)#5"), "{stdout}");
+    assert!(stdout.contains("object(ReflectionFunction)#6"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_generator_closed_state_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-generator-closed-state");
     fs::create_dir_all(&root).unwrap();
