@@ -1368,7 +1368,7 @@ ptn_phpt_has_external_service_harness() {
     local path=$1
 
     grep -Eiq \
-        'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
+        'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1:[0-9]|\[::1\]:[0-9]' \
         "$path"
 }
 
