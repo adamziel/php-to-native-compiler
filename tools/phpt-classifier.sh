@@ -2894,6 +2894,10 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/013.phpt|\
         ext/phar/tests/014.phpt|\
         ext/phar/tests/016.phpt|\
+        ext/phar/tests/020.phpt|\
+        ext/phar/tests/030.phpt|\
+        ext/phar/tests/bug73809.phpt|\
+        ext/phar/tests/delete_in_phar.phpt|\
         ext/phar/tests/include_path_advanced.phpt|\
         ext/phar/tests/phar_extract3.phpt|\
         ext/phar/tests/delete.phpt|\
@@ -2902,7 +2906,11 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/019c.phpt|\
         ext/phar/tests/bug54395.phpt|\
         ext/phar/tests/bug79503.phpt|\
+        ext/phar/tests/phar_dir_iterate.phpt|\
+        ext/phar/tests/phar_oo_006.phpt|\
         ext/phar/tests/zip/phar_buildfromiterator4.phpt|\
+        ext/phar/tests/zip/corrupt_010.phpt|\
+        ext/phar/tests/zip/open_for_write_existing_b.phpt|\
         ext/phar/tests/phar_buildfromiterator10.phpt|\
         ext/phar/tests/buildFromIterator_user_overrides/getMTime_errors.phpt|\
         ext/phar/tests/phar_oo_004.phpt|\

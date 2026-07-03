@@ -3110,6 +3110,28 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_zlib_corrupt_dir_rows = [
+        "ext/phar/tests/zip/corrupt_010.phpt",
+        "ext/phar/tests/phar_oo_006.phpt",
+        "ext/phar/tests/delete_in_phar.phpt",
+        "ext/phar/tests/bug73809.phpt",
+        "ext/phar/tests/zip/open_for_write_existing_b.phpt",
+        "ext/phar/tests/phar_dir_iterate.phpt",
+        "ext/phar/tests/020.phpt",
+        "ext/phar/tests/030.phpt",
+    ];
+    for row in phar_zlib_corrupt_dir_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar zlib corrupt directory row\n--EXTENSIONS--\nphar\n--FILE--\n<?php\nPhar::loadPhar(__DIR__ . '/archive.phar');\n$p = new Phar('phar://' . __DIR__ . '/archive.phar');\nvar_dump(isset($p['.phar/test']));\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let pdo_mysql_service = classify_at_relative_path(
         "--TEST--\npdo mysql service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
         "ext/pdo_mysql/tests/service.phpt",

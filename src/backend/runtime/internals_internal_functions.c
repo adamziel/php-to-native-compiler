@@ -199426,9 +199426,88 @@ static int ptn_phar_parse_zip_entry_content(
     return 0;
 }
 
+static void ptn_phar_archive_set_zip_split_archive_error(PtnPharArchiveState *archive) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: split archives spanning multiple zips cannot be processed in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: split archives spanning multiple zips cannot be processed in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
+static void ptn_phar_archive_set_zip_large_signature_error(PtnPharArchiveState *archive) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: signatures larger than 64 KiB are not supported in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: signatures larger than 64 KiB are not supported in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
+static int ptn_phar_zip_has_split_archive_eocd(const unsigned char *data, size_t len) {
+    if (data == NULL || len < 22) {
+        return 0;
+    }
+    size_t min_cursor = len > 0x10000u + 22u ? len - (0x10000u + 22u) : 0;
+    for (size_t cursor = len - 22; cursor + 22 <= len; cursor--) {
+        if (ptn_phar_read_u32_le(data + cursor) == 0x06054b50u) {
+            uint16_t disk_number = ptn_phar_read_u16_le(data + cursor + 4);
+            uint16_t central_start_disk = ptn_phar_read_u16_le(data + cursor + 6);
+            return disk_number != 0 || central_start_disk != 0;
+        }
+        if (cursor == min_cursor) {
+            break;
+        }
+    }
+    return 0;
+}
+
 static void ptn_phar_parse_zip(PtnPharArchiveState *archive, const unsigned char *data, size_t len) {
+    if (ptn_phar_zip_has_split_archive_eocd(data, len)) {
+        ptn_phar_archive_set_zip_split_archive_error(archive);
+        return;
+    }
     size_t cursor = 0;
     while (cursor + 4 <= len) {
+        if (archive != NULL && archive->load_error != NULL) {
+            return;
+        }
         uint32_t signature = ptn_phar_read_u32_le(data + cursor);
         if (signature == 0x02014b50u || signature == 0x06054b50u) {
             break;
@@ -199469,6 +199548,10 @@ static void ptn_phar_parse_zip(PtnPharArchiveState *archive, const unsigned char
                 free(archive->stub);
                 archive->stub = ptn_duplicate_string_len((const char *)content, content_len);
                 archive->stub_len = content_len;
+            } else if (strcmp(name, ".phar/signature.bin") == 0) {
+                if (content_len > 64u * 1024u) {
+                    ptn_phar_archive_set_zip_large_signature_error(archive);
+                }
             } else {
                 ptn_phar_archive_add_parent_dirs(archive, name);
                 ptn_phar_archive_set_virtual_entry(archive, name, content, content_len);
@@ -200161,6 +200244,14 @@ static int ptn_phar_entry_name_is_alias_meta_file(const char *name) {
 static int ptn_phar_entry_name_is_meta_file(const char *name) {
     return ptn_phar_entry_name_is_stub_meta_file(name) ||
         ptn_phar_entry_name_is_alias_meta_file(name);
+}
+
+static void ptn_phar_throw_magic_directory_offset_get(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "BadMethodCallException",
+        "Cannot directly get any files or directories in magic \".phar\" directory"
+    );
 }
 
 static int ptn_phar_entry_name_has_double_slash(const char *name) {
@@ -201720,6 +201811,24 @@ static PtnValue ptn_phar_file_info_value_for_class(
         : class_name;
     if (ptn_phar_info_class_is_file_object(resolved_class)) {
         char *uri = ptn_phar_entry_uri(archive, entry_name);
+        if (!ptn_ascii_case_equal(resolved_class, "SplFileObject") &&
+            runtime->new_instance_without_constructor != NULL &&
+            runtime->method_dispatch != NULL &&
+            runtime->declared_method_exists != NULL &&
+            runtime->declared_method_exists(resolved_class, "__construct")) {
+            PtnValue result = runtime->new_instance_without_constructor(runtime, resolved_class, line);
+            if (runtime->exceptions->active_exception != NULL || result.type != PTN_OBJECT) {
+                free(uri);
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+            PtnValue ctor_arg = ptn_owned_string(uri);
+            PtnValue ctor_result =
+                runtime->method_dispatch(runtime, result, "__construct", 1, &ctor_arg, line);
+            ptn_value_destroy(&ctor_result);
+            ptn_value_destroy(&ctor_arg);
+            return result;
+        }
         PtnValue args[2] = {
             ptn_owned_string(uri),
             ptn_string("r"),
@@ -202671,6 +202780,10 @@ static PtnValue ptn_phar_call_method(
         if (entry_name == NULL) {
             return ptn_null();
         }
+        if (ptn_phar_entry_name_is_magic_directory_tree(entry_name)) {
+            free(entry_name);
+            return ptn_bool(0);
+        }
         int exists = ptn_phar_archive_find_entry_index(data->archive, entry_name, NULL);
         free(entry_name);
         return ptn_bool(exists);
@@ -202682,6 +202795,11 @@ static PtnValue ptn_phar_call_method(
         }
         char *entry_name = ptn_phar_string_arg(runtime, "Phar::offsetGet", 1, "localName", args[0], line);
         if (entry_name == NULL) {
+            return ptn_null();
+        }
+        if (ptn_phar_entry_name_is_magic_directory_tree(entry_name)) {
+            free(entry_name);
+            ptn_phar_throw_magic_directory_offset_get(runtime);
             return ptn_null();
         }
         size_t index = 0;
@@ -203424,8 +203542,9 @@ static mode_t ptn_phar_archive_entry_mode(PtnPharArchiveEntry *entry) {
     int is_dir = ptn_phar_archive_entry_is_dir(entry);
     mode_t permissions = entry == NULL ? 0 : (mode_t)(entry->flags & 0777);
     if (permissions == 0 && (entry == NULL || (entry->flags & PTN_PHAR_ENTRY_MODE_SET) == 0)) {
-        permissions = is_dir ? 0777 : 0666;
+        permissions = is_dir ? 0555 : 0444;
     }
+    permissions &= (mode_t)~0222;
 #if defined(S_IFDIR) && defined(S_IFREG)
     return (is_dir ? S_IFDIR : S_IFREG) | permissions;
 #else
@@ -203438,6 +203557,9 @@ static void ptn_phar_stat_fill_entry(PtnPharArchiveEntry *entry, struct stat *in
     info->st_dev = 12;
     info->st_mode = ptn_phar_archive_entry_mode(entry);
     info->st_nlink = 1;
+    info->st_rdev = -1;
+    info->st_blksize = -1;
+    info->st_blocks = -1;
     if (entry != NULL) {
         info->st_atime = (time_t)entry->timestamp;
         info->st_mtime = (time_t)entry->timestamp;
@@ -203475,11 +203597,14 @@ static int ptn_phar_uri_stat(const char *uri, struct stat *info) {
             memset(info, 0, sizeof(*info));
             info->st_dev = 12;
 #if defined(S_IFDIR)
-            info->st_mode = S_IFDIR | 0777;
+            info->st_mode = S_IFDIR | 0555;
 #else
-            info->st_mode = 0040000 | 0777;
+            info->st_mode = 0040000 | 0555;
 #endif
             info->st_nlink = 1;
+            info->st_rdev = -1;
+            info->st_blksize = -1;
+            info->st_blocks = -1;
             free(entry_name);
             return 1;
         }
@@ -264040,7 +264165,36 @@ static PtnValue ptn_spl_file_object_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
     PtnSplFileObjectData *data = ptn_spl_file_object_data_from_value(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        if (data != NULL) {
+            ptn_throw_exception(runtime, "Error", "Cannot call constructor twice");
+            return ptn_null();
+        }
+        if (resolved_receiver.type != PTN_OBJECT) {
+            ptn_throw_exception(runtime, "Error", "Invalid SplFileObject object");
+            return ptn_null();
+        }
+        PtnValue replacement =
+            ptn_spl_file_object_new_for_class(runtime, "SplFileObject", argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL) {
+            PtnSplFileObjectData *new_data =
+                (PtnSplFileObjectData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_spl_file_object_data_free;
+            ptn_spl_file_object_sync_properties(runtime, receiver, new_data, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
     if (data == NULL) {
         ptn_throw_exception(runtime, "Error", "Invalid SplFileObject object");
         return ptn_null();
@@ -264080,10 +264234,6 @@ static PtnValue ptn_spl_file_object_call_method(
         }
         ptn_value_destroy(&current);
         return ptn_owned_string(ptn_duplicate_string(""));
-    }
-    if (ptn_ascii_case_equal(name, "__construct")) {
-        ptn_throw_exception(runtime, "Error", "Cannot call constructor twice");
-        return ptn_null();
     }
     if (ptn_internal_class_method_exists("SplFileInfo", name) &&
         !ptn_ascii_case_equal(name, "openFile")) {
