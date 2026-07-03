@@ -45650,6 +45650,24 @@ static PtnValue ptn_wordwrap_width_not_positive(
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static void ptn_wordwrap_enforce_memory_limit(
+    PtnRuntime *runtime,
+    PtnStringOperand string,
+    PtnStringOperand break_string,
+    size_t line
+) {
+    if (string.len == 0) {
+        return;
+    }
+    if (break_string.len > (SIZE_MAX - string.len) / string.len) {
+        ptn_emit_memory_allocation_overflow_error(runtime, string.len, break_string.len, string.len, line);
+        return;
+    }
+
+    size_t estimated_len = string.len + (string.len * break_string.len);
+    ptn_string_result_enforce_memory_limit(runtime, estimated_len, line);
+}
+
 static PtnValue ptn_internal_wordwrap(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "wordwrap", 1, "string", args[0], line);
     int64_t width = argc >= 2
@@ -45676,6 +45694,7 @@ static PtnValue ptn_internal_wordwrap(PtnRuntime *runtime, size_t argc, const Pt
         );
         return ptn_null();
     }
+    ptn_wordwrap_enforce_memory_limit(runtime, string, break_string, line);
     if (width <= 0) {
         PtnValue result = ptn_wordwrap_width_not_positive(string, break_string, width, cut_long_words);
         ptn_string_operand_free(string);
@@ -52419,17 +52438,20 @@ static PtnValue ptn_internal_quotemeta(PtnRuntime *runtime, size_t argc, const P
 }
 
 static char *ptn_chunk_split_string(
+    PtnRuntime *runtime,
     const char *input,
     size_t input_len,
     size_t chunk_len,
     const char *ending,
     size_t ending_len,
+    size_t line,
     size_t *output_len_out
 ) {
     if (input_len == 0) {
         if (ending_len == SIZE_MAX) {
             ptn_abort_out_of_memory();
         }
+        ptn_string_result_enforce_memory_limit(runtime, ending_len, line);
         char *output = malloc(ending_len + 1);
         if (output == NULL) {
             ptn_abort_out_of_memory();
@@ -52448,6 +52470,7 @@ static char *ptn_chunk_split_string(
     if (output_len == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
 
     char *output = malloc(output_len + 1);
     if (output == NULL) {
@@ -52497,11 +52520,13 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     }
     size_t output_len = 0;
     char *output = ptn_chunk_split_string(
+        runtime,
         input.data,
         input.len,
         (size_t)chunk_len_value,
         ending.data,
         ending.len,
+        line,
         &output_len
     );
     ptn_string_operand_free(input);

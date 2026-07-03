@@ -2955,6 +2955,24 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
         memory_limit_read.starts_with("runnable\t"),
         "{memory_limit_read:?}"
     );
+
+    let wordwrap_memory_limit = classify_at_relative_path(
+        "--TEST--\nwordwrap allocation fatal\n--INI--\nmemory_limit=1M\n--FILE--\n<?php\nwordwrap(str_repeat('x', 32), 1, str_repeat('y', 64));\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
+        "ext/standard/tests/strings/wordwrap_memory_limit.phpt",
+    );
+    assert!(
+        wordwrap_memory_limit.starts_with("runnable\t"),
+        "{wordwrap_memory_limit:?}"
+    );
+
+    let chunk_split_memory_limit = classify_at_relative_path(
+        "--TEST--\nchunk split allocation fatal\n--INI--\nmemory_limit=1M\n--FILE--\n<?php\nchunk_split(str_repeat('a', 500), 1);\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
+        "ext/standard/tests/strings/chunk_split_variation3.phpt",
+    );
+    assert!(
+        chunk_split_memory_limit.starts_with("runnable\t"),
+        "{chunk_split_memory_limit:?}"
+    );
 }
 
 #[test]

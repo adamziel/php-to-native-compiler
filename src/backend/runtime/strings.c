@@ -69,6 +69,40 @@ static PTN_UNUSED void ptn_string_buffer_append_format(PtnStringBuffer *buffer, 
     buffer->len += (size_t)written;
 }
 
+static PTN_UNUSED void ptn_string_result_enforce_memory_limit(
+    PtnRuntime *runtime,
+    size_t output_len,
+    size_t line
+) {
+    if (output_len == SIZE_MAX) {
+        ptn_emit_memory_allocation_overflow_error(runtime, output_len, 1, 1, line);
+        return;
+    }
+
+    size_t memory_limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &memory_limit) || memory_limit == 0) {
+        return;
+    }
+
+    size_t allocation_len = output_len + 1;
+    if (allocation_len <= memory_limit) {
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        memory_limit,
+        allocation_len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_string_buffer_append_indent(PtnStringBuffer *buffer, size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         ptn_string_buffer_append_char(buffer, ' ');

@@ -1467,6 +1467,19 @@ ptn_phpt_supported_file_external_row() {
     [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]]
 }
 
+ptn_phpt_supported_string_allocation_limit_row() {
+    local rel=$1
+
+    case "$rel" in
+        ext/standard/tests/strings/wordwrap_memory_limit.phpt|\
+        ext/standard/tests/strings/chunk_split_variation3.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 ptn_phpt_first_environment_section() {
     local path=$1
     local sections
@@ -3020,7 +3033,8 @@ ptn_phpt_classify_row() {
         fi
     fi
 
-    if ptn_phpt_has_resource_limit_expectation "$path"; then
+    if ptn_phpt_has_resource_limit_expectation "$path" \
+        && ! ptn_phpt_supported_string_allocation_limit_row "$rel"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
         return 0
     fi

@@ -27461,6 +27461,37 @@ echo \"after\\n\";\n",
 }
 
 #[test]
+fn compile_wordwrap_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-wordwrap-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("wordwrap-memory-limit.php");
+    let output = root.join("wordwrap-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+$string = str_repeat('x', 32);\n\
+$break = str_repeat('y', 64);\n\
+wordwrap($string, 1, $break);\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "1K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 2081 bytes"));
+    assert!(stderr.contains("wordwrap-memory-limit.php on line 5"));
+}
+
+#[test]
 fn compile_html_word_and_number_string_functions_to_native_binary() {
     let root = temp_dir("ptn-native-html-word-number-strings");
     fs::create_dir_all(&root).unwrap();
@@ -39569,6 +39600,36 @@ try { chunk_split(\"abc\", -1); } catch (ValueError $e) { echo $e->getMessage(),
         "string(8) \"12.34.5.\"\nstring(5) \"ab1c1\"\nbool(true)\nbool(true)\nchunk_split(): Argument #2 ($length) must be greater than 0\nchunk_split(): Argument #2 ($length) must be greater than 0\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chunk_split_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-chunk-split-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chunk-split-memory-limit.php");
+    let output = root.join("chunk-split-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+$body = str_repeat('a', 500);\n\
+chunk_split($body, 1);\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "1K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 1501 bytes"));
+    assert!(stderr.contains("chunk-split-memory-limit.php on line 4"));
 }
 
 #[test]
