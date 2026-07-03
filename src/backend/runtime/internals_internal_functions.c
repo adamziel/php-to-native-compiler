@@ -207543,7 +207543,8 @@ static PtnValue ptn_reflection_parameter_object_from_closure_method_metadata(
     PtnFunctionMetadata metadata,
     size_t index,
     size_t closure_function_index,
-    const char *closure_scope_class_name
+    const char *closure_scope_class_name,
+    int use_closure_display_name
 );
 static PtnSensitiveParameterValueData *ptn_sensitive_parameter_value_data(
     PtnRuntime *runtime,
@@ -209512,7 +209513,8 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
                         metadata,
                         i,
                         data->closure_function_index,
-                        data->closure_scope_class_name
+                        data->closure_scope_class_name,
+                        0
                     )
                     : ptn_reflection_parameter_object_from_metadata(runtime, metadata, i)
             );
@@ -215549,6 +215551,7 @@ typedef struct {
     size_t closure_function_index;
     char *closure_scope_class_name;
     int has_declaring_method;
+    int declaring_closure_method_uses_display_name;
     char *declaring_method_class_name;
     char *declaring_method_name;
 } PtnReflectionParameterData;
@@ -220419,6 +220422,7 @@ static PtnValue ptn_reflection_parameter_object_from_metadata(
     data->closure_function_index = 0;
     data->closure_scope_class_name = NULL;
     data->has_declaring_method = 0;
+    data->declaring_closure_method_uses_display_name = 0;
     data->declaring_method_class_name = NULL;
     data->declaring_method_name = NULL;
 
@@ -220463,7 +220467,8 @@ static PtnValue ptn_reflection_parameter_object_from_closure_method_metadata(
     PtnFunctionMetadata metadata,
     size_t index,
     size_t closure_function_index,
-    const char *closure_scope_class_name
+    const char *closure_scope_class_name,
+    int use_closure_display_name
 ) {
     PtnValue object = ptn_reflection_parameter_object_from_closure_metadata(
         runtime,
@@ -220474,9 +220479,34 @@ static PtnValue ptn_reflection_parameter_object_from_closure_method_metadata(
     );
     PtnReflectionParameterData *data = (PtnReflectionParameterData *)object.as.object->native_data;
     data->has_declaring_method = 1;
+    data->declaring_closure_method_uses_display_name = use_closure_display_name;
     data->declaring_method_class_name = ptn_duplicate_string("Closure");
     data->declaring_method_name = ptn_duplicate_string("__invoke");
     return object;
+}
+
+static int ptn_reflection_closure_has_method_declaring_function(PtnValue closure) {
+    closure = ptn_value_deref(closure);
+    if (closure.type != PTN_CLOSURE) {
+        return 0;
+    }
+    const char *scope_class_name = closure.as.closure->scope_class_name;
+    if (scope_class_name != NULL && !ptn_ascii_case_equal(scope_class_name, "Closure")) {
+        return 1;
+    }
+    PtnValue closure_this;
+    return ptn_symbols_get(&closure.as.closure->captures, "this", &closure_this);
+}
+
+static int ptn_reflection_function_closure_has_method_declaring_function(
+    PtnReflectionFunctionData *data
+) {
+    return data != NULL &&
+        data->closure_scope_class_name != NULL &&
+        (
+            !ptn_ascii_case_equal(data->closure_scope_class_name, "Closure") ||
+            data->has_closure_this
+        );
 }
 
 static PtnFunctionMetadata ptn_reflection_parameter_resolve_function_metadata(
@@ -220692,6 +220722,16 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
     }
     PtnValue target = ptn_value_deref(args[0]);
     if (target.type == PTN_CLOSURE) {
+        if (ptn_reflection_closure_has_method_declaring_function(target)) {
+            return ptn_reflection_parameter_object_from_closure_method_metadata(
+                runtime,
+                metadata,
+                index,
+                target.as.closure->function_index,
+                target.as.closure->scope_class_name,
+                1
+            );
+        }
         return ptn_reflection_parameter_object_from_closure_metadata(
             runtime,
             metadata,
@@ -220723,7 +220763,8 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
                     metadata,
                     index,
                     class_arg.as.closure->function_index,
-                    class_arg.as.closure->scope_class_name
+                    class_arg.as.closure->scope_class_name,
+                    0
                 );
             }
         }
@@ -221236,7 +221277,7 @@ static PtnValue ptn_reflection_parameter_declaring_function(
                 data->metadata,
                 data->closure_function_index,
                 data->closure_scope_class_name,
-                0
+                data->declaring_closure_method_uses_display_name
             );
         }
         return ptn_reflection_method_object_from_name(
@@ -236812,7 +236853,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
                 result.as.array,
                 ptn_array_int_key((int64_t)i),
                 data->has_closure_function_index
-                    ? (data->closure_scope_class_name == NULL
+                    ? (!ptn_reflection_function_closure_has_method_declaring_function(data)
                         ? ptn_reflection_parameter_object_from_closure_metadata(
                             runtime,
                             metadata,
@@ -236825,7 +236866,8 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
                             metadata,
                             i,
                             data->closure_function_index,
-                            data->closure_scope_class_name
+                            data->closure_scope_class_name,
+                            1
                         ))
                     : ptn_reflection_parameter_object_from_metadata(runtime, metadata, i)
             );
