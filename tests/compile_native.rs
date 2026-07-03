@@ -1796,6 +1796,65 @@ var_dump(array_key_exists('i', $defaults));\n",
 }
 
 #[test]
+fn compile_legacy_same_name_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-legacy-same-name-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-same-name-constructor.php");
+    let output = root.join("legacy-same-name-constructor-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class testcase {\n\
+    private $encoding;\n\
+    private $chunk_size;\n\
+\n\
+    function testcase($enc, $chunk_size = 0) {\n\
+        $this->encoding = $enc;\n\
+        $this->chunk_size = $chunk_size;\n\
+        echo \"legacy:$enc:$chunk_size\\n\";\n\
+    }\n\
+\n\
+    function run() {\n\
+        echo \"state:$this->encoding:$this->chunk_size\\n\";\n\
+    }\n\
+}\n\
+\n\
+$case = new testcase(\"EUC-JP\", 1);\n\
+$case->run();\n\
+\n\
+class Modern {\n\
+    function Modern() { echo \"legacy should not run\\n\"; }\n\
+    function __construct() { echo \"modern\\n\"; }\n\
+}\n\
+new Modern();\n\
+\n\
+class ParentCase {\n\
+    function ParentCase() { echo \"parent legacy\\n\"; }\n\
+}\n\
+class ChildCase extends ParentCase {}\n\
+new ChildCase();\n\
+\n\
+class X {\n\
+    function Y() { echo \"not a constructor\\n\"; }\n\
+}\n\
+class Y extends X {}\n\
+new Y();\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "legacy:EUC-JP:1\nstate:EUC-JP:1\nmodern\nparent legacy\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_new_instance_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-class-new-instance");
     fs::create_dir_all(&root).unwrap();
@@ -56943,6 +57002,25 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
         echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
     }
 }
+
+class DeferredReceiverParser {
+    public function start_element($parser, $name, $attributes) {
+        echo \"deferred-start:$name\\n\";
+    }
+
+    public function end_element($parser, $name) {
+        echo \"deferred-end:$name\\n\";
+    }
+
+    public function run() {
+        $parser = xml_parser_create();
+        xml_set_element_handler($parser, 'start_element', 'end_element');
+        xml_set_object($parser, $this);
+        xml_parse($parser, '<ready/>');
+    }
+}
+
+(new DeferredReceiverParser())->run();
 ",
     )
     .unwrap();
@@ -56982,6 +57060,8 @@ foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
     assert!(stdout.contains(
         "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) method stdClass::missing_end() does not exist\n"
     ));
+    assert!(stdout.contains("deferred-start:READY\n"));
+    assert!(stdout.contains("deferred-end:READY\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
