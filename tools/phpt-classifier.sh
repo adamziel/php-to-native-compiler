@@ -1238,7 +1238,7 @@ ptn_phpt_unsupported_ini_blocker() {
     key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
 
     case "$key" in
-        fatal_error_backtraces|error_log|report_memleaks)
+        fatal_error_backtraces|error_log|log_errors|report_memleaks)
             printf 'unsupported-diagnostics-ini\trequires engine diagnostic/logging mode %s; PTN diagnostics do not yet model that runtime channel\n' "$key"
             return 0
             ;;
@@ -1259,6 +1259,99 @@ ptn_phpt_unsupported_ini_blocker() {
             return 0
             ;;
     esac
+
+    return 1
+}
+
+ptn_phpt_file_uses_function_call() {
+    local path=$1
+    local function_name
+    function_name=$(ptn_phpt_normalized_function_name "$2")
+    [[ -n "$function_name" ]] || return 1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v fn="$function_name" '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            line = ptn_php_code_line($0)
+            pattern = "(^|[^[:alnum:]_$>:])" fn "[[:space:]]*\\("
+            if (line ~ pattern) {
+                found = 1
+                exit
+            }
+        }
+        END { exit found ? 0 : 1 }
+    '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
+}
+
+ptn_phpt_first_unsupported_standard_general_function_ini_surface() {
+    local rel=$1
+    local path=$2
+
+    [[ "$rel" == ext/standard/tests/general_functions/* ]] || return 1
+
+    if ! ptn_phpt_modeled_function_exists "ini_get_all" \
+        && ptn_phpt_file_uses_function_call "$path" "ini_get_all"; then
+        printf 'unsupported-general-function-runtime\trequires ini_get_all() runtime metadata, outside PTN modeled ini_get/ini_set surface\n'
+        return 0
+    fi
+
+    if { ! ptn_phpt_modeled_function_exists "output_add_rewrite_var" \
+            && ptn_phpt_file_uses_function_call "$path" "output_add_rewrite_var"; } \
+        || { ! ptn_phpt_modeled_function_exists "output_reset_rewrite_vars" \
+            && ptn_phpt_file_uses_function_call "$path" "output_reset_rewrite_vars"; }; then
+        printf 'unsupported-output-rewrite-runtime\trequires output URL rewrite variable runtime, outside PTN modeled output buffering/session URL rewriting surface\n'
+        return 0
+    fi
 
     return 1
 }
@@ -2862,6 +2955,10 @@ ptn_phpt_classify_row() {
     fi
 
     if ptn_phpt_csv_contains_ci "INI" "$sections"; then
+        if value=$(ptn_phpt_first_unsupported_standard_general_function_ini_surface "$rel" "$path"); then
+            printf '%s\n' "$value"
+            return 0
+        fi
         if value=$(ptn_phpt_first_unsupported_ini "$path"); then
             if ptn_phpt_unsupported_ini_blocker "$value"; then
                 return 0
