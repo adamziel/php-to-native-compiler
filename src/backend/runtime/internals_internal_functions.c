@@ -145126,6 +145126,8 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
     }
     if (node->child_count == 0) {
         int xhtml_namespace_element =
+            document != NULL &&
+            document->modern_dom &&
             node->namespace_uri != NULL &&
             strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0;
         if (ptn_xml_serialize_no_empty_tag ||
@@ -149164,6 +149166,36 @@ static PtnXmlNode *ptn_xml_element_find_attribute(PtnXmlNode *element, const cha
     return NULL;
 }
 
+static int ptn_xml_element_attribute_index(PtnXmlNode *element, PtnXmlNode *attr, size_t *index_out) {
+    if (element == NULL || attr == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < element->attribute_count; i++) {
+        if (element->attributes[i] == attr) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_xml_element_move_attribute_before(PtnXmlNode *element, PtnXmlNode *attr, PtnXmlNode *before) {
+    size_t attr_index = 0;
+    size_t before_index = 0;
+    if (attr == before ||
+        !ptn_xml_element_attribute_index(element, attr, &attr_index) ||
+        !ptn_xml_element_attribute_index(element, before, &before_index) ||
+        attr_index < before_index) {
+        return;
+    }
+    for (size_t i = attr_index; i > before_index; i--) {
+        element->attributes[i] = element->attributes[i - 1];
+    }
+    element->attributes[before_index] = attr;
+}
+
 static void ptn_xml_attribute_set_value(PtnRuntime *runtime, PtnXmlNode *attr, const char *data, size_t len) {
     if (attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE) {
         return;
@@ -149520,7 +149552,13 @@ static char *ptn_dom_xmlns_attribute_name_for_prefix(const char *prefix) {
     return name;
 }
 
-static void ptn_dom_element_ensure_prefixed_namespace(PtnRuntime *runtime, PtnXmlNode *element, const char *prefix, const char *uri) {
+static void ptn_dom_element_ensure_prefixed_namespace_before(
+    PtnRuntime *runtime,
+    PtnXmlNode *element,
+    const char *prefix,
+    const char *uri,
+    PtnXmlNode *before_attr
+) {
     if (element == NULL || prefix == NULL || prefix[0] == '\0' || uri == NULL || uri[0] == '\0') {
         return;
     }
@@ -149538,7 +149576,15 @@ static void ptn_dom_element_ensure_prefixed_namespace(PtnRuntime *runtime, PtnXm
             attr->synthetic_namespace_declaration = 1;
         }
     }
+    PtnXmlNode *attr = ptn_xml_element_find_attribute(element, xmlns_name);
+    if (attr != NULL && attr->synthetic_namespace_declaration) {
+        ptn_xml_element_move_attribute_before(element, attr, before_attr);
+    }
     free(xmlns_name);
+}
+
+static void ptn_dom_element_ensure_prefixed_namespace(PtnRuntime *runtime, PtnXmlNode *element, const char *prefix, const char *uri) {
+    ptn_dom_element_ensure_prefixed_namespace_before(runtime, element, prefix, uri, NULL);
 }
 
 static const char *ptn_xml_lookup_local_namespace_uri(PtnXmlNode *element, const char *prefix) {
@@ -149890,7 +149936,7 @@ static void ptn_dom_attribute_prepare_for_element_ex(
             ptn_dom_attribute_set_serialized_prefix(attr, prefix);
         }
     }
-    ptn_dom_element_ensure_prefixed_namespace(runtime, element, prefix, uri);
+    ptn_dom_element_ensure_prefixed_namespace_before(runtime, element, prefix, uri, attr);
     free(prefix);
     free(requested_prefix);
 }
