@@ -143386,7 +143386,7 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         node->namespace_uri[0] != '\0' &&
         ptn_xml_name_has_prefix(serialized_name)) {
         char *current_prefix = ptn_xml_prefix_dup(serialized_name);
-        const char *current_binding = ptn_xml_lookup_namespace_uri(node, current_prefix);
+        const char *current_binding = ptn_xml_lookup_declared_namespace_uri(node, current_prefix);
         if (current_binding == NULL || strcmp(current_binding, node->namespace_uri) != 0) {
             char *nearest_prefix = ptn_dom_element_find_prefix_for_namespace(node, node->namespace_uri);
             if (nearest_prefix != NULL &&
@@ -143430,7 +143430,7 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         char *element_prefix = ptn_xml_prefix_dup(serialized_name);
         char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(element_prefix);
         const char *local_binding = ptn_xml_element_attribute_value(node, xmlns_name);
-        const char *in_scope_binding = ptn_xml_lookup_namespace_uri(node->parent, element_prefix);
+        const char *in_scope_binding = ptn_xml_lookup_declared_namespace_uri(node->parent, element_prefix);
         int standalone_root = node == ptn_xml_serialize_standalone_root;
         int inherited_default_binding = !standalone_root &&
             element_prefix[0] == '\0' &&
@@ -153545,7 +153545,7 @@ static PtnValue ptn_dom_element_rename_method(PtnRuntime *runtime, PtnValue rece
     if (element->namespace_uri != NULL && element->namespace_uri[0] != '\0') {
         char *prefix = ptn_xml_prefix_dup(element->name);
         if (prefix[0] != '\0') {
-            const char *bound = ptn_xml_lookup_namespace_uri(element, prefix);
+            const char *bound = ptn_xml_lookup_declared_namespace_uri(element, prefix);
             if (bound != NULL && strcmp(bound, element->namespace_uri) != 0) {
                 char *generated_prefix = ptn_dom_element_generated_attribute_prefix(element, element->namespace_uri, NULL);
                 element->serialized_name = ptn_dom_qualified_name_with_prefix_dup(

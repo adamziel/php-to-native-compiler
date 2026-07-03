@@ -57789,6 +57789,55 @@ var_dump($attr->name, $attr->prefix, $attr->localName, $attr->namespaceURI);
 }
 
 #[test]
+fn compile_modern_dom_namespace_serialization_reconciles_declared_prefixes_to_native_binary() {
+    let root =
+        temp_dir("ptn-native-modern-dom-namespace-serialization-reconciles-declared-prefixes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-namespace-serialization-reconciles-declared-prefixes.php");
+    let output = root.join("modern-dom-namespace-serialization-reconciles-declared-prefixes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createFromString('<root><a:parent xmlns:a="urn:b"><a:child xmlns:b="urn:b"><b:leaf/></a:child></a:parent></root>');
+$child = $dom->getElementsByTagName("a:child")[0];
+$dom->documentElement->append($child);
+echo $dom->saveXML($child), "\n";
+
+$renamed = Dom\XMLDocument::createFromString('<root xmlns:a="urn:a"><a:child attrib="value"/></root>');
+$root = $renamed->documentElement;
+$root->rename("urn:x", "a:foo");
+echo $renamed->saveXML(), "\n";
+var_dump($root->prefix, $root->namespaceURI);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<b:child xmlns:b=\"urn:b\"><b:leaf/></b:child>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<ns1:foo xmlns:ns1=\"urn:x\" xmlns:a=\"urn:a\"><a:child attrib=\"value\"/></ns1:foo>\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:x\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_lookup_declared_namespace_uri"));
+}
+
+#[test]
 fn compile_simplexml_declared_entity_debug_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-declared-entity-debug");
     fs::create_dir_all(&root).unwrap();
