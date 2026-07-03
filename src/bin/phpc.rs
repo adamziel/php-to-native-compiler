@@ -2,6 +2,8 @@ use std::fmt;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::net::{TcpListener, TcpStream};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -1673,9 +1675,10 @@ fn compile_and_run(
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("phpc"))
         });
+    let php_binary_wrapper = php_binary_wrapper(&php_binary, native.path(), script)?;
     let mut command = Command::new(native.path());
     command.args(args);
-    command.env("PTN_PHP_BINARY", &php_binary);
+    command.env("PTN_PHP_BINARY", php_binary_wrapper.path());
     command.env("PTN_SCRIPT_FILENAME", script);
     command.env("PTN_RUNTIME_SOURCE_PATH", script);
     if let Some(loaded_file_path) = &ini.loaded_file_path {
@@ -1966,6 +1969,113 @@ fn compile_and_run(
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
+}
+
+fn shell_single_quote(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn php_binary_wrapper(phpc: &Path, native: &Path, script: &Path) -> Result<TempPath, PhpcError> {
+    let wrapper = TempPath::new("ptn-phpc-binary", "sh");
+    let canonical_script = fs::canonicalize(script).unwrap_or_else(|_| script.to_path_buf());
+    let content = format!(
+        r#"#!/usr/bin/env bash
+phpc={phpc}
+native={native}
+script={script}
+canonical_script={canonical_script}
+args=("$@")
+
+dispatch_current_script() {{
+    local candidate="$1"
+    local next_index="$2"
+    if [[ "$candidate" == "$script" || "$candidate" == "$canonical_script" ]]; then
+        export PTN_SCRIPT_FILENAME="$script"
+        export PTN_RUNTIME_SOURCE_PATH="$script"
+        exec "$native" "${{args[@]:$next_index}}"
+    fi
+    exec "$phpc" "${{args[@]}}"
+}}
+
+i=0
+while (( i < ${{#args[@]}} )); do
+    arg="${{args[$i]}}"
+    case "$arg" in
+        -q|-n|-C)
+            ((i += 1))
+            ;;
+        -d|-c)
+            ((i += 2))
+            ;;
+        -d*|-c*)
+            ((i += 1))
+            ;;
+        -r)
+            exec "$phpc" "${{args[@]}}"
+            ;;
+        -f)
+            ((i += 1))
+            if (( i >= ${{#args[@]}} )); then
+                exec "$phpc" "${{args[@]}}"
+            fi
+            candidate="${{args[$i]}}"
+            ((i += 1))
+            dispatch_current_script "$candidate" "$i"
+            ;;
+        --)
+            ((i += 1))
+            if (( i >= ${{#args[@]}} )); then
+                exec "$phpc" "${{args[@]}}"
+            fi
+            candidate="${{args[$i]}}"
+            ((i += 1))
+            dispatch_current_script "$candidate" "$i"
+            ;;
+        -*)
+            ((i += 1))
+            ;;
+        *)
+            candidate="$arg"
+            ((i += 1))
+            dispatch_current_script "$candidate" "$i"
+            ;;
+    esac
+done
+
+exec "$phpc" "${{args[@]}}"
+"#,
+        phpc = shell_single_quote(&phpc.to_string_lossy()),
+        native = shell_single_quote(&native.to_string_lossy()),
+        script = shell_single_quote(&script.to_string_lossy()),
+        canonical_script = shell_single_quote(&canonical_script.to_string_lossy()),
+    );
+    fs::write(wrapper.path(), content).map_err(|error| {
+        PhpcError::Message(format!("failed to write PHP_BINARY wrapper: {error}"))
+    })?;
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(wrapper.path())
+            .map_err(|error| {
+                PhpcError::Message(format!("failed to stat PHP_BINARY wrapper: {error}"))
+            })?
+            .permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(wrapper.path(), permissions).map_err(|error| {
+            PhpcError::Message(format!(
+                "failed to make PHP_BINARY wrapper executable: {error}"
+            ))
+        })?;
+    }
+    Ok(wrapper)
 }
 
 fn phar_archive_main_wrapper(script: &Path) -> Result<Option<TempPath>, PhpcError> {

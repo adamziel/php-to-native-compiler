@@ -7561,6 +7561,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("openssl_pkcs12_read") && argument_index == 1 {
         return Some("certificates");
     }
+    if name.eq_ignore_ascii_case("openssl_pkey_export") && argument_index == 1 {
+        return Some("output");
+    }
     if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
         return Some("encrypted_data");
     }
@@ -7581,6 +7584,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("openssl_seal") && argument_index == 5 {
         return Some("iv");
+    }
+    if name.eq_ignore_ascii_case("openssl_x509_export") && argument_index == 1 {
+        return Some("output");
     }
     if name.eq_ignore_ascii_case("curl_multi_exec") && argument_index == 1 {
         return Some("still_running");
@@ -39517,6 +39523,24 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         name: "options",
         default: Some(InternalParameterDefault::Null),
     }];
+    static OPENSSL_PKEY_EXPORT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static OPENSSL_PKEY_EXPORT_TO_FILE_PARAMETERS: [InternalParameterSpec; 4] = [
         InternalParameterSpec {
             name: "key",
@@ -39528,7 +39552,7 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         },
         InternalParameterSpec {
             name: "passphrase",
-            default: Some(InternalParameterDefault::String("")),
+            default: Some(InternalParameterDefault::Null),
         },
         InternalParameterSpec {
             name: "options",
@@ -39595,6 +39619,34 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         InternalParameterSpec {
             name: "passphrase",
             default: None,
+        },
+    ];
+    static OPENSSL_X509_EXPORT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "no_text",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static OPENSSL_X509_EXPORT_TO_FILE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "no_text",
+            default: Some(InternalParameterDefault::Int(1)),
         },
     ];
     static OPENSSL_PUBLIC_ENCRYPT_PARAMETERS: [InternalParameterSpec; 5] = [
@@ -40047,6 +40099,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_SEAL_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkey_new") {
         Some(&OPENSSL_PKEY_NEW_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkey_export") {
+        Some(&OPENSSL_PKEY_EXPORT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkey_export_to_file") {
         Some(&OPENSSL_PKEY_EXPORT_TO_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_csr_new") {
@@ -40059,6 +40113,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_PUBLIC_ENCRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_private_decrypt") {
         Some(&OPENSSL_PRIVATE_DECRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_x509_export") {
+        Some(&OPENSSL_X509_EXPORT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_x509_export_to_file") {
+        Some(&OPENSSL_X509_EXPORT_TO_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("count_chars") {
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {
@@ -41512,6 +41570,7 @@ fn openssl_link_args(config: &OpenSslCompileConfig) -> Vec<String> {
         "-L".to_string(),
         config.lib_dir.to_string_lossy().into_owned(),
         format!("-Wl,-rpath,{}", config.lib_dir.to_string_lossy()),
+        "-lssl".to_string(),
         "-lcrypto".to_string(),
     ]
 }
@@ -41672,10 +41731,15 @@ fn openssl_include_dir_is_valid(path: &Path) -> bool {
 }
 
 fn openssl_lib_dir_is_valid(path: &Path) -> bool {
-    path.join("libcrypto.so").exists()
+    let has_crypto = path.join("libcrypto.so").exists()
         || path.join("libcrypto.so.3").exists()
         || path.join("libcrypto.dylib").exists()
-        || path.join("libcrypto.a").exists()
+        || path.join("libcrypto.a").exists();
+    let has_ssl = path.join("libssl.so").exists()
+        || path.join("libssl.so.3").exists()
+        || path.join("libssl.dylib").exists()
+        || path.join("libssl.a").exists();
+    has_crypto && has_ssl
 }
 
 fn discover_zlib_compile_config() -> Option<ZlibCompileConfig> {
@@ -43742,9 +43806,23 @@ impl ValueEmitter {
             .return_type
             .as_ref()
             .or(implicit_magic_return_type.as_ref());
+        let effective_source_file = if function.source_file.is_empty() {
+            source_file.to_string()
+        } else {
+            function.source_file.clone()
+        };
+        let effective_source_dir = if effective_source_file == source_file {
+            source_dir.to_string()
+        } else {
+            Path::new(&effective_source_file)
+                .parent()
+                .map(|path| path.to_string_lossy().into_owned())
+                .filter(|path| !path.is_empty())
+                .unwrap_or_else(|| source_dir.to_string())
+        };
         Self::new_with_scope(
-            source_file,
-            source_dir,
+            &effective_source_file,
+            &effective_source_dir,
             functions,
             classes,
             includes,
