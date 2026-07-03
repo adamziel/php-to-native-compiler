@@ -1855,11 +1855,23 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
     return ptn_null();
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_curl_clone_handle(PtnRuntime *runtime, PtnResource *handle);
+#endif
+
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_CLOSURE) {
         return ptn_closure_clone(runtime, resolved);
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (resolved.type == PTN_RESOURCE &&
+        resolved.as.resource != NULL &&
+        resolved.as.resource->type_name != NULL &&
+        strcmp(resolved.as.resource->type_name, "curl") == 0) {
+        return ptn_curl_clone_handle(runtime, resolved.as.resource);
+    }
+#endif
     if (resolved.type != PTN_OBJECT) {
         char message[192];
         int written = snprintf(

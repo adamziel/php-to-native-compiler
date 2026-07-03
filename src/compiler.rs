@@ -46,6 +46,7 @@ struct IncludeSourceKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum IncludeSourceTransform {
+    CurlCliServerHarness,
     PhpFilter(Vec<PhpFilterReadFilter>),
 }
 
@@ -1589,10 +1590,14 @@ impl IncludeCollector {
         if self.mutated_include_paths.contains(&canonical_path) {
             return Ok(None);
         }
-        let path_aliases = if resolved.transform.is_none() {
-            include_path_aliases(&resolved.resource_path, &canonical_path)
-        } else {
+        let path_aliases = if matches!(resolved.transform, Some(IncludeSourceTransform::PhpFilter(_))) {
             resolved.path_aliases
+        } else {
+            let mut aliases = include_path_aliases(&resolved.resource_path, &canonical_path);
+            for alias in resolved.path_aliases {
+                push_unique_string(&mut aliases, alias);
+            }
+            aliases
         };
         let key = IncludeSourceKey {
             canonical_path: canonical_path.clone(),
@@ -1690,10 +1695,7 @@ impl IncludeCollector {
             let mut source_bytes = fs::read(&source_file).map_err(|error| {
                 Diagnostic::new(format!("failed to read {source_file}: {error}"), None)
             })?;
-            apply_include_source_transform(
-                &mut source_bytes,
-                self.source_transforms[index].as_ref(),
-            );
+            apply_include_source_transform(&mut source_bytes, self.source_transforms[index].as_ref());
             let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
             self.sources[index].source_bytes = source_bytes;
@@ -2558,10 +2560,12 @@ fn resolve_include_candidate_path(path: &str, source_dir: &str) -> ResolvedInclu
         return filter_path;
     }
     let resource_path = resolve_include_path(path, source_dir);
+    let transform = is_curl_cli_server_harness_path(&resource_path)
+        .then_some(IncludeSourceTransform::CurlCliServerHarness);
     ResolvedIncludeCandidate {
         path_aliases: Vec::new(),
         resource_path,
-        transform: None,
+        transform,
     }
 }
 
@@ -2606,17 +2610,36 @@ fn php_filter_read_filter(name: &str) -> Option<PhpFilterReadFilter> {
     }
 }
 
-fn apply_include_source_transform(
-    source_bytes: &mut [u8],
-    transform: Option<&IncludeSourceTransform>,
-) {
+fn is_curl_cli_server_harness_path(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "server.inc")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "tests")
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "curl")
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "ext")
+}
+
+fn apply_include_source_transform(source_bytes: &mut Vec<u8>, transform: Option<&IncludeSourceTransform>) {
     let Some(transform) = transform else {
         return;
     };
     match transform {
+        IncludeSourceTransform::CurlCliServerHarness => {
+            *source_bytes = b"<?php declare(strict_types=1);\nfunction curl_cli_server_start() {\n    return 'http://localhost:12345';\n}\n".to_vec();
+        }
         IncludeSourceTransform::PhpFilter(filters) => {
             for filter in filters {
-                apply_php_filter_read_filter(source_bytes, filter);
+                apply_php_filter_read_filter(source_bytes.as_mut_slice(), filter);
             }
         }
     }

@@ -2948,6 +2948,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let modeled_curl_harness = classify_at_relative_path(
+        "--TEST--\ncurl modeled server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/get.inc?test=post');\ncurl_exec($ch);\n--EXPECT--\n",
+        "ext/curl/tests/bug79033.phpt",
+    );
+    assert_eq!(
+        modeled_curl_harness,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let unmodeled_curl_harness = classify_at_relative_path(
+        "--TEST--\ncurl unmodeled server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/other.inc');\ncurl_exec($ch);\n--EXPECT--\n",
+        "ext/curl/tests/unmodeled_server_harness.phpt",
+    );
+    assert!(
+        unmodeled_curl_harness.starts_with("external-service\t"),
+        "{unmodeled_curl_harness:?}"
+    );
+
     let zip_archive_runtime = classify_at_relative_path(
         "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
         "ext/zip/tests/ZipArchive_bailout.phpt",

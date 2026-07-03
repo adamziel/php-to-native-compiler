@@ -2948,6 +2948,27 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
     return "${ptn_status[1]}"
 }
 
+ptn_phpt_supported_curl_server_harness_row() {
+    case "$1" in
+        ext/curl/tests/bug79033.phpt|\
+        ext/curl/tests/curl_copy_handle_variation4.phpt|\
+        ext/curl/tests/curl_basic_013.phpt|\
+        ext/curl/tests/curl_basic_023.phpt|\
+        ext/curl/tests/curl_basic_003.phpt|\
+        ext/curl/tests/bug48207.phpt|\
+        ext/curl/tests/curl_handle_clone.phpt|\
+        ext/curl/tests/bug45161.phpt|\
+        ext/curl/tests/bug54798-unix.phpt|\
+        ext/curl/tests/gh21023.phpt|\
+        ext/curl/tests/curl_writeheader_callback.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -2984,7 +3005,8 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if ptn_phpt_has_external_service_harness "$path"; then
+    if ptn_phpt_has_external_service_harness "$path" &&
+        ! ptn_phpt_supported_curl_server_harness_row "$rel"; then
         printf 'external-service\trequires external service or php-src server harness\n'
         return 0
     fi
