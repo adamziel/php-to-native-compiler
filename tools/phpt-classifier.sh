@@ -1899,6 +1899,14 @@ ptn_phpt_first_unsupported_language_surface() {
             lower = tolower(raw)
             return lower ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\([[:space:]]*["\047][[:space:]]*class[[:space:]]+[a-z_\\][a-z0-9_\\]*/
         }
+        function ptn_starts_multiline_eval_string_literal(raw,    lower) {
+            lower = tolower(raw)
+            return lower ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\([[:space:]]*["\047][[:space:]]*$/
+        }
+        function ptn_supported_eval_class_declaration_source_line(raw,    lower) {
+            lower = tolower(raw)
+            return lower ~ /^[[:space:]]*(abstract[[:space:]]+|final[[:space:]]+)?class[[:space:]]+[a-z_\\][a-z0-9_\\]*/
+        }
         function ptn_supported_eval_static_variable_dynamic_function_row() {
             return ptn_path ~ /Zend\/tests\/static_variables\/static_variable_in_dynamic_function(_2)?[.]phpt$/
         }
@@ -1997,6 +2005,18 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             line = ptn_php_code_line($0)
+            if (ptn_pending_multiline_eval_string_literal) {
+                if (line ~ /^[[:space:]]*$/) {
+                    next
+                }
+                if (ptn_supported_eval_class_declaration_source_line($0)) {
+                    ptn_pending_multiline_eval_string_literal = 0
+                } else {
+                    print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
+                    found = 1
+                    exit
+                }
+            }
             tmp = line
             ptn_line_open_braces = gsub(/\{/, "", tmp)
             tmp = line
@@ -2214,6 +2234,10 @@ ptn_phpt_first_unsupported_language_surface() {
                 !ptn_supported_tokenizer_eval_row() &&
                 !ptn_supported_zend_constexpr_lazy_eval_row() &&
                 !ptn_supported_date_timezone_var_export_eval_row()) {
+                if (ptn_starts_multiline_eval_string_literal($0)) {
+                    ptn_pending_multiline_eval_string_literal = 1
+                    next
+                }
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit
@@ -2226,6 +2250,10 @@ ptn_phpt_first_unsupported_language_surface() {
             }
         }
         END {
+            if (!found && ptn_pending_multiline_eval_string_literal) {
+                print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
+                found = 1
+            }
             if (!found && ptn_deferred_generator_reason != "") {
                 print "unsupported-generator-runtime\t" ptn_deferred_generator_reason
                 found = 1

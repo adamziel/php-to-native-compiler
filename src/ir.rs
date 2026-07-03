@@ -1286,6 +1286,12 @@ fn class_runtime_declaration_key(source_file: &str, name: &str) -> (String, Stri
 fn ast_class_source_file(default_source_file: &str, source_file: Option<&str>) -> String {
     match source_file {
         Some("__PTN_EVAL_CODE__") => format!("{default_source_file} : eval()'d code"),
+        Some(source_file) if source_file.starts_with("__PTN_EVAL_CODE__:") => {
+            let line = source_file
+                .strip_prefix("__PTN_EVAL_CODE__:")
+                .expect("checked eval source prefix");
+            format!("{default_source_file}({line}) : eval()'d code")
+        }
         Some(source_file) => source_file.to_string(),
         None => default_source_file.to_string(),
     }

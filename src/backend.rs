@@ -35367,6 +35367,7 @@ fn emit_class_declaration_fatals(
     functions: &[FunctionDecl],
     source_path: &str,
 ) {
+    let diagnostic_source_path = class_declaration_diagnostic_source_path(class, source_path);
     let Some(fatal) = collect_class_declaration_fatals(class, classes, functions)
         .into_iter()
         .next()
@@ -35384,7 +35385,7 @@ fn emit_class_declaration_fatals(
         out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
         out.push_str(&c_string(&fatal.message));
         out.push_str("\", \"");
-        out.push_str(&c_string(source_path));
+        out.push_str(&c_string(diagnostic_source_path));
         out.push_str("\", ");
         out.push_str(&fatal.line.to_string());
         out.push_str(");\n");
@@ -35401,10 +35402,21 @@ fn emit_class_declaration_fatals(
     out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
     out.push_str(&c_string(&fatal.message));
     out.push_str("\", \"");
-    out.push_str(&c_string(source_path));
+    out.push_str(&c_string(diagnostic_source_path));
     out.push_str("\", ");
     out.push_str(&fatal.line.to_string());
     out.push_str(");\n");
+}
+
+fn class_declaration_diagnostic_source_path<'a>(
+    class: &'a ClassDecl,
+    source_path: &'a str,
+) -> &'a str {
+    if class.source_file.ends_with(" : eval()'d code") {
+        &class.source_file
+    } else {
+        source_path
+    }
 }
 
 fn collect_class_declaration_fatals(
@@ -35454,6 +35466,24 @@ fn collect_class_declaration_fatals(
             uncaught_error: false,
             pre_deprecation: fatal.pre_deprecation,
         });
+    }
+    if !class.is_abstract && !class.is_interface && !class.is_anonymous {
+        if let Some(method) = class.methods.iter().find(|method| {
+            method.is_abstract
+                && functions
+                    .get(method.function_index)
+                    .is_none_or(|function| function.trait_name.is_none())
+        }) {
+            fatals.push(DeclarationFatal {
+                message: format!(
+                    "Class {} declares abstract method {}() and must therefore be declared abstract",
+                    class.name, method.name
+                ),
+                line: class.line,
+                uncaught_error: false,
+                pre_deprecation: None,
+            });
+        }
     }
     for method in &class.methods {
         let Some(function) = functions.get(method.function_index) else {
