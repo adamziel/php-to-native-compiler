@@ -102201,6 +102201,114 @@ var_dump((bool) ($abstract->getModifiers() & ReflectionProperty::IS_ABSTRACT));
 }
 
 #[test]
+fn compile_reflection_property_raw_lazy_target_resolution_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-raw-lazy-target-resolution");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-raw-lazy-target-resolution.php");
+    let output = root.join("reflection-property-raw-lazy-target-resolution-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class RawLazyBase {
+    public $virtual {
+        get {
+            echo \"base get\\n\";
+            return __METHOD__;
+        }
+        set {
+            echo \"base set\\n\";
+        }
+    }
+}
+
+class RawLazyChild extends RawLazyBase {
+    public $virtual {
+        get {
+            echo \"child get\\n\";
+            return $this->virtual;
+        }
+        set {
+            echo \"child set\\n\";
+            $this->virtual = $value;
+        }
+    }
+
+    public $dynamic {
+        get {
+            echo \"dynamic get\\n\";
+            return $this->dynamic;
+        }
+        set {
+            echo \"dynamic set\\n\";
+            $this->dynamic = $value;
+        }
+    }
+
+    public static $changed = 'static';
+}
+
+$child = new RawLazyChild();
+$baseVirtual = new ReflectionProperty(RawLazyBase::class, 'virtual');
+$baseVirtual->setRawValueWithoutLazyInitialization($child, 43);
+var_dump($baseVirtual->getRawValue($child));
+
+$scope = new RawLazyBase();
+$scope->dynamic = 'base dynamic';
+$scope->changed = 'base changed';
+
+$dynamic = new ReflectionProperty($scope, 'dynamic');
+$dynamic->setRawValueWithoutLazyInitialization($child, 44);
+var_dump($dynamic->getRawValue($child));
+
+$changed = new ReflectionProperty($scope, 'changed');
+try {
+    $changed->setRawValue($child, 45);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump($changed->getRawValue($child));
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $changed->setRawValueWithoutLazyInitialization($child, 46);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(43)\n",
+            "int(44)\n",
+            "May not use setRawValue on static properties\n",
+            "May not use getRawValue on static properties\n",
+            "Can not use setRawValueWithoutLazyInitialization on static property RawLazyChild::$changed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_target_static_property"));
+    assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
+}
+
+#[test]
 fn compile_reflection_property_current_red_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-current-red-metadata");
     fs::create_dir_all(&root).unwrap();
