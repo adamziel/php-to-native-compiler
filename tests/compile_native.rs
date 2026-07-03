@@ -53662,7 +53662,6 @@ echo $method->getName(), \"\\n\";
         "__invoke\n__invoke\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-
 }
 
 #[test]
