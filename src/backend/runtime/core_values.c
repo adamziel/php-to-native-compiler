@@ -1947,11 +1947,16 @@ struct PtnRuntime {
     char *opcache_file_cache_only;
     char *opcache_file_update_protection;
     char *opcache_interned_strings_buffer;
+    char *opcache_jit;
+    char *opcache_jit_buffer_size;
+    char *opcache_jit_hot_func;
     char *opcache_log_verbosity_level;
     char *opcache_optimization_level;
     char *opcache_opt_debug_level;
     char *opcache_preload;
     char *opcache_preload_user;
+    char *opcache_protect_memory;
+    char *opcache_revalidate_freq;
     char *opcache_save_comments;
     char *opcache_validate_timestamps;
     char *phar_readonly;

@@ -1158,6 +1158,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_file_update_protection = NULL;
         free(runtime->opcache_interned_strings_buffer);
         runtime->opcache_interned_strings_buffer = NULL;
+        free(runtime->opcache_jit);
+        runtime->opcache_jit = NULL;
+        free(runtime->opcache_jit_buffer_size);
+        runtime->opcache_jit_buffer_size = NULL;
+        free(runtime->opcache_jit_hot_func);
+        runtime->opcache_jit_hot_func = NULL;
         free(runtime->opcache_log_verbosity_level);
         runtime->opcache_log_verbosity_level = NULL;
         free(runtime->opcache_optimization_level);
@@ -1168,6 +1174,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_preload = NULL;
         free(runtime->opcache_preload_user);
         runtime->opcache_preload_user = NULL;
+        free(runtime->opcache_protect_memory);
+        runtime->opcache_protect_memory = NULL;
+        free(runtime->opcache_revalidate_freq);
+        runtime->opcache_revalidate_freq = NULL;
         free(runtime->opcache_save_comments);
         runtime->opcache_save_comments = NULL;
         free(runtime->opcache_validate_timestamps);

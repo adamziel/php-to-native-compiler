@@ -11082,6 +11082,28 @@ interface Contract {
 }
 
 #[test]
+fn parser_accepts_binary_keyword_class_static_calls() {
+    parser::parse(
+        "<?php
+class Binary {
+    public static function read(string $buffer, int &$offset): int {
+        $offset++;
+        return 0;
+    }
+}
+class Stream {
+    public string $buffer;
+    public int $offset;
+    public function read(): int {
+        return Binary::read($this->buffer, $this->offset);
+    }
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_accepts_private_instance_properties() {
     let program = parser::parse(
         "<?php
@@ -47238,6 +47260,136 @@ var_dump(in_array('ClosureLocalClass', get_declared_classes()));
     assert!(c_source.contains("ptn_declared_class_exists"));
     assert!(c_source.contains("ptn_declared_runtime_interface_exists"));
     assert!(c_source.contains("ptn_declared_user_classes"));
+}
+
+#[test]
+fn compile_duplicate_conditional_parent_constructor_uses_active_class_to_native_binary() {
+    let root = temp_dir("ptn-native-duplicate-conditional-parent-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let include = root.join("active-parent.inc");
+    let input = root.join("duplicate-conditional-parent-constructor.php");
+    let output = root.join("duplicate-conditional-parent-constructor-bin");
+    fs::write(
+        &include,
+        "<?php
+$x = 0;
+class UniqueList {
+    public const A = 1;
+    public const B = 1;
+    private $foo;
+    public function __construct($b) {
+        global $x;
+        $x++;
+        $this->foo = self::A + $b;
+    }
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+if (true) {
+    require __DIR__ . '/active-parent.inc';
+} else {
+    $y = 0;
+    class UniqueList {
+        public const A = 1;
+        public const B = 1;
+        private $foo;
+        public function __construct($b) {
+            global $y;
+            $y++;
+            $this->foo = self::A + $b;
+        }
+    }
+}
+class UniqueListLast extends UniqueList {
+    public function __construct() {
+        parent::__construct(self::B);
+    }
+}
+for ($i = 0; $i < 10; $i++) {
+    new UniqueListLast();
+}
+var_dump($x);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(10)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nullable_scalar_return_reissues_missing_variable_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-nullable-scalar-return-missing-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nullable-scalar-return-missing-variable.php");
+    let output = root.join("nullable-scalar-return-missing-variable-bin");
+    fs::write(
+        &input,
+        "<?php
+function test($cond): ?int {
+    if ($cond) {
+        $i = 'foo';
+    }
+    return $i;
+}
+var_dump(test(false));
+var_dump(test(false));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("Undefined variable $i").count(), 4);
+    assert_eq!(stdout.matches("NULL").count(), 2);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_closure_call_hides_temporary_bound_closure_id_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-call-temporary-id");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-call-temporary-id.php");
+    let output = root.join("closure-call-temporary-id-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {}
+function bar() {
+    return function () {
+        return function () {
+            return function () { return 42; };
+        };
+    };
+}
+$foo = new Foo;
+$f = bar();
+var_dump($f->call($foo));
+var_dump($f->call($foo));
+var_dump($f());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("object(Closure)#3").count(), 3);
+    assert!(!stdout.contains("object(Closure)#4"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -90232,6 +90384,86 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
             "string(1) \"1\"\n",
             "string(2) \"-1\"\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_opt_jit_row_pack_dumps_bounded_optimizer_shapes() {
+    let root = temp_dir("ptn-phpc-opcache-opt-jit-row-pack-dumps");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-opt-jit-row-pack-dumps.php");
+    fs::write(
+        &input,
+        "<?php\n\
+#[AllowDynamicProperties]\n\
+class A {}\n\
+function sccp_array_param(int $x) {\n\
+    if ($x) {\n\
+        $a = [0, 1];\n\
+    } else {\n\
+        $a = [0, 2];\n\
+    }\n\
+    echo $a[1];\n\
+}\n\
+function dead_object_assignment(int $x) {\n\
+    $a = new A;\n\
+    $a->foo = $x;\n\
+}\n\
+function short_ternary_call() {\n\
+    $var = null;\n\
+    $var = $var ?: test2();\n\
+    return $var;\n\
+}\n\
+function constant_array_echo() {\n\
+    $a = [1, 2, 3];\n\
+    $i = 1;\n\
+    $c = $i < 2;\n\
+    if ($c) {\n\
+        $k = 2 * $i;\n\
+        $a[$k] = $i;\n\
+        echo $a[$k];\n\
+    }\n\
+    echo $a[2];\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("sccp_array_param:\n"), "{stdout}");
+    assert!(
+        stdout.contains("0005 T2 = FETCH_DIM_R CV1($a) int(1)\n0006 ECHO T2\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("dead_object_assignment:\n"), "{stdout}");
+    assert!(
+        stdout.contains("0000 CV0($x) = RECV 1\n0001 RETURN null\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("short_ternary_call:\n"), "{stdout}");
+    assert!(
+        stdout
+            .contains("0000 INIT_FCALL_BY_NAME 0 string(\"test2\")\n0001 T1 = DO_FCALL_BY_NAME\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("constant_array_echo:\n"), "{stdout}");
+    assert!(
+        stdout.contains("0000 ECHO string(\"1\")\n0001 ECHO string(\"1\")\n0002 RETURN null\n"),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

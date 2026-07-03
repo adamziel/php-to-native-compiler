@@ -2789,12 +2789,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "runtime function table mutation",
         ),
         (
-            "opcache optimizer dump",
-            "opcache.opt_debug_level=0x20000",
-            "unsupported-opcache-observability\t",
-            "optimizer disassembly",
-        ),
-        (
             "host path",
             "sys_temp_dir=/tmp",
             "unsupported-host-path-ini\t",
@@ -2864,6 +2858,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         opcache_metadata_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let opcache_opt_jit_ini = classify_at_relative_path(
+        "--TEST--\nopcache opt jit ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.opt_debug_level=0x20000\nopcache.jit=1255\nopcache.jit_buffer_size=16M\nopcache.jit_hot_func=2\nopcache.protect_memory=1\nopcache.revalidate_freq=0\nzend_test.observer.enabled=0\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n",
+        "ext/opcache/tests/opt/sccp_008.phpt",
+    );
+    assert_eq!(
+        opcache_opt_jit_ini.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 

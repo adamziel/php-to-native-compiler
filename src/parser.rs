@@ -9125,95 +9125,12 @@ impl Parser<'_> {
                 if name.eq_ignore_ascii_case("match") {
                     return self.parse_match_expr(token.span);
                 }
-                let parsed_name =
-                    self.parse_name_from_first(name, token.span, None, "expected name")?;
-                let unqualified = matches!(parsed_name.resolution, NameResolution::Unqualified);
-                let lowercase = parsed_name.name.to_ascii_lowercase();
-                if matches!(self.peek().kind, TokenKind::DoubleColon) {
-                    let class_name = self.resolve_class_name(&parsed_name);
-                    let class_name = self.resolve_runtime_class_alias_name(&class_name);
-                    self.parse_static_member_expr(class_name, parsed_name.span)
-                } else if matches!(self.peek().kind, TokenKind::LeftParen) {
-                    if unqualified && lowercase == "__halt_compiler" {
-                        return Err(Diagnostic::new(
-                            "__HALT_COMPILER() can only be used from the outermost scope",
-                            Some(parsed_name.span),
-                        ));
-                    }
-                    if self.peek_is_first_class_callable_arguments() {
-                        let right_span = self.parse_first_class_callable_arguments()?;
-                        let resolved_name = self.resolve_function_name(&parsed_name);
-                        let callable = Expr::FirstClassCallable {
-                            callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
-                            span: combine_spans(parsed_name.span, right_span),
-                        };
-                        return self.parse_postfix_expr_from(callable, true);
-                    }
-                    match (unqualified, lowercase.as_str()) {
-                        (true, "array") => self.parse_long_array_literal(parsed_name.span),
-                        (true, "list") => self.parse_long_list_expr(parsed_name.span),
-                        (true, "isset") => self.parse_isset_expr(parsed_name.span),
-                        (true, "empty") => self.parse_empty_expr(parsed_name.span),
-                        _ => {
-                            let (arguments, argument_names, argument_unpacks, right_span) =
-                                self.parse_call_arguments()?;
-                            let resolved_name = self.resolve_function_name(&parsed_name);
-                            if unqualified && lowercase == "eval" {
-                                if let Some(expr) = self.literal_eval_return_expr(
-                                    &arguments,
-                                    &argument_names,
-                                    &argument_unpacks,
-                                )? {
-                                    return Ok(expr);
-                                }
-                            }
-                            validate_mutating_array_internal_call(
-                                &resolved_name,
-                                &arguments,
-                                parsed_name.span,
-                            )?;
-                            Ok(Expr::Call {
-                                name: resolved_name,
-                                arguments,
-                                argument_names,
-                                argument_unpacks,
-                                call_line: parsed_name.span.line,
-                                span: combine_spans(parsed_name.span, right_span),
-                            })
-                        }
-                    }
-                } else if unqualified
-                    && lowercase == "__namespace__"
-                    && self.current_namespace.is_some()
-                {
-                    Ok(Expr::String(
-                        self.current_namespace.clone().unwrap_or_default(),
-                        parsed_name.span,
-                    ))
-                } else if unqualified {
-                    if lowercase == "__compiler_halt_offset__" {
-                        if let Some(offset) = self.compiler_halt_offset {
-                            Ok(Expr::Int(offset, parsed_name.span))
-                        } else {
-                            Ok(Expr::Constant(
-                                self.resolve_constant_name(&parsed_name),
-                                parsed_name.span,
-                            ))
-                        }
-                    } else if let Some(kind) = magic_constant_kind(&parsed_name.name) {
-                        Ok(Expr::MagicConstant(kind, parsed_name.span))
-                    } else {
-                        Ok(Expr::Constant(
-                            self.resolve_constant_name(&parsed_name),
-                            parsed_name.span,
-                        ))
-                    }
-                } else {
-                    Ok(Expr::Constant(
-                        self.resolve_constant_name(&parsed_name),
-                        parsed_name.span,
-                    ))
-                }
+                self.parse_named_primary_expr(name, token.span)
+            }
+            TokenKind::BinaryType => {
+                let name = name_segment_from_source_token(self.source, &token)
+                    .unwrap_or_else(|| token_text(&token.kind).to_string());
+                self.parse_named_primary_expr(name, token.span)
             }
             TokenKind::Backslash => {
                 let first_token = self.advance().clone();
@@ -9339,6 +9256,94 @@ impl Parser<'_> {
                 Some(token.span),
             )),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
+        }
+    }
+
+    fn parse_named_primary_expr(&mut self, name: String, span: SourceSpan) -> Result<Expr> {
+        let parsed_name = self.parse_name_from_first(name, span, None, "expected name")?;
+        let unqualified = matches!(parsed_name.resolution, NameResolution::Unqualified);
+        let lowercase = parsed_name.name.to_ascii_lowercase();
+        if matches!(self.peek().kind, TokenKind::DoubleColon) {
+            let class_name = self.resolve_class_name(&parsed_name);
+            let class_name = self.resolve_runtime_class_alias_name(&class_name);
+            self.parse_static_member_expr(class_name, parsed_name.span)
+        } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+            if unqualified && lowercase == "__halt_compiler" {
+                return Err(Diagnostic::new(
+                    "__HALT_COMPILER() can only be used from the outermost scope",
+                    Some(parsed_name.span),
+                ));
+            }
+            if self.peek_is_first_class_callable_arguments() {
+                let right_span = self.parse_first_class_callable_arguments()?;
+                let resolved_name = self.resolve_function_name(&parsed_name);
+                let callable = Expr::FirstClassCallable {
+                    callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
+                    span: combine_spans(parsed_name.span, right_span),
+                };
+                return self.parse_postfix_expr_from(callable, true);
+            }
+            match (unqualified, lowercase.as_str()) {
+                (true, "array") => self.parse_long_array_literal(parsed_name.span),
+                (true, "list") => self.parse_long_list_expr(parsed_name.span),
+                (true, "isset") => self.parse_isset_expr(parsed_name.span),
+                (true, "empty") => self.parse_empty_expr(parsed_name.span),
+                _ => {
+                    let (arguments, argument_names, argument_unpacks, right_span) =
+                        self.parse_call_arguments()?;
+                    let resolved_name = self.resolve_function_name(&parsed_name);
+                    if unqualified && lowercase == "eval" {
+                        if let Some(expr) = self.literal_eval_return_expr(
+                            &arguments,
+                            &argument_names,
+                            &argument_unpacks,
+                        )? {
+                            return Ok(expr);
+                        }
+                    }
+                    validate_mutating_array_internal_call(
+                        &resolved_name,
+                        &arguments,
+                        parsed_name.span,
+                    )?;
+                    Ok(Expr::Call {
+                        name: resolved_name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        call_line: parsed_name.span.line,
+                        span: combine_spans(parsed_name.span, right_span),
+                    })
+                }
+            }
+        } else if unqualified && lowercase == "__namespace__" && self.current_namespace.is_some() {
+            Ok(Expr::String(
+                self.current_namespace.clone().unwrap_or_default(),
+                parsed_name.span,
+            ))
+        } else if unqualified {
+            if lowercase == "__compiler_halt_offset__" {
+                if let Some(offset) = self.compiler_halt_offset {
+                    Ok(Expr::Int(offset, parsed_name.span))
+                } else {
+                    Ok(Expr::Constant(
+                        self.resolve_constant_name(&parsed_name),
+                        parsed_name.span,
+                    ))
+                }
+            } else if let Some(kind) = magic_constant_kind(&parsed_name.name) {
+                Ok(Expr::MagicConstant(kind, parsed_name.span))
+            } else {
+                Ok(Expr::Constant(
+                    self.resolve_constant_name(&parsed_name),
+                    parsed_name.span,
+                ))
+            }
+        } else {
+            Ok(Expr::Constant(
+                self.resolve_constant_name(&parsed_name),
+                parsed_name.span,
+            ))
         }
     }
 

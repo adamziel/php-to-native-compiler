@@ -116874,6 +116874,15 @@ static const char *ptn_opcache_ini_default(const char *name) {
     if (ptn_ascii_case_equal(name, "opcache.interned_strings_buffer")) {
         return "8";
     }
+    if (ptn_ascii_case_equal(name, "opcache.jit")) {
+        return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.jit_buffer_size")) {
+        return "0";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.jit_hot_func")) {
+        return "127";
+    }
     if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
         return "1";
     }
@@ -116888,6 +116897,12 @@ static const char *ptn_opcache_ini_default(const char *name) {
     }
     if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
         return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
+        return "0";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
+        return "2";
     }
     if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
         return "1";
@@ -116924,6 +116939,15 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     if (ptn_ascii_case_equal(name, "opcache.interned_strings_buffer")) {
         return &root->opcache_interned_strings_buffer;
     }
+    if (ptn_ascii_case_equal(name, "opcache.jit")) {
+        return &root->opcache_jit;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.jit_buffer_size")) {
+        return &root->opcache_jit_buffer_size;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.jit_hot_func")) {
+        return &root->opcache_jit_hot_func;
+    }
     if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
         return &root->opcache_log_verbosity_level;
     }
@@ -116938,6 +116962,12 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     }
     if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
         return &root->opcache_preload_user;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
+        return &root->opcache_protect_memory;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
+        return &root->opcache_revalidate_freq;
     }
     if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
         return &root->opcache_save_comments;
@@ -116966,11 +116996,16 @@ static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, co
         "opcache.file_cache_only",
         "opcache.file_update_protection",
         "opcache.interned_strings_buffer",
+        "opcache.jit",
+        "opcache.jit_buffer_size",
+        "opcache.jit_hot_func",
         "opcache.log_verbosity_level",
         "opcache.optimization_level",
         "opcache.opt_debug_level",
         "opcache.preload",
         "opcache.preload_user",
+        "opcache.protect_memory",
+        "opcache.revalidate_freq",
         "opcache.save_comments",
         "opcache.validate_timestamps",
     };
@@ -123318,14 +123353,17 @@ static void ptn_opcache_configuration_set_directive(PtnRuntime *runtime, PtnValu
         ptn_ascii_case_equal(name, "opcache.enable_cli") ||
         ptn_ascii_case_equal(name, "opcache.fast_shutdown") ||
         ptn_ascii_case_equal(name, "opcache.file_cache_only") ||
+        ptn_ascii_case_equal(name, "opcache.protect_memory") ||
         ptn_ascii_case_equal(name, "opcache.save_comments") ||
         ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
         value = ptn_bool(ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, name), 1));
     } else if (ptn_ascii_case_equal(name, "opcache.file_update_protection") ||
                ptn_ascii_case_equal(name, "opcache.interned_strings_buffer") ||
+               ptn_ascii_case_equal(name, "opcache.jit_hot_func") ||
                ptn_ascii_case_equal(name, "opcache.log_verbosity_level") ||
                ptn_ascii_case_equal(name, "opcache.optimization_level") ||
-               ptn_ascii_case_equal(name, "opcache.opt_debug_level")) {
+               ptn_ascii_case_equal(name, "opcache.opt_debug_level") ||
+               ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
         value = ptn_int(ptn_opcache_ini_integer_value(runtime, name));
     } else {
         value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, name)));
@@ -123342,11 +123380,16 @@ static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
         "opcache.file_cache_only",
         "opcache.file_update_protection",
         "opcache.interned_strings_buffer",
+        "opcache.jit",
+        "opcache.jit_buffer_size",
+        "opcache.jit_hot_func",
         "opcache.log_verbosity_level",
         "opcache.optimization_level",
         "opcache.opt_debug_level",
         "opcache.preload",
         "opcache.preload_user",
+        "opcache.protect_memory",
+        "opcache.revalidate_freq",
         "opcache.save_comments",
         "opcache.validate_timestamps",
     };
@@ -226450,11 +226493,16 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "opcache.file_cache_only");
         ptn_extension_ini_set_entry(runtime, result, "opcache.file_update_protection");
         ptn_extension_ini_set_entry(runtime, result, "opcache.interned_strings_buffer");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.jit");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.jit_buffer_size");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.jit_hot_func");
         ptn_extension_ini_set_entry(runtime, result, "opcache.log_verbosity_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.optimization_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.opt_debug_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.preload");
         ptn_extension_ini_set_entry(runtime, result, "opcache.preload_user");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.protect_memory");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.revalidate_freq");
         ptn_extension_ini_set_entry(runtime, result, "opcache.save_comments");
         ptn_extension_ini_set_entry(runtime, result, "opcache.validate_timestamps");
         return result;

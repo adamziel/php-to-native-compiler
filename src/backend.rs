@@ -1361,6 +1361,46 @@ fn opcache_function_after_optimizer_dump(function: &FunctionDecl) -> Option<Stri
             tmps,
         ));
     }
+    if let Some((dump, vars, tmps)) = opcache_function_array_branch_fetch_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_dead_object_assignment_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_short_ternary_call_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_constant_array_echo_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
     if let Some((dump, vars, tmps)) = opcache_function_echo_simplification_dump(function) {
         return Some(opcache_render_after_optimizer_function(
             function_name,
@@ -1685,6 +1725,332 @@ fn opcache_function_echo_simplification_dump(
     None
 }
 
+fn opcache_function_array_branch_fetch_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Branch {
+        condition,
+        then_body,
+        else_body,
+    }, Instruction::Echo {
+        value: ValueExpr::ArrayAccess { array, index, .. },
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if !matches!(condition, ValueExpr::Load { name, .. } if name == &parameter.name) {
+        return None;
+    }
+    let (then_name, then_array) = opcache_single_array_store(then_body)?;
+    let (else_name, else_array) = opcache_single_array_store(else_body)?;
+    if then_name != else_name {
+        return None;
+    }
+    if !matches!(array.as_ref(), ValueExpr::Load { name, .. } if name == then_name) {
+        return None;
+    }
+    let ValueExpr::Int(index) = index.as_ref() else {
+        return None;
+    };
+    let index = *index;
+    opcache_array_literal_value_at(then_array, index)?;
+    opcache_array_literal_value_at(else_array, index)?;
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode(format!("JMPZ CV0(${}) 0004", parameter.name));
+    dump.opcode(format!("CV1(${then_name}) = QM_ASSIGN array(...)"));
+    dump.opcode("JMP 0005");
+    dump.opcode(format!("CV1(${then_name}) = QM_ASSIGN array(...)"));
+    dump.opcode(format!("T2 = FETCH_DIM_R CV1(${then_name}) int({index})"));
+    dump.opcode("ECHO T2");
+    dump.opcode("RETURN null");
+    Some((dump, 2, 1))
+}
+
+fn opcache_function_dead_object_assignment_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Store {
+        name: object_name,
+        value:
+            ValueExpr::NewObject {
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            },
+        ..
+    }, Instruction::Expression(ValueExpr::Assign {
+        target: AssignmentTarget::Property { receiver, .. },
+        op: AssignmentOp::Assign,
+        value,
+    })] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if !arguments.is_empty()
+        || argument_names.iter().any(Option::is_some)
+        || argument_unpacks.iter().any(|unpack| *unpack)
+        || !matches!(receiver.as_ref(), ValueExpr::Load { name, .. } if name == object_name)
+        || !matches!(value.as_ref(), ValueExpr::Load { name, .. } if name == &parameter.name)
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode("RETURN null");
+    Some((dump, 1, 0))
+}
+
+fn opcache_function_short_ternary_call_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if !function.parameters.is_empty() {
+        return None;
+    }
+    let [Instruction::Store {
+        name,
+        value: ValueExpr::Null,
+        ..
+    }, Instruction::Store {
+        name: target_name,
+        value:
+            ValueExpr::Ternary {
+                condition,
+                if_true: None,
+                if_false,
+                ..
+            },
+        ..
+    }, Instruction::Return {
+        value: Some(ValueExpr::Load {
+            name: return_name, ..
+        }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if target_name != name
+        || return_name != name
+        || !matches!(condition.as_ref(), ValueExpr::Load { name: condition_name, .. } if condition_name == name)
+    {
+        return None;
+    }
+    let ValueExpr::InternalCall {
+        name: call_name,
+        arguments,
+        argument_names,
+        argument_unpacks,
+        ..
+    } = if_false.as_ref()
+    else {
+        return None;
+    };
+    if !arguments.is_empty()
+        || argument_names.iter().any(Option::is_some)
+        || argument_unpacks.iter().any(|unpack| *unpack)
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!(
+        "INIT_FCALL_BY_NAME 0 string(\"{}\")",
+        call_name.trim_start_matches('\\')
+    ));
+    dump.opcode("T1 = DO_FCALL_BY_NAME");
+    dump.opcode(format!("CV0(${name}) = QM_ASSIGN T1"));
+    dump.opcode(format!("RETURN CV0(${name})"));
+    Some((dump, 1, 1))
+}
+
+fn opcache_function_constant_array_echo_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if !function.parameters.is_empty() {
+        return None;
+    }
+    let mut values: HashMap<String, ValueExpr> = HashMap::new();
+    let mut echoes = Vec::new();
+    for instruction in &function.body {
+        opcache_execute_constant_array_instruction(instruction, &mut values, &mut echoes)?;
+    }
+    if echoes.is_empty() {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    for echo in echoes {
+        dump.opcode(format!("ECHO string(\"{}\")", opcache_debug_string(&echo)));
+    }
+    dump.opcode("RETURN null");
+    Some((dump, 0, 0))
+}
+
+fn opcache_single_array_store(
+    instructions: &[Instruction],
+) -> Option<(&str, &Vec<IrArrayElement>)> {
+    let [Instruction::Store {
+        name,
+        value: ValueExpr::Array(elements),
+        ..
+    }] = instructions
+    else {
+        return None;
+    };
+    Some((name.as_str(), elements))
+}
+
+fn opcache_execute_constant_array_instruction(
+    instruction: &Instruction,
+    values: &mut HashMap<String, ValueExpr>,
+    echoes: &mut Vec<String>,
+) -> Option<()> {
+    match instruction {
+        Instruction::Store { name, value, .. } => {
+            let folded = opcache_eval_constant_value(value, values)?;
+            values.insert(name.clone(), folded);
+            Some(())
+        }
+        Instruction::StoreArrayDim {
+            array,
+            dimensions,
+            value,
+            compound_op: None,
+            ..
+        } => {
+            let [Some(index)] = dimensions.as_slice() else {
+                return None;
+            };
+            let index = opcache_eval_int(index, &opcache_int_env(values))?;
+            let value = opcache_eval_constant_value(value, values)?;
+            let ValueExpr::Array(elements) = values.get_mut(array)? else {
+                return None;
+            };
+            opcache_array_literal_set(elements, index, value)
+        }
+        Instruction::Echo { value, .. } => {
+            let value = opcache_eval_constant_value(value, values)?;
+            echoes.push(opcache_constant_echo_string(&value)?);
+            Some(())
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let branch = if opcache_eval_bool(condition, values)? {
+                then_body
+            } else {
+                else_body
+            };
+            for nested in branch {
+                opcache_execute_constant_array_instruction(nested, values, echoes)?;
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+fn opcache_eval_constant_value(
+    value: &ValueExpr,
+    values: &HashMap<String, ValueExpr>,
+) -> Option<ValueExpr> {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Array(_) => Some(value.clone()),
+        ValueExpr::Load { name, .. } => values.get(name).cloned(),
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            let array = opcache_eval_constant_value(array, values)?;
+            let index = opcache_eval_int(index, &opcache_int_env(values))?;
+            let ValueExpr::Array(elements) = array else {
+                return None;
+            };
+            opcache_array_literal_value_at(&elements, index).cloned()
+        }
+        ValueExpr::Binary {
+            op: BinaryOp::Less,
+            left,
+            right,
+            ..
+        } => {
+            let int_values = opcache_int_env(values);
+            Some(ValueExpr::Bool(
+                opcache_eval_int(left, &int_values)? < opcache_eval_int(right, &int_values)?,
+            ))
+        }
+        ValueExpr::Binary { .. } => Some(ValueExpr::Int(opcache_eval_int(
+            value,
+            &opcache_int_env(values),
+        )?)),
+        _ => None,
+    }
+}
+
+fn opcache_eval_bool(value: &ValueExpr, values: &HashMap<String, ValueExpr>) -> Option<bool> {
+    match opcache_eval_constant_value(value, values)? {
+        ValueExpr::Bool(value) => Some(value),
+        ValueExpr::Int(value) => Some(value != 0),
+        ValueExpr::Null => Some(false),
+        ValueExpr::String(value) => Some(!value.is_empty() && value != "0"),
+        ValueExpr::Binary { .. } => unreachable!(),
+        _ => None,
+    }
+}
+
+fn opcache_array_literal_value_at(elements: &[IrArrayElement], index: i64) -> Option<&ValueExpr> {
+    let index = usize::try_from(index).ok()?;
+    let element = elements.get(index)?;
+    if element.key.is_some() {
+        return None;
+    }
+    let IrArrayElementValue::Value(value) = &element.value else {
+        return None;
+    };
+    Some(value)
+}
+
+fn opcache_array_literal_set(
+    elements: &mut Vec<IrArrayElement>,
+    index: i64,
+    value: ValueExpr,
+) -> Option<()> {
+    let index = usize::try_from(index).ok()?;
+    let element = elements.get_mut(index)?;
+    if element.key.is_some() {
+        return None;
+    }
+    element.value = IrArrayElementValue::Value(value);
+    Some(())
+}
+
+fn opcache_constant_echo_string(value: &ValueExpr) -> Option<String> {
+    match value {
+        ValueExpr::String(value) => Some(value.clone()),
+        ValueExpr::Int(value) => Some(value.to_string()),
+        ValueExpr::Bool(true) => Some("1".to_string()),
+        ValueExpr::Bool(false) | ValueExpr::Null => Some(String::new()),
+        _ => None,
+    }
+}
+
 fn opcache_render_after_optimizer_function(
     function_name: &str,
     function: &FunctionDecl,
@@ -1722,6 +2088,12 @@ fn opcache_eval_int(value: &ValueExpr, values: &HashMap<String, i64>) -> Option<
             right,
             ..
         } => Some(opcache_eval_int(left, values)? + opcache_eval_int(right, values)?),
+        ValueExpr::Binary {
+            op: BinaryOp::Multiply,
+            left,
+            right,
+            ..
+        } => Some(opcache_eval_int(left, values)? * opcache_eval_int(right, values)?),
         _ => None,
     }
 }
@@ -5330,7 +5702,7 @@ fn emit_declared_class_new_instance_without_constructor(
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
     out.push_str("        return ptn_object_new_shell_at(caller_runtime, \"stdClass\", line);\n");
     out.push_str("    }\n");
-    for declared_class in classes {
+    for (class_index, declared_class) in classes.iter().enumerate() {
         if declared_class.is_enum
             || declared_class.is_interface
             || declared_class.is_abstract
@@ -5342,7 +5714,9 @@ fn emit_declared_class_new_instance_without_constructor(
         }
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(caller_runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         if let Some(parent_class_name) =
             inherited_modeled_internal_class_name(declared_class, classes)
         {
@@ -5376,14 +5750,16 @@ fn emit_declared_class_new_instance_without_constructor(
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
     let mut emitted_branch = false;
-    for declared_class in classes {
+    for (class_index, declared_class) in classes.iter().enumerate() {
         out.push_str("    ");
         if emitted_branch {
             out.push_str("} else ");
         }
         out.push_str("if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(&runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         if declared_class.is_enum {
             out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate enum ");
             out.push_str(&c_string(&declared_class.name));
@@ -5470,10 +5846,12 @@ fn emit_declared_class_new_instance_without_constructor(
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
     out.push_str("        return ptn_object_new_shell_at(runtime, \"stdClass\", line);\n");
     out.push_str("    }\n");
-    for declared_class in classes {
+    for (class_index, declared_class) in classes.iter().enumerate() {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         out.push_str("        PtnValue result = ptn_declared_class_new_instance_without_constructor(runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\", line);\n");
@@ -8669,6 +9047,17 @@ fn implicit_magic_method_return_type(function: &FunctionDecl) -> Option<TypeHint
 
 fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
     !matches!(return_type, TypeHint::Void | TypeHint::Never)
+}
+
+fn nullable_scalar_return_accepts_synthesized_null(return_type: &TypeHint) -> bool {
+    matches!(
+        return_type,
+        TypeHint::Nullable(inner)
+            if matches!(
+                inner.as_ref(),
+                TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool
+            )
+    )
 }
 
 fn by_ref_return_fallback_notice_requires_satisfied_type(return_type: &TypeHint) -> bool {
@@ -18226,6 +18615,7 @@ fn emit_property_hook_get_helper(
                 property.hook_get_body.is_some() && !hook_body_is_generator,
                 false,
                 false,
+                false,
             );
             values.current_property_name = Some(property.name.clone());
             let value_temp = if let Some(body) = &property.hook_get_body {
@@ -18557,6 +18947,7 @@ fn emit_property_hook_set_helper(
                 Some(display_name.as_str()),
                 Some(class.name.as_str()),
                 property.trait_name.as_deref(),
+                false,
                 false,
                 false,
                 false,
@@ -27295,6 +27686,10 @@ fn emit_method_dispatch(
         out.push_str("            }\n");
         out.push_str("#endif\n");
         out.push_str("            PtnValue bound = ptn_closure_clone(runtime, resolved);\n");
+        out.push_str("            if (bound.type == PTN_CLOSURE && bound.as.closure != NULL) {\n");
+        out.push_str("                ptn_runtime_release_object_id(runtime, bound.as.closure->object_id);\n");
+        out.push_str("                bound.as.closure->object_id = 0;\n");
+        out.push_str("            }\n");
         out.push_str(
             "            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n",
         );
@@ -27345,7 +27740,7 @@ fn emit_method_dispatch(
         out.push_str("        return ptn_closure_reflection_result;\n");
         out.push_str("    }\n");
     }
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         let private_methods: Vec<_> = class
             .methods
             .iter()
@@ -27358,7 +27753,9 @@ fn emit_method_dispatch(
         out.push_str(&c_string(&class.name));
         out.push_str("\") && ptn_declared_class_is_same_or_descendant(class_name, \"");
         out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         for method in private_methods {
             let function = &functions[method.function_index];
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -27469,10 +27866,12 @@ fn emit_method_dispatch(
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         out.push_str("        const char *ptn_inaccessible_visibility = NULL;\n");
         out.push_str("        const char *ptn_inaccessible_class = NULL;\n");
         out.push_str("        const char *ptn_inaccessible_method = NULL;\n");
@@ -27964,10 +28363,12 @@ fn emit_method_dispatch(
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         out.push_str("    if (ptn_ascii_case_equal(target_class_name, \"");
         out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
+        out.push_str("\") && ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         for property in class
             .properties
             .iter()
@@ -31632,6 +32033,21 @@ fn emit_instruction(
                     out.push_str(&result_value);
                     out.push_str("));\n");
                     emit_value_cleanup(out, "    ", &result_value);
+                    if values.current_function_nullable_scalar_return_accepts_synthesized_null {
+                        if let ValueExpr::Load { name, line } = value {
+                            out.push_str("    if (ptn_return_value.type == PTN_NULL && !ptn_runtime_read_variable_quiet(&runtime, \"");
+                            out.push_str(&c_string(name));
+                            out.push_str("\").exists) {\n");
+                            out.push_str("        (void)ptn_runtime_read_variable(&runtime, \"");
+                            out.push_str(&c_string(name));
+                            out.push_str("\", \"");
+                            out.push_str(&c_string(source_path));
+                            out.push_str("\", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            out.push_str("    }\n");
+                        }
+                    }
                 }
                 emit_exceptional_finally_return_override(out, values, target);
                 let context_indices = return_cleanup_context_indices(finally_stack);
@@ -41542,6 +41958,7 @@ struct ValueEmitter {
     current_function_is_generator: bool,
     current_function_tracks_return_line: bool,
     current_function_tracks_return_value_was_set: bool,
+    current_function_nullable_scalar_return_accepts_synthesized_null: bool,
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
@@ -43282,6 +43699,7 @@ impl ValueEmitter {
             false,
             false,
             false,
+            false,
         )
     }
 
@@ -43339,6 +43757,9 @@ impl ValueEmitter {
                     || effective_return_type.is_some_and(return_type_needs_runtime_context)),
             !function.is_generator
                 && effective_return_type.is_some_and(return_type_needs_return_value_was_set),
+            !function.is_generator
+                && effective_return_type
+                    .is_some_and(nullable_scalar_return_accepts_synthesized_null),
             function.is_anonymous,
             function.is_anonymous,
         )
@@ -43360,6 +43781,7 @@ impl ValueEmitter {
         current_function_is_generator: bool,
         current_function_tracks_return_line: bool,
         current_function_tracks_return_value_was_set: bool,
+        current_function_nullable_scalar_return_accepts_synthesized_null: bool,
         use_runtime_class_scope: bool,
         current_function_is_anonymous: bool,
     ) -> Self {
@@ -43381,6 +43803,7 @@ impl ValueEmitter {
             current_function_is_generator,
             current_function_tracks_return_line,
             current_function_tracks_return_value_was_set,
+            current_function_nullable_scalar_return_accepts_synthesized_null,
             current_function_is_anonymous,
             current_function_index,
             generator_yield_abort_target: None,

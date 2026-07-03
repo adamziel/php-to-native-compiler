@@ -3221,6 +3221,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         getenv("PTN_OPCACHE_FILE_UPDATE_PROTECTION");
     const char *configured_opcache_interned_strings_buffer =
         getenv("PTN_OPCACHE_INTERNED_STRINGS_BUFFER");
+    const char *configured_opcache_jit = getenv("PTN_OPCACHE_JIT");
+    const char *configured_opcache_jit_buffer_size =
+        getenv("PTN_OPCACHE_JIT_BUFFER_SIZE");
+    const char *configured_opcache_jit_hot_func = getenv("PTN_OPCACHE_JIT_HOT_FUNC");
     const char *configured_opcache_log_verbosity_level =
         getenv("PTN_OPCACHE_LOG_VERBOSITY_LEVEL");
     const char *configured_opcache_optimization_level =
@@ -3228,6 +3232,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_opt_debug_level = getenv("PTN_OPCACHE_OPT_DEBUG_LEVEL");
     const char *configured_opcache_preload = getenv("PTN_OPCACHE_PRELOAD");
     const char *configured_opcache_preload_user = getenv("PTN_OPCACHE_PRELOAD_USER");
+    const char *configured_opcache_protect_memory = getenv("PTN_OPCACHE_PROTECT_MEMORY");
+    const char *configured_opcache_revalidate_freq = getenv("PTN_OPCACHE_REVALIDATE_FREQ");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
     const char *configured_opcache_validate_timestamps =
         getenv("PTN_OPCACHE_VALIDATE_TIMESTAMPS");
@@ -3317,6 +3323,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->opcache_interned_strings_buffer = ptn_duplicate_string(
         configured_opcache_interned_strings_buffer == NULL ? "8" : configured_opcache_interned_strings_buffer
     );
+    runtime->opcache_jit = ptn_duplicate_string(
+        configured_opcache_jit == NULL ? "" : configured_opcache_jit
+    );
+    runtime->opcache_jit_buffer_size = ptn_duplicate_string(
+        configured_opcache_jit_buffer_size == NULL ? "0" : configured_opcache_jit_buffer_size
+    );
+    runtime->opcache_jit_hot_func = ptn_duplicate_string(
+        configured_opcache_jit_hot_func == NULL ? "127" : configured_opcache_jit_hot_func
+    );
     runtime->opcache_log_verbosity_level = ptn_duplicate_string(
         configured_opcache_log_verbosity_level == NULL ? "1" : configured_opcache_log_verbosity_level
     );
@@ -3331,6 +3346,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_preload_user = ptn_duplicate_string(
         configured_opcache_preload_user == NULL ? "" : configured_opcache_preload_user
+    );
+    runtime->opcache_protect_memory = ptn_duplicate_string(
+        configured_opcache_protect_memory == NULL ? "0" : configured_opcache_protect_memory
+    );
+    runtime->opcache_revalidate_freq = ptn_duplicate_string(
+        configured_opcache_revalidate_freq == NULL ? "2" : configured_opcache_revalidate_freq
     );
     runtime->opcache_save_comments = ptn_duplicate_string(
         configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
