@@ -16966,6 +16966,18 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     if (container.type == PTN_NULL) {
         return ptn_null();
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnLookupResult internal_result = ptn_lookup_missing();
+    if (ptn_internal_array_object_offset_lookup_for_assign_op(
+            runtime,
+            container,
+            &key_value,
+            line,
+            &internal_result
+        )) {
+        return internal_result.exists ? internal_result.value : ptn_null();
+    }
+#endif
     if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
         return ptn_arrayaccess_read(runtime, container, key_value, line);
     }

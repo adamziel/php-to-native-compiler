@@ -719,6 +719,40 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
 }
 
 #[test]
+fn compile_list_destructures_spl_fixed_array_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-list-destructure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-list-destructure.php");
+    let output = root.join("spl-fixed-array-list-destructure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fixed = new SplFixedArray(1);
+$fixed[0] = "the element";
+list($value) = $fixed;
+var_dump($value);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(11) \"the element\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_fixed_array_recursive_export_and_debug_dump_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-recursive-debug");
     fs::create_dir_all(&root).unwrap();
@@ -6218,6 +6252,35 @@ fn compile_short_echo_tag_between_inline_html_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "<a>x</a>");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_short_echo_open_tag_to_native_binary() {
+    let root = temp_dir("ptn-native-short-echo-open-tag");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("short-echo-open-tag.php");
+    let output = root.join("short-echo-open-tag-bin");
+    fs::write(
+        &input,
+        "<%= 'literal' %>\n<?php $value = 'echoed'; ?>\n<?= $value ?>\n<? $ignored = 1; ?>\n<?= isset($ignored) ? 'bad' : 'ok' ?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "<%= 'literal' %>\nechoed<? $ignored = 1; ?>\nok"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
