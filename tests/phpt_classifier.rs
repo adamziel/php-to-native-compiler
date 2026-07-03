@@ -969,6 +969,10 @@ fn phpt_classifier_allows_literal_eval_class_declarations() {
             "magic warning in eval class",
             "--TEST--\neval magic warning\n--FILE--\n<?php\nset_error_handler(function($_, $msg, $file) {});\neval('class A { private function __invoke() { } }');\n--EXPECT--\n",
         ),
+        (
+            "multiline eval class",
+            "--TEST--\nmultiline eval class\n--FILE--\n<?php\neval('\nclass MultilineRuntimeClass {}\n');\nnew MultilineRuntimeClass;\n--EXPECT--\n",
+        ),
     ];
 
     for (name, phpt) in cases {

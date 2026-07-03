@@ -6871,7 +6871,7 @@ impl Parser<'_> {
                 .unwrap_or_else(|| eval_source.to_string());
             class.is_conditionally_declared = true;
             class.is_syntactically_conditionally_declared = true;
-            class.source_file = Some("__PTN_EVAL_CODE__".to_string());
+            class.source_file = Some(format!("__PTN_EVAL_CODE__:{}", span.line));
             let name = class.name.clone();
             self.eval_visible_classes.push(class.clone());
             self.anonymous_classes.push(class);
@@ -19710,6 +19710,9 @@ fn validate_no_discard_function_target(
 
 fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
+        if class.is_conditionally_declared {
+            continue;
+        }
         if class.is_enum {
             if let Some(method) = class.methods.iter().find(|method| method.is_abstract) {
                 return Err(Diagnostic::new(

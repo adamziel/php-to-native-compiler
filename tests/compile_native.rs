@@ -25097,6 +25097,7 @@ fn compile_eval_concrete_class_with_abstract_method_fatals_to_native_binary() {
     fs::write(
         &input,
         r#"<?php
+echo "before\n";
 eval('
 class EvalConcreteWithAbstract {
     abstract static function func();
@@ -25111,7 +25112,7 @@ echo "unreached\n";
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
     let stderr = String::from_utf8(execution.stderr).unwrap();
     assert!(
         stderr.contains(
@@ -25119,7 +25120,7 @@ echo "unreached\n";
         ),
         "{stderr}"
     );
-    assert!(stderr.contains("eval()'d code on line "), "{stderr}");
+    assert!(stderr.contains(") : eval()'d code on line "), "{stderr}");
 }
 
 #[test]
