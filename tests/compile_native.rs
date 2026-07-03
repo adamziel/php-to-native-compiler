@@ -16580,6 +16580,50 @@ fn phpc_renders_unexpected_const_terminator_as_php_parse_error() {
 }
 
 #[test]
+fn phpc_renders_invalid_unbraced_interpolation_offset_as_parse_error() {
+    let root = temp_dir("ptn-phpc-invalid-unbraced-interpolation-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("invalid-unbraced-interpolation-offset.php");
+    fs::write(
+        &input,
+        "<?php\n$arr = array('foo' => 'bar');\necho \"$arr['foo']\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected string content, expecting \"-\" or identifier or variable or number in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_delete_control_character_as_parse_error() {
+    let root = temp_dir("ptn-phpc-delete-control-character-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("delete-control-character.php");
+    fs::write(&input, "<?php\n$a\x7Fb = 3;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected character 0x7F in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn phpc_renders_unparenthesized_nested_ternary_as_php_fatal() {
     let root = temp_dir("ptn-phpc-nested-ternary-fatal");
     fs::create_dir_all(&root).unwrap();
@@ -16614,6 +16658,35 @@ fn compile_echo_program_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_error_log_mail_mode_return_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-error-log-mail-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-log-mail-mode.php");
+    let output = root.join("error-log-mail-mode-bin");
+    fs::write(
+        &input,
+        "<?php
+$headers = \"From: test <mail@example.test>\\n\";
+var_dump(error_log(\"missing destination\", 1, null));
+var_dump(error_log(\"with destination\", 1, \"default@example.test\", null));
+var_dump(error_log(\"headers only\", 1, null, $headers));
+var_dump(error_log(\"with both\", 1, \"default@example.test\", $headers));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -45789,6 +45862,72 @@ test();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("runtime.declared_user_functions[0] = 1"));
     assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+}
+
+#[test]
+fn compile_runtime_eval_static_local_statement_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-eval-static-local");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-eval-static-local.php");
+    let output = root.join("runtime-eval-static-local-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    function f() {
+        eval(getenv('PTN_STATIC_EVAL_CODE'));
+        var_dump($k);
+    }
+}
+(new C)->f();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_STATIC_EVAL_CODE", " static $k = array(4,5,6); ")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  int(4)\n  [1]=>\n  int(5)\n  [2]=>\n  int(6)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_runtime_eval_rejects_delete_control_character_before_variable_read() {
+    let root = temp_dir("ptn-native-runtime-eval-delete-control-character");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-eval-delete-control-character.php");
+    let output = root.join("runtime-eval-delete-control-character-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    eval("
+        \$a\x7Fb = 3;
+        var_dump(\$a\x7Fb);
+    ");
+} catch (ParseError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "syntax error, unexpected character 0x7F\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
