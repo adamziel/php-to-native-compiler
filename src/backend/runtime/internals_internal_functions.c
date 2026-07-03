@@ -196930,6 +196930,79 @@ static PtnValue ptn_internal_zend_string_or_stdclass_or_null(PtnRuntime *runtime
     return ptn_zend_test_string_or_stdclass_impl(runtime, "zend_string_or_stdclass_or_null", 1, args[0], line);
 }
 
+static int ptn_zend_call_method_if_exists_has_public_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+
+    if (runtime != NULL && runtime->declared_method_visibility_metadata != NULL) {
+        const char *declaring_class = NULL;
+        int visibility = PTN_PROPERTY_PUBLIC;
+        int is_abstract = 0;
+        if (runtime->declared_method_visibility_metadata(
+            receiver.as.object->class_name,
+            method_name,
+            &declaring_class,
+            &visibility,
+            &is_abstract
+        )) {
+            return visibility == PTN_PROPERTY_PUBLIC && !is_abstract;
+        }
+    }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    return ptn_internal_class_method_exists(receiver.as.object->class_name, method_name);
+#else
+    (void)method_name;
+    return 0;
+#endif
+}
+
+static PtnValue ptn_internal_zend_call_method_if_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue receiver = ptn_value_deref(args[0]);
+    if (receiver.type != PTN_OBJECT) {
+        ptn_zend_test_throw_arg_type_error(runtime, "zend_call_method_if_exists", 1, "obj", "object", receiver);
+        return ptn_null();
+    }
+
+    PtnStringOperand method_operand = ptn_internal_expect_string_arg(
+        runtime,
+        "zend_call_method_if_exists",
+        2,
+        "method",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(method_operand);
+        return ptn_null();
+    }
+    char *method_name = ptn_duplicate_string_len(method_operand.data, method_operand.len);
+    ptn_string_operand_free(method_operand);
+
+    if (!ptn_zend_call_method_if_exists_has_public_method(runtime, receiver, method_name)) {
+        free(method_name);
+        return ptn_null();
+    }
+
+    size_t method_argc = argc > 2 ? argc - 2 : 0;
+    const PtnValue *method_args = method_argc > 0 ? args + 2 : NULL;
+    PtnValue result = runtime->method_dispatch != NULL
+        ? runtime->method_dispatch(runtime, receiver, method_name, method_argc, method_args, line)
+        : ptn_call_method(runtime, receiver, method_name, method_argc, method_args, line);
+    free(method_name);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
+    return ptn_call_result_for_value_context(result);
+}
+
 static PtnValue ptn_internal_zend_test_nullable_array_return(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -198292,6 +198365,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "xmlwriter_write_element_ns", 4, 5, ptn_internal_xmlwriter_write_element_ns },
         { "xmlwriter_write_pi", 3, 3, ptn_internal_xmlwriter_write_pi },
         { "xmlwriter_write_raw", 2, 2, ptn_internal_xmlwriter_write_raw },
+        { "zend_call_method_if_exists", 2, PTN_VARIADIC_ARGS, ptn_internal_zend_call_method_if_exists },
         { "zend_iterable", 1, 2, ptn_internal_zend_iterable },
         { "zend_number_or_string", 1, 1, ptn_internal_zend_number_or_string },
         { "zend_number_or_string_or_null", 1, 1, ptn_internal_zend_number_or_string_or_null },
@@ -198348,7 +198422,8 @@ static int ptn_internal_function_name_has_prefix(const char *name, const char *p
 }
 
 static int ptn_internal_function_is_zend_test_helper(const char *name) {
-    return ptn_ascii_case_equal(name, "zend_iterable") ||
+    return ptn_ascii_case_equal(name, "zend_call_method_if_exists") ||
+        ptn_ascii_case_equal(name, "zend_iterable") ||
         ptn_ascii_case_equal(name, "zend_number_or_string") ||
         ptn_ascii_case_equal(name, "zend_number_or_string_or_null") ||
         ptn_ascii_case_equal(name, "zend_string_or_object") ||
