@@ -100570,6 +100570,13 @@ $object->p = 'value';
 $reflectionObject = new ReflectionObject($object);
 var_dump(strpos((string) $reflectionObject, \"Dynamic properties [0]\") !== false);
 var_dump(count($reflectionObject->getProperties()));
+try {
+    $reflectionObject->getProperty('p');
+    echo \"property-found\\n\";
+} catch (ReflectionException $e) {
+    echo \"property-missing\\n\";
+}
+var_dump($reflectionObject->hasProperty('p'));
 
 class ReflectIterableSameName {
     public iterable $iterable;
@@ -100604,8 +100611,10 @@ var_dump($nullableIterableType::class, $nullableIterableType->getName(), (string
             "bool(false)\n",
             "bool(true)\n",
             "bool(false)\n",
-            "bool(false)\n",
+            "bool(true)\n",
             "int(1)\n",
+            "property-missing\n",
+            "bool(false)\n",
             "string(19) \"ReflectionNamedType\"\n",
             "string(8) \"iterable\"\n",
             "string(8) \"iterable\"\n",
