@@ -137749,6 +137749,7 @@ struct PtnXmlNode {
     int namespace_declaration;
     int synthetic_namespace_declaration;
     int allow_empty_prefixed_namespace_declaration;
+    int namespace_declaration_reports_xmlns_uri;
     int id_attribute_state;
     int detached_parent_hidden;
     int allow_reconstructed_document_element_sibling;
@@ -138917,6 +138918,7 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     clone->namespace_declaration = node->namespace_declaration;
     clone->synthetic_namespace_declaration = node->synthetic_namespace_declaration;
     clone->allow_empty_prefixed_namespace_declaration = node->allow_empty_prefixed_namespace_declaration;
+    clone->namespace_declaration_reports_xmlns_uri = node->namespace_declaration_reports_xmlns_uri;
     clone->id_attribute_state = node->id_attribute_state;
     if (!node->modern_dom && ptn_xml_attribute_is_namespace_declaration(node)) {
         clone->parent = node->parent;
@@ -153776,6 +153778,7 @@ static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue re
         strcmp(attr->namespace_uri, ptn_dom_xmlns_namespace_uri()) == 0 &&
         ptn_xml_attribute_name_is_namespace_declaration(attr->name)) {
         attr->namespace_declaration = 1;
+        attr->namespace_declaration_reports_xmlns_uri = 1;
     }
     ptn_xml_set_owner_document_recursive(attr, document);
     ptn_string_operand_free(namespace_uri);
@@ -154224,6 +154227,7 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
         strcmp(attr->namespace_uri, ptn_dom_xmlns_namespace_uri()) == 0 &&
         ptn_xml_attribute_name_is_namespace_declaration(attr->name)) {
         attr->namespace_declaration = 1;
+        attr->namespace_declaration_reports_xmlns_uri = 1;
     }
     attr->owner_document = ptn_xml_document_for_node(element);
     PtnXmlNode *replace = ns ? ptn_dom_element_replaced_attribute_for_node(element, attr, 1) : ptn_dom_find_attribute(element, attr->name);
@@ -157787,7 +157791,7 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     }
     if (ptn_ascii_case_equal(property, "namespaceURI")) {
         if (ptn_xml_attribute_is_namespace_declaration(node)) {
-            const char *uri = node->modern_dom
+            const char *uri = node->modern_dom || node->namespace_declaration_reports_xmlns_uri
                 ? ptn_dom_xmlns_namespace_uri()
                 : (node->value == NULL ? "" : node->value);
             *value_out = ptn_owned_string(ptn_duplicate_string(uri));
