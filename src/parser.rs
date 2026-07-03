@@ -16,9 +16,7 @@ use crate::ast::{
     TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
     UnsetTarget,
 };
-use crate::diagnostic::{
-    Diagnostic, DiagnosticKind, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan,
-};
+use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
     lex, lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
     StringPart as TokenStringPart, Token, TokenKind,
@@ -6751,8 +6749,7 @@ impl Parser<'_> {
             true,
         ) {
             Ok(program) => program,
-            Err(error) if error.kind == DiagnosticKind::ParseError => return Ok(None),
-            Err(error) => return Err(error),
+            Err(_) => return Ok(None),
         };
         for statement in &eval_program.statements {
             self.note_runtime_class_alias_statement(statement);
@@ -6902,8 +6899,7 @@ impl Parser<'_> {
             true,
         ) {
             Ok(program) => program,
-            Err(error) if error.kind == DiagnosticKind::ParseError => return Ok(None),
-            Err(error) => return Err(error),
+            Err(_) => return Ok(None),
         };
 
         if !eval_program.functions.is_empty()

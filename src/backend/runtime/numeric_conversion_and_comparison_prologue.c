@@ -3459,6 +3459,11 @@ static void ptn_uncaught_exception_output_flush(PtnRuntime *runtime) {
     fflush(stdout);
 }
 
+static int ptn_uncaught_exception_output_has_started(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL && root->output_has_started;
+}
+
 static void ptn_uncaught_exception_output_printf(PtnRuntime *runtime, const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -3586,6 +3591,9 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     }
     if (display_path == NULL) {
         if (ptn_ascii_case_equal(exception->class_name, "ParseError")) {
+            if (ptn_uncaught_exception_output_has_started(runtime)) {
+                ptn_uncaught_exception_output_cstr(runtime, "\n");
+            }
             ptn_uncaught_exception_output_cstr(runtime, "Parse error: ");
             ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
             ptn_uncaught_exception_output_cstr(runtime, " in [no active file] on line 1\n");
@@ -3600,6 +3608,9 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     }
 
     if (ptn_ascii_case_equal(exception->class_name, "ParseError")) {
+        if (ptn_uncaught_exception_output_has_started(runtime)) {
+            ptn_uncaught_exception_output_cstr(runtime, "\n");
+        }
         ptn_uncaught_exception_output_cstr(runtime, "Parse error: ");
         ptn_uncaught_exception_output_write(runtime, exception->message, exception->message_len);
         ptn_uncaught_exception_output_printf(runtime, " in %s on line %zu\n", display_path, display_line == 0 ? 1 : display_line);

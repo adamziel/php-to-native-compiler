@@ -46152,6 +46152,138 @@ class C {
 }
 
 #[test]
+fn compile_runtime_eval_static_local_new_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-eval-static-new");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-eval-static-new.php");
+    let output = root.join("runtime-eval-static-new-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    eval('static $a = new DoesNotExist;');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+static $live = new stdClass;
+var_dump($live);
+
+try {
+    eval('static $b = new stdClass([] + 0);');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+class EvalStaticNewBox {
+    public function __construct(public $a, public $b) {}
+}
+
+try {
+    eval('static $c = new EvalStaticNewBox(new stdClass, [] + 0);');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+static $box = new EvalStaticNewBox(new stdClass, 42);
+var_dump($box);
+
+class EvalStaticNewThrows {
+    public function __construct() {
+        echo "Side-effect\n";
+        throw new Exception("Failed to construct");
+    }
+}
+
+try {
+    eval('static $d = new EvalStaticNewThrows;');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Class \"DoesNotExist\" not found\n",
+            "object(stdClass)#2 (0) {\n",
+            "}\n",
+            "Unsupported operand types: array + int\n",
+            "Unsupported operand types: array + int\n",
+            "object(EvalStaticNewBox)#4 (2) {\n",
+            "  [\"a\"]=>\n",
+            "  object(stdClass)#1 (0) {\n",
+            "  }\n",
+            "  [\"b\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+            "Side-effect\n",
+            "Failed to construct\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_lazy_initializer_eval_parse_error_occurs_at_initialization_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-eval-init-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-eval-init-parse-error.php");
+    let output = root.join("lazy-eval-init-parse-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LazyEvalFatalBox {
+    public $b;
+    public $c;
+
+    public function __construct() {
+        eval('{');
+    }
+}
+
+$reflector = new ReflectionClass(LazyEvalFatalBox::class);
+$obj = $reflector->newLazyGhost(function ($obj) {
+    var_dump("initializer");
+    $obj->__construct();
+});
+
+$reflector->getProperty('b')->setRawValueWithoutLazyInitialization($obj, new stdClass);
+
+var_dump($obj);
+var_dump($obj->c);
+echo "unreached\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("lazy ghost object(LazyEvalFatalBox)#"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(11) \"initializer\""), "{stdout}");
+    assert!(
+        stdout.contains("string(11) \"initializer\"\n\nParse error: Unclosed '{' in "),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Parse error: Unclosed '{' in "), "{stdout}");
+    assert!(!stdout.contains("unreached"), "{stdout}");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(stderr, "");
+}
+
+#[test]
 fn compile_runtime_eval_rejects_delete_control_character_before_variable_read() {
     let root = temp_dir("ptn-native-runtime-eval-delete-control-character");
     fs::create_dir_all(&root).unwrap();
@@ -105943,6 +106075,73 @@ var_dump($reflector->isUninitializedLazyObject($skipped));
     assert!(c_source.contains("lazy_skip"));
     assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
     assert!(c_source.contains("skipLazyInitialization"));
+}
+
+#[test]
+fn compile_lazy_hooked_property_isset_uses_get_hook_without_initialization_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-hooked-isset-no-init");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-hooked-isset-no-init.php");
+    let output = root.join("lazy-hooked-isset-no-init-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyHookedIssetBox {
+    public $a {
+        get { return 1; }
+        set($value) {}
+    }
+
+    public int $b = 1;
+
+    public function __construct(int $a) {
+        echo \"initializer ran\\n\";
+        $this->a = $a;
+        $this->b = 2;
+    }
+}
+
+function report_lazy_hooked_isset(string $label, ReflectionClass $reflector, object $obj): void {
+    echo \"#\", $label, \"\\n\";
+    var_dump(isset($obj->a));
+    var_dump($reflector->isUninitializedLazyObject($obj));
+}
+
+$reflector = new ReflectionClass(LazyHookedIssetBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo \"ghost init\\n\";
+    $obj->__construct(1);
+});
+report_lazy_hooked_isset('ghost', $reflector, $ghost);
+
+$proxy = $reflector->newLazyProxy(function () {
+    echo \"proxy init\\n\";
+    return new LazyHookedIssetBox(1);
+});
+report_lazy_hooked_isset('proxy', $reflector, $proxy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "#ghost\nbool(true)\nbool(true)\n#proxy\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_property_isset_needs_initialization"));
+    assert!(c_source.contains("property_hook_get"));
 }
 
 #[test]
