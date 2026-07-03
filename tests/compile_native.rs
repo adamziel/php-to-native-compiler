@@ -112360,7 +112360,7 @@ dir,dir5\n"
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_glob_run_brace_pattern"));
+    assert!(c_source.contains("ptn_glob_expand_braces_into"));
     assert!(c_source.contains("ptn_ini_text_is_reserved_false_or_null"));
 }
 

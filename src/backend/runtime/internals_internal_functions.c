@@ -67650,7 +67650,6 @@ static int ptn_glob_find_expandable_brace(const char *pattern, size_t *open_out,
     int depth = 0;
     int in_class = 0;
     int escaped = 0;
-    int has_comma = 0;
     for (size_t i = 0; i < len; i++) {
         char ch = pattern[i];
         if (escaped) {
@@ -67674,22 +67673,18 @@ static int ptn_glob_find_expandable_brace(const char *pattern, size_t *open_out,
         if (ch == '{') {
             if (depth == 0) {
                 open = i;
-                has_comma = 0;
             }
             depth++;
             continue;
         }
         if (ch == '}' && depth > 0) {
             depth--;
-            if (depth == 0 && has_comma) {
+            if (depth == 0) {
                 *open_out = open;
                 *close_out = i;
                 return 1;
             }
             continue;
-        }
-        if (ch == ',' && depth == 1) {
-            has_comma = 1;
         }
     }
     return 0;
