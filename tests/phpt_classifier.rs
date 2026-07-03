@@ -2948,6 +2948,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let soap_custom_content_type = classify_at_relative_path(
+        "--TEST--\nsoap custom content type\n--EXTENSIONS--\nsoap\n--FILE--\n<?php\ninclude __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri']);\n--EXPECT--\n",
+        "ext/soap/tests/custom_content_type.phpt",
+    );
+    assert_eq!(
+        soap_custom_content_type.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let modeled_curl_harness = classify_at_relative_path(
         "--TEST--\ncurl modeled server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/get.inc?test=post');\ncurl_exec($ch);\n--EXPECT--\n",
         "ext/curl/tests/bug79033.phpt",

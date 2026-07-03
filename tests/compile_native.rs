@@ -428,7 +428,7 @@ fn compile_iterator_protocol_and_array_backed_spl_to_native_binary() {
     let output = root.join("iterator-protocol-spl-bin");
     fs::write(
         &input,
-        r#"<?php
+        r##"<?php
 class Numbers implements Iterator {
     private $items = ["a" => 10, "b" => 20];
     private $keys = ["a", "b"];
@@ -452,7 +452,7 @@ $wrap = new IteratorIterator(new ArrayIterator([7, 8]));
 foreach ($wrap as $value) {
     echo $wrap->offsetGet(0), ":", $value, "\n";
 }
-"#,
+"##,
     )
     .unwrap();
 
@@ -67596,6 +67596,201 @@ $server->handle($client->__getLastRequest());
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_append_scalar_value"));
+}
+
+#[test]
+fn compile_soap_non_wsdl_last_request_headers_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-non-wsdl-last-request-headers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-non-wsdl-last-request-headers.php");
+    let output = root.join("soap-non-wsdl-last-request-headers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_headers($contentType) {
+    $client = new SoapClient(NULL, [
+        'location' => 'http://localhost:1234/path?x=1',
+        'uri' => 'misc-uri',
+        'soap_version' => SOAP_1_2,
+        'user_agent' => 'Vincent JARDIN, test headers',
+        'trace' => true,
+        'stream_context' => stream_context_create([
+            'http' => [
+                'header' => "MIME-Version: 1.0\r\n",
+                'content_type' => $contentType,
+            ],
+        ]),
+    ]);
+    $client->__soapCall("foo", ['arg1' => "XXXbar"]);
+    echo $client->__getLastRequestHeaders();
+    echo "---\n";
+}
+
+dump_headers('Multipart/Related');
+dump_headers('');
+var_dump(method_exists('SoapClient', '__getLastRequestHeaders'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("POST /path?x=1 HTTP/1.1\r\n"), "{stdout}");
+    assert!(
+        stdout.contains("User-Agent: Vincent JARDIN, test headers\r\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("MIME-Version: 1.0\r\n"), "{stdout}");
+    assert!(
+        stdout.contains("Content-Type: Multipart/Related; action=\"misc-uri#foo\"\r\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Content-Type: application/soap+xml; charset=utf-8; action=\"misc-uri#foo\"\r\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_record_http_request_headers"));
+    assert!(c_source.contains("ptn_soap_get_last_request_headers"));
+}
+
+#[test]
+fn compile_soap_wsdl_simple_type_rpc_request_and_decode_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-simple-type-rpc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-simple-type-rpc.php");
+    let output = root.join("soap-wsdl-simple-type-rpc-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$val = null;
+
+function test($input) {
+    global $val;
+    $val = $input;
+}
+
+function schema_wsdl($schema, $typeAttr) {
+    return <<<WSDL
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+      $schema
+    </schema>
+  </types>
+  <message name="testMessage"><part name="testParam" $typeAttr/></message>
+  <portType name="testPortType"><operation name="test"><input message="testMessage"/></operation></portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input><soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+    </operation>
+  </binding>
+  <service name="testService"><port name="testPort" binding="tns:testBinding"><soap:address location="test://" /></port></service>
+</definitions>
+WSDL;
+}
+
+function run_schema($label, $schema, $typeAttr, $param) {
+    global $val;
+    $val = null;
+    $wsdl = __DIR__ . "/$label.wsdl";
+    file_put_contents($wsdl, schema_wsdl($schema, $typeAttr));
+    ini_set("soap.wsdl_cache_enabled", 0);
+    $client = new SoapClient($wsdl, ["trace" => 1, "exceptions" => 0]);
+    $server = new SoapServer($wsdl);
+    $server->addFunction("test");
+    unlink($wsdl);
+    $client->test($param);
+    echo $client->__getLastRequest();
+    ob_start();
+    $server->handle($client->__getLastRequest());
+    ob_end_clean();
+    var_dump($val);
+    echo "--$label--\n";
+}
+
+run_schema(
+    "restriction",
+    '<simpleType name="restrictedInt"><restriction base="xsd:int"/></simpleType>',
+    'type="tns:restrictedInt"',
+    123.5
+);
+run_schema(
+    "list",
+    '<simpleType name="intList"><list><simpleType><restriction base="int"/></simpleType></list></simpleType>',
+    'type="tns:intList"',
+    [123, 456.7]
+);
+run_schema(
+    "unionList",
+    '<simpleType name="unionList"><list><simpleType><union memberTypes="int float str"/></simpleType></list></simpleType>',
+    'type="tns:unionList"',
+    [123, 123.5, "str"]
+);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:restrictedInt\">123</testParam>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(123)\n--restriction--\n"), "{stdout}");
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:intList\">123 456</testParam>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(7) \"123 456\"\n--list--\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:unionList\">123 123.5 str</testParam>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(13) \"123 123.5 str\"\n--unionList--\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_encoded_part_xsi_type_prefix"));
+    assert!(c_source.contains("ptn_soap_decode_text_as_type"));
 }
 
 #[test]

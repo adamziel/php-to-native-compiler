@@ -1,9 +1,10 @@
 use std::fmt;
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ptn::diagnostic::{DiagnosticNotice, DiagnosticNoticeKind};
 use ptn::{
@@ -46,6 +47,11 @@ fn run() -> Result<i32, PhpcError> {
             print_modules();
             Ok(0)
         }
+        Mode::Server {
+            bind,
+            doc_root,
+            router,
+        } => run_cli_server(&bind, doc_root.as_deref(), router.as_deref()),
         Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
         Mode::Inline { source, args } => {
             if let Some(code) = run_inline_probe_fast_path(&source, &args) {
@@ -75,6 +81,57 @@ fn run() -> Result<i32, PhpcError> {
             compile_and_run(temp.path(), &[], &ini, sapi)
         }
     }
+}
+
+fn run_cli_server(
+    bind: &str,
+    _doc_root: Option<&Path>,
+    _router: Option<&Path>,
+) -> Result<i32, PhpcError> {
+    let (listen_addr, display_host) = cli_server_bind_address(bind);
+    let listener = TcpListener::bind(&listen_addr)
+        .map_err(|error| format!("failed to bind CLI server on {bind}: {error}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| format!("failed to inspect CLI server address: {error}"))?
+        .port();
+
+    println!("PHP 8.4.0 Development Server (http://{display_host}:{port}) started");
+    let _ = io::stdout().flush();
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => handle_cli_server_connection(&mut stream),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(format!("CLI server accept failed: {error}").into()),
+        }
+    }
+
+    Ok(0)
+}
+
+fn cli_server_bind_address(bind: &str) -> (String, String) {
+    let (host, port) = bind.rsplit_once(':').unwrap_or(("localhost", bind));
+    let listen_host = if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
+        "127.0.0.1"
+    } else {
+        host
+    };
+    let display_host = if host.is_empty() || host == "0.0.0.0" {
+        "localhost"
+    } else {
+        host
+    };
+    (format!("{listen_host}:{port}"), display_host.to_string())
+}
+
+fn handle_cli_server_connection(stream: &mut TcpStream) {
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    let mut request = [0_u8; 1024];
+    let _ = stream.read(&mut request);
+    let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let _ = stream.write_all(response);
+    let _ = stream.flush();
 }
 
 const PHP_EXTENSION_DIR: &str = ".";
@@ -383,8 +440,19 @@ enum Sapi {
 enum Mode {
     Version,
     Modules,
-    Script { script: PathBuf, args: Vec<String> },
-    Inline { source: String, args: Vec<String> },
+    Server {
+        bind: String,
+        doc_root: Option<PathBuf>,
+        router: Option<PathBuf>,
+    },
+    Script {
+        script: PathBuf,
+        args: Vec<String>,
+    },
+    Inline {
+        source: String,
+        args: Vec<String>,
+    },
     Stdin,
 }
 
@@ -480,6 +548,9 @@ impl Invocation {
         let mut script_args = Vec::new();
         let mut ini = RuntimeIni::default();
         let mut sapi = Sapi::Cli;
+        let mut server_bind = None;
+        let mut server_doc_root = None;
+        let mut server_router = None;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -558,6 +629,18 @@ impl Invocation {
                     }
                     break;
                 }
+                "-t" => {
+                    let path = args
+                        .next()
+                        .ok_or_else(|| "missing value for -t".to_string())?;
+                    server_doc_root = Some(PathBuf::from(path));
+                }
+                "-S" => {
+                    let bind = args
+                        .next()
+                        .ok_or_else(|| "missing value for -S".to_string())?;
+                    server_bind = Some(bind);
+                }
                 _ if let Some(value) = arg.strip_prefix("-d") => {
                     apply_ini_setting(value, &mut ini);
                 }
@@ -566,13 +649,40 @@ impl Invocation {
                         ini.loaded_file_path = Some(PathBuf::from(path));
                     }
                 }
+                _ if let Some(path) = arg.strip_prefix("-t") => {
+                    if !path.is_empty() {
+                        server_doc_root = Some(PathBuf::from(path));
+                    }
+                }
+                _ if let Some(bind) = arg.strip_prefix("-S") => {
+                    if !bind.is_empty() {
+                        server_bind = Some(bind.to_string());
+                    }
+                }
                 _ if arg.starts_with('-') => {}
+                _ if server_bind.is_some() && server_router.is_none() => {
+                    server_router = Some(PathBuf::from(arg));
+                    script_args.extend(args);
+                    break;
+                }
                 _ => {
                     script = Some(PathBuf::from(arg));
                     script_args.extend(args);
                     break;
                 }
             }
+        }
+
+        if let Some(bind) = server_bind {
+            return Ok(Self {
+                mode: Mode::Server {
+                    bind,
+                    doc_root: server_doc_root,
+                    router: server_router,
+                },
+                ini,
+                sapi,
+            });
         }
 
         let mode = match script {

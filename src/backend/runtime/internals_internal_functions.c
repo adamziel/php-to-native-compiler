@@ -188219,6 +188219,8 @@ typedef struct {
     PtnValue cookies;
     char *last_request;
     size_t last_request_len;
+    char *last_request_headers;
+    size_t last_request_headers_len;
     PtnSoapType *types;
     size_t type_count;
     size_t type_capacity;
@@ -188309,6 +188311,7 @@ static void ptn_soap_client_data_free(void *data_ptr) {
     ptn_value_destroy(&data->headers);
     ptn_value_destroy(&data->cookies);
     free(data->last_request);
+    free(data->last_request_headers);
     for (size_t i = 0; i < data->type_count; i++) {
         ptn_soap_type_free(&data->types[i]);
     }
@@ -192253,7 +192256,13 @@ static void ptn_soap_append_rpc_encoded_part(
         ptn_string_buffer_append(body, " xsi:nil=\"true\"/>");
         open_part = 0;
     } else {
-        ptn_string_buffer_append_format(body, " xsi:type=\"xsd:%s\">", ptn_soap_xsd_type_name(part_type_local));
+        const char *xsi_prefix = ptn_soap_encoded_part_xsi_type_prefix(type, part_type_local);
+        ptn_string_buffer_append_format(
+            body,
+            " xsi:type=\"%s:%s\">",
+            xsi_prefix,
+            strcmp(xsi_prefix, "xsd") == 0 ? ptn_soap_xsd_type_name(part_type_local) : part_type_local
+        );
     }
 
     if (runtime->exceptions->active_exception == NULL && open_part) {
@@ -193241,7 +193250,218 @@ static char *ptn_soap_client_effective_location_dup(
     if (data != NULL && data->location != NULL) {
         return ptn_duplicate_string(data->location);
     }
+    if (data != NULL) {
+        char *option_location = ptn_soap_options_string_dup(runtime, data->options, "location", line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(option_location);
+            return NULL;
+        }
+        if (option_location != NULL) {
+            return option_location;
+        }
+    }
     return ptn_duplicate_string("");
+}
+
+static int ptn_soap_client_soap_version(PtnSoapClientData *data) {
+    PtnValue version_value;
+    if (data == NULL || !ptn_soap_options_entry(data->options, "soap_version", &version_value)) {
+        return 1;
+    }
+    return ptn_value_to_integer(version_value) == 2 ? 2 : 1;
+}
+
+static PtnValue *ptn_soap_http_stream_context_option(PtnSoapClientData *data, const char *option_name) {
+    PtnValue context_value;
+    if (data == NULL || !ptn_soap_options_entry(data->options, "stream_context", &context_value)) {
+        return NULL;
+    }
+    context_value = ptn_value_deref(context_value);
+    if (context_value.type != PTN_RESOURCE || context_value.as.resource == NULL) {
+        return NULL;
+    }
+    return ptn_stream_context_option(context_value.as.resource, "http", option_name);
+}
+
+static char *ptn_soap_http_action_dup(const char *uri, const char *method_name) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (uri != NULL) {
+        ptn_string_buffer_append(&buffer, uri);
+    }
+    if (method_name != NULL && method_name[0] != '\0') {
+        if (buffer.len != 0 && buffer.data[buffer.len - 1] != '#') {
+            ptn_string_buffer_append_char(&buffer, '#');
+        }
+        ptn_string_buffer_append(&buffer, method_name);
+    }
+    if (buffer.data == NULL) {
+        return ptn_duplicate_string("");
+    }
+    return buffer.data;
+}
+
+static char *ptn_soap_http_host_from_location_dup(const char *location) {
+    if (location == NULL || location[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    const char *host = strstr(location, "://");
+    host = host == NULL ? location : host + 3;
+    size_t len = strcspn(host, "/?#");
+    return ptn_duplicate_string_len(host, len);
+}
+
+static char *ptn_soap_http_path_from_location_dup(const char *location) {
+    if (location == NULL || location[0] == '\0') {
+        return ptn_duplicate_string("/");
+    }
+    const char *host = strstr(location, "://");
+    host = host == NULL ? location : host + 3;
+    const char *path = strpbrk(host, "/?#");
+    if (path == NULL || *path == '#') {
+        return ptn_duplicate_string("/");
+    }
+    if (*path == '?') {
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        ptn_string_buffer_append_char(&buffer, '/');
+        ptn_string_buffer_append(&buffer, path);
+        return buffer.data == NULL ? ptn_duplicate_string("/") : buffer.data;
+    }
+    return ptn_duplicate_string(path);
+}
+
+static int ptn_soap_append_http_context_header_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    size_t line,
+    size_t depth
+) {
+    if (depth > 16) {
+        return 1;
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            if (!ptn_soap_append_http_context_header_value(
+                    runtime,
+                    buffer,
+                    value.as.array->entries[i].value,
+                    line,
+                    depth + 1
+                )) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    PtnStringOperand header = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(header);
+        return 0;
+    }
+    if (header.len != 0) {
+        ptn_string_buffer_append_len(buffer, header.data, header.len);
+        if (header.data[header.len - 1] != '\n') {
+            ptn_string_buffer_append(buffer, "\r\n");
+        }
+    }
+    ptn_string_operand_free(header);
+    return 1;
+}
+
+static int ptn_soap_client_record_http_request_headers(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    const char *method_name,
+    const char *uri,
+    size_t line
+) {
+    char *location = ptn_soap_client_effective_location_dup(runtime, data, ptn_null(), line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(location);
+        return 0;
+    }
+    char *host = ptn_soap_http_host_from_location_dup(location);
+    char *path = ptn_soap_http_path_from_location_dup(location);
+    char *user_agent = ptn_soap_options_string_dup(runtime, data->options, "user_agent", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(location);
+        free(host);
+        free(path);
+        free(user_agent);
+        return 0;
+    }
+    char *content_type = NULL;
+    PtnValue *content_type_value = ptn_soap_http_stream_context_option(data, "content_type");
+    if (content_type_value != NULL) {
+        content_type = ptn_soap_value_string_dup(runtime, *content_type_value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(location);
+            free(host);
+            free(path);
+            free(user_agent);
+            free(content_type);
+            return 0;
+        }
+    }
+    char *action = ptn_soap_http_action_dup(uri, method_name);
+    int soap_version = ptn_soap_client_soap_version(data);
+
+    PtnStringBuffer headers;
+    ptn_string_buffer_init(&headers);
+    ptn_string_buffer_append_format(&headers, "POST %s HTTP/1.1\r\n", path);
+    if (host[0] != '\0') {
+        ptn_string_buffer_append_format(&headers, "Host: %s\r\n", host);
+    }
+    if (user_agent != NULL && user_agent[0] != '\0') {
+        ptn_string_buffer_append_format(&headers, "User-Agent: %s\r\n", user_agent);
+    }
+    PtnValue *context_header = ptn_soap_http_stream_context_option(data, "header");
+    if (context_header != NULL &&
+        !ptn_soap_append_http_context_header_value(runtime, &headers, *context_header, line, 0)) {
+        free(location);
+        free(host);
+        free(path);
+        free(user_agent);
+        free(content_type);
+        free(action);
+        free(headers.data);
+        return 0;
+    }
+
+    ptn_string_buffer_append(&headers, "Content-Type: ");
+    if (content_type != NULL && content_type[0] != '\0') {
+        ptn_string_buffer_append(&headers, content_type);
+        if (soap_version == 2 && action[0] != '\0') {
+            ptn_string_buffer_append_format(&headers, "; action=\"%s\"", action);
+        }
+    } else if (soap_version == 2) {
+        ptn_string_buffer_append(&headers, "application/soap+xml; charset=utf-8");
+        if (action[0] != '\0') {
+            ptn_string_buffer_append_format(&headers, "; action=\"%s\"", action);
+        }
+    } else {
+        ptn_string_buffer_append(&headers, "text/xml; charset=utf-8");
+    }
+    ptn_string_buffer_append(&headers, "\r\n");
+    if (soap_version == 1 && action[0] != '\0') {
+        ptn_string_buffer_append_format(&headers, "SOAPAction: \"%s\"\r\n", action);
+    }
+    ptn_string_buffer_append_format(&headers, "Content-Length: %zu\r\n", data->last_request_len);
+    ptn_string_buffer_append(&headers, "\r\n");
+
+    free(data->last_request_headers);
+    data->last_request_headers = headers.data;
+    data->last_request_headers_len = headers.len;
+    free(location);
+    free(host);
+    free(path);
+    free(user_agent);
+    free(content_type);
+    free(action);
+    return 1;
 }
 
 static char *ptn_soap_options_encoding_dup(PtnRuntime *runtime, PtnValue options, size_t line) {
@@ -199330,6 +199550,12 @@ static int ptn_soap_client_record_non_wsdl_request(
     free(data->last_request);
     data->last_request = buffer.data;
     data->last_request_len = buffer.len;
+    if (!ptn_soap_client_record_http_request_headers(runtime, data, method_name, uri, line)) {
+        free(uri);
+        free(header_xml.data);
+        ptn_soap_namespace_list_free(&namespaces);
+        return 0;
+    }
     free(uri);
     free(header_xml.data);
     ptn_soap_namespace_list_free(&namespaces);
@@ -199560,6 +199786,35 @@ static PtnValue ptn_soap_get_last_request(
     return ptn_owned_string_len(
         ptn_duplicate_string_len(data->last_request, data->last_request_len),
         data->last_request_len
+    );
+}
+
+static PtnValue ptn_soap_get_last_request_headers(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc
+) {
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapClient::__getLastRequestHeaders() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
+    if (data == NULL || data->last_request_headers == NULL) {
+        return ptn_null();
+    }
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len(data->last_request_headers, data->last_request_headers_len),
+        data->last_request_headers_len
     );
 }
 
@@ -200053,6 +200308,9 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     }
     if (is_client && ptn_ascii_case_equal(name, "__getLastRequest")) {
         return ptn_soap_get_last_request(runtime, receiver, argc);
+    }
+    if (is_client && ptn_ascii_case_equal(name, "__getLastRequestHeaders")) {
+        return ptn_soap_get_last_request_headers(runtime, receiver, argc);
     }
     if (is_client && ptn_ascii_case_equal(name, "__setCookie")) {
         return ptn_soap_client_set_cookie(runtime, receiver, argc, args, line);
@@ -206630,6 +206888,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "__getCookies")
             || ptn_ascii_case_equal(method_name, "__getFunctions")
             || ptn_ascii_case_equal(method_name, "__getLastRequest")
+            || ptn_ascii_case_equal(method_name, "__getLastRequestHeaders")
             || ptn_ascii_case_equal(method_name, "__getTypes")
             || ptn_ascii_case_equal(method_name, "__setCookie")
             || ptn_ascii_case_equal(method_name, "__setLocation")
@@ -208461,6 +208720,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "__getCookies");
         ptn_append_method_name(result, &index, "__getFunctions");
         ptn_append_method_name(result, &index, "__getLastRequest");
+        ptn_append_method_name(result, &index, "__getLastRequestHeaders");
         ptn_append_method_name(result, &index, "__getTypes");
         ptn_append_method_name(result, &index, "__setCookie");
         ptn_append_method_name(result, &index, "__setLocation");
