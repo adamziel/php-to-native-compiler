@@ -53963,6 +53963,41 @@ var_dump(is_float($lcg), $lcg >= 0 && $lcg <= 1);
 }
 
 #[test]
+fn compile_mt_srand_unknown_modes_cast_to_byte_to_native_binary() {
+    let root = temp_dir("ptn-native-mt-srand-unknown-modes-byte-cast");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mt-srand-unknown-modes-byte-cast.php");
+    let output = root.join("mt-srand-unknown-modes-byte-cast-bin");
+    fs::write(
+        &input,
+        "<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+foreach ([0, 1, 2, 256, 257] as $mode) {
+    mt_srand(1, $mode);
+    var_dump(mt_rand());
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(895547922)\n",
+            "int(1244335972)\n",
+            "int(895547922)\n",
+            "int(895547922)\n",
+            "int(1244335972)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_getmypid_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-getmypid-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
