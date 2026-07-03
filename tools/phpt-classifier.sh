@@ -88,6 +88,56 @@ ptn_phpt_trim() {
 
 declare -gA PTN_PHPT_SECTION_CACHE_KEY_BY_PATH=()
 declare -gA PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH=()
+declare -g PTN_PHPT_MODELED_FUNCTIONS_LOADED=0
+declare -gA PTN_PHPT_MODELED_FUNCTIONS_BY_NAME=()
+
+ptn_phpt_repo_root() {
+    cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
+}
+
+ptn_phpt_normalized_function_name() {
+    local value
+    value=$(ptn_phpt_trim "$1")
+    value=${value#\\}
+    ptn_phpt_lower "$value"
+}
+
+ptn_phpt_load_modeled_functions() {
+    [[ "$PTN_PHPT_MODELED_FUNCTIONS_LOADED" -eq 0 ]] || return 0
+
+    local repo_root
+    local registry
+    local function_name
+    repo_root=$(ptn_phpt_repo_root)
+    registry="$repo_root/src/backend/runtime/internals_internal_functions.c"
+
+    if [[ -r "$registry" ]]; then
+        while IFS= read -r function_name; do
+            function_name=$(ptn_phpt_normalized_function_name "$function_name")
+            [[ -n "$function_name" ]] || continue
+            [[ "$function_name" != *::* ]] || continue
+            PTN_PHPT_MODELED_FUNCTIONS_BY_NAME[$function_name]=1
+        done < <(
+            LC_ALL=C sed -nE 's/^[[:space:]]*\{[[:space:]]*"([^"]+)"[[:space:]]*,.*/\1/p' "$registry"
+        )
+    fi
+
+    PTN_PHPT_MODELED_FUNCTIONS_LOADED=1
+}
+
+ptn_phpt_modeled_function_exists() {
+    local function_name
+    function_name=$(ptn_phpt_normalized_function_name "$1")
+    [[ -n "$function_name" ]] || return 1
+
+    if [[ -n "${PTN_PHPT_AVAILABLE_FUNCTIONS:-}" ]]; then
+        ptn_phpt_csv_contains_ci "$function_name" "$PTN_PHPT_AVAILABLE_FUNCTIONS"
+        return $?
+    fi
+
+    ptn_phpt_load_modeled_functions
+    [[ -v "PTN_PHPT_MODELED_FUNCTIONS_BY_NAME[$function_name]" ]]
+}
 
 ptn_phpt_build_section_cache() {
     local manifest=$1
@@ -577,7 +627,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
@@ -596,6 +646,7 @@ ptn_phpt_modeled_skipif_precondition() {
     local php_zts_count
     local setlocale_count
     local defined_count
+    local function_exists_count
     local in_array_count
     local stream_get_filters_count
     local include_count
@@ -610,6 +661,7 @@ ptn_phpt_modeled_skipif_precondition() {
     php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
     defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
+    function_exists_count=$(ptn_phpt_count_matches 'function_exists[[:space:]]*\(' "$code_without_strings")
     in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
     stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
@@ -880,6 +932,33 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$defined_count" -eq "$parsed_defined_count" ]] || return 1
 
+    local function_exists_condition_lines
+    local parsed_function_exists_count=0
+    function_exists_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "!?[[:space:]]*function_exists[[:space:]]*\\([[:space:]]*['\"][^'\"]+['\"][[:space:]]*\\)" \
+        || true)
+    if [[ -n "$function_exists_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            local function_name
+            function_name=$(printf '%s\n' "$condition" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            function_name=$(ptn_phpt_normalized_function_name "$function_name")
+            [[ "$function_name" =~ ^[a-z_][a-z0-9_]*$ ]] || return 1
+            parsed_function_exists_count=$((parsed_function_exists_count + 1))
+
+            if printf '%s\n' "$condition" | grep -Eq '^[[:space:]]*!'; then
+                if ! ptn_phpt_modeled_function_exists "$function_name"; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- function availability guard requires %s; modeled PTN functions leave it unavailable\n' "$function_name"
+                    return 0
+                fi
+            elif ptn_phpt_modeled_function_exists "$function_name"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- function availability guard skips when %s is available in modeled PTN functions\n' "$function_name"
+                return 0
+            fi
+        done <<< "$function_exists_condition_lines"
+        modeled_families+=("function-exists")
+    fi
+    [[ "$function_exists_count" -eq "$parsed_function_exists_count" ]] || return 1
+
     local parsed_stream_filter_count=0
     if [[ "$stream_get_filters_count" -gt 0 || "$in_array_count" -gt 0 ]]; then
         [[ "$stream_get_filters_count" -eq 1 && "$in_array_count" -eq 1 ]] || return 1
@@ -947,7 +1026,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_stream_filter_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1
