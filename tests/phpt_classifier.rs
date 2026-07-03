@@ -2968,6 +2968,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let auto_detect_line_endings_ini = classify_at_relative_path(
+        "--TEST--\nauto detect line endings ini\n--INI--\nauto_detect_line_endings=on\n--FILE--\n<?php\nvar_dump(ini_get('auto_detect_line_endings'));\n--EXPECT--\nstring(1) \"1\"\n",
+        "ext/standard/tests/file/auto_detect_line_endings_1.phpt",
+    );
+    assert_eq!(
+        auto_detect_line_endings_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let residual_extension_ini = classify(
         "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\npcre.recursion_limit=1\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('pcre.recursion_limit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
     );

@@ -91740,6 +91740,35 @@ fn phpc_session_save_handler_user_startup_ini_emits_diagnostic() {
 }
 
 #[test]
+fn phpc_auto_detect_line_endings_startup_ini_emits_deprecation() {
+    let root = temp_dir("ptn-phpc-auto-detect-line-endings-startup-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("auto-detect-line-endings-startup-ini.php");
+    fs::write(
+        &input,
+        "<?php\nvar_dump(ini_get('auto_detect_line_endings'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("auto_detect_line_endings=on")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Deprecated: auto_detect_line_endings is deprecated in Unknown on line 0\n",
+            "string(1) \"1\"\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_session_ini_upload_progress_trans_sid_and_lazy_write_are_runtime_visible() {
     let root = temp_dir("ptn-phpc-session-ini-upload-trans-sid");
     fs::create_dir_all(&root).unwrap();

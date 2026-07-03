@@ -1675,6 +1675,10 @@ fn compile_and_run(
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
     let mbstring_startup_messages = mbstring_startup_messages(&ini);
+    let auto_detect_line_endings_deprecated = ini
+        .auto_detect_line_endings
+        .as_deref()
+        .is_some_and(ini_scalar_truthy);
     let mut source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
         script_encoding: ini
@@ -2002,6 +2006,7 @@ fn compile_and_run(
         || !session_startup_deprecations.is_empty()
         || !assert_startup_deprecations.is_empty()
         || !mbstring_startup_messages.is_empty()
+        || auto_detect_line_endings_deprecated
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
@@ -2032,6 +2037,9 @@ fn compile_and_run(
     }
     if ini.allow_url_include_deprecated {
         println!("Deprecated: Directive 'allow_url_include' is deprecated in Unknown on line 0");
+    }
+    if auto_detect_line_endings_deprecated {
+        println!("Deprecated: auto_detect_line_endings is deprecated in Unknown on line 0");
     }
     for (index, warning) in mbstring_startup_messages.iter().enumerate() {
         println!("{warning}");
