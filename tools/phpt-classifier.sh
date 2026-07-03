@@ -1757,7 +1757,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/iterator_028[.]phpt$/ ||
                 ptn_path ~ /ext\/simplexml\/tests\/gh15837[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
-                ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/
+                ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_dtor_order[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/bug69970[.]phpt$/
         }
         function ptn_supported_recursive_iterator_iterator_surface_line(line) {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
@@ -1768,9 +1770,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])appenditerator([^[:alnum:]_]|$)/
         }
         function ptn_supported_spl_helper_function_line(line) {
-            return (ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ ||
-                    ptn_path ~ /ext\/dom\/tests\/bug79852[.]phpt$/) &&
-                line ~ /(^|[^[:alnum:]_$\\])iterator_count[[:space:]]*\(/
+            return ((ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ ||
+                     ptn_path ~ /ext\/dom\/tests\/bug79852[.]phpt$/) &&
+                    line ~ /(^|[^[:alnum:]_$\\])iterator_count[[:space:]]*\(/) ||
+                (ptn_path ~ /ext\/spl\/tests\/spl_classes[.]phpt$/ &&
+                    line ~ /(^|[^[:alnum:]_$\\])spl_classes[[:space:]]*\(/)
         }
         function ptn_supported_spl_temp_file_object_surface_line(line) {
             return (ptn_path ~ /ext\/spl\/tests\/SplTempFileObject_constructor_memory_lt1_variation[.]phpt$/ ||
@@ -1789,7 +1793,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])filesystemiterator([^[:alnum:]_]|$)/
         }
         function ptn_supported_directory_iterator_surface_line(line) {
-            return ptn_path ~ /ext\/spl\/tests\/dit_004[.]phpt$/ &&
+            return (ptn_path ~ /ext\/spl\/tests\/dit_004[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/DirectoryIterator_empty_constructor[.]phpt$/) &&
                 line ~ /(^|[^[:alnum:]_$\\])directoryiterator([^[:alnum:]_]|$)/
         }
         function ptn_supported_spl_autoload_register_validation_row() {
@@ -2342,7 +2347,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
         }
         function ptn_supported_magic_lifecycle_metadata_row() {
-            return ptn_path ~ /Zend\/tests\/magic_methods\/magic_methods_(019|serialize|sleep|unserialize|wakeup)[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/magic_methods\/magic_methods_(019|serialize|sleep|unserialize|wakeup)[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/gh16588[.]phpt$/
         }
         function ptn_supported_date_timelib_relative_row() {
             return ptn_path ~ /ext\/date\/tests\/(bug20382-1|date_modify-2|gh9700|bug49585|bug70277|bug45543|bug54597|bug29150|bug62852_var2|bug33415-2|bug75851|bug41964)[.]phpt$/

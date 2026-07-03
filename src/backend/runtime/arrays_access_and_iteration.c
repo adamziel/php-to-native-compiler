@@ -12045,28 +12045,6 @@ static PTN_UNUSED int ptn_generator_try_throw_catch(
     return 0;
 }
 
-static PTN_UNUSED int ptn_generator_install_active_throw(
-    PtnRuntime *runtime,
-    PtnValue thrown,
-    const char *path,
-    size_t line
-) {
-    if (runtime == NULL || runtime->exceptions == NULL) {
-        ptn_value_destroy(&thrown);
-        return 0;
-    }
-
-    PtnTryFrame throw_frame;
-    ptn_try_frame_push(runtime, &throw_frame);
-    if (setjmp(throw_frame.jump) == 0) {
-        (void)ptn_throw_value(runtime, thrown, path, line);
-        ptn_try_frame_pop(runtime, &throw_frame);
-        return runtime->exceptions->active_exception != NULL;
-    }
-    ptn_try_frame_pop(runtime, &throw_frame);
-    return runtime->exceptions->active_exception != NULL;
-}
-
 static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -12126,34 +12104,6 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
     if (ptn_generator_try_throw_catch(runtime, receiver, generator, thrown, line, &caught_result)) {
         ptn_value_destroy(&thrown);
         return caught_result;
-    }
-    if (ptn_generator_install_active_throw(
-            runtime,
-            ptn_value_clone_deref(thrown),
-            runtime != NULL ? runtime->source_path : NULL,
-            line
-        )) {
-        PtnException *throw_exception =
-            runtime != NULL && runtime->exceptions != NULL
-                ? runtime->exceptions->active_exception
-                : NULL;
-        ptn_generator_close_for_throw(runtime, generator);
-        if (
-            runtime != NULL &&
-            runtime->exceptions != NULL &&
-            runtime->exceptions->active_exception != NULL &&
-            runtime->exceptions->active_exception != throw_exception
-        ) {
-            ptn_generator_rewrite_throw_unwind_exception_trace(
-                runtime,
-                generator,
-                runtime->exceptions->active_exception,
-                line
-            );
-        }
-        ptn_value_destroy(&thrown);
-        ptn_rethrow_exception(runtime);
-        return ptn_null();
     }
     ptn_generator_close_for_throw(runtime, generator);
     return ptn_throw_value(
@@ -14848,6 +14798,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_method_exists("NoRewindIterator", method_name)) {
         return 1;
     }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveIteratorIterator") &&
+        ptn_internal_class_method_exists("RecursiveIteratorIterator", method_name)) {
+        return 1;
+    }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") &&
         ptn_internal_class_method_exists("RecursiveArrayIterator", method_name)) {
         return 1;
@@ -14875,16 +14829,17 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         runtime->declared_method_exists(object->class_name, method_name);
 }
 
+static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+
 static PTN_UNUSED int ptn_object_declares_iterator_method(
     PtnRuntime *runtime,
     PtnObject *object,
     const char *method_name
 ) {
-    return runtime != NULL &&
-        runtime->declared_method_exists != NULL &&
-        object != NULL &&
+    (void)runtime;
+    return object != NULL &&
         object->class_name != NULL &&
-        runtime->declared_method_exists(object->class_name, method_name);
+        ptn_declared_class_method_exists(object->class_name, method_name);
 }
 
 static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
@@ -14993,6 +14948,15 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
     return iterator;
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_recursive_iterator_iterator_foreach_rewind(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    int repeat_current_once,
+    size_t line
+);
+#endif
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
     PtnRuntime *runtime,
     PtnValue iterator_value,
@@ -15023,6 +14987,22 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
         PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
         ptn_value_destroy(&rewind);
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (
+        iterator.iterator_object.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(
+            iterator.iterator_object.as.object->class_name,
+            "RecursiveIteratorIterator"
+        )
+        ) {
+        (void)ptn_internal_recursive_iterator_iterator_foreach_rewind(
+            runtime,
+            iterator.iterator_object,
+            ptn_object_declares_iterator_method(runtime, iterator.iterator_object.as.object, "rewind"),
+            line
+        );
+    }
+#endif
     ptn_protocol_iterator_refresh_valid(&iterator);
     if (iterator_frame_active) {
         ptn_try_frame_pop(runtime, &iterator_frame);

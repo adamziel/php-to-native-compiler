@@ -151858,6 +151858,14 @@ static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, c
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static PtnValue ptn_internal_spl_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
 static PtnValue ptn_internal_assert_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     ptn_emit_deprecation(&runtime->diagnostics, "Function assert_options() is deprecated since 8.3", line);
     int64_t option = ptn_value_to_integer(args[0]);
@@ -226406,6 +226414,7 @@ static PtnValue ptn_internal_spl_autoload_extensions(PtnRuntime *runtime, size_t
 static PtnValue ptn_internal_spl_autoload_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_strtotime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -228055,6 +228064,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "spl_autoload_functions", 0, 0, ptn_internal_spl_autoload_functions },
         { "spl_autoload_register", 0, 3, ptn_internal_spl_autoload_register },
         { "spl_autoload_unregister", 1, 1, ptn_internal_spl_autoload_unregister },
+        { "spl_classes", 0, 0, ptn_internal_spl_classes },
         { "spl_object_hash", 1, 1, ptn_internal_spl_object_hash },
         { "spl_object_id", 1, 1, ptn_internal_spl_object_id },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
@@ -248931,8 +248941,14 @@ typedef struct {
     PtnValue inner;
     PtnRecursiveIteratorIteratorFrame frames[65];
     size_t frame_count;
+    PtnObject *owner;
+    char *owner_class_name;
     PtnValue current;
     PtnValue key;
+    uint64_t generation;
+    size_t end_children_frame_count;
+    int suppress_end_children_rewind;
+    int repeat_current_once;
     int valid;
     int mode;
     int initialized;
@@ -249283,6 +249299,7 @@ static void ptn_recursive_iterator_iterator_data_free(void *data) {
     }
     ptn_recursive_iterator_iterator_clear_traversal(iterator_data);
     ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data->owner_class_name);
     free(iterator_data);
 }
 
@@ -249706,7 +249723,17 @@ static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
         ptn_throw_exception(runtime, "Error", "Object is not initialized");
         return NULL;
     }
-    return (PtnRecursiveIteratorIteratorData *)receiver.as.object->native_data;
+    PtnRecursiveIteratorIteratorData *data =
+        (PtnRecursiveIteratorIteratorData *)receiver.as.object->native_data;
+    if (
+        data->owner == NULL ||
+        !ptn_internal_class_name_is_recursive_iterator_iterator(receiver.as.object->class_name)
+    ) {
+        data->owner = receiver.as.object;
+        free(data->owner_class_name);
+        data->owner_class_name = ptn_duplicate_string(receiver.as.object->class_name);
+    }
+    return data;
 }
 
 static PtnCallbackFilterIteratorData *ptn_callback_filter_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -261059,9 +261086,11 @@ static PtnValue ptn_spl_object_storage_serialized_payload(
     ptn_string_buffer_append_format(&buffer, "x:i:%zu;", count);
     for (size_t i = 0; i < count; i++) {
         PtnValue object = ptn_spl_object_storage_object_at(data, i);
+        PtnValue info = ptn_spl_object_storage_info_at(data, i);
         PtnValue object_serialized = ptn_internal_serialize(runtime, 1, &object, line);
         ptn_value_destroy(&object);
         if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&info);
             ptn_value_destroy(&object_serialized);
             free(buffer.data);
             return ptn_null();
@@ -261072,7 +261101,6 @@ static PtnValue ptn_spl_object_storage_serialized_payload(
         ptn_string_operand_free(object_payload);
         ptn_value_destroy(&object_serialized);
 
-        PtnValue info = ptn_spl_object_storage_info_at(data, i);
         PtnValue info_serialized = ptn_internal_serialize(runtime, 1, &info, line);
         ptn_value_destroy(&info);
         if (runtime->exceptions->active_exception != NULL) {
@@ -263609,6 +263637,22 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     char *path = ptn_spl_file_path_arg(runtime, ctor_name, 1, args[0], line);
     if (runtime->exceptions->active_exception != NULL || path == NULL) {
         free(path);
+        return ptn_null();
+    }
+    if (path[0] == '\0') {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($directory) must not be empty",
+            ctor_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        free(path);
+        ptn_throw_exception(runtime, "ValueError", message);
         return ptn_null();
     }
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
@@ -266149,6 +266193,47 @@ static void ptn_recursive_iterator_iterator_advance_parent_after_child(
     ptn_value_destroy(&next);
 }
 
+static int ptn_recursive_iterator_iterator_call_owner_hook(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    const char *method_name,
+    size_t line
+) {
+    const char *hook_class_name = data != NULL && data->owner_class_name != NULL
+        ? data->owner_class_name
+        : (data != NULL && data->owner != NULL ? data->owner->class_name : NULL);
+    if (
+        runtime == NULL ||
+        runtime->exceptions->active_exception != NULL ||
+        runtime->method_dispatch == NULL ||
+        data == NULL ||
+        data->owner == NULL ||
+        hook_class_name == NULL ||
+        !ptn_declared_class_method_exists(hook_class_name, method_name)
+    ) {
+        return 1;
+    }
+    char *original_class_name = data->owner->class_name;
+    size_t previous_end_children_frame_count = data->end_children_frame_count;
+    data->end_children_frame_count = data->frame_count;
+    if (!ptn_ascii_case_equal(original_class_name, hook_class_name)) {
+        data->owner->class_name = (char *)hook_class_name;
+    }
+    PtnValue receiver = ptn_value_borrow(ptn_object(data->owner));
+    PtnValue result = runtime->method_dispatch(
+        runtime,
+        receiver,
+        method_name,
+        0,
+        NULL,
+        line
+    );
+    data->owner->class_name = original_class_name;
+    data->end_children_frame_count = previous_end_children_frame_count;
+    ptn_value_destroy(&result);
+    return runtime->exceptions->active_exception == NULL;
+}
+
 static void ptn_recursive_iterator_iterator_advance_to_next(
     PtnRuntime *runtime,
     PtnRecursiveIteratorIteratorData *data,
@@ -266194,6 +266279,46 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
         int is_valid = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
         ptn_value_destroy(&valid);
         if (!is_valid || runtime->exceptions->active_exception != NULL) {
+            if (data->frame_count > 1) {
+                size_t exhausted_frame_count = data->frame_count;
+                uint64_t generation = data->generation;
+                if (!ptn_recursive_iterator_iterator_call_owner_hook(
+                    runtime,
+                    data,
+                    "endChildren",
+                    line
+                )) {
+                    return;
+                }
+                if (generation != data->generation) {
+                    for (size_t hook_frame_count = exhausted_frame_count - 1;
+                         hook_frame_count > 0;
+                         hook_frame_count--) {
+                        size_t resumed_frame_count = data->frame_count;
+                        uint64_t ancestor_generation = data->generation;
+                        data->frame_count = hook_frame_count;
+                        data->suppress_end_children_rewind++;
+                        int hook_ok = ptn_recursive_iterator_iterator_call_owner_hook(
+                            runtime,
+                            data,
+                            "endChildren",
+                            line
+                        );
+                        data->suppress_end_children_rewind--;
+                        data->frame_count = resumed_frame_count;
+                        if (!hook_ok) {
+                            return;
+                        }
+                        if (ancestor_generation == data->generation) {
+                            break;
+                        }
+                    }
+                    if (data->valid) {
+                        return;
+                    }
+                    continue;
+                }
+            }
             data->frame_count--;
             ptn_recursive_iterator_iterator_clear_frame(frame);
             ptn_recursive_iterator_iterator_advance_parent_after_child(runtime, data, line);
@@ -266317,8 +266442,14 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     }
     data->inner = inner;
     data->frame_count = 0;
+    data->owner = NULL;
+    data->owner_class_name = NULL;
     data->current = ptn_null();
     data->key = ptn_null();
+    data->generation = 0;
+    data->end_children_frame_count = 0;
+    data->suppress_end_children_rewind = 0;
+    data->repeat_current_once = 0;
     data->valid = 0;
     data->mode = mode;
     data->initialized = 0;
@@ -266328,6 +266459,8 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     PtnValue object = ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_recursive_iterator_iterator_data_free;
+    data->owner = object.as.object;
+    data->owner_class_name = ptn_duplicate_string("RecursiveIteratorIterator");
     return object;
 }
 
@@ -270415,12 +270548,67 @@ static void ptn_recursive_iterator_iterator_rewind_data(
     PtnRecursiveIteratorIteratorData *data,
     size_t line
 ) {
+    data->generation++;
+    if (data->suppress_end_children_rewind && data->end_children_frame_count > 0) {
+        data->initialized = 1;
+        return;
+    }
+    if (data->end_children_frame_count > 1 &&
+        data->end_children_frame_count <= data->frame_count) {
+        size_t target_frame_count = data->end_children_frame_count - 1;
+        ptn_recursive_iterator_iterator_clear_current(data);
+        while (data->frame_count > target_frame_count) {
+            data->frame_count--;
+            ptn_recursive_iterator_iterator_clear_frame(&data->frames[data->frame_count]);
+        }
+        if (data->frame_count > 0) {
+            PtnRecursiveIteratorIteratorFrame *frame =
+                &data->frames[data->frame_count - 1];
+            if (frame->has_post) {
+                ptn_value_destroy(&frame->post_value);
+                ptn_value_destroy(&frame->post_key);
+                frame->post_value = ptn_null();
+                frame->post_key = ptn_null();
+                frame->has_post = 0;
+            }
+            frame->pending_descend = 0;
+            frame->pending_advance = 0;
+            PtnValue rewind =
+                ptn_iterator_inner_call_no_args(runtime, frame->iterator, "rewind", line);
+            ptn_value_destroy(&rewind);
+            if (runtime->exceptions->active_exception != NULL) {
+                return;
+            }
+        }
+        data->initialized = 1;
+        ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+        return;
+    }
     ptn_recursive_iterator_iterator_clear_traversal(data);
     data->initialized = 1;
     if (!ptn_recursive_iterator_iterator_push_frame(runtime, data, data->inner, line)) {
         return;
     }
     ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+}
+
+static PTN_UNUSED int ptn_internal_recursive_iterator_iterator_foreach_rewind(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    int repeat_current_once,
+    size_t line
+) {
+    PtnRecursiveIteratorIteratorData *data =
+        ptn_recursive_iterator_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return 0;
+    }
+    int repeat_after_rewind = repeat_current_once && !data->initialized;
+    ptn_recursive_iterator_iterator_rewind_data(runtime, data, line);
+    if (repeat_after_rewind && data->valid) {
+        data->repeat_current_once = 1;
+    }
+    return runtime->exceptions->active_exception == NULL;
 }
 
 static void ptn_recursive_iterator_iterator_ensure_initialized(
@@ -270610,7 +270798,11 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
         if (runtime->exceptions->active_exception == NULL) {
             ptn_recursive_iterator_iterator_ensure_initialized(runtime, data, line);
             if (runtime->exceptions->active_exception == NULL) {
-                ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+                if (data->repeat_current_once) {
+                    data->repeat_current_once = 0;
+                } else {
+                    ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+                }
             }
         }
         return ptn_null();
