@@ -5658,6 +5658,75 @@ class A {
 }
 
 #[test]
+fn compile_dynamic_require_data_url_parse_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-require-data-url-parse-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("require-data-url-parse-errors.php");
+    let output = root.join("require-data-url-parse-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test_parse_error($code) {
+    try {
+        require 'data://text/plain;base64,' . base64_encode($code);
+    } catch (ParseError $e) {
+        echo $e->getMessage(), " on line ", $e->getLine(), "\n";
+    }
+}
+
+test_parse_error(<<<'EOC'
+<?php
+{ { { { { }
+EOC
+);
+
+test_parse_error(<<<'EOC'
+<?php
+/** doc comment */
+function f() {
+EOC
+);
+
+test_parse_error(<<<'EOC'
+<?php
+empty
+EOC
+);
+
+test_parse_error('<?php
+var_dump(078);');
+
+test_parse_error('<?php
+var_dump("\u{xyz}");');
+test_parse_error('<?php
+var_dump("\u{ffffff}");');
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unclosed '{' on line 2\n\
+Unclosed '{' on line 3\n\
+syntax error, unexpected end of file, expecting \"(\" on line 2\n\
+Invalid numeric literal on line 2\n\
+Invalid UTF-8 codepoint escape sequence on line 2\n\
+Invalid UTF-8 codepoint escape sequence: Codepoint too large on line 2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_relative_dir_dynamic_include_uses_existing_cwd_path_to_native_binary() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
