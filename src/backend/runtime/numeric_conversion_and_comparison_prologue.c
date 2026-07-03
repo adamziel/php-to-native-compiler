@@ -258,6 +258,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->realpath_cache = NULL;
+    runtime->realpath_cache_len = 0;
+    runtime->realpath_cache_capacity = 0;
     runtime->autoload_callbacks = NULL;
     runtime->autoload_callback_scope_class_names = NULL;
     runtime->autoload_callback_called_class_names = NULL;
@@ -1083,6 +1086,14 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->included_files = NULL;
         runtime->included_files_len = 0;
         runtime->included_files_capacity = 0;
+        for (size_t i = 0; i < runtime->realpath_cache_len; i++) {
+            free(runtime->realpath_cache[i].path);
+            free(runtime->realpath_cache[i].resolved_path);
+        }
+        free(runtime->realpath_cache);
+        runtime->realpath_cache = NULL;
+        runtime->realpath_cache_len = 0;
+        runtime->realpath_cache_capacity = 0;
         for (size_t i = 0; i < runtime->autoload_callbacks_len; i++) {
             ptn_value_destroy(&runtime->autoload_callbacks[i]);
             free(runtime->autoload_callback_scope_class_names[i]);

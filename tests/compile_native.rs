@@ -35622,6 +35622,13 @@ try {
     echo $e->getMessage(), "\n";
 }
 
+echo "before sort\n";
+$sort = popen("sort", "w");
+fwrite($sort, "zeta\n");
+fwrite($sort, "alpha\n");
+pclose($sort);
+echo "after sort\n";
+
 $plain = __DIR__ . "/gzopen-plain.txt";
 file_put_contents($plain, "Here is some plain\ntext");
 $gz = gzopen($plain, "r");
@@ -35656,6 +35663,10 @@ fclose($server);
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "popen(): Argument #2 ($mode) must be one of \"r\", \"rb\", \"w\", or \"wb\"\n\
+before sort\n\
+alpha\n\
+zeta\n\
+after sort\n\
 bool(true)\n\
 Here is some plain\n\
 text\n\
@@ -35668,6 +35679,7 @@ bool(false)\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_popen"));
+    assert!(c_source.contains("ptn_flush_inherited_process_stdio"));
     assert!(c_source.contains("ptn_internal_fsockopen"));
     assert!(c_source.contains("ptn_internal_stream_set_timeout"));
     assert!(c_source.contains("ptn_try_open_plain_gz_read_stream"));
@@ -55221,7 +55233,23 @@ var_dump(function_exists(\"realpath_cache_size\"), function_exists(\"REALPATH_CA
 var_dump(realpath_cache_size() > 0);\n\
 $cache = realpath_cache_get();\n\
 var_dump(isset($cache[__DIR__]));\n\
-var_dump($cache[__DIR__][\"is_dir\"], $cache[__DIR__][\"realpath\"] === __DIR__);\n",
+var_dump($cache[__DIR__][\"is_dir\"], $cache[__DIR__][\"realpath\"] === __DIR__);\n\
+$dir = __DIR__ . \"/rp-dir\";\n\
+$link = __DIR__ . \"/rp-link\";\n\
+@unlink($link);\n\
+@rmdir($dir);\n\
+mkdir($dir);\n\
+symlink($dir, $link);\n\
+var_dump(realpath($link) === $dir);\n\
+unlink($link);\n\
+var_dump(realpath($link) === $dir);\n\
+clearstatcache(false, $link);\n\
+var_dump(realpath($link) === $dir);\n\
+clearstatcache(true, __DIR__ . \"/missing-link\");\n\
+var_dump(realpath($link) === $dir);\n\
+clearstatcache(true, $link);\n\
+var_dump(realpath($link));\n\
+rmdir($dir);\n",
     )
     .unwrap();
 
@@ -55236,7 +55264,13 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
-bool(true)\n"
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -1367,7 +1367,25 @@ ptn_phpt_has_external_service_harness() {
 ptn_phpt_has_process_boundary() {
     local path=$1
 
-    awk '
+    case "$path" in
+        */ext/standard/tests/file/*|*/ext/standard/tests/streams/*|*/ext/standard/tests/general_functions/*)
+            awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "FILE" || section == "CLEAN" || section == "SKIPIF"
+            next
+        }
+        active && /(^|[^[:alnum:]_\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice)[[:space:]]*\(/ {
+            found = 1
+            exit
+        }
+        END { exit found ? 0 : 1 }
+    ' "$path"
+            ;;
+        *)
+            awk '
         /^--[A-Z0-9_]+--[[:space:]]*$/ {
             section = $0
             sub(/^--/, "", section)
@@ -1381,6 +1399,8 @@ ptn_phpt_has_process_boundary() {
         }
         END { exit found ? 0 : 1 }
     ' "$path"
+            ;;
+    esac
 }
 
 ptn_phpt_supported_cli_self_probe() {
