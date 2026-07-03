@@ -2327,6 +2327,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnum_(construct|getBackingType|getCase|getCases|hasCase|isBacked|toString(_(backed_int|backed_string|unbacked))?)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumUnitCase_(construct|getDocComment|getEnum|getValue)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumBackedCase_getBackingValue[.]phpt$/ ||
+                ptn_path ~ /ext\/soap\/tests\/gh15711[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
         }
         function ptn_supported_magic_lifecycle_metadata_row() {

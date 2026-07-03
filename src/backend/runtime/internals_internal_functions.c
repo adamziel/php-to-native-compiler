@@ -194866,7 +194866,14 @@ static int ptn_soap_build_rpc_encoded_request(
         "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\"",
         request_namespace
     );
-    if (has_array_part) {
+    if (has_array_part && custom_namespace_first) {
+        ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (part_count != 0) {
+            ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
+    } else if (has_array_part) {
         ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (part_count != 0) {
@@ -202025,6 +202032,9 @@ static int ptn_soap_client_record_non_wsdl_request(
         ptn_string_buffer_append(&buffer, "\"");
     }
     if (!request_has_soap_param && request_has_struct_array) {
+        if (request_needs_ns2 && !request_has_apache_map) {
+            ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
+        }
         ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         if (request_has_apache_map) {
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
