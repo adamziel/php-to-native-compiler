@@ -12045,6 +12045,28 @@ static PTN_UNUSED int ptn_generator_try_throw_catch(
     return 0;
 }
 
+static PTN_UNUSED int ptn_generator_install_active_throw(
+    PtnRuntime *runtime,
+    PtnValue thrown,
+    const char *path,
+    size_t line
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        ptn_value_destroy(&thrown);
+        return 0;
+    }
+
+    PtnTryFrame throw_frame;
+    ptn_try_frame_push(runtime, &throw_frame);
+    if (setjmp(throw_frame.jump) == 0) {
+        (void)ptn_throw_value(runtime, thrown, path, line);
+        ptn_try_frame_pop(runtime, &throw_frame);
+        return runtime->exceptions->active_exception != NULL;
+    }
+    ptn_try_frame_pop(runtime, &throw_frame);
+    return runtime->exceptions->active_exception != NULL;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -12104,6 +12126,34 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
     if (ptn_generator_try_throw_catch(runtime, receiver, generator, thrown, line, &caught_result)) {
         ptn_value_destroy(&thrown);
         return caught_result;
+    }
+    if (ptn_generator_install_active_throw(
+            runtime,
+            ptn_value_clone_deref(thrown),
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        )) {
+        PtnException *throw_exception =
+            runtime != NULL && runtime->exceptions != NULL
+                ? runtime->exceptions->active_exception
+                : NULL;
+        ptn_generator_close_for_throw(runtime, generator);
+        if (
+            runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL &&
+            runtime->exceptions->active_exception != throw_exception
+        ) {
+            ptn_generator_rewrite_throw_unwind_exception_trace(
+                runtime,
+                generator,
+                runtime->exceptions->active_exception,
+                line
+            );
+        }
+        ptn_value_destroy(&thrown);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
     }
     ptn_generator_close_for_throw(runtime, generator);
     return ptn_throw_value(

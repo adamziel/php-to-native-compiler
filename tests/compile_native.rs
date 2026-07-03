@@ -26476,6 +26476,51 @@ try {
 }
 
 #[test]
+fn compile_generator_throw_chains_yield_from_value_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-yield-from-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-yield-from-destructor.php");
+    let output = root.join("generator-throw-yield-from-destructor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield from [1, 2, new class {
+        function __destruct() {
+            throw new Exception("dtor");
+        }
+    }];
+}
+
+gen()->throw(new Exception("outer"));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let outer = stdout
+        .find("Fatal error: Uncaught Exception: outer")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let dtor = stdout
+        .find("Next Exception: dtor")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(outer < dtor, "{stdout}");
+    assert!(stdout.contains("class@anonymous->__destruct()"), "{stdout}");
+    assert!(
+        stdout.contains("Generator->throw(Object(Exception))"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_rewrite_throw_unwind_exception_trace"));
+}
+
+#[test]
 fn compile_generator_throw_caught_continues_to_next_yield_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-caught-continues");
     fs::create_dir_all(&root).unwrap();
