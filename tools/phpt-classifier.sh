@@ -1497,6 +1497,7 @@ ptn_phpt_supported_process_boundary_row() {
     local rel=$1
 
     [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
 }
 

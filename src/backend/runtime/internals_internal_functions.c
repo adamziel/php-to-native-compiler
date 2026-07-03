@@ -61607,6 +61607,55 @@ static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const P
         );
         return ptn_null();
     }
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
+    if (user_stream != NULL) {
+        if (user_stream->runtime == NULL ||
+            user_stream->runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_truncate")) {
+            ptn_emit_warning(&runtime->diagnostics, "ftruncate(): Can't truncate this stream!", line);
+            return ptn_bool(0);
+        }
+
+        PtnValue truncate_arg = ptn_int(size);
+        PtnValue truncate_result = user_stream->runtime->method_dispatch(
+            user_stream->runtime,
+            user_stream->wrapper_object,
+            "stream_truncate",
+            1,
+            &truncate_arg,
+            line
+        );
+        ptn_value_destroy(&truncate_arg);
+        if (user_stream->runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&truncate_result);
+            return ptn_null();
+        }
+        PtnValue resolved = ptn_value_deref(truncate_result);
+        if (resolved.type != PTN_BOOL) {
+            PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
+            const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
+                ? wrapper_object.as.object->class_name
+                : "user-space";
+            char message[224];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ftruncate(): %s::stream_truncate value must be of type bool, %s given",
+                class_name == NULL ? "user-space" : class_name,
+                ptn_offset_container_type_name(resolved)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_value_destroy(&truncate_result);
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            ptn_value_destroy(&truncate_result);
+            return ptn_bool(0);
+        }
+        int ok = resolved.as.boolean;
+        ptn_value_destroy(&truncate_result);
+        return ptn_bool(ok);
+    }
     if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
         ptn_emit_warning(&runtime->diagnostics, "ftruncate(): Can't truncate this stream!", line);
         return ptn_bool(0);
@@ -68269,6 +68318,14 @@ static PtnValue ptn_internal_realpath(PtnRuntime *runtime, size_t argc, const Pt
     char *resolved = realpath(path, NULL);
 #endif
     if (resolved == NULL) {
+        if (strcmp(path, ".") == 0 || strcmp(path, "./") == 0) {
+            char *cwd = ptn_platform_getcwd_alloc();
+            if (cwd == NULL) {
+                free(path);
+                return ptn_string(".");
+            }
+            free(cwd);
+        }
         free(path);
         return ptn_bool(0);
     }
@@ -68535,6 +68592,55 @@ static PtnValue ptn_internal_fnmatch(PtnRuntime *runtime, size_t argc, const Ptn
     int64_t flags = argc >= 3
         ? ptn_internal_expect_integer_arg(runtime, "fnmatch", 3, "flags", args[2], line)
         : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(filename);
+        return ptn_null();
+    }
+    if (memchr(pattern.data, '\0', pattern.len) != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(filename);
+        ptn_throw_exception(runtime, "ValueError", "fnmatch(): Argument #1 ($pattern) must not contain any null bytes");
+        return ptn_null();
+    }
+    if (memchr(filename.data, '\0', filename.len) != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(filename);
+        ptn_throw_exception(runtime, "ValueError", "fnmatch(): Argument #2 ($filename) must not contain any null bytes");
+        return ptn_null();
+    }
+    if (filename.len >= PTN_PHP_MAXPATHLEN) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(filename);
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fnmatch(): Filename exceeds the maximum allowed length of %d characters",
+            PTN_PHP_MAXPATHLEN
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
+    if (pattern.len >= PTN_PHP_MAXPATHLEN) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(filename);
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fnmatch(): Pattern exceeds the maximum allowed length of %d characters",
+            PTN_PHP_MAXPATHLEN
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
     char *pattern_c = ptn_path_operand_to_c_string(pattern);
     char *filename_c = ptn_path_operand_to_c_string(filename);
     ptn_string_operand_free(pattern);
@@ -147119,7 +147225,7 @@ static int ptn_process_parse_descriptor_spec(
             }
         } else if (spec.type == PTN_RESOURCE) {
             if (!ptn_process_open_stream_descriptor(descriptor, spec.as.resource)) {
-                ptn_emit_warning(&runtime->diagnostics, "proc_open(): supplied stream descriptor is not valid", line);
+                ptn_throw_exception(runtime, "TypeError", "proc_open(): supplied resource is not a valid stream resource");
                 return 0;
             }
         } else {
