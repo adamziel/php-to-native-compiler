@@ -95795,27 +95795,27 @@ array_walk($items, \"needs_type\");
     assert_eq!(execution.status.code(), Some(255));
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("object(TypeHinted)#"), "{stdout}");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
     let message = format!(
         "Fatal error: Uncaught TypeError: needs_type(): Argument #1 ($value) must be of type TypeHinted, int given in {}:3",
         input.display()
     );
-    assert!(stderr.contains(&message), "{stderr}");
+    assert!(stdout.contains(&message), "{stdout}");
     assert!(
-        stderr.contains("\n#0 [internal function]: needs_type(1, 1)\n"),
-        "{stderr}"
+        stdout.contains("\n#0 [internal function]: needs_type(1, 1)\n"),
+        "{stdout}"
     );
     assert!(
-        stderr.contains(&format!(
+        stdout.contains(&format!(
             "\n#1 {}(7): array_walk(Array, 'needs_type')\n",
             input.display()
         )),
-        "{stderr}"
+        "{stdout}"
     );
     assert!(
-        !stderr.contains("called in"),
-        "internal callback type errors must not add a call-site suffix: {stderr}"
+        !stdout.contains("called in"),
+        "internal callback type errors must not add a call-site suffix: {stdout}"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("include_definition && include_call_site"));
