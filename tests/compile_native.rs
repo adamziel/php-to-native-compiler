@@ -104138,12 +104138,12 @@ var_dump($a);
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Warning: Array to string conversion in ptn on line 3\n\
+        "\nWarning: Array to string conversion in ptn on line 3\n\
 string(6) \"Arrayx\"\n\
-Warning: Array to string conversion in ptn on line 4\n\
+\nWarning: Array to string conversion in ptn on line 4\n\
 string(6) \"xArray\"\n\
-Warning: Array to string conversion in ptn on line 5\n\
-Warning: Array to string conversion in ptn on line 5\n\
+\nWarning: Array to string conversion in ptn on line 5\n\
+\nWarning: Array to string conversion in ptn on line 5\n\
 string(10) \"ArrayArray\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
