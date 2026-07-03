@@ -139314,6 +139314,19 @@ static void ptn_xml_append_text_span(PtnRuntime *runtime, PtnXmlNode *parent, co
     ptn_xml_append_child(parent, text);
 }
 
+static char *ptn_xml_external_entity_local_path(const char *system_id) {
+    if (system_id == NULL || system_id[0] == '\0') {
+        return NULL;
+    }
+    if (ptn_ascii_case_has_prefix(system_id, "file:///")) {
+        return ptn_duplicate_string(system_id + 7);
+    }
+    if (ptn_ascii_case_has_prefix(system_id, "file://")) {
+        return NULL;
+    }
+    return ptn_duplicate_string(system_id);
+}
+
 static void ptn_xml_append_parsed_text_span(
     PtnRuntime *runtime,
     PtnXmlNode *parent,
@@ -139382,19 +139395,36 @@ static void ptn_xml_append_parsed_text_span(
             ptn_xml_document_substitute_entities_enabled(document)) {
             char *system_id = ptn_xml_document_external_entity_system_id(document, entity_name);
             if (system_id != NULL && system_id[0] != '\0') {
-                unsigned char *entity_data = NULL;
-                size_t entity_len = 0;
-                int read_result = ptn_read_file_bytes(system_id, &entity_data, &entity_len);
-                if (read_result > 0) {
-                    ptn_xml_append_text_span(runtime, parent, (const char *)entity_data, entity_len);
-                    free(entity_data);
+                char *entity_path = ptn_xml_external_entity_local_path(system_id);
+                if (entity_path != NULL && !ptn_open_basedir_allows_path(runtime, entity_path)) {
+                    size_t warning_line = ptn_dom_xml_parse_warning_php_line != 0
+                        ? ptn_dom_xml_parse_warning_php_line
+                        : (parent->line_no > 0 ? (size_t)parent->line_no : 0);
+                    ptn_emit_open_basedir_warning(runtime, "DOMDocument::loadXML", entity_path, warning_line);
+                    free(entity_path);
                     free(system_id);
                     free(entity_name);
                     pos = semi + 1;
                     chunk_start = pos;
                     continue;
                 }
-                free(entity_data);
+                if (entity_path != NULL) {
+                    unsigned char *entity_data = NULL;
+                    size_t entity_len = 0;
+                    int read_result = ptn_read_file_bytes_with_normalized_probe(runtime, entity_path, &entity_data, &entity_len);
+                    if (read_result > 0) {
+                        ptn_xml_append_text_span(runtime, parent, (const char *)entity_data, entity_len);
+                        free(entity_data);
+                        free(entity_path);
+                        free(system_id);
+                        free(entity_name);
+                        pos = semi + 1;
+                        chunk_start = pos;
+                        continue;
+                    }
+                    free(entity_data);
+                    free(entity_path);
+                }
             }
             free(system_id);
         }
@@ -155513,6 +155543,18 @@ static PtnValue ptn_dom_write_serialized_file(
         return ptn_null();
     }
     PtnStringOperand data = ptn_value_to_string_operand(serialized);
+    if (!ptn_open_basedir_check_local_path(runtime, function_name, path, line)) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, function_name, path, detail, line);
+        free(path);
+        ptn_string_operand_free(data);
+        ptn_value_destroy(&serialized);
+        return ptn_bool(0);
+    }
     FILE *stream = fopen(path, "wb");
     if (stream == NULL) {
         char detail[192];
