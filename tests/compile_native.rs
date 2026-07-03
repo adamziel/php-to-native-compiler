@@ -22251,6 +22251,43 @@ ob_end_flush();
 }
 
 #[test]
+fn compile_output_add_rewrite_var_rewrites_urls_and_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-output-add-rewrite-var");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-add-rewrite-var.php");
+    let output = root.join("output-add-rewrite-var-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start();\n\
+ini_set('url_rewriter.hosts', 'php.net,www.php.net');\n\
+output_add_rewrite_var('<name>', '<value>');\n\
+output_add_rewrite_var('<name>', '<value>');\n\
+echo '<a href=\"\">empty</a>', \"\\n\";\n\
+echo '<a href=\"//php.net/foo.php\">host</a>', \"\\n\";\n\
+echo '<a href=\"bad://php.net/foo.php\">bad</a>', \"\\n\";\n\
+echo '<form method=\"get\">go</form>', \"\\n\";\n\
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<a href=\"?%3CNAME%3E=%3CVALUE%3E\">empty</a>\n",
+            "<a href=\"//php.net/foo.php?%3CNAME%3E=%3CVALUE%3E\">host</a>\n",
+            "<a href=\"bad://php.net/foo.php\">bad</a>\n",
+            "<form method=\"get\"><input type=\"hidden\" name=\"&lt;NAME&gt;\" value=\"&lt;VALUE&gt;\" />go</form>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_trans_sid_respects_arg_separator_output_to_native_binary() {
     let root = temp_dir("ptn-native-session-trans-sid-arg-separator-output");
     fs::create_dir_all(&root).unwrap();
@@ -81902,6 +81939,34 @@ echo \"unreached\\n\";",
 }
 
 #[test]
+fn compile_array_spread_max_elements_errors_without_huge_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-array-spread-max-elements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-spread-max-elements.php");
+    let output = root.join("array-spread-max-elements-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$array = range(0, 2**20);\n\
+$args = array_fill(0, 2, $array);\n\
+try { array_merge(...$args); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff(...$args); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "The total number of elements must be lower than 1048576\n\
+The total number of elements must be lower than 1048576\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_pad_to_native_binary() {
     let root = temp_dir("ptn-native-array-pad");
     fs::create_dir_all(&root).unwrap();
@@ -83312,8 +83377,8 @@ try { range(\"A\", \"H\", 0.0); } catch (ValueError $e) { echo $e->getMessage(),
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "The supplied range exceeds the maximum array size by 999998951425.0 elements: start=0.0, end=100000000000.0, step=0.1. Max size: 1048576\n",
-            "The supplied range exceeds the maximum array size by 9223372036853727232 elements: start=0, end=9223372036854775807, step=1. Calculated size: 9223372036854775808. Maximum size: 1048576.\n",
+            "The supplied range exceeds the maximum array size by 999998951424.0 elements: start=0.0, end=100000000000.0, step=0.1. Max size: 1048577\n",
+            "The supplied range exceeds the maximum array size by 9223372036853727231 elements: start=0, end=9223372036854775807, step=1. Calculated size: 9223372036854775808. Maximum size: 1048577.\n",
             "array(4) {\n",
             "  [0]=>\n",
             "  float(4.5)\n",
@@ -91186,6 +91251,41 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(0) \"\"\nstring(1) \"1\"\nstring(1) \"0\"\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_ini_get_all_reports_error_append_builtin_default_to_native_binary() {
+    let root = temp_dir("ptn-phpc-ini-get-all-error-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-get-all-error-append.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['error_append_string']['global_value']);\n\
+var_dump($all['error_append_string']['local_value']);\n\
+var_dump($all['error_append_string']['builtin_default_value']);\n\
+ini_set('error_append_string', 'BAR');\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['error_append_string']['global_value']);\n\
+var_dump($all['error_append_string']['local_value']);\n\
+var_dump($all['error_append_string']['builtin_default_value']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("error_append_string=FOO")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"FOO\"\nstring(3) \"FOO\"\nNULL\nstring(3) \"FOO\"\nstring(3) \"BAR\"\nNULL\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

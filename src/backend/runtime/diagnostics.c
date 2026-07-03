@@ -3137,6 +3137,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_has_started = 0;
     runtime->trans_sid_pending_output = NULL;
     runtime->trans_sid_pending_output_len = 0;
+    runtime->output_rewrite_vars = NULL;
+    runtime->output_rewrite_vars_len = 0;
+    runtime->output_rewrite_vars_capacity = 0;
+    runtime->url_rewriter_hosts = NULL;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;
     runtime->output_started_source_path = NULL;
@@ -3277,7 +3281,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_highlight_html = getenv("PTN_HIGHLIGHT_HTML");
     const char *configured_highlight_keyword = getenv("PTN_HIGHLIGHT_KEYWORD");
     const char *configured_highlight_string = getenv("PTN_HIGHLIGHT_STRING");
+    const char *configured_error_append_string = getenv("PTN_ERROR_APPEND_STRING");
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
+    const char *configured_url_rewriter_hosts = getenv("PTN_URL_REWRITER_HOSTS");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_recursion_limit = getenv("PTN_PCRE_RECURSION_LIMIT");
@@ -3358,8 +3364,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->highlight_string = ptn_duplicate_string(
         configured_highlight_string == NULL ? "#DD0000" : configured_highlight_string
     );
+    runtime->error_append_string = ptn_duplicate_string(
+        configured_error_append_string == NULL ? "" : configured_error_append_string
+    );
     runtime->output_handler = ptn_duplicate_string(
         configured_output_handler == NULL ? "" : configured_output_handler
+    );
+    free(runtime->url_rewriter_hosts);
+    runtime->url_rewriter_hosts = ptn_duplicate_string(
+        configured_url_rewriter_hosts == NULL ? "" : configured_url_rewriter_hosts
     );
     runtime->filter_default = ptn_duplicate_string(
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default

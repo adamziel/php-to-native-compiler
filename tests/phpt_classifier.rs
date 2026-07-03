@@ -3426,21 +3426,16 @@ fn phpt_classifier_recategorizes_standard_general_function_ini_runtime_gaps() {
         "ext/standard/tests/general_functions/ini_get_all_builtin_default_value_null.phpt",
     );
     assert!(
-        ini_get_all.starts_with("unsupported-general-function-runtime\t"),
+        ini_get_all.starts_with("runnable\t"),
         "{ini_get_all:?}"
     );
-    assert!(ini_get_all.contains("ini_get_all"), "{ini_get_all:?}");
 
     let output_add_rewrite_var = classify_at_relative_path(
         "--TEST--\nrewrite var\n--INI--\nsession.trans_sid_tags=\"a=href\"\nurl_rewriter.tags=\"a=href\"\n--FILE--\n<?php\noutput_add_rewrite_var('<name>', '<value>');\n--EXPECT--\n",
         "ext/standard/tests/general_functions/output_add_rewrite_var_basic2.phpt",
     );
     assert!(
-        output_add_rewrite_var.starts_with("unsupported-output-rewrite-runtime\t"),
-        "{output_add_rewrite_var:?}"
-    );
-    assert!(
-        output_add_rewrite_var.contains("output URL rewrite"),
+        output_add_rewrite_var.starts_with("runnable\t"),
         "{output_add_rewrite_var:?}"
     );
 
@@ -3449,11 +3444,7 @@ fn phpt_classifier_recategorizes_standard_general_function_ini_runtime_gaps() {
         "ext/standard/tests/general_functions/url_rewriting_basic3.phpt",
     );
     assert!(
-        output_reset_rewrite_vars.starts_with("unsupported-output-rewrite-runtime\t"),
-        "{output_reset_rewrite_vars:?}"
-    );
-    assert!(
-        output_reset_rewrite_vars.contains("output URL rewrite"),
+        output_reset_rewrite_vars.starts_with("runnable\t"),
         "{output_reset_rewrite_vars:?}"
     );
 }
@@ -3853,11 +3844,6 @@ fn phpt_classifier_excludes_huge_array_allocation_rows() {
             "multi-billion element array_fill()",
         ),
         (
-            "spread-expanded max elements",
-            "--TEST--\nspread max elements\n--FILE--\n<?php\n$power = 20;\n$arr = range(0, 2**$power);\narray_diff(...array_fill(0, 2**(32-$power), $arr));\n--EXPECTF--\n",
-            "max-array-size/resource-limit diagnostics",
-        ),
-        (
             "peak memory accounting",
             "--TEST--\npeak memory\n--FILE--\n<?php\nvar_dump(memory_get_peak_usage());\nmemory_reset_peak_usage();\n--EXPECTF--\n",
             "memory manager peak-usage accounting",
@@ -3875,6 +3861,18 @@ fn phpt_classifier_excludes_huge_array_allocation_rows() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_spread_expanded_array_limit_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nspread max elements\n--FILE--\n<?php\n$power = 20;\n$arr = range(0, 2**$power);\narray_diff(...array_fill(0, 2**(32-$power), $arr));\n--EXPECTF--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]
