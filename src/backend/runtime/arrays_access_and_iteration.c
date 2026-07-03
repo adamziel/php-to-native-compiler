@@ -1115,9 +1115,26 @@ static PTN_UNUSED PtnValue ptn_new_object(
         }
     }
     if (ptn_runtime_dynamic_class_exists(runtime, lookup_class_name)) {
-        (void)argc;
-        (void)args;
-        return ptn_object_new_shell_at(runtime, lookup_class_name, line);
+        PtnValue result = ptn_object_new_shell_at(runtime, lookup_class_name, line);
+        const char *constructor_body =
+            ptn_runtime_dynamic_class_constructor_body(runtime, lookup_class_name);
+        if (constructor_body != NULL) {
+            if (argc != 0) {
+                ptn_value_destroy(&result);
+                ptn_throw_exception(runtime, "ArgumentCountError", "Runtime-defined class constructor does not accept arguments");
+                return ptn_null();
+            }
+            (void)args;
+            (void)ptn_runtime_execute_dynamic_class_constructor_body(runtime, constructor_body, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+        } else {
+            (void)argc;
+            (void)args;
+        }
+        return result;
     }
     if (ptn_declared_runtime_user_class_exists(runtime, lookup_class_name)) {
         return ptn_declared_class_new_instance(runtime, lookup_class_name, argc, args, line);

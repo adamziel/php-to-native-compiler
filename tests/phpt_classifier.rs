@@ -2138,8 +2138,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "default autoload callback",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register();\n--EXPECT--\n",
-            "unsupported-autoload-metadata\t",
-            "requires default spl_autoload callback resolution",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "autoload call helper",
@@ -2564,6 +2564,18 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\ntemp file string\n--FILE--\n<?php\necho new SplTempFileObject();\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/SplFileObject/bug77024.phpt",
+            "--TEST--\ntemp file cached line\n--FILE--\n<?php\n$file = new SplTempFileObject();\n$file->fwrite(\"line 1\\nline 2\\n\");\n$file->seek(0);\nvar_dump($file->current());\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFileObject/gh8561.phpt",
+            "--TEST--\ntemp file seek current\n--FILE--\n<?php\n$file = new SplTempFileObject();\n$file->fwrite(\"line 1\\nline 2\\n\");\n$file->seek(1);\n$file->seek(0);\necho $file->current();\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFileObject/gh8273.phpt",
+            "--TEST--\ntemp file iterator lines\n--FILE--\n<?php\n$file = new SplTempFileObject();\n$file->fwrite(\"line 1\\nline 2\\nline 3\\n\");\nforeach ($file as $line) { echo $line; }\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/bug47534.phpt",
             "--TEST--\nrecursive directory current mode\n--FILE--\n<?php\nnew RecursiveDirectoryIterator(__DIR__, FileSystemIterator::CURRENT_AS_PATHNAME);\n--EXPECT--\n",
         ),
@@ -2587,12 +2599,42 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt",
             "--TEST--\nautoload validation\n--FILE--\n<?php\nspl_autoload_register('spl_autoload_call');\n--EXPECT--\n",
         ),
+        (
+            "ext/spl/tests/autoloading/bug52339.phpt",
+            "--TEST--\ndefault autoload callback\n--FILE--\n<?php\nspl_autoload_register();\nnew Missing;\n--EXPECTF--\n",
+        ),
+        (
+            "ext/spl/tests/autoloading/spl_autoload_002.phpt",
+            "--TEST--\nspl autoload helper\n--FILE--\n<?php\nvar_dump(spl_autoload_extensions());\nspl_autoload('Missing');\n--EXPECTF--\n",
+        ),
     ];
 
     for (path, phpt) in cases {
         assert_eq!(
             classify_at_relative_path(phpt, path).trim_end(),
             "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_allows_spl_autoload_eval_residual_rows_by_path() {
+    let cases = [
+        (
+            "ext/spl/tests/autoloading/spl_autoload_bug48541.phpt",
+            "--TEST--\nautoload eval constructor\n--FILE--\n<?php\nspl_autoload_register(function ($class) {\n    eval('class ' . $class . ' { function __construct() { echo \"foo\\\\n\"; } }');\n});\nnew TestClass;\n--EXPECT--\nfoo\n",
+        ),
+        (
+            "ext/spl/tests/autoloading/bug74372.phpt",
+            "--TEST--\neval parse error\n--FILE--\n<?php\neval('ha ha ha');\n--EXPECTF--\nParse error: syntax error, unexpected identifier \"ha\" in %s on line %d\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
             "{path}"
         );
     }

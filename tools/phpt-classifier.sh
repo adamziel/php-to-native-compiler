@@ -1763,7 +1763,10 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_spl_temp_file_object_surface_line(line) {
             return (ptn_path ~ /ext\/spl\/tests\/SplTempFileObject_constructor_memory_lt1_variation[.]phpt$/ ||
-                    ptn_path ~ /ext\/spl\/tests\/gh9883-extra[.]phpt$/) &&
+                    ptn_path ~ /ext\/spl\/tests\/gh9883-extra[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/SplFileObject\/bug77024[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/SplFileObject\/gh8561[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/SplFileObject\/gh8273[.]phpt$/) &&
                 line ~ /(^|[^[:alnum:]_$\\])spltempfileobject([^[:alnum:]_]|$)/
         }
         function ptn_supported_recursive_directory_iterator_surface_line(line) {
@@ -1776,6 +1779,17 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_spl_autoload_register_validation_row() {
             return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_throw_with_spl_autoloader_call_as_autoloader[.]phpt$/
+        }
+        function ptn_supported_spl_autoload_helper_row() {
+            return ptn_path ~ /ext\/spl\/tests\/autoloading\/bug52339[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/autoloading\/bug38325[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/autoloading\/bug73896[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_012[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_002[.]phpt$/
+        }
+        function ptn_supported_spl_autoload_helper_function_line(line) {
+            return ptn_supported_spl_autoload_helper_row() &&
+                line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/
         }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
@@ -1813,6 +1827,10 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_eval_static_variable_dynamic_function_row() {
             return ptn_path ~ /Zend\/tests\/static_variables\/static_variable_in_dynamic_function(_2)?[.]phpt$/
+        }
+        function ptn_supported_spl_autoload_eval_row() {
+            return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_bug48541[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/autoloading\/bug74372[.]phpt$/
         }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
@@ -1940,16 +1958,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/ &&
-                !ptn_supported_spl_autoload_register_validation_row()) {
-                print "unsupported-autoload-metadata\trequires default spl_autoload callback resolution, outside PTN modeled autoload registry"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\(/) {
                 saw_spl_autoload_register = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/ &&
+                !ptn_supported_spl_autoload_helper_row()) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit
@@ -1972,7 +1985,8 @@ ptn_phpt_first_unsupported_language_surface() {
                     !ptn_supported_directory_iterator_surface_line(line) &&
                     !ptn_supported_recursive_directory_iterator_surface_line(line)) ||
                 (ptn_has_unmodeled_spl_function(line) &&
-                    !ptn_supported_spl_helper_function_line(line))) {
+                    !ptn_supported_spl_helper_function_line(line) &&
+                    !ptn_supported_spl_autoload_helper_function_line(line))) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1
                 exit
@@ -2082,7 +2096,8 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/ &&
                 !ptn_supported_eval_class_declaration_raw($0) &&
-                !ptn_supported_eval_static_variable_dynamic_function_row()) {
+                !ptn_supported_eval_static_variable_dynamic_function_row() &&
+                !ptn_supported_spl_autoload_eval_row()) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit
@@ -2382,7 +2397,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/ &&
+                !ptn_supported_spl_autoload_helper_row()) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit

@@ -2159,6 +2159,15 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
     const char *class_name,
     const char *parent_name
 );
+static PTN_UNUSED const char *ptn_runtime_dynamic_class_constructor_body(
+    PtnRuntime *runtime,
+    const char *class_name
+);
+static PTN_UNUSED int ptn_runtime_execute_dynamic_class_constructor_body(
+    PtnRuntime *runtime,
+    const char *body,
+    size_t line
+);
 static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
     PtnRuntime *runtime,
     const char *class_name
