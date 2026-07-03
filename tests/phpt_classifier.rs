@@ -2821,6 +2821,48 @@ fn phpt_classifier_keeps_date_create_from_format_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_allows_date_timelib_relative_row_pack() {
+    let plain_date_phpt =
+        "--TEST--\ndate relative row\n--FILE--\n<?php\necho date('c', strtotime('next Monday'));\n--EXPECT--\n";
+    let wakeup_phpt =
+        "--TEST--\ndate unserialize wakeup row\n--FILE--\n<?php\nclass Foo extends DateTime { function __wakeup(): void {} }\n--EXPECT--\n";
+    let rows = [
+        "ext/date/tests/bug20382-1.phpt",
+        "ext/date/tests/date_modify-2.phpt",
+        "ext/date/tests/gh9700.phpt",
+        "ext/date/tests/bug49585.phpt",
+        "ext/date/tests/bug70277.phpt",
+        "ext/date/tests/bug45543.phpt",
+        "ext/date/tests/bug54597.phpt",
+        "ext/date/tests/bug29150.phpt",
+        "ext/date/tests/bug62852_var2.phpt",
+        "ext/date/tests/bug33415-2.phpt",
+        "ext/date/tests/bug75851.phpt",
+        "ext/date/tests/bug41964.phpt",
+    ];
+
+    for path in rows {
+        let phpt = if path.ends_with("bug62852_var2.phpt") {
+            wakeup_phpt
+        } else {
+            plain_date_phpt
+        };
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+
+    let unrelated =
+        classify_at_relative_path(wakeup_phpt, "ext/date/tests/other_datetime_wakeup.phpt");
+    assert!(
+        unrelated.starts_with("unsupported-magic-method-metadata\t"),
+        "{unrelated:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     let cases = [
         (

@@ -30854,6 +30854,54 @@ unserialize('a:2:{i:0;O:8:\"DateTime\":3:{s:4:\"date\";s:26:\"2000-01-01 00:00:0
         unserialize_stdout.contains("unserialize('a:2:{i:0;O:8:\"D...')"),
         "{unserialize_stdout}"
     );
+
+    let wakeup_unserialize_input = root.join("invalid-datetime-wakeup-unserialize.php");
+    let wakeup_unserialize_output = root.join("invalid-datetime-wakeup-unserialize-bin");
+    fs::write(
+        &wakeup_unserialize_input,
+        "<?php\n\
+class Foo extends DateTime {\n\
+    function __wakeup(): void {\n\
+        parent::__wakeup();\n\
+    }\n\
+}\n\
+unserialize('O:3:\"Foo\":3:{s:4:\"date\";s:20:\"10007-06-07 03:51:49\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}');\n",
+    )
+    .unwrap();
+
+    compile_file(
+        &wakeup_unserialize_input,
+        &wakeup_unserialize_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let wakeup_unserialize_execution = Command::new(&wakeup_unserialize_output).output().unwrap();
+    assert!(
+        !wakeup_unserialize_execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&wakeup_unserialize_execution.stdout),
+        String::from_utf8_lossy(&wakeup_unserialize_execution.stderr)
+    );
+    let wakeup_unserialize_stdout = String::from_utf8(wakeup_unserialize_execution.stdout).unwrap();
+    let wakeup_unserialize_stderr = String::from_utf8(wakeup_unserialize_execution.stderr).unwrap();
+    assert_eq!(wakeup_unserialize_stderr, "");
+    assert!(
+        wakeup_unserialize_stdout
+            .contains("Uncaught Error: Invalid serialization data for DateTime object"),
+        "{wakeup_unserialize_stdout}"
+    );
+    assert_eq!(
+        wakeup_unserialize_stdout
+            .matches("DateTime->__unserialize(Array)")
+            .count(),
+        1,
+        "{wakeup_unserialize_stdout}"
+    );
+    assert!(
+        wakeup_unserialize_stdout.contains("unserialize('O:3:\"Foo\":3:{s:...')"),
+        "{wakeup_unserialize_stdout}"
+    );
 }
 
 #[test]
@@ -31539,6 +31587,22 @@ date_default_timezone_set('Asia/Tehran');
 $base = mktime(17, 17, 17, 10, 25, 1977);
 echo date('l Y-m-d H:i:s T I', strtotime('next Tuesday', $base)), "\n";
 
+date_default_timezone_set('Asia/Thimbu');
+$base = mktime(17, 17, 17, 1, 6476, 1970);
+echo date('l Y-m-d H:i:s T I', strtotime('next Thursday', $base)), "\n";
+
+date_default_timezone_set('Africa/Monrovia');
+$base = mktime(17, 17, 17, 1, 730, 1970);
+echo date('l Y-m-d H:i:s T I', strtotime('next Friday', $base)), "\n";
+
+date_default_timezone_set('Asia/Katmandu');
+$base = mktime(17, 17, 17, 1, 5838, 1970);
+echo date('l Y-m-d H:i:s T I', strtotime('next Wednesday', $base)), "\n";
+
+date_default_timezone_set('Pacific/Nauru');
+$base = mktime(17, 17, 17, 2, 3, 1979);
+echo date('l Y-m-d H:i:s T I', strtotime('next Saturday +2 hours', $base)), "\n";
+
 date_default_timezone_set('UTC');
 $base = 1133216119;
 echo date(DateTime::ISO8601, strtotime('+ 1 month', $base)), "\n";
@@ -31577,6 +31641,10 @@ echo date(DateTime::ISO8601, strtotime('+ 1 month', $base)), "\n";
             "2008-01-01T05:00:00-0700\n",
             "Monday 2004-11-01 00:00:00 CET\n",
             "Tuesday 1977-11-01 00:00:00 +04 0\n",
+            "Thursday 1987-10-01 00:30:00 +06 0\n",
+            "Friday 1972-01-07 00:44:30 GMT 0\n",
+            "Wednesday 1986-01-01 00:15:00 +0545 0\n",
+            "Saturday 1979-02-10 02:30:00 +12 0\n",
             "2005-12-28T22:15:19+0000\n",
         )
     );

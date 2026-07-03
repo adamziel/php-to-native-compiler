@@ -131655,6 +131655,23 @@ static int ptn_timezone_system_offset_for_wall_timestamp(
     char *old_copy = old_tz == NULL ? NULL : ptn_duplicate_string(old_tz);
     ptn_set_timezone_env(name);
     time_t local_timestamp = mktime(&local_parts);
+    if (local_timestamp != (time_t)-1) {
+        struct tm *resolved_parts = localtime(&local_timestamp);
+        if (resolved_parts != NULL) {
+            time_t resolved_wall = ptn_datetime_utc_timestamp_for_parts(
+                (int64_t)resolved_parts->tm_year + 1900,
+                resolved_parts->tm_mon + 1,
+                resolved_parts->tm_mday,
+                resolved_parts->tm_hour,
+                resolved_parts->tm_min,
+                resolved_parts->tm_sec
+            );
+            time_t gap = wall_timestamp - resolved_wall;
+            if (gap > 0 && gap <= 7200) {
+                local_timestamp += gap;
+            }
+        }
+    }
     ptn_timezone_restore_env(old_copy);
     if (local_timestamp == (time_t)-1) {
         return 0;
@@ -135064,6 +135081,7 @@ static int ptn_date_interval_parse_relative_spec(const char *spec, PtnDateInterv
     memset(data, 0, sizeof(*data));
     data->from_string = 1;
     data->has_total_days = 0;
+    int consumed = 0;
     if (spec == NULL) {
         return 0;
     }
@@ -135088,10 +135106,23 @@ static int ptn_date_interval_parse_relative_spec(const char *spec, PtnDateInterv
         return 1;
     }
 
+    consumed = 0;
+    if (ptn_date_interval_special_relative_prefix_consumed(spec, &consumed) &&
+        ptn_date_interval_tail_has_non_space(spec, consumed)) {
+        PtnDateIntervalData tail;
+        memset(&tail, 0, sizeof(tail));
+        tail.from_string = 1;
+        if (ptn_date_interval_parse_relative_terms(spec + consumed, &tail)) {
+            *data = tail;
+            data->has_relative_special = 1;
+            return 1;
+        }
+    }
+
     char sign = '\0';
     long long amount = 0;
     char unit[32];
-    int consumed = 0;
+    consumed = 0;
     unit[0] = '\0';
     if (sscanf(spec, " %c%lld %31s %n", &sign, &amount, unit, &consumed) == 3 &&
         (sign == '+' || sign == '-') &&
@@ -136127,6 +136158,41 @@ static int ptn_datetime_apply_relative_special_to_timestamp(
     return 0;
 }
 
+static time_t ptn_datetime_apply_interval_to_timestamp(
+    PtnDateTimeData *datetime,
+    PtnDateIntervalData *interval,
+    int subtract
+);
+
+static int ptn_datetime_apply_relative_special_prefix_to_timestamp(
+    PtnDateTimeData *datetime,
+    PtnDateIntervalData *interval,
+    time_t *timestamp_out
+) {
+    if (datetime == NULL || interval == NULL || interval->date_string == NULL || timestamp_out == NULL) {
+        return 0;
+    }
+    int consumed = 0;
+    if (!ptn_date_interval_special_relative_prefix_consumed(interval->date_string, &consumed) ||
+        !ptn_date_interval_tail_has_non_space(interval->date_string, consumed)) {
+        return 0;
+    }
+    char *special = ptn_duplicate_string_len(interval->date_string, (size_t)consumed);
+    time_t special_timestamp = datetime->timestamp;
+    int ok = ptn_datetime_apply_relative_special_to_timestamp(datetime, special, &special_timestamp);
+    free(special);
+    if (!ok) {
+        return 0;
+    }
+    PtnDateTimeData base = *datetime;
+    base.timestamp = special_timestamp;
+    PtnDateIntervalData tail = *interval;
+    tail.has_relative_special = 0;
+    tail.date_string = NULL;
+    *timestamp_out = ptn_datetime_apply_interval_to_timestamp(&base, &tail, 0);
+    return 1;
+}
+
 static int ptn_datetime_relative_special_resets_time(const char *spec) {
     return spec != NULL &&
         (ptn_ascii_case_equal(spec, "noon") ||
@@ -136144,6 +136210,9 @@ static time_t ptn_datetime_apply_interval_to_timestamp(
     if (!subtract && interval->has_relative_special && interval->date_string != NULL) {
         time_t special_timestamp = datetime->timestamp;
         if (ptn_datetime_apply_relative_special_to_timestamp(datetime, interval->date_string, &special_timestamp)) {
+            return special_timestamp;
+        }
+        if (ptn_datetime_apply_relative_special_prefix_to_timestamp(datetime, interval, &special_timestamp)) {
             return special_timestamp;
         }
     }
@@ -136391,20 +136460,26 @@ static void ptn_datetime_throw_invalid_serialization(
         if (frame_written < 0 || (size_t)frame_written >= sizeof(frame_name)) {
             ptn_abort_out_of_memory();
         }
-        PtnValue frame_arg = ptn_value_borrow(ptn_array(array));
-        ptn_throw_exception_owned_message_at_with_trace_frame(
-            runtime,
-            "Error",
-            ptn_duplicate_string(invalid_message),
-            runtime == NULL ? NULL : runtime->source_path,
-            line,
-            frame_name,
-            NULL,
-            0,
-            1,
-            &frame_arg
-        );
-        return;
+        int frame_already_active = runtime != NULL &&
+            runtime->trace_frame != NULL &&
+            runtime->trace_frame->function_name != NULL &&
+            strcmp(runtime->trace_frame->function_name, frame_name) == 0;
+        if (!frame_already_active) {
+            PtnValue frame_arg = ptn_value_borrow(ptn_array(array));
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "Error",
+                ptn_duplicate_string(invalid_message),
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                frame_name,
+                NULL,
+                0,
+                1,
+                &frame_arg
+            );
+            return;
+        }
     }
     ptn_throw_exception_owned_message_at(
         runtime,

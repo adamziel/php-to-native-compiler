@@ -2331,6 +2331,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         function ptn_supported_magic_lifecycle_metadata_row() {
             return ptn_path ~ /Zend\/tests\/magic_methods\/magic_methods_(019|serialize|sleep|unserialize|wakeup)[.]phpt$/
         }
+        function ptn_supported_date_timelib_relative_row() {
+            return ptn_path ~ /ext\/date\/tests\/(bug20382-1|date_modify-2|gh9700|bug49585|bug70277|bug45543|bug54597|bug29150|bug62852_var2|bug33415-2|bug75851|bug41964)[.]phpt$/
+        }
         function ptn_supported_class_constant_static_local_metadata_row() {
             return ptn_path ~ /ext\/reflection\/tests\/bug63614[.]phpt$/
         }
@@ -2440,7 +2443,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /function[[:space:]]+&?[[:space:]]*__(serialize|unserialize|sleep|wakeup)[[:space:]]*\(/ &&
                 !ptn_supported_enum_metadata_row() &&
-                !ptn_supported_magic_lifecycle_metadata_row()) {
+                !ptn_supported_magic_lifecycle_metadata_row() &&
+                !ptn_supported_date_timelib_relative_row()) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
