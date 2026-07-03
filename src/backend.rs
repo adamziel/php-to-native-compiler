@@ -153,6 +153,7 @@ pub fn emit_c(module: &Module) -> String {
             runtime_requirements.direct_internal_helpers = true;
         }
     }
+    let generator_throw_catch_handlers = collect_generator_throw_catch_handlers(&module.functions);
     let needs_lightweight_closure_reflection = !runtime_requirements.internal_function_dispatch
         && (runtime_requirements.closure_reflection_dispatch || needs_method_dispatch);
     let needs_magic_property_read = module.classes.iter().any(|class| {
@@ -224,6 +225,7 @@ pub fn emit_c(module: &Module) -> String {
         runtime_requirements.dynamic_function_dispatch,
         needs_method_dispatch,
     );
+    emit_generator_throw_catch_handler_prototypes(&mut out, &generator_throw_catch_handlers);
     emit_function_static_variable_provider_prototypes(&mut out, &module.functions);
     emit_declared_property_default_array_helper_prototypes(&mut out, &module.classes);
     emit_include_helpers(
@@ -252,6 +254,16 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
         &module.source_dir,
         runtime_requirements.internal_function_dispatch,
+    );
+    emit_generator_throw_catch_handlers(
+        &mut out,
+        &module.source_file,
+        &module.source_dir,
+        &module.functions,
+        &module.classes,
+        &module.includes,
+        runtime_requirements.internal_function_dispatch,
+        &generator_throw_catch_handlers,
     );
     emit_preload_static_local_reset_helper(&mut out, &module.functions);
     if runtime_requirements.internal_function_dispatch || needs_callable_dispatch {
@@ -471,6 +483,11 @@ pub fn emit_c(module: &Module) -> String {
         .any(|class| class.properties.iter().any(property_hook_set_has_runtime))
     {
         out.push_str("    runtime.property_hook_set = ptn_declared_class_property_hook_set;\n");
+    }
+    if !generator_throw_catch_handlers.is_empty() {
+        out.push_str(
+            "    runtime.generator_throw_catch_dispatch = ptn_generator_throw_catch_dispatch;\n",
+        );
     }
     if has_declared_class_constants {
         out.push_str(
@@ -5106,6 +5123,163 @@ fn emit_user_function_prototypes(
             "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
+}
+
+fn emit_generator_throw_catch_handler_prototypes(
+    out: &mut String,
+    handlers: &[GeneratorThrowCatchHandler],
+) {
+    if handlers.is_empty() {
+        return;
+    }
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_generator_throw_catch_dispatch(PtnRuntime *runtime, size_t handler_id, PtnValue exception, size_t line, int *handled_out);\n");
+    for handler in handlers {
+        out.push_str("static PTN_UNUSED PtnValue ");
+        out.push_str(&generator_throw_catch_handler_name(
+            handler.function_index,
+            handler.try_index,
+            handler.catch_index,
+        ));
+        out.push_str(
+            "(PtnRuntime *caller_runtime, PtnValue exception, size_t line, int *handled_out);\n",
+        );
+    }
+}
+
+fn emit_generator_throw_catch_handlers(
+    out: &mut String,
+    source_file: &str,
+    source_dir: &str,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+    includes: &[IncludeFile],
+    full_internal_dispatch: bool,
+    handlers: &[GeneratorThrowCatchHandler],
+) {
+    if handlers.is_empty() {
+        return;
+    }
+    for handler in handlers {
+        let function = &functions[handler.function_index];
+        out.push_str("\nstatic PTN_UNUSED PtnValue ");
+        out.push_str(&generator_throw_catch_handler_name(
+            handler.function_index,
+            handler.try_index,
+            handler.catch_index,
+        ));
+        out.push_str(
+            "(PtnRuntime *caller_runtime, PtnValue exception, size_t line, int *handled_out) {\n",
+        );
+        out.push_str("    if (handled_out != NULL) {\n");
+        out.push_str("        *handled_out = 0;\n");
+        out.push_str("    }\n");
+        out.push_str("    if (caller_runtime == NULL) {\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+        out.push_str("    PtnRuntime runtime;\n");
+        out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+        out.push_str("    runtime.current_function_name = \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("\";\n");
+        out.push_str("    runtime.current_class_name = ");
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(";\n");
+        out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(";\n");
+        out.push_str("    runtime.call_site_line = line;\n");
+        out.push_str("    runtime.strict_types = ");
+        out.push_str(if function.strict_types { "1" } else { "0" });
+        out.push_str(";\n");
+        out.push_str("    if (!(");
+        for (index, type_name) in handler.catch.type_names.iter().enumerate() {
+            if index > 0 {
+                out.push_str(" || ");
+            }
+            out.push_str("ptn_value_satisfies_class_type_hint(&runtime, exception, \"");
+            out.push_str(&c_string(type_name));
+            out.push_str("\")");
+        }
+        out.push_str(")) {\n");
+        out.push_str("        ptn_runtime_free(&runtime);\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+        out.push_str("    if (handled_out != NULL) {\n");
+        out.push_str("        *handled_out = 1;\n");
+        out.push_str("    }\n");
+        if let Some(variable) = &handler.catch.variable {
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(variable));
+            out.push_str("\", exception);\n");
+        }
+        out.push_str("    PtnTryFrame ptn_generator_throw_catch_try_frame;\n");
+        out.push_str("    ptn_try_frame_push(&runtime, &ptn_generator_throw_catch_try_frame);\n");
+        out.push_str("    if (setjmp(ptn_generator_throw_catch_try_frame.jump) == 0) {\n");
+        let mut values = ValueEmitter::new_for_function(
+            source_file,
+            source_dir,
+            functions,
+            classes,
+            includes,
+            handler.function_index,
+            function,
+            full_internal_dispatch,
+        );
+        values.current_function_is_generator = false;
+        let mut break_targets = Vec::new();
+        let mut finally_stack = Vec::new();
+        for instruction in &handler.catch.body {
+            emit_instruction(
+                out,
+                &mut values,
+                instruction,
+                &mut break_targets,
+                &mut finally_stack,
+                source_file,
+                None,
+                None,
+            );
+        }
+        out.push_str("    }\n");
+        out.push_str("    ptn_try_frame_pop(&runtime, &ptn_generator_throw_catch_try_frame);\n");
+        out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+        out.push_str("        ptn_runtime_free(&runtime);\n");
+        out.push_str("        ptn_rethrow_exception(caller_runtime);\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    return ptn_null();\n");
+        out.push_str("}\n");
+    }
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_generator_throw_catch_dispatch(PtnRuntime *runtime, size_t handler_id, PtnValue exception, size_t line, int *handled_out) {\n");
+    out.push_str("    switch (handler_id) {\n");
+    for handler in handlers {
+        out.push_str("        case ");
+        out.push_str(
+            &generator_throw_catch_handler_id(
+                handler.function_index,
+                handler.try_index,
+                handler.catch_index,
+            )
+            .to_string(),
+        );
+        out.push_str(": return ");
+        out.push_str(&generator_throw_catch_handler_name(
+            handler.function_index,
+            handler.try_index,
+            handler.catch_index,
+        ));
+        out.push_str("(runtime, exception, line, handled_out);\n");
+    }
+    out.push_str("        default: break;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (handled_out != NULL) {\n");
+    out.push_str("        *handled_out = 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
 }
 
 fn emit_declared_class_new_instance_without_constructor(
@@ -32170,6 +32344,25 @@ fn emit_try(
             || catches
                 .iter()
                 .any(|catch| instructions_contain_generator_statement_yield(&catch.body)));
+    let generator_throw_catch_try_index = if values.current_function_is_generator {
+        let try_index = values.generator_throw_catch_next_try_index;
+        values.generator_throw_catch_next_try_index += 1;
+        Some(try_index)
+    } else {
+        None
+    };
+    let generator_throw_catch_registrations =
+        generator_throw_catch_try_index.and_then(|try_index| {
+            values.current_function_index.and_then(|function_index| {
+                generator_throw_catch_registrations_for_try(
+                    function_index,
+                    try_index,
+                    body,
+                    catches,
+                    finally_body,
+                )
+            })
+        });
     let return_label = if return_target.is_some()
         && !finally_body.is_empty()
         && (try_or_catch_can_return || try_or_catch_has_generator_statement_yield)
@@ -32190,7 +32383,11 @@ fn emit_try(
             .push(return_label.clone());
     }
     let body_generator_yield_abort_target = if try_or_catch_has_generator_statement_yield {
-        body_return_target.map(str::to_string)
+        if generator_throw_catch_registrations.is_some() {
+            values.generator_yield_abort_target.clone()
+        } else {
+            body_return_target.map(str::to_string)
+        }
     } else {
         values.generator_yield_abort_target.clone()
     };
@@ -32366,6 +32563,11 @@ fn emit_try(
         out.push_str("                }\n");
         out.push_str("            }\n");
     }
+    if let Some(registrations) = &generator_throw_catch_registrations {
+        values
+            .generator_throw_catch_stack
+            .push(registrations.clone());
+    }
     emit_instruction_sequence_with_generator_yield_abort_target(
         out,
         values,
@@ -32377,6 +32579,9 @@ fn emit_try(
         active_label_scope,
         body_generator_yield_abort_target.as_deref(),
     );
+    if generator_throw_catch_registrations.is_some() {
+        values.generator_throw_catch_stack.pop();
+    }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
@@ -33199,6 +33404,216 @@ fn instruction_contains_return(instruction: &Instruction) -> bool {
             .any(|case| instructions_contain_return(&case.body)),
         _ => false,
     }
+}
+
+fn generator_throw_catch_handler_id(
+    function_index: usize,
+    try_index: usize,
+    catch_index: usize,
+) -> usize {
+    ((function_index + 1) << 32) | ((try_index + 1) << 16) | (catch_index + 1)
+}
+
+fn generator_throw_catch_handler_name(
+    function_index: usize,
+    try_index: usize,
+    catch_index: usize,
+) -> String {
+    format!("ptn_generator_throw_catch_{function_index}_{try_index}_{catch_index}")
+}
+
+fn generator_throw_catch_body_supported(catch: &IrCatchClause) -> bool {
+    !instructions_contain_generator_statement_yield(&catch.body)
+        && !instructions_contain_return(&catch.body)
+}
+
+fn instruction_contains_top_level_generator_statement_yield(instruction: &Instruction) -> bool {
+    matches!(
+        instruction,
+        Instruction::Expression(ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. })
+    )
+}
+
+fn generator_throw_catch_try_body_collects_safely(body: &[Instruction]) -> bool {
+    body.iter()
+        .rposition(instruction_contains_top_level_generator_statement_yield)
+        .is_some_and(|yield_index| {
+            !body[yield_index + 1..]
+                .iter()
+                .any(|instruction| !matches!(instruction, Instruction::Label { .. }))
+        })
+}
+
+fn generator_throw_catch_registrations_for_try(
+    function_index: usize,
+    try_index: usize,
+    body: &[Instruction],
+    catches: &[IrCatchClause],
+    finally_body: &[Instruction],
+) -> Option<Vec<GeneratorThrowCatchRegistration>> {
+    if finally_body.is_empty()
+        && instructions_contain_generator_statement_yield(body)
+        && generator_throw_catch_try_body_collects_safely(body)
+        && !catches.is_empty()
+        && catches.iter().all(generator_throw_catch_body_supported)
+    {
+        Some(
+            catches
+                .iter()
+                .enumerate()
+                .map(|(catch_index, _)| GeneratorThrowCatchRegistration {
+                    handler_id: generator_throw_catch_handler_id(
+                        function_index,
+                        try_index,
+                        catch_index,
+                    ),
+                })
+                .collect(),
+        )
+    } else {
+        None
+    }
+}
+
+fn collect_generator_throw_catch_handlers_from_instructions(
+    handlers: &mut Vec<GeneratorThrowCatchHandler>,
+    function_index: usize,
+    next_try_index: &mut usize,
+    instructions: &[Instruction],
+) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Try {
+                body,
+                catches,
+                finally_body,
+            } => {
+                let try_index = *next_try_index;
+                *next_try_index += 1;
+                if generator_throw_catch_registrations_for_try(
+                    function_index,
+                    try_index,
+                    body,
+                    catches,
+                    finally_body,
+                )
+                .is_some()
+                {
+                    for (catch_index, catch) in catches.iter().enumerate() {
+                        handlers.push(GeneratorThrowCatchHandler {
+                            function_index,
+                            try_index,
+                            catch_index,
+                            catch: catch.clone(),
+                        });
+                    }
+                }
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    body,
+                );
+                for catch in catches {
+                    collect_generator_throw_catch_handlers_from_instructions(
+                        handlers,
+                        function_index,
+                        next_try_index,
+                        &catch.body,
+                    );
+                }
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    finally_body,
+                );
+            }
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    then_body,
+                );
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    else_body,
+                );
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => {
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    body,
+                );
+            }
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    initializers,
+                );
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    updates,
+                );
+                collect_generator_throw_catch_handlers_from_instructions(
+                    handlers,
+                    function_index,
+                    next_try_index,
+                    body,
+                );
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    collect_generator_throw_catch_handlers_from_instructions(
+                        handlers,
+                        function_index,
+                        next_try_index,
+                        &case.body,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_generator_throw_catch_handlers(
+    functions: &[FunctionDecl],
+) -> Vec<GeneratorThrowCatchHandler> {
+    let mut handlers = Vec::new();
+    for (function_index, function) in functions.iter().enumerate() {
+        if !function.is_generator {
+            continue;
+        }
+        let mut next_try_index = 0;
+        collect_generator_throw_catch_handlers_from_instructions(
+            &mut handlers,
+            function_index,
+            &mut next_try_index,
+            &function.body,
+        );
+    }
+    handlers
 }
 
 fn user_function_c_name(index: usize) -> String {
@@ -40951,6 +41366,8 @@ struct ValueEmitter {
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
     generator_yield_assignment_variables: Vec<String>,
+    generator_throw_catch_stack: Vec<Vec<GeneratorThrowCatchRegistration>>,
+    generator_throw_catch_next_try_index: usize,
     exceptional_finally_saved_exception: Option<String>,
     exceptional_finally_deferred_return_targets: Vec<String>,
     user_functions: Vec<FunctionDecl>,
@@ -40958,6 +41375,19 @@ struct ValueEmitter {
     includes: Vec<IncludeFile>,
     full_internal_dispatch: bool,
     known_simple_preg_patterns: HashSet<String>,
+}
+
+#[derive(Clone)]
+struct GeneratorThrowCatchRegistration {
+    handler_id: usize,
+}
+
+#[derive(Clone)]
+struct GeneratorThrowCatchHandler {
+    function_index: usize,
+    try_index: usize,
+    catch_index: usize,
+    catch: IrCatchClause,
 }
 
 enum PropertyReadSegment<'a> {
@@ -42704,6 +43134,8 @@ impl ValueEmitter {
             current_function_index,
             generator_yield_abort_target: None,
             generator_yield_assignment_variables: Vec::new(),
+            generator_throw_catch_stack: Vec::new(),
+            generator_throw_catch_next_try_index: 0,
             exceptional_finally_saved_exception: None,
             exceptional_finally_deferred_return_targets: Vec::new(),
             user_functions: functions.to_vec(),
@@ -57470,6 +57902,19 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &key_temp);
         }
         emit_value_cleanup(out, "    ", &value_temp);
+        if !self.generator_throw_catch_stack.is_empty() {
+            let registrations: Vec<_> = self
+                .generator_throw_catch_stack
+                .iter()
+                .rev()
+                .flat_map(|registrations| registrations.iter().cloned())
+                .collect();
+            for registration in registrations {
+                out.push_str("    ptn_generator_register_throw_catch(&runtime, ");
+                out.push_str(&registration.handler_id.to_string());
+                out.push_str(");\n");
+            }
+        }
         result_temp
     }
 

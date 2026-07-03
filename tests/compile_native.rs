@@ -25334,6 +25334,46 @@ try {
 }
 
 #[test]
+fn compile_generator_throw_caught_continues_to_next_yield_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-caught-continues");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-caught-continues.php");
+    let output = root.join("generator-throw-caught-continues-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    echo "before yield\n";
+    try {
+        yield;
+    } catch (RuntimeException $e) {
+        echo get_class($e), ": ", $e->getMessage(), "\n";
+    }
+    yield "result";
+}
+
+$generator = gen();
+var_dump($generator->throw(new RuntimeException("Test")));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "before yield\nRuntimeException: Test\nstring(6) \"result\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_register_throw_catch"));
+    assert!(c_source.contains("ptn_generator_throw_catch_dispatch"));
+}
+
+#[test]
 fn compile_generator_throw_type_error_trace_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-type-error-trace");
     fs::create_dir_all(&root).unwrap();
