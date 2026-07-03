@@ -3830,6 +3830,36 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_return_type_exception_owned_message_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line
+) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_runtime_release_owned_finally_return_suppressed_exception(runtime);
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_throw_exception_owned_message_at_defined_location(
     PtnRuntime *runtime,
     const char *class_name,

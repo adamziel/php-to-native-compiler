@@ -4849,7 +4849,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    }\n");
     out.push_str("    snprintf(message, (size_t)needed + 1, \"%s(): Return value must be of type %s, %s returned\", display_function_name, expected_type_name, given);\n");
     out.push_str("    free(display_function_name_owned);\n");
-    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("    ptn_throw_return_type_exception_owned_message_at(runtime, \"TypeError\", message, runtime != NULL ? runtime->source_path : NULL, line);\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_return_int(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line, PtnValue *out) {\n");
@@ -6415,11 +6415,11 @@ fn emit_user_functions(
         out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
         out.push_str("        ptn_rethrow_exception(&runtime);\n");
         out.push_str("    }\n");
-        out.push_str(
-            "    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
-        );
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
+            out.push_str(
+                "    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
+            );
             out.push_str("    ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
             out.push_str("    if (runtime.current_generator != NULL) {\n");
             out.push_str("        runtime.current_generator->executing = 0;\n");
@@ -6468,6 +6468,9 @@ fn emit_user_functions(
                 function.return_by_ref,
             );
         }
+        out.push_str(
+            "    ptn_runtime_release_owned_finally_return_suppressed_exception(&runtime);\n",
+        );
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -8752,7 +8755,7 @@ fn emit_return_type_boundary(
             out.push_str("        snprintf(ptn_never_return_message, (size_t)ptn_never_return_needed + 1, \"%s(): never-returning %s must not implicitly return\", \"");
             out.push_str(&c_string(function_name));
             out.push_str("\", ptn_never_return_kind);\n");
-            out.push_str("        ptn_throw_exception_owned_message_at(&runtime, \"TypeError\", ptn_never_return_message, runtime.source_path, ptn_return_line);\n");
+            out.push_str("        ptn_throw_return_type_exception_owned_message_at(&runtime, \"TypeError\", ptn_never_return_message, runtime.source_path, ptn_return_line);\n");
             out.push_str("    }\n");
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -11862,7 +11865,9 @@ fn emit_class_metadata_helpers(
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_trait_exists(const char *name) {\n");
     if traits.is_empty() {
+        out.push_str("#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    (void)name;\n");
+        out.push_str("#endif\n");
     }
     for trait_decl in traits {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -11871,6 +11876,11 @@ fn emit_class_metadata_helpers(
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_trait_exists_name(name)) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -11903,14 +11913,22 @@ fn emit_class_metadata_helpers(
     }
     if traits.is_empty() {
         out.push_str("    (void)runtime;\n");
+        out.push_str("#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    (void)name;\n");
+        out.push_str("#endif\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_trait_exists_name(name)) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str("\n#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("static int ptn_internal_class_exists_name(const char *class_name);\n");
     out.push_str("static int ptn_internal_interface_exists_name(const char *name);\n");
+    out.push_str("static int ptn_internal_trait_exists_name(const char *name);\n");
     out.push_str("#endif\n");
     out.push_str(
         "static PTN_UNUSED void ptn_append_declared_alias_names(PtnRuntime *runtime, PtnValue result, int64_t *index, int kind, int include_internal) {\n",
@@ -13830,6 +13848,11 @@ fn emit_class_metadata_helpers(
                 out.push_str("        }\n");
             }
         }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -13909,6 +13932,11 @@ fn emit_class_metadata_helpers(
             out.push_str(");\n");
             out.push_str("        }\n");
         }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
+            out.push_str("            return ptn_function_metadata_found(\"_ZendTestTrait::testMethod\", 1, 0, 0, 0, NULL, 0, \"bool\", \"bool\", 0, 1);\n");
+            out.push_str("        }\n");
+        }
         out.push_str("        return ptn_function_metadata_not_found();\n");
         out.push_str("    }\n");
     }
@@ -13951,6 +13979,14 @@ fn emit_class_metadata_helpers(
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
+            out.push_str("            *declaring_class = \"_ZendTestTrait\";\n");
+            out.push_str("            *visibility = PTN_PROPERTY_PUBLIC;\n");
+            out.push_str("            *is_abstract = 0;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
@@ -13983,6 +14019,11 @@ fn emit_class_metadata_helpers(
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -14022,6 +14063,11 @@ fn emit_class_metadata_helpers(
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
             out.push_str(&c_string(&method.name));
             out.push_str("\"));\n");
+            out.push_str("        }\n");
+        }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_declared_method_visibility_allows(access_scope, \"_ZendTestTrait\", PTN_PROPERTY_PUBLIC)) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"testMethod\"));\n");
             out.push_str("        }\n");
         }
         out.push_str("        return result;\n");
@@ -14077,6 +14123,11 @@ fn emit_class_metadata_helpers(
                 out.push_str(" || ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")");
             }
             out.push_str(") {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -22795,6 +22846,11 @@ fn emit_tentative_internal_return_signature_deprecations(
 ) {
     let bypass_deprecation_handler =
         class_has_tentative_internal_return_signature_fatal(class, classes, functions);
+    let class_diagnostic_name = if class.is_anonymous {
+        php_visible_anonymous_class_name(&class.name)
+    } else {
+        class.name.as_str()
+    };
     for method in &class.methods {
         if method.visibility == PropertyVisibility::Private {
             continue;
@@ -22822,7 +22878,7 @@ fn emit_tentative_internal_return_signature_deprecations(
         {
             let message = format!(
                 "Declaration of {}::{} must be compatible with {}::{}",
-                class.name,
+                class_diagnostic_name,
                 runtime_method_signature_display(method, function),
                 tentative_method.class_name,
                 tentative_method.signature
@@ -22848,7 +22904,7 @@ fn emit_tentative_internal_return_signature_deprecations(
         }
         let message = format!(
             "Return type of {}::{} should either be compatible with {}::{}, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice",
-            class.name,
+            class_diagnostic_name,
             runtime_method_signature_display(method, function),
             tentative_method.class_name,
             tentative_method.signature
@@ -24294,6 +24350,15 @@ fn class_has_concrete_method(class: &ClassDecl, method_name: &str, classes: &[Cl
             .and_then(|name| class_by_name(classes, name));
     }
     false
+}
+
+fn class_imports_internal_zend_test_trait_test_method(class: &ClassDecl) -> bool {
+    class.trait_uses.iter().any(|trait_use| {
+        trait_use.name.eq_ignore_ascii_case("_ZendTestTrait") && trait_use.aliases.is_empty()
+    }) && !class
+        .methods
+        .iter()
+        .any(|method| method.name.eq_ignore_ascii_case("testMethod"))
 }
 
 fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) -> bool {
@@ -27400,6 +27465,16 @@ fn emit_method_dispatch(
         out.push_str("        const char *ptn_inaccessible_visibility = NULL;\n");
         out.push_str("        const char *ptn_inaccessible_class = NULL;\n");
         out.push_str("        const char *ptn_inaccessible_method = NULL;\n");
+        if class_imports_internal_zend_test_trait_test_method(class) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"testMethod\")) {\n");
+            out.push_str("            if (argc != 0) {\n");
+            out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"_ZendTestTrait::testMethod() expects exactly 0 arguments\");\n");
+            out.push_str("                return ptn_null();\n");
+            out.push_str("            }\n");
+            out.push_str("            (void)args;\n");
+            out.push_str("            return ptn_bool(1);\n");
+            out.push_str("        }\n");
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             let function = &functions[method.function_index];
