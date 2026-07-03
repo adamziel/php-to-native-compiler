@@ -1004,6 +1004,28 @@ fn phpt_classifier_allows_static_variable_dynamic_function_eval_rows() {
 }
 
 #[test]
+fn phpt_classifier_allows_tokenizer_eval_rows() {
+    let gh19507 = "--TEST--\ntokenizer eval handler\n--FILE--\n<?php\nset_error_handler(function (int $errno, string $msg) {\n    eval('123;');\n});\nPhpToken::tokenize('<?php (double) $x;', TOKEN_PARSE);\n--EXPECT--\n";
+    assert_eq!(
+        classify_at_relative_path(gh19507, "ext/tokenizer/tests/gh19507_eval.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let reconstruction = "--TEST--\ntoken reconstruction\n--FILE--\n<?php\n$token_array = token_get_all('<?php echo 1; ?>');\n$script = '';\nforeach ($token_array as $token) { $script .= is_array($token) ? $token[1] : $token; }\neval($script);\n--EXPECT--\n";
+    assert_eq!(
+        classify_at_relative_path(
+            reconstruction,
+            "ext/tokenizer/tests/token_get_all_variation19.phpt"
+        ),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+    assert!(
+        classify(reconstruction).starts_with("unsupported-dynamic-eval\t"),
+        "generic eval reconstruction rows stay classified until the tokenizer path is known supported"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (

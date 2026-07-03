@@ -27841,6 +27841,10 @@ fn emit_method_dispatch(
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("#endif\n");
+    out.push_str("    PtnValue ptn_dynamic_method_result;\n");
+    out.push_str("    if (ptn_runtime_call_dynamic_class_method(runtime, resolved, method_name, argc, args, line, &ptn_dynamic_method_result)) {\n");
+    out.push_str("        return ptn_dynamic_method_result;\n");
+    out.push_str("    }\n");
     out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("}\n");
 

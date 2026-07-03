@@ -1832,6 +1832,10 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /ext\/spl\/tests\/autoloading\/spl_autoload_bug48541[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/autoloading\/bug74372[.]phpt$/
         }
+        function ptn_supported_tokenizer_eval_row() {
+            return ptn_path ~ /ext\/tokenizer\/tests\/gh19507_eval[.]phpt$/ ||
+                ptn_path ~ /ext\/tokenizer\/tests\/token_get_all_variation19[.]phpt$/
+        }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
@@ -2097,7 +2101,8 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/ &&
                 !ptn_supported_eval_class_declaration_raw($0) &&
                 !ptn_supported_eval_static_variable_dynamic_function_row() &&
-                !ptn_supported_spl_autoload_eval_row()) {
+                !ptn_supported_spl_autoload_eval_row() &&
+                !ptn_supported_tokenizer_eval_row()) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
                 exit

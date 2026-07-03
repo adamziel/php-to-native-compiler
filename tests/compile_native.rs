@@ -40315,6 +40315,152 @@ foreach (PhpToken::tokenize('<?php $foo = $a?->b();', TOKEN_PARSE) as $token) {
 }
 
 #[test]
+fn compile_php_token_tokenize_token_parse_cast_deprecation_uses_error_handler() {
+    let root = temp_dir("ptn-native-php-token-token-parse-cast-deprecation-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-token-token-parse-cast-deprecation-handler.php");
+    let output = root.join("php-token-token-parse-cast-deprecation-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function (int $errno, string $msg) {
+    eval('123;');
+    echo 'handler:', $errno, ':', $msg, "\n";
+});
+
+foreach (PhpToken::tokenize('<?php (double) $x;', TOKEN_PARSE) as $token) {
+    echo $token->getTokenName(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "handler:8192:Non-canonical cast (double) is deprecated, use the (float) cast instead\n",
+            "T_OPEN_TAG\n",
+            "T_DOUBLE_CAST\n",
+            "T_WHITESPACE\n",
+            "T_VARIABLE\n",
+            ";\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_token_get_all_scans_inline_php_islands_to_native_binary() {
+    let root = temp_dir("ptn-native-token-get-all-inline-php-islands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("token-get-all-inline-php-islands.php");
+    let output = root.join("token-get-all-inline-php-islands-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$phpstr = '
+<?php
+echo "ran\n";
+?>';
+
+$script = "";
+foreach (token_get_all($phpstr) as $token) {
+    if (is_array($token)) {
+        if (strncmp($token[1], '<?php', 5) == 0) {
+            continue;
+        }
+        if (strncmp($token[1], '?>', 2) == 0) {
+            continue;
+        }
+        $script .= $token[1];
+    } else {
+        $script .= $token;
+    }
+}
+
+var_dump($script === "\necho \"ran\\n\";\n");
+eval($script);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nran\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_dynamic_class_method_and_for_loop_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-dynamic-class-method-for-loop");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-dynamic-class-method-for-loop.php");
+    let output = root.join("eval-dynamic-class-method-for-loop-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$script = '
+// The class scanner must ignore this comment before the real declaration.
+// class Decoy {}
+class TestClass {
+    public function foo() {
+        echo "Called foo()\n";
+    }
+}
+
+$a = new TestClass();
+$a->foo();
+
+for ($i = 0; $i < 3; $i++) {
+    echo "Loop iteration $i\n";
+}';
+
+eval($script);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Called foo()\n",
+            "Loop iteration 0\n",
+            "Loop iteration 1\n",
+            "Loop iteration 2\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_token_get_all_single_ampersands_to_native_binary() {
     let root = temp_dir("ptn-native-token-get-all-single-ampersands");
     fs::create_dir_all(&root).unwrap();
