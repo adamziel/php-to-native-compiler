@@ -180330,6 +180330,37 @@ static int ptn_phar_mung_server_variable_is_allowed(PtnStringOperand value) {
         ptn_string_operand_ascii_case_equal(value, "SCRIPT_NAME");
 }
 
+static void ptn_phar_throw_mung_server_exception(
+    PtnRuntime *runtime,
+    char *message,
+    size_t line,
+    size_t argc,
+    const PtnValue *args
+) {
+    const char *path = runtime == NULL ? NULL : runtime->source_path;
+    PtnTraceFrame *frame = runtime == NULL ? NULL : runtime->trace_frame;
+    if (
+        frame != NULL &&
+        frame->function_name != NULL &&
+        ptn_ascii_case_equal(frame->function_name, "Phar::mungServer")
+    ) {
+        ptn_throw_exception_owned_message_at(runtime, "PharException", message, path, line);
+        return;
+    }
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "PharException",
+        message,
+        path,
+        line,
+        "Phar::mungServer",
+        path,
+        line,
+        argc,
+        args
+    );
+}
+
 static PtnValue ptn_internal_phar_mung_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc != 1) {
         char message[128];
@@ -180345,22 +180376,24 @@ static PtnValue ptn_internal_phar_mung_server(PtnRuntime *runtime, size_t argc, 
         return ptn_null();
     }
     if (variables == NULL || variables->len == 0) {
-        ptn_throw_exception(
+        ptn_phar_throw_mung_server_exception(
             runtime,
-            "PharException",
-            "No values passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME"
+            ptn_duplicate_string("No values passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME"),
+            line,
+            argc,
+            args
         );
         return ptn_null();
     }
     for (size_t i = 0; i < variables->len; i++) {
         PtnValue value = ptn_value_deref(variables->entries[i].value);
         if (value.type != PTN_STRING) {
-            ptn_throw_exception_owned_message_at(
+            ptn_phar_throw_mung_server_exception(
                 runtime,
-                "PharException",
                 ptn_duplicate_string("Non-string value passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME"),
-                runtime == NULL ? NULL : runtime->source_path,
-                line
+                line,
+                argc,
+                args
             );
             return ptn_null();
         }
@@ -180394,8 +180427,13 @@ static PtnValue ptn_internal_phar_mung_server(PtnRuntime *runtime, size_t argc, 
                 free(message);
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "PharException", message);
-            free(message);
+            ptn_phar_throw_mung_server_exception(
+                runtime,
+                message,
+                line,
+                argc,
+                args
+            );
             return ptn_null();
         }
     }

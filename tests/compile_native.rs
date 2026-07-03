@@ -67741,6 +67741,82 @@ var_dump(method_exists('Phar', 'mungServer'));
 }
 
 #[test]
+fn compile_dynamic_phar_mung_server_empty_array_reports_call_location_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-phar-mung-server-empty-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-phar-mung-server-empty-array.php");
+    let output = root.join("dynamic-phar-mung-server-empty-array-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    eval('Phar::mungServer([]);');
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+    echo "file:", $e->getFile(), "\n";
+    echo "line:", $e->getLine(), "\n";
+    $trace = $e->getTrace();
+    echo "trace:", $trace[0]['class'], $trace[0]['type'], $trace[0]['function'], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "PharException:No values passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME\n",
+                "file:{}\n",
+                "line:3\n",
+                "trace:Phar::mungServer\n",
+            ),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_static_phar_mung_server_empty_array_uncaught_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-static-phar-mung-server-empty-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-phar-mung-server-empty-array.php");
+    let output = root.join("static-phar-mung-server-empty-array-bin");
+    fs::write(&input, "<?php\nPhar::mungServer([]);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(&format!(
+            "Fatal error: Uncaught PharException: No values passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME in {}:2",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "#0 {}(2): Phar::mungServer(Array)",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#1 {main}"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("thrown in {} on line 2", input.display())),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_phar_directory_wrapper_iteration_to_native_binary() {
     let root = temp_dir("ptn-native-phar-directory-wrapper");
     fs::create_dir_all(&root).unwrap();
