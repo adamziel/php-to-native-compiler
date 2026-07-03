@@ -63659,6 +63659,26 @@ static int ptn_file_put_contents_validate_context_arg(
     return 1;
 }
 
+static void ptn_emit_file_put_contents_partial_write_warning(
+    PtnRuntime *runtime,
+    size_t written,
+    size_t requested,
+    size_t line
+) {
+    char message[192];
+    int formatted = snprintf(
+        message,
+        sizeof(message),
+        "file_put_contents(): Only %zu of %zu bytes written, possibly out of free disk space",
+        written,
+        requested
+    );
+    if (formatted < 0 || (size_t)formatted >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
         runtime,
@@ -63692,6 +63712,13 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         free(path);
         ptn_string_operand_free(data);
         return ptn_null();
+    }
+    PtnResource *context = NULL;
+    if (argc >= 4) {
+        PtnValue context_value = ptn_value_deref(args[3]);
+        if (context_value.type == PTN_RESOURCE) {
+            context = context_value.as.resource;
+        }
     }
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(path, &zlib_path)) {
@@ -63805,6 +63832,62 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         free(path);
         ptn_string_operand_free(data);
         return ptn_bool(0);
+    }
+    PtnValue user_stream = ptn_null();
+    if (ptn_try_open_user_stream_wrapper(
+            runtime,
+            "file_put_contents",
+            path,
+            (flags & PTN_FILE_APPEND) != 0 ? "ab" : "wb",
+            context,
+            line,
+            &user_stream
+        )) {
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+        PtnValue resolved_stream = ptn_value_deref(user_stream);
+        if (resolved_stream.type != PTN_RESOURCE ||
+            !ptn_stream_resource_is_open(resolved_stream.as.resource)) {
+            ptn_value_destroy(&user_stream);
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_bool(0);
+        }
+        size_t written = ptn_stream_write_filtered(
+            runtime,
+            "file_put_contents",
+            resolved_stream.as.resource,
+            data.data,
+            data.len,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_stream);
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+        ptn_resource_close(resolved_stream.as.resource);
+        ptn_value_destroy(&user_stream);
+        if (written != data.len) {
+            ptn_emit_file_put_contents_partial_write_warning(runtime, written, data.len, line);
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_bool(0);
+        }
+        if (data.len > (size_t)INT64_MAX) {
+            free(path);
+            ptn_string_operand_free(data);
+            ptn_abort_out_of_memory();
+        }
+        PtnValue result = ptn_int((int64_t)data.len);
+        free(path);
+        ptn_string_operand_free(data);
+        return result;
     }
     FILE *stream = fopen(path, (flags & PTN_FILE_APPEND) != 0 ? "ab" : "wb");
     if (stream == NULL) {
@@ -167745,6 +167828,80 @@ static int ptn_stream_resource_is_socket_like(PtnResource *resource) {
         ptn_ascii_case_has_prefix(uri, "udg://");
 }
 
+static int ptn_user_stream_dispatch_set_option(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    const char *function_name,
+    int64_t option,
+    int64_t value,
+    int ptrparam_is_null,
+    int64_t ptrparam,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
+    if (user_stream == NULL) {
+        return 0;
+    }
+    if (user_stream->runtime == NULL ||
+        user_stream->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
+        PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
+        const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
+            ? wrapper_object.as.object->class_name
+            : "user-space";
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::stream_set_option is not implemented!",
+            class_name == NULL ? "user-space" : class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_report_resource_error(
+            runtime,
+            resource,
+            function_name,
+            message,
+            "user-space",
+            "NotImplemented",
+            0,
+            1,
+            line
+        );
+        *out = ptn_bool(0);
+        return 1;
+    }
+
+    PtnValue option_args[3] = {
+        ptn_int(option),
+        ptn_int(value),
+        ptrparam_is_null ? ptn_null() : ptn_int(ptrparam)
+    };
+    PtnValue option_result = user_stream->runtime->method_dispatch(
+        user_stream->runtime,
+        user_stream->wrapper_object,
+        "stream_set_option",
+        3,
+        option_args,
+        line
+    );
+    ptn_value_destroy(&option_args[0]);
+    ptn_value_destroy(&option_args[1]);
+    ptn_value_destroy(&option_args[2]);
+    if (user_stream->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&option_result);
+        *out = ptn_null();
+        return 1;
+    }
+    int ok = ptn_is_truthy(option_result);
+    ptn_value_destroy(&option_result);
+    *out = ptn_bool(ok);
+    return 1;
+}
+
 static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_blocking", args[0], line);
@@ -167752,6 +167909,20 @@ static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t arg
         return ptn_null();
     }
     int enabled = ptn_is_truthy(args[1]);
+    PtnValue user_result = ptn_null();
+    if (ptn_user_stream_dispatch_set_option(
+            runtime,
+            resource,
+            "stream_set_blocking",
+            PTN_STREAM_OPTION_BLOCKING,
+            enabled ? 1 : 0,
+            1,
+            0,
+            line,
+            &user_result
+        )) {
+        return user_result;
+    }
 #if defined(_WIN32)
     (void)resource;
     (void)enabled;
@@ -167797,6 +167968,20 @@ static PtnValue ptn_internal_stream_set_timeout(PtnRuntime *runtime, size_t argc
         ptn_throw_exception(runtime, "ValueError", "stream_set_timeout(): Argument #3 ($microseconds) must be greater than or equal to 0");
         return ptn_null();
     }
+    PtnValue user_result = ptn_null();
+    if (ptn_user_stream_dispatch_set_option(
+            runtime,
+            resource,
+            "stream_set_timeout",
+            PTN_STREAM_OPTION_READ_TIMEOUT,
+            seconds,
+            0,
+            microseconds,
+            line,
+            &user_result
+        )) {
+        return user_result;
+    }
 #if defined(_WIN32)
     (void)resource;
     (void)seconds;
@@ -167829,60 +168014,24 @@ static PtnValue ptn_internal_stream_set_write_buffer(PtnRuntime *runtime, size_t
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
-    if (user_stream != NULL) {
-        if (user_stream->runtime == NULL ||
-            user_stream->runtime->method_dispatch == NULL ||
-            !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
-            PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
-            const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
-                ? wrapper_object.as.object->class_name
-                : "user-space";
-            char message[224];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "%s::stream_set_option is not implemented!",
-                class_name == NULL ? "user-space" : class_name
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_stream_report_resource_error(
-                runtime,
-                resource,
-                "stream_set_write_buffer",
-                message,
-                "user-space",
-                "NotImplemented",
-                0,
-                1,
-                line
-            );
-            return ptn_bool(0);
-        }
-        PtnValue option_args[3] = {
-            ptn_int(3),
-            ptn_int(size == 0 ? 0 : 2),
-            ptn_int(size)
-        };
-        PtnValue option_result = user_stream->runtime->method_dispatch(
-            user_stream->runtime,
-            user_stream->wrapper_object,
-            "stream_set_option",
-            3,
-            option_args,
-            line
-        );
-        ptn_value_destroy(&option_args[0]);
-        ptn_value_destroy(&option_args[1]);
-        ptn_value_destroy(&option_args[2]);
-        if (user_stream->runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&option_result);
+    PtnValue user_result = ptn_null();
+    if (ptn_user_stream_dispatch_set_option(
+            runtime,
+            resource,
+            "stream_set_write_buffer",
+            PTN_STREAM_OPTION_WRITE_BUFFER,
+            size == 0 ? PTN_STREAM_BUFFER_NONE : PTN_STREAM_BUFFER_FULL,
+            0,
+            size,
+            line,
+            &user_result
+        )) {
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&user_result);
             return ptn_null();
         }
-        int ok = ptn_is_truthy(option_result);
-        ptn_value_destroy(&option_result);
+        int ok = ptn_is_truthy(user_result);
+        ptn_value_destroy(&user_result);
         return ptn_int(ok ? 0 : -1);
     }
 #if defined(_IONBF) && defined(_IOFBF)
