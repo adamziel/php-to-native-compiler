@@ -221171,6 +221171,31 @@ static void ptn_db_array_append(PtnValue array_value, PtnValue value) {
     ptn_array_set_entry(array.as.array, ptn_array_int_key(array.as.array->next_auto_key), value);
 }
 
+static const char *ptn_db_sqlite_sqlstate_for_code(int64_t code) {
+    switch (code) {
+        case 0:
+            return "00000";
+        case 19:
+            return "23000";
+        default:
+            return "HY000";
+    }
+}
+
+static const char *ptn_db_error_info_sqlstate(
+    PtnDbConnectionData *db,
+    const char *state,
+    int64_t code,
+    int64_t extended_code
+) {
+    const char *fallback = state != NULL ? state : "HY000";
+    if (db == NULL || db->driver == NULL || !ptn_ascii_case_equal(db->driver, "sqlite")) {
+        return fallback;
+    }
+    int64_t effective_code = db->extended_result_codes && extended_code != 0 ? extended_code : code;
+    return ptn_db_sqlite_sqlstate_for_code(effective_code);
+}
+
 static void ptn_db_set_error_info_extended(
     PtnDbConnectionData *db,
     const char *state,
@@ -221187,8 +221212,12 @@ static void ptn_db_set_error_info_extended(
     db->last_error_message = message == NULL ? NULL : ptn_duplicate_string(message);
     ptn_value_destroy(&db->last_error_info);
     db->last_error_info = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(0), ptn_string(state != NULL ? state : "HY000"));
     int64_t pdo_code = db->extended_result_codes && extended_code != 0 ? extended_code : code;
+    ptn_array_set_entry(
+        db->last_error_info.as.array,
+        ptn_array_int_key(0),
+        ptn_string(ptn_db_error_info_sqlstate(db, state, code, extended_code))
+    );
     ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(1), pdo_code == 0 ? ptn_null() : ptn_int(pdo_code));
     ptn_array_set_entry(db->last_error_info.as.array, ptn_array_int_key(2), message == NULL ? ptn_null() : ptn_string(message));
 }

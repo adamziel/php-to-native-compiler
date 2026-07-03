@@ -32525,6 +32525,50 @@ try {
 }
 
 #[test]
+fn compile_pdo_sqlite_extended_result_codes_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-extended-result-codes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-extended-result-codes.php");
+    let output = root.join("pdo-sqlite-extended-result-codes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$db = new PDO('sqlite::memory:');
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+$db->exec('CREATE TABLE dog (id INTEGER PRIMARY KEY, name TEXT)');
+$db->exec("INSERT INTO dog VALUES (1, 'Annoying Dog')");
+$db->exec("INSERT INTO dog VALUES (1, 'Annoying Dog')");
+$error = $db->errorInfo();
+echo $error[0], ':', $error[1], "\n";
+
+$extended = new PDO('sqlite::memory:', '', '', [Pdo\Sqlite::ATTR_EXTENDED_RESULT_CODES => true]);
+$extended->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+$extended->exec('CREATE TABLE dog (id INTEGER PRIMARY KEY, name TEXT)');
+$extended->exec("INSERT INTO dog VALUES (1, 'Annoying Dog')");
+$extended->exec("INSERT INTO dog VALUES (1, 'Annoying Dog')");
+$error = $extended->errorInfo();
+echo $error[0], ':', $error[1], "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "23000:19\nHY000:1555\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_db_sqlite_sqlstate_for_code"));
+    assert!(c_source.contains("extended_result_codes"));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
