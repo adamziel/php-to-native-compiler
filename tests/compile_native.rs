@@ -59086,6 +59086,24 @@ function ptn_dom_wrong_document_variation($method) {
 foreach (['prepend', 'append', 'before', 'after', 'replaceWith'] as $method) {
     ptn_dom_wrong_document_variation($method);
 }
+
+function ptn_dom_document_child_wrong_document_variation($method) {
+    $dom1 = new DOMDocument();
+    $dom1->loadXML('<test/>');
+
+    $dom2 = new DOMDocument();
+    $dom2->loadXML('<test><foo/></test>');
+
+    try {
+        $dom1->documentElement->$method($dom2->documentElement->firstChild);
+    } catch (DOMException $e) {
+        echo 'document-', $method, ':', $e->getMessage(), "\n";
+    }
+}
+
+foreach (['before', 'after', 'replaceWith'] as $method) {
+    ptn_dom_document_child_wrong_document_variation($method);
+}
 "#,
     )
     .unwrap();
@@ -59115,6 +59133,9 @@ foreach (['prepend', 'append', 'before', 'after', 'replaceWith'] as $method) {
             "<container><alone/><child/></container>\n",
             "replaceWith:Wrong Document Error\n",
             "<container><alone/><child/></container>\n",
+            "document-before:Wrong Document Error\n",
+            "document-after:Wrong Document Error\n",
+            "document-replaceWith:Wrong Document Error\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
