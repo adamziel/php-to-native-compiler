@@ -210888,12 +210888,87 @@ static void ptn_reflection_property_throw_raw_virtual_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static int ptn_reflection_property_target_static_property(
+    PtnValue target,
+    const char *property_name,
+    const char **declaring_class_out
+) {
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT || target.as.object == NULL) {
+        return 0;
+    }
+    const char *declaring_class = NULL;
+    int is_static = 0;
+    int visibility = 0;
+    int has_default = 0;
+    int modifiers = 0;
+    if (!ptn_reflection_property_class_metadata(
+            target.as.object->class_name,
+            property_name,
+            &declaring_class,
+            &is_static,
+            &visibility,
+            &has_default,
+            &modifiers
+        ) ||
+        !is_static) {
+        return 0;
+    }
+    (void)visibility;
+    (void)has_default;
+    (void)modifiers;
+    if (declaring_class_out != NULL) {
+        *declaring_class_out = declaring_class == NULL
+            ? target.as.object->class_name
+            : declaring_class;
+    }
+    return 1;
+}
+
+static void ptn_reflection_property_throw_raw_static_error(
+    PtnRuntime *runtime,
+    const char *method_name,
+    const char *class_name,
+    const char *property_name
+) {
+    if (ptn_ascii_case_equal(method_name, "getRawValue") ||
+        ptn_ascii_case_equal(method_name, "setRawValue")) {
+        char message[80];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "May not use %s on static properties",
+            method_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Can not use %s on static property %s::$%s",
+        method_name,
+        class_name,
+        property_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ReflectionException", message);
+}
+
 static int ptn_reflection_property_write_raw_storage_value(
     PtnRuntime *runtime,
     PtnValue target,
     const char *property_name,
     const char *property_owner,
     PtnValue value,
+    const char *method_name,
     size_t line
 );
 
@@ -210909,9 +210984,12 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
     if (target.type != PTN_OBJECT || target.as.object == NULL) {
         return ptn_null();
     }
-    const PtnObjectPropertyMetadata *metadata = is_dynamic
-        ? NULL
-        : ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_reflection_property_object_metadata(
+            target,
+            property_name,
+            is_dynamic ? NULL : property_owner
+        );
     if (!is_dynamic &&
         (ptn_ascii_case_equal(target.as.object->class_name, "XMLReader") ||
          ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "XMLReader")) &&
@@ -210931,6 +211009,22 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
             metadata->declaring_class,
             metadata->display_name,
             line
+        );
+        return ptn_null();
+    }
+    const char *static_declaring_class = NULL;
+    if (is_dynamic &&
+        metadata == NULL &&
+        ptn_reflection_property_target_static_property(
+            target,
+            property_name,
+            &static_declaring_class
+        )) {
+        ptn_reflection_property_throw_raw_static_error(
+            runtime,
+            "getRawValue",
+            static_declaring_class,
+            property_name
         );
         return ptn_null();
     }
@@ -210960,6 +211054,7 @@ static PtnValue ptn_reflection_property_set_raw_object_value(
     const char *property_name,
     const char *property_owner,
     PtnValue value,
+    const char *method_name,
     size_t line
 ) {
     const PtnObjectPropertyMetadata *metadata =
@@ -210981,9 +211076,25 @@ static PtnValue ptn_reflection_property_set_raw_object_value(
             property_name,
             property_owner,
             value,
+            method_name,
             line
         );
         return ptn_value_clone_deref(value);
+    }
+    const char *static_declaring_class = NULL;
+    if (property_owner == NULL &&
+        ptn_reflection_property_target_static_property(
+            target,
+            property_name,
+            &static_declaring_class
+        )) {
+        ptn_reflection_property_throw_raw_static_error(
+            runtime,
+            method_name,
+            static_declaring_class,
+            property_name
+        );
+        return ptn_null();
     }
     PtnValue result = ptn_object_write_property(
         runtime,
@@ -211508,6 +211619,7 @@ static int ptn_reflection_property_write_raw_storage_value(
     const char *property_name,
     const char *property_owner,
     PtnValue value,
+    const char *method_name,
     size_t line
 ) {
     target = ptn_value_deref(target);
@@ -211523,6 +211635,7 @@ static int ptn_reflection_property_write_raw_storage_value(
             property_name,
             property_owner,
             value,
+            method_name,
             line
         );
         ptn_value_destroy(&written);
@@ -212401,35 +212514,12 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         const char *property_owner = declaring_class == NULL ? data->class_name : declaring_class;
         if (is_static) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "Can not use %s on static property %s::$%s",
+            ptn_reflection_property_throw_raw_static_error(
+                runtime,
                 name,
                 property_owner,
                 data->name
             );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "ReflectionException", message);
-            return ptn_null();
-        }
-        if ((modifiers & 512) != 0) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "Can not use %s on virtual property %s::$%s",
-                name,
-                property_owner,
-                data->name
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "ReflectionException", message);
             return ptn_null();
         }
         PtnValue target = ptn_value_deref(args[0]);
@@ -212448,7 +212538,65 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ptn_throw_exception(runtime, "TypeError", message);
             return ptn_null();
         }
-        if (data->is_dynamic) {
+        const char *raw_property_owner = data->is_dynamic ? NULL : property_owner;
+        const PtnObjectPropertyMetadata *existing_metadata =
+            ptn_reflection_property_object_metadata(target, data->name, raw_property_owner);
+        if (skip_property && (modifiers & 512) != 0) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Can not use %s on virtual property %s::$%s",
+                name,
+                property_owner,
+                data->name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        if (!skip_property &&
+            (modifiers & 512) != 0 &&
+            (existing_metadata == NULL || existing_metadata->is_virtual)) {
+            const char *virtual_class = existing_metadata == NULL
+                ? property_owner
+                : existing_metadata->declaring_class;
+            const char *virtual_property = existing_metadata == NULL
+                ? data->name
+                : existing_metadata->display_name;
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Can not use %s on virtual property %s::$%s",
+                name,
+                virtual_class,
+                virtual_property
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        if (data->is_dynamic && existing_metadata == NULL) {
+            const char *static_declaring_class = NULL;
+            if (!skip_property &&
+                ptn_reflection_property_target_static_property(
+                    target,
+                    data->name,
+                    &static_declaring_class
+                )) {
+                ptn_reflection_property_throw_raw_static_error(
+                    runtime,
+                    name,
+                    static_declaring_class,
+                    data->name
+                );
+                return ptn_null();
+            }
             char message[192];
             int written = snprintf(
                 message,
@@ -212476,8 +212624,6 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         if (skip_property && !target.as.object->lazy_uninitialized) {
             return ptn_null();
         }
-        const PtnObjectPropertyMetadata *existing_metadata =
-            ptn_reflection_property_object_metadata(target, data->name, property_owner);
         if (skip_property && existing_metadata != NULL && existing_metadata->lazy_skip) {
             return ptn_null();
         }
@@ -212504,8 +212650,9 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             runtime,
             target,
             data->name,
-            property_owner,
+            raw_property_owner,
             value,
+            name,
             line
         );
         if (runtime->exceptions->active_exception == NULL) {
@@ -212620,6 +212767,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 data->name,
                 data->is_dynamic ? NULL : (declaring_class == NULL ? data->class_name : declaring_class),
                 args[1],
+                name,
                 line
             );
             written = ptn_value_clone_deref(args[1]);
