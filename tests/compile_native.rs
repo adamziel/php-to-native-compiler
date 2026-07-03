@@ -62641,6 +62641,84 @@ try {
 }
 
 #[test]
+fn compile_dom_modern_attribute_reconciliation_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-modern-attribute-reconciliation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-modern-attribute-reconciliation.php");
+    let output = root.join("dom-modern-attribute-reconciliation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createEmpty();
+$root = $dom->appendChild($dom->createElement('root'));
+
+$root->setAttributeNS("urn:a", "a:root1", "bar");
+$root1 = $root->getAttributeNodeNS("urn:a", "root1");
+$root->setAttributeNS("urn:b", "a:root2", "bar");
+$root2 = $root->getAttributeNodeNS("urn:b", "root2");
+$root->setAttributeNS("urn:a", "a:root3", "bar");
+$root3 = $root->getAttributeNodeNS("urn:a", "root3");
+
+$child = $root->appendChild($dom->createElement("child"));
+$child->setAttributeNS("urn:x", "a:child1", "bar");
+$child1 = $child->getAttributeNodeNS("urn:x", "child1");
+$child->setAttributeNS("urn:a", "a:child2", "bar");
+$child2 = $child->getAttributeNodeNS("urn:a", "child2");
+
+echo $dom->saveXml(), "\n";
+
+var_dump($root1->prefix, $root1->namespaceURI);
+var_dump($root2->prefix, $root2->namespaceURI);
+var_dump($root3->prefix, $root3->namespaceURI);
+
+$child->removeAttribute("a:child1");
+$root->setAttributeNodeNS($child1);
+
+var_dump($child1->prefix, $child1->namespaceURI);
+var_dump($child2->prefix, $child2->namespaceURI);
+
+echo $dom->saveXml(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<root xmlns:a=\"urn:a\" a:root1=\"bar\" xmlns:ns1=\"urn:b\" ns1:root2=\"bar\" a:root3=\"bar\"><child xmlns:a=\"urn:x\" a:child1=\"bar\" xmlns:ns2=\"urn:a\" ns2:child2=\"bar\"/></root>\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:a\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:b\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:a\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:x\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:a\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<root xmlns:a=\"urn:a\" a:root1=\"bar\" xmlns:ns1=\"urn:b\" ns1:root2=\"bar\" a:root3=\"bar\" xmlns:ns2=\"urn:x\" ns2:child1=\"bar\"><child a:child2=\"bar\"/></root>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_element_reconcile_synthetic_namespaces"));
+    assert!(c_source.contains("ptn_xml_append_attribute_namespace_declaration"));
+}
+
+#[test]
 fn compile_dom_xpath_nodelist_handle_sequence_to_native_binary() {
     let root = temp_dir("ptn-native-dom-xpath-nodelist-handles");
     fs::create_dir_all(&root).unwrap();
