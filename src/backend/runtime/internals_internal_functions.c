@@ -213987,8 +213987,9 @@ typedef struct PtnZipArchiveEntry {
 #define PTN_ZIP_ER_EXISTS 10
 #define PTN_ZIP_ER_INCONS 21
 #define PTN_ZIP_ER_CANCELLED 32
-#define PTN_ZIP_AFL_IS_TORRENTZIP 1
-#define PTN_ZIP_AFL_WANT_TORRENTZIP 2
+#define PTN_ZIP_AFL_IS_TORRENTZIP 4
+#define PTN_ZIP_AFL_WANT_TORRENTZIP 8
+#define PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE 16
 
 static const char PTN_ZIP_TORRENTZIP_COMMENT[] = "PTN-TORRENTZIP";
 
@@ -214853,7 +214854,8 @@ static int ptn_zip_archive_write_to_path(PtnZipArchiveData *data) {
     if (data == NULL || data->filename == NULL) {
         return 0;
     }
-    if (data->entry_count == 0) {
+    if (data->entry_count == 0 &&
+        (data->archive_flags & PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE) == 0) {
         if (unlink(data->filename) != 0 && errno != ENOENT) {
             return 0;
         }
@@ -216133,8 +216135,15 @@ static PtnValue ptn_zip_archive_add_file(
     int overwrite = (flags & PTN_ZIP_FL_OVERWRITE) != 0;
 
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
-    int ok = data != NULL && data->is_open &&
-        ptn_zip_archive_store_file_entry(data, archive_name, path, start, length, has_length, overwrite);
+    int ok = 0;
+    if (data != NULL && data->is_open) {
+        struct stat path_info;
+        if (stat(path, &path_info) != 0) {
+            ptn_emit_warning(&runtime->diagnostics, "ZipArchive::addFile(): No such file or directory", line);
+        } else {
+            ok = ptn_zip_archive_store_file_entry(data, archive_name, path, start, length, has_length, overwrite);
+        }
+    }
     free(archive_name);
     free(path);
     ptn_zip_archive_set_status(runtime, data, receiver, ok ? PTN_ZIP_ER_OK : data == NULL ? PTN_ZIP_ER_OK : data->status, line);
@@ -216724,7 +216733,7 @@ static PtnValue ptn_zip_archive_set_archive_flag(
     } else {
         data->archive_flags &= ~flag;
     }
-    if ((flag & PTN_ZIP_AFL_WANT_TORRENTZIP) != 0) {
+    if ((flag & (PTN_ZIP_AFL_WANT_TORRENTZIP | PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE)) != 0) {
         ptn_zip_archive_mark_irreversible_dirty(data);
     }
     ptn_zip_archive_set_status(runtime, data, receiver, PTN_ZIP_ER_OK, line);
@@ -248563,6 +248572,7 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("EM_AES_256"), ptn_int(PTN_ZIP_EM_AES_256));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("AFL_IS_TORRENTZIP"), ptn_int(PTN_ZIP_AFL_IS_TORRENTZIP));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("AFL_WANT_TORRENTZIP"), ptn_int(PTN_ZIP_AFL_WANT_TORRENTZIP));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE"), ptn_int(PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("LIBZIP_VERSION"), ptn_string(PTN_ZIP_LIBZIP_VERSION));
         return;
     }

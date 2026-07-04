@@ -6383,6 +6383,7 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "EM_AES_256") == 0) { *out = ptn_int(PTN_ZIP_EM_AES_256); return 1; }
         if (strcmp(constant, "AFL_IS_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_IS_TORRENTZIP); return 1; }
         if (strcmp(constant, "AFL_WANT_TORRENTZIP") == 0) { *out = ptn_int(PTN_ZIP_AFL_WANT_TORRENTZIP); return 1; }
+        if (strcmp(constant, "AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE") == 0) { *out = ptn_int(PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE); return 1; }
         if (strcmp(constant, "LIBZIP_VERSION") == 0) { *out = ptn_string(PTN_ZIP_LIBZIP_VERSION); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "XMLReader")) {

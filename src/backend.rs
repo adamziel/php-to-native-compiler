@@ -38520,6 +38520,10 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             ("EM_AES_256", "PTN_ZIP_EM_AES_256"),
             ("AFL_IS_TORRENTZIP", "PTN_ZIP_AFL_IS_TORRENTZIP"),
             ("AFL_WANT_TORRENTZIP", "PTN_ZIP_AFL_WANT_TORRENTZIP"),
+            (
+                "AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE",
+                "PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE",
+            ),
         ];
         for (constant, value) in ZIP_ARCHIVE_CONSTANTS {
             if name.eq_ignore_ascii_case(constant) {

@@ -69097,6 +69097,85 @@ var_dump($wrappedMeta['wrapper_type'], $wrappedMeta['stream_type'], $wrappedMeta
 }
 
 #[test]
+fn compile_ziparchive_missing_addfile_and_empty_archive_flag_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-missing-addfile-empty-flag");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-missing-addfile-empty-flag.php");
+    let output = root.join("ziparchive-missing-addfile-empty-flag-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$file = __DIR__ . '/base.zip';
+$empty = __DIR__ . '/empty.zip';
+@unlink($file);
+@unlink($empty);
+
+$zip = new ZipArchive;
+$zip->open($file, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+$zip->addFromString('keep.txt', 'ok');
+$zip->close();
+
+$zip = new ZipArchive;
+$zip->open($file);
+var_dump($zip->addFile(__DIR__ . '/missing.txt', 'missing.txt'));
+var_dump($zip->status === ZipArchive::ER_OK, count($zip), $zip->getNameIndex(0));
+$zip->close();
+
+copy($file, $empty);
+$zip = new ZipArchive;
+$zip->open($empty, ZipArchive::CREATE);
+$zip->deleteIndex(0);
+$zip->close();
+var_dump(file_exists($empty));
+
+copy($file, $empty);
+$zip = new ZipArchive;
+$zip->open($empty, ZipArchive::CREATE);
+var_dump($zip->setArchiveFlag(ZipArchive::AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE, 1));
+var_dump($zip->getArchiveFlag(ZipArchive::AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE));
+$zip->deleteIndex(0);
+$zip->close();
+var_dump(file_exists($empty));
+
+$reader = new ZipArchive;
+$reader->open($empty);
+var_dump(count($reader));
+$reader->close();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: ZipArchive::addFile(): No such file or directory"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nbool(true)\nint(1)\nstring(8) \"keep.txt\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(false)\nbool(true)\nint(1)\nbool(true)\nint(0)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_ZIP_AFL_CREATE_OR_KEEP_FILE_FOR_EMPTY_ARCHIVE"));
+    assert!(c_source.contains("ptn_zip_archive_write_to_path"));
+}
+
+#[test]
 fn compile_zip_name_metadata_edges_to_native_binary() {
     let root = temp_dir("ptn-native-zip-name-metadata-edges");
     fs::create_dir_all(&root).unwrap();
