@@ -1,0 +1,8 @@
+# Focused PHPT row pack for opcache optimizer current-red rows.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-opcache-opt-next-current-red-row-pack.txt
+#
+# bucket: opcache-opt-next-current-red rows=2
+ext/opcache/tests/opt/coalesce.phpt
+ext/opcache/tests/optimize_static_003.phpt

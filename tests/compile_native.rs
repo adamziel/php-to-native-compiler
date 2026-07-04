@@ -52697,11 +52697,12 @@ show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
 }
 
 #[test]
-fn compile_reflection_function_static_variables_dump_dereferences_static_locals_to_native_binary() {
-    let root = temp_dir("ptn-native-reflection-function-static-vars-deref");
+fn compile_reflection_function_static_variables_dump_preserves_static_local_refs_to_native_binary()
+{
+    let root = temp_dir("ptn-native-reflection-function-static-vars-ref");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("reflection-function-static-vars-deref.php");
-    let output = root.join("reflection-function-static-vars-deref-bin");
+    let input = root.join("reflection-function-static-vars-ref.php");
+    let output = root.join("reflection-function-static-vars-ref-bin");
     fs::write(
         &input,
         "<?php
@@ -52720,7 +52721,7 @@ reflected_static_variables();
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(1) {\n  [\"a\"]=>\n  int(42)\n}\n"
+        "array(1) {\n  [\"a\"]=>\n  &int(42)\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -95399,6 +95400,52 @@ function constant_array_echo() {\n\
     assert!(stdout.contains("ConstReturner::getBaz:\n"), "{stdout}");
     assert!(
         stdout.matches("0000 RETURN int(42)\n").count() >= 3,
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_coalesce_functions_dump_after_optimizer_shape() {
+    let root = temp_dir("ptn-phpc-opcache-coalesce-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-coalesce-dump.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function a() {\n\
+    $test = $test ?? true;\n\
+    return $test;\n\
+}\n\
+function b() {\n\
+    $test ??= true;\n\
+    return $test;\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("a:\n"), "{stdout}");
+    assert!(stdout.contains("b:\n"), "{stdout}");
+    assert_eq!(
+        stdout
+            .matches("0000 T1 = COALESCE CV0($test) 0001\n0001 RETURN bool(true)\n")
+            .count(),
+        2,
         "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

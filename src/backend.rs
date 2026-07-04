@@ -1417,6 +1417,16 @@ fn opcache_function_after_optimizer_dump(
             tmps,
         ));
     }
+    if let Some((dump, vars, tmps)) = opcache_function_coalesce_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
 
     None
 }
@@ -1796,6 +1806,52 @@ fn opcache_function_echo_simplification_dump(
     }
 
     None
+}
+
+fn opcache_function_coalesce_dump(function: &FunctionDecl) -> Option<(OpcacheDump, usize, usize)> {
+    if !function.parameters.is_empty() {
+        return None;
+    }
+
+    let variable_name = match function.body.as_slice() {
+        [Instruction::Store {
+            name,
+            value:
+                ValueExpr::Binary {
+                    op: BinaryOp::Coalesce,
+                    left,
+                    right,
+                    ..
+                },
+            ..
+        }, Instruction::Return {
+            value: Some(ValueExpr::Load {
+                name: return_name, ..
+            }),
+            ..
+        }] if matches!(left.as_ref(), ValueExpr::Load { name: left_name, .. } if left_name == name)
+            && matches!(right.as_ref(), ValueExpr::Bool(true))
+            && return_name == name =>
+        {
+            name
+        }
+        [Instruction::Expression(ValueExpr::Assign {
+            target: AssignmentTarget::Variable { name, .. },
+            op: AssignmentOp::CoalesceAssign,
+            value,
+        }), Instruction::Return {
+            value: Some(ValueExpr::Load {
+                name: return_name, ..
+            }),
+            ..
+        }] if matches!(value.as_ref(), ValueExpr::Bool(true)) && return_name == name => name,
+        _ => return None,
+    };
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("T1 = COALESCE CV0(${variable_name}) 0001"));
+    dump.opcode("RETURN bool(true)");
+    Some((dump, 1, 1))
 }
 
 fn opcache_function_array_branch_fetch_dump(
