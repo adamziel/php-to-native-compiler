@@ -5390,12 +5390,6 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
     const char *access_scope,
     size_t line
 );
-static PTN_UNUSED int ptn_internal_xml_property_unset(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    const char *property,
-    size_t line
-);
 static PTN_UNUSED int ptn_internal_xml_property_read(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -9754,9 +9748,6 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_internal_xml_property_unset(runtime, receiver, property, line)) {
-        return;
-    }
     PtnValue internal_value = ptn_null();
     if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
         ptn_value_destroy(&internal_value);
