@@ -1283,16 +1283,16 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
-        if (rewrite_vars_enabled) {
-            rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
-            output_data = rewrite_vars_rewritten;
-        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
+        }
+        if (rewrite_vars_enabled) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
         }
     }
     ptn_output_write_raw(runtime, root, output_data, rewritten_len);
@@ -1317,9 +1317,10 @@ static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) 
 }
 
 static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer) {
-    if (buffer == NULL || buffer->trans_sid_rewrite) {
+    if (buffer == NULL) {
         return;
     }
+    ptn_output_buffer_clear_trans_sid_snapshot(buffer);
     PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
     buffer->trans_sid_session_name = ptn_duplicate_string(
         state.session_name == NULL || state.session_name[0] == '\0' ? "PHPSESSID" : state.session_name
@@ -1420,11 +1421,6 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
-        if (rewrite_vars_enabled) {
-            rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
-            output_data = rewrite_vars_rewritten;
-        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state;
             state.session_name = buffer->trans_sid_session_name;
@@ -1434,6 +1430,11 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
+        }
+        if (rewrite_vars_enabled) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
         }
         ptn_output_write_rewritten_buffer_output(runtime, output_data, rewritten_len);
     } else {
