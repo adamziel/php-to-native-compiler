@@ -246879,6 +246879,29 @@ static int ptn_zend_test_reflection_property_metadata(
     int *has_default,
     int *modifiers
 ) {
+    if (ptn_ascii_case_equal(class_name, "DimensionHandlersNoArrayAccess")) {
+        if (strcmp(property_name, "read") == 0 ||
+            strcmp(property_name, "write") == 0 ||
+            strcmp(property_name, "has") == 0 ||
+            strcmp(property_name, "unset") == 0 ||
+            strcmp(property_name, "readType") == 0 ||
+            strcmp(property_name, "hasOffset") == 0 ||
+            strcmp(property_name, "checkEmpty") == 0 ||
+            strcmp(property_name, "offset") == 0) {
+            *declaring_class = "DimensionHandlersNoArrayAccess";
+            *is_static = 0;
+            *visibility = PTN_PROPERTY_PUBLIC;
+            *has_default =
+                strcmp(property_name, "read") == 0 ||
+                strcmp(property_name, "write") == 0 ||
+                strcmp(property_name, "has") == 0 ||
+                strcmp(property_name, "unset") == 0 ||
+                strcmp(property_name, "hasOffset") == 0;
+            *modifiers = 1;
+            return 1;
+        }
+        return 0;
+    }
     if (ptn_ascii_case_equal(class_name, "_ZendTestTrait")) {
         if (strcmp(property_name, "testProp") == 0 ||
             strcmp(property_name, "classUnionProp") == 0) {
@@ -246950,6 +246973,32 @@ static int ptn_zend_test_reflection_property_type_metadata(
     int *is_builtin,
     int *is_readonly
 ) {
+    if (ptn_ascii_case_equal(class_name, "DimensionHandlersNoArrayAccess")) {
+        *allows_null = 0;
+        *is_builtin = 1;
+        *is_readonly = 0;
+        if (strcmp(property_name, "read") == 0 ||
+            strcmp(property_name, "write") == 0 ||
+            strcmp(property_name, "has") == 0 ||
+            strcmp(property_name, "unset") == 0 ||
+            strcmp(property_name, "hasOffset") == 0) {
+            *type_name = "bool";
+            *type_display_name = "bool";
+            return 1;
+        }
+        if (strcmp(property_name, "readType") == 0 ||
+            strcmp(property_name, "checkEmpty") == 0) {
+            *type_name = "int";
+            *type_display_name = "int";
+            return 1;
+        }
+        if (strcmp(property_name, "offset") == 0) {
+            *type_name = NULL;
+            *type_display_name = "mixed";
+            return 1;
+        }
+        return 0;
+    }
     if (ptn_ascii_case_equal(class_name, "_ZendTestTrait")) {
         if (strcmp(property_name, "testProp") == 0) {
             *type_name = NULL;
@@ -247032,6 +247081,16 @@ static PtnValue ptn_zend_test_reflection_property_default_value(
     const char *class_name,
     const char *property_name
 ) {
+    if (ptn_ascii_case_equal(class_name, "DimensionHandlersNoArrayAccess")) {
+        if (strcmp(property_name, "read") == 0 ||
+            strcmp(property_name, "write") == 0 ||
+            strcmp(property_name, "has") == 0 ||
+            strcmp(property_name, "unset") == 0 ||
+            strcmp(property_name, "hasOffset") == 0) {
+            return ptn_bool(0);
+        }
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(class_name, "_ZendTestTrait") &&
         strcmp(property_name, "testProp") == 0) {
         return ptn_null();

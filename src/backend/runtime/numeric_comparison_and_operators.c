@@ -1228,6 +1228,34 @@ static PTN_UNUSED int ptn_arithmetic_string_to_number(
     return 1;
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static int ptn_zend_test_numeric_castable_no_operations_number(PtnValue value, PtnNumber *out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_ascii_case_equal(value.as.object->class_name, "NumericCastableNoOperations")) {
+        return 0;
+    }
+    char *storage_key = ptn_object_private_storage_key("NumericCastableNoOperations", "val");
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(value.as.object->properties, key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue stored = ptn_value_deref(entry->value);
+    if (stored.type == PTN_INT) {
+        *out = ptn_number_int(stored.as.integer);
+        return 1;
+    }
+    if (stored.type == PTN_FLOAT) {
+        *out = ptn_number_float(stored.as.floating);
+        return 1;
+    }
+    return 0;
+}
+#endif
+
 static PTN_UNUSED int ptn_arithmetic_number(
     PtnRuntime *runtime,
     PtnValue value,
@@ -1262,6 +1290,9 @@ static PTN_UNUSED int ptn_arithmetic_number(
         case PTN_RESOURCE:
         case PTN_OBJECT:
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+            if (ptn_zend_test_numeric_castable_no_operations_number(value, number)) {
+                return 1;
+            }
             if (ptn_simplexml_numeric_value(value, number)) {
                 return 1;
             }
@@ -1305,6 +1336,9 @@ static PTN_UNUSED int ptn_numeric_operator_rejects_operand(PtnValue value) {
         case PTN_OBJECT: {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             PtnNumber ignored;
+            if (ptn_zend_test_numeric_castable_no_operations_number(value, &ignored)) {
+                return 0;
+            }
             if (ptn_simplexml_numeric_value(value, &ignored)) {
                 return 0;
             }
@@ -2399,6 +2433,10 @@ static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue val
     }
     value = ptn_value_deref(value);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnNumber zend_test_number;
+    if (ptn_zend_test_numeric_castable_no_operations_number(value, &zend_test_number)) {
+        return ptn_increment_number(zend_test_number);
+    }
     PtnValue internal_result = ptn_null();
     if (ptn_bcmath_number_inc_dec(runtime, value, 1, line, &internal_result)) {
         return internal_result;
@@ -2442,6 +2480,10 @@ static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue val
     }
     value = ptn_value_deref(value);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnNumber zend_test_number;
+    if (ptn_zend_test_numeric_castable_no_operations_number(value, &zend_test_number)) {
+        return ptn_decrement_number(zend_test_number);
+    }
     PtnValue internal_result = ptn_null();
     if (ptn_bcmath_number_inc_dec(runtime, value, 0, line, &internal_result)) {
         return internal_result;

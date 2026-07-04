@@ -80815,6 +80815,105 @@ var_dump($a * $b);\n",
 }
 
 #[test]
+fn phpc_zend_test_tail_current_runtime_surface_runs_with_internal_dispatch() {
+    let root = temp_dir("ptn-phpc-zend-test-tail-current-runtime-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-tail-current-runtime-surface.php");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $message) { echo \"notice:$message\\n\"; return true; });\n\
+\n\
+try { var_dump(clone ZendTestIntEnum::Foo); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo implode(',', array_keys(get_class_vars(DimensionHandlersNoArrayAccess::class))), \"\\n\";\n\
+\n\
+$l = new LongCastableNoOperations(5);\n\
+$f = new FloatCastableNoOperations(15.8);\n\
+$nl = new NumericCastableNoOperations(52);\n\
+$nf = new NumericCastableNoOperations(58.3);\n\
+try { var_dump($l - 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump($f - 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($nl - 1);\n\
+var_dump($nf - 1);\n\
+try { $l--; var_dump($l); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $f--; var_dump($f); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$nl--;\n\
+$nf--;\n\
+var_dump($nl, $nf);\n\
+\n\
+$o = new DimensionHandlersNoArrayAccess();\n\
+$r = $o['foo'];\n\
+var_dump($o->read, $o->write, $o->has, $o->unset, $o->readType, $o->hasOffset, $o->offset);\n\
+$checkEmpty = new ReflectionProperty($o, 'checkEmpty');\n\
+$offset = new ReflectionProperty($o, 'offset');\n\
+var_dump($checkEmpty->isInitialized($o), $offset->isInitialized($o));\n\
+\n\
+$o = new DimensionHandlersNoArrayAccess();\n\
+$r = isset($o['foo']);\n\
+var_dump($r, $o->has, $o->checkEmpty);\n\
+\n\
+$o = new DimensionHandlersNoArrayAccess();\n\
+try { $o['foo']['bar'] = true; } catch (Throwable $e) { echo $e::class, ':', $e->getMessage(), \"\\n\"; }\n\
+var_dump($o->read, $o->write, $o->readType, $o->hasOffset, $o->offset);\n\
+\n\
+$o = new DimensionHandlersNoArrayAccess();\n\
+try { $r = &$o['foo']['bar']; } catch (Throwable $e) { echo $e::class, ':', $e->getMessage(), \"\\n\"; }\n\
+var_dump($o->read, $o->readType, $o->hasOffset, $o->offset);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "phpc exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Trying to clone an uncloneable object of class ZendTestIntEnum\n",
+            "read,write,has,unset,readType,hasOffset,checkEmpty,offset\n",
+            "Unsupported operand types: LongCastableNoOperations - int\n",
+            "Unsupported operand types: FloatCastableNoOperations - int\n",
+            "int(51)\n",
+            "float(57.3)\n",
+            "Cannot decrement LongCastableNoOperations\n",
+            "Cannot decrement FloatCastableNoOperations\n",
+            "int(51)\n",
+            "float(57.3)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "string(3) \"foo\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "notice:Indirect modification of overloaded element of DimensionHandlersNoArrayAccess has no effect\n",
+            "Error:Cannot use a scalar value as an array\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "string(3) \"foo\"\n",
+            "notice:Indirect modification of overloaded element of DimensionHandlersNoArrayAccess has no effect\n",
+            "Error:Cannot use a scalar value as an array\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "string(3) \"foo\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strtr_dereferences_replacement_array_entries_to_native_binary() {
     let root = temp_dir("ptn-native-strtr-reference-map");
     fs::create_dir_all(&root).unwrap();

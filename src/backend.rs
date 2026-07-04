@@ -33,6 +33,11 @@ const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "DoOperationNoCast",
+    "LongCastableNoOperations",
+    "FloatCastableNoOperations",
+    "NumericCastableNoOperations",
+    "DimensionHandlersNoArrayAccess",
+    "ZendTestIntEnum",
     "php_user_filter",
     "CurlHandle",
     "CurlMultiHandle",
@@ -104,6 +109,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "ZendTestIntEnum",
     "Random\\IntervalBoundary",
     "StreamErrorCode",
     "StreamErrorMode",
@@ -11667,6 +11673,11 @@ fn emit_class_metadata_helpers(
         "stdClass",
         "InternalIterator",
         "DoOperationNoCast",
+        "LongCastableNoOperations",
+        "FloatCastableNoOperations",
+        "NumericCastableNoOperations",
+        "DimensionHandlersNoArrayAccess",
+        "ZendTestIntEnum",
         "DatePeriod",
         "BcMath\\Number",
         "Generator",
@@ -12569,6 +12580,11 @@ fn emit_class_metadata_helpers(
         "stdClass",
         "InternalIterator",
         "DoOperationNoCast",
+        "LongCastableNoOperations",
+        "FloatCastableNoOperations",
+        "NumericCastableNoOperations",
+        "DimensionHandlersNoArrayAccess",
+        "ZendTestIntEnum",
         "BcMath\\Number",
         "Generator",
         "Fiber",
@@ -13706,6 +13722,7 @@ fn emit_class_metadata_helpers(
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    emit_direct_modeled_internal_class_vars(out);
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
@@ -26634,6 +26651,12 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "__php_incomplete_class" => Some("__PHP_Incomplete_Class"),
                 "_zendtestclass" => Some("_ZendTestClass"),
                 "_zendtestchildclass" => Some("_ZendTestChildClass"),
+                "dooperationnocast" => Some("DoOperationNoCast"),
+                "longcastablenooperations" => Some("LongCastableNoOperations"),
+                "floatcastablenooperations" => Some("FloatCastableNoOperations"),
+                "numericcastablenooperations" => Some("NumericCastableNoOperations"),
+                "dimensionhandlersnoarrayaccess" => Some("DimensionHandlersNoArrayAccess"),
+                "zendtestintenum" => Some("ZendTestIntEnum"),
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "fiber" => Some("Fiber"),
@@ -26672,7 +26695,27 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
 }
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
-    let property_names: &[&str] = if matches!(
+    if class_name == "DimensionHandlersNoArrayAccess" {
+        for (property_name, default_expr) in [
+            ("read", "ptn_bool(0)"),
+            ("write", "ptn_bool(0)"),
+            ("has", "ptn_bool(0)"),
+            ("unset", "ptn_bool(0)"),
+            ("readType", "ptn_null()"),
+            ("hasOffset", "ptn_bool(0)"),
+            ("checkEmpty", "ptn_null()"),
+            ("offset", "ptn_null()"),
+        ] {
+            out.push_str(indent);
+            out.push_str("ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(property_name);
+            out.push_str("\"), ");
+            out.push_str(default_expr);
+            out.push_str(");\n");
+        }
+        return;
+    }
+    let null_property_names: &[&str] = if matches!(
         class_name,
         "ReflectionClass" | "ReflectionEnum" | "ReflectionObject"
     ) {
@@ -26694,11 +26737,36 @@ fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: 
     } else {
         &[]
     };
-    for property_name in property_names {
+    for property_name in null_property_names {
         out.push_str(indent);
         out.push_str("ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
         out.push_str(property_name);
         out.push_str("\"), ptn_null());\n");
+    }
+}
+
+fn emit_direct_modeled_internal_class_vars(out: &mut String) {
+    let class_names = [
+        "ReflectionClass",
+        "ReflectionEnum",
+        "ReflectionObject",
+        "ReflectionClassConstant",
+        "ReflectionEnumBackedCase",
+        "ReflectionEnumUnitCase",
+        "ReflectionMethod",
+        "ReflectionProperty",
+        "ReflectionFunction",
+        "ReflectionFunctionAbstract",
+        "ReflectionParameter",
+        "DimensionHandlersNoArrayAccess",
+    ];
+    for class_name in class_names {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        emit_modeled_internal_class_vars(out, "        ", class_name);
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
     }
 }
 

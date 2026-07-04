@@ -316,6 +316,13 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_read(
     PtnValue key_value,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_arrayaccess_read_with_type(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line,
+    int read_type
+);
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
     size_t index = ptn_array_find_key(array, key);
@@ -1078,6 +1085,303 @@ static PtnValue ptn_zend_test_do_operation_no_cast_new(
     return object;
 }
 
+static int ptn_zend_test_castable_no_operations_number_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line,
+    PtnValue *out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT || value.type == PTN_FLOAT) {
+        *out = ptn_value_clone(value);
+        return 1;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($val) must be of type int|float, %s given",
+        function_name,
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    return 0;
+}
+
+static PtnValue ptn_zend_test_castable_no_operations_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 1 argument",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue stored = ptn_null();
+    PtnPropertyTypeKind property_type = PTN_PROPERTY_TYPE_NONE;
+    const char *property_type_text = NULL;
+    if (ptn_ascii_case_equal(class_name, "LongCastableNoOperations")) {
+        char function_name[] = "LongCastableNoOperations::__construct";
+        int64_t value = ptn_internal_expect_integer_arg(runtime, function_name, 1, "val", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        stored = ptn_int(value);
+        property_type = PTN_PROPERTY_TYPE_INT;
+        property_type_text = "int";
+    } else if (ptn_ascii_case_equal(class_name, "FloatCastableNoOperations")) {
+        PtnValue resolved = ptn_value_deref(args[0]);
+        if (resolved.type != PTN_INT && resolved.type != PTN_FLOAT) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "FloatCastableNoOperations::__construct(): Argument #1 ($val) must be of type float, %s given",
+                ptn_offset_container_type_name(resolved)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+            return ptn_null();
+        }
+        stored = ptn_float(resolved.type == PTN_FLOAT ? resolved.as.floating : (double)resolved.as.integer);
+        property_type = PTN_PROPERTY_TYPE_FLOAT;
+        property_type_text = "float";
+    } else {
+        if (!ptn_zend_test_castable_no_operations_number_arg(
+                runtime,
+                "NumericCastableNoOperations::__construct",
+                args[0],
+                line,
+                &stored
+            )) {
+            return ptn_null();
+        }
+        property_type = PTN_PROPERTY_TYPE_TEXT;
+        property_type_text = "int|float";
+    }
+
+    PtnValue object = ptn_object_new_shell_at(runtime, class_name, line);
+    ptn_object_register_property_metadata(
+        object.as.object,
+        "val",
+        class_name,
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_PRIVATE,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
+        property_type,
+        NULL,
+        property_type_text,
+        0
+    );
+    char *storage_key = ptn_object_private_storage_key(class_name, "val");
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(storage_key), stored);
+    free(storage_key);
+    return object;
+}
+
+static int ptn_zend_test_dimension_handlers_is(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        ptn_ascii_case_equal(value.as.object->class_name, "DimensionHandlersNoArrayAccess");
+}
+
+static void ptn_zend_test_dimension_handlers_register_property(
+    PtnValue object,
+    const char *property,
+    PtnPropertyTypeKind type_kind,
+    const char *type_text,
+    int has_value,
+    PtnValue value
+) {
+    ptn_object_register_property_metadata(
+        object.as.object,
+        property,
+        "DimensionHandlersNoArrayAccess",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
+        type_kind,
+        NULL,
+        type_text,
+        0
+    );
+    if (has_value) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key(property),
+            value
+        );
+    }
+}
+
+static void ptn_zend_test_dimension_handlers_initialize_properties(PtnValue object) {
+    ptn_zend_test_dimension_handlers_register_property(object, "read", PTN_PROPERTY_TYPE_BOOL, "bool", 1, ptn_bool(0));
+    ptn_zend_test_dimension_handlers_register_property(object, "write", PTN_PROPERTY_TYPE_BOOL, "bool", 1, ptn_bool(0));
+    ptn_zend_test_dimension_handlers_register_property(object, "has", PTN_PROPERTY_TYPE_BOOL, "bool", 1, ptn_bool(0));
+    ptn_zend_test_dimension_handlers_register_property(object, "unset", PTN_PROPERTY_TYPE_BOOL, "bool", 1, ptn_bool(0));
+    ptn_zend_test_dimension_handlers_register_property(object, "readType", PTN_PROPERTY_TYPE_INT, "int", 0, ptn_null());
+    ptn_zend_test_dimension_handlers_register_property(object, "hasOffset", PTN_PROPERTY_TYPE_BOOL, "bool", 1, ptn_bool(0));
+    ptn_zend_test_dimension_handlers_register_property(object, "checkEmpty", PTN_PROPERTY_TYPE_INT, "int", 0, ptn_null());
+    ptn_zend_test_dimension_handlers_register_property(object, "offset", PTN_PROPERTY_TYPE_MIXED, "mixed", 0, ptn_null());
+}
+
+static PtnValue ptn_zend_test_dimension_handlers_no_arrayaccess_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "DimensionHandlersNoArrayAccess::__construct() expects exactly 0 arguments");
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell_at(runtime, "DimensionHandlersNoArrayAccess", line);
+    ptn_zend_test_dimension_handlers_initialize_properties(object);
+    return object;
+}
+
+static int ptn_zend_test_dimension_handlers_offset_present(const PtnValue *offset) {
+    if (offset == NULL) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(*offset);
+    return value.type != PTN_NULL;
+}
+
+static void ptn_zend_test_dimension_handlers_common(
+    PtnValue object,
+    const PtnValue *offset,
+    const char *property
+) {
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key(property),
+        ptn_bool(1)
+    );
+    int has_offset = ptn_zend_test_dimension_handlers_offset_present(offset);
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("hasOffset"),
+        ptn_bool(has_offset)
+    );
+    if (has_offset) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key("offset"),
+            ptn_value_clone_deref(*offset)
+        );
+    }
+}
+
+static PtnValue ptn_zend_test_dimension_handlers_read(
+    PtnValue object,
+    const PtnValue *offset,
+    int read_type
+) {
+    ptn_zend_test_dimension_handlers_common(object, offset, "read");
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("readType"),
+        ptn_int(read_type)
+    );
+    return ptn_bool(1);
+}
+
+static void ptn_zend_test_dimension_handlers_write(PtnValue object, const PtnValue *offset) {
+    ptn_zend_test_dimension_handlers_common(object, offset, "write");
+}
+
+static int ptn_zend_test_dimension_handlers_has(PtnValue object, const PtnValue *offset, int check_empty) {
+    ptn_zend_test_dimension_handlers_common(object, offset, "has");
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("checkEmpty"),
+        ptn_int(check_empty)
+    );
+    return 1;
+}
+
+static void ptn_zend_test_dimension_handlers_unset(PtnValue object, const PtnValue *offset) {
+    ptn_zend_test_dimension_handlers_common(object, offset, "unset");
+}
+
+static int ptn_zend_test_dimension_handlers_can_dispatch(PtnValue container, const char *method_name) {
+    if (!ptn_zend_test_dimension_handlers_is(container)) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(method_name, "offsetGet") ||
+        ptn_ascii_case_equal(method_name, "offsetSet") ||
+        ptn_ascii_case_equal(method_name, "offsetExists") ||
+        ptn_ascii_case_equal(method_name, "offsetUnset");
+}
+
+static int ptn_zend_test_dimension_handlers_call(
+    PtnValue container,
+    const char *method_name,
+    size_t argc,
+    PtnValue *args,
+    PtnValue *result_out
+) {
+    if (!ptn_zend_test_dimension_handlers_is(container)) {
+        return 0;
+    }
+    const PtnValue *offset = argc > 0 ? &args[0] : NULL;
+    if (ptn_ascii_case_equal(method_name, "offsetGet")) {
+        *result_out = ptn_zend_test_dimension_handlers_read(container, offset, 0);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(method_name, "offsetSet")) {
+        ptn_zend_test_dimension_handlers_write(container, offset);
+        *result_out = ptn_null();
+        return 1;
+    }
+    if (ptn_ascii_case_equal(method_name, "offsetExists")) {
+        *result_out = ptn_bool(ptn_zend_test_dimension_handlers_has(container, offset, 0));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(method_name, "offsetUnset")) {
+        ptn_zend_test_dimension_handlers_unset(container, offset);
+        *result_out = ptn_null();
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_date_period_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1343,6 +1647,14 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_ascii_case_equal(lookup_class_name, "DoOperationNoCast")) {
         return ptn_zend_test_do_operation_no_cast_new(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "LongCastableNoOperations") ||
+        ptn_ascii_case_equal(lookup_class_name, "FloatCastableNoOperations") ||
+        ptn_ascii_case_equal(lookup_class_name, "NumericCastableNoOperations")) {
+        return ptn_zend_test_castable_no_operations_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "DimensionHandlersNoArrayAccess")) {
+        return ptn_zend_test_dimension_handlers_no_arrayaccess_new(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "_ZendTestClass") ||
         ptn_ascii_case_equal(lookup_class_name, "_ZendTestChildClass")) {
@@ -14861,7 +15173,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             }
 #endif
             PtnValue key = key_value == NULL ? ptn_null() : *key_value;
-            PtnValue value = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue value = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 1);
             if (value.type == PTN_REFERENCE) {
                 return value;
             }
@@ -14941,7 +15253,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
         }
 #endif
         PtnValue key = key_value == NULL ? ptn_null() : *key_value;
-        PtnValue result = ptn_arrayaccess_read(runtime, *value, key, line);
+        PtnValue result = ptn_arrayaccess_read_with_type(runtime, *value, key, line, 1);
         if (result.type == PTN_REFERENCE) {
             return result;
         }
@@ -17502,7 +17814,15 @@ static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
     const char *method_name
 ) {
     container = ptn_value_deref(container);
-    if (container.type != PTN_OBJECT || runtime->method_dispatch == NULL) {
+    if (container.type != PTN_OBJECT) {
+        return 0;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_zend_test_dimension_handlers_can_dispatch(container, method_name)) {
+        return 1;
+    }
+#endif
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
         return 0;
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -17556,6 +17876,18 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_call(
     PtnValue *args,
     size_t line
 ) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_zend_test_dimension_handlers_call(
+            container,
+            method_name,
+            argc,
+            args,
+            &internal_result
+        )) {
+        return internal_result;
+    }
+#endif
     PtnValue receiver = ptn_value_clone_deref(container);
     PtnValue result = runtime->method_dispatch(runtime, receiver, method_name, argc, args, line);
     ptn_value_destroy(&receiver);
@@ -17567,16 +17899,39 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_call(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_arrayaccess_read_with_type(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line,
+    int read_type
+) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue resolved_container = ptn_value_deref(container);
+    if (ptn_zend_test_dimension_handlers_is(resolved_container)) {
+        PtnValue key = ptn_value_clone_deref(key_value);
+        PtnValue result = ptn_zend_test_dimension_handlers_read(
+            resolved_container,
+            &key,
+            read_type
+        );
+        ptn_value_destroy(&key);
+        return result;
+    }
+#endif
+    PtnValue args[1] = { ptn_value_clone_deref(key_value) };
+    PtnValue result = ptn_arrayaccess_call(runtime, container, "offsetGet", 1, args, line);
+    ptn_value_destroy(&args[0]);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_arrayaccess_read(
     PtnRuntime *runtime,
     PtnValue container,
     PtnValue key_value,
     size_t line
 ) {
-    PtnValue args[1] = { ptn_value_clone_deref(key_value) };
-    PtnValue result = ptn_arrayaccess_call(runtime, container, "offsetGet", 1, args, line);
-    ptn_value_destroy(&args[0]);
-    return result;
+    return ptn_arrayaccess_read_with_type(runtime, container, key_value, line, 0);
 }
 
 static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
@@ -17705,6 +18060,14 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_zend_test_dimension_handlers_is(container)) {
+        result = ptn_lookup_found(ptn_zend_test_dimension_handlers_read(
+            container,
+            &key_value,
+            quiet ? 3 : 0
+        ));
+        goto done;
+    }
     if (quiet) {
         PtnLookupResult internal_result = ptn_lookup_missing();
         if (ptn_internal_array_object_offset_lookup_quiet(
@@ -17954,6 +18317,10 @@ static PTN_UNUSED int ptn_offset_is_set(
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_zend_test_dimension_handlers_is(container)) {
+        result = ptn_zend_test_dimension_handlers_has(container, &key_value, 0);
+        goto done;
+    }
     if (ptn_arrayaccess_value_is_weak_map(container)) {
         result = ptn_weak_map_offset_isset(runtime, container, key_value, line);
         goto done;
@@ -18027,6 +18394,10 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_zend_test_dimension_handlers_is(container)) {
+        result = !ptn_zend_test_dimension_handlers_has(container, &key_value, 1);
+        goto done;
+    }
     {
         PtnLookupResult internal_result = ptn_lookup_missing();
         if (ptn_internal_array_object_offset_lookup_quiet(
@@ -18816,7 +19187,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
             }
 #endif
             PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-            PtnValue value = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue value = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 1);
             if (segment_count == 1 && value.type == PTN_REFERENCE) {
                 return value;
             }
@@ -18836,8 +19207,17 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
                 ptn_value_destroy(&value);
                 return nested_reference;
             }
+            (void)ptn_arrayaccess_nested_write_should_apply(runtime, slot_value, value, line);
+            PtnValue nested_reference = ptn_value_reference_for_array_path(
+                runtime,
+                &value,
+                segments + 1,
+                segment_count - 1,
+                path,
+                line
+            );
             ptn_value_destroy(&value);
-            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            return nested_reference;
         }
         if (slot_value.type == PTN_STRING && segments[0].append) {
             ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
@@ -19004,7 +19384,7 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
                 return;
             }
             PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-            PtnValue value = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue value = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 1);
             if (value.type == PTN_REFERENCE) {
                 if (segment_count == 1) {
                     ptn_reference_assign(runtime, value.as.reference, reference);
@@ -19124,7 +19504,7 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue value = ptn_arrayaccess_read(runtime, *target_value, key, line);
+        PtnValue value = ptn_arrayaccess_read_with_type(runtime, *target_value, key, line, 1);
         if (segment_count == 1 && value.type == PTN_REFERENCE) {
             return value;
         }
@@ -19144,8 +19524,17 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
             ptn_value_destroy(&value);
             return nested_reference;
         }
+        (void)ptn_arrayaccess_nested_write_should_apply(runtime, *target_value, value, line);
+        PtnValue nested_reference = ptn_value_reference_for_array_path(
+            runtime,
+            &value,
+            segments + 1,
+            segment_count - 1,
+            path,
+            line
+        );
         ptn_value_destroy(&value);
-        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        return nested_reference;
     }
 
     PtnArray *array = NULL;
@@ -20125,7 +20514,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
 #endif
             PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
             ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
-            PtnValue nested = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue nested = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 1);
             if (ptn_arrayaccess_nested_write_should_apply(runtime, slot_value, nested, line)) {
                 ptn_value_array_path_set_impl(
                     runtime,
@@ -20517,7 +20906,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
 #endif
             PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
             ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
-            PtnValue nested = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue nested = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 1);
             PtnValue result = ptn_value_clone_deref(value);
             if (ptn_arrayaccess_nested_write_should_apply(runtime, slot_value, nested, line)) {
                 ptn_value_destroy(&result);
@@ -20795,7 +21184,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue nested = ptn_arrayaccess_read(runtime, slot_value, key, line);
+        PtnValue nested = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, segment_count == 1 ? 0 : 2);
         if (segment_count == 1) {
             return nested;
         }
@@ -20996,7 +21385,7 @@ static PTN_UNUSED int ptn_runtime_array_path_read_overloaded_base_for_assign_op(
                 }
 #endif
                 PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-                *base_out = ptn_arrayaccess_read(runtime, slot_value, key, line);
+                *base_out = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, 2);
                 return 1;
             }
         }
@@ -21039,7 +21428,7 @@ static PTN_UNUSED int ptn_value_array_path_read_overloaded_base_for_assign_op(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        *base_out = ptn_arrayaccess_read(runtime, target_value, key, line);
+        *base_out = ptn_arrayaccess_read_with_type(runtime, target_value, key, line, 2);
         return 1;
     }
 
@@ -21135,7 +21524,7 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue nested = ptn_arrayaccess_read(runtime, *target_value, key, line);
+        PtnValue nested = ptn_arrayaccess_read_with_type(runtime, *target_value, key, line, 1);
         if (ptn_arrayaccess_nested_write_should_apply(runtime, *target_value, nested, line)) {
             ptn_value_array_path_set_impl(
                 runtime,
@@ -21252,7 +21641,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue nested = ptn_arrayaccess_read(runtime, *target_value, key, line);
+        PtnValue nested = ptn_arrayaccess_read_with_type(runtime, *target_value, key, line, 1);
         PtnValue result = ptn_value_clone_deref(value);
         if (ptn_arrayaccess_nested_write_should_apply(runtime, *target_value, nested, line)) {
             ptn_value_destroy(&result);
@@ -21439,7 +21828,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue nested = ptn_arrayaccess_read(runtime, slot_value, key, line);
+        PtnValue nested = ptn_arrayaccess_read_with_type(runtime, slot_value, key, line, segment_count == 1 ? 0 : 2);
         if (segment_count == 1) {
             return nested;
         }
@@ -21632,7 +22021,7 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         }
 #endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
-        PtnValue nested = ptn_arrayaccess_read(runtime, *value, key, line);
+        PtnValue nested = ptn_arrayaccess_read_with_type(runtime, *value, key, line, 5);
         if (ptn_arrayaccess_nested_write_should_apply(runtime, *value, nested, line)) {
             ptn_value_array_path_unset(runtime, &nested, segments + 1, segment_count - 1, line);
         }

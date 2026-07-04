@@ -1,0 +1,3 @@
+Zend/tests/in-de-crement/decrement_with_castable_objects_no_subtraction.phpt
+Zend/tests/enum/no-clone-internal.phpt
+Zend/tests/offsets/internal_handlers.phpt
