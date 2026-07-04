@@ -62658,6 +62658,74 @@ var_dump($sxe->elem1['attr1']);
 }
 
 #[test]
+fn compile_simplexml_namespace_property_unset_and_assignment_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-namespace-property-unset-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-namespace-property-unset-diagnostics.php");
+    let output = root.join("simplexml-namespace-property-unset-diagnostics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = new SimpleXMLElement('<root xmlns:ns="ns"><foo>bar</foo><ns:foo>ns:bar</ns:foo><ns:foo2>ns:bar2</ns:foo2></root>');
+var_dump(isset($xml->foo2));
+unset($xml->foo);
+$ns = $xml->children('ns');
+var_dump(count($ns));
+var_dump((string) $ns->foo, (string) $ns->foo2);
+
+try {
+    $xml->{""} = "bar";
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$xml->copy = $ns->foo;
+var_dump((string) $xml->copy);
+
+try {
+    $xml->bad = new stdClass;
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    simplexml_load_string("XXXXXXX^", null, 0x6000000000000001);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "int(2)\n",
+            "string(6) \"ns:bar\"\n",
+            "string(7) \"ns:bar2\"\n",
+            "Cannot create element with an empty name\n",
+            "string(6) \"ns:bar\"\n",
+            "It's not possible to assign a complex type to properties, stdClass given\n",
+            "simplexml_load_string(): Argument #3 ($options) is too large\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_property_unset"));
+}
+
+#[test]
 fn compile_modern_dom_selector_methods_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-selector-methods");
     fs::create_dir_all(&root).unwrap();

@@ -169120,6 +169120,7 @@ static int ptn_dom_document_property_truthy(PtnXmlNode *document, const char *pr
 static PtnSimpleXmlData *ptn_simplexml_data(PtnValue value);
 static PtnValue ptn_simplexml_property_value(PtnRuntime *runtime, PtnValue receiver, const char *property);
 static int ptn_simplexml_property_write(PtnRuntime *runtime, PtnValue receiver, const char *property, PtnValue value, size_t line, PtnValue *value_out);
+static int ptn_simplexml_property_unset(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line);
 static int ptn_simplexml_materialize_pending_property(PtnRuntime *runtime, PtnSimpleXmlData *data);
 static int ptn_simplexml_method_exists(const char *class_name, const char *method_name);
 static PtnValue ptn_internal_dom_import_simplexml(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -190082,6 +190083,19 @@ static PTN_UNUSED int ptn_internal_xml_property_write_indirect(
     }
     *value_out = ptn_value_clone_deref(value);
     return 1;
+}
+
+static PTN_UNUSED int ptn_internal_xml_property_unset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || ptn_simplexml_data(receiver) == NULL) {
+        return 0;
+    }
+    return ptn_simplexml_property_unset(runtime, receiver, property, line);
 }
 
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
@@ -262354,8 +262368,12 @@ static int ptn_simplexml_node_matches_property(PtnXmlNode *node, const char *pro
 }
 
 static int ptn_simplexml_namespace_view_matches(const PtnSimpleXmlData *data, PtnXmlNode *node) {
-    if (data == NULL || !data->property_namespace_active) {
+    if (data == NULL) {
         return 1;
+    }
+    if (!data->property_namespace_active) {
+        const char *name = node == NULL || node->name == NULL ? "" : node->name;
+        return strchr(name, ':') == NULL;
     }
     const char *node_uri = node == NULL || node->namespace_uri == NULL ? "" : node->namespace_uri;
     const char *view_uri = data->property_namespace_uri == NULL ? "" : data->property_namespace_uri;
@@ -262688,8 +262706,34 @@ static int ptn_simplexml_property_write(
     PtnValue *value_out
 ) {
     PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
-    if (data == NULL || data->attributes || property == NULL || property[0] == '\0') {
+    if (data == NULL || data->attributes || property == NULL) {
         return 0;
+    }
+    if (property[0] == '\0') {
+        ptn_throw_exception(runtime, "ValueError", "Cannot create element with an empty name");
+        *value_out = ptn_null();
+        return 1;
+    }
+    PtnValue resolved_value = ptn_value_deref(value);
+    int value_is_simplexml = resolved_value.type == PTN_OBJECT && ptn_simplexml_data(resolved_value) != NULL;
+    if (resolved_value.type == PTN_ARRAY ||
+        (resolved_value.type == PTN_OBJECT && !value_is_simplexml) ||
+        resolved_value.type == PTN_CLOSURE ||
+        resolved_value.type == PTN_EXCEPTION) {
+        const char *given = ptn_offset_key_type_name(resolved_value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "It's not possible to assign a complex type to properties, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        *value_out = ptn_null();
+        return 1;
     }
     PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -262712,6 +262756,57 @@ static int ptn_simplexml_property_write(
     }
     ptn_string_operand_free(string);
     *value_out = ptn_value_clone_deref(value);
+    return 1;
+}
+
+static int ptn_simplexml_property_unset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
+    if (data == NULL || data->attributes || property == NULL) {
+        return 0;
+    }
+    if (property[0] == '\0' || data->item_count == 0) {
+        return 1;
+    }
+    if (data->collection_view) {
+        size_t write_index = 0;
+        for (size_t i = 0; i < data->item_count; i++) {
+            PtnXmlNode *node = data->items[i];
+            if (ptn_simplexml_node_matches_property(node, property) &&
+                ptn_simplexml_namespace_view_matches(data, node)) {
+                ptn_xml_detach_node(node);
+                continue;
+            }
+            data->items[write_index++] = node;
+        }
+        data->item_count = write_index;
+        if (data->position > data->item_count) {
+            data->position = data->item_count;
+        }
+        ptn_simplexml_clear_iterator_current_cache(data);
+        (void)runtime;
+        (void)line;
+        return 1;
+    }
+    for (size_t i = 0; i < data->item_count; i++) {
+        PtnXmlNode *parent = data->items[i];
+        for (size_t j = 0; parent != NULL && j < parent->child_count;) {
+            PtnXmlNode *child = parent->children[j];
+            if (ptn_simplexml_node_matches_property(child, property) &&
+                ptn_simplexml_namespace_view_matches(data, child)) {
+                ptn_xml_detach_node(child);
+                continue;
+            }
+            j++;
+        }
+    }
+    ptn_simplexml_clear_iterator_current_cache(data);
+    (void)runtime;
+    (void)line;
     return 1;
 }
 
@@ -263049,6 +263144,23 @@ static PTN_UNUSED int ptn_simplexml_debug_properties(
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (data->attributes) {
+        if (data->collection_view) {
+            PtnValue attrs = ptn_array_from_literal_entries(0, NULL);
+            for (size_t i = 0; i < data->item_count; i++) {
+                PtnXmlNode *attr = data->items[i];
+                if (attr == NULL) {
+                    continue;
+                }
+                ptn_array_set_entry(
+                    attrs.as.array,
+                    ptn_array_string_key(attr->name == NULL ? "" : attr->name),
+                    ptn_owned_string(ptn_duplicate_string(attr->value == NULL ? "" : attr->value))
+                );
+            }
+            ptn_array_set_entry(result.as.array, ptn_array_string_key("@attributes"), attrs);
+            *properties_out = result;
+            return 1;
+        }
         for (size_t i = 0; i < data->item_count; i++) {
             PtnXmlNode *attr = data->items[i];
             ptn_array_set_entry(
@@ -263469,7 +263581,14 @@ static PtnValue ptn_internal_simplexml_load_string(PtnRuntime *runtime, size_t a
         ptn_string_operand_free(source);
         return ptn_null();
     }
-    int options = argc >= 3 ? (int)ptn_value_to_integer(args[2]) : 0;
+    int64_t options64 = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    if (options64 > INT_MAX || options64 < INT_MIN) {
+        free(class_name);
+        ptn_string_operand_free(source);
+        ptn_throw_exception(runtime, "ValueError", "simplexml_load_string(): Argument #3 ($options) is too large");
+        return ptn_null();
+    }
+    int options = (int)options64;
     PtnValue result = ptn_simplexml_from_bytes(
         runtime,
         "simplexml_load_string",
@@ -263566,7 +263685,15 @@ static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t arg
         free(bytes);
         return ptn_null();
     }
-    int options = argc >= 3 ? (int)ptn_value_to_integer(args[2]) : 0;
+    int64_t options64 = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    if (options64 > INT_MAX || options64 < INT_MIN) {
+        free(class_name);
+        free(path);
+        free(bytes);
+        ptn_throw_exception(runtime, "ValueError", "simplexml_load_file(): Argument #3 ($options) is too large");
+        return ptn_null();
+    }
+    int options = (int)options64;
     PtnValue result = ptn_simplexml_from_bytes(
         runtime,
         "simplexml_load_file",
@@ -263776,12 +263903,29 @@ static PTN_UNUSED PtnValue ptn_simplexml_new(
         }
         return result;
     }
-    PtnValue forwarded[3] = {
+    PtnStringOperand source = ptn_internal_expect_string_arg(
+        runtime,
+        "SimpleXMLElement::__construct",
+        1,
+        "data",
         args[0],
-        ptn_string(class_name == NULL ? "SimpleXMLElement" : class_name),
-        ptn_int(options64)
-    };
-    PtnValue result = ptn_internal_simplexml_load_string(runtime, 3, forwarded, line);
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    PtnValue result = ptn_simplexml_from_bytes(
+        runtime,
+        "SimpleXMLElement::__construct",
+        source.data,
+        source.len,
+        NULL,
+        (int)options64,
+        line,
+        class_name
+    );
+    ptn_string_operand_free(source);
     if (argc >= 4 && ptn_value_deref(result).type == PTN_OBJECT) {
         PtnSimpleXmlData *data = ptn_simplexml_data(result);
         if (data != NULL && data->item_count > 0 && ptn_value_deref(args[3]).type != PTN_NULL) {
@@ -264805,6 +264949,10 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
             1,
             0
         );
+        PtnSimpleXmlData *result_data = ptn_simplexml_data(result);
+        if (result_data != NULL) {
+            result_data->collection_view = 1;
+        }
         free(items);
         return result;
     }
