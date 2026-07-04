@@ -1743,8 +1743,13 @@ fn phpt_classifier_allows_generator_fiber_lifecycle_row_pack() {
         ("Zend/tests/generators/gh15330-005.phpt", generator_body),
         ("Zend/tests/fibers/resume.phpt", fiber_body),
         ("Zend/tests/fibers/destructors_005.phpt", fiber_body),
+        ("Zend/tests/fibers/destructors_008.phpt", fiber_body),
         ("Zend/tests/fibers/gh9916-003.phpt", fiber_body),
         ("Zend/tests/fibers/gh15108-001.phpt", fiber_body),
+        (
+            "Zend/tests/fibers/suspend-in-force-close-fiber.phpt",
+            fiber_body,
+        ),
     ];
 
     for (relative_path, phpt) in cases {

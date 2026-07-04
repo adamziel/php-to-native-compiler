@@ -2287,6 +2287,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     const char *path,
     size_t line
 ) {
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
@@ -2332,6 +2333,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
     const char *path,
     size_t line
 ) {
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
