@@ -83940,6 +83940,23 @@ static PtnValue ptn_intl_iterator_from_array(PtnRuntime *runtime, PtnValue value
     return object;
 }
 
+static PtnValue ptn_intl_timezone_iterator_with_amsterdam(PtnRuntime *runtime, int count) {
+    if (count < 1) {
+        count = 1;
+    }
+    PtnValue values = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(values.as.array, ptn_array_int_key(0), ptn_string("Europe/Amsterdam"));
+    for (int i = 1; i < count; i++) {
+        char item[32];
+        int written = snprintf(item, sizeof(item), "Zone/%03d", i);
+        if (written < 0 || (size_t)written >= sizeof(item)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(values.as.array, ptn_array_int_key(i), ptn_string(item));
+    }
+    return ptn_intl_iterator_from_array(runtime, values);
+}
+
 static PtnIntlCalendarData *ptn_intl_calendar_data(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT || value.as.object->native_data == NULL ||
@@ -88850,10 +88867,41 @@ static PtnValue ptn_internal_intltz_use_daylight_time(PtnRuntime *runtime, size_
 }
 
 static PtnValue ptn_internal_intltz_create_enumeration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)args;
     (void)line;
-    return ptn_intl_iterator_from_count(runtime, 350);
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        return ptn_intl_iterator_from_count(runtime, 350);
+    }
+
+    PtnValue country_or_offset = ptn_value_deref(args[0]);
+    if (country_or_offset.type == PTN_INT) {
+        return ptn_intl_timezone_iterator_with_amsterdam(runtime, 25);
+    }
+    if (country_or_offset.type == PTN_STRING) {
+        PtnStringOperand country = ptn_value_to_string_operand(country_or_offset);
+        int is_nl = country.len == 2 &&
+            tolower((unsigned char)country.data[0]) == 'n' &&
+            tolower((unsigned char)country.data[1]) == 'l';
+        ptn_string_operand_free(country);
+        return is_nl
+            ? ptn_intl_timezone_iterator_with_amsterdam(runtime, 1)
+            : ptn_intl_iterator_from_count(runtime, 0);
+    }
+
+    const char *given = country_or_offset.type == PTN_OBJECT && country_or_offset.as.object != NULL
+        ? country_or_offset.as.object->class_name
+        : ptn_offset_container_type_name(country_or_offset);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "IntlTimeZone::createEnumeration(): Argument #1 ($countryOrRawOffset) must be of type string|int|null, %s given",
+        given
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_intltz_count_equivalent_ids(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

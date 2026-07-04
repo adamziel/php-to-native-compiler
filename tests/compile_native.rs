@@ -58596,6 +58596,61 @@ var_dump(intltz_get_raw_offset($lsb));\n",
 }
 
 #[test]
+fn compile_intl_timezone_create_enumeration_filters_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-create-enumeration-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-create-enumeration-filters.php");
+    let output = root.join("intl-timezone-create-enumeration-filters-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_exception(callable $cb): void {\n\
+    try { $cb(); } catch (Throwable $e) { echo $e::class, ': ', $e->getMessage(), \"\\n\"; }\n\
+}\n\
+\n\
+$nl = IntlTimeZone::createEnumeration('NL');\n\
+var_dump(get_class($nl));\n\
+$nlValues = iterator_to_array($nl);\n\
+var_dump(count($nlValues) >= 1);\n\
+var_dump(in_array('Europe/Amsterdam', $nlValues));\n\
+\n\
+$offset = IntlTimeZone::createEnumeration(3600000);\n\
+var_dump(get_class($offset));\n\
+$offsetValues = iterator_to_array($offset);\n\
+var_dump(count($offsetValues) > 20);\n\
+var_dump(in_array('Europe/Amsterdam', $offsetValues));\n\
+\n\
+$all = intltz_create_enumeration();\n\
+var_dump(count(iterator_to_array($all)) > 300);\n\
+\n\
+dump_exception(fn() => IntlTimeZone::createEnumeration([]));\n\
+dump_exception(fn() => IntlTimeZone::createEnumeration(new stdClass()));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_intltz_create_enumeration"));
+    assert!(c_source.contains("ptn_intl_timezone_iterator_with_amsterdam"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(12) \"IntlIterator\"\n\
+bool(true)\n\
+bool(true)\n\
+string(12) \"IntlIterator\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+TypeError: IntlTimeZone::createEnumeration(): Argument #1 ($countryOrRawOffset) must be of type string|int|null, array given\n\
+TypeError: IntlTimeZone::createEnumeration(): Argument #1 ($countryOrRawOffset) must be of type string|int|null, stdClass given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
     fs::create_dir_all(&root).unwrap();
