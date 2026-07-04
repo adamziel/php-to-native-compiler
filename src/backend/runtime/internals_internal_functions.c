@@ -83654,12 +83654,17 @@ static int ptn_intl_date_formatter_set_timezone(
     return 1;
 }
 
+static void ptn_intl_signal_error(PtnRuntime *runtime, const char *message, size_t line);
+static char *ptn_intl_function_error_message(const char *function_name, const char *message, const char *icu_error);
+
 static int ptn_intl_date_formatter_set_calendar(
     PtnRuntime *runtime,
     PtnIntlDateFormatterData *data,
     PtnValue value,
     const char *function_name,
-    size_t position
+    size_t position,
+    int throw_on_error,
+    size_t line
 ) {
     PtnValue calendar = ptn_value_deref(value);
     if (calendar.type == PTN_OBJECT &&
@@ -83707,26 +83712,19 @@ static int ptn_intl_date_formatter_set_calendar(
     }
     int calendar_type = (int)ptn_value_to_integer(calendar);
     if (calendar_type != 0 && calendar_type != 1) {
-        int needed = snprintf(
-            NULL,
-            0,
-            "%s(): Invalid value for calendar type; it must be one of IntlDateFormatter::TRADITIONAL (locale's default calendar) or IntlDateFormatter::GREGORIAN. Alternatively, it can be an IntlCalendar object",
-            function_name
-        );
-        if (needed < 0) {
-            ptn_abort_out_of_memory();
-        }
-        char *message = malloc((size_t)needed + 1);
-        if (message == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        snprintf(
+        const char *message =
+            "Invalid value for calendar type; it must be one of IntlDateFormatter::TRADITIONAL (locale's default calendar) or IntlDateFormatter::GREGORIAN. Alternatively, it can be an IntlCalendar object";
+        char *formatted = ptn_intl_function_error_message(
+            function_name,
             message,
-            (size_t)needed + 1,
-            "%s(): Invalid value for calendar type; it must be one of IntlDateFormatter::TRADITIONAL (locale's default calendar) or IntlDateFormatter::GREGORIAN. Alternatively, it can be an IntlCalendar object",
-            function_name
+            throw_on_error ? NULL : "U_ILLEGAL_ARGUMENT_ERROR"
         );
-        ptn_throw_exception_owned_message(runtime, "IntlException", message);
+        if (throw_on_error) {
+            ptn_throw_exception_owned_message(runtime, "IntlException", formatted);
+        } else {
+            ptn_intl_signal_error(runtime, formatted, line);
+            free(formatted);
+        }
         return 0;
     }
     data->calendar = calendar_type;
@@ -83750,6 +83748,7 @@ static PtnIntlDateFormatterData *ptn_intl_date_formatter_ensure_data(PtnValue ob
 static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
     PtnRuntime *runtime,
     const char *function_name,
+    int throw_on_error,
     size_t argc,
     const PtnValue *args,
     size_t line
@@ -83777,7 +83776,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
         }
     }
     if (argc >= 5) {
-        if (!ptn_intl_date_formatter_set_calendar(runtime, data, args[4], function_name, 5)) {
+        if (!ptn_intl_date_formatter_set_calendar(runtime, data, args[4], function_name, 5, throw_on_error, line)) {
             ptn_intl_date_formatter_data_free(data);
             ptn_value_destroy(&object);
             return ptn_null();
@@ -83795,7 +83794,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
     return object;
 }
 
-static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_name, const char *function_name, int throw_on_error, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_name, const char *function_name, const char *timezone_argument_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_message_formatter_new(PtnRuntime *runtime, const char *class_name, const char *function_name, int throw_on_error, size_t argc, const PtnValue *args, size_t line);
@@ -83816,7 +83815,7 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     size_t line
 ) {
     if (ptn_ascii_case_equal(class_name, "IntlDateFormatter")) {
-        return ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", argc, args, line);
+        return ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", 1, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlCalendar") ||
         ptn_ascii_case_equal(class_name, "IntlGregorianCalendar")) {
@@ -83851,7 +83850,7 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(class_name, "Collator")) {
-        return ptn_intl_collator_new(runtime, class_name, argc, args, line);
+        return ptn_intl_collator_new(runtime, class_name, "Collator::__construct", 1, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "ResourceBundle")) {
         return ptn_intl_resourcebundle_new(runtime, class_name, argc, args, line);
@@ -83977,6 +83976,44 @@ static void ptn_intl_signal_error(PtnRuntime *runtime, const char *message, size
     }
 }
 
+static char *ptn_intl_function_error_message(const char *function_name, const char *message, const char *icu_error) {
+    int needed = icu_error == NULL
+        ? snprintf(NULL, 0, "%s(): %s", function_name, message)
+        : snprintf(NULL, 0, "%s(): %s: %s", function_name, message, icu_error);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (icu_error == NULL) {
+        snprintf(formatted, (size_t)needed + 1, "%s(): %s", function_name, message);
+    } else {
+        snprintf(formatted, (size_t)needed + 1, "%s(): %s: %s", function_name, message, icu_error);
+    }
+    return formatted;
+}
+
+static int64_t ptn_intl_error_code_from_message(const char *message) {
+    if (message == NULL) {
+        return 0;
+    }
+    if (strstr(message, "U_NUMBER_SKELETON_SYNTAX_ERROR") != NULL) {
+        return 65811;
+    }
+    if (strstr(message, "U_INVALID_CHAR_FOUND") != NULL) {
+        return 10;
+    }
+    if (strstr(message, "U_PATTERN_SYNTAX_ERROR") != NULL) {
+        return 9;
+    }
+    if (strstr(message, "U_UNMATCHED_BRACES") != NULL) {
+        return 6;
+    }
+    return strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") == NULL ? 0 : 1;
+}
+
 static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -83985,19 +84022,7 @@ static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t arg
     const char *message = root == NULL || root->intl_last_error_message == NULL
         ? "U_ZERO_ERROR"
         : root->intl_last_error_message;
-    if (strstr(message, "U_NUMBER_SKELETON_SYNTAX_ERROR") != NULL) {
-        return ptn_int(65811);
-    }
-    if (strstr(message, "U_INVALID_CHAR_FOUND") != NULL) {
-        return ptn_int(10);
-    }
-    if (strstr(message, "U_PATTERN_SYNTAX_ERROR") != NULL) {
-        return ptn_int(9);
-    }
-    if (strstr(message, "U_UNMATCHED_BRACES") != NULL) {
-        return ptn_int(6);
-    }
-    return ptn_int(strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") == NULL ? 0 : 1);
+    return ptn_int(ptn_intl_error_code_from_message(message));
 }
 
 static PtnValue ptn_internal_intl_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -85109,7 +85134,7 @@ static PtnValue ptn_internal_datefmt_create_named(
         }
         ptn_string_operand_free(locale);
     }
-    return ptn_intl_date_formatter_new(runtime, function_name, argc, args, line);
+    return ptn_intl_date_formatter_new(runtime, function_name, 0, argc, args, line);
 }
 
 static PtnValue ptn_internal_datefmt_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -85304,7 +85329,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
             ptn_throw_exception(runtime, "IntlException", "IntlDateFormatter::__construct(): cannot call constructor twice");
             return ptn_null();
         }
-        PtnValue replacement = ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", argc, args, line);
+        PtnValue replacement = ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
             ptn_adopt_internal_parent_object_state(receiver, replacement);
         }
@@ -85357,7 +85382,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
             return ptn_null();
         }
         if (data != NULL) {
-            if (!ptn_intl_date_formatter_set_calendar(runtime, data, args[0], "IntlDateFormatter::setCalendar", 1)) {
+            if (!ptn_intl_date_formatter_set_calendar(runtime, data, args[0], "IntlDateFormatter::setCalendar", 1, 1, line)) {
                 return ptn_null();
             }
         }
@@ -89376,11 +89401,27 @@ static PtnValue ptn_internal_datefmt_format_object(PtnRuntime *runtime, size_t a
     return ptn_intl_format_parts(&temp, year, month, day, hour, minute, second);
 }
 
-static PtnValue ptn_internal_intl_timezone_create_timezone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    char *id = argc >= 1 ? ptn_intl_value_string_copy(args[0]) : ptn_duplicate_string("UTC");
+static PtnValue ptn_internal_intl_timezone_create_timezone_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand timezone_id = argc >= 1
+        ? ptn_internal_expect_string_arg(runtime, function_name, 1, "timezoneId", args[0], line)
+        : ptn_string_operand_borrowed("UTC");
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone_id);
+        return ptn_null();
+    }
+    char *id = ptn_duplicate_string_len(timezone_id.data, timezone_id.len);
+    ptn_string_operand_free(timezone_id);
     PtnValue result = ptn_intl_timezone_create(runtime, id, line);
     free(id);
     return result;
+}
+
+static PtnValue ptn_internal_intl_timezone_create_timezone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_intl_timezone_create_timezone_named(runtime, "intltz_create_time_zone", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_timezone_static_create_timezone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_intl_timezone_create_timezone_named(runtime, "IntlTimeZone::createTimeZone", argc, args, line);
 }
 
 static PtnValue ptn_internal_intltz_get_offset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -89467,12 +89508,23 @@ static PtnValue ptn_internal_intltz_create_enumeration(PtnRuntime *runtime, size
     return ptn_null();
 }
 
-static PtnValue ptn_internal_intltz_count_equivalent_ids(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
-    (void)line;
+static PtnValue ptn_internal_intltz_count_equivalent_ids_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand timezone_id =
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "timezoneId", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone_id);
+        return ptn_null();
+    }
+    ptn_string_operand_free(timezone_id);
     return ptn_int(2);
+}
+
+static PtnValue ptn_internal_intltz_count_equivalent_ids(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_intltz_count_equivalent_ids_named(runtime, "intltz_count_equivalent_ids", argc, args, line);
+}
+
+static PtnValue ptn_internal_intltz_static_count_equivalent_ids(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_intltz_count_equivalent_ids_named(runtime, "IntlTimeZone::countEquivalentIDs", argc, args, line);
 }
 
 static PtnValue ptn_internal_intltz_get_gmt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -89605,6 +89657,26 @@ static PtnValue ptn_internal_intltz_get_id_for_windows_id(PtnRuntime *runtime, s
 
 static PtnValue ptn_internal_intltz_create_timezone_id_enumeration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
+    if (argc >= 1) {
+        PtnValue type = ptn_value_deref(args[0]);
+        if (type.type == PTN_OBJECT || type.type == PTN_ARRAY) {
+            const char *given = type.type == PTN_OBJECT && type.as.object != NULL
+                ? type.as.object->class_name
+                : ptn_offset_container_type_name(type);
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "IntlTimeZone::createTimeZoneIDEnumeration(): Argument #1 ($type) must be of type int, %s given",
+                given
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+    }
     if (argc >= 3) {
         int64_t raw_offset = ptn_value_to_integer(args[2]);
         if (raw_offset < INT32_MIN || raw_offset > INT32_MAX) {
@@ -94240,6 +94312,26 @@ static PtnIntlCollatorData *ptn_intl_collator_data_new(const char *locale) {
     return data;
 }
 
+static const char *ptn_intl_collator_creation_failure(const char *locale) {
+    if (strlen(locale) > 156) {
+        return "Locale string too long, should be no longer than 156 characters";
+    }
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || api->ucol_open == NULL) {
+        return NULL;
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuCollator *collator = api->ucol_open(locale, &status);
+    if (collator != NULL && !ptn_icu_failure(status)) {
+        api->ucol_close(collator);
+        return NULL;
+    }
+    if (collator != NULL) {
+        api->ucol_close(collator);
+    }
+    return "unable to open ICU collator";
+}
+
 static PtnIntlCollatorData *ptn_intl_collator_data(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT || value.as.object->native_data == NULL) {
@@ -94281,16 +94373,40 @@ static int ptn_intl_collator_compare_string_operands(
     return compared < 0 ? -1 : (compared > 0 ? 1 : 0);
 }
 
-static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_intl_collator_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *function_name,
+    int throw_on_error,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     const char *locale_text = "";
     PtnStringOperand locale = { "", NULL, 0 };
     if (argc >= 1) {
-        locale = ptn_internal_expect_string_arg(runtime, "Collator::__construct", 1, "locale", args[0], line);
+        locale = ptn_internal_expect_string_arg(runtime, function_name, 1, "locale", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(locale);
             return ptn_null();
         }
         locale_text = locale.data;
+    }
+    const char *failure = ptn_intl_collator_creation_failure(locale_text);
+    if (failure != NULL) {
+        char *message = ptn_intl_function_error_message(
+            function_name,
+            failure,
+            throw_on_error ? NULL : "U_ILLEGAL_ARGUMENT_ERROR"
+        );
+        if (throw_on_error) {
+            ptn_throw_exception_owned_message(runtime, "IntlException", message);
+        } else {
+            ptn_intl_set_error_message(runtime, message);
+            free(message);
+        }
+        ptn_string_operand_free(locale);
+        return ptn_null();
     }
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = ptn_intl_collator_data_new(locale_text);
@@ -94299,18 +94415,16 @@ static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_nam
     return object;
 }
 
+static PtnValue ptn_internal_collator_create_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_intl_collator_new(runtime, "Collator", function_name, 0, argc, args, line);
+}
+
 static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnStringOperand locale =
-        ptn_internal_expect_string_arg(runtime, "collator_create", 1, "locale", args[0], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    PtnValue object = ptn_object_new_shell(runtime, "Collator");
-    object.as.object->native_data = ptn_intl_collator_data_new(locale.data);
-    object.as.object->native_data_free = ptn_intl_collator_data_free;
-    ptn_string_operand_free(locale);
-    return object;
+    return ptn_internal_collator_create_named(runtime, "collator_create", argc, args, line);
+}
+
+static PtnValue ptn_internal_collator_static_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_collator_create_named(runtime, "Collator::create", argc, args, line);
 }
 
 static int ptn_intl_collator_compare_sort_values(
@@ -94667,9 +94781,17 @@ static PtnValue ptn_internal_collator_get_attribute(PtnRuntime *runtime, size_t 
 static PtnValue ptn_intl_collator_get_error_message_value(PtnValue receiver) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL || data->last_error_message == NULL) {
-        return ptn_string("U_ZERO_ERROR");
+        return ptn_bool(0);
     }
     return ptn_string(data->last_error_message);
+}
+
+static PtnValue ptn_intl_collator_get_error_code_value(PtnValue receiver) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL || data->last_error_message == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_int(ptn_intl_error_code_from_message(data->last_error_message));
 }
 
 static PtnValue ptn_internal_collator_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -94677,6 +94799,13 @@ static PtnValue ptn_internal_collator_get_error_message(PtnRuntime *runtime, siz
     (void)argc;
     (void)line;
     return ptn_intl_collator_get_error_message_value(args[0]);
+}
+
+static PtnValue ptn_internal_collator_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_intl_collator_get_error_code_value(args[0]);
 }
 
 static PtnValue ptn_internal_collator_get_strength(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -94708,7 +94837,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     size_t line
 ) {
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_intl_collator_new(runtime, "Collator", argc, args, line);
+        PtnValue replacement = ptn_intl_collator_new(runtime, "Collator", "Collator::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
             ptn_adopt_internal_parent_object_state(receiver, replacement);
         }
@@ -94735,6 +94864,11 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
         (void)argc;
         (void)args;
         return ptn_intl_collator_get_error_message_value(receiver);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorCode")) {
+        (void)argc;
+        (void)args;
+        return ptn_intl_collator_get_error_code_value(receiver);
     }
     if (ptn_ascii_case_equal(name, "getStrength")) {
         (void)argc;
@@ -208594,7 +208728,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "createTimeZone")) {
-        return ptn_internal_intl_timezone_create_timezone(runtime, argc, args, line);
+        return ptn_internal_intl_timezone_static_create_timezone(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "createEnumeration")) {
@@ -208602,7 +208736,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "countEquivalentIDs")) {
-        return ptn_internal_intltz_count_equivalent_ids(runtime, argc, args, line);
+        return ptn_internal_intltz_static_count_equivalent_ids(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "getEquivalentID")) {
@@ -208742,7 +208876,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     }
     if (ptn_ascii_case_equal(class_name, "Collator") &&
         ptn_ascii_case_equal(name, "create")) {
-        return ptn_internal_collator_create(runtime, argc, args, line);
+        return ptn_internal_collator_static_create(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "UConverter") &&
         ptn_ascii_case_equal(name, "transcode")) {
@@ -229142,11 +229276,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
-        { "Collator::create", 1, 1, ptn_internal_collator_create },
+        { "Collator::create", 1, 1, ptn_internal_collator_static_create },
         { "collator_asort", 2, 3, ptn_internal_collator_asort },
         { "collator_compare", 3, 3, ptn_internal_collator_compare },
         { "collator_create", 1, 1, ptn_internal_collator_create },
         { "collator_get_attribute", 2, 2, ptn_internal_collator_get_attribute },
+        { "collator_get_error_code", 1, 1, ptn_internal_collator_get_error_code },
         { "collator_get_error_message", 1, 1, ptn_internal_collator_get_error_message },
         { "collator_get_locale", 2, 2, ptn_internal_collator_get_locale },
         { "collator_get_sort_key", 2, 2, ptn_internal_collator_get_sort_key },
@@ -229498,9 +229633,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlGregorianCalendar::createInstance", 0, 2, ptn_intl_gregorian_calendar_create_instance },
         { "IntlGregorianCalendar::fromDateTime", 1, 1, ptn_intl_calendar_from_datetime },
         { "IntlDatePatternGenerator::create", 0, 1, ptn_intl_date_pattern_generator_create },
-        { "IntlTimeZone::countEquivalentIDs", 1, 1, ptn_internal_intltz_count_equivalent_ids },
+        { "IntlTimeZone::countEquivalentIDs", 1, 1, ptn_internal_intltz_static_count_equivalent_ids },
         { "IntlTimeZone::createEnumeration", 0, 1, ptn_internal_intltz_create_enumeration },
-        { "IntlTimeZone::createTimeZone", 1, 1, ptn_internal_intl_timezone_create_timezone },
+        { "IntlTimeZone::createTimeZone", 1, 1, ptn_internal_intl_timezone_static_create_timezone },
         { "IntlTimeZone::createTimeZoneIDEnumeration", 1, 3, ptn_internal_intltz_create_timezone_id_enumeration },
         { "IntlTimeZone::getCanonicalID", 1, 2, ptn_internal_intltz_get_canonical_id },
         { "IntlTimeZone::getEquivalentID", 2, 2, ptn_internal_intltz_get_equivalent_id },

@@ -60766,6 +60766,47 @@ MessageFormatter::create(): message formatter creation failed: U_UNMATCHED_BRACE
 }
 
 #[test]
+fn compile_intl_collator_error_code_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-collator-error-code-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-collator-error-code-constants.php");
+    let output = root.join("intl-collator-error-code-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$coll = collator_create('ru_RU');\n\
+var_dump(Collator::NORMALIZATION_MODE, U_ZERO_ERROR, U_ILLEGAL_ARGUMENT_ERROR, defined('U_ILLEGAL_ARGUMENT_ERROR'), constant('U_ILLEGAL_ARGUMENT_ERROR'));\n\
+collator_get_attribute($coll, Collator::NORMALIZATION_MODE);\n\
+var_dump(collator_get_error_code($coll), $coll->getErrorCode());\n\
+var_dump(collator_get_attribute($coll, 12345));\n\
+var_dump(collator_get_error_code($coll), $coll->getErrorCode());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_collator_get_error_code_value"));
+    assert!(c_source.contains("U_ILLEGAL_ARGUMENT_ERROR"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(4)\n\
+int(0)\n\
+int(1)\n\
+bool(true)\n\
+int(1)\n\
+int(0)\n\
+int(0)\n\
+bool(false)\n\
+int(1)\n\
+int(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();

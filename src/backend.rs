@@ -38025,8 +38025,38 @@ fn is_compact_intl_new_object(class_name: &str, argument_unpacks: &[bool]) -> bo
 
 fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Option<&'static str> {
     let class_name = class_name.trim_start_matches('\\');
-    if class_name.eq_ignore_ascii_case("Collator") && name.eq_ignore_ascii_case("SORT_REGULAR") {
-        return Some("PTN_SORT_REGULAR");
+    if class_name.eq_ignore_ascii_case("Collator") {
+        const COLLATOR_CONSTANTS: &[(&str, &str)] = &[
+            ("DEFAULT_VALUE", "-1"),
+            ("PRIMARY", "0"),
+            ("SECONDARY", "1"),
+            ("TERTIARY", "2"),
+            ("DEFAULT_STRENGTH", "2"),
+            ("QUATERNARY", "3"),
+            ("IDENTICAL", "15"),
+            ("OFF", "16"),
+            ("ON", "17"),
+            ("SHIFTED", "20"),
+            ("NON_IGNORABLE", "21"),
+            ("LOWER_FIRST", "24"),
+            ("UPPER_FIRST", "25"),
+            ("FRENCH_COLLATION", "0"),
+            ("ALTERNATE_HANDLING", "1"),
+            ("CASE_FIRST", "2"),
+            ("CASE_LEVEL", "3"),
+            ("NORMALIZATION_MODE", "4"),
+            ("STRENGTH", "5"),
+            ("HIRAGANA_QUATERNARY_MODE", "6"),
+            ("NUMERIC_COLLATION", "7"),
+            ("SORT_REGULAR", "PTN_SORT_REGULAR"),
+            ("SORT_STRING", "PTN_SORT_STRING"),
+            ("SORT_NUMERIC", "PTN_SORT_NUMERIC"),
+        ];
+        for (constant, value) in COLLATOR_CONSTANTS {
+            if name.eq_ignore_ascii_case(constant) {
+                return Some(value);
+            }
+        }
     }
     if class_name.eq_ignore_ascii_case("IntlTimeZone") {
         const INTL_TIMEZONE_CONSTANTS: &[(&str, &str)] = &[
