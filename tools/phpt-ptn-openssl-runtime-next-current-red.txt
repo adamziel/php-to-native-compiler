@@ -1,0 +1,8 @@
+# Focused OpenSSL runtime current-red rows for openssl-runtime-next.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-openssl-runtime-next-current-red.txt
+#
+# bucket: openssl-runtime-next-current-red rows=2
+ext/openssl/tests/bug72165.phpt
+ext/openssl/tests/openssl_pkcs7_encrypt_basic.phpt

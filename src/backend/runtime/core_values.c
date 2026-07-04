@@ -73,6 +73,7 @@
 #include <openssl/objects.h>
 #include <openssl/opensslv.h>
 #include <openssl/pkcs12.h>
+#include <openssl/pkcs7.h>
 #include <openssl/provider.h>
 #include <openssl/rsa.h>
 #include <openssl/ssl.h>

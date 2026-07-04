@@ -39838,6 +39838,50 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         },
         InternalParameterSpec {
             name: "cipher_algo",
+            default: Some(InternalParameterDefault::Int(5)),
+        },
+    ];
+    static OPENSSL_PKCS7_ENCRYPT_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "input_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "headers",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "cipher_algo",
+            default: Some(InternalParameterDefault::Int(5)),
+        },
+    ];
+    static OPENSSL_PKCS7_DECRYPT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "input_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
             default: Some(InternalParameterDefault::Null),
         },
     ];
@@ -40527,6 +40571,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_CIPHER_ALGO_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_cms_encrypt") {
         Some(&OPENSSL_CMS_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkcs7_encrypt") {
+        Some(&OPENSSL_PKCS7_ENCRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkcs7_decrypt") {
+        Some(&OPENSSL_PKCS7_DECRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_encrypt")
         || name.eq_ignore_ascii_case("openssl_decrypt")
     {
