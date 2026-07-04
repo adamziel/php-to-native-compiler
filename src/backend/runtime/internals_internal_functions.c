@@ -157478,22 +157478,41 @@ static const char *ptn_date_datetime_ancestor_for_value(PtnValue value) {
     return "DateTime";
 }
 
+static void ptn_date_format_uninitialized_object_message(
+    char *message,
+    size_t message_size,
+    const char *source_class,
+    const char *ancestor
+) {
+    int written;
+    if (ptn_ascii_case_equal(source_class, ancestor)) {
+        written = snprintf(
+            message,
+            message_size,
+            "Object of type %s has not been correctly initialized by calling parent::__construct() in its constructor",
+            source_class
+        );
+    } else {
+        written = snprintf(
+            message,
+            message_size,
+            "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+            source_class,
+            ancestor
+        );
+    }
+    if (written < 0 || (size_t)written >= message_size) {
+        ptn_abort_out_of_memory();
+    }
+}
+
 static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnValue value, const char *ancestor) {
     PtnValue object = ptn_value_deref(value);
     const char *source_class = object.type == PTN_OBJECT && object.as.object != NULL
         ? object.as.object->class_name
         : ancestor;
     char message[256];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
-        source_class,
-        ancestor
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
+    ptn_date_format_uninitialized_object_message(message, sizeof(message), source_class, ancestor);
     const char *path = NULL;
     size_t line = 0;
     if (runtime != NULL) {
@@ -157527,16 +157546,7 @@ static void ptn_date_throw_uninitialized_method_object_error(
         ? object.as.object->class_name
         : ancestor;
     char message[256];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
-        source_class,
-        ancestor
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
+    ptn_date_format_uninitialized_object_message(message, sizeof(message), source_class, ancestor);
     char frame_name[96];
     int frame_written = snprintf(
         frame_name,

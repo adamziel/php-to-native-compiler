@@ -1,0 +1,2 @@
+# bucket: date-runtime-next-gh8471 rows=1
+ext/date/tests/bug-gh8471.phpt
