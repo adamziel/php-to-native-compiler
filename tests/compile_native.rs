@@ -37471,6 +37471,48 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_fsockopen_host_port_string_to_native_binary() {
+    let root = temp_dir("ptn-native-fsockopen-host-port-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fsockopen-host-port-string.php");
+    let output = root.join("fsockopen-host-port-string-bin");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let php = r#"<?php
+$port = __PORT__;
+$server = stream_socket_server("tcp://127.0.0.1:$port");
+var_dump(is_resource($server));
+$client = fsockopen("127.0.0.1", $port);
+var_dump(is_resource($client));
+fclose($client);
+$client = fsockopen("127.0.0.1:$port");
+var_dump(is_resource($client));
+fclose($client);
+echo "done\n";
+"#
+    .replace("__PORT__", &port.to_string());
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_fsockopen"));
+    assert!(c_source.contains("ptn_internal_stream_socket_server"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();
