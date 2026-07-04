@@ -1,0 +1,6 @@
+ext/openssl/tests/bug36732.phpt
+ext/openssl/tests/bug68879.phpt
+ext/openssl/tests/bug74099.phpt
+ext/openssl/tests/bug74720_1.phpt
+ext/openssl/tests/bug81713.phpt
+ext/openssl/tests/openssl_csr_sign_basic.phpt

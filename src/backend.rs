@@ -39969,6 +39969,36 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static OPENSSL_PKCS7_SIGN_PARAMETERS: [InternalParameterSpec; 7] = [
+        InternalParameterSpec {
+            name: "input_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "headers",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(64)),
+        },
+        InternalParameterSpec {
+            name: "untrusted_certificates_filename",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static OPENSSL_ENCRYPT_PARAMETERS: [InternalParameterSpec; 7] = [
         InternalParameterSpec {
             name: "data",
@@ -40690,6 +40720,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_PKCS7_ENCRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkcs7_decrypt") {
         Some(&OPENSSL_PKCS7_DECRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkcs7_sign") {
+        Some(&OPENSSL_PKCS7_SIGN_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_encrypt")
         || name.eq_ignore_ascii_case("openssl_decrypt")
     {
