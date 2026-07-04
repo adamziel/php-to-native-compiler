@@ -3146,6 +3146,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_rewrite_vars = NULL;
     runtime->output_rewrite_vars_len = 0;
     runtime->output_rewrite_vars_capacity = 0;
+    runtime->output_rewrite_vars_before_trans_sid = 0;
     runtime->url_rewriter_hosts = NULL;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;

@@ -1110,6 +1110,11 @@ static int ptn_output_rewrite_vars_enabled(PtnRuntime *runtime) {
     return root != NULL && root->output_rewrite_vars_len != 0;
 }
 
+static int ptn_output_rewrite_vars_before_trans_sid(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_output_rewrite_root(runtime);
+    return root != NULL && root->output_rewrite_vars_before_trans_sid;
+}
+
 static unsigned char ptn_output_rewrite_upper_byte(unsigned char byte) {
     return (unsigned char)toupper(byte);
 }
@@ -1561,6 +1566,8 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
     char *trans_sid_rewritten = NULL;
     int rewrite_vars_enabled = ptn_output_rewrite_vars_enabled(runtime);
     int trans_sid_enabled = buffer != NULL && buffer->trans_sid_rewrite;
+    int rewrite_vars_first =
+        rewrite_vars_enabled && trans_sid_enabled && ptn_output_rewrite_vars_before_trans_sid(runtime);
     if (rewrite_vars_enabled || trans_sid_enabled) {
         PtnRuntime *root = ptn_runtime_root(runtime);
         if (root == NULL) {
@@ -1600,6 +1607,11 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
+        if (rewrite_vars_enabled && (!trans_sid_enabled || rewrite_vars_first)) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
+        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state;
             state.session_name = buffer->trans_sid_session_name;
@@ -1610,7 +1622,7 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
         }
-        if (rewrite_vars_enabled) {
+        if (rewrite_vars_enabled && trans_sid_enabled && !rewrite_vars_first) {
             rewrite_vars_rewritten =
                 ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
             output_data = rewrite_vars_rewritten;
@@ -155515,6 +155527,7 @@ static void ptn_output_rewrite_vars_clear(PtnRuntime *runtime) {
         root->output_rewrite_vars[i].value_len = 0;
     }
     root->output_rewrite_vars_len = 0;
+    root->output_rewrite_vars_before_trans_sid = 0;
 }
 
 static void ptn_output_rewrite_var_store(
@@ -155525,6 +155538,9 @@ static void ptn_output_rewrite_var_store(
     PtnRuntime *root = ptn_output_rewrite_root(runtime);
     if (root == NULL) {
         return;
+    }
+    if (root->output_rewrite_vars_len == 0) {
+        root->output_rewrite_vars_before_trans_sid = ptn_session_trans_sid_output_enabled(runtime);
     }
     char *stored_name = ptn_output_rewrite_upper_copy(name);
     char *stored_value = ptn_output_rewrite_upper_copy(value);

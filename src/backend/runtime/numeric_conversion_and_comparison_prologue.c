@@ -140,6 +140,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_rewrite_vars = NULL;
     runtime->output_rewrite_vars_len = 0;
     runtime->output_rewrite_vars_capacity = 0;
+    runtime->output_rewrite_vars_before_trans_sid = 0;
     runtime->url_rewriter_hosts = NULL;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;
@@ -1395,6 +1396,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_rewrite_vars = NULL;
         runtime->output_rewrite_vars_len = 0;
         runtime->output_rewrite_vars_capacity = 0;
+        runtime->output_rewrite_vars_before_trans_sid = 0;
         free(runtime->url_rewriter_hosts);
         runtime->url_rewriter_hosts = NULL;
         runtime->current_output_source_path = NULL;

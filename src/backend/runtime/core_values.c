@@ -1879,6 +1879,7 @@ struct PtnRuntime {
     PtnOutputRewriteVar *output_rewrite_vars;
     size_t output_rewrite_vars_len;
     size_t output_rewrite_vars_capacity;
+    int output_rewrite_vars_before_trans_sid;
     char *url_rewriter_hosts;
     const char *current_output_source_path;
     size_t current_output_line;
