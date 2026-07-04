@@ -7816,6 +7816,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("socket_select") && argument_index == 2 {
         return Some("except");
     }
+    if name.eq_ignore_ascii_case("socket_create_pair") && argument_index == 3 {
+        return Some("pair");
+    }
+    if name.eq_ignore_ascii_case("socket_getpeername") && argument_index == 1 {
+        return Some("address");
+    }
+    if name.eq_ignore_ascii_case("socket_getpeername") && argument_index == 2 {
+        return Some("port");
+    }
     if name.eq_ignore_ascii_case("socket_getsockname") && argument_index == 1 {
         return Some("address");
     }

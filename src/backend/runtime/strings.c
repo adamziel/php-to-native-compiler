@@ -2303,6 +2303,24 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(IP_PMTUDISC_DO);
         return 1;
     }
+#if defined(IP_MULTICAST_TTL)
+    if (strcmp(name, "IP_MULTICAST_TTL") == 0) {
+        *out = ptn_int(IP_MULTICAST_TTL);
+        return 1;
+    }
+#endif
+#if defined(IP_MULTICAST_LOOP)
+    if (strcmp(name, "IP_MULTICAST_LOOP") == 0) {
+        *out = ptn_int(IP_MULTICAST_LOOP);
+        return 1;
+    }
+#endif
+#if defined(IP_MULTICAST_IF)
+    if (strcmp(name, "IP_MULTICAST_IF") == 0) {
+        *out = ptn_int(IP_MULTICAST_IF);
+        return 1;
+    }
+#endif
     if (strcmp(name, "AI_PASSIVE") == 0) {
         *out = ptn_int(AI_PASSIVE);
         return 1;
@@ -2351,6 +2369,24 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(13);
         return 1;
     }
+#if defined(SO_RCVTIMEO)
+    if (strcmp(name, "SO_RCVTIMEO") == 0) {
+        *out = ptn_int(SO_RCVTIMEO);
+        return 1;
+    }
+#endif
+#if defined(SO_SNDTIMEO)
+    if (strcmp(name, "SO_SNDTIMEO") == 0) {
+        *out = ptn_int(SO_SNDTIMEO);
+        return 1;
+    }
+#endif
+#if defined(SCM_RIGHTS)
+    if (strcmp(name, "SCM_RIGHTS") == 0) {
+        *out = ptn_int(SCM_RIGHTS);
+        return 1;
+    }
+#endif
     if (strcmp(name, "PHP_NORMAL_READ") == 0) {
         *out = ptn_int(1);
         return 1;

@@ -37747,6 +37747,61 @@ var_dump(socket_set_option($socket, IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)
 }
 
 #[test]
+fn compile_socket_pair_export_and_timeval_options_to_native_binary() {
+    let root = temp_dir("ptn-native-socket-pair-export-timeval-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("socket-pair-export-timeval-options.php");
+    let output = root.join("socket-pair-export-timeval-options-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sockets = [];
+var_dump(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets));
+$write = null;
+$except = null;
+var_dump(socket_select($sockets, $write, $except, 0));
+
+$udp = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+$stream = socket_export_stream($udp);
+echo stream_get_meta_data($stream)["stream_type"], "\n";
+socket_set_option($udp, IPPROTO_IP, IP_MULTICAST_IF, 1);
+var_dump(socket_getopt($udp, IPPROTO_IP, IP_MULTICAST_IF));
+
+$tcp = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+socket_set_option($tcp, SOL_SOCKET, SO_RCVTIMEO, ["sec" => 1, "usec" => 0]);
+var_dump(socket_get_option($tcp, SOL_SOCKET, SO_RCVTIMEO));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(0)\n",
+            "udp_socket\n",
+            "int(1)\n",
+            "array(2) {\n",
+            "  [\"sec\"]=>\n",
+            "  int(1)\n",
+            "  [\"usec\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_socket_create_pair"));
+    assert!(c_source.contains("ptn_internal_socket_export_stream"));
+    assert!(c_source.contains("SO_RCVTIMEO"));
+}
+
+#[test]
 fn compile_eval_worker_stream_socket_nodelay_to_native_binary() {
     let root = temp_dir("ptn-native-eval-worker-stream-socket-nodelay");
     fs::create_dir_all(&root).unwrap();

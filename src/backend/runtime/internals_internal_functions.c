@@ -150590,6 +150590,15 @@ static void ptn_defined_constants_add_sockets(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "IPPROTO_IPV6", 41);
     ptn_get_defined_constants_add_int(table, "IP_MTU_DISCOVER", IP_MTU_DISCOVER);
     ptn_get_defined_constants_add_int(table, "IP_PMTUDISC_DO", IP_PMTUDISC_DO);
+#if defined(IP_MULTICAST_TTL)
+    ptn_get_defined_constants_add_int(table, "IP_MULTICAST_TTL", IP_MULTICAST_TTL);
+#endif
+#if defined(IP_MULTICAST_LOOP)
+    ptn_get_defined_constants_add_int(table, "IP_MULTICAST_LOOP", IP_MULTICAST_LOOP);
+#endif
+#if defined(IP_MULTICAST_IF)
+    ptn_get_defined_constants_add_int(table, "IP_MULTICAST_IF", IP_MULTICAST_IF);
+#endif
     ptn_get_defined_constants_add_int(table, "AI_PASSIVE", AI_PASSIVE);
     ptn_get_defined_constants_add_int(table, "AI_CANONNAME", AI_CANONNAME);
     ptn_get_defined_constants_add_int(table, "AI_NUMERICHOST", AI_NUMERICHOST);
@@ -150599,6 +150608,15 @@ static void ptn_defined_constants_add_sockets(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "AI_NUMERICSERV", AI_NUMERICSERV);
     ptn_get_defined_constants_add_int(table, "MCAST_JOIN_GROUP", 42);
     ptn_get_defined_constants_add_int(table, "SO_REUSEPORT", 15);
+#if defined(SO_RCVTIMEO)
+    ptn_get_defined_constants_add_int(table, "SO_RCVTIMEO", SO_RCVTIMEO);
+#endif
+#if defined(SO_SNDTIMEO)
+    ptn_get_defined_constants_add_int(table, "SO_SNDTIMEO", SO_SNDTIMEO);
+#endif
+#if defined(SCM_RIGHTS)
+    ptn_get_defined_constants_add_int(table, "SCM_RIGHTS", SCM_RIGHTS);
+#endif
 }
 
 static PtnValue ptn_defined_constants_sockets_table(void) {
@@ -151224,6 +151242,15 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
         "IPPROTO_IPV6",
         "IP_MTU_DISCOVER",
         "IP_PMTUDISC_DO",
+#if defined(IP_MULTICAST_TTL)
+        "IP_MULTICAST_TTL",
+#endif
+#if defined(IP_MULTICAST_LOOP)
+        "IP_MULTICAST_LOOP",
+#endif
+#if defined(IP_MULTICAST_IF)
+        "IP_MULTICAST_IF",
+#endif
         "AI_PASSIVE",
         "AI_CANONNAME",
         "AI_NUMERICHOST",
@@ -151233,6 +151260,15 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
         "AI_NUMERICSERV",
         "MCAST_JOIN_GROUP",
         "SO_REUSEPORT",
+#if defined(SO_RCVTIMEO)
+        "SO_RCVTIMEO",
+#endif
+#if defined(SO_SNDTIMEO)
+        "SO_SNDTIMEO",
+#endif
+#if defined(SCM_RIGHTS)
+        "SCM_RIGHTS",
+#endif
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -194684,6 +194720,7 @@ typedef struct {
     int type;
     int protocol;
     int last_error;
+    int ip_multicast_if;
 } PtnSocketData;
 
 typedef struct {
@@ -194767,6 +194804,7 @@ static PtnResource *ptn_socket_new_resource(
     data->type = type;
     data->protocol = protocol;
     data->last_error = 0;
+    data->ip_multicast_if = 0;
 
     PtnResource *resource = ptn_resource_new_named("Socket");
     ptn_resource_assign_object_id(runtime, resource);
@@ -195221,6 +195259,42 @@ static PtnValue ptn_internal_socket_create(PtnRuntime *runtime, size_t argc, con
 #endif
 }
 
+static PtnValue ptn_internal_socket_create_pair(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t domain = ptn_internal_expect_integer_arg(runtime, "socket_create_pair", 1, "domain", args[0], line);
+    int64_t type = ptn_internal_expect_integer_arg(runtime, "socket_create_pair", 2, "type", args[1], line);
+    int64_t protocol = ptn_internal_expect_integer_arg(runtime, "socket_create_pair", 3, "protocol", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)domain;
+    (void)type;
+    (void)protocol;
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(0);
+#else
+    int descriptors[2] = { -1, -1 };
+    if (socketpair((int)domain, (int)type, (int)protocol, descriptors) != 0) {
+        return ptn_socket_false_from_errno(NULL);
+    }
+    PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        pair.as.array,
+        ptn_array_int_key(0),
+        ptn_resource(ptn_socket_new_resource(runtime, descriptors[0], (int)domain, (int)type, (int)protocol))
+    );
+    ptn_array_set_entry(
+        pair.as.array,
+        ptn_array_int_key(1),
+        ptn_resource(ptn_socket_new_resource(runtime, descriptors[1], (int)domain, (int)type, (int)protocol))
+    );
+    ptn_socket_assign_reference(runtime, args[3], pair);
+    ptn_socket_set_last_error(NULL, 0);
+    return ptn_bool(1);
+#endif
+}
+
 static PtnValue ptn_internal_socket_create_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t port = ptn_internal_expect_integer_arg(runtime, "socket_create_listen", 1, "port", args[0], line);
     int64_t backlog = argc >= 2
@@ -195231,7 +195305,8 @@ static PtnValue ptn_internal_socket_create_listen(PtnRuntime *runtime, size_t ar
     }
     if (port < 0 || port > 65535) {
         ptn_socket_set_last_error(NULL, EINVAL);
-        return ptn_bool(0);
+        ptn_throw_exception(runtime, "ValueError", "socket_create_listen(): Argument #1 ($port) must be between 0 and 65535");
+        return ptn_null();
     }
 #if defined(_WIN32)
     (void)backlog;
@@ -195252,6 +195327,19 @@ static PtnValue ptn_internal_socket_create_listen(PtnRuntime *runtime, size_t ar
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
         listen(fd, backlog < 0 ? 0 : (int)backlog) != 0) {
         int error_code = errno;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_create_listen(): unable to bind to given address [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            close(fd);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
         close(fd);
         return ptn_socket_false_with_error(NULL, error_code);
     }
@@ -195358,6 +195446,71 @@ static PtnValue ptn_internal_socket_getsockname(PtnRuntime *runtime, size_t argc
 #endif
 }
 
+static PtnValue ptn_internal_socket_getpeername(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_getpeername", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    (void)argc;
+    ptn_socket_assign_reference(runtime, args[1], ptn_null());
+    if (argc >= 3) {
+        ptn_socket_assign_reference(runtime, args[2], ptn_null());
+    }
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+    if (getpeername(data->fd, (struct sockaddr *)&addr, &len) != 0) {
+        int error_code = errno;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_getpeername(): unable to retrieve peer name [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        ptn_socket_assign_reference(runtime, args[1], ptn_null());
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_socket_false_with_error(data, error_code);
+    }
+    if (addr.ss_family == AF_INET) {
+        char buffer[INET_ADDRSTRLEN];
+        struct sockaddr_in *inet_addr = (struct sockaddr_in *)&addr;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, buffer, sizeof(buffer));
+        if (formatted == NULL) {
+            return ptn_socket_false_from_errno(data);
+        }
+        ptn_socket_assign_reference(runtime, args[1], ptn_string(formatted));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+        }
+    } else if (addr.ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((struct sockaddr_un *)&addr, len);
+        ptn_socket_assign_reference(runtime, args[1], ptn_owned_string(path));
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_int(0));
+        }
+    } else {
+        ptn_socket_assign_reference(runtime, args[1], ptn_null());
+        if (argc >= 3) {
+            ptn_socket_assign_reference(runtime, args[2], ptn_null());
+        }
+        return ptn_socket_false_with_error(data, EAFNOSUPPORT);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_bool(1);
+#endif
+}
+
 static PtnValue ptn_internal_socket_listen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_listen", 1, "socket", args[0]);
     if (resource == NULL) {
@@ -195445,7 +195598,20 @@ static PtnValue ptn_internal_socket_accept(PtnRuntime *runtime, size_t argc, con
         fd = accept(data->fd, NULL, NULL);
     } while (fd < 0 && errno == EINTR);
     if (fd < 0) {
-        return ptn_socket_false_from_errno(data);
+        int error_code = errno;
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_accept(): unable to accept incoming connection [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_socket_false_with_error(data, error_code);
     }
     ptn_socket_set_last_error(data, 0);
     return ptn_resource(ptn_socket_new_resource(runtime, fd, data->domain, data->type, data->protocol));
@@ -195784,7 +195950,7 @@ static PtnValue ptn_internal_socket_set_block(PtnRuntime *runtime, size_t argc, 
     return ptn_bool(1);
 }
 
-static void ptn_socket_linger_missing_key(PtnRuntime *runtime, const char *key_name) {
+static void ptn_socket_option_missing_key(PtnRuntime *runtime, const char *key_name) {
     char message[128];
     int written = snprintf(
         message,
@@ -195798,14 +195964,41 @@ static void ptn_socket_linger_missing_key(PtnRuntime *runtime, const char *key_n
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static int ptn_socket_array_integer_value(PtnArray *array, const char *key_name, int *out) {
+static void ptn_socket_option_array_type_error(
+    PtnRuntime *runtime,
+    const char *option_name,
+    PtnValue value
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "socket_set_option(): Argument #4 ($value) must be of type array when argument #3 ($option) is %s, %s given",
+        option_name,
+        ptn_offset_container_type_name(ptn_value_deref(value))
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int ptn_socket_array_integer_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const char *key_name,
+    size_t line,
+    int64_t *out
+) {
     PtnArrayKey key = ptn_array_string_key(key_name);
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
     ptn_array_key_free(key);
     if (entry == NULL) {
         return 0;
     }
-    *out = (int)ptn_value_to_integer(entry->value);
+    PtnValue integer = ptn_cast_int_with_runtime(runtime, entry->value, line);
+    *out = ptn_value_deref(integer).type == PTN_INT ? ptn_value_deref(integer).as.integer : 0;
+    ptn_value_destroy(&integer);
     return 1;
 }
 
@@ -195827,24 +196020,86 @@ static PtnValue ptn_internal_socket_set_option(PtnRuntime *runtime, size_t argc,
     return ptn_socket_false_with_error(data, 0);
 #else
     int result = -1;
-    if (level == SOL_SOCKET && option == SO_LINGER) {
-        PtnValue option_value = ptn_value_deref(args[3]);
+    PtnValue option_value = ptn_value_deref(args[3]);
+#if defined(MCAST_JOIN_GROUP)
+    if (level == IPPROTO_IP && option == MCAST_JOIN_GROUP && data->domain != AF_INET) {
+        ptn_throw_exception(runtime, "ValueError", "IP address used in the context of an unexpected type of socket");
+        return ptn_null();
+    }
+#endif
+#if defined(IP_MULTICAST_IF)
+    if (level == IPPROTO_IP && option == IP_MULTICAST_IF) {
+        PtnValue integer = ptn_cast_int_with_runtime(runtime, args[3], line);
+        data->ip_multicast_if = (int)(ptn_value_deref(integer).type == PTN_INT ? ptn_value_deref(integer).as.integer : 0);
+        ptn_value_destroy(&integer);
+        ptn_socket_set_last_error(data, 0);
+        return ptn_bool(1);
+    }
+#endif
+#if defined(SO_RCVTIMEO) && defined(SO_SNDTIMEO)
+    if (level == SOL_SOCKET && (option == SO_RCVTIMEO || option == SO_SNDTIMEO)) {
+        const char *option_name = option == SO_RCVTIMEO ? "SO_RCVTIMEO" : "SO_SNDTIMEO";
         if (option_value.type != PTN_ARRAY) {
-            ptn_socket_linger_missing_key(runtime, "l_onoff");
+            if (option_value.type == PTN_OBJECT) {
+                ptn_socket_option_missing_key(runtime, "sec");
+            } else {
+                ptn_socket_option_array_type_error(runtime, option_name, option_value);
+            }
             return ptn_null();
         }
+        int64_t seconds = 0;
+        int64_t microseconds = 0;
+        if (!ptn_socket_array_integer_value(runtime, option_value.as.array, "sec", line, &seconds)) {
+            ptn_socket_option_missing_key(runtime, "sec");
+            return ptn_null();
+        }
+        if (!ptn_socket_array_integer_value(runtime, option_value.as.array, "usec", line, &microseconds)) {
+            ptn_socket_option_missing_key(runtime, "usec");
+            return ptn_null();
+        }
+        struct timeval timeout;
+        timeout.tv_sec = (time_t)seconds;
+        timeout.tv_usec = (suseconds_t)microseconds;
+        result = setsockopt(data->fd, (int)level, (int)option, &timeout, sizeof(timeout));
+    } else
+#endif
+    if (level == SOL_SOCKET && option == SO_LINGER) {
+        if (option_value.type != PTN_ARRAY) {
+            ptn_socket_option_array_type_error(runtime, "SO_LINGER", option_value);
+            return ptn_null();
+        }
+        int64_t l_onoff = 0;
+        int64_t l_linger = 0;
         struct linger linger_value;
-        if (!ptn_socket_array_integer_value(option_value.as.array, "l_onoff", &linger_value.l_onoff)) {
-            ptn_socket_linger_missing_key(runtime, "l_onoff");
+        if (!ptn_socket_array_integer_value(runtime, option_value.as.array, "l_onoff", line, &l_onoff)) {
+            ptn_socket_option_missing_key(runtime, "l_onoff");
             return ptn_null();
         }
-        if (!ptn_socket_array_integer_value(option_value.as.array, "l_linger", &linger_value.l_linger)) {
-            ptn_socket_linger_missing_key(runtime, "l_linger");
+        if (!ptn_socket_array_integer_value(runtime, option_value.as.array, "l_linger", line, &l_linger)) {
+            ptn_socket_option_missing_key(runtime, "l_linger");
             return ptn_null();
         }
+        if (l_onoff < 0 || l_onoff > INT_MAX) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "socket_set_option(): Argument #4 ($value) \"l_onoff\" must be between 0 and %d",
+                INT_MAX
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return ptn_null();
+        }
+        linger_value.l_onoff = (int)l_onoff;
+        linger_value.l_linger = (int)l_linger;
         result = setsockopt(data->fd, (int)level, (int)option, &linger_value, sizeof(linger_value));
     } else {
-        int value = (int)ptn_value_to_integer(args[3]);
+        PtnValue integer = ptn_cast_int_with_runtime(runtime, args[3], line);
+        int value = (int)(ptn_value_deref(integer).type == PTN_INT ? ptn_value_deref(integer).as.integer : 0);
+        ptn_value_destroy(&integer);
         result = setsockopt(data->fd, (int)level, (int)option, &value, sizeof(value));
     }
     if (result != 0) {
@@ -195898,6 +196153,26 @@ static PtnValue ptn_internal_socket_get_option(PtnRuntime *runtime, size_t argc,
         ptn_socket_set_last_error(data, 0);
         return result;
     }
+#if defined(IP_MULTICAST_IF)
+    if (level == IPPROTO_IP && option == IP_MULTICAST_IF) {
+        ptn_socket_set_last_error(data, 0);
+        return ptn_int(data->ip_multicast_if);
+    }
+#endif
+#if defined(SO_RCVTIMEO) && defined(SO_SNDTIMEO)
+    if (level == SOL_SOCKET && (option == SO_RCVTIMEO || option == SO_SNDTIMEO)) {
+        struct timeval timeout;
+        socklen_t len = sizeof(timeout);
+        if (getsockopt(data->fd, (int)level, (int)option, &timeout, &len) != 0) {
+            return ptn_socket_false_from_errno(data);
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("sec"), ptn_int((int64_t)timeout.tv_sec));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("usec"), ptn_int((int64_t)timeout.tv_usec));
+        ptn_socket_set_last_error(data, 0);
+        return result;
+    }
+#endif
     int value = 0;
     socklen_t len = sizeof(value);
     if (getsockopt(data->fd, (int)level, (int)option, &value, &len) != 0) {
@@ -196086,6 +196361,10 @@ static PtnValue ptn_internal_socket_select(PtnRuntime *runtime, size_t argc, con
     struct timeval timeout;
     struct timeval *timeout_ptr = NULL;
     if (seconds >= 0) {
+        if (microseconds > 999999) {
+            seconds += microseconds / 1000000;
+            microseconds %= 1000000;
+        }
         timeout.tv_sec = (time_t)seconds;
         timeout.tv_usec = (suseconds_t)microseconds;
         timeout_ptr = &timeout;
@@ -196108,6 +196387,50 @@ static PtnValue ptn_internal_socket_select(PtnRuntime *runtime, size_t argc, con
     ptn_socket_assign_reference(runtime, args[2], except_null ? ptn_null() : ptn_socket_select_selected_array(except_array, &except_set));
     ptn_socket_set_last_error(NULL, 0);
     return ptn_int(selected);
+#endif
+}
+
+static PtnValue ptn_internal_socket_export_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_export_stream", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+#if defined(_WIN32)
+    (void)line;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int duplicate = dup(data->fd);
+    if (duplicate < 0) {
+        return ptn_socket_false_from_errno(data);
+    }
+    FILE *stream = fdopen(duplicate, "r+");
+    if (stream == NULL) {
+        int error_code = errno;
+        close(duplicate);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "socket_export_stream(): unable to open socket stream [%d]: %s",
+            error_code,
+            strerror(error_code)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_socket_false_with_error(data, error_code);
+    }
+    const char *uri = "tcp://socket";
+    if (data->domain == AF_UNIX) {
+        uri = data->type == SOCK_DGRAM ? "udg://socket" : "unix://socket";
+    } else if (data->type == SOCK_DGRAM) {
+        uri = "udp://socket";
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
 #endif
 }
 
@@ -233608,7 +233931,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "socket_connect", 2, 3, ptn_internal_socket_connect },
         { "socket_create", 3, 3, ptn_internal_socket_create },
         { "socket_create_listen", 1, 2, ptn_internal_socket_create_listen },
+        { "socket_create_pair", 4, 4, ptn_internal_socket_create_pair },
+        { "socket_export_stream", 1, 1, ptn_internal_socket_export_stream },
         { "socket_get_option", 3, 3, ptn_internal_socket_get_option },
+        { "socket_getopt", 3, 3, ptn_internal_socket_get_option },
+        { "socket_getpeername", 2, 3, ptn_internal_socket_getpeername },
         { "socket_getsockname", 2, 3, ptn_internal_socket_getsockname },
         { "socket_import_stream", 1, 1, ptn_internal_socket_import_stream },
         { "socket_last_error", 0, 1, ptn_internal_socket_last_error },
