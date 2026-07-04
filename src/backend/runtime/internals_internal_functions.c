@@ -54720,6 +54720,7 @@ static int64_t ptn_internal_expect_integer_arg(
     PtnValue value,
     size_t line
 );
+static int ptn_read_stream_bytes(FILE *stream, unsigned char **data_out, size_t *len_out);
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
 static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path);
@@ -66758,8 +66759,12 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         free(path);
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(path, "php://stdin")) {
+        read_result = ptn_read_stream_bytes(stdin, &data, &data_len);
+    }
     PtnValue user_stream = ptn_null();
-    if (ptn_try_open_user_stream_wrapper(runtime, "file_get_contents", path, "rb", context, line, &user_stream)) {
+    if (read_result == 0 &&
+        ptn_try_open_user_stream_wrapper(runtime, "file_get_contents", path, "rb", context, line, &user_stream)) {
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&user_stream);
             free(path);
@@ -67448,17 +67453,9 @@ static PtnValue ptn_data_url_stream_metadata(PtnResource *resource) {
     return result;
 }
 
-static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
-    int data_url_result = ptn_try_read_data_url_bytes(path, data_out, len_out);
-    if (data_url_result != 0) {
-        return data_url_result;
-    }
-
-    FILE *stream = fopen(path, "rb");
-    if (stream == NULL) {
-        return 0;
-    }
-
+static int ptn_read_stream_bytes(FILE *stream, unsigned char **data_out, size_t *len_out) {
+    *data_out = NULL;
+    *len_out = 0;
     unsigned char *data = NULL;
     size_t len = 0;
     size_t capacity = 0;
@@ -67467,7 +67464,6 @@ static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_
         size_t read_len = fread(chunk, 1, sizeof(chunk), stream);
         if (read_len != 0) {
             if (read_len > SIZE_MAX - len) {
-                fclose(stream);
                 free(data);
                 ptn_abort_out_of_memory();
             }
@@ -67476,7 +67472,6 @@ static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_
                 size_t new_capacity = capacity == 0 ? 4096 : capacity;
                 while (new_capacity < required) {
                     if (new_capacity > SIZE_MAX / 2) {
-                        fclose(stream);
                         free(data);
                         ptn_abort_out_of_memory();
                     }
@@ -67484,7 +67479,6 @@ static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_
                 }
                 unsigned char *new_data = realloc(data, new_capacity);
                 if (new_data == NULL) {
-                    fclose(stream);
                     free(data);
                     ptn_abort_out_of_memory();
                 }
@@ -67496,21 +67490,37 @@ static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_
         }
         if (read_len < sizeof(chunk)) {
             if (ferror(stream)) {
-                fclose(stream);
                 free(data);
                 return -1;
             }
             break;
         }
     }
-
-    if (fclose(stream) != 0) {
-        free(data);
-        return -1;
-    }
     *data_out = data;
     *len_out = len;
     return 1;
+}
+
+static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    int data_url_result = ptn_try_read_data_url_bytes(path, data_out, len_out);
+    if (data_url_result != 0) {
+        return data_url_result;
+    }
+
+    FILE *stream = fopen(path, "rb");
+    if (stream == NULL) {
+        return 0;
+    }
+
+    int read_result = ptn_read_stream_bytes(stream, data_out, len_out);
+
+    if (fclose(stream) != 0) {
+        free(*data_out);
+        *data_out = NULL;
+        *len_out = 0;
+        return -1;
+    }
+    return read_result;
 }
 
 static PtnValue ptn_internal_sha1_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
