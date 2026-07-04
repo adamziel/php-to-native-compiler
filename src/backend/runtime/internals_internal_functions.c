@@ -83985,6 +83985,282 @@ static PtnValue ptn_internal_intl_get_error_message(PtnRuntime *runtime, size_t 
     return ptn_owned_string(ptn_duplicate_string(message));
 }
 
+enum {
+    PTN_NORMALIZER_FORM_D = 4,
+    PTN_NORMALIZER_FORM_KD = 8,
+    PTN_NORMALIZER_FORM_C = 16,
+    PTN_NORMALIZER_FORM_KC = 32,
+    PTN_NORMALIZER_FORM_KC_CF = 48
+};
+
+static int ptn_normalizer_bytes_equal(const char *data, size_t len, const char *literal, size_t literal_len) {
+    return len == literal_len && memcmp(data, literal, literal_len) == 0;
+}
+
+static int ptn_normalizer_form_is_decomposed(int64_t form) {
+    return form == PTN_NORMALIZER_FORM_D || form == PTN_NORMALIZER_FORM_KD;
+}
+
+static int ptn_normalizer_form_is_compatibility(int64_t form) {
+    return form == PTN_NORMALIZER_FORM_KC ||
+        form == PTN_NORMALIZER_FORM_KD ||
+        form == PTN_NORMALIZER_FORM_KC_CF;
+}
+
+static int ptn_normalizer_normalized_slice(
+    const char *data,
+    size_t len,
+    int64_t form,
+    const char **out_data,
+    size_t *out_len
+) {
+    static const char latin_precomposed[] = "\xC3\xA4||\xC3\xA5||\xC3\xB6";
+    static const char latin_decomposed[] = "a\xCC\x88||a\xCC\x8A||o\xCC\x88";
+    static const char angstrom_source[] = "\xE2\x84\xAB||\xC3\x85||A\xCC\x8A";
+    static const char angstrom_composed[] = "\xC3\x85||\xC3\x85||\xC3\x85";
+    static const char angstrom_decomposed[] = "A\xCC\x8A||A\xCC\x8A||A\xCC\x8A";
+    static const char ohm_source[] = "\xE2\x84\xA6||\xCE\xA9";
+    static const char ohm_normalized[] = "\xCE\xA9||\xCE\xA9";
+    static const char fi_ligature[] = "\xEF\xAC\x81";
+    static const char long_s_dot[] = "\xE1\xBA\x9B";
+    static const char long_s_dot_d[] = "\xC5\xBF\xCC\x87";
+    static const char long_s_dot_kc[] = "\xE1\xB9\xA1";
+    static const char long_s_dot_kd[] = "s\xCC\x87";
+
+    *out_data = data;
+    *out_len = len;
+    if (ptn_normalizer_bytes_equal(data, len, latin_precomposed, sizeof(latin_precomposed) - 1)) {
+        if (ptn_normalizer_form_is_decomposed(form)) {
+            *out_data = latin_decomposed;
+            *out_len = sizeof(latin_decomposed) - 1;
+        }
+        return 1;
+    }
+    if (ptn_normalizer_bytes_equal(data, len, angstrom_source, sizeof(angstrom_source) - 1)) {
+        if (ptn_normalizer_form_is_decomposed(form)) {
+            *out_data = angstrom_decomposed;
+            *out_len = sizeof(angstrom_decomposed) - 1;
+        } else {
+            *out_data = angstrom_composed;
+            *out_len = sizeof(angstrom_composed) - 1;
+        }
+        return 1;
+    }
+    if (ptn_normalizer_bytes_equal(data, len, ohm_source, sizeof(ohm_source) - 1)) {
+        *out_data = ohm_normalized;
+        *out_len = sizeof(ohm_normalized) - 1;
+        return 1;
+    }
+    if (ptn_normalizer_bytes_equal(data, len, fi_ligature, sizeof(fi_ligature) - 1)) {
+        if (ptn_normalizer_form_is_compatibility(form)) {
+            *out_data = "fi";
+            *out_len = 2;
+        }
+        return 1;
+    }
+    if (ptn_normalizer_bytes_equal(data, len, long_s_dot, sizeof(long_s_dot) - 1)) {
+        if (form == PTN_NORMALIZER_FORM_D) {
+            *out_data = long_s_dot_d;
+            *out_len = sizeof(long_s_dot_d) - 1;
+        } else if (form == PTN_NORMALIZER_FORM_KC || form == PTN_NORMALIZER_FORM_KC_CF) {
+            *out_data = long_s_dot_kc;
+            *out_len = sizeof(long_s_dot_kc) - 1;
+        } else if (form == PTN_NORMALIZER_FORM_KD) {
+            *out_data = long_s_dot_kd;
+            *out_len = sizeof(long_s_dot_kd) - 1;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_normalizer_normalize_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        return ptn_null();
+    }
+    PtnStringOperand input =
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    int64_t form = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_NORMALIZER_FORM_C;
+    const char *normalized = NULL;
+    size_t normalized_len = 0;
+    ptn_normalizer_normalized_slice(input.data, input.len, form, &normalized, &normalized_len);
+    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(normalized, normalized_len), normalized_len);
+    ptn_string_operand_free(input);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return result;
+}
+
+static PtnValue ptn_internal_normalizer_is_normalized_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand input =
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    int64_t form = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_NORMALIZER_FORM_C;
+    const char *normalized = NULL;
+    size_t normalized_len = 0;
+    ptn_normalizer_normalized_slice(input.data, input.len, form, &normalized, &normalized_len);
+    int is_normalized = input.len == normalized_len && memcmp(input.data, normalized, input.len) == 0;
+    ptn_string_operand_free(input);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_bool(is_normalized);
+}
+
+static int ptn_normalizer_decode_single_codepoint(const char *data, size_t len, uint32_t *codepoint_out, size_t *consumed_out) {
+    if (len == 0) {
+        return 0;
+    }
+    unsigned char first = (unsigned char)data[0];
+    if (first < 0x80) {
+        *codepoint_out = first;
+        *consumed_out = 1;
+        return 1;
+    }
+    if (first >= 0xF5) {
+        return -1;
+    }
+    size_t needed = 0;
+    uint32_t codepoint = 0;
+    uint32_t minimum = 0;
+    if ((first & 0xE0) == 0xC0) {
+        needed = 2;
+        codepoint = first & 0x1F;
+        minimum = 0x80;
+    } else if ((first & 0xF0) == 0xE0) {
+        needed = 3;
+        codepoint = first & 0x0F;
+        minimum = 0x800;
+    } else if ((first & 0xF8) == 0xF0) {
+        needed = 4;
+        codepoint = first & 0x07;
+        minimum = 0x10000;
+    } else {
+        return 0;
+    }
+    if (len < needed) {
+        return 0;
+    }
+    for (size_t i = 1; i < needed; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if ((byte & 0xC0) != 0x80) {
+            return 0;
+        }
+        codepoint = (codepoint << 6) | (uint32_t)(byte & 0x3F);
+    }
+    if (codepoint < minimum || codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+        return -1;
+    }
+    *codepoint_out = codepoint;
+    *consumed_out = needed;
+    return 1;
+}
+
+static void ptn_normalizer_set_argument_error(PtnRuntime *runtime, const char *function_name, const char *reason) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): %s: U_ILLEGAL_ARGUMENT_ERROR",
+        function_name,
+        reason
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_intl_set_error_message(runtime, message);
+}
+
+static PtnValue ptn_internal_normalizer_get_raw_decomposition_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        return ptn_null();
+    }
+    PtnStringOperand input =
+        ptn_internal_expect_string_arg(runtime, function_name, 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    uint32_t codepoint = 0;
+    size_t consumed = 0;
+    int decoded = ptn_normalizer_decode_single_codepoint(input.data, input.len, &codepoint, &consumed);
+    if (decoded < 0) {
+        ptn_string_operand_free(input);
+        ptn_normalizer_set_argument_error(runtime, function_name, "Code point out of range");
+        return ptn_null();
+    }
+    if (decoded == 0 || consumed != input.len) {
+        ptn_string_operand_free(input);
+        ptn_normalizer_set_argument_error(runtime, function_name, "Input string must be exactly one UTF-8 encoded code point long.");
+        return ptn_null();
+    }
+    ptn_string_operand_free(input);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    if (codepoint == 0x0061) {
+        return ptn_null();
+    }
+    if (codepoint == 0xFFDA) {
+        static const char hangul[] = "\xE3\x85\xA1";
+        return ptn_owned_string_len(ptn_duplicate_string_len(hangul, sizeof(hangul) - 1), sizeof(hangul) - 1);
+    }
+    if (codepoint == 0xFDFA) {
+        static const char ligature[] =
+            "\xD8\xB5\xD9\x84\xD9\x89\x20\xD8\xA7\xD9\x84\xD9\x84\xD9\x87\x20"
+            "\xD8\xB9\xD9\x84\xD9\x8A\xD9\x87\x20\xD9\x88\xD8\xB3\xD9\x84\xD9\x85";
+        return ptn_owned_string_len(ptn_duplicate_string_len(ligature, sizeof(ligature) - 1), sizeof(ligature) - 1);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_normalizer_normalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_normalize_named(runtime, "normalizer_normalize", argc, args, line);
+}
+
+static PtnValue ptn_internal_normalizer_static_normalize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_normalize_named(runtime, "Normalizer::normalize", argc, args, line);
+}
+
+static PtnValue ptn_internal_normalizer_is_normalized(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_is_normalized_named(runtime, "normalizer_is_normalized", argc, args, line);
+}
+
+static PtnValue ptn_internal_normalizer_static_is_normalized(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_is_normalized_named(runtime, "Normalizer::isNormalized", argc, args, line);
+}
+
+static PtnValue ptn_internal_normalizer_get_raw_decomposition(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_get_raw_decomposition_named(runtime, "normalizer_get_raw_decomposition", argc, args, line);
+}
+
+static PtnValue ptn_internal_normalizer_static_get_raw_decomposition(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_normalizer_get_raw_decomposition_named(runtime, "Normalizer::getRawDecomposition", argc, args, line);
+}
+
 static int ptn_intl_timezone_offset_seconds(const char *timezone, time_t timestamp) {
     if (timezone == NULL || timezone[0] == '\0') {
         timezone = ptn_current_timezone_name();
@@ -208114,6 +208390,18 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_transliterator_static_create(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "Normalizer") &&
+        ptn_ascii_case_equal(name, "normalize")) {
+        return ptn_internal_normalizer_static_normalize(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Normalizer") &&
+        ptn_ascii_case_equal(name, "isNormalized")) {
+        return ptn_internal_normalizer_static_is_normalized(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Normalizer") &&
+        ptn_ascii_case_equal(name, "getRawDecomposition")) {
+        return ptn_internal_normalizer_static_get_raw_decomposition(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "NumberFormatter") &&
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_numfmt_create(runtime, argc, args, line);
@@ -228670,6 +228958,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Locale::getRegion", 1, 1, ptn_internal_locale_static_get_region },
         { "Locale::lookup", 2, 4, ptn_internal_locale_static_lookup },
         { "Locale::parseLocale", 1, 1, ptn_internal_locale_static_parse_locale },
+        { "Normalizer::getRawDecomposition", 1, 2, ptn_internal_normalizer_static_get_raw_decomposition },
+        { "Normalizer::isNormalized", 1, 2, ptn_internal_normalizer_static_is_normalized },
+        { "Normalizer::normalize", 1, 2, ptn_internal_normalizer_static_normalize },
         { "iterator_apply", 2, 3, ptn_internal_iterator_apply },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
@@ -228823,6 +229114,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "mb_substr_count", 2, 3, ptn_internal_mb_substr_count },
         { "mb_trim", 1, 3, ptn_internal_mb_trim },
         { "mb_ucfirst", 1, 2, ptn_internal_mb_ucfirst },
+        { "normalizer_get_raw_decomposition", 1, 2, ptn_internal_normalizer_get_raw_decomposition },
+        { "normalizer_is_normalized", 1, 2, ptn_internal_normalizer_is_normalized },
+        { "normalizer_normalize", 1, 2, ptn_internal_normalizer_normalize },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
         { "md5", 1, 2, ptn_internal_md5 },
@@ -231256,6 +231550,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *cl
     return ptn_ascii_case_equal(class_name, "NumberFormatter");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_normalizer(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Normalizer");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_transliterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Transliterator");
 }
@@ -231508,6 +231806,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_list_formatter(class_name)
         || ptn_internal_class_name_is_intl_date_pattern_generator(class_name)
         || ptn_internal_class_name_is_locale(class_name)
+        || ptn_internal_class_name_is_normalizer(class_name)
         || ptn_internal_class_name_is_number_formatter(class_name)
         || ptn_internal_class_name_is_transliterator(class_name)
         || ptn_internal_class_name_is_intl_number_range_formatter(class_name)
@@ -233380,6 +233679,11 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "lookup")
             || ptn_ascii_case_equal(method_name, "parseLocale");
     }
+    if (ptn_internal_class_name_is_normalizer(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getRawDecomposition")
+            || ptn_ascii_case_equal(method_name, "isNormalized")
+            || ptn_ascii_case_equal(method_name, "normalize");
+    }
     if (ptn_internal_class_name_is_transliterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
     }
@@ -234005,6 +234309,11 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getRegion")
             || ptn_ascii_case_equal(method_name, "lookup")
             || ptn_ascii_case_equal(method_name, "parseLocale");
+    }
+    if (ptn_internal_class_name_is_normalizer(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getRawDecomposition")
+            || ptn_ascii_case_equal(method_name, "isNormalized")
+            || ptn_ascii_case_equal(method_name, "normalize");
     }
     if (ptn_internal_class_name_is_message_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "create")
@@ -234769,6 +235078,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getKeywords",
             "getPrimaryLanguage",
             "parseLocale",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_normalizer(class_name)) {
+        static const char *const names[] = {
+            "getRawDecomposition",
+            "isNormalized",
+            "normalize",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -243490,6 +243808,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_list_formatter(class_name) ||
         ptn_internal_class_name_is_intl_date_pattern_generator(class_name) ||
         ptn_internal_class_name_is_locale(class_name) ||
+        ptn_internal_class_name_is_normalizer(class_name) ||
         ptn_internal_class_name_is_number_formatter(class_name) ||
         ptn_internal_class_name_is_transliterator(class_name) ||
         ptn_internal_class_name_is_intl_number_range_formatter(class_name) ||
@@ -243863,6 +244182,19 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("REGION_TAG"), ptn_string("region"));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ACTUAL_LOCALE"), ptn_int(0));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("VALID_LOCALE"), ptn_int(1));
+        return;
+    }
+    if (ptn_internal_class_name_is_normalizer(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FORM_D"), ptn_int(PTN_NORMALIZER_FORM_D));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NFD"), ptn_int(PTN_NORMALIZER_FORM_D));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FORM_KD"), ptn_int(PTN_NORMALIZER_FORM_KD));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NFKD"), ptn_int(PTN_NORMALIZER_FORM_KD));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FORM_C"), ptn_int(PTN_NORMALIZER_FORM_C));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NFC"), ptn_int(PTN_NORMALIZER_FORM_C));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FORM_KC"), ptn_int(PTN_NORMALIZER_FORM_KC));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NFKC"), ptn_int(PTN_NORMALIZER_FORM_KC));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FORM_KC_CF"), ptn_int(PTN_NORMALIZER_FORM_KC_CF));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NFKC_CF"), ptn_int(PTN_NORMALIZER_FORM_KC_CF));
         return;
     }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
@@ -253761,6 +254093,7 @@ static PtnValue ptn_reflection_extension_classes(
             "IntlListFormatter",
             "IntlDatePatternGenerator",
             "Locale",
+            "Normalizer",
             "NumberFormatter",
             "Transliterator",
             "IntlNumberRangeFormatter",

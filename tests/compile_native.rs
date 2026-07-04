@@ -58861,6 +58861,71 @@ TypeError: IntlTimeZone::createEnumeration(): Argument #1 ($countryOrRawOffset) 
 }
 
 #[test]
+fn compile_intl_normalizer_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-normalizer-forms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-normalizer-forms.php");
+    let output = root.join("intl-normalizer-forms-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function hex_dump($value): void { var_dump($value === null ? null : bin2hex($value)); }\n\
+\n\
+var_dump(Normalizer::FORM_C, Normalizer::NFC, Normalizer::FORM_D, Normalizer::NFD);\n\
+var_dump(Normalizer::FORM_KC, Normalizer::NFKC, Normalizer::FORM_KD, Normalizer::NFKD);\n\
+$angstrom = \"\\xE2\\x84\\xAB||\\xC3\\x85||A\\xCC\\x8A\";\n\
+hex_dump(Normalizer::normalize($angstrom, Normalizer::FORM_C));\n\
+hex_dump(normalizer_normalize($angstrom, Normalizer::FORM_D));\n\
+var_dump(Normalizer::isNormalized($angstrom, Normalizer::FORM_C));\n\
+$fi = \"\\xEF\\xAC\\x81\";\n\
+hex_dump(Normalizer::normalize($fi, Normalizer::FORM_KC));\n\
+var_dump(normalizer_is_normalized($fi, Normalizer::FORM_KC));\n\
+hex_dump(Normalizer::getRawDecomposition(\"\\xEF\\xBF\\x9A\", Normalizer::FORM_KC));\n\
+hex_dump(normalizer_get_raw_decomposition(\"\\xEF\\xB7\\xBA\", Normalizer::FORM_KC));\n\
+hex_dump(Normalizer::getRawDecomposition('a', Normalizer::FORM_KC));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+hex_dump(Normalizer::getRawDecomposition('', Normalizer::FORM_KC));\n\
+echo intl_get_error_message(), \"\\n\";\n\
+hex_dump(normalizer_get_raw_decomposition(\"\\xF5\", Normalizer::FORM_KC));\n\
+echo intl_get_error_message(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_normalizer_normalize_named"));
+    assert!(c_source.contains("ptn_internal_class_name_is_normalizer"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(16)\n\
+int(16)\n\
+int(4)\n\
+int(4)\n\
+int(32)\n\
+int(32)\n\
+int(8)\n\
+int(8)\n\
+string(20) \"c3857c7cc3857c7cc385\"\n\
+string(26) \"41cc8a7c7c41cc8a7c7c41cc8a\"\n\
+bool(false)\n\
+string(4) \"6669\"\n\
+bool(false)\n\
+string(6) \"e385a1\"\n\
+string(66) \"d8b5d984d98920d8a7d984d984d98720d8b9d984d98ad98720d988d8b3d984d985\"\n\
+NULL\n\
+U_ZERO_ERROR\n\
+NULL\n\
+Normalizer::getRawDecomposition(): Input string must be exactly one UTF-8 encoded code point long.: U_ILLEGAL_ARGUMENT_ERROR\n\
+NULL\n\
+normalizer_get_raw_decomposition(): Code point out of range: U_ILLEGAL_ARGUMENT_ERROR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
     fs::create_dir_all(&root).unwrap();

@@ -6793,6 +6793,28 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Normalizer")) {
+        if (strcmp(constant, "FORM_D") == 0 || strcmp(constant, "NFD") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "FORM_KD") == 0 || strcmp(constant, "NFKD") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+        if (strcmp(constant, "FORM_C") == 0 || strcmp(constant, "NFC") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "FORM_KC") == 0 || strcmp(constant, "NFKC") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "FORM_KC_CF") == 0 || strcmp(constant, "NFKC_CF") == 0) {
+            *out = ptn_int(48);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "NumberFormatter")) {
         if (strcmp(constant, "PATTERN_DECIMAL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PATTERN_DECIMAL); return 1; }
         if (strcmp(constant, "DECIMAL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DECIMAL); return 1; }

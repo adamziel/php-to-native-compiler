@@ -11675,6 +11675,7 @@ fn emit_class_metadata_helpers(
         "IntlListFormatter",
         "IntlDatePatternGenerator",
         "Locale",
+        "Normalizer",
         "NumberFormatter",
         "Transliterator",
         "IntlNumberRangeFormatter",
@@ -12589,6 +12590,7 @@ fn emit_class_metadata_helpers(
         "IntlListFormatter",
         "IntlDatePatternGenerator",
         "Locale",
+        "Normalizer",
         "NumberFormatter",
         "Transliterator",
         "IntlNumberRangeFormatter",
@@ -26345,6 +26347,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intllistformatter" => Some("IntlListFormatter"),
         "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
         "locale" => Some("Locale"),
+        "normalizer" => Some("Normalizer"),
         "numberformatter" => Some("NumberFormatter"),
         "transliterator" => Some("Transliterator"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
@@ -37667,6 +37670,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlListFormatter")
                 || class_name.eq_ignore_ascii_case("IntlDatePatternGenerator")
                 || class_name.eq_ignore_ascii_case("Locale")
+                || class_name.eq_ignore_ascii_case("Normalizer")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
                 || class_name.eq_ignore_ascii_case("IntlNumberRangeFormatter")
                 || class_name.eq_ignore_ascii_case("Collator")
@@ -38041,6 +38045,26 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             return Some(value);
         }
     }
+    if class_name.eq_ignore_ascii_case("Normalizer") {
+        const NORMALIZER_CONSTANTS: &[(&str, &str)] = &[
+            ("FORM_D", "4"),
+            ("NFD", "4"),
+            ("FORM_KD", "8"),
+            ("NFKD", "8"),
+            ("FORM_C", "16"),
+            ("NFC", "16"),
+            ("FORM_KC", "32"),
+            ("NFKC", "32"),
+            ("FORM_KC_CF", "48"),
+            ("NFKC_CF", "48"),
+        ];
+        if let Some((_, value)) = NORMALIZER_CONSTANTS
+            .iter()
+            .find(|(constant_name, _)| name.eq_ignore_ascii_case(constant_name))
+        {
+            return Some(value);
+        }
+    }
     if class_name.eq_ignore_ascii_case("Pdo\\Sqlite") {
         if name.eq_ignore_ascii_case("ATTR_READONLY_STATEMENT") {
             return Some("1001");
@@ -38300,6 +38324,7 @@ fn is_compact_intl_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("getDisplayVariant")
         || name.eq_ignore_ascii_case("getErrorCode")
         || name.eq_ignore_ascii_case("getErrorMessage")
+        || name.eq_ignore_ascii_case("getRawDecomposition")
         || name.eq_ignore_ascii_case("getLocale")
         || name.eq_ignore_ascii_case("getPattern")
         || name.eq_ignore_ascii_case("getRegion")

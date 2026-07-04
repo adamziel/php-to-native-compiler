@@ -1,0 +1,2 @@
+ext/intl/tests/normalizer_get_raw_decomposition.phpt
+ext/intl/tests/normalizer_normalize.phpt
