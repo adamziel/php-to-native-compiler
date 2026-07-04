@@ -34331,6 +34331,54 @@ option-error\n"
 }
 
 #[test]
+fn compile_zlib_deflate_filter_remove_seek_roundtrip_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-deflate-filter-remove-seek");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-deflate-filter-remove-seek.php");
+    let output = root.join("zlib-deflate-filter-remove-seek-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$file = __DIR__ . "/zlib-filter-seek.zlib";
+$text = "Hello, World!";
+
+$fp = fopen($file, "w+");
+$filter = stream_filter_append($fp, "zlib.deflate", STREAM_FILTER_WRITE);
+var_dump(fwrite($fp, $text));
+var_dump(stream_filter_remove($filter));
+var_dump(fseek($fp, 0, SEEK_SET) === 0);
+var_dump(fseek($fp, 50, SEEK_SET) === 0);
+fclose($fp);
+
+$fp = fopen($file, "r");
+stream_filter_append($fp, "zlib.inflate", STREAM_FILTER_READ);
+var_dump(stream_get_contents($fp));
+fclose($fp);
+@unlink($file);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(13)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(13) \"Hello, World!\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("zlib_finished"));
+    assert!(c_source.contains("ptn_internal_stream_filter_remove"));
+}
+
+#[test]
 fn compile_zlib_row_pack_frontier_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-row-pack-frontier");
     fs::create_dir_all(&root).unwrap();

@@ -59435,6 +59435,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_window = zlib_window;
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
+    filter->zlib_finished = 0;
     filter->write_seek_mode = write_seek_mode;
     filter->user_filter_failed = 0;
     filter->user_filter_invalid_callback_reported = 0;
@@ -60091,6 +60092,7 @@ static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
         memset(filter->base64_values, 0, sizeof(filter->base64_values));
+        filter->zlib_finished = 0;
         filter->user_filter_closed = 0;
     }
 }
@@ -60236,6 +60238,7 @@ static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
     filter->zlib_error = 0;
+    filter->zlib_finished = 0;
     filter->iconv_error = 0;
     filter->user_filter_closed = 0;
 }
@@ -61016,6 +61019,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
             continue;
         }
         if (ptn_stream_filter_kind_is_zlib(filter->kind)) {
+            if (filter->zlib_finished && output_len == 0) {
+                continue;
+            }
             unsigned char *transformed = NULL;
             size_t transformed_len = 0;
             int ok = ptn_zlib_transform_bytes_no_dictionary(
@@ -61032,6 +61038,9 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 free(output);
                 output = (char *)transformed;
                 output_len = transformed_len;
+                if (filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE && closing) {
+                    filter->zlib_finished = 1;
+                }
             } else {
                 filter->zlib_error = 1;
                 free(output);

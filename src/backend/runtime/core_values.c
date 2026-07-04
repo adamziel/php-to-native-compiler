@@ -1546,6 +1546,7 @@ struct PtnStreamFilter {
     int64_t zlib_window;
     int64_t zlib_level;
     int zlib_error;
+    int zlib_finished;
     int write_seek_mode;
     int user_filter_failed;
     int user_filter_invalid_callback_reported;
