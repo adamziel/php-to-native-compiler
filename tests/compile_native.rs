@@ -40725,6 +40725,8 @@ echo bin2hex(mb_convert_encoding(hex2bin('f4908080'), 'UCS-4BE', 'UTF-8-Mobile#D
 echo bin2hex(mb_convert_encoding(hex2bin('1b2849211b2842'), 'UTF-16BE', 'JIS')), \"\\n\";\n\
 var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'JIS'));\n\
 var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'ISO-2022-JP'));\n\
+var_dump(mb_check_encoding(hex2bin('1b2428401b2842'), 'JIS'));\n\
+var_dump(mb_check_encoding(hex2bin('1b2428401b2842'), 'ISO-2022-JP'));\n\
 echo bin2hex(mb_convert_encoding(hex2bin('a3'), 'JIS', 'JIS')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('1b244221001b2842'), 'UTF-16BE', 'JIS')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('1b244221001b2842'), 'UTF-16BE', 'ISO-2022-JP')), \"\\n\";\n\
@@ -40755,6 +40757,8 @@ echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \
             "bool(false)\n",
             "00000025000000250000002500000025\n",
             "ff61\n",
+            "bool(true)\n",
+            "bool(false)\n",
             "bool(true)\n",
             "bool(false)\n",
             "1b2849231b2842\n",

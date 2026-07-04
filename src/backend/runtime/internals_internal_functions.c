@@ -122333,7 +122333,10 @@ static int ptn_mb_jis_validate_bytes(const char *data, size_t len, const char *e
                 }
                 unsigned char nested = (unsigned char)data[i + 3];
                 if (nested == '@' || nested == 'B' || nested == 'D') {
-                    if (is_2004 || (nested == 'D' ? !allow_jisx0212 : !ptn_mb_encoding_is_jis_family(encoding))) {
+                    if (is_2004 ||
+                        (nested == 'D'
+                            ? !allow_jisx0212
+                            : !(is_jis || is_cp5022x))) {
                         invalid = 1;
                     }
                     jis_state = nested == 'D' ? 3 : 2;
