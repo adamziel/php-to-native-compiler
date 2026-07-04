@@ -74163,6 +74163,212 @@ try {{
 }
 
 #[test]
+fn compile_soap_rpc_encoded_apache_map_schema_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-rpc-encoded-apache-map-schema");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-rpc-encoded-apache-map-schema.php");
+    let output = root.join("soap-rpc-encoded-apache-map-schema-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$seen = [];
+function test($input) {
+    global $seen;
+    $seen[] = $input;
+}
+
+function run_map_case($path, $schema, $type) {
+    $wsdl = <<<WSDL
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+$schema
+    </schema>
+  </types>
+  <message name="testMessage">
+    <part name="testParam" $type/>
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL;
+    file_put_contents($path, $wsdl);
+    $client = new SoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+    $server = new SoapServer($path);
+    $server->addFunction('test');
+    $client->test(['a' => 123, 'b' => 123.5]);
+    $request = $client->__getLastRequest();
+    echo $request;
+    ob_start();
+    $server->handle($request);
+    ob_end_clean();
+    unlink($path);
+}
+
+run_map_case(
+    __DIR__ . '/direct-map.wsdl',
+    '',
+    'type="apache:Map" xmlns:apache="http://xml.apache.org/xml-soap"'
+);
+
+$extensionSchema = <<<'XML'
+      <complexType name="testType">
+        <complexContent>
+          <extension base="apache:Map" xmlns:apache="http://xml.apache.org/xml-soap">
+          </extension>
+        </complexContent>
+      </complexType>
+XML;
+run_map_case(__DIR__ . '/extension-map.wsdl', $extensionSchema, 'type="testType"');
+var_dump($seen);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("xsi:type=\"ns2:Map\"").count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("<item><key xsi:type=\"xsd:string\">a</key><value xsi:type=\"xsd:int\">123</value></item>")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.contains("[0]=>\n  array(2)"), "{stdout}");
+    assert!(stdout.contains("[1]=>\n  array(2)"), "{stdout}");
+    assert!(stdout.contains("float(123.5)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_message_part_is_apache_map"));
+    assert!(c_source.contains("base_type_namespace"));
+}
+
+#[test]
+fn compile_soap11_literal_array_type_uses_xsd_item_names_to_native_binary() {
+    let root = temp_dir("ptn-native-soap11-literal-array-type-schema");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap11-literal-array-type-schema.php");
+    let output = root.join("soap11-literal-array-type-schema-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$wsdl = __DIR__ . '/soap11-array-type.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+      <complexType name="testType">
+        <complexContent>
+          <restriction base="SOAP-ENC:Array">
+            <attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="int[]"/>
+          </restriction>
+        </complexContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="testMessage">
+    <part name="testParam" type="tns:testType"/>
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="literal" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->test([123, 123.5]);
+echo $client->__getLastRequest();
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<testParam><xsd:int>123</xsd:int><xsd:int>123</xsd:int></testParam>"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("<testParam><item>"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("array_use_xsd_item_name"));
+}
+
+#[test]
 fn compile_soap12_literal_array_size_schema_to_native_binary() {
     let root = temp_dir("ptn-native-soap12-literal-array-size-schema");
     fs::create_dir_all(&root).unwrap();
