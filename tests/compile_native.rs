@@ -62610,6 +62610,71 @@ fclose($write);
 }
 
 #[test]
+fn phpc_dom_libxml_shutdown_stream_close_open_basedir_ini_blocks_external_entity() {
+    let root = temp_dir("ptn-phpc-dom-libxml-shutdown-stream-close-open-basedir");
+    let base = root.join("base");
+    fs::create_dir_all(&base).unwrap();
+    fs::write(root.join("bad"), "secret").unwrap();
+    let input = root.join("dom-libxml-shutdown-stream-close-open-basedir.php");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+class StreamExploiter {{
+    public $context;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {{
+        return true;
+    }}
+
+    public function stream_close() {{
+        $dir = str_replace('\\', '/', dirname(getcwd()));
+        $doc = new DOMDocument();
+        $doc->resolveExternals = true;
+        $doc->substituteEntities = true;
+        $doc->loadXML('<!DOCTYPE doc [<!ENTITY file SYSTEM "file:///' . $dir . '/bad">]><doc>&file;</doc>');
+        echo $doc->documentElement->firstChild->nodeValue, "\n";
+    }}
+}}
+
+chdir({});
+stream_wrapper_register('streamexploiter', StreamExploiter::class);
+$fp = fopen('streamexploiter://', 'r');
+var_dump(is_resource($fp));
+"#,
+            php_string_literal(&base)
+        ),
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&root)
+        .arg("-d")
+        .arg("open_basedir=.")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.starts_with("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("DOMDocument::loadXML(): open_basedir restriction in effect."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Attempt to read property \"nodeValue\" on null"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("secret"), "{stdout}");
+    assert_eq!(stderr, "");
+}
+
+#[test]
 fn compile_xmlreader_default_attributes_to_native_binary() {
     let root = temp_dir("ptn-native-xmlreader-default-attributes");
     fs::create_dir_all(&root).unwrap();

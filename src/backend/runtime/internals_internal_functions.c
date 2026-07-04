@@ -181658,7 +181658,22 @@ static int ptn_dom_libxml_accepts_document_source(
     return 1;
 }
 
-static int ptn_dom_load_options_need_libxml_normalized_source(int options) {
+static int ptn_dom_load_options_resolve_external_entities(int options) {
+    return (options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDATTR | PTN_LIBXML_DTDVALID)) != 0;
+}
+
+static int ptn_dom_open_basedir_guards_external_entities(PtnRuntime *runtime, int options) {
+    if (!ptn_dom_load_options_resolve_external_entities(options)) {
+        return 0;
+    }
+    const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
+    return open_basedir != NULL && open_basedir[0] != '\0';
+}
+
+static int ptn_dom_load_options_need_libxml_normalized_source(PtnRuntime *runtime, int options) {
+    if (ptn_dom_open_basedir_guards_external_entities(runtime, options)) {
+        return 0;
+    }
     return (options & (PTN_LIBXML_DTDATTR | PTN_LIBXML_NOENT | PTN_LIBXML_NOCDATA | PTN_LIBXML_NOBLANKS)) != 0;
 }
 
@@ -181768,7 +181783,8 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     }
     char *normalized_source = NULL;
     size_t normalized_len = 0;
-    int use_normalized_source = ptn_dom_load_options_need_libxml_normalized_source(options);
+    int open_basedir_guards_external_entities = ptn_dom_open_basedir_guards_external_entities(runtime, options);
+    int use_normalized_source = ptn_dom_load_options_need_libxml_normalized_source(runtime, options);
     if (use_normalized_source) {
         if (!ptn_dom_libxml_normalized_document_source(
             runtime,
@@ -181784,7 +181800,7 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
             ptn_string_operand_free(source);
             return ptn_bool(0);
         }
-    } else if (!ptn_dom_libxml_accepts_document_source(
+    } else if (!open_basedir_guards_external_entities && !ptn_dom_libxml_accepts_document_source(
             runtime,
             "DOMDocument::loadXML",
             source.data,
