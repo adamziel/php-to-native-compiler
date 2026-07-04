@@ -143862,6 +143862,17 @@ static int ptn_ini_quantity_suffix_multiplier(char suffix, int64_t *multiplier) 
     }
 }
 
+static int ptn_ini_quantity_digit_value(unsigned char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    ch = (unsigned char)tolower(ch);
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    return -1;
+}
+
 static void ptn_emit_sourced_ini_warning(PtnRuntime *runtime, const char *message, size_t line) {
     if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
         return;
@@ -143880,6 +143891,56 @@ static void ptn_emit_sourced_ini_warning(PtnRuntime *runtime, const char *messag
     fputc('\n', stream);
 }
 
+static void ptn_ini_quantity_warning_no_digits_after_base_prefix(
+    PtnRuntime *runtime,
+    const char *input,
+    size_t line
+) {
+    char message[512];
+    snprintf(
+        message,
+        sizeof(message),
+        "Invalid quantity \"%s\": no digits after base prefix, interpreting as \"0\" for backwards compatibility",
+        input
+    );
+    ptn_emit_sourced_ini_warning(runtime, message, line);
+}
+
+static void ptn_ini_quantity_warning_no_valid_leading_digits(
+    PtnRuntime *runtime,
+    const char *input,
+    size_t line
+) {
+    char message[512];
+    snprintf(
+        message,
+        sizeof(message),
+        "Invalid quantity \"%s\": no valid leading digits, interpreting as \"0\" for backwards compatibility",
+        input
+    );
+    ptn_emit_sourced_ini_warning(runtime, message, line);
+}
+
+static void ptn_ini_quantity_warning_out_of_range(
+    PtnRuntime *runtime,
+    const char *input,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    FILE *stream = runtime->diagnostics.stream == NULL ? stdout : runtime->diagnostics.stream;
+    fputc('\n', stream);
+    runtime->diagnostics.emitted_warning = 1;
+    fprintf(
+        stream,
+        "Warning: Invalid quantity \"%s\": value is out of range, using overflow result for backwards compatibility in %s on line %zu\n",
+        input,
+        runtime->source_path == NULL ? "ptn" : runtime->source_path,
+        line
+    );
+}
+
 static int64_t ptn_parse_ini_quantity_operand(
     PtnRuntime *runtime,
     PtnStringOperand input,
@@ -143890,17 +143951,76 @@ static int64_t ptn_parse_ini_quantity_operand(
     while (isspace((unsigned char)*start)) {
         start++;
     }
-
-    errno = 0;
-    char *numeric_end = start;
-    long long parsed = strtoll(start, &numeric_end, 0);
-    if (numeric_end == start) {
-        parsed = 0;
-    }
-
     char *last = start + strlen(start);
     while (last > start && isspace((unsigned char)last[-1])) {
         last--;
+    }
+    *last = '\0';
+
+    char *cursor = start;
+    int sign = 1;
+    if (*cursor == '+' || *cursor == '-') {
+        sign = *cursor == '-' ? -1 : 1;
+        cursor++;
+    }
+
+    int base = 10;
+    int has_base_prefix = 0;
+    char prefix = '\0';
+    if (cursor[0] == '0') {
+        unsigned char next = (unsigned char)tolower((unsigned char)cursor[1]);
+        if (next == 'x' || next == 'b' || next == 'o') {
+            has_base_prefix = 1;
+            prefix = (char)next;
+            base = next == 'x' ? 16 : (next == 'b' ? 2 : 8);
+            cursor += 2;
+        } else {
+            base = 8;
+        }
+    }
+
+    unsigned long long magnitude = 0;
+    int digit_count = 0;
+    int subject_overflow = 0;
+    char *numeric_start = cursor;
+    char *numeric_end = cursor;
+    while (numeric_end < last) {
+        int digit = ptn_ini_quantity_digit_value((unsigned char)*numeric_end);
+        if (digit < 0 || digit >= base) {
+            break;
+        }
+        if (magnitude > (ULLONG_MAX - (unsigned long long)digit) / (unsigned long long)base) {
+            subject_overflow = 1;
+            magnitude = ULLONG_MAX;
+        } else if (!subject_overflow) {
+            magnitude = magnitude * (unsigned long long)base + (unsigned long long)digit;
+        }
+        digit_count++;
+        numeric_end++;
+    }
+
+    if (digit_count == 0) {
+        if (has_base_prefix) {
+            if (numeric_start < last && isdigit((unsigned char)*numeric_start)) {
+                ptn_ini_quantity_warning_no_valid_leading_digits(runtime, start, line);
+            } else {
+                ptn_ini_quantity_warning_no_digits_after_base_prefix(runtime, start, line);
+            }
+        }
+        free(text);
+        return 0;
+    }
+
+    if (
+        has_base_prefix &&
+        digit_count == 1 &&
+        numeric_start[0] == '0' &&
+        numeric_end < last &&
+        tolower((unsigned char)*numeric_end) == (unsigned char)prefix
+    ) {
+        ptn_ini_quantity_warning_no_digits_after_base_prefix(runtime, start, line);
+        free(text);
+        return 0;
     }
 
     int64_t multiplier = 1;
@@ -143913,21 +144033,19 @@ static int64_t ptn_parse_ini_quantity_operand(
         valid_suffix = ptn_ini_quantity_suffix_multiplier(suffix, &multiplier);
     }
 
-    if (numeric_end == start) {
-        free(text);
-        return 0;
-    }
-
     if (has_suffix && !valid_suffix) {
+        size_t numeric_len = (size_t)(numeric_end - start);
+        char *numeric_text = ptn_duplicate_string_len(start, numeric_len);
         char message[512];
         snprintf(
             message,
             sizeof(message),
-            "Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%lld\" for backwards compatibility",
+            "Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%s\" for backwards compatibility",
             start,
             suffix,
-            parsed
+            numeric_text
         );
+        free(numeric_text);
         ptn_emit_sourced_ini_warning(runtime, message, line);
     } else if (has_suffix && valid_suffix) {
         int ambiguous = 0;
@@ -143938,27 +144056,49 @@ static int64_t ptn_parse_ini_quantity_operand(
             }
         }
         if (ambiguous) {
+            size_t numeric_len = (size_t)(numeric_end - start);
+            char *numeric_text = ptn_duplicate_string_len(start, numeric_len);
             char message[512];
             snprintf(
                 message,
                 sizeof(message),
-                "Invalid quantity \"%s\", interpreting as \"%lld %c\" for backwards compatibility",
+                "Invalid quantity \"%s\", interpreting as \"%s %c\" for backwards compatibility",
                 start,
-                parsed,
+                numeric_text,
                 (char)tolower((unsigned char)suffix)
             );
+            free(numeric_text);
+            ptn_emit_sourced_ini_warning(runtime, message, line);
+        }
+    } else if (numeric_end < last) {
+        int has_junk_space = 0;
+        for (char *cursor = numeric_end; cursor < last; cursor++) {
+            if (isspace((unsigned char)*cursor)) {
+                has_junk_space = 1;
+                break;
+            }
+        }
+        if (!has_junk_space && isalpha((unsigned char)*numeric_end)) {
+            size_t numeric_len = (size_t)(numeric_end - start);
+            char *numeric_text = ptn_duplicate_string_len(start, numeric_len);
+            char message[512];
+            snprintf(
+                message,
+                sizeof(message),
+                "Invalid quantity \"%s\": unknown multiplier \"%s\", interpreting as \"%s\" for backwards compatibility",
+                start,
+                numeric_text,
+                numeric_text
+            );
+            free(numeric_text);
             ptn_emit_sourced_ini_warning(runtime, message, line);
         }
     }
 
-    int sign = parsed < 0 ? -1 : 1;
-    unsigned long long magnitude = parsed < 0
-        ? (unsigned long long)(-(parsed + 1)) + 1ULL
-        : (unsigned long long)parsed;
     unsigned long long limit = sign < 0
         ? (unsigned long long)INT64_MAX + 1ULL
         : (unsigned long long)INT64_MAX;
-    if (multiplier > 0 && magnitude > limit / (unsigned long long)multiplier) {
+    if (subject_overflow || (multiplier > 0 && magnitude > limit / (unsigned long long)multiplier)) {
         free(text);
         return sign < 0 ? INT64_MIN : INT64_MAX;
     }
@@ -143971,6 +144111,36 @@ static int64_t ptn_parse_ini_quantity_operand(
         return -(int64_t)multiplied;
     }
     return (int64_t)multiplied;
+}
+
+static int64_t ptn_parse_ini_uquantity_operand(
+    PtnRuntime *runtime,
+    PtnStringOperand input,
+    size_t line
+) {
+    int64_t quantity = ptn_parse_ini_quantity_operand(runtime, input, line);
+    char *text = ptn_duplicate_string_len(input.data, input.len);
+    char *start = text;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    char *last = start + strlen(start);
+    while (last > start && isspace((unsigned char)last[-1])) {
+        last--;
+    }
+    *last = '\0';
+    char *subject = start;
+    if (*subject == '+') {
+        subject++;
+    }
+    if (
+        quantity < -1 ||
+        (quantity == INT64_MAX && strcmp(subject, "9223372036854775807") != 0)
+    ) {
+        ptn_ini_quantity_warning_out_of_range(runtime, start, line);
+    }
+    free(text);
+    return quantity;
 }
 
 static int ptn_runtime_current_zend_assertions(PtnRuntime *runtime) {
@@ -233848,6 +234018,36 @@ static PtnValue ptn_internal_zend_test_compile_to_ast(PtnRuntime *runtime, size_
     );
 }
 
+static PtnValue ptn_internal_zend_test_zend_ini_parse_quantity(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(
+        runtime,
+        "zend_test_zend_ini_parse_quantity",
+        1,
+        "shorthand",
+        args[0],
+        line
+    );
+    int64_t quantity = ptn_parse_ini_quantity_operand(runtime, input, line);
+    ptn_string_operand_free(input);
+    return ptn_int(quantity);
+}
+
+static PtnValue ptn_internal_zend_test_zend_ini_parse_uquantity(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(
+        runtime,
+        "zend_test_zend_ini_parse_uquantity",
+        1,
+        "shorthand",
+        args[0],
+        line
+    );
+    int64_t quantity = ptn_parse_ini_uquantity_operand(runtime, input, line);
+    ptn_string_operand_free(input);
+    return ptn_int(quantity);
+}
+
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue source = ptn_value_deref(args[0]);
@@ -235281,6 +235481,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
         { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
         { "zend_test_void_return", 0, 0, ptn_internal_zend_test_void_return },
+        { "zend_test_zend_ini_parse_quantity", 1, 1, ptn_internal_zend_test_zend_ini_parse_quantity },
+        { "zend_test_zend_ini_parse_uquantity", 1, 1, ptn_internal_zend_test_zend_ini_parse_uquantity },
         { "zend_version", 0, 0, ptn_internal_zend_version },
         { "zlib_decode", 1, 2, ptn_internal_zlib_decode },
         { "zlib_encode", 2, 3, ptn_internal_zlib_encode },
@@ -235340,7 +235542,9 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||
-        ptn_ascii_case_equal(name, "zend_test_void_return");
+        ptn_ascii_case_equal(name, "zend_test_void_return") ||
+        ptn_ascii_case_equal(name, "zend_test_zend_ini_parse_quantity") ||
+        ptn_ascii_case_equal(name, "zend_test_zend_ini_parse_uquantity");
 }
 
 static const char *ptn_internal_function_extension_name(const char *name) {

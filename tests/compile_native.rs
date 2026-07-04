@@ -96928,6 +96928,41 @@ echo ini_parse_quantity('-0x0BEEF'), \"\\n\";\n",
 }
 
 #[test]
+fn phpc_zend_test_ini_quantity_helpers_match_prefix_and_overflow_edges() {
+    let root = temp_dir("ptn-phpc-zend-test-ini-quantity-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-ini-quantity-helpers.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo zend_test_zend_ini_parse_quantity('0o14'), \"\\n\";\n\
+echo zend_test_zend_ini_parse_quantity('+0O14K'), \"\\n\";\n\
+echo zend_test_zend_ini_parse_quantity('-0o14 m'), \"\\n\";\n\
+var_dump(zend_test_zend_ini_parse_uquantity('-1') === -1);\n\
+zend_test_zend_ini_parse_uquantity('-2');\n\
+zend_test_zend_ini_parse_quantity('0x0x12');\n\
+zend_test_zend_ini_parse_quantity('0b+10');\n\
+zend_test_zend_ini_parse_quantity('0g10');\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("error_reporting=E_ALL")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("12\n12288\n-12582912\nbool(true)\n"));
+    assert!(stdout.contains("Invalid quantity \"-2\": value is out of range"));
+    assert!(stdout.contains("Invalid quantity \"0x0x12\": no digits after base prefix"));
+    assert!(stdout.contains("Invalid quantity \"0b+10\": no digits after base prefix"));
+    assert!(stdout.contains("Invalid quantity \"0g10\": unknown multiplier \"0\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_memory_limit_runtime_changes_to_native_binary() {
     let root = temp_dir("ptn-native-memory-limit-runtime-changes");
     fs::create_dir_all(&root).unwrap();
