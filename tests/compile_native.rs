@@ -90943,6 +90943,30 @@ fn phpc_stdin_mode_executes_piped_inline_html_source() {
 }
 
 #[test]
+fn phpc_inline_file_get_contents_reads_php_stdin() {
+    let payload = "*".repeat(2049);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-r")
+        .arg("echo file_get_contents('php://stdin');")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.as_bytes())
+        .unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(execution.stdout, payload.as_bytes());
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_preserves_script_dir_for_directory_separator_require_once() {
     let root = temp_dir("ptn-phpc-script-dir-require-once");
     fs::create_dir_all(&root).unwrap();
