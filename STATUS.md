@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T20:50:09Z |
+| last refresh | 2026-07-04T21:00:10Z |
 | source commit | `3287b20d3d9e` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,28 +22,27 @@
 | field | value |
 | --- | --- |
 | source commit | `3287b20d3d9e` |
-| statused tests | 187 |
-| passed tests | 138 |
-| failed tests | 47 |
+| statused tests | 207 |
+| passed tests | 150 |
+| failed tests | 55 |
 | skipped tests | 2 |
 | warned tests | 0 |
-| unknown tests | 21680 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T204532Z` |
+| unknown tests | 21660 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T205428Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-04T20:00Z) | 2 |
-| last 24 hours (2026-07-03T21:00Z - 2026-07-04T20:00Z) | 48 |
-| last 7 days (2026-06-27T21:00Z - 2026-07-04T20:00Z) | 114 |
+| latest hour (2026-07-04T21:00Z) | 0 |
+| last 24 hours (2026-07-03T22:00Z - 2026-07-04T21:00Z) | 48 |
+| last 7 days (2026-06-27T22:00Z - 2026-07-04T21:00Z) | 114 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 12900 | 21867 |
-| hourly history retained 2026-06-27T21:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T22:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T23:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T00:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-04T17:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T19:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-04T20:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-27T21:00Z | 0 | 12786 |
 | 2026-06-27T22:00Z | 0 | 12786 |
 | 2026-06-27T23:00Z | 0 | 12786 |
 | 2026-06-28T00:00Z | 0 | 12786 |
@@ -352,3 +351,4 @@
 | 2026-07-04T18:00Z | 0 | 12895 |
 | 2026-07-04T19:00Z | 3 | 12898 |
 | 2026-07-04T20:00Z | 2 | 12900 |
+| 2026-07-04T21:00Z | 0 | 12900 |
