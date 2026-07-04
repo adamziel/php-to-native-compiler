@@ -138204,6 +138204,183 @@ static int ptn_openssl_add_pkey_pem(PtnValue array, const char *key, EVP_PKEY *p
     return ok;
 }
 
+static void ptn_openssl_pkcs12_emit_path_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *prefix,
+    const char *path,
+    size_t line
+) {
+    size_t needed = strlen(function_name) + strlen(prefix) + strlen(path != NULL ? path : "") + 8;
+    char *message = malloc(needed);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, needed, "%s(): %s%s", function_name, prefix, path != NULL ? path : "");
+    if (written < 0 || (size_t)written >= needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_openssl_pkcs12_emit_warning(PtnRuntime *runtime, const char *function_name, const char *message, size_t line) {
+    size_t needed = strlen(function_name) + strlen(message) + 8;
+    char *warning = malloc(needed);
+    if (warning == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(warning, needed, "%s(): %s", function_name, message);
+    if (written < 0 || (size_t)written >= needed) {
+        free(warning);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+    free(warning);
+}
+
+static PtnValue ptn_internal_openssl_pkcs12_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int cert_owned = 0;
+    X509 *cert = ptn_openssl_x509_from_value(
+        runtime,
+        "openssl_pkcs12_export_to_file",
+        1,
+        "certificate",
+        args[0],
+        line,
+        &cert_owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (cert == NULL) {
+        ptn_openssl_pkcs12_emit_warning(runtime, "openssl_pkcs12_export_to_file", "X.509 Certificate cannot be retrieved", line);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand output_operand = ptn_internal_expect_string_arg(
+        runtime,
+        "openssl_pkcs12_export_to_file",
+        2,
+        "output_filename",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        return ptn_null();
+    }
+    char *output_path = ptn_openssl_path_from_operand(output_operand);
+    ptn_string_operand_free(output_operand);
+
+    int key_owned = 0;
+    EVP_PKEY *private_key = ptn_openssl_private_key_from_value(
+        runtime,
+        "openssl_pkcs12_export_to_file",
+        3,
+        "private_key",
+        args[2],
+        line,
+        &key_owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(output_path);
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        return ptn_null();
+    }
+    if (private_key == NULL) {
+        free(output_path);
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        ptn_openssl_pkcs12_emit_warning(runtime, "openssl_pkcs12_export_to_file", "Cannot get private key from parameter 3", line);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand passphrase = ptn_internal_expect_string_arg(
+        runtime,
+        "openssl_pkcs12_export_to_file",
+        4,
+        "passphrase",
+        args[3],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(output_path);
+        if (key_owned) {
+            EVP_PKEY_free(private_key);
+        }
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        return ptn_null();
+    }
+
+    if (X509_check_private_key(cert, private_key) != 1) {
+        ptn_string_operand_free(passphrase);
+        free(output_path);
+        if (key_owned) {
+            EVP_PKEY_free(private_key);
+        }
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        ERR_clear_error();
+        ptn_openssl_pkcs12_emit_warning(runtime, "openssl_pkcs12_export_to_file", "Private key does not correspond to cert", line);
+        return ptn_bool(0);
+    }
+
+    BIO *output = output_path == NULL ? NULL : BIO_new_file(output_path, "wb");
+    if (output == NULL) {
+        ptn_string_operand_free(passphrase);
+        if (key_owned) {
+            EVP_PKEY_free(private_key);
+        }
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        ERR_clear_error();
+        ptn_openssl_pkcs12_emit_path_warning(
+            runtime,
+            "openssl_pkcs12_export_to_file",
+            "Error opening file ",
+            output_path,
+            line
+        );
+        free(output_path);
+        return ptn_bool(0);
+    }
+
+    char *passphrase_cstr = ptn_duplicate_string_len(passphrase.data, passphrase.len);
+    ptn_string_operand_free(passphrase);
+    PKCS12 *pkcs12 = PKCS12_create(passphrase_cstr, NULL, private_key, cert, NULL, 0, 0, 0, 0, 0);
+    int ok = pkcs12 != NULL && i2d_PKCS12_bio(output, pkcs12) == 1;
+    if (pkcs12 != NULL) {
+        PKCS12_free(pkcs12);
+    }
+    BIO_free(output);
+    free(passphrase_cstr);
+    free(output_path);
+    if (key_owned) {
+        EVP_PKEY_free(private_key);
+    }
+    if (cert_owned) {
+        X509_free(cert);
+    }
+    if (!ok) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    ERR_clear_error();
+    (void)argc;
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_openssl_pkcs12_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     if (args[1].type != PTN_REFERENCE) {
@@ -139552,6 +139729,16 @@ static PtnValue ptn_internal_openssl_pkcs12_read(PtnRuntime *runtime, size_t arg
     (void)argc;
     (void)ptn_internal_expect_string_arg(runtime, "openssl_pkcs12_read", 1, "pkcs12", args[0], line);
     (void)ptn_internal_expect_string_arg(runtime, "openssl_pkcs12_read", 3, "passphrase", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_pkcs12_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_pkcs12_export_to_file", 2, "output_filename", args[1], line);
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_pkcs12_export_to_file", 4, "passphrase", args[3], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -232936,6 +233123,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "openssl_get_cipher_methods", 0, 1, ptn_internal_openssl_get_cipher_methods },
         { "openssl_get_md_methods", 0, 1, ptn_internal_openssl_get_md_methods },
         { "openssl_open", 5, 6, ptn_internal_openssl_open },
+        { "openssl_pkcs12_export_to_file", 4, 5, ptn_internal_openssl_pkcs12_export_to_file },
         { "openssl_pkcs12_read", 3, 3, ptn_internal_openssl_pkcs12_read },
         { "openssl_pkcs7_decrypt", 3, 4, ptn_internal_openssl_pkcs7_decrypt },
         { "openssl_pkcs7_encrypt", 4, 6, ptn_internal_openssl_pkcs7_encrypt },

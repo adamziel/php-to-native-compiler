@@ -1,0 +1,7 @@
+# Focused OpenSSL PKCS12/export current-red rows for openssl-pkcs12-next.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-openssl-pkcs12-next-current-red.txt
+#
+# bucket: openssl-pkcs12-next-current-red rows=1
+ext/openssl/tests/openssl_pkcs12_export_to_file_error.phpt

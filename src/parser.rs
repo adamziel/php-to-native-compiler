@@ -24363,6 +24363,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "openssl_get_cipher_methods"
             | "openssl_get_md_methods"
             | "openssl_open"
+            | "openssl_pkcs12_export_to_file"
             | "openssl_pkcs12_read"
             | "openssl_pkcs7_decrypt"
             | "openssl_pkcs7_encrypt"

@@ -40145,6 +40145,28 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String("")),
         },
     ];
+    static OPENSSL_PKCS12_EXPORT_TO_FILE_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "private_key",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "passphrase",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static OPENSSL_PKCS12_READ_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "pkcs12",
@@ -40657,6 +40679,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         || name.eq_ignore_ascii_case("openssl_get_privatekey")
     {
         Some(&OPENSSL_PKEY_GET_PRIVATE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkcs12_export_to_file") {
+        Some(&OPENSSL_PKCS12_EXPORT_TO_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkcs12_read") {
         Some(&OPENSSL_PKCS12_READ_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_public_encrypt") {
