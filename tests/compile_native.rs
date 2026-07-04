@@ -43102,6 +43102,46 @@ var_dump(openssl_error_string());
 }
 
 #[test]
+fn compile_openssl_dh_key_details_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-dh-key-details");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("openssl-dh-key-details.php");
+    let output = root.join("openssl-dh-key-details-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(OPENSSL_KEYTYPE_DH);
+$details = [
+    'p' => base64_decode('3Pk6C4g5cuwOGZiaxaLOMQ4dN3F+jZVxu3Yjcxhm5h73Wi4niYsFf5iRwuJ6Y5w/KbYIFFgc07LKOYbSaDcFV31FwuflLcgcehcYduXOp0sUSL/frxiCjv0lGfFOReOCZjSvGUnltTXMgppIO4p2Ij5dSQolfwW9/xby+yLFg6s='),
+    'g' => base64_decode('Ag=='),
+    'priv_key' => base64_decode('jUdcV++P/m7oUodWiqKqKXZVenHRuj92Ig6Fmzs7QlqVdUc5mNBxmEWjug+ObffanPpOeab/LyXwjNMzevtBz3tW4oROau++9EIMJVVQr8fW9zdYBJcYieC5l4t8nRj5/Uu/Z0G2rWVLBleSi28mqqNEvnUs7uxYxrar69lwQYs='),
+];
+$key = openssl_pkey_new(['dh' => $details]);
+$data = openssl_pkey_get_details($key);
+var_dump($data['type']);
+echo base64_encode($data['dh']['priv_key']), "\n";
+echo base64_encode($data['dh']['pub_key']), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(2)\njUdcV++P/m7oUodWiqKqKXZVenHRuj92Ig6Fmzs7QlqVdUc5mNBxmEWjug+ObffanPpOeab/LyXwjNMzevtBz3tW4oROau++9EIMJVVQr8fW9zdYBJcYieC5l4t8nRj5/Uu/Z0G2rWVLBleSi28mqqNEvnUs7uxYxrar69lwQYs=\n0DmJUe9dr02pAtVoGyLHdC+rfBU3mDCelKGPXRDFHofx6mFfN2gcZCmp/ab4ezDXfpIBOatpVdbn2fTNUGo64DtKE2WGTsZCl90RgrGUv8XW/4WDPXeE7g5u7KWHBG/LCE5+XsilE5P5/GIyqr9gsiudTmk+H/hiYZl9Smar9k0=\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_openssl_certificate_export_primitives_to_native_binary() {
     let root = temp_dir("ptn-native-openssl-certificate-export-primitives");
     fs::create_dir_all(&root).unwrap();

@@ -37,6 +37,7 @@ static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
 #define PTN_OPENSSL_ENCODING_PEM 2
 #define PTN_OPENSSL_KEYTYPE_RSA 0
 #define PTN_OPENSSL_KEYTYPE_DSA 1
+#define PTN_OPENSSL_KEYTYPE_DH 2
 #define PTN_OPENSSL_CMS_NOVERIFY 32
 #define PTN_OPENSSL_CMS_DETACHED 64
 #define PTN_OPENSSL_CMS_BINARY 128
@@ -115,6 +116,10 @@ static int ptn_openssl_constant_value(const char *name, PtnValue *out) {
     }
     if (strcmp(name, "OPENSSL_KEYTYPE_DSA") == 0) {
         *out = ptn_int(PTN_OPENSSL_KEYTYPE_DSA);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_KEYTYPE_DH") == 0) {
+        *out = ptn_int(PTN_OPENSSL_KEYTYPE_DH);
         return 1;
     }
     if (strcmp(name, "OPENSSL_CMS_NOVERIFY") == 0) {
@@ -136997,12 +137002,164 @@ static PtnArrayEntry *ptn_openssl_array_string_entry(PtnArray *array, const char
     return array == NULL ? NULL : ptn_array_entry_for_key(array, ptn_array_string_key(key));
 }
 
+static BIGNUM *ptn_openssl_bn_from_binary_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    if (operand.len > (size_t)INT_MAX) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    BIGNUM *bn = BN_bin2bn((const unsigned char *)operand.data, (int)operand.len, NULL);
+    ptn_string_operand_free(operand);
+    return bn;
+}
+
+static BIGNUM *ptn_openssl_dh_bn_from_array(PtnRuntime *runtime, PtnArray *details, const char *key, size_t line) {
+    PtnArrayEntry *entry = ptn_openssl_array_string_entry(details, key);
+    if (entry == NULL) {
+        return NULL;
+    }
+    return ptn_openssl_bn_from_binary_value(runtime, entry->value, line);
+}
+
+static EVP_PKEY *ptn_openssl_pkey_from_dh_details(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL) {
+        return NULL;
+    }
+    PtnArray *details = resolved.as.array;
+    BIGNUM *p = ptn_openssl_dh_bn_from_array(runtime, details, "p", line);
+    BIGNUM *g = ptn_openssl_dh_bn_from_array(runtime, details, "g", line);
+    BIGNUM *priv_key = ptn_openssl_dh_bn_from_array(runtime, details, "priv_key", line);
+    BIGNUM *pub_key = ptn_openssl_dh_bn_from_array(runtime, details, "pub_key", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        BN_free(p);
+        BN_free(g);
+        BN_free(priv_key);
+        BN_free(pub_key);
+        return NULL;
+    }
+    if (p == NULL || g == NULL || priv_key == NULL) {
+        BN_free(p);
+        BN_free(g);
+        BN_free(priv_key);
+        BN_free(pub_key);
+        return NULL;
+    }
+    if (pub_key == NULL) {
+        BN_CTX *ctx = BN_CTX_new();
+        pub_key = BN_new();
+        int ok = ctx != NULL && pub_key != NULL && BN_mod_exp(pub_key, g, priv_key, p, ctx) == 1;
+        if (ctx != NULL) {
+            BN_CTX_free(ctx);
+        }
+        if (!ok) {
+            BN_free(p);
+            BN_free(g);
+            BN_free(priv_key);
+            BN_free(pub_key);
+            ERR_clear_error();
+            return NULL;
+        }
+    }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    DH *dh = DH_new();
+    EVP_PKEY *pkey = NULL;
+    int ok = dh != NULL &&
+        DH_set0_pqg(dh, p, NULL, g) == 1 &&
+        DH_set0_key(dh, pub_key, priv_key) == 1;
+    if (ok) {
+        p = NULL;
+        g = NULL;
+        pub_key = NULL;
+        priv_key = NULL;
+        pkey = EVP_PKEY_new();
+        ok = pkey != NULL && EVP_PKEY_assign_DH(pkey, dh) == 1;
+        if (ok) {
+            dh = NULL;
+        }
+    }
+    if (dh != NULL) {
+        DH_free(dh);
+    }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+    BN_free(p);
+    BN_free(g);
+    BN_free(priv_key);
+    BN_free(pub_key);
+    if (!ok) {
+        if (pkey != NULL) {
+            EVP_PKEY_free(pkey);
+        }
+        ERR_clear_error();
+        return NULL;
+    }
+    return pkey;
+}
+
+static EVP_PKEY *ptn_openssl_generate_dh_key(int64_t bits) {
+    if (bits <= 0 || bits > INT_MAX) {
+        return NULL;
+    }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    DH *dh = DH_new();
+    EVP_PKEY *pkey = NULL;
+    int ok = dh != NULL &&
+        DH_generate_parameters_ex(dh, (int)bits, DH_GENERATOR_2, NULL) == 1 &&
+        DH_generate_key(dh) == 1;
+    if (ok) {
+        pkey = EVP_PKEY_new();
+        ok = pkey != NULL && EVP_PKEY_assign_DH(pkey, dh) == 1;
+        if (ok) {
+            dh = NULL;
+        }
+    }
+    if (dh != NULL) {
+        DH_free(dh);
+    }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+    if (!ok) {
+        if (pkey != NULL) {
+            EVP_PKEY_free(pkey);
+        }
+        ERR_clear_error();
+        return NULL;
+    }
+    return pkey;
+}
+
 static PtnValue ptn_internal_openssl_pkey_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t bits = 2048;
+    int64_t key_type = PTN_OPENSSL_KEYTYPE_RSA;
+    PtnArray *options = NULL;
     if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
-        PtnArray *options = ptn_internal_expect_array_arg(runtime, "openssl_pkey_new", 1, "options", args[0]);
+        options = ptn_internal_expect_array_arg(runtime, "openssl_pkey_new", 1, "options", args[0]);
         if (options == NULL || runtime->exceptions->active_exception != NULL) {
             return ptn_null();
+        }
+        PtnArrayEntry *dh_entry = ptn_openssl_array_string_entry(options, "dh");
+        if (dh_entry != NULL) {
+            EVP_PKEY *dh_key = ptn_openssl_pkey_from_dh_details(runtime, dh_entry->value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            if (dh_key == NULL) {
+                return ptn_bool(0);
+            }
+            return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_PKEY, "OpenSSL key", dh_key, NULL, NULL);
         }
         PtnArrayEntry *bits_entry = ptn_openssl_array_string_entry(options, "private_key_bits");
         if (bits_entry != NULL) {
@@ -137018,16 +137175,129 @@ static PtnValue ptn_internal_openssl_pkey_new(PtnRuntime *runtime, size_t argc, 
                 return ptn_null();
             }
         }
+        PtnArrayEntry *type_entry = ptn_openssl_array_string_entry(options, "private_key_type");
+        if (type_entry != NULL) {
+            key_type = ptn_internal_expect_integer_arg(
+                runtime,
+                "openssl_pkey_new",
+                1,
+                "options",
+                type_entry->value,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
     }
     if (bits <= 0 || bits > INT_MAX) {
         return ptn_bool(0);
     }
-    EVP_PKEY *pkey = EVP_RSA_gen((unsigned int)bits);
+    EVP_PKEY *pkey = key_type == PTN_OPENSSL_KEYTYPE_DH
+        ? ptn_openssl_generate_dh_key(bits)
+        : EVP_RSA_gen((unsigned int)bits);
     if (pkey == NULL) {
         ERR_clear_error();
         return ptn_bool(0);
     }
     return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_PKEY, "OpenSSL key", pkey, NULL, NULL);
+}
+
+static PtnValue ptn_openssl_bn_binary_value(const BIGNUM *bn) {
+    if (bn == NULL) {
+        return ptn_string("");
+    }
+    int len = BN_num_bytes(bn);
+    char *bytes = malloc((size_t)len + 1);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (len > 0) {
+        BN_bn2bin(bn, (unsigned char *)bytes);
+    }
+    bytes[len] = '\0';
+    return ptn_owned_string_len(bytes, (size_t)len);
+}
+
+static int ptn_openssl_pkey_type_value(EVP_PKEY *pkey) {
+    int type = EVP_PKEY_base_id(pkey);
+    if (type == EVP_PKEY_RSA || type == EVP_PKEY_RSA2) {
+        return PTN_OPENSSL_KEYTYPE_RSA;
+    }
+    if (type == EVP_PKEY_DSA || type == EVP_PKEY_DSA1 || type == EVP_PKEY_DSA2 ||
+        type == EVP_PKEY_DSA3 || type == EVP_PKEY_DSA4) {
+        return PTN_OPENSSL_KEYTYPE_DSA;
+    }
+    if (type == EVP_PKEY_DH) {
+        return PTN_OPENSSL_KEYTYPE_DH;
+    }
+    return -1;
+}
+
+static PtnValue ptn_internal_openssl_pkey_get_details(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnOpenSslResourceData *resource_data = ptn_openssl_resource_data(args[0], PTN_OPENSSL_RESOURCE_PKEY);
+    if (resource_data == NULL || resource_data->pkey == NULL) {
+        return ptn_bool(0);
+    }
+    EVP_PKEY *pkey = resource_data->pkey;
+    BIO *public_bio = BIO_new(BIO_s_mem());
+    int ok = public_bio != NULL && PEM_write_bio_PUBKEY(public_bio, pkey) == 1;
+    if (!ok) {
+        if (public_bio != NULL) {
+            BIO_free(public_bio);
+        }
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("bits"), ptn_int((int64_t)EVP_PKEY_bits(pkey)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("key"), ptn_openssl_pem_from_bio(public_bio));
+    BIO_free(public_bio);
+    int key_type = ptn_openssl_pkey_type_value(pkey);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("type"), ptn_int((int64_t)key_type));
+
+    if (key_type == PTN_OPENSSL_KEYTYPE_DH) {
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+        DH *dh = EVP_PKEY_get1_DH(pkey);
+        if (dh != NULL) {
+            const BIGNUM *p = NULL;
+            const BIGNUM *g = NULL;
+            const BIGNUM *pub_key = NULL;
+            const BIGNUM *priv_key = NULL;
+            DH_get0_pqg(dh, &p, NULL, &g);
+            DH_get0_key(dh, &pub_key, &priv_key);
+            PtnValue dh_details = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(dh_details.as.array, ptn_array_string_key("p"), ptn_openssl_bn_binary_value(p));
+            ptn_array_set_entry(dh_details.as.array, ptn_array_string_key("g"), ptn_openssl_bn_binary_value(g));
+            ptn_array_set_entry(dh_details.as.array, ptn_array_string_key("priv_key"), ptn_openssl_bn_binary_value(priv_key));
+            ptn_array_set_entry(dh_details.as.array, ptn_array_string_key("pub_key"), ptn_openssl_bn_binary_value(pub_key));
+            ptn_array_set_entry(result.as.array, ptn_array_string_key("dh"), dh_details);
+            DH_free(dh);
+        }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+    }
+
+    (void)runtime;
+    ERR_clear_error();
+    return result;
+}
+
+static PtnValue ptn_internal_openssl_free_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Function openssl_free_key() is deprecated since 8.0, as OpenSSLAsymmetricKey objects are freed automatically",
+        line
+    );
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_openssl_pkey_get_private(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -139832,6 +140102,25 @@ static PtnValue ptn_internal_openssl_pkey_new(PtnRuntime *runtime, size_t argc, 
     (void)args;
     (void)line;
     return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_pkey_get_details(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_free_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Function openssl_free_key() is deprecated since 8.0, as OpenSSLAsymmetricKey objects are freed automatically",
+        line
+    );
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_openssl_pkey_export_to_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -150330,6 +150619,7 @@ static void ptn_defined_constants_add_openssl(PtnValue table) {
         "OPENSSL_DONT_ZERO_PAD_KEY",
         "OPENSSL_KEYTYPE_RSA",
         "OPENSSL_KEYTYPE_DSA",
+        "OPENSSL_KEYTYPE_DH",
         "OPENSSL_CMS_NOVERIFY",
         "OPENSSL_CMS_DETACHED",
         "OPENSSL_CMS_BINARY",
@@ -234257,8 +234547,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "openssl_pkcs7_verify", 2, 7, ptn_internal_openssl_pkcs7_verify },
         { "openssl_pkey_export", 2, 4, ptn_internal_openssl_pkey_export },
         { "openssl_pkey_export_to_file", 2, 4, ptn_internal_openssl_pkey_export_to_file },
+        { "openssl_pkey_get_details", 1, 1, ptn_internal_openssl_pkey_get_details },
         { "openssl_pkey_get_private", 1, 2, ptn_internal_openssl_pkey_get_private },
         { "openssl_pkey_new", 0, 1, ptn_internal_openssl_pkey_new },
+        { "openssl_free_key", 1, 1, ptn_internal_openssl_free_key },
         { "openssl_private_decrypt", 3, 5, ptn_internal_openssl_private_decrypt },
         { "openssl_public_encrypt", 3, 5, ptn_internal_openssl_public_encrypt },
         { "openssl_random_pseudo_bytes", 1, 2, ptn_internal_openssl_random_pseudo_bytes },

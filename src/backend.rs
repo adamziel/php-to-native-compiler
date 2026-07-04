@@ -40091,6 +40091,15 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static OPENSSL_PKEY_GET_DETAILS_PARAMETERS: [InternalParameterSpec; 1] =
+        [InternalParameterSpec {
+            name: "key",
+            default: None,
+        }];
+    static OPENSSL_FREE_KEY_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "key",
+        default: None,
+    }];
     static OPENSSL_CSR_NEW_PARAMETERS: [InternalParameterSpec; 4] = [
         InternalParameterSpec {
             name: "distinguished_names",
@@ -40695,6 +40704,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&OPENSSL_PKEY_EXPORT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_pkey_export_to_file") {
         Some(&OPENSSL_PKEY_EXPORT_TO_FILE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_pkey_get_details") {
+        Some(&OPENSSL_PKEY_GET_DETAILS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_free_key") {
+        Some(&OPENSSL_FREE_KEY_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_csr_new") {
         Some(&OPENSSL_CSR_NEW_PARAMETERS)
     } else if name.eq_ignore_ascii_case("openssl_csr_sign") {
