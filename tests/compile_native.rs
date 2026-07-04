@@ -22278,10 +22278,72 @@ echo '<form method=\"get\">go</form>', \"\\n\";\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "<a href=\"?%3CNAME%3E=%3CVALUE%3E\">empty</a>\n",
-            "<a href=\"//php.net/foo.php?%3CNAME%3E=%3CVALUE%3E\">host</a>\n",
+            "<a href=\"?%3Cname%3E=%3Cvalue%3E\">empty</a>\n",
+            "<a href=\"//php.net/foo.php?%3Cname%3E=%3Cvalue%3E\">host</a>\n",
             "<a href=\"bad://php.net/foo.php\">bad</a>\n",
-            "<form method=\"get\"><input type=\"hidden\" name=\"&lt;NAME&gt;\" value=\"&lt;VALUE&gt;\" />go</form>\n",
+            "<form method=\"get\"><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" />go</form>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_output_rewrite_vars_and_trans_sid_buffer_to_native_binary() {
+    let root = temp_dir("ptn-native-output-rewrite-vars-trans-sid-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-rewrite-vars-trans-sid-buffer.php");
+    let output = root.join("output-rewrite-vars-trans-sid-buffer-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start();\n\
+ini_set('url_rewriter.hosts', 'url-rewriter.test');\n\
+session_id('testid');\n\
+session_start();\n\
+echo '<a href=\"\"></a>', \"\\n\";\n\
+echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
+ob_flush();\n\
+output_add_rewrite_var('<name>', '<value>');\n\
+echo '<a href=\"\"></a>', \"\\n\";\n\
+echo '<a href=\"//url-rewriter.test/foo.php\"></a>', \"\\n\";\n\
+echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
+ob_end_flush();\n\
+output_reset_rewrite_vars();\n\
+output_add_rewrite_var('<name2>', '<value2>');\n\
+echo '<a href=\"\"></a>', \"\\n\";\n\
+echo '<a href=\"//url-rewriter.test/foo.php\"></a>', \"\\n\";\n\
+echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", &root)
+        .env("PTN_SESSION_USE_COOKIES", "0")
+        .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_TRANS_SID", "1")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<a href=\"?PHPSESSID=testid\"></a>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
+            "<a href=\"?%3Cname%3E=%3Cvalue%3E&PHPSESSID=testid\"></a>\n",
+            "<a href=\"//url-rewriter.test/foo.php?%3Cname%3E=%3Cvalue%3E\"></a>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" /><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" />x</form>\n",
+            "<a href=\"?PHPSESSID=testid\"></a>\n",
+            "<a href=\"//url-rewriter.test/foo.php\"></a>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
