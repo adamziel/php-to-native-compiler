@@ -2362,6 +2362,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_listed_as_target-userland|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|must_target_const-userland|not_repeatable-userland|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_(AllowDynamicProperties|Attribute|Deprecated|NoDiscard|success)|with_Attribute)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionAttribute_(constructor_001|newInstance_(deprecated|exception))[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/(ReflectionAttribute_toString|ReflectionConstant_getAttributes(_empty|_internal)?|bug80370|gh(11937_2|12908|20895|8982))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/004_name_resolution[.]phpt$/ ||

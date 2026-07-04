@@ -1,0 +1,12 @@
+# ptn-h8v2k: reflection internal attribute metadata rows admitted after
+# ReflectionAttribute, ReflectionConstant, and dynamic-property attribute
+# metadata proved runnable.
+ext/reflection/tests/ReflectionAttribute_toString.phpt
+ext/reflection/tests/ReflectionConstant_getAttributes.phpt
+ext/reflection/tests/ReflectionConstant_getAttributes_empty.phpt
+ext/reflection/tests/ReflectionConstant_getAttributes_internal.phpt
+ext/reflection/tests/bug80370.phpt
+ext/reflection/tests/gh11937_2.phpt
+ext/reflection/tests/gh12908.phpt
+ext/reflection/tests/gh20895.phpt
+ext/reflection/tests/gh8982.phpt

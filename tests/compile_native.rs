@@ -54660,6 +54660,81 @@ var_dump(in_array(\"Attribute\", get_declared_classes()));
 }
 
 #[test]
+fn compile_reflection_attribute_string_and_constant_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-attribute-string-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-string-constant.php");
+    let output = root.join("reflection-attribute-string-constant-bin");
+    fs::write(
+        &input,
+        "<?php
+#[FooAttr]
+#[BarAttr(a: \"foo\", b: 1234)]
+function attr_string_probe() {}
+
+#[ConstAttr]
+const REFLECT_ATTR_CONST = 42;
+const REFLECT_ATTR_EMPTY = 0;
+
+$functionAttributes = (new ReflectionFunction('attr_string_probe'))->getAttributes();
+echo $functionAttributes[0];
+echo $functionAttributes[1];
+
+$constantAttributes = (new ReflectionConstant('REFLECT_ATTR_CONST'))->getAttributes();
+var_dump(count($constantAttributes));
+var_dump($constantAttributes[0]->getName());
+var_dump($constantAttributes[0]->getArguments());
+var_dump((new ReflectionConstant('REFLECT_ATTR_EMPTY'))->getAttributes());
+
+#[AllowDynamicProperties]
+class ReflectDynamicAttributeProbe {}
+
+$object = new ReflectDynamicAttributeProbe();
+$object->dyn = 1;
+var_dump((new ReflectionProperty($object, 'dyn'))->getAttributes());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Attribute [ FooAttr ]\n",
+            "Attribute [ BarAttr ] {\n",
+            "  - Arguments [2] {\n",
+            "    Argument #0 [ a = 'foo' ]\n",
+            "    Argument #1 [ b = 1234 ]\n",
+            "  }\n",
+            "}\n",
+            "int(1)\n",
+            "string(9) \"ConstAttr\"\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ReflectionConstant::getAttributes"));
+    assert!(c_source.contains("ptn_reflection_attribute_call_method"));
+    assert!(c_source.contains("ptn_reflection_attribute_object_from_name_with_arguments_error"));
+}
+
+#[test]
 fn compile_trait_property_attributes_are_visible_to_reflection_to_native_binary() {
     let root = temp_dir("ptn-native-trait-property-attributes");
     fs::create_dir_all(&root).unwrap();
