@@ -1,0 +1,2 @@
+# Focused Zend type-declarations row for zend_test internal union property inheritance.
+Zend/tests/type_declarations/union_types/inheritance_internal.phpt

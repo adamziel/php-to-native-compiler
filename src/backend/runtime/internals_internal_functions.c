@@ -232467,6 +232467,8 @@ static int ptn_internal_trait_exists_name(const char *name) {
 static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_ascii_case_equal(class_name, "DoOperationNoCast")
+        || ptn_ascii_case_equal(class_name, "_ZendTestClass")
+        || ptn_ascii_case_equal(class_name, "_ZendTestChildClass")
         || ptn_internal_class_name_is_stdclass_name(class_name)
         || ptn_internal_class_name_is_array_iterator(class_name)
         || ptn_internal_class_name_is_empty_iterator(class_name)

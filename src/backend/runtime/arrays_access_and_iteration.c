@@ -1025,6 +1025,19 @@ static PTN_UNUSED PtnValue ptn_uri_new(
 #endif
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_zend_test_class_initialize_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_zend_test_class_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PtnValue ptn_zend_test_do_operation_no_cast_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1315,6 +1328,10 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_ascii_case_equal(lookup_class_name, "DoOperationNoCast")) {
         return ptn_zend_test_do_operation_no_cast_new(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "_ZendTestClass") ||
+        ptn_ascii_case_equal(lookup_class_name, "_ZendTestChildClass")) {
+        return ptn_zend_test_class_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||
@@ -9973,6 +9990,57 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
         line
     );
 }
+
+static PTN_UNUSED void ptn_zend_test_class_initialize_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "classUnionProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "stdClass|Iterator|null",
+        1,
+        1,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_zend_test_class_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[128];
+        snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 0 arguments",
+            class_name
+        );
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell_at(runtime, class_name, line);
+    ptn_zend_test_class_initialize_properties(runtime, object, "_ZendTestClass", line);
+    return object;
+}
+#endif
 
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line) {
     if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {

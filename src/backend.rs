@@ -13198,6 +13198,7 @@ fn emit_class_metadata_helpers(
         ("ReflectionEnumBackedCase", "ReflectionEnumUnitCase"),
         ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
         ("ReflectionObject", "ReflectionClass"),
+        ("_ZendTestChildClass", "_ZendTestClass"),
         ("PharFileInfo", "SplFileInfo"),
         ("SimpleXMLIterator", "SimpleXMLElement"),
         ("SplFileObject", "SplFileInfo"),
@@ -26447,6 +26448,8 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "phardata" => Some("PharData"),
                 "pharfileinfo" => Some("PharFileInfo"),
                 "__php_incomplete_class" => Some("__PHP_Incomplete_Class"),
+                "_zendtestclass" => Some("_ZendTestClass"),
+                "_zendtestchildclass" => Some("_ZendTestChildClass"),
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "fiber" => Some("Fiber"),
@@ -52719,6 +52722,15 @@ impl ValueEmitter {
             out.push_str("    ptn_zip_archive_initialize_properties(&runtime, ");
             out.push_str(result_temp);
             out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        if inherited_modeled_internal_class_name(declared_class, &self.classes)
+            .is_some_and(|name| name.eq_ignore_ascii_case("_ZendTestClass"))
+        {
+            out.push_str("    ptn_zend_test_class_initialize_properties(&runtime, ");
+            out.push_str(result_temp);
+            out.push_str(", \"_ZendTestClass\", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }

@@ -49790,6 +49790,59 @@ var_dump($override->testMethod());
 }
 
 #[test]
+fn compile_internal_zend_test_class_union_property_inheritance_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-class-union-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-class-union-property.php");
+    let output = root.join("internal-zend-test-class-union-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class C extends _ZendTestClass {}
+
+$obj = new _ZendTestChildClass;
+$obj->classUnionProp = new stdClass;
+$obj->classUnionProp = new ArrayIterator;
+try {
+    $obj->classUnionProp = new DateTime;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$obj = new C;
+$obj->classUnionProp = new stdClass;
+$obj->classUnionProp = new ArrayIterator;
+try {
+    $obj->classUnionProp = new DateTime;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot assign DateTime to property _ZendTestClass::$classUnionProp of type stdClass|Iterator|null\n\
+Cannot assign DateTime to property _ZendTestClass::$classUnionProp of type stdClass|Iterator|null\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_class_initialize_properties"));
+    assert!(c_source.contains("_ZendTestChildClass"));
+}
+
+#[test]
 fn compile_trait_constructor_promotion_declares_imported_property_to_native_binary() {
     let root = temp_dir("ptn-native-trait-constructor-promotion");
     fs::create_dir_all(&root).unwrap();
