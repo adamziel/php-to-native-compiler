@@ -58596,6 +58596,43 @@ var_dump(intltz_get_raw_offset($lsb));\n",
 }
 
 #[test]
+fn compile_intl_timezone_uninitialized_clone_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-uninitialized-clone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-uninitialized-clone.php");
+    let output = root.join("intl-timezone-uninitialized-clone-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A extends IntlTimeZone {\n\
+    public function __construct() {}\n\
+}\n\
+\n\
+$tz = new A();\n\
+try {\n\
+    $b = clone $tz;\n\
+    var_dump($b);\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_clone_value(&runtime"));
+    assert!(c_source.contains("Cannot clone uninitialized IntlTimeZone"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: Cannot clone uninitialized IntlTimeZone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_timezone_create_enumeration_filters_to_native_binary() {
     let root = temp_dir("ptn-native-intl-timezone-create-enumeration-filters");
     fs::create_dir_all(&root).unwrap();

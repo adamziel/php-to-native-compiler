@@ -1925,6 +1925,11 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlDateFormatter");
         return ptn_null();
     }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "IntlTimeZone") &&
+        source->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlTimeZone");
+        return ptn_null();
+    }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "NumberFormatter") &&
         source->native_data == NULL) {
         ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
