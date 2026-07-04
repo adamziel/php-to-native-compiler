@@ -67792,6 +67792,71 @@ $client->AnyFunction(new SoapVar('<array><item/><item/><item/></array>', XSD_ANY
 }
 
 #[test]
+fn compile_soap_wsdl_anyxml_struct_fields_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-anyxml-struct-fields");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-anyxml-struct-fields.php");
+    let output = root.join("soap-wsdl-anyxml-struct-fields-bin");
+    fs::write(
+        root.join("bug40609.wsdl"),
+        r#"<wsdl:definitions xmlns:axis2="http://quickstart.samples/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:ns="http://quickstart.samples/xsd" targetNamespace="http://quickstart.samples/">
+<wsdl:types><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://quickstart.samples/xsd">
+<xs:element name="update"><xs:complexType><xs:sequence><xs:element name="symbol" nillable="true" type="xs:any" /><xs:element name="price" nillable="true" type="xs:any" /></xs:sequence></xs:complexType></xs:element>
+</xs:schema></wsdl:types>
+<wsdl:message name="updateMessage"><wsdl:part name="part1" element="ns:update" /></wsdl:message>
+<wsdl:portType name="StockQuoteServicePortType"><wsdl:operation name="update"><wsdl:input message="axis2:updateMessage" /></wsdl:operation></wsdl:portType>
+<wsdl:binding name="StockQuoteServiceSOAP11Binding" type="axis2:StockQuoteServicePortType"><soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" /><wsdl:operation name="update"><soap:operation soapAction="urn:update" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input></wsdl:operation></wsdl:binding>
+<wsdl:service name="StockQuoteService"><wsdl:port name="StockQuoteServiceSOAP11port_http" binding="axis2:StockQuoteServiceSOAP11Binding"><soap:address location="test://" /></wsdl:port></wsdl:service>
+</wsdl:definitions>"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+class LocalSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        exit(0);
+    }
+}
+
+ini_set("soap.wsdl_cache_enabled", 0);
+$client = new LocalSoapClient(__DIR__ . "/bug40609.wsdl", ["trace" => 1, "exceptions" => 0]);
+$client->update([
+    "symbol" => new SoapVar("<symbol>MSFT</symbol>", XSD_ANYXML),
+    "price" => new SoapVar("<price>1000</price>", XSD_ANYXML),
+]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" ",
+            "xmlns:ns1=\"http://quickstart.samples/xsd\"><SOAP-ENV:Body><ns1:update>",
+            "<symbol>MSFT</symbol><price>1000</price>",
+            "</ns1:update></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("XSD_ANYXML"));
+    assert!(c_source.contains("ptn_soap_append_any_value"));
+}
+
+#[test]
 fn compile_soap_ssl_method_deprecation_to_native_binary() {
     let root = temp_dir("ptn-native-soap-ssl-method-deprecation");
     fs::create_dir_all(&root).unwrap();

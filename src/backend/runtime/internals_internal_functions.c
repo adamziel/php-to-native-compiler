@@ -215297,12 +215297,49 @@ static void ptn_soap_append_scalar_value(
     ptn_string_operand_free(string);
 }
 
+static int ptn_soap_value_is_anyxml_soapvar(PtnValue value, PtnValue *encoded_out) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_OBJECT &&
+        resolved.as.object != NULL &&
+        ptn_ascii_case_equal(resolved.as.object->class_name, "SoapVar")) {
+        PtnValue encoded = ptn_null();
+        PtnValue encoded_type = ptn_null();
+        (void)ptn_soap_object_property(resolved, "enc_value", &encoded);
+        (void)ptn_soap_object_property(resolved, "enc_type", &encoded_type);
+        if (ptn_value_to_integer(encoded_type) == 147) {
+            if (encoded_out != NULL) {
+                *encoded_out = encoded;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_soap_append_any_value(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
     PtnValue value,
     size_t line
 ) {
+    PtnValue encoded = ptn_null();
+    if (ptn_soap_value_is_anyxml_soapvar(value, &encoded)) {
+        PtnStringOperand raw_xml = ptn_soap_scalar_string_operand(runtime, encoded, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(raw_xml);
+            return;
+        }
+        ptn_string_buffer_append_len(buffer, raw_xml.data, raw_xml.len);
+        ptn_string_operand_free(raw_xml);
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_OBJECT &&
+        resolved.as.object != NULL &&
+        ptn_ascii_case_equal(resolved.as.object->class_name, "SoapVar") &&
+        ptn_soap_object_property(resolved, "enc_value", &encoded)) {
+        value = encoded;
+    }
     if (ptn_soap_value_is_enum_case(value)) {
         PtnValue backing = ptn_null();
         if (!ptn_soap_enum_backing_value(runtime, value, &backing)) {
@@ -215774,6 +215811,12 @@ static void ptn_soap_append_one_field_element(
         }
         ptn_string_buffer_append(buffer, field->name);
         ptn_string_buffer_append_char(buffer, '>');
+        return;
+    }
+
+    if (ptn_soap_type_name_is(field->type, "any") &&
+        ptn_soap_value_is_anyxml_soapvar(value, NULL)) {
+        ptn_soap_append_any_value(runtime, buffer, value, line);
         return;
     }
 
