@@ -13,8 +13,9 @@ Usage: tools/run-bounded-phpt.sh [--classify-only] [--classify-harness-programs]
 Classify a PHPT manifest, then run runnable rows through php-src run-tests.php.
 
 Environment:
-  PTN_PHPT_TEST_TIMEOUT        Per-test run-tests.php timeout. Defaults to 180
+  PTN_PHPT_TEST_TIMEOUT        Per-test run-tests.php timeout. Defaults to 900
                                seconds to allow native compile startup latency.
+  PTN_PHPT_RUN_TESTS_JOBS      Parallel run-tests.php workers. Defaults to 1.
 
 Options:
   --classify-only              write classification and blocker manifests without
@@ -295,9 +296,14 @@ fi
 cargo build --bin phpc
 
 phpc_bin=${PHPC_BIN:-$PWD/target/debug/phpc}
-phpt_test_timeout=${PTN_PHPT_TEST_TIMEOUT:-180}
+phpt_test_timeout=${PTN_PHPT_TEST_TIMEOUT:-900}
 if [[ ! "$phpt_test_timeout" =~ ^[0-9]+$ || "$phpt_test_timeout" -le 0 ]]; then
     echo "PTN_PHPT_TEST_TIMEOUT must be a positive integer number of seconds: $phpt_test_timeout" >&2
+    exit 2
+fi
+phpt_run_tests_jobs=${PTN_PHPT_RUN_TESTS_JOBS:-1}
+if [[ ! "$phpt_run_tests_jobs" =~ ^[0-9]+$ || "$phpt_run_tests_jobs" -le 0 ]]; then
+    echo "PTN_PHPT_RUN_TESTS_JOBS must be a positive integer: $phpt_run_tests_jobs" >&2
     exit 2
 fi
 commit=$(git rev-parse --short=12 HEAD)
@@ -346,8 +352,9 @@ aggregate_run_status=0
     echo "corpus-revision: $corpus_revision"
     echo "manifest: $resolved_manifest"
     echo "runnable-manifest: $runnable_manifest"
-    echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
+    echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" PTN_PHPT_RUN_TESTS_JOBS=\"$phpt_run_tests_jobs\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
     echo "timeout-seconds: $phpt_test_timeout"
+    echo "run-tests-jobs: $phpt_run_tests_jobs"
     echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
     emit_classification_summary
 } | tee "$summary"
@@ -366,10 +373,14 @@ for bucket in "${bucket_order[@]}"; do
     fi
 
     set +e
+    run_tests_args=(-q --set-timeout "$phpt_test_timeout" -p "$phpc_bin")
+    if [[ "$phpt_run_tests_jobs" -gt 1 ]]; then
+        run_tests_args+=("-j$phpt_run_tests_jobs")
+    fi
     PHPC_BIN="$phpc_bin" \
       TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
       TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
-      php "$php_src/run-tests.php" -q --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
+      php "$php_src/run-tests.php" "${run_tests_args[@]}" "${tests[@]}" 2>&1 | tee "$log"
     run_status=${PIPESTATUS[0]}
     set -e
 

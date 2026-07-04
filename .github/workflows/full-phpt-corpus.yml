@@ -10,7 +10,11 @@ on:
       timeout_seconds:
         description: Per-PHPT timeout passed to run-tests.php
         required: true
-        default: "180"
+        default: "900"
+      run_tests_jobs:
+        description: Parallel run-tests.php workers per shard
+        required: true
+        default: "2"
 
 permissions:
   contents: read
@@ -21,13 +25,20 @@ concurrency:
 
 jobs:
   full-phpt-shard:
-    name: shard ${{ matrix.shard }}/14
+    name: shard ${{ matrix.shard }}/59
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 1440
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        shard: [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+          10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+          20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+          30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+          40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+          50, 51, 52, 53, 54, 55, 56, 57, 58, 59
+        ]
 
     steps:
       - name: Checkout compiler
@@ -65,7 +76,7 @@ jobs:
         run: |
           tools/phpt-full-corpus-shard.sh \
             --shard-index "${{ matrix.shard }}" \
-            --shard-count 15 \
+            --shard-count 60 \
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
@@ -73,6 +84,7 @@ jobs:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
+          PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
@@ -108,7 +120,7 @@ jobs:
       - name: Compose full-corpus result
         run: |
           tools/compose-phpt-full-corpus-results.py \
-            --expected-shards 15 \
+            --expected-shards 60 \
             --out-dir .runtime/full-phpt-composed \
             .runtime/full-phpt-artifacts
 
