@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T15:50:07Z |
+| last refresh | 2026-07-04T16:00:10Z |
 | source commit | `2e6c12130c8c` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,29 +21,28 @@
 
 | field | value |
 | --- | --- |
-| source commit | `2e6c12130c8c` |
-| statused tests | 211 |
-| passed tests | 151 |
-| failed tests | 58 |
-| skipped tests | 2 |
+| source commit | `46df908de54f` |
+| statused tests | 194 |
+| passed tests | 148 |
+| failed tests | 46 |
+| skipped tests | 0 |
 | warned tests | 0 |
-| unknown tests | 21656 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T154454Z` |
+| unknown tests | 21673 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T155240Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-04T15:00Z) | 2 |
-| last 24 hours (2026-07-03T16:00Z - 2026-07-04T15:00Z) | 42 |
-| last 7 days (2026-06-27T16:00Z - 2026-07-04T15:00Z) | 108 |
+| latest hour (2026-07-04T16:00Z) | 0 |
+| last 24 hours (2026-07-03T17:00Z - 2026-07-04T16:00Z) | 42 |
+| last 7 days (2026-06-27T17:00Z - 2026-07-04T16:00Z) | 108 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 12916 | 21867 |
-| hourly history retained 2026-06-27T16:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T17:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T19:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-04T12:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T13:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T14:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-04T15:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-27T16:00Z | 0 | 12808 |
 | 2026-06-27T17:00Z | 0 | 12808 |
 | 2026-06-27T18:00Z | 0 | 12808 |
 | 2026-06-27T19:00Z | 0 | 12808 |
@@ -352,3 +351,4 @@
 | 2026-07-04T13:00Z | 17 | 12914 |
 | 2026-07-04T14:00Z | 0 | 12914 |
 | 2026-07-04T15:00Z | 2 | 12916 |
+| 2026-07-04T16:00Z | 0 | 12916 |
