@@ -2317,8 +2317,12 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/
         }
         function ptn_supported_reflection_property_named_type_metadata_row() {
-            return ptn_path !~ /(^|\/)(lazy_objects|property_hooks)\// &&
+            return ptn_path ~ /(^|\/)ext\/reflection\/tests\/types\/ReflectionType_001[.]phpt$/ ||
+                ptn_path !~ /(^|\/)(lazy_objects|property_hooks)\// &&
                 ptn_path !~ /ext\/reflection\/tests\/types\//
+        }
+        function ptn_supported_reflection_property_object_metadata_row() {
+            return ptn_path ~ /(^|\/)ext\/reflection\/tests\/gh8444[.]phpt$/
         }
         function ptn_supported_typed_static_property_metadata_row() {
             return ptn_reflection_property_typed_metadata_row ||
@@ -2373,7 +2377,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass(Constant_isEnumCase|_isEnum)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnum_(construct|getBackingType|getCase|getCases|hasCase|isBacked|toString(_(backed_int|backed_string|unbacked))?)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumUnitCase_(construct|getDocComment|getEnum|getValue)[.]phpt$/ ||
-                ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumBackedCase_getBackingValue[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/(ReflectionEnumBackedCase_getBackingValue(_002)?|gh8444)[.]phpt$/ ||
                 ptn_path ~ /ext\/soap\/tests\/gh15711[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
         }
@@ -2570,7 +2574,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 }
             }
             if ((line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ &&
-                    !ptn_supported_lazy_reflection_property_is_readable_row()) ||
+                    !ptn_supported_lazy_reflection_property_is_readable_row() &&
+                    !ptn_supported_reflection_property_object_metadata_row()) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&

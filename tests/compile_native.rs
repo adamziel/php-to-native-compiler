@@ -53256,6 +53256,87 @@ try {
 }
 
 #[test]
+fn compile_reflection_type_and_enum_default_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-type-enum-default-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-type-enum-default-metadata.php");
+    let output = root.join("reflection-type-enum-default-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BaseType {}
+class ChildType extends BaseType {
+    public function parentParam(parent $value): self { return $this; }
+}
+class PropTypeBox {
+    public int $id;
+    public BaseType $base;
+}
+
+$method = new ReflectionMethod(ChildType::class, 'parentParam');
+$paramType = $method->getParameters()[0]->getType();
+$returnType = $method->getReturnType();
+$baseType = (new ReflectionProperty(PropTypeBox::class, 'base'))->getType();
+echo $paramType->getName(), "\n";
+var_dump($paramType->isBuiltin());
+echo $returnType->getName(), "\n";
+echo $baseType->getName(), "\n";
+
+enum Foo {
+    case Bar;
+}
+class EnumDefaultBox {
+    public Foo $enum = Foo::Bar;
+    public $enumInArray = [Foo::Bar];
+}
+echo new ReflectionProperty(EnumDefaultBox::class, 'enum'), "\n";
+echo new ReflectionProperty(EnumDefaultBox::class, 'enumInArray'), "\n";
+
+enum Inm: int {
+    case Foo = y;
+}
+try {
+    var_dump((new ReflectionEnumBackedCase(Inm::class, 'Foo'))->getBackingValue());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "BaseType\n",
+            "bool(false)\n",
+            "ChildType\n",
+            "BaseType\n",
+            "Property [ public Foo $enum = Foo::Bar ]\n",
+            "\n",
+            "Property [ public $enumInArray = [Foo::Bar] ]\n",
+            "\n",
+            "Undefined constant \"y\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_property_type_metadata"));
+    assert!(c_source.contains("ptn_declared_class_reflection_enum_case"));
+    assert!(c_source.contains("Foo::Bar"));
+}
+
+#[test]
 fn compile_enum_trace_and_property_default_handles_to_native_binary() {
     let root = temp_dir("ptn-native-enum-trace-property-default");
     fs::create_dir_all(&root).unwrap();
