@@ -51481,6 +51481,106 @@ var_dump($reflection->getAttributes('Missing'));
 }
 
 #[test]
+fn compile_zend_test_attribute_and_constant_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-attribute-constant-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-attribute-constant-metadata.php");
+    let output = root.join("zend-test-attribute-constant-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr) {
+    echo $errno, ':', $errstr, \"\\n\";
+    return true;
+});
+
+$global = new ReflectionConstant('ZEND_CONSTANT_A');
+var_dump($global->getName(), $global->getValue(), $global->getExtensionName(), $global->isDeprecated());
+echo $global;
+
+$deprecated = new ReflectionConstant('ZEND_TEST_DEPRECATED');
+var_dump($deprecated->getName(), $deprecated->getValue(), $deprecated->getExtensionName(), $deprecated->isDeprecated());
+echo $deprecated;
+
+zend_test_nodiscard();
+zend_test_deprecated_nodiscard();
+
+echo zend_test_compile_to_ast('<?php
+#[MyAttrib]
+const WITH_ATTRIBUTE = true;
+#[MyAttrib(5, param: \"example\")]
+const WITH_PARAMETERS = true;
+echo zend_test_compile_to_ast(file_get_contents(__FILE__));
+');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(15) \"ZEND_CONSTANT_A\"\n"));
+    assert!(stdout.contains("string(6) \"global\"\n"));
+    assert!(stdout.contains("string(9) \"zend_test\"\n"));
+    assert!(stdout.contains("bool(false)\n"));
+    assert!(stdout.contains("Constant [ <persistent> string ZEND_CONSTANT_A ] { global }\n"));
+    assert!(stdout.contains("string(20) \"ZEND_TEST_DEPRECATED\"\n"));
+    assert!(stdout.contains("int(42)\n"));
+    assert!(stdout.contains("bool(true)\n"));
+    assert!(
+        stdout.contains("Constant [ <persistent, deprecated> int ZEND_TEST_DEPRECATED ] { 42 }\n")
+    );
+    assert!(
+        stdout.contains(
+            "The return value of function zend_test_nodiscard() should either be used or intentionally ignored by casting it as (void), custom message\n"
+        )
+    );
+    assert!(stdout
+        .contains("Function zend_test_deprecated_nodiscard() is deprecated, custom message\n"));
+    assert!(
+        stdout.contains(
+            "The return value of function zend_test_deprecated_nodiscard() should either be used or intentionally ignored by casting it as (void), custom message 2\n"
+        )
+    );
+    assert!(stdout.contains("#[MyAttrib(5, param: 'example')]\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_test_compile_to_ast"));
+    assert!(c_source.contains("ptn_zend_test_constant_value"));
+
+    let fatal_input = root.join("zend-test-attribute-invalid-function.php");
+    let fatal_output = root.join("zend-test-attribute-invalid-function-bin");
+    fs::write(
+        &fatal_input,
+        "<?php
+#[ZendTestAttribute]
+function invalid_target() {}
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &fatal_input,
+        &fatal_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let fatal_execution = Command::new(&fatal_output).output().unwrap();
+    assert!(!fatal_execution.status.success());
+    assert_eq!(String::from_utf8(fatal_execution.stdout).unwrap(), "");
+    let fatal_stderr = String::from_utf8(fatal_execution.stderr).unwrap();
+    assert!(
+        fatal_stderr
+            .contains("Fatal error: Only classes can be marked with #[ZendTestAttribute] in "),
+        "{fatal_stderr}"
+    );
+}
+
+#[test]
 fn compile_reflection_constant_namespace_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-constant-namespace-metadata");
     fs::create_dir_all(&root).unwrap();

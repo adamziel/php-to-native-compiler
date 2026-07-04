@@ -35458,6 +35458,14 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
 
 fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
     let mut fatals = Vec::new();
+    for function in &module.functions {
+        if function.class_name.is_some() || !function.initially_declared {
+            continue;
+        }
+        if let Some(fatal) = zend_test_attribute_function_declaration_fatal(&function.attributes) {
+            fatals.push(fatal);
+        }
+    }
     for trait_decl in &module.traits {
         if let Some(message) =
             reserved_declaration_name_fatal_message(&trait_decl.name, ("a", "trait"))
@@ -35472,6 +35480,26 @@ fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<Declaration
         collect_property_hook_attribute_declaration_fatals(&mut fatals, &trait_decl.properties);
     }
     fatals
+}
+
+fn zend_test_attribute_function_declaration_fatal(
+    attributes: &AttributeMetadata,
+) -> Option<DeclarationFatal> {
+    attributes
+        .instances
+        .iter()
+        .find(|instance| {
+            instance
+                .name
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("ZendTestAttribute")
+        })
+        .map(|instance| DeclarationFatal {
+            message: "Only classes can be marked with #[ZendTestAttribute]".to_string(),
+            line: instance.line,
+            uncaught_error: false,
+            pre_deprecation: None,
+        })
 }
 
 fn emit_class_declaration_fatals(

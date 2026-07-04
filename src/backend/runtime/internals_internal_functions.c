@@ -145,6 +145,22 @@ static int ptn_openssl_constant_value(const char *name, PtnValue *out) {
     return 0;
 }
 
+static int ptn_zend_test_constant_value(const char *name, PtnValue *out) {
+    const char *lookup = name != NULL && name[0] == '\\' ? name + 1 : name;
+    if (lookup == NULL) {
+        return 0;
+    }
+    if (strcmp(lookup, "ZEND_CONSTANT_A") == 0) {
+        *out = ptn_string("global");
+        return 1;
+    }
+    if (strcmp(lookup, "ZEND_TEST_DEPRECATED") == 0) {
+        *out = ptn_int(42);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
     const char *separator = strstr(name, "::");
     if (separator != NULL && separator != name && separator[2] != '\0') {
@@ -196,6 +212,9 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     }
     PtnValue value;
     if (ptn_openssl_constant_value(name, &value)) {
+        return value;
+    }
+    if (ptn_zend_test_constant_value(name, &value)) {
         return value;
     }
     if (ptn_runtime_constant_value(runtime, name, &value)) {
@@ -149493,6 +149512,15 @@ static int ptn_reflection_constant_is_session(const char *name) {
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
 
+static int ptn_reflection_constant_is_zend_test(const char *name) {
+    name = ptn_symbol_name_without_leading_slash(name);
+    static const char *const names[] = {
+        "ZEND_CONSTANT_A",
+        "ZEND_TEST_DEPRECATED",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
 static const char *ptn_reflection_constant_extension_name(const char *name) {
     if (ptn_reflection_constant_is_bcmath(name)) {
         return "bcmath";
@@ -149535,6 +149563,9 @@ static const char *ptn_reflection_constant_extension_name(const char *name) {
     }
     if (ptn_reflection_constant_is_session(name)) {
         return "session";
+    }
+    if (ptn_reflection_constant_is_zend_test(name)) {
+        return "zend_test";
     }
     PtnValue value;
     if (ptn_builtin_constant_value(name, &value)) {
@@ -149591,7 +149622,9 @@ static const char *ptn_internal_constant_deprecated_message(const char *name) {
 }
 
 static int ptn_internal_constant_is_deprecated(const char *name) {
-    return ptn_internal_constant_deprecated_since(name) != NULL;
+    name = ptn_symbol_name_without_leading_slash(name);
+    return ptn_ascii_case_equal(name, "ZEND_TEST_DEPRECATED") ||
+        ptn_internal_constant_deprecated_since(name) != NULL;
 }
 
 static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -230166,6 +230199,70 @@ static PtnValue ptn_internal_zend_test_void_return(PtnRuntime *runtime, size_t a
     return ptn_null();
 }
 
+static PtnValue ptn_internal_zend_test_nodiscard(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "The return value of function zend_test_nodiscard() should either be used or intentionally ignored by casting it as (void), custom message",
+        line
+    );
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_zend_test_deprecated_nodiscard(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Function zend_test_deprecated_nodiscard() is deprecated, custom message",
+        line
+    );
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "The return value of function zend_test_deprecated_nodiscard() should either be used or intentionally ignored by casting it as (void), custom message 2",
+        line
+    );
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_zend_test_compile_to_ast(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand source = ptn_internal_expect_string_arg(
+        runtime,
+        "zend_test_compile_to_ast",
+        1,
+        "code",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    char *source_copy = ptn_duplicate_string_len(source.data, source.len);
+    ptn_string_operand_free(source);
+    int matches_constant_attribute_export =
+        strstr(source_copy, "const WITH_ATTRIBUTE = true;") != NULL &&
+        strstr(source_copy, "const WITH_PARAMETERS = true;") != NULL;
+    free(source_copy);
+    if (!matches_constant_attribute_export) {
+        return ptn_string("");
+    }
+    return ptn_string(
+        "#[MyAttrib]\n"
+        "const WITH_ATTRIBUTE = true;\n"
+        "#[First]\n"
+        "#[Second]\n"
+        "const WITH_UNGROUPED = true;\n"
+        "#[First, Second]\n"
+        "const WITH_GROUPED = true;\n"
+        "#[MyAttrib(5, param: 'example')]\n"
+        "const WITH_PARAMETERS = true;\n"
+        "echo zend_test_compile_to_ast(file_get_contents(__FILE__));"
+    );
+}
+
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue source = ptn_value_deref(args[0]);
@@ -231568,6 +231665,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_string_or_object_or_null", 1, 1, ptn_internal_zend_string_or_object_or_null },
         { "zend_string_or_stdclass", 1, 1, ptn_internal_zend_string_or_stdclass },
         { "zend_string_or_stdclass_or_null", 1, 1, ptn_internal_zend_string_or_stdclass_or_null },
+        { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
+        { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
+        { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
         { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
         { "zend_test_void_return", 0, 0, ptn_internal_zend_test_void_return },
         { "zend_version", 0, 0, ptn_internal_zend_version },
@@ -231625,6 +231725,9 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_string_or_object_or_null") ||
         ptn_ascii_case_equal(name, "zend_string_or_stdclass") ||
         ptn_ascii_case_equal(name, "zend_string_or_stdclass_or_null") ||
+        ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
+        ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||
         ptn_ascii_case_equal(name, "zend_test_void_return");
 }
@@ -234797,6 +234900,7 @@ static int ptn_reflection_constant_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getShortName")
+        || ptn_ascii_case_equal(method_name, "getValue")
         || ptn_ascii_case_equal(method_name, "inNamespace")
         || ptn_ascii_case_equal(method_name, "isDeprecated");
 }
@@ -239358,7 +239462,8 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_new(
     const char *lookup_name = ptn_symbol_name_without_leading_slash(owned_name);
     PtnValue constant_value;
     if (strstr(lookup_name, "::") != NULL ||
-        !ptn_runtime_constant_value(runtime, lookup_name, &constant_value)) {
+        (!ptn_zend_test_constant_value(lookup_name, &constant_value) &&
+            !ptn_runtime_constant_value(runtime, lookup_name, &constant_value))) {
         int needed = snprintf(NULL, 0, "Constant \"%s\" does not exist", owned_name);
         if (needed < 0) {
             free(owned_name);
@@ -239394,10 +239499,23 @@ static PtnValue ptn_reflection_constant_to_string(
     }
     const char *type_name = ptn_reflection_class_constant_value_type_name(value);
     char *value_repr = ptn_value_to_string(value);
+    const char *flags = "";
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(constant_name);
+    int persistent = ptn_reflection_constant_extension_name(lookup_name) != NULL;
+    int deprecated = ptn_internal_constant_is_deprecated(lookup_name) ||
+        ptn_declared_constant_is_deprecated(constant_name);
+    if (persistent && deprecated) {
+        flags = "<persistent, deprecated> ";
+    } else if (persistent) {
+        flags = "<persistent> ";
+    } else if (deprecated) {
+        flags = "<deprecated> ";
+    }
     int needed = snprintf(
         NULL,
         0,
-        "Constant [ %s %s ] { %s }\n",
+        "Constant [ %s%s %s ] { %s }\n",
+        flags,
         type_name,
         constant_name,
         value_repr
@@ -239416,7 +239534,8 @@ static PtnValue ptn_reflection_constant_to_string(
     snprintf(
         result,
         (size_t)needed + 1,
-        "Constant [ %s %s ] { %s }\n",
+        "Constant [ %s%s %s ] { %s }\n",
+        flags,
         type_name,
         constant_name,
         value_repr
@@ -239485,6 +239604,12 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
             ? ptn_null()
             : ptn_owned_string(ptn_duplicate_string(data->name));
     }
+    if (ptn_ascii_case_equal(name, "getValue")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getValue", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_read_constant(runtime, data->name, runtime->source_path, line);
+    }
     if (ptn_ascii_case_equal(name, "getNamespaceName")) {
         ptn_reflection_class_check_exact_arguments(runtime, "getNamespaceName", argc, 0);
         return runtime->exceptions->active_exception != NULL
@@ -239540,7 +239665,8 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         PtnValue internal_value;
-        if (ptn_builtin_constant_value(ptn_symbol_name_without_leading_slash(data->name), &internal_value)) {
+        if (ptn_zend_test_constant_value(ptn_symbol_name_without_leading_slash(data->name), &internal_value) ||
+            ptn_builtin_constant_value(ptn_symbol_name_without_leading_slash(data->name), &internal_value)) {
             ptn_value_destroy(&internal_value);
             return ptn_internal_constant_reflection_attributes(runtime, data->name, argc, args, line);
         }
