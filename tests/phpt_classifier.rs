@@ -2704,6 +2704,10 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/iterator_048.phpt",
+            "--TEST--\nrecursive regex iterator\n--FILE--\n<?php\nclass MyRecursiveRegexIterator extends RecursiveRegexIterator {}\n$ar = new RecursiveArrayIterator(array('Foo', array('Bar')));\n$it = new MyRecursiveRegexIterator($ar, '/Bar/');\nforeach(new RecursiveIteratorIterator($it) as $k => $v) { var_dump($k, $v); }\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/RecursiveIteratorIterator_dtor_order.phpt",
             "--TEST--\nrecursive dtor order\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\nforeach ($it as $value) {}\n--EXPECT--\n",
         ),
@@ -2834,6 +2838,10 @@ fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
         (
             "ext/spl/tests/SplFixedArray_change_size_during_iteration.phpt",
             "--TEST--\nresize\n--FILE--\n<?php\n$fixed = SplFixedArray::fromArray([1, 2, 3]);\nforeach ($fixed as $value) { $fixed->setSize(2); }\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug63680.phpt",
+            "--TEST--\nfixed array cyclic gc\n--FILE--\n<?php\n$a = new SplFixedArray(1);\n$b = new SplFixedArray(1);\n$a[0] = $b;\n$b[0] = $a;\nvar_dump(gc_collect_cycles());\n--EXPECT--\n",
         ),
         (
             "ext/spl/tests/SplFixedArray_serialize.phpt",
