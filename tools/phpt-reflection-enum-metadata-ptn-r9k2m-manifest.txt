@@ -1,0 +1,4 @@
+ext/reflection/tests/ReflectionProperty_setValue_readonly.phpt
+ext/reflection/tests/bug81457.phpt
+ext/reflection/tests/bug81681.phpt
+ext/reflection/tests/gh11937_1.phpt

@@ -53391,6 +53391,117 @@ try {
 }
 
 #[test]
+fn compile_reflection_enum_frontier_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-enum-frontier-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-enum-frontier-metadata.php");
+    let output = root.join("reflection-enum-frontier-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+enum Foo: int {
+    case Bar = 0;
+}
+
+$reflection = new ReflectionProperty(Foo::class, 'value');
+try {
+    $reflection->setValue(Foo::Bar, 1);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(Foo::Bar->value);
+
+enum testEnum {
+    case A;
+    case B;
+
+    public function foo() {}
+}
+
+$re = new ReflectionEnum(testEnum::class);
+$me = $re->getMethod('foo');
+echo $me->getDeclaringClass()::class, "\n";
+
+$rc = new ReflectionClass(testEnum::class);
+$mc = $rc->getMethod('foo');
+echo $mc->getDeclaringClass()::class, "\n";
+
+enum Status {
+    case Draft;
+    case Published;
+    case Archived;
+}
+
+$reflectionEnum = new ReflectionEnum('\Status');
+var_dump($reflectionEnum->isInstantiable());
+var_dump($reflectionEnum->isCloneable());
+
+enum AttributeEnum {
+    case One;
+    case Two;
+    const CASES = [self::One, self::Two];
+}
+
+var_dump(AttributeEnum::CASES);
+
+#[Attribute]
+class Attr {
+    public function __construct(public $value) {}
+}
+
+class AttrPayload {
+    public function __construct(public $value) {}
+}
+
+#[Attr(new AttrPayload(AttributeEnum::CASES))]
+function test() {}
+
+echo (new ReflectionFunction('test'))->getAttributes('Attr')[0];
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot modify readonly property Foo::$value\n",
+            "int(0)\n",
+            "ReflectionEnum\n",
+            "ReflectionEnum\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  enum(AttributeEnum::One)\n",
+            "  [1]=>\n",
+            "  enum(AttributeEnum::Two)\n",
+            "}\n",
+            "Attribute [ Attr ] {\n",
+            "  - Arguments [1] {\n",
+            "    Argument #0 [ new \\AttrPayload(AttributeEnum::CASES) ]\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_enum_case"));
+    assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
+    assert!(c_source.contains("ptn_reflection_enum_call_method"));
+}
+
+#[test]
 fn compile_reflection_type_and_enum_default_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-type-enum-default-metadata");
     fs::create_dir_all(&root).unwrap();
