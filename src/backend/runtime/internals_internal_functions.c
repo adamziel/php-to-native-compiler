@@ -218190,6 +218190,78 @@ static int ptn_soap_rpc_request_uses_xsi_before_xsd(
     return 0;
 }
 
+static const char *ptn_soap_wsdl_first_namespace_declaration_uri(
+    PtnSoapClientData *data,
+    const char *uri
+) {
+    if (data == NULL || data->wsdl == NULL || uri == NULL || uri[0] == '\0') {
+        return NULL;
+    }
+    size_t uri_len = strlen(uri);
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *found = ptn_memmem_simple(cursor, (size_t)(end - cursor), uri, uri_len);
+        if (found == NULL) {
+            return NULL;
+        }
+        const char *tag_start = found;
+        while (tag_start > data->wsdl && tag_start[-1] != '<' && tag_start[-1] != '>') {
+            tag_start--;
+        }
+        if (tag_start > data->wsdl && tag_start[-1] == '<') {
+            const char *value_start = found;
+            while (value_start > tag_start &&
+                   value_start[-1] != '"' &&
+                   value_start[-1] != '\'' &&
+                   value_start[-1] != '<' &&
+                   value_start[-1] != '>') {
+                value_start--;
+            }
+            if (value_start > tag_start && (value_start[-1] == '"' || value_start[-1] == '\'')) {
+                const char *equals = value_start - 1;
+                while (equals > tag_start && isspace((unsigned char)equals[-1])) {
+                    equals--;
+                }
+                if (equals > tag_start && equals[-1] == '=') {
+                    const char *name_end = equals - 1;
+                    while (name_end > tag_start && isspace((unsigned char)name_end[-1])) {
+                        name_end--;
+                    }
+                    const char *name_start = name_end;
+                    while (name_start > tag_start &&
+                           !isspace((unsigned char)name_start[-1]) &&
+                           name_start[-1] != '<') {
+                        name_start--;
+                    }
+                    size_t name_len = (size_t)(name_end - name_start);
+                    if (name_len == strlen("xmlns") && strncmp(name_start, "xmlns", name_len) == 0) {
+                        return found;
+                    }
+                    if (name_len > strlen("xmlns:") &&
+                        strncmp(name_start, "xmlns:", strlen("xmlns:")) == 0) {
+                        return found;
+                    }
+                }
+            }
+        }
+        cursor = found + uri_len;
+    }
+    return NULL;
+}
+
+static int ptn_soap_wsdl_declares_soap_encoding_before_xsi(PtnSoapClientData *data) {
+    const char *soap_encoding = ptn_soap_wsdl_first_namespace_declaration_uri(
+        data,
+        "http://schemas.xmlsoap.org/soap/encoding/"
+    );
+    const char *xsi = ptn_soap_wsdl_first_namespace_declaration_uri(
+        data,
+        "http://www.w3.org/2001/XMLSchema-instance"
+    );
+    return soap_encoding != NULL && xsi != NULL && soap_encoding < xsi;
+}
+
 static void ptn_soap_append_ns2_namespace_declaration(PtnStringBuffer *body, const char *namespace_uri) {
     ptn_string_buffer_append(body, " xmlns:ns2=\"");
     ptn_xml_append_escaped_ex(body, namespace_uri == NULL ? "" : namespace_uri, 1, 0);
@@ -218395,6 +218467,7 @@ static int ptn_soap_build_rpc_encoded_request(
         custom_namespace_before_encoding;
     int has_array_part = ptn_soap_rpc_request_has_array_part(data, parts, part_count);
     int xsi_before_xsd = ptn_soap_rpc_request_uses_xsi_before_xsd(data, parts, part_count);
+    int soap_encoding_before_xsi = ptn_soap_wsdl_declares_soap_encoding_before_xsi(data);
     ptn_string_buffer_append_format(
         &body,
         "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\"",
@@ -218409,10 +218482,15 @@ static int ptn_soap_build_rpc_encoded_request(
         }
     } else if (has_array_part) {
         ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (soap_encoding_before_xsi) {
+            ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        }
         if (part_count != 0) {
             ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
-        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        if (!soap_encoding_before_xsi) {
+            ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        }
         if (custom_namespace != NULL && custom_namespace[0] != '\0') {
             ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
         }

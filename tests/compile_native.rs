@@ -70525,6 +70525,104 @@ echo $client->__getLastRequest();
 }
 
 #[test]
+fn compile_soap_rpc_encoded_array_request_keeps_wsdl_encoding_before_xsi_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-rpc-array-encoding-before-xsi");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-rpc-array-encoding-before-xsi.php");
+    let output = root.join("soap-rpc-array-encoding-before-xsi-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/round3-groupd-rpcenc.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="WSDLInteropTestRpcEncService"
+  targetNamespace="http://soapinterop.org/WSDLInteropTestRpcEnc"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="http://soapinterop.org/WSDLInteropTestRpcEnc"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsd1="http://soapinterop.org/xsd"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema"
+      xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+      targetNamespace="http://soapinterop.org/xsd">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/"/>
+      <complexType name="ArrayOfstring">
+        <complexContent>
+          <restriction base="SOAP-ENC:Array">
+            <attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="xsd:string[]"/>
+          </restriction>
+        </complexContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoStringArray">
+    <part name="param0" type="xsd1:ArrayOfstring"/>
+  </message>
+  <message name="echoStringArrayResponse"/>
+  <portType name="WSDLInteropTestRpcEncPortType">
+    <operation name="echoStringArray">
+      <input message="tns:echoStringArray"/>
+      <output message="tns:echoStringArrayResponse"/>
+    </operation>
+  </portType>
+  <binding name="WSDLInteropTestRpcEncPortBinding" type="tns:WSDLInteropTestRpcEncPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoStringArray">
+      <soap:operation soapAction="" style="rpc"/>
+      <input>
+        <soap:body encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+          namespace="http://soapinterop.org/WSDLInteropTestRpcEnc" use="encoded"/>
+      </input>
+      <output>
+        <soap:body encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+          namespace="http://soapinterop.org/WSDLInteropTestRpcEnc" use="encoded"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="WSDLInteropTestRpcEncService">
+    <port name="WSDLInteropTestRpcEncPort" binding="tns:WSDLInteropTestRpcEncPortBinding">
+      <soap:address location="test://"/>
+    </port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoStringArray(['one', 'two', 'three']);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/xsd\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<param0 SOAP-ENC:arrayType=\"xsd:string[3]\" xsi:type=\"ns2:ArrayOfstring\"><item xsi:type=\"xsd:string\">one</item><item xsi:type=\"xsd:string\">two</item><item xsi:type=\"xsd:string\">three</item></param0>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_wsdl_declares_soap_encoding_before_xsi"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();
