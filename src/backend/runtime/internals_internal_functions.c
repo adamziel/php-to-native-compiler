@@ -746,6 +746,15 @@ static int ptn_session_trans_sid_url_allowed(
     size_t *host_end_out,
     int *external_out
 ) {
+    if (url_len == 0) {
+        if (host_end_out != NULL) {
+            *host_end_out = 0;
+        }
+        if (external_out != NULL) {
+            *external_out = 0;
+        }
+        return 1;
+    }
     size_t host_start = 0;
     size_t host_len = 0;
     size_t host_end = 0;
@@ -929,7 +938,7 @@ static unsigned char ptn_output_rewrite_upper_byte(unsigned char byte) {
 static void ptn_output_rewrite_append_urlencoded(PtnStringBuffer *output, const char *data, size_t len) {
     static const char hex[] = "0123456789ABCDEF";
     for (size_t i = 0; i < len; i++) {
-        unsigned char byte = ptn_output_rewrite_upper_byte((unsigned char)data[i]);
+        unsigned char byte = (unsigned char)data[i];
         if (isalnum(byte) || byte == '-' || byte == '_' || byte == '.' || byte == '~') {
             ptn_string_buffer_append_char(output, (char)byte);
         } else if (byte == ' ') {
@@ -944,7 +953,7 @@ static void ptn_output_rewrite_append_urlencoded(PtnStringBuffer *output, const 
 
 static void ptn_output_rewrite_append_html_escaped(PtnStringBuffer *output, const char *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
-        unsigned char byte = ptn_output_rewrite_upper_byte((unsigned char)data[i]);
+        unsigned char byte = (unsigned char)data[i];
         switch (byte) {
             case '&':
                 ptn_string_buffer_append(output, "&amp;");
@@ -1236,7 +1245,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     char *combined = NULL;
     size_t rewritten_len = len;
     const char *output_data = data;
-    int rewrite_vars_enabled = ptn_output_rewrite_vars_enabled(runtime);
+    int rewrite_vars_enabled = 0;
     int trans_sid_enabled = ptn_session_trans_sid_output_enabled(runtime);
     if (rewrite_vars_enabled || trans_sid_enabled) {
         PtnRuntime *rewrite_root = root == NULL ? runtime : root;
@@ -1323,20 +1332,116 @@ static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, Pt
     buffer->trans_sid_rewrite = 1;
 }
 
+static void ptn_output_write_rewritten_buffer_output(PtnRuntime *runtime, const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        root != NULL &&
+        root->output_buffers_len == 0 &&
+        !root->output_buffer_callback_passthrough_output &&
+        !root->header_callback_running
+    ) {
+        ptn_runtime_run_header_callback(runtime);
+    }
+    size_t output_buffers_len = root == NULL ? 0 : root->output_buffers_len;
+    if (
+        root != NULL &&
+        root->output_buffer_callback_passthrough_output &&
+        root->output_buffer_callback_skip_buffers <= output_buffers_len
+    ) {
+        output_buffers_len -= root->output_buffer_callback_skip_buffers;
+    }
+    if (output_buffers_len != 0) {
+        PtnOutputBuffer *buffer = &root->output_buffers[output_buffers_len - 1];
+        ptn_string_buffer_append_len(&buffer->buffer, data, len);
+        if (buffer->chunk_size != 0 && buffer->buffer.len >= buffer->chunk_size) {
+            (void)ptn_output_buffer_flush_top_chunk(
+                runtime,
+                0,
+                PTN_PHP_OUTPUT_HANDLER_WRITE,
+                "ob_start"
+            );
+        }
+        return;
+    }
+    ptn_output_write_raw(runtime, root, data, len);
+}
+
 static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuffer *buffer, const char *data, size_t len) {
-    if (buffer == NULL || !buffer->trans_sid_rewrite || data == NULL || len == 0) {
+    if (data == NULL || len == 0) {
         ptn_output_write(runtime, data, len);
         return;
     }
-    PtnSessionTransSidRewriteState state;
-    state.session_name = buffer->trans_sid_session_name;
-    state.session_id = buffer->trans_sid_session_id;
-    state.trans_sid_hosts = buffer->trans_sid_hosts;
-    state.arg_separator_output = buffer->trans_sid_arg_separator_output;
     size_t rewritten_len = len;
-    char *rewritten = ptn_session_rewrite_trans_sid_output(runtime, &state, data, len, &rewritten_len);
-    ptn_output_write(runtime, rewritten, rewritten_len);
-    free(rewritten);
+    const char *output_data = data;
+    char *combined = NULL;
+    char *rewrite_vars_rewritten = NULL;
+    char *trans_sid_rewritten = NULL;
+    int rewrite_vars_enabled = ptn_output_rewrite_vars_enabled(runtime);
+    int trans_sid_enabled = buffer != NULL && buffer->trans_sid_rewrite;
+    if (rewrite_vars_enabled || trans_sid_enabled) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        const char *rewrite_input = data;
+        size_t rewrite_len = len;
+        if (
+            root != NULL &&
+            root->trans_sid_pending_output != NULL &&
+            root->trans_sid_pending_output_len != 0
+        ) {
+            size_t pending_len = root->trans_sid_pending_output_len;
+            if (pending_len > SIZE_MAX - len) {
+                ptn_abort_out_of_memory();
+            }
+            combined = malloc(pending_len + len);
+            if (combined == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            memcpy(combined, root->trans_sid_pending_output, pending_len);
+            memcpy(combined + pending_len, data, len);
+            free(root->trans_sid_pending_output);
+            root->trans_sid_pending_output = NULL;
+            root->trans_sid_pending_output_len = 0;
+            rewrite_input = combined;
+            rewrite_len = pending_len + len;
+        }
+        size_t pending_start = ptn_session_trans_sid_incomplete_tag_start(rewrite_input, rewrite_len);
+        if (pending_start != SIZE_MAX) {
+            ptn_output_store_trans_sid_pending(root, rewrite_input + pending_start, rewrite_len - pending_start);
+            rewrite_len = pending_start;
+        }
+        if (rewrite_len == 0) {
+            free(combined);
+            return;
+        }
+        output_data = rewrite_input;
+        rewritten_len = rewrite_len;
+        if (rewrite_vars_enabled) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
+        }
+        if (trans_sid_enabled) {
+            PtnSessionTransSidRewriteState state;
+            state.session_name = buffer->trans_sid_session_name;
+            state.session_id = buffer->trans_sid_session_id;
+            state.trans_sid_hosts = buffer->trans_sid_hosts;
+            state.arg_separator_output = buffer->trans_sid_arg_separator_output;
+            trans_sid_rewritten =
+                ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
+            output_data = trans_sid_rewritten;
+        }
+        ptn_output_write_rewritten_buffer_output(runtime, output_data, rewritten_len);
+    } else {
+        ptn_output_write(runtime, data, len);
+    }
+    free(rewrite_vars_rewritten);
+    free(trans_sid_rewritten);
+    free(combined);
 }
 
 static PTN_UNUSED void ptn_output_write_cstr(PtnRuntime *runtime, const char *data) {
@@ -141548,6 +141653,14 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
                 line
             );
         }
+        if (ptn_ascii_case_equal(session_ini->name, "session.use_only_cookies") &&
+            !ptn_runtime_ini_bool(next, ptn_is_truthy(args[1]))) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "ini_set(): Disabling session.use_only_cookies INI setting is deprecated",
+                line
+            );
+        }
         ptn_runtime_set_session_ini(runtime, session_ini->name, next);
         free(next);
         ptn_string_operand_free(value);
@@ -150952,9 +151065,7 @@ static char *ptn_output_rewrite_upper_copy(PtnStringOperand operand) {
     if (copy == NULL) {
         ptn_abort_out_of_memory();
     }
-    for (size_t i = 0; i < operand.len; i++) {
-        copy[i] = (char)ptn_output_rewrite_upper_byte((unsigned char)operand.data[i]);
-    }
+    memcpy(copy, operand.data, operand.len);
     copy[operand.len] = '\0';
     return copy;
 }
