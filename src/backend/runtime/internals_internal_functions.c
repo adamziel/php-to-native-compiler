@@ -218528,7 +218528,11 @@ static const char *ptn_soap_wsdl_first_namespace_declaration_uri(
     return NULL;
 }
 
-static int ptn_soap_wsdl_declares_soap_encoding_before_xsi(PtnSoapClientData *data) {
+static int ptn_soap_rpc_request_prefers_soap_encoding_before_xsi(
+    PtnSoapClientData *data,
+    PtnSoapMessagePart *parts,
+    size_t part_count
+) {
     const char *soap_encoding = ptn_soap_wsdl_first_namespace_declaration_uri(
         data,
         "http://schemas.xmlsoap.org/soap/encoding/"
@@ -218537,7 +218541,17 @@ static int ptn_soap_wsdl_declares_soap_encoding_before_xsi(PtnSoapClientData *da
         data,
         "http://www.w3.org/2001/XMLSchema-instance"
     );
-    return soap_encoding != NULL && xsi != NULL && soap_encoding < xsi;
+    if (soap_encoding == NULL) {
+        return 0;
+    }
+    if (xsi != NULL) {
+        return soap_encoding < xsi;
+    }
+    if (part_count == 0) {
+        return 0;
+    }
+    PtnSoapType *type = ptn_soap_type_list_find(data->types, data->type_count, parts[0].type_local);
+    return type != NULL && type->is_array;
 }
 
 static void ptn_soap_append_ns2_namespace_declaration(PtnStringBuffer *body, const char *namespace_uri) {
@@ -218745,7 +218759,7 @@ static int ptn_soap_build_rpc_encoded_request(
         custom_namespace_before_encoding;
     int has_array_part = ptn_soap_rpc_request_has_array_part(data, parts, part_count);
     int xsi_before_xsd = ptn_soap_rpc_request_uses_xsi_before_xsd(data, parts, part_count);
-    int soap_encoding_before_xsi = ptn_soap_wsdl_declares_soap_encoding_before_xsi(data);
+    int soap_encoding_before_xsi = ptn_soap_rpc_request_prefers_soap_encoding_before_xsi(data, parts, part_count);
     ptn_string_buffer_append_format(
         &body,
         "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"%s\"",

@@ -70854,7 +70854,105 @@ echo $client->__getLastRequest();
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_soap_wsdl_declares_soap_encoding_before_xsi"));
+    assert!(c_source.contains("ptn_soap_rpc_request_prefers_soap_encoding_before_xsi"));
+}
+
+#[test]
+fn compile_soap_rpc_encoded_array_request_synthesized_xsi_keeps_declared_encoding_order_to_native_binary(
+) {
+    let root = temp_dir("ptn-native-soap-rpc-array-synth-xsi-after-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-rpc-array-synth-xsi-after-encoding.php");
+    let output = root.join("soap-rpc-array-synth-xsi-after-encoding-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/round2-float-array.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://soapinterop.org/"
+  xmlns:s="http://soapinterop.org/xsd"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/xsd">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <import namespace="http://schemas.xmlsoap.org/wsdl/" />
+      <complexType name="ArrayOffloat">
+        <complexContent>
+          <restriction base="SOAP-ENC:Array">
+            <attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="float[]"/>
+          </restriction>
+        </complexContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoFloatArrayRequest">
+    <part name="inputFloatArray" type="s:ArrayOffloat"/>
+  </message>
+  <message name="echoFloatArrayResponse"/>
+  <portType name="InteropTestPortType">
+    <operation name="echoFloatArray">
+      <input message="tns:echoFloatArrayRequest"/>
+      <output message="tns:echoFloatArrayResponse"/>
+    </operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoFloatArray">
+      <soap:operation soapAction="http://" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://soapinterop.org/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+      <output>
+        <soap:body use="encoded" namespace="http://soapinterop.org/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding">
+      <soap:address location="test://"/>
+    </port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoFloatArray([1.3223, 34.2, 325.325]);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/xsd\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputFloatArray SOAP-ENC:arrayType=\"xsd:float[3]\" xsi:type=\"ns2:ArrayOffloat\"><item xsi:type=\"xsd:float\">1.3223</item><item xsi:type=\"xsd:float\">34.2</item><item xsi:type=\"xsd:float\">325.325</item></inputFloatArray>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_rpc_request_prefers_soap_encoding_before_xsi"));
 }
 
 #[test]
