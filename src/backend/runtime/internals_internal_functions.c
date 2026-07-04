@@ -23932,6 +23932,14 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
+static int ptn_natcompare_bytes(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len,
+    int fold_case
+);
+
 static int ptn_internal_sort_flags_are_valid(int64_t flags) {
     return flags == PTN_SORT_REGULAR ||
         flags == PTN_SORT_NUMERIC ||
@@ -29241,6 +29249,7 @@ static int ptn_array_unique_contains_string_value(
     PtnArray *array,
     PtnStringOperand value_string,
     int case_insensitive,
+    int natural,
     size_t line
 ) {
     for (size_t i = 0; i < array->len; i++) {
@@ -29249,8 +29258,17 @@ static int ptn_array_unique_contains_string_value(
             array->entries[i].value,
             line
         );
-        int equal = value_string.len == existing_string.len;
-        if (equal && case_insensitive) {
+        int equal = 0;
+        if (natural) {
+            equal = ptn_natcompare_bytes(
+                (const unsigned char *)value_string.data,
+                value_string.len,
+                (const unsigned char *)existing_string.data,
+                existing_string.len,
+                case_insensitive
+            ) == 0;
+        } else if (value_string.len == existing_string.len && case_insensitive) {
+            equal = 1;
             for (size_t index = 0; index < value_string.len; index++) {
                 if (tolower((unsigned char)value_string.data[index]) !=
                     tolower((unsigned char)existing_string.data[index])) {
@@ -29258,7 +29276,7 @@ static int ptn_array_unique_contains_string_value(
                     break;
                 }
             }
-        } else if (equal) {
+        } else if (value_string.len == existing_string.len) {
             equal = memcmp(value_string.data, existing_string.data, value_string.len) == 0;
         }
         ptn_string_operand_free(existing_string);
@@ -29308,8 +29326,10 @@ static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, cons
         : PTN_SORT_STRING;
     int regular = flags == PTN_SORT_REGULAR;
     int numeric = flags == PTN_SORT_NUMERIC;
+    int natural = flags == PTN_SORT_NATURAL || flags == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE);
     int string_case_insensitive = flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE);
-    if (!regular && !numeric && flags != PTN_SORT_STRING && !string_case_insensitive) {
+    int string = flags == PTN_SORT_STRING || flags == PTN_SORT_LOCALE_STRING || string_case_insensitive;
+    if (!regular && !numeric && !natural && !string) {
         ptn_throw_exception(
             runtime,
             "Error",
@@ -29332,7 +29352,8 @@ static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, cons
                 runtime,
                 result.as.array,
                 entry_string,
-                string_case_insensitive,
+                string_case_insensitive || flags == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE),
+                natural,
                 line
             );
             ptn_string_operand_free(entry_string);

@@ -82200,6 +82200,12 @@ $nested = [[1], [2], [1]];\n\
 var_dump(array_unique($nested, SORT_STRING));\n\
 $numeric = [\"one\" => \"1\", \"float\" => 1.0, \"int\" => 1, \"two\" => \"2\", \"twof\" => 2.0, \"false\" => false, \"blank\" => \"\", \"zero\" => 0, \"text\" => \"abc\"];\n\
 var_dump(array_unique($numeric, SORT_NUMERIC));\n\
+$natural = [\"first\" => \"img10\", \"second\" => \"img2\", \"dupe\" => \"img10\", \"padded\" => \"img02\", \"plain\" => \"img2\"];\n\
+var_dump(array_unique($natural, SORT_NATURAL));\n\
+$naturalCase = [\"upper\" => \"File10\", \"lower\" => \"file10\", \"other\" => \"file2\"];\n\
+var_dump(array_unique($naturalCase, SORT_NATURAL | SORT_FLAG_CASE));\n\
+$locale = [\"a\" => \"A\", \"b\" => \"A\", \"c\" => \"a\"];\n\
+var_dump(array_unique($locale, SORT_LOCALE_STRING));\n\
 var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), defined(\"SORT_STRING\"));",
     )
     .unwrap();
@@ -82272,6 +82278,26 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
             "  [\"false\"]=>\n",
             "  bool(false)\n",
             "}\n",
+            "array(3) {\n",
+            "  [\"first\"]=>\n",
+            "  string(5) \"img10\"\n",
+            "  [\"second\"]=>\n",
+            "  string(4) \"img2\"\n",
+            "  [\"padded\"]=>\n",
+            "  string(5) \"img02\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"upper\"]=>\n",
+            "  string(6) \"File10\"\n",
+            "  [\"other\"]=>\n",
+            "  string(5) \"file2\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(1) \"A\"\n",
+            "  [\"c\"]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n"
@@ -82284,6 +82310,7 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
     assert!(c_source.contains("ptn_array_unique_string_operand"));
     assert!(c_source.contains("ptn_array_unique_contains_string_value"));
     assert!(c_source.contains("ptn_array_unique_contains_numeric_value"));
+    assert!(c_source.contains("ptn_natcompare_bytes"));
 }
 
 #[test]
