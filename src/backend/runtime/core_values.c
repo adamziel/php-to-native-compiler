@@ -2618,8 +2618,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_filter_iterator(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_multiple_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_parent_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_no_rewind_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_iterator_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_tree_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
@@ -3468,6 +3470,12 @@ static PTN_UNUSED PtnValue ptn_multiple_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_parent_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3484,6 +3492,14 @@ static PTN_UNUSED PtnValue ptn_multiple_iterator_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_parent_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -3491,6 +3507,20 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_recursive_tree_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_recursive_tree_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
@@ -3902,6 +3932,11 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     const char *name,
     size_t argc,
     const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED void ptn_internal_prepare_foreach_iterator(
+    PtnRuntime *runtime,
+    PtnValue iterator,
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue source, size_t line);

@@ -1365,8 +1365,14 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_multiple_iterator(lookup_class_name)) {
         return ptn_multiple_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_parent_iterator(lookup_class_name)) {
+        return ptn_parent_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
         return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_tree_iterator(lookup_class_name)) {
+        return ptn_recursive_tree_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_limit_iterator(lookup_class_name)) {
         return ptn_limit_iterator_new(runtime, argc, args, line);
@@ -15086,6 +15092,11 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
     }
 #endif
     ptn_protocol_iterator_refresh_valid(&iterator);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (iterator.valid) {
+        ptn_internal_prepare_foreach_iterator(runtime, iterator.iterator_object, line);
+    }
+#endif
     if (iterator_frame_active) {
         ptn_try_frame_pop(runtime, &iterator_frame);
     }
