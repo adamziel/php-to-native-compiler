@@ -51104,6 +51104,90 @@ var_dump(
 }
 
 #[test]
+fn compile_reflection_source_disabled_and_final_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-source-disabled-final-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-source-disabled-final-property.php");
+    let output = root.join("reflection-source-disabled-final-property-bin");
+    fs::write(
+        &input,
+        "<?php
+const REFLECT_SOURCE_META_CONST = 1;
+
+class ReflectFinalPropertyMeta {
+    final public $a;
+    public $b;
+}
+
+$constant = new ReflectionConstant('REFLECT_SOURCE_META_CONST');
+var_dump($constant->getFileName() === __FILE__);
+var_dump((new ReflectionConstant('PHP_VERSION'))->getFileName());
+
+$final = new ReflectionProperty(ReflectFinalPropertyMeta::class, 'a');
+$plain = new ReflectionProperty(ReflectFinalPropertyMeta::class, 'b');
+var_dump($final->isFinal());
+echo $final;
+echo $plain;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "Property [ final public $a = NULL ]\n",
+            "Property [ public $b = NULL ]\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_constant_with_source"));
+    assert!(c_source.contains("Property [ final public $a = NULL ]"));
+
+    let disabled_input = root.join("reflection-function-disabled-hidden.php");
+    let disabled_output = root.join("reflection-function-disabled-hidden-bin");
+    fs::write(
+        &disabled_input,
+        "<?php
+var_dump(function_exists('is_file'));
+try {
+    $reflection = new ReflectionFunction('is_file');
+    var_dump($reflection->isDisabled());
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &disabled_input,
+        &disabled_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let disabled_execution = Command::new(&disabled_output)
+        .env("PTN_DISABLE_FUNCTIONS", "is_file")
+        .output()
+        .unwrap();
+    assert!(disabled_execution.status.success());
+    assert_eq!(
+        String::from_utf8(disabled_execution.stdout).unwrap(),
+        concat!("bool(false)\n", "Function is_file() does not exist\n")
+    );
+    assert_eq!(String::from_utf8(disabled_execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_internal_constant_deprecated_attribute_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-internal-constant-deprecated-attribute");
     fs::create_dir_all(&root).unwrap();

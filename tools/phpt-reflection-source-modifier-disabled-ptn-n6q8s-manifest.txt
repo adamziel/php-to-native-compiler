@@ -1,0 +1,4 @@
+# ptn-n6q8s: reflection source, modifier, and disabled-function metadata rows.
+ext/reflection/tests/ReflectionConstant_getFileName.phpt
+ext/reflection/tests/ReflectionFunction_isDisabled_basic.phpt
+ext/reflection/tests/final_property_indicated.phpt

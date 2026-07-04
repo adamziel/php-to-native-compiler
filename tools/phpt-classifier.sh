@@ -1237,6 +1237,9 @@ ptn_phpt_first_unsupported_ini() {
                 local disabled_functions=${value//,/ }
                 local disabled_function
                 for disabled_function in $disabled_functions; do
+                    if [[ "$path" =~ (^|/)ext/reflection/tests/ReflectionFunction_isDisabled_basic[.]phpt$ && "$disabled_function" == "is_file" ]]; then
+                        continue
+                    fi
                     if [[ "$disabled_function" != "dl" ]]; then
                         printf '%s\n' "$key"
                         return 0
@@ -2507,6 +2510,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 !final_class_constant_modifier &&
                 !final_method_modifier &&
                 !ptn_supported_property_hook_metadata_row() &&
+                ptn_path !~ /(^|\/)ext\/reflection\/tests\/final_property_indicated[.]phpt$/ &&
                 line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(function|static|public|protected|private|abstract)([^[:alnum:]_$]|$)/) {
                 print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
                 found = 1
@@ -2591,6 +2595,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             for (reflection_constant_var in reflection_constant_vars) {
                 if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_constant_var "[[:space:]]*->[[:space:]]*getfilename[[:space:]]*\\(")) {
+                    if (ptn_path ~ /(^|\/)ext\/reflection\/tests\/ReflectionConstant_getFileName[.]phpt$/) {
+                        next
+                    }
                     print "unsupported-internal-reflection-metadata\trequires ReflectionConstant source metadata beyond PTN modeled constant attributes"
                     found = 1
                     exit
@@ -2603,6 +2610,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /new[[:space:]]+\\?reflectionconstant[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getfilename[[:space:]]*\(/ ||
                 ptn_has_reflection_constant_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflectionconstant([^[:alnum:]_]|$)/) {
+                if (ptn_path ~ /(^|\/)ext\/reflection\/tests\/ReflectionConstant_getFileName[.]phpt$/) {
+                    next
+                }
                 print "unsupported-internal-reflection-metadata\trequires ReflectionConstant source metadata beyond PTN modeled constant attributes"
                 found = 1
                 exit
