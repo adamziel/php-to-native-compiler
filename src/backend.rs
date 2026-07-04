@@ -28374,6 +28374,11 @@ fn emit_method_dispatch(
         "\nstatic PTN_UNUSED int ptn_declared_method_argument_by_ref(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argument_index) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        (void)runtime;\n");
+    out.push_str("        (void)argument_index;\n");
+    out.push_str("        return ptn_ascii_case_equal(method_name, \"bindTo\") ? 0 : -1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        (void)runtime;\n");
     out.push_str("        (void)method_name;\n");
@@ -38328,6 +38333,7 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
     functions.iter().any(|function| {
         !function.is_anonymous
+            && function.initially_declared
             && (function.class_name.is_none() || function.is_static)
             && function.name.eq_ignore_ascii_case(name)
     })
@@ -44478,6 +44484,7 @@ impl ValueEmitter {
             .enumerate()
             .find(|(_, function)| {
                 !function.is_anonymous
+                    && function.initially_declared
                     && !function_is_trait_body(function)
                     && (function.class_name.is_none() || function.is_static)
                     && function.name.eq_ignore_ascii_case(name)
