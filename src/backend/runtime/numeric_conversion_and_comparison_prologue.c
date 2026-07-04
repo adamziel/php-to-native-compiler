@@ -1027,6 +1027,16 @@ static void ptn_runtime_close_user_stream_resources(PtnRuntime *runtime) {
 }
 #endif
 
+static int ptn_runtime_has_new_active_exception(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
+    return runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        runtime->exceptions->active_exception != entry_exception;
+}
+
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         if (runtime->shutdown_in_progress) {
@@ -1045,23 +1055,59 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         if (session_shutdown_early) {
             ptn_runtime_session_shutdown(runtime);
         }
+        PtnException *shutdown_entry_exception = runtime->exceptions == NULL
+            ? NULL
+            : runtime->exceptions->active_exception;
         ptn_runtime_run_header_callback(runtime);
         ptn_runtime_run_shutdown_functions(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_run_static_property_destructors(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_run_static_local_destructors(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_run_symbol_value_destructors(&runtime->symbols);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_close_suspended_fibers(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_force_close_root_generators(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_force_close_live_generators(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_run_object_destructors_until_output_buffer(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_close_user_stream_resources(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
         ptn_runtime_run_object_destructors(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         if (!session_shutdown_early) {
             ptn_runtime_session_shutdown(runtime);
         }
         ptn_runtime_run_static_property_destructors(runtime);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
         ptn_standard_streams_shutdown();
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);

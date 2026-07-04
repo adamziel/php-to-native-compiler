@@ -2281,12 +2281,51 @@ static int ptn_runtime_has_active_output_buffer(PtnRuntime *runtime) {
         root->output_buffer_callback_depth == 0;
 }
 
+static void ptn_runtime_mark_current_fiber_fatal_error(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnObject *current_fiber = runtime->current_fiber != NULL
+        ? runtime->current_fiber
+        : (root == NULL ? NULL : root->current_fiber);
+    if (
+        current_fiber == NULL ||
+        current_fiber->class_name == NULL ||
+        !ptn_ascii_case_equal(current_fiber->class_name, "Fiber") ||
+        current_fiber->native_data == NULL
+    ) {
+        return;
+    }
+    PtnFiberData *fiber_data = (PtnFiberData *)current_fiber->native_data;
+    fiber_data->running = 0;
+    fiber_data->completed = 1;
+    fiber_data->threw = 0;
+    fiber_data->fatal_error = 1;
+    fiber_data->resume_credit = 0;
+    fiber_data->close_requested = 0;
+#if !defined(_WIN32)
+    fiber_data->suspended_try_frame = NULL;
+    fiber_data->suspended_trace_frame = NULL;
+    fiber_data->active_method_frame = NULL;
+    fiber_data->active_trace_tail = NULL;
+    fiber_data->suspended_generator = NULL;
+#endif
+    runtime->current_fiber = NULL;
+    runtime->trace_frame = NULL;
+    if (root != NULL) {
+        root->current_fiber = NULL;
+        root->trace_frame = NULL;
+    }
+}
+
 static PTN_UNUSED void ptn_emit_fatal_error_at(
     PtnRuntime *runtime,
     const char *message,
     const char *path,
     size_t line
 ) {
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
@@ -2331,6 +2370,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
     const char *path,
     size_t line
 ) {
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     fflush(stdout);
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {

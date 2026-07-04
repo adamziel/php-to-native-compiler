@@ -2458,6 +2458,7 @@ static PTN_UNUSED PtnValue ptn_str_repeat_value(PtnRuntime *runtime, const PtnVa
             "ValueError",
             "str_repeat(): Argument #2 ($times) must be greater than or equal to 0"
         );
+        return ptn_null();
     }
     if (repeat == 0 || input.len == 0) {
         ptn_string_operand_free(input);
@@ -2472,9 +2473,11 @@ static PTN_UNUSED PtnValue ptn_str_repeat_value(PtnRuntime *runtime, const PtnVa
     size_t times = (size_t)repeat;
     if (input.len > SIZE_MAX / times || input.len * times == SIZE_MAX) {
         ptn_string_operand_free(input);
-        ptn_abort_out_of_memory();
+        ptn_emit_memory_allocation_overflow_error(runtime, input.len, times, 1, line);
+        return ptn_null();
     }
     size_t output_len = input.len * times;
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
     char *output = malloc(output_len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -48141,6 +48144,7 @@ static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const 
             "ValueError",
             "str_repeat(): Argument #2 ($times) must be greater than or equal to 0"
         );
+        return ptn_null();
     }
     if (repeat == 0 || input.len == 0) {
         ptn_string_operand_free(input);
@@ -48155,9 +48159,11 @@ static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const 
     size_t times = (size_t)repeat;
     if (input.len > SIZE_MAX / times || input.len * times == SIZE_MAX) {
         ptn_string_operand_free(input);
-        ptn_abort_out_of_memory();
+        ptn_emit_memory_allocation_overflow_error(runtime, input.len, times, 1, line);
+        return ptn_null();
     }
     size_t output_len = input.len * times;
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
     char *output = malloc(output_len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -207522,13 +207528,27 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 );
                 return ptn_null();
             }
-            if (runtime->current_fiber == NULL) {
-                ptn_throw_exception_at(
+            PtnObject *current_fiber = runtime->current_fiber;
+            PtnFiberData *current_fiber_data = NULL;
+            if (
+                current_fiber != NULL &&
+                ptn_internal_class_name_is_fiber(current_fiber->class_name) &&
+                current_fiber->native_data != NULL
+            ) {
+                current_fiber_data = (PtnFiberData *)current_fiber->native_data;
+            }
+            if (current_fiber_data == NULL || !current_fiber_data->running) {
+                ptn_throw_exception_owned_message_at_with_trace_frame(
                     runtime,
                     "FiberError",
-                    "Cannot suspend outside of a fiber",
+                    ptn_duplicate_string("Cannot suspend outside of a fiber"),
                     runtime->source_path,
-                    line
+                    line,
+                    "Fiber::suspend",
+                    runtime->source_path,
+                    line,
+                    argc,
+                    args
                 );
                 return ptn_null();
             }
@@ -208100,6 +208120,11 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
         return;
     }
     PtnRuntime *runtime = data->context_runtime;
+    PtnException *saved_active_exception =
+        runtime->exceptions == NULL ? NULL : runtime->exceptions->active_exception;
+    if (saved_active_exception != NULL) {
+        runtime->exceptions->active_exception = NULL;
+    }
     ptn_value_destroy(&data->resume_value);
     data->resume_value = ptn_null();
     ptn_value_destroy(&data->resume_exception);
@@ -208114,6 +208139,9 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
         data->close_requested = 0;
         ptn_fiber_detach_active_method_frame(runtime, data);
         ptn_fiber_restore_caller_runtime(runtime, data);
+        if (saved_active_exception != NULL) {
+            runtime->exceptions->active_exception = saved_active_exception;
+        }
         return;
     }
     if (
@@ -208123,6 +208151,17 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
         ptn_exception_free(runtime->exceptions->active_exception);
         runtime->exceptions->active_exception = NULL;
         data->threw = 0;
+    }
+    if (saved_active_exception != NULL) {
+        if (runtime->exceptions->active_exception == NULL) {
+            runtime->exceptions->active_exception = saved_active_exception;
+        } else {
+            ptn_exception_chain_previous_if_missing(
+                runtime->exceptions->active_exception,
+                saved_active_exception
+            );
+            ptn_exception_free(saved_active_exception);
+        }
     }
     data->close_requested = 0;
     data->resume_credit = 0;
@@ -208217,6 +208256,21 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
         return argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
     }
     PtnFiberData *data = (PtnFiberData *)fiber->native_data;
+    if (data->close_requested) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "FiberError",
+            ptn_duplicate_string("Cannot suspend in a force-closed fiber"),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            "Fiber::suspend",
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        return ptn_null();
+    }
     ptn_fiber_clear_suspension(data);
     ptn_value_destroy(&data->suspend_value);
     data->suspend_value = argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
@@ -208423,6 +208477,7 @@ static int ptn_fiber_init_object(
     data->running = 0;
     data->completed = 0;
     data->threw = 0;
+    data->fatal_error = 0;
     data->resume_credit = 0;
     data->resume_throw = 0;
     data->close_requested = 0;
@@ -208485,6 +208540,7 @@ static PtnValue ptn_fiber_start(
     data->started = 1;
     data->threw = 0;
     data->completed = 0;
+    data->fatal_error = 0;
     data->resume_credit = 0;
     ptn_value_destroy(&data->suspend_value);
     data->suspend_value = ptn_null();
@@ -208687,6 +208743,21 @@ static PTN_UNUSED PtnValue ptn_fiber_call_method(
                 runtime,
                 "FiberError",
                 ptn_duplicate_string("Cannot get fiber return value: The fiber has not been started"),
+                runtime->source_path,
+                line,
+                "Fiber->getReturn",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return ptn_null();
+        }
+        if (data->fatal_error) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot get fiber return value: The fiber exited with a fatal error"),
                 runtime->source_path,
                 line,
                 "Fiber->getReturn",

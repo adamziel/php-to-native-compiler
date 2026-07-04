@@ -152,6 +152,7 @@ typedef struct PtnFiberData {
     int running;
     int completed;
     int threw;
+    int fatal_error;
     int resume_credit;
     int resume_throw;
     int close_requested;

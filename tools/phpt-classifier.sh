@@ -1895,8 +1895,10 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /Zend\/tests\/generators\/gh15330-005[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/resume[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/destructors_005[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/destructors_008[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/gh9916-003[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/fibers\/gh15108-001[.]phpt$/
+                ptn_path ~ /Zend\/tests\/fibers\/gh15108-001[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/suspend-in-force-close-fiber[.]phpt$/
         }
         function ptn_has_direct_assignment_yield(line) {
             return line ~ /(^|[^=!<>])[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*yield([^[:alnum:]_]|$)/
@@ -3221,6 +3223,7 @@ ptn_phpt_classify_row() {
     fi
 
     if ptn_phpt_has_resource_limit_expectation "$path" \
+        && [[ "$rel" != "Zend/tests/fibers/get-return-after-bailout.phpt" ]] \
         && ! ptn_phpt_has_modeled_string_allocation_limit_expectation "$path" \
         && ! ptn_phpt_supported_recursive_fiber_resource_limit_row "$rel"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'

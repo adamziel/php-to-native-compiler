@@ -1700,8 +1700,13 @@ fn phpt_classifier_allows_generator_fiber_lifecycle_row_pack() {
         ("Zend/tests/generators/gh15330-005.phpt", generator_body),
         ("Zend/tests/fibers/resume.phpt", fiber_body),
         ("Zend/tests/fibers/destructors_005.phpt", fiber_body),
+        ("Zend/tests/fibers/destructors_008.phpt", fiber_body),
         ("Zend/tests/fibers/gh9916-003.phpt", fiber_body),
         ("Zend/tests/fibers/gh15108-001.phpt", fiber_body),
+        (
+            "Zend/tests/fibers/suspend-in-force-close-fiber.phpt",
+            fiber_body,
+        ),
     ];
 
     for (relative_path, phpt) in cases {
@@ -3446,6 +3451,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     assert!(
         recursive_fiber_memory_limit.starts_with("runnable\t"),
         "{recursive_fiber_memory_limit:?}"
+    );
+
+    let fiber_bailout_memory_limit = classify_at_relative_path(
+        "--TEST--\nFiber::getReturn() after bailout\n--FILE--\n<?php\n$fiber = new Fiber(static function (): void { str_repeat('X', PHP_INT_MAX); });\n$fiber->start();\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s(tried to allocate %d bytes) %sget-return-after-bailout.php on line %d\n",
+        "Zend/tests/fibers/get-return-after-bailout.phpt",
+    );
+    assert!(
+        fiber_bailout_memory_limit.starts_with("runnable\t"),
+        "{fiber_bailout_memory_limit:?}"
     );
 }
 
