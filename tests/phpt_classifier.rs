@@ -2894,6 +2894,10 @@ fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
             "ext/spl/tests/SplFixedArray_setSize_destruct.phpt",
             "--TEST--\nsetSize destructor\n--FILE--\n<?php\n$fixed = new SplFixedArray(1);\n$fixed->offsetSet(0, false);\n--EXPECT--\n",
         ),
+        (
+            "ext/spl/tests/bug63680.phpt",
+            "--TEST--\nfixed array compare\n--FILE--\n<?php\n$a = new SplFixedArray(1);\n$b = new SplFixedArray(1);\nvar_dump($a == $b);\n--EXPECT--\n",
+        ),
     ];
 
     for (path, phpt) in cases {
@@ -2921,6 +2925,40 @@ fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
         generator_backed.starts_with("unsupported-spl-surface\t"),
         "{generator_backed:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_keeps_spl_iterator_row_pack_surfaces_runnable() {
+    let cases = [
+        (
+            "ext/spl/tests/bug41828.phpt",
+            "--TEST--\nrecursive iterator subclass constructor\n--FILE--\n<?php\nclass Foo extends RecursiveIteratorIterator {}\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug81587.phpt",
+            "--TEST--\nmultiple iterator simplexml\n--FILE--\n<?php\n$mi = new MultipleIterator();\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_023.phpt",
+            "--TEST--\nrecursive iterator catch children\n--FILE--\n<?php\nclass A extends RecursiveArrayIterator {}\nclass B extends RecursiveIteratorIterator {}\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_033.phpt",
+            "--TEST--\nparent iterator\n--FILE--\n<?php\n$it = new ParentIterator(new RecursiveArrayIterator([]));\nforeach (new RecursiveIteratorIterator($it) as $v) {}\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/recursive_tree_iterator_004.phpt",
+            "--TEST--\nrecursive tree iterator\n--FILE--\n<?php\n$it = new RecursiveTreeIterator(new RecursiveArrayIterator([]));\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
 }
 
 #[test]

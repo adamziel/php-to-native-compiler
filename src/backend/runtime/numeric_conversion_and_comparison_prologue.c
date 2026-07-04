@@ -10171,10 +10171,24 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "ParentIterator")
+        && ptn_internal_class_method_exists("ParentIterator", name)
+    ) {
+        return ptn_parent_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "RecursiveIteratorIterator")
         && ptn_internal_class_method_exists("RecursiveIteratorIterator", name)
     ) {
         return ptn_recursive_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "RecursiveTreeIterator")
+        && ptn_internal_class_method_exists("RecursiveTreeIterator", name)
+    ) {
+        return ptn_recursive_tree_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

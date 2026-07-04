@@ -1760,6 +1760,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/SplFixedArray_immediate_gc[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/SplFixedArray_serialize[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/SplFixedArray_setSize_destruct[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/bug63680[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/splfixedarray_json_encode[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/SplArray_fromArray[.]phpt$/
         }
@@ -1776,11 +1777,19 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_dtor_order[.]phpt$/ ||
-                ptn_path ~ /ext\/spl\/tests\/bug69970[.]phpt$/
+                ptn_path ~ /ext\/spl\/tests\/bug41828[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/bug69970[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_023[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_033[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/recursive_tree_iterator_004[.]phpt$/
         }
         function ptn_supported_recursive_iterator_iterator_surface_line(line) {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
-                line ~ /(^|[^[:alnum:]_$\\])(recursivearrayiterator|recursiveiteratoriterator)([^[:alnum:]_]|$)/
+                line ~ /(^|[^[:alnum:]_$\\])(parentiterator|recursivearrayiterator|recursiveiteratoriterator|recursivetreeiterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_multiple_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/bug81587[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])multipleiterator([^[:alnum:]_]|$)/
         }
         function ptn_supported_append_iterator_surface_line(line) {
             return ptn_path ~ /ext\/spl\/tests\/bug72684[.]phpt$/ &&
@@ -2048,6 +2057,7 @@ ptn_phpt_first_unsupported_language_surface() {
             if ((ptn_has_unmodeled_spl_symbol(line) &&
                     !ptn_supported_spl_fixed_array_surface_line(line) &&
                     !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
+                    !ptn_supported_multiple_iterator_surface_line(line) &&
                     !ptn_supported_append_iterator_surface_line(line) &&
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
                     !ptn_supported_directory_iterator_surface_line(line) &&

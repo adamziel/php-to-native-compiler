@@ -4755,10 +4755,16 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveCachingIterator\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveRegexIterator\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveRegexIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"ParentIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveTreeIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str(
@@ -11611,12 +11617,14 @@ fn emit_class_metadata_helpers(
         "RecursiveCachingIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
+        "RecursiveTreeIterator",
         "FilterIterator",
         "CallbackFilterIterator",
         "RecursiveCallbackFilterIterator",
         "InfiniteIterator",
         "LimitIterator",
         "MultipleIterator",
+        "ParentIterator",
         "NoRewindIterator",
         "SplDoublyLinkedList",
         "SplQueue",
@@ -12540,9 +12548,11 @@ fn emit_class_metadata_helpers(
         "InfiniteIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
+        "RecursiveTreeIterator",
         "SplObjectStorage",
         "LimitIterator",
         "MultipleIterator",
+        "ParentIterator",
         "NoRewindIterator",
         "RegexIterator",
         "RecursiveRegexIterator",
@@ -26262,12 +26272,14 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
         "multipleiterator" => Some("MultipleIterator"),
+        "parentiterator" => Some("ParentIterator"),
         "norewinditerator" => Some("NoRewindIterator"),
         "regexiterator" => Some("RegexIterator"),
         "recursivecachingiterator" => Some("RecursiveCachingIterator"),
         "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursiveregexiterator" => Some("RecursiveRegexIterator"),
+        "recursivetreeiterator" => Some("RecursiveTreeIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
         "splfixedarray" => Some("SplFixedArray"),
@@ -27849,6 +27861,23 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("#endif\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (resolved.as.object->native_data == NULL && !ptn_ascii_case_equal(method_name, \"__construct\") && !ptn_internal_class_exists_name(class_name)) {\n");
+    out.push_str("        const char *ptn_uninitialized_parent = ptn_declared_class_parent_name(class_name);\n");
+    out.push_str("        while (ptn_uninitialized_parent != NULL) {\n");
+    out.push_str("            if (ptn_ascii_case_equal(ptn_uninitialized_parent, \"RecursiveIteratorIterator\")) {\n");
+    out.push_str("                char ptn_uninitialized_message[256];\n");
+    out.push_str("                int ptn_uninitialized_written = snprintf(ptn_uninitialized_message, sizeof(ptn_uninitialized_message), \"The %s instance wasn't initialized properly\", class_name);\n");
+    out.push_str("                if (ptn_uninitialized_written < 0 || (size_t)ptn_uninitialized_written >= sizeof(ptn_uninitialized_message)) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str("                ptn_throw_exception_at(runtime, \"Error\", ptn_uninitialized_message, runtime->source_path, line);\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            ptn_uninitialized_parent = ptn_declared_class_parent_name(ptn_uninitialized_parent);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     if needs_closure_reflection_dispatch {
         out.push_str("    PtnValue ptn_closure_reflection_result;\n");
         out.push_str("    if (ptn_closure_reflection_try_call_method(runtime, resolved, method_name, argc, args, line, &ptn_closure_reflection_result)) {\n");
