@@ -29280,14 +29280,33 @@ static int ptn_array_unique_contains_regular_value(
     return 0;
 }
 
+static int ptn_array_unique_numbers_equal(PtnNumber left, PtnNumber right) {
+    if (left.type == PTN_NUMBER_INT && right.type == PTN_NUMBER_INT) {
+        return left.integer == right.integer;
+    }
+    return left.floating == right.floating;
+}
+
+static int ptn_array_unique_contains_numeric_value(PtnArray *array, PtnValue value) {
+    PtnNumber value_number = ptn_to_number(value);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnNumber existing_number = ptn_to_number(array->entries[i].value);
+        if (ptn_array_unique_numbers_equal(value_number, existing_number)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unique", 1, "array", args[0]);
     int64_t flags = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "array_unique", 2, "flags", args[1], line)
         : PTN_SORT_STRING;
     int regular = flags == PTN_SORT_REGULAR;
+    int numeric = flags == PTN_SORT_NUMERIC;
     int string_case_insensitive = flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE);
-    if (!regular && flags != PTN_SORT_STRING && !string_case_insensitive) {
+    if (!regular && !numeric && flags != PTN_SORT_STRING && !string_case_insensitive) {
         ptn_throw_exception(
             runtime,
             "Error",
@@ -29302,6 +29321,8 @@ static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, cons
         int duplicate = 0;
         if (regular) {
             duplicate = ptn_array_unique_contains_regular_value(runtime, result.as.array, entry->value, line);
+        } else if (numeric) {
+            duplicate = ptn_array_unique_contains_numeric_value(result.as.array, entry->value);
         } else {
             PtnStringOperand entry_string = ptn_array_unique_string_operand(runtime, entry->value, line);
             duplicate = ptn_array_unique_contains_string_value(

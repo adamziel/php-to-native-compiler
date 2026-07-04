@@ -80980,6 +80980,8 @@ var_dump(array_unique(['b', 'a', 'b'], SORT_REGULAR));\n\
 try { array_unique([new stdClass, new stdClass], SORT_STRING | SORT_FLAG_CASE); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $nested = [[1], [2], [1]];\n\
 var_dump(array_unique($nested, SORT_STRING));\n\
+$numeric = [\"one\" => \"1\", \"float\" => 1.0, \"int\" => 1, \"two\" => \"2\", \"twof\" => 2.0, \"false\" => false, \"blank\" => \"\", \"zero\" => 0, \"text\" => \"abc\"];\n\
+var_dump(array_unique($numeric, SORT_NUMERIC));\n\
 var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), defined(\"SORT_STRING\"));",
     )
     .unwrap();
@@ -81044,6 +81046,14 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
             "    int(1)\n",
             "  }\n",
             "}\n",
+            "array(3) {\n",
+            "  [\"one\"]=>\n",
+            "  string(1) \"1\"\n",
+            "  [\"two\"]=>\n",
+            "  string(1) \"2\"\n",
+            "  [\"false\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n"
@@ -81055,6 +81065,7 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
     assert!(c_source.contains("ptn_internal_array_unique"));
     assert!(c_source.contains("ptn_array_unique_string_operand"));
     assert!(c_source.contains("ptn_array_unique_contains_string_value"));
+    assert!(c_source.contains("ptn_array_unique_contains_numeric_value"));
 }
 
 #[test]
