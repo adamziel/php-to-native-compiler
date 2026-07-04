@@ -556,6 +556,10 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
     return 1
 }
 
+ptn_phpt_supported_recursive_fiber_resource_limit_row() {
+    [[ "$1" == "Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt" ]]
+}
+
 ptn_phpt_php_constant_defined() {
     local constant=$1
 
@@ -1718,6 +1722,9 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_has_named_modeled_array_internal_call(line) {
             return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
         }
+        function ptn_supported_named_modeled_array_internal_call_row() {
+            return ptn_path ~ /Zend\/tests\/named_params\/missing_param[.]phpt$/
+        }
         function ptn_has_by_reference_parameter(line) {
             return line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*&[[:space:]]*(\.\.\.)?[[:space:]]*\$[a-z_]/
         }
@@ -2163,7 +2170,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (ptn_has_named_modeled_array_internal_call(line)) {
+            if (ptn_has_named_modeled_array_internal_call(line) &&
+                !ptn_supported_named_modeled_array_internal_call_row()) {
                 print "unsupported-internal-call-binding\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
                 found = 1
                 exit
@@ -3213,7 +3221,8 @@ ptn_phpt_classify_row() {
     fi
 
     if ptn_phpt_has_resource_limit_expectation "$path" \
-        && ! ptn_phpt_has_modeled_string_allocation_limit_expectation "$path"; then
+        && ! ptn_phpt_has_modeled_string_allocation_limit_expectation "$path" \
+        && ! ptn_phpt_supported_recursive_fiber_resource_limit_row "$rel"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
         return 0
     fi
