@@ -218889,9 +218889,6 @@ static int ptn_soap_rpc_request_uses_xsi_before_xsd(
         if (type->is_simple && (type->is_list || type->is_union)) {
             return 1;
         }
-        if (type->has_simple_content && ptn_soap_type_has_attribute_fields(type)) {
-            return 1;
-        }
         if (!type->has_simple_content &&
             !ptn_soap_type_has_element_fields(type) &&
             ptn_soap_type_has_attribute_fields(type)) {

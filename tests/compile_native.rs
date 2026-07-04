@@ -70850,6 +70850,93 @@ echo $client->__getLastRequest();
 }
 
 #[test]
+fn compile_soap_simple_content_attribute_request_uses_xsd_before_xsi_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-simple-content-attribute-namespace-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-simple-content-attribute-namespace-order.php");
+    let output = root.join("soap-simple-content-attribute-namespace-order-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$wsdl = __DIR__ . '/simple-content-attribute.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://test-uri/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://test-uri/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <complexType name="testType">
+        <simpleContent>
+          <extension base="int">
+            <attribute name="int" type="int"/>
+          </extension>
+        </simpleContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="testMessage"><part name="testParam" type="tns:testType"/></message>
+  <message name="testResponse"/>
+  <portType name="testPortType">
+    <operation name="test"><input message="tns:testMessage"/><output message="tns:testResponse"/></operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+      <output>
+        <soap:body use="encoded" namespace="http://test-uri/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding"><soap:address location="test://"/></port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->test((object)['_' => 123.5, 'int' => 123.5]);
+echo $client->__getLastRequest();
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://test-uri/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testType\" int=\"123\">123</testParam>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_rpc_request_uses_xsi_before_xsd"));
+}
+
+#[test]
 fn compile_soap_rpc_encoded_array_request_namespace_order_to_native_binary() {
     let root = temp_dir("ptn-native-soap-rpc-encoded-array-namespace-order");
     fs::create_dir_all(&root).unwrap();
