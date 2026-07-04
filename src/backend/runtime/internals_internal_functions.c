@@ -84689,10 +84689,23 @@ static PtnValue ptn_intl_calendar_set_timezone_value(
 }
 
 static const char *ptn_intl_calendar_type_for_locale(const char *locale) {
+    if (locale != NULL && strstr(locale, "calendar=hebrew") != NULL) {
+        return "hebrew";
+    }
     if (locale != NULL && strstr(locale, "calendar=islamic") != NULL) {
         return "islamic";
     }
     return "gregorian";
+}
+
+static char *ptn_intl_calendar_locale_name(const char *locale, int64_t type) {
+    const char *source = locale == NULL ? "" : locale;
+    const char *keyword = strchr(source, '@');
+    size_t len = keyword == NULL ? strlen(source) : (size_t)(keyword - source);
+    if (type == 1 && len == 2 && source[0] == 'n' && source[1] == 'l') {
+        return ptn_duplicate_string("nl_NL");
+    }
+    return ptn_duplicate_string_len(source, len);
 }
 
 static int ptn_intl_parse_datetime_string(const char *input, const char *default_timezone, int *year, int *month, int *day, int *hour, int *minute, int *second, char **timezone_out) {
@@ -85523,6 +85536,61 @@ static PtnValue ptn_intl_calendar_create_from_date_time(PtnRuntime *runtime, siz
     return ptn_intl_calendar_create(runtime, "IntlGregorianCalendar", ptn_current_timezone_name(), "", "gregorian", time_ms, line);
 }
 
+static PtnValue ptn_intl_calendar_create_from_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue date_time_args[6] = {
+        argc >= 1 ? args[0] : ptn_int(1970),
+        argc >= 2 ? args[1] : ptn_int(0),
+        argc >= 3 ? args[2] : ptn_int(1),
+        ptn_int(0),
+        ptn_int(0),
+        ptn_int(0)
+    };
+    return ptn_intl_calendar_create_from_date_time(runtime, 6, date_time_args, line);
+}
+
+static PtnValue ptn_intl_calendar_get_now(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_float((double)time(NULL) * 1000.0);
+}
+
+static PtnValue ptn_intl_calendar_get_available_locales(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    static const char *const locales[] = {
+        "af", "af_NA", "af_ZA", "agq", "agq_CM", "ak", "ak_GH", "am", "am_ET", "ar",
+        "ar_AE", "ar_BH", "ar_DZ", "ar_EG", "ar_IQ", "ar_JO", "ar_KW", "ar_LB", "ar_LY", "ar_MA",
+        "ar_OM", "ar_QA", "ar_SA", "ar_SD", "ar_SY", "ar_TN", "ar_YE", "as", "as_IN", "az",
+        "az_Cyrl", "az_Latn", "be", "be_BY", "bg", "bg_BG", "bn", "bn_BD", "bn_IN", "br",
+        "br_FR", "bs", "bs_BA", "ca", "ca_ES", "chr", "chr_US", "cs", "cs_CZ", "cy",
+        "cy_GB", "da", "da_DK", "de", "de_AT", "de_BE", "de_CH", "de_DE", "de_LI", "de_LU",
+        "el", "el_CY", "el_GR", "en", "en_AU", "en_BE", "en_CA", "en_GB", "en_IE", "en_IN",
+        "en_MT", "en_NZ", "en_PH", "en_SG", "en_US", "en_ZA", "en_ZW", "es", "es_AR", "es_BO",
+        "es_CL", "es_CO", "es_CR", "es_DO", "es_EC", "es_ES", "es_GT", "es_HN", "es_MX", "es_NI",
+        "es_PA", "es_PE", "es_PR", "es_PY", "es_SV", "es_US", "es_UY", "es_VE", "et", "et_EE",
+        "eu", "eu_ES", "fa", "fa_AF", "fa_IR", "fi", "fi_FI", "fil", "fil_PH", "fr",
+        "fr_BE", "fr_CA", "fr_CH", "fr_FR", "fr_LU", "ga", "ga_IE", "gl", "gl_ES", "gu",
+        "gu_IN", "he", "he_IL", "hi", "hi_IN", "hr", "hr_HR", "hu", "hu_HU", "hy",
+        "hy_AM", "id", "id_ID", "is", "is_IS", "it", "it_CH", "it_IT", "ja", "ja_JP",
+        "ka", "ka_GE", "kk", "kk_KZ", "km", "km_KH", "kn", "kn_IN", "ko", "ko_KR",
+        "lt", "lt_LT", "lv", "lv_LV", "mk", "mk_MK", "ml", "ml_IN", "mr", "mr_IN",
+        "ms", "ms_MY", "nb", "nb_NO", "nl", "nl_BE", "nl_NL", "nn", "nn_NO", "pl",
+        "pl_PL", "pt", "pt_BR", "pt_PT", "ro", "ro_RO", "ru", "ru_RU", "sk", "sk_SK",
+        "sl", "sl_SI", "sr", "sr_Cyrl", "sr_Latn", "sv", "sv_SE", "sw", "sw_KE", "ta",
+        "ta_IN", "te", "te_IN", "th", "th_TH", "tr", "tr_TR", "uk", "uk_UA", "ur",
+        "ur_PK", "vi", "vi_VN", "zh", "zh_CN", "zh_HK", "zh_TW"
+    };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(locales) / sizeof(locales[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_string(locales[i]));
+    }
+    return result;
+}
+
 static PtnValue ptn_intl_calendar_from_datetime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1) {
         return ptn_intl_calendar_create(runtime, "IntlGregorianCalendar", ptn_current_timezone_name(), "", "gregorian", 0, line);
@@ -85711,6 +85779,79 @@ static PtnValue ptn_intl_calendar_minimum(PtnRuntime *runtime, const char *funct
         return ptn_int(1);
     }
     return ptn_int(0);
+}
+
+enum {
+    PTN_INTL_CALENDAR_LEAST_MAXIMUM = 0,
+    PTN_INTL_CALENDAR_ACTUAL_MAXIMUM = 1,
+    PTN_INTL_CALENDAR_MAXIMUM = 2
+};
+
+static PtnValue ptn_intl_calendar_maximum(
+    PtnRuntime *runtime,
+    PtnIntlCalendarData *data,
+    const char *function_name,
+    int arg_number,
+    size_t argc,
+    const PtnValue *args,
+    int kind
+) {
+    int64_t field = argc == 0 ? 0 : ptn_value_to_integer(args[0]);
+    if (!ptn_intl_calendar_valid_field(field)) {
+        ptn_intl_calendar_throw_invalid_field(runtime, function_name, arg_number);
+        return ptn_null();
+    }
+    if (field == 5) {
+        if (kind == PTN_INTL_CALENDAR_LEAST_MAXIMUM) {
+            return ptn_int(28);
+        }
+        if (kind == PTN_INTL_CALENDAR_ACTUAL_MAXIMUM) {
+            int year, month, day, hour, minute, second;
+            ptn_intl_calendar_parts(data, &year, &month, &day, &hour, &minute, &second);
+            return ptn_int(ptn_intl_calendar_days_in_month(year, month));
+        }
+        return ptn_int(31);
+    }
+    if (field == 2) return ptn_int(11);
+    if (field == 10) return ptn_int(11);
+    if (field == 11) return ptn_int(23);
+    if (field == 12 || field == 13) return ptn_int(59);
+    if (field == 14) return ptn_int(999);
+    return ptn_int(0);
+}
+
+static int ptn_intl_calendar_valid_day_of_week(int64_t day_of_week) {
+    return day_of_week >= 1 && day_of_week <= 7;
+}
+
+static void ptn_intl_calendar_throw_invalid_day_of_week(PtnRuntime *runtime, const char *function_name, int arg_number) {
+    char message[176];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%d ($dayOfWeek) must be a valid day of the week",
+        function_name,
+        arg_number
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_intl_calendar_get_day_of_week_type(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int arg_number,
+    size_t argc,
+    const PtnValue *args
+) {
+    int64_t day_of_week = argc == 0 ? 0 : ptn_value_to_integer(args[0]);
+    if (!ptn_intl_calendar_valid_day_of_week(day_of_week)) {
+        ptn_intl_calendar_throw_invalid_day_of_week(runtime, function_name, arg_number);
+        return ptn_null();
+    }
+    return ptn_int(day_of_week == 1 || day_of_week == 7 ? 1 : 0);
 }
 
 static PtnValue ptn_intl_calendar_set_minimal_days(
@@ -85922,11 +86063,23 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "fieldDifference")) {
-        int64_t target_ms = (int64_t)ptn_value_to_double(args[0]);
         int64_t field = argc >= 2 ? ptn_value_to_integer(args[1]) : 13;
+        if (!ptn_intl_calendar_valid_field(field)) {
+            ptn_intl_calendar_throw_invalid_field(runtime, "IntlCalendar::fieldDifference", 2);
+            return ptn_null();
+        }
+        double target = argc >= 1 ? ptn_value_to_double(args[0]) : 0.0;
+        if (!isfinite(target) || target < -62135596800000.0 || target > 253402300799000.0) {
+            const char *message = "IntlCalendar::fieldDifference(): Call to ICU method has failed: U_ILLEGAL_ARGUMENT_ERROR";
+            ptn_intl_calendar_set_error(data, 1, message);
+            ptn_intl_set_error_message(runtime, message);
+            return ptn_bool(0);
+        }
+        int64_t target_ms = (int64_t)target;
         int64_t diff_ms = target_ms - data->time_ms;
         data->time_ms = target_ms;
         data->field_set_mask = ptn_intl_calendar_all_field_mask();
+        ptn_intl_calendar_set_error(data, 0, "U_ZERO_ERROR");
         return ptn_int(field == 12 ? diff_ms / 60000 : diff_ms / 1000);
     }
     if (ptn_ascii_case_equal(name, "isWeekend")) {
@@ -85996,7 +86149,27 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
         return ptn_intl_timezone_create(runtime, data->timezone, line);
     }
     if (ptn_ascii_case_equal(name, "getWeekendTransition")) {
+        int64_t day_of_week = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
+        if (!ptn_intl_calendar_valid_day_of_week(day_of_week)) {
+            ptn_intl_calendar_throw_invalid_day_of_week(runtime, "IntlCalendar::getWeekendTransition", 1);
+            return ptn_null();
+        }
         return ptn_int(86400000);
+    }
+    if (ptn_ascii_case_equal(name, "getDayOfWeekType")) {
+        return ptn_intl_calendar_get_day_of_week_type(
+            runtime,
+            "IntlCalendar::getDayOfWeekType",
+            1,
+            argc,
+            args
+        );
+    }
+    if (ptn_ascii_case_equal(name, "inDaylightTime")) {
+        int raw_offset = 0;
+        int dst_offset = 0;
+        ptn_intl_timezone_offsets_ms(data->timezone, (time_t)(data->time_ms / 1000), &raw_offset, &dst_offset);
+        return ptn_bool(dst_offset != 0);
     }
     if (ptn_ascii_case_equal(name, "setTimeZone")) {
         if (argc < 1) {
@@ -86022,7 +86195,7 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
             ptn_throw_exception(runtime, "ValueError", "IntlCalendar::getLocale(): Argument #1 ($type) must be either Locale::ACTUAL_LOCALE or Locale::VALID_LOCALE");
             return ptn_null();
         }
-        return ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
+        return ptn_owned_string(ptn_intl_calendar_locale_name(data->locale, type));
     }
     if (ptn_ascii_case_equal(name, "setRepeatedWallTimeOption")) {
         data->repeated_wall_time_option = argc >= 1 ? (int)ptn_value_to_integer(args[0]) : 0;
@@ -86041,10 +86214,37 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
         return ptn_intl_calendar_minimum(runtime, "IntlCalendar::getMinimum", 1, argc, args);
     }
     if (ptn_ascii_case_equal(name, "getLeastMaximum")) {
-        return ptn_intl_calendar_minimum(runtime, "IntlCalendar::getLeastMaximum", 1, argc, args);
+        return ptn_intl_calendar_maximum(
+            runtime,
+            data,
+            "IntlCalendar::getLeastMaximum",
+            1,
+            argc,
+            args,
+            PTN_INTL_CALENDAR_LEAST_MAXIMUM
+        );
+    }
+    if (ptn_ascii_case_equal(name, "getActualMaximum")) {
+        return ptn_intl_calendar_maximum(
+            runtime,
+            data,
+            "IntlCalendar::getActualMaximum",
+            1,
+            argc,
+            args,
+            PTN_INTL_CALENDAR_ACTUAL_MAXIMUM
+        );
     }
     if (ptn_ascii_case_equal(name, "getMaximum")) {
-        return ptn_intl_calendar_minimum(runtime, "IntlCalendar::getMaximum", 1, argc, args);
+        return ptn_intl_calendar_maximum(
+            runtime,
+            data,
+            "IntlCalendar::getMaximum",
+            1,
+            argc,
+            args,
+            PTN_INTL_CALENDAR_MAXIMUM
+        );
     }
     if (ptn_ascii_case_equal(name, "isSet")) {
         int64_t field = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
@@ -89711,15 +89911,56 @@ static PtnValue ptn_internal_intlcal_get_minimum(PtnRuntime *runtime, size_t arg
 
 static PtnValue ptn_internal_intlcal_get_least_maximum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
-    return argc < 2 ? ptn_null() : ptn_intl_calendar_minimum(runtime, "intlcal_get_least_maximum", 2, argc - 1, args + 1);
+    return argc < 2 ? ptn_null() : ptn_intl_calendar_maximum(
+        runtime,
+        argc >= 1 ? ptn_intl_calendar_data(args[0]) : NULL,
+        "intlcal_get_least_maximum",
+        2,
+        argc - 1,
+        args + 1,
+        PTN_INTL_CALENDAR_LEAST_MAXIMUM
+    );
+}
+
+static PtnValue ptn_internal_intlcal_get_actual_maximum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return argc < 2 ? ptn_null() : ptn_intl_calendar_maximum(
+        runtime,
+        argc >= 1 ? ptn_intl_calendar_data(args[0]) : NULL,
+        "intlcal_get_actual_maximum",
+        2,
+        argc - 1,
+        args + 1,
+        PTN_INTL_CALENDAR_ACTUAL_MAXIMUM
+    );
 }
 
 static PtnValue ptn_internal_intlcal_get_maximum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
-    return argc < 2 ? ptn_null() : ptn_intl_calendar_minimum(runtime, "intlcal_get_maximum", 2, argc - 1, args + 1);
+    return argc < 2 ? ptn_null() : ptn_intl_calendar_maximum(
+        runtime,
+        argc >= 1 ? ptn_intl_calendar_data(args[0]) : NULL,
+        "intlcal_get_maximum",
+        2,
+        argc - 1,
+        args + 1,
+        PTN_INTL_CALENDAR_MAXIMUM
+    );
 }
 
-static PtnValue ptn_internal_intlcal_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "get", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getErrorCode", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getErrorMessage", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getLocale", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getType", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_now(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_intl_calendar_get_now(runtime, argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_available_locales(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_intl_calendar_get_available_locales(runtime, argc, args, line); }
+static PtnValue ptn_internal_intlcal_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc >= 2 && !ptn_intl_calendar_valid_field(ptn_value_to_integer(args[1]))) {
+        ptn_intl_calendar_throw_invalid_field(runtime, "intlcal_get", 2);
+        return ptn_null();
+    }
+    return ptn_internal_intlcal_alias(runtime, "get", argc, args, line);
+}
 static PtnValue ptn_internal_intlcal_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "add", argc, args, line); }
 static PtnValue ptn_internal_intlcal_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     ptn_emit_deprecation(
@@ -89811,6 +90052,17 @@ static PtnValue ptn_internal_intlcal_set_first_day_of_week(PtnRuntime *runtime, 
 static PtnValue ptn_internal_intlcal_get_first_day_of_week(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getFirstDayOfWeek", argc, args, line); }
 static PtnValue ptn_internal_intlcal_set_repeated_wall_time_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "setRepeatedWallTimeOption", argc, args, line); }
 static PtnValue ptn_internal_intlcal_get_repeated_wall_time_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "getRepeatedWallTimeOption", argc, args, line); }
+static PtnValue ptn_internal_intlcal_get_day_of_week_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return argc < 2 ? ptn_null() : ptn_intl_calendar_get_day_of_week_type(
+        runtime,
+        "intlcal_get_day_of_week_type",
+        2,
+        argc - 1,
+        args + 1
+    );
+}
+static PtnValue ptn_internal_intlcal_in_daylight_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "inDaylightTime", argc, args, line); }
 static PtnValue ptn_internal_intlcal_to_date_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { return ptn_internal_intlcal_alias(runtime, "toDateTime", argc, args, line); }
 
 static PtnValue ptn_internal_locale_compose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -208895,6 +209147,14 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_uconverter_reason_text(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
+        ptn_ascii_case_equal(name, "getAvailableLocales")) {
+        return ptn_intl_calendar_get_available_locales(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
+        ptn_ascii_case_equal(name, "getNow")) {
+        return ptn_intl_calendar_get_now(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
         ptn_ascii_case_equal(name, "getKeywordValuesForLocale")) {
         return ptn_intl_calendar_get_keyword_values(runtime, argc, args, line);
     }
@@ -208908,6 +209168,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_internal_class_name_is_intl_calendar(class_name) &&
         ptn_ascii_case_equal(name, "fromDateTime")) {
         return ptn_intl_calendar_from_datetime(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlGregorianCalendar") &&
+        ptn_ascii_case_equal(name, "createFromDate")) {
+        return ptn_intl_calendar_create_from_date(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlGregorianCalendar") &&
         ptn_ascii_case_equal(name, "createFromDateTime")) {
@@ -229865,9 +230129,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlBreakIterator::createWordInstance", 0, 1, ptn_internal_intl_break_iterator_create_word_instance },
         { "IntlCalendar::createInstance", 0, 2, ptn_intl_calendar_create_instance },
         { "IntlCalendar::fromDateTime", 1, 1, ptn_intl_calendar_from_datetime },
+        { "IntlCalendar::getAvailableLocales", 0, 0, ptn_intl_calendar_get_available_locales },
         { "IntlCalendar::getKeywordValuesForLocale", 3, 3, ptn_internal_intl_calendar_get_keyword_values_for_locale },
+        { "IntlCalendar::getNow", 0, 0, ptn_intl_calendar_get_now },
         { "IntlDateFormatter::create", 1, 6, ptn_internal_intl_date_formatter_create },
         { "IntlDateFormatter::formatObject", 1, 3, ptn_internal_datefmt_format_object },
+        { "IntlGregorianCalendar::createFromDate", 3, 3, ptn_intl_calendar_create_from_date },
         { "IntlGregorianCalendar::createFromDateTime", 6, 6, ptn_intl_calendar_create_from_date_time },
         { "IntlGregorianCalendar::createInstance", 0, 2, ptn_intl_gregorian_calendar_create_instance },
         { "IntlGregorianCalendar::fromDateTime", 1, 1, ptn_intl_calendar_from_datetime },
@@ -229892,17 +230159,26 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intlcal_create_instance", 0, 2, ptn_internal_intlcal_create_instance },
         { "intlcal_field_difference", 3, 3, ptn_internal_intlcal_field_difference },
         { "intlcal_get", 2, 2, ptn_internal_intlcal_get },
+        { "intlcal_get_actual_maximum", 2, 2, ptn_internal_intlcal_get_actual_maximum },
         { "intlcal_get_actual_minimum", 2, 2, ptn_internal_intlcal_get_actual_minimum },
+        { "intlcal_get_available_locales", 0, 0, ptn_internal_intlcal_get_available_locales },
+        { "intlcal_get_day_of_week_type", 2, 2, ptn_internal_intlcal_get_day_of_week_type },
+        { "intlcal_get_error_code", 1, 1, ptn_internal_intlcal_get_error_code },
+        { "intlcal_get_error_message", 1, 1, ptn_internal_intlcal_get_error_message },
         { "intlcal_get_first_day_of_week", 1, 1, ptn_internal_intlcal_get_first_day_of_week },
         { "intlcal_get_greatest_minimum", 2, 2, ptn_internal_intlcal_get_greatest_minimum },
         { "intlcal_get_least_maximum", 2, 2, ptn_internal_intlcal_get_least_maximum },
+        { "intlcal_get_locale", 2, 2, ptn_internal_intlcal_get_locale },
         { "intlcal_get_maximum", 2, 2, ptn_internal_intlcal_get_maximum },
         { "intlcal_get_minimal_days_in_first_week", 1, 1, ptn_internal_intlcal_get_minimal_days_in_first_week },
         { "intlcal_get_minimum", 2, 2, ptn_internal_intlcal_get_minimum },
+        { "intlcal_get_now", 0, 0, ptn_internal_intlcal_get_now },
         { "intlcal_get_repeated_wall_time_option", 1, 1, ptn_internal_intlcal_get_repeated_wall_time_option },
         { "intlcal_get_time", 1, 1, ptn_internal_intlcal_get_time },
         { "intlcal_get_time_zone", 1, 1, ptn_internal_intlcal_get_time_zone },
+        { "intlcal_get_type", 1, 1, ptn_internal_intlcal_get_type },
         { "intlcal_get_weekend_transition", 2, 2, ptn_internal_intlcal_get_weekend_transition },
+        { "intlcal_in_daylight_time", 1, 1, ptn_internal_intlcal_in_daylight_time },
         { "intlcal_is_equivalent_to", 2, 2, ptn_internal_intlcal_is_equivalent_to },
         { "intlcal_is_set", 2, 2, ptn_internal_intlcal_is_set },
         { "intlcal_is_weekend", 1, 2, ptn_internal_intlcal_is_weekend },

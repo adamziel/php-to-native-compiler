@@ -59664,6 +59664,101 @@ var_dump($lsb->getDisplayName(false, IntlTimeZone::DISPLAY_GENERIC_LOCATION));\n
 }
 
 #[test]
+fn compile_intl_calendar_getter_error_aliases_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-getter-error-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-getter-error-aliases.php");
+    let output = root.join("intl-calendar-getter-error-aliases-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+ini_set('intl.default_locale', 'nl');\n\
+\n\
+$cal = IntlGregorianCalendar::createFromDate(2012, 1, 29);\n\
+var_dump($cal->getErrorCode(), intlcal_get_error_code($cal), $cal->getErrorMessage(), intlcal_get_error_message($cal));\n\
+$cal->add(IntlCalendar::FIELD_SECOND, 2147483647);\n\
+var_dump($cal->fieldDifference(-PHP_INT_MAX, IntlCalendar::FIELD_SECOND));\n\
+var_dump($cal->getErrorCode(), intlcal_get_error_code($cal), $cal->getErrorMessage(), intlcal_get_error_message($cal));\n\
+\n\
+$cal = IntlCalendar::createInstance('UTC');\n\
+$cal->setTime(strtotime('2012-02-29 05:06:07 +0000') * 1000);\n\
+var_dump(\n\
+    $cal->getLeastMaximum(IntlCalendar::FIELD_DAY_OF_MONTH),\n\
+    intlcal_get_least_maximum($cal, IntlCalendar::FIELD_DAY_OF_MONTH),\n\
+    $cal->getActualMaximum(IntlCalendar::FIELD_DAY_OF_MONTH),\n\
+    intlcal_get_actual_maximum($cal, IntlCalendar::FIELD_DAY_OF_MONTH),\n\
+    $cal->getMaximum(IntlCalendar::FIELD_DAY_OF_MONTH),\n\
+    intlcal_get_maximum($cal, IntlCalendar::FIELD_DAY_OF_MONTH)\n\
+);\n\
+\n\
+$cal = IntlCalendar::createInstance('UTC');\n\
+var_dump($cal->getLocale(Locale::ACTUAL_LOCALE));\n\
+var_dump(intlcal_get_locale($cal, Locale::VALID_LOCALE));\n\
+$hebrew = IntlCalendar::createInstance(null, 'nl_NL@calendar=hebrew');\n\
+var_dump(intlcal_get_type($hebrew));\n\
+\n\
+$locales = IntlCalendar::getAvailableLocales();\n\
+var_dump(count($locales) > 100, in_array('pt', intlcal_get_available_locales(), true));\n\
+var_dump(abs(IntlCalendar::getNow() - intlcal_get_now()) < 500);\n\
+\n\
+var_dump(intlcal_get_day_of_week_type($cal, IntlCalendar::DOW_SUNDAY));\n\
+var_dump($cal->getDayOfWeekType(IntlCalendar::DOW_MONDAY));\n\
+try { intlcal_get($cal, -1); } catch (Throwable $e) { echo get_class($e), ': ', $e->getCode(), ', ', $e->getMessage(), \"\\n\"; }\n\
+try { $cal->getDayOfWeekType(0); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $cal->getWeekendTransition(0); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+\n\
+$ams = IntlCalendar::createInstance('Europe/Amsterdam');\n\
+$ams->setTime(strtotime('2012-01-01') * 1000);\n\
+var_dump($ams->inDaylightTime());\n\
+$ams->setTime(strtotime('2012-04-01') * 1000);\n\
+var_dump(intlcal_in_daylight_time($ams));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_calendar_create_from_date"));
+    assert!(c_source.contains("ptn_internal_intlcal_get_actual_maximum"));
+    assert!(c_source.contains("ptn_internal_intlcal_get_error_code"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\n\
+int(0)\n\
+string(12) \"U_ZERO_ERROR\"\n\
+string(12) \"U_ZERO_ERROR\"\n\
+bool(false)\n\
+int(1)\n\
+int(1)\n\
+string(88) \"IntlCalendar::fieldDifference(): Call to ICU method has failed: U_ILLEGAL_ARGUMENT_ERROR\"\n\
+string(88) \"IntlCalendar::fieldDifference(): Call to ICU method has failed: U_ILLEGAL_ARGUMENT_ERROR\"\n\
+int(28)\n\
+int(28)\n\
+int(29)\n\
+int(29)\n\
+int(31)\n\
+int(31)\n\
+string(2) \"nl\"\n\
+string(5) \"nl_NL\"\n\
+string(6) \"hebrew\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(1)\n\
+int(0)\n\
+ValueError: 0, intlcal_get(): Argument #2 ($field) must be a valid field\n\
+IntlCalendar::getDayOfWeekType(): Argument #1 ($dayOfWeek) must be a valid day of the week\n\
+IntlCalendar::getWeekendTransition(): Argument #1 ($dayOfWeek) must be a valid day of the week\n\
+bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_set_out_of_bounds_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-set-out-of-bounds");
     fs::create_dir_all(&root).unwrap();
