@@ -72317,6 +72317,158 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap12_server_validation_faults_to_native_binary() {
+    fn assert_soap12_output(root: &Path, name: &str, source: &str, expected: &str) {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+        let execution = Command::new(&output).output().unwrap();
+        assert!(
+            execution.status.success(),
+            "{name} native exited with {:?}\nstderr:\n{}",
+            execution.status.code(),
+            String::from_utf8_lossy(&execution.stderr)
+        );
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    }
+
+    let root = temp_dir("ptn-native-soap12-server-validation-faults");
+    fs::create_dir_all(&root).unwrap();
+
+    assert_soap12_output(
+        &root,
+        "wrong-version",
+        r#"<?php
+class Soap12Service {
+    public function echoOk($input) { return $input; }
+}
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://wrong-version/">
+  <env:Body>
+    <test:echoOk xmlns:test="http://example.org/ts-tests">foo</test:echoOk>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://example.org/ts-tests', 'soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+echo "after\n";
+"#,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\"><env:Body><env:Fault><env:Code><env:Value>env:VersionMismatch</env:Value></env:Code><env:Reason><env:Text xml:lang=\"en\">Wrong Version</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>",
+    );
+
+    assert_soap12_output(
+        &root,
+        "body-encoding-style",
+        r#"<?php
+class Soap12Service {
+    public function echoOk($input) { return $input; }
+}
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body env:encodingStyle="http://www.w3.org/2003/05/soap-encoding">
+    <test:echoOk xmlns:test="http://example.org/ts-tests">foo</test:echoOk>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://example.org/ts-tests', 'soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+echo "after\n";
+"#,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang=\"en\">encodingStyle cannot be specified on the Body</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>",
+    );
+
+    assert_soap12_output(
+        &root,
+        "procedure-not-present",
+        r#"<?php
+class Soap12Service {
+    public function echoOk($input) { return $input; }
+}
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body>
+    <test:DoesNotExist xmlns:test="http://example.org/ts-tests"/>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://example.org/ts-tests', 'soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+echo "after\n";
+"#,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\"><env:Body><env:Fault><env:Code><env:Value>rpc:ProcedureNotPresent</env:Value></env:Code><env:Reason><env:Text xml:lang=\"en\">Procedure not present</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>",
+    );
+
+    assert_soap12_output(
+        &root,
+        "return-void-rpc",
+        r#"<?php
+class Soap12Service {
+    public function returnVoid() {}
+}
+
+$wsdl = __DIR__ . '/return-void.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="ReturnVoid"
+  targetNamespace="http://example.org/wsdl"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:tns="http://example.org/wsdl">
+  <message name="returnVoidRequest"/>
+  <message name="returnVoidResponse"/>
+  <portType name="ReturnVoidPortType">
+    <operation name="returnVoid">
+      <input message="tns:returnVoidRequest"/>
+      <output message="tns:returnVoidResponse"/>
+    </operation>
+  </portType>
+  <binding name="ReturnVoidBinding" type="tns:ReturnVoidPortType">
+    <soap12:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="returnVoid">
+      <soap12:operation/>
+      <input>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </input>
+      <output>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </output>
+    </operation>
+  </binding>
+</definitions>
+WSDL);
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body>
+    <test:returnVoid xmlns:test="http://example.org/ts-tests"/>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$server = new SoapServer($wsdl, ['soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+"#,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:ns1=\"http://example.org/ts-tests\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:enc=\"http://www.w3.org/2003/05/soap-encoding\"><env:Body><ns1:returnVoidResponse env:encodingStyle=\"http://www.w3.org/2003/05/soap-encoding\"/></env:Body></env:Envelope>\n",
+    );
+}
+
+#[test]
 fn compile_soap_server_handle_soapfault_responses_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-handle-soapfaults");
     fs::create_dir_all(&root).unwrap();
