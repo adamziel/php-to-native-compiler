@@ -59111,6 +59111,69 @@ TypeError: IntlDateFormatter::setTimeZone(): Argument #1 ($timezone) Object of c
 }
 
 #[test]
+fn compile_intl_dateformatter_calendar_timezone_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-dateformatter-calendar-timezone-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-dateformatter-calendar-timezone-errors.php");
+    let output = root.join("intl-dateformatter-calendar-timezone-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('Europe/Amsterdam');\n\
+function dump_exception(callable $cb): void {\n\
+    try {\n\
+        $cb();\n\
+    } catch (Throwable $e) {\n\
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+\n\
+$intlcal = new IntlGregorianCalendar();\n\
+$pstdate = new DateTime('2012-01-01 00:00:00 WEST');\n\
+var_dump($intlcal->setTimeZone($pstdate->getTimeZone()));\n\
+var_dump($intlcal->getErrorMessage());\n\
+var_dump($intlcal->getTimeZone()->getID());\n\
+\n\
+$pstdate = new DateTime('2012-01-01 00:00:00 +24:00');\n\
+var_dump($intlcal->setTimeZone($pstdate->getTimeZone()));\n\
+var_dump($intlcal->getErrorMessage());\n\
+var_dump($intlcal->getTimeZone()->getID());\n\
+\n\
+dump_exception(fn() => new IntlDateFormatter(null, 0, 0, 'bad timezone'));\n\
+dump_exception(fn() => new IntlDateFormatter(null, 0, 0, null, 3));\n\
+dump_exception(fn() => new IntlDateFormatter(null, 0, 0, null, new stdClass()));\n\
+\n\
+$formatter = new IntlDateFormatter(null, 0, 0);\n\
+dump_exception(fn() => $formatter->setTimeZone(array()));\n\
+dump_exception(fn() => $formatter->setTimeZone('non existing timezone'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_calendar_set_timezone_value"));
+    assert!(c_source.contains("ptn_intl_date_formatter_set_timezone"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+string(126) \"IntlCalendar::setTimeZone(): time zone id 'WEST' extracted from ext/date DateTimeZone not recognized: U_ILLEGAL_ARGUMENT_ERROR\"\n\
+string(16) \"Europe/Amsterdam\"\n\
+bool(false)\n\
+string(102) \"IntlCalendar::setTimeZone(): object has an time zone offset that's too large: U_ILLEGAL_ARGUMENT_ERROR\"\n\
+string(16) \"Europe/Amsterdam\"\n\
+IntlException: IntlDateFormatter::__construct(): No such time zone: \"bad timezone\"\n\
+IntlException: IntlDateFormatter::__construct(): Invalid value for calendar type; it must be one of IntlDateFormatter::TRADITIONAL (locale's default calendar) or IntlDateFormatter::GREGORIAN. Alternatively, it can be an IntlCalendar object\n\
+TypeError: IntlDateFormatter::__construct(): Argument #5 ($calendar) must be of type IntlCalendar|int|null, stdClass given\n\
+TypeError: IntlDateFormatter::setTimeZone(): Argument #1 ($timezone) must be of type object|string|null, array given\n\
+IntlException: IntlDateFormatter::setTimeZone(): No such time zone: \"non existing timezone\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_formatter_dispatch_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-formatter-dispatch-aliases");
     fs::create_dir_all(&root).unwrap();
