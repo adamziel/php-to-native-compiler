@@ -49843,6 +49843,144 @@ Cannot assign DateTime to property _ZendTestClass::$classUnionProp of type stdCl
 }
 
 #[test]
+fn compile_internal_zend_test_typed_static_and_reflection_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-typed-static-reflection-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-typed-static-reflection-properties.php");
+    let output = root.join("internal-zend-test-typed-static-reflection-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class C extends _ZendTestClass {}
+class TraitUser {
+    use _ZendTestTrait;
+}
+
+$obj = new _ZendTestClass;
+var_dump($obj->intProp);
+try {
+    $obj->intProp = 'not an int';
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $obj->classProp = $obj;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$obj->classProp = new stdClass;
+var_dump($obj->classProp instanceof stdClass);
+
+$child = new C;
+var_dump($child->intProp);
+
+$static = new ReflectionProperty('_ZendTestClass', '_StaticProp');
+$static->setValue(new _ZendTestClass, 42);
+var_dump($static->getValue());
+
+var_dump(_ZendTestClass::$staticIntProp);
+try {
+    _ZendTestClass::$staticIntProp = 'not an int';
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+_ZendTestClass::$staticIntProp = 456;
+var_dump(_ZendTestClass::$staticIntProp);
+
+$union = (new ReflectionProperty(_ZendTestClass::class, 'classUnionProp'))->getType();
+echo $union, \"\\n\";
+
+$trait = new TraitUser;
+var_dump($trait->testProp);
+$traitProp = new ReflectionProperty(TraitUser::class, 'classUnionProp');
+var_dump($traitProp->isInitialized($trait));
+$types = $traitProp->getType()->getTypes();
+echo $types[0], \"\\n\", $types[1], \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(123)\n",
+            "Cannot assign string to property _ZendTestClass::$intProp of type int\n",
+            "Cannot assign _ZendTestClass to property _ZendTestClass::$classProp of type ?stdClass\n",
+            "bool(true)\n",
+            "int(123)\n",
+            "int(42)\n",
+            "int(123)\n",
+            "Cannot assign string to property _ZendTestClass::$staticIntProp of type int\n",
+            "int(456)\n",
+            "stdClass|Iterator|null\n",
+            "NULL\n",
+            "bool(false)\n",
+            "Traversable\n",
+            "Countable\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_class_define_static_properties"));
+    assert!(c_source.contains("ptn_zend_test_trait_initialize_properties"));
+    assert!(c_source.contains("Traversable|Countable"));
+}
+
+#[test]
+fn compile_failed_internal_typed_property_assignment_releases_receiver_guard_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-typed-property-receiver-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-typed-property-receiver-guard.php");
+    let output = root.join("internal-typed-property-receiver-guard-bin");
+    fs::write(
+        &input,
+        "<?php
+class C extends _ZendTestClass {}
+
+$obj = new _ZendTestClass;
+try {
+    $obj->classProp = $obj;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$obj->classProp = new stdClass;
+$obj = new C;
+$next = new stdClass;
+var_dump(spl_object_id($next));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot assign _ZendTestClass to property _ZendTestClass::$classProp of type ?stdClass\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_trait_constructor_promotion_declares_imported_property_to_native_binary() {
     let root = temp_dir("ptn-native-trait-constructor-promotion");
     fs::create_dir_all(&root).unwrap();

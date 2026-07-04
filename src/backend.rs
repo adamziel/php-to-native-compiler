@@ -8201,6 +8201,9 @@ fn emit_static_property_declarations(
             emit_static_property_declaration(out, &trait_decl.name, property, &value_temp);
         }
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    ptn_zend_test_class_define_static_properties(&runtime);\n");
+    out.push_str("#endif\n");
 }
 
 fn emit_static_property_declaration(
@@ -13491,6 +13494,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            out.push_str("        if (strcmp(property_name, \"testProp\") == 0 || strcmp(property_name, \"classUnionProp\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         for property in class_property_exists_chain(class, classes) {
             if !class_property_exists_entry_visible_from_class(&property, class.name.as_str()) {
                 continue;
@@ -13560,6 +13568,29 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            for property_name in ["testProp", "classUnionProp"] {
+                out.push_str("        if (strcmp(property_name, \"");
+                out.push_str(property_name);
+                out.push_str("\") == 0) {\n");
+                out.push_str("            if (declaring_class_out != NULL) {\n");
+                out.push_str("                *declaring_class_out = \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (visibility_out != NULL) {\n");
+                out.push_str("                *visibility_out = PTN_PROPERTY_PUBLIC;\n");
+                out.push_str("            }\n");
+                out.push_str("            if (set_visibility_out != NULL) {\n");
+                out.push_str("                *set_visibility_out = PTN_PROPERTY_PUBLIC;\n");
+                out.push_str("            }\n");
+                out.push_str("            if (is_static_out != NULL) {\n");
+                out.push_str("                *is_static_out = 0;\n");
+                out.push_str("            }\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_property_exists_chain(class, classes) {
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(entry.name));
@@ -20344,6 +20375,17 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            for property_name in ["testProp", "classUnionProp"] {
+                out.push_str("        if (ptn_reflection_property_matches_filter(1, filter_present, filter)) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_property_object_from_name(runtime, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(property_name);
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_property_exists_chain(class, classes) {
             if entry.visibility == PropertyVisibility::Private
                 && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
@@ -20396,6 +20438,9 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"testProp\"), ptn_null());\n");
+        }
         for entry in class_reflection_property_defaults_chain(class, classes, true)
             .into_iter()
             .chain(class_reflection_property_defaults_chain(
@@ -20490,6 +20535,24 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            for (property_name, has_default) in [("testProp", "1"), ("classUnionProp", "0")] {
+                out.push_str("        if (strcmp(property_name, \"");
+                out.push_str(property_name);
+                out.push_str("\") == 0) {\n");
+                out.push_str("            *declaring_class = \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\";\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = PTN_PROPERTY_PUBLIC;\n");
+                out.push_str("            *has_default = ");
+                out.push_str(has_default);
+                out.push_str(";\n");
+                out.push_str("            *modifiers = 1;\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         if class.is_enum {
             out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
             out.push_str("            *declaring_class = \"");
@@ -20718,6 +20781,24 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            out.push_str("        if (strcmp(property_name, \"testProp\") == 0) {\n");
+            out.push_str("            *is_readonly = 0;\n");
+            out.push_str("            *type_name = NULL;\n");
+            out.push_str("            *type_display_name = NULL;\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 0;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            out.push_str("        if (strcmp(property_name, \"classUnionProp\") == 0) {\n");
+            out.push_str("            *is_readonly = 0;\n");
+            out.push_str("            *type_name = NULL;\n");
+            out.push_str("            *type_display_name = \"Traversable|Countable\";\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 0;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         if class.is_enum {
             out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
             out.push_str("            *is_readonly = 1;\n");
@@ -20825,6 +20906,22 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class_uses_internal_zend_test_trait(class) {
+            out.push_str("        if (strcmp(property_name, \"testProp\") == 0) {\n");
+            out.push_str("            *type_name = NULL;\n");
+            out.push_str("            *type_display_name = NULL;\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 0;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            out.push_str("        if (strcmp(property_name, \"classUnionProp\") == 0) {\n");
+            out.push_str("            *type_name = NULL;\n");
+            out.push_str("            *type_display_name = \"Traversable|Countable\";\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 0;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         if class.is_enum {
             out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
             out.push_str("            *type_name = \"never\";\n");
@@ -24893,6 +24990,13 @@ fn class_imports_internal_zend_test_trait_test_method(class: &ClassDecl) -> bool
         .methods
         .iter()
         .any(|method| method.name.eq_ignore_ascii_case("testMethod"))
+}
+
+fn class_uses_internal_zend_test_trait(class: &ClassDecl) -> bool {
+    class
+        .trait_uses
+        .iter()
+        .any(|trait_use| trait_use.name.eq_ignore_ascii_case("_ZendTestTrait"))
 }
 
 fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) -> bool {
@@ -52731,6 +52835,15 @@ impl ValueEmitter {
             out.push_str("    ptn_zend_test_class_initialize_properties(&runtime, ");
             out.push_str(result_temp);
             out.push_str(", \"_ZendTestClass\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        if class_uses_internal_zend_test_trait(declared_class) {
+            out.push_str("    ptn_zend_test_trait_initialize_properties(&runtime, ");
+            out.push_str(result_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }

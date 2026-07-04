@@ -234325,7 +234325,33 @@ static int ptn_uri_whatwg_url_validation_error_method_exists(const char *method_
     return ptn_ascii_case_equal(method_name, "__construct");
 }
 
+static int ptn_zend_test_reflection_property_metadata(
+    const char *class_name,
+    const char *property_name,
+    const char **declaring_class,
+    int *is_static,
+    int *visibility,
+    int *has_default,
+    int *modifiers
+);
+
 static int ptn_internal_class_property_exists(const char *class_name, const char *property_name) {
+    const char *zend_test_declaring_class = NULL;
+    int zend_test_is_static = 0;
+    int zend_test_visibility = 0;
+    int zend_test_has_default = 0;
+    int zend_test_modifiers = 0;
+    if (ptn_zend_test_reflection_property_metadata(
+        class_name,
+        property_name,
+        &zend_test_declaring_class,
+        &zend_test_is_static,
+        &zend_test_visibility,
+        &zend_test_has_default,
+        &zend_test_modifiers
+    )) {
+        return 1;
+    }
     if (ptn_internal_class_name_is_xml_reader(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLReader")) {
         return ptn_xml_reader_property_known(property_name);
@@ -241713,6 +241739,188 @@ static PtnValue ptn_builtin_exception_reflection_property_default(
     return ptn_null();
 }
 
+static int ptn_zend_test_class_reflection_property_applies(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
+        ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass");
+}
+
+static int ptn_zend_test_reflection_property_metadata(
+    const char *class_name,
+    const char *property_name,
+    const char **declaring_class,
+    int *is_static,
+    int *visibility,
+    int *has_default,
+    int *modifiers
+) {
+    if (ptn_ascii_case_equal(class_name, "_ZendTestTrait")) {
+        if (strcmp(property_name, "testProp") == 0 ||
+            strcmp(property_name, "classUnionProp") == 0) {
+            *declaring_class = "_ZendTestTrait";
+            *is_static = 0;
+            *visibility = PTN_PROPERTY_PUBLIC;
+            *has_default = strcmp(property_name, "testProp") == 0;
+            *modifiers = 1;
+            return 1;
+        }
+        return 0;
+    }
+    if (!ptn_zend_test_class_reflection_property_applies(class_name)) {
+        return 0;
+    }
+    if (strcmp(property_name, "_StaticProp") == 0 ||
+        strcmp(property_name, "staticIntProp") == 0) {
+        *declaring_class = "_ZendTestClass";
+        *is_static = 1;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 1;
+        *modifiers = 1 | 16;
+        return 1;
+    }
+    if (strcmp(property_name, "intProp") == 0 ||
+        strcmp(property_name, "classProp") == 0 ||
+        strcmp(property_name, "classUnionProp") == 0) {
+        *declaring_class = "_ZendTestClass";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 1;
+        *modifiers = 1;
+        return 1;
+    }
+    if (strcmp(property_name, "classIntersectionProp") == 0 ||
+        strcmp(property_name, "dnfProperty") == 0) {
+        *declaring_class = "_ZendTestClass";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 0;
+        *modifiers = 1;
+        return 1;
+    }
+    if (strcmp(property_name, "readonlyProp") == 0) {
+        *declaring_class = "_ZendTestClass";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 0;
+        *modifiers = 1 | 128;
+        return 1;
+    }
+    if (strcmp(property_name, "finalProp") == 0) {
+        *declaring_class = "_ZendTestClass";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 0;
+        *modifiers = 1 | 32;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_zend_test_reflection_property_type_metadata(
+    const char *class_name,
+    const char *property_name,
+    const char **type_name,
+    const char **type_display_name,
+    int *allows_null,
+    int *is_builtin,
+    int *is_readonly
+) {
+    if (ptn_ascii_case_equal(class_name, "_ZendTestTrait")) {
+        if (strcmp(property_name, "testProp") == 0) {
+            *type_name = NULL;
+            *type_display_name = NULL;
+            *allows_null = 0;
+            *is_builtin = 0;
+            *is_readonly = 0;
+            return 1;
+        }
+        if (strcmp(property_name, "classUnionProp") == 0) {
+            *type_name = NULL;
+            *type_display_name = "Traversable|Countable";
+            *allows_null = 0;
+            *is_builtin = 0;
+            *is_readonly = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (!ptn_zend_test_class_reflection_property_applies(class_name)) {
+        return 0;
+    }
+    *is_readonly = 0;
+    if (strcmp(property_name, "_StaticProp") == 0) {
+        *type_name = NULL;
+        *type_display_name = NULL;
+        *allows_null = 0;
+        *is_builtin = 0;
+        return 1;
+    }
+    if (strcmp(property_name, "intProp") == 0 ||
+        strcmp(property_name, "staticIntProp") == 0 ||
+        strcmp(property_name, "finalProp") == 0) {
+        *type_name = "int";
+        *type_display_name = "int";
+        *allows_null = 0;
+        *is_builtin = 1;
+        return 1;
+    }
+    if (strcmp(property_name, "readonlyProp") == 0) {
+        *type_name = "int";
+        *type_display_name = "int";
+        *allows_null = 0;
+        *is_builtin = 1;
+        *is_readonly = 1;
+        return 1;
+    }
+    if (strcmp(property_name, "classProp") == 0) {
+        *type_name = "stdClass";
+        *type_display_name = "?stdClass";
+        *allows_null = 1;
+        *is_builtin = 0;
+        return 1;
+    }
+    if (strcmp(property_name, "classUnionProp") == 0) {
+        *type_name = NULL;
+        *type_display_name = "stdClass|Iterator|null";
+        *allows_null = 1;
+        *is_builtin = 0;
+        return 1;
+    }
+    if (strcmp(property_name, "classIntersectionProp") == 0) {
+        *type_name = NULL;
+        *type_display_name = "Traversable&Countable";
+        *allows_null = 0;
+        *is_builtin = 0;
+        return 1;
+    }
+    if (strcmp(property_name, "dnfProperty") == 0) {
+        *type_name = NULL;
+        *type_display_name = "Iterator|(Traversable&Countable)";
+        *allows_null = 0;
+        *is_builtin = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static PtnValue ptn_zend_test_reflection_property_default_value(
+    const char *class_name,
+    const char *property_name
+) {
+    if (ptn_ascii_case_equal(class_name, "_ZendTestTrait") &&
+        strcmp(property_name, "testProp") == 0) {
+        return ptn_null();
+    }
+    if (!ptn_zend_test_class_reflection_property_applies(class_name)) {
+        return ptn_null();
+    }
+    if (strcmp(property_name, "intProp") == 0 ||
+        strcmp(property_name, "staticIntProp") == 0) {
+        return ptn_int(123);
+    }
+    return ptn_null();
+}
+
 static int ptn_reflection_property_class_metadata(
     const char *class_name,
     const char *property_name,
@@ -241723,6 +241931,17 @@ static int ptn_reflection_property_class_metadata(
     int *modifiers
 ) {
     if (ptn_declared_class_reflection_property_metadata(
+        class_name,
+        property_name,
+        declaring_class,
+        is_static,
+        visibility,
+        has_default,
+        modifiers
+    )) {
+        return 1;
+    }
+    if (ptn_zend_test_reflection_property_metadata(
         class_name,
         property_name,
         declaring_class,
@@ -241765,6 +241984,22 @@ static PtnValue ptn_reflection_property_default_value(
             canonical_exception,
             property_name
         );
+    }
+    const char *zend_test_declaring_class = NULL;
+    int zend_test_is_static = 0;
+    int zend_test_visibility = 0;
+    int zend_test_has_default = 0;
+    int zend_test_modifiers = 0;
+    if (ptn_zend_test_reflection_property_metadata(
+        class_name,
+        property_name,
+        &zend_test_declaring_class,
+        &zend_test_is_static,
+        &zend_test_visibility,
+        &zend_test_has_default,
+        &zend_test_modifiers
+    )) {
+        return ptn_zend_test_reflection_property_default_value(class_name, property_name);
     }
     return ptn_declared_class_reflection_property_default(runtime, class_name, property_name);
 }
@@ -241921,6 +242156,17 @@ static int ptn_reflection_property_type_metadata(
     if (data->is_dynamic) {
         return 0;
     }
+    if (ptn_zend_test_reflection_property_type_metadata(
+        data->class_name,
+        data->name,
+        type_name,
+        type_display_name,
+        allows_null,
+        is_builtin,
+        is_readonly
+    )) {
+        return 1;
+    }
     if ((ptn_internal_class_name_is_xml_reader(data->class_name) ||
          ptn_declared_class_is_same_or_descendant(data->class_name, "XMLReader")) &&
         ptn_xml_reader_property_known(data->name)) {
@@ -241974,10 +242220,21 @@ static int ptn_reflection_property_settable_type_metadata(
     if (data->is_dynamic) {
         return 0;
     }
+    int is_readonly = 0;
+    if (ptn_zend_test_reflection_property_type_metadata(
+        data->class_name,
+        data->name,
+        type_name,
+        type_display_name,
+        allows_null,
+        is_builtin,
+        &is_readonly
+    )) {
+        return 1;
+    }
     if ((ptn_internal_class_name_is_xml_reader(data->class_name) ||
          ptn_declared_class_is_same_or_descendant(data->class_name, "XMLReader")) &&
         ptn_xml_reader_property_known(data->name)) {
-        int is_readonly = 0;
         return ptn_reflection_property_type_metadata(
             data,
             type_name,

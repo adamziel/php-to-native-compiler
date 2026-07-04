@@ -8663,19 +8663,34 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         PtnObject *assignment_receiver = receiver.as.object;
         size_t refcount_before_coercion = assignment_receiver->refcount;
         ptn_object_retain(assignment_receiver);
-        int coerced = ptn_property_type_coerce_assignment(
-            runtime,
-            metadata->type_kind,
-            metadata->type_class_name,
-            metadata->type_text,
-            metadata->type_allows_null,
-            metadata->declaring_class,
-            metadata->display_name,
-            value,
-            0,
-            line,
-            &stored
-        );
+        int coerced = 0;
+        PtnTryFrame property_coercion_frame;
+        ptn_try_frame_push(runtime, &property_coercion_frame);
+        if (setjmp(property_coercion_frame.jump) == 0) {
+            coerced = ptn_property_type_coerce_assignment(
+                runtime,
+                metadata->type_kind,
+                metadata->type_class_name,
+                metadata->type_text,
+                metadata->type_allows_null,
+                metadata->declaring_class,
+                metadata->display_name,
+                value,
+                0,
+                line,
+                &stored
+            );
+            ptn_try_frame_pop(runtime, &property_coercion_frame);
+        } else {
+            ptn_try_frame_pop(runtime, &property_coercion_frame);
+            ptn_object_release(assignment_receiver);
+            ptn_value_destroy(&stored);
+            ptn_array_key_free(key);
+            free(storage_key);
+            PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
         int receiver_invalidated = assignment_receiver->refcount <= refcount_before_coercion;
         int active_exception = ptn_runtime_has_active_exception(runtime);
         if (receiver_invalidated && !active_exception) {
@@ -10000,6 +10015,40 @@ static PTN_UNUSED void ptn_zend_test_class_initialize_properties(
     PtnValue assigned = ptn_object_declare_property(
         runtime,
         object,
+        "intProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        1,
+        ptn_int(123),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "classProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_CLASS,
+        "stdClass",
+        "?stdClass",
+        1,
+        1,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
         "classUnionProp",
         declaring_class,
         PTN_PROPERTY_PUBLIC,
@@ -10014,6 +10063,149 @@ static PTN_UNUSED void ptn_zend_test_class_initialize_properties(
         line
     );
     ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "classIntersectionProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "Traversable&Countable",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "readonlyProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        1,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "finalProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "dnfProperty",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "Iterator|(Traversable&Countable)",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PTN_UNUSED void ptn_zend_test_trait_initialize_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "testProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "classUnionProp",
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "Traversable|Countable",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PTN_UNUSED void ptn_zend_test_class_define_static_properties(PtnRuntime *runtime) {
+    PtnValue static_prop = ptn_null();
+    ptn_runtime_define_static_property(
+        runtime,
+        "_ZendTestClass",
+        "_StaticProp",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        static_prop,
+        1
+    );
+    ptn_value_destroy(&static_prop);
+    PtnValue static_int_prop = ptn_int(123);
+    ptn_runtime_define_static_property(
+        runtime,
+        "_ZendTestClass",
+        "staticIntProp",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        static_int_prop,
+        1
+    );
+    ptn_value_destroy(&static_int_prop);
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
