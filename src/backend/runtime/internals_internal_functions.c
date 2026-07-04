@@ -218259,7 +218259,7 @@ static int ptn_soap_wsdl_declares_soap_encoding_before_xsi(PtnSoapClientData *da
         data,
         "http://www.w3.org/2001/XMLSchema-instance"
     );
-    return soap_encoding != NULL && xsi != NULL && soap_encoding < xsi;
+    return soap_encoding != NULL && (xsi == NULL || soap_encoding < xsi);
 }
 
 static void ptn_soap_append_ns2_namespace_declaration(PtnStringBuffer *body, const char *namespace_uri) {

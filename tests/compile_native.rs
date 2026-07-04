@@ -70511,7 +70511,7 @@ echo $client->__getLastRequest();
     );
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stdout.contains("xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:ns2=\"http://soapinterop.org/types\""),
+        stdout.contains("xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/types\""),
         "{stdout}"
     );
     assert!(
@@ -70522,6 +70522,7 @@ echo $client->__getLastRequest();
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_build_rpc_encoded_request"));
+    assert!(c_source.contains("ptn_soap_wsdl_declares_soap_encoding_before_xsi"));
 }
 
 #[test]
