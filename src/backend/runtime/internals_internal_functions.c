@@ -218876,10 +218876,23 @@ static int ptn_soap_rpc_request_has_array_part(
     return 0;
 }
 
+static int ptn_soap_simple_content_value_is_nil(const PtnSoapType *type, PtnValue value) {
+    if (type == NULL || !type->has_simple_content) {
+        return 0;
+    }
+    PtnValue simple_value = ptn_null();
+    if (!ptn_soap_schema_value_property(value, "_", &simple_value)) {
+        return 0;
+    }
+    return ptn_value_deref(simple_value).type == PTN_NULL;
+}
+
 static int ptn_soap_rpc_request_uses_xsi_before_xsd(
     PtnSoapClientData *data,
     PtnSoapMessagePart *parts,
-    size_t part_count
+    size_t part_count,
+    size_t argc,
+    const PtnValue *args
 ) {
     for (size_t i = 0; i < part_count; i++) {
         PtnSoapType *type = ptn_soap_type_list_find(data->types, data->type_count, parts[i].type_local);
@@ -218887,6 +218900,9 @@ static int ptn_soap_rpc_request_uses_xsi_before_xsd(
             continue;
         }
         if (type->is_simple && (type->is_list || type->is_union)) {
+            return 1;
+        }
+        if (i < argc && ptn_soap_simple_content_value_is_nil(type, args[i])) {
             return 1;
         }
         if (!type->has_simple_content &&
@@ -219012,13 +219028,7 @@ static void ptn_soap_append_rpc_encoded_part(
             : (type == NULL || type->namespace_uri == NULL ? "" : type->namespace_uri);
         (void)ptn_soap_namespace_list_add(&rpc_namespaces, namespace_uri);
     }
-    int simple_content_nil = 0;
-    if (type != NULL && type->has_simple_content) {
-        PtnValue simple_value = ptn_null();
-        if (ptn_soap_schema_value_property(value, "_", &simple_value)) {
-            simple_content_nil = ptn_value_deref(simple_value).type == PTN_NULL;
-        }
-    }
+    int simple_content_nil = ptn_soap_simple_content_value_is_nil(type, value);
     PtnValue resolved_value = ptn_value_deref(value);
 
     ptn_string_buffer_append_char(body, '<');
@@ -219188,7 +219198,7 @@ static int ptn_soap_build_rpc_encoded_request(
         custom_namespace[0] != '\0' &&
         custom_namespace_before_encoding;
     int has_array_part = ptn_soap_rpc_request_has_array_part(data, parts, part_count);
-    int xsi_before_xsd = ptn_soap_rpc_request_uses_xsi_before_xsd(data, parts, part_count);
+    int xsi_before_xsd = ptn_soap_rpc_request_uses_xsi_before_xsd(data, parts, part_count, argc, args);
     int soap_encoding_before_xsi = ptn_soap_rpc_request_prefers_soap_encoding_before_xsi(data, parts, part_count);
     ptn_string_buffer_append_format(
         &body,
