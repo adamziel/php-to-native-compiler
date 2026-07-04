@@ -1,0 +1,18 @@
+# ptn-rh2m4: reflection property-hook metadata rows admitted after the
+# declared property-hook reflection surface became modeled.
+ext/reflection/tests/ReflectionClass_toString_008.phpt
+ext/reflection/tests/ReflectionParameter_getDocComment_basic.phpt
+ext/reflection/tests/ReflectionParameter_getDocComment_indented.phpt
+ext/reflection/tests/ReflectionParameter_getDocComment_property_hooks.phpt
+ext/reflection/tests/ReflectionProperty_getMangledName_hooks.phpt
+ext/reflection/tests/ReflectionProperty_getSettableType.phpt
+ext/reflection/tests/ReflectionProperty_isReadable_hooks.phpt
+ext/reflection/tests/ReflectionProperty_isWritable_hooks.phpt
+ext/reflection/tests/ReflectionProperty_toString_001.phpt
+ext/reflection/tests/gh19187.phpt
+ext/reflection/tests/property_hooks/basics.phpt
+ext/reflection/tests/property_hooks/ReflectionProperty_getHook_inheritance.phpt
+ext/reflection/tests/property_hooks/ReflectionProperty_getHooks.phpt
+ext/reflection/tests/property_hooks/ReflectionProperty_getSetValue.phpt
+ext/reflection/tests/property_hooks/gh15718.phpt
+ext/reflection/tests/property_hooks/hook_guard.phpt

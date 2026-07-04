@@ -2419,7 +2419,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/property_hooks\/(abstract_get_set_readonly|abstract_hook(_in_non_abstract_class|_not_implemented)?|abstract_prop_(final|hooks|not_implemented|without_hooks)|backed_invariant|bug00[1248]|cpp|default_on_virtual(_with_inheritance)?|duplicate_hook|final_private_prop|final_prop(_2|_promoted_[1234])?|gh154(19|38)_[12]|interface(_explicit_abstract|_final_hook|_final_prop|_get_only|_get_set_readonly|_invalid_explicitly_abstract|_not_implemented|_not_public)?|invalid_(abstract_(body|final|indirect(_2)?|private)|empty_hooks|final_private|hook_visibility|static|static_prop)|no_get_parameters|parent_get_not_in_class|parent_outside_property|private_prop_final_hook|property_promotion|readonly|set_by_ref|set_shorthand|set_variadic|syntax|traits_abstract|unknown_hook(_private)?|var_property)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_getProperties_003[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_isIterable_gh20217[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_toString_008|ReflectionParameter_getDocComment_(basic|indented|property_hooks)|ReflectionProperty_(getMangledName_hooks|getSettableType|isReadable_hooks|isWritable_hooks|toString_001)|gh19187)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/property_hooks\/(ReflectionProperty_getSetRawValue|ReflectionProperty_isInitialized|gh17713)[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/property_hooks\/(basics|ReflectionProperty_getHook_inheritance|ReflectionProperty_getHooks|ReflectionProperty_getSetValue|gh15718|hook_guard)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/property_hooks\/ReflectionClass_getMethods[.]phpt$/
         }
         function ptn_supported_enum_metadata_row() {

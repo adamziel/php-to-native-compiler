@@ -107417,6 +107417,17 @@ var_dump($getOnly->isWritable(null, $object));
 $abstract = new ReflectionProperty(ReflectHookAbstract::class, 'must');
 var_dump($abstract->isAbstract());
 var_dump((bool) ($abstract->getModifiers() & ReflectionProperty::IS_ABSTRACT));
+
+#[AllowDynamicProperties]
+class ReflectHookDynamic {}
+
+$dynamicObject = new ReflectHookDynamic();
+$dynamicObject->dyn = 'value';
+$dynamic = new ReflectionProperty($dynamicObject, 'dyn');
+var_dump($dynamic->hasHooks());
+var_dump($dynamic->getHooks());
+var_dump($dynamic->getHook(PropertyHookType::Get));
+var_dump($dynamic->getHook(PropertyHookType::Set));
 ",
     )
     .unwrap();
@@ -107456,6 +107467,11 @@ var_dump((bool) ($abstract->getModifiers() & ReflectionProperty::IS_ABSTRACT));
             "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(false)\n",
+            "array(0) {\n",
+            "}\n",
+            "NULL\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
