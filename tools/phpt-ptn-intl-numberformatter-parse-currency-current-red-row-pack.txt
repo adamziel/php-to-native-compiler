@@ -1,0 +1,1 @@
+ext/intl/tests/formatter_parse_currency.phpt

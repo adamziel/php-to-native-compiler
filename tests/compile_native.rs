@@ -59800,6 +59800,60 @@ int(9)\n\
 }
 
 #[test]
+fn compile_intl_number_formatter_parse_currency_success_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-parse-currency");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-parse-currency.php");
+    let output = root.join("intl-number-formatter-parse-currency-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fmt = new NumberFormatter('en_US', NumberFormatter::CURRENCY);\n\
+$pos = 0;\n\
+$currency = '';\n\
+var_dump($fmt->parseCurrency('$9,988,776.65', $currency, $pos));\n\
+var_dump($currency, $pos);\n\
+$pos = 1;\n\
+$currency = '';\n\
+var_dump(numfmt_parse_currency($fmt, ' $123.45', $currency, $pos));\n\
+var_dump($currency, $pos);\n\
+var_dump($fmt->parseCurrency('123.45', $currency));\n\
+var_dump($currency);\n\
+var_dump($fmt->getErrorMessage());\n\
+class Test { public int $prop = 1; }\n\
+$test = new Test;\n\
+try {\n\
+    numfmt_parse_currency($fmt, \"1\\xC2\\xA0$\", $test->prop);\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(9988776.65)\n\
+string(3) \"USD\"\n\
+int(0)\n\
+float(123.45)\n\
+string(3) \"USD\"\n\
+int(1)\n\
+bool(false)\n\
+NULL\n\
+string(70) \"NumberFormatter::parseCurrency(): Number parsing failed: U_PARSE_ERROR\"\n\
+Cannot assign string to reference held by property Test::$prop of type int\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_numfmt_parse_currency_impl"));
+}
+
+#[test]
 fn compile_intl_locale_resourcebundle_current_red_edges_to_native_binary() {
     let root = temp_dir("ptn-native-intl-locale-resourcebundle-current-red");
     fs::create_dir_all(&root).unwrap();

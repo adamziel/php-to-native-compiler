@@ -92722,7 +92722,6 @@ static PtnValue ptn_internal_numfmt_parse_currency_impl(
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
     PtnIntlNumberFormatterData *data = argc >= 1 ? ptn_intl_number_formatter_data(args[0]) : NULL;
     if (data == NULL) {
         ptn_throw_exception(runtime, "Error", "Found unconstructed NumberFormatter");
@@ -92734,16 +92733,84 @@ static PtnValue ptn_internal_numfmt_parse_currency_impl(
         ptn_string_operand_free(source);
         return ptn_null();
     }
-    int has_currency = 0;
-    for (size_t i = 0; i < source.len; i++) {
-        unsigned char byte = (unsigned char)source.data[i];
-        if (byte == '$' || byte == 0xC2 || isalpha(byte)) {
-            has_currency = 1;
-            break;
+
+    size_t start_offset = 0;
+    if (argc >= 4) {
+        int64_t raw_offset = ptn_value_to_integer(ptn_value_deref(args[3]));
+        if (raw_offset > 0) {
+            start_offset = (uint64_t)raw_offset > source.len ? source.len : (size_t)raw_offset;
         }
     }
-    ptn_string_operand_free(source);
-    if (!has_currency) {
+
+    size_t pos = start_offset;
+    while (pos < source.len && isspace((unsigned char)source.data[pos])) {
+        pos++;
+    }
+    int has_prefix_currency = 0;
+    if (pos < source.len && source.data[pos] == '$') {
+        has_prefix_currency = 1;
+        pos++;
+    }
+    while (pos < source.len && isspace((unsigned char)source.data[pos])) {
+        pos++;
+    }
+
+    char number_buffer[128];
+    size_t number_len = 0;
+    int saw_digit = 0;
+    int saw_decimal = 0;
+    for (; pos < source.len; pos++) {
+        unsigned char byte = (unsigned char)source.data[pos];
+        if (isdigit(byte)) {
+            if (number_len + 1 >= sizeof(number_buffer)) {
+                break;
+            }
+            number_buffer[number_len++] = (char)byte;
+            saw_digit = 1;
+            continue;
+        }
+        if (byte == ',' || byte == '\'') {
+            continue;
+        }
+        if (byte == '.' && !saw_decimal) {
+            if (number_len + 1 >= sizeof(number_buffer)) {
+                break;
+            }
+            number_buffer[number_len++] = '.';
+            saw_decimal = 1;
+            continue;
+        }
+        if ((byte == '+' || byte == '-') && number_len == 0) {
+            if (number_len + 1 >= sizeof(number_buffer)) {
+                break;
+            }
+            number_buffer[number_len++] = (char)byte;
+            continue;
+        }
+        break;
+    }
+    number_buffer[number_len] = '\0';
+
+    size_t end_offset = pos;
+    while (pos < source.len && isspace((unsigned char)source.data[pos])) {
+        pos++;
+    }
+    if (pos + 1 < source.len &&
+        (unsigned char)source.data[pos] == 0xC2 &&
+        (unsigned char)source.data[pos + 1] == 0xA0) {
+        pos += 2;
+        while (pos < source.len && isspace((unsigned char)source.data[pos])) {
+            pos++;
+        }
+    }
+    int has_suffix_currency = 0;
+    if (pos < source.len && source.data[pos] == '$') {
+        has_suffix_currency = 1;
+        end_offset = pos + 1;
+    }
+
+    if (!saw_digit || (!has_prefix_currency && !has_suffix_currency)) {
+        ptn_string_operand_free(source);
         char message[160];
         int written = snprintf(
             message,
@@ -92760,11 +92827,37 @@ static PtnValue ptn_internal_numfmt_parse_currency_impl(
         }
         return ptn_bool(0);
     }
+
+    char *parse_end = NULL;
+    double parsed = strtod(number_buffer, &parse_end);
+    if (parse_end == number_buffer) {
+        ptn_string_operand_free(source);
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Number parsing failed: U_PARSE_ERROR",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_intl_number_formatter_set_error(runtime, data, 9, message);
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 2, ptn_null())) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
+    ptn_string_operand_free(source);
+
     if (!ptn_intl_assign_reference_string(runtime, args, argc, 2, "USD")) {
         return ptn_null();
     }
+    if (!ptn_intl_assign_reference_value(runtime, args, argc, 3, ptn_int((int64_t)end_offset))) {
+        return ptn_null();
+    }
     ptn_intl_number_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
-    return ptn_float(1.0);
+    return ptn_float(parsed);
 }
 
 static PtnValue ptn_internal_numfmt_parse_currency(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
