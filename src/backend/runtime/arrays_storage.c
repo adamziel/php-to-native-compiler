@@ -152,6 +152,7 @@ typedef struct PtnFiberData {
     int running;
     int completed;
     int threw;
+    int fatal_error;
     int resume_credit;
     int resume_throw;
     int close_requested;
@@ -180,6 +181,49 @@ static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *objec
     (void)object;
 }
 #endif
+
+static PTN_UNUSED void ptn_runtime_mark_current_fiber_fatal_error(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnObject *fiber = runtime == NULL ? NULL : runtime->current_fiber;
+    if (fiber == NULL && root != NULL) {
+        fiber = root->current_fiber;
+    }
+    if (
+        fiber == NULL ||
+        !ptn_ascii_case_equal(fiber->class_name, "Fiber") ||
+        fiber->native_data == NULL
+    ) {
+        return;
+    }
+    PtnFiberData *data = (PtnFiberData *)fiber->native_data;
+    data->running = 0;
+    data->completed = 1;
+    data->threw = 0;
+    data->fatal_error = 1;
+    data->resume_credit = 0;
+    data->resume_throw = 0;
+    data->close_requested = 0;
+#if !defined(_WIN32)
+    PtnRuntime *targets[2] = { runtime, root };
+    for (size_t i = 0; i < 2; i++) {
+        PtnRuntime *target = targets[i];
+        if (target == NULL || (i == 1 && target == runtime)) {
+            continue;
+        }
+        if (target->exceptions != NULL) {
+            target->exceptions->try_frame = data->caller_try_frame;
+        }
+        target->trace_frame = data->caller_trace_frame;
+        target->current_fiber = data->caller_fiber;
+        target->current_generator = data->caller_generator;
+    }
+    data->active_method_frame = NULL;
+    data->active_trace_tail = NULL;
+    data->suspended_try_frame = NULL;
+    data->suspended_trace_frame = NULL;
+    data->suspended_generator = NULL;
+#endif
+}
 
 static PtnException *ptn_exception_previous_exception(PtnException *exception) {
     if (exception == NULL) {

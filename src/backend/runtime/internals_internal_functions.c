@@ -2475,6 +2475,7 @@ static PTN_UNUSED PtnValue ptn_str_repeat_value(PtnRuntime *runtime, const PtnVa
         ptn_abort_out_of_memory();
     }
     size_t output_len = input.len * times;
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
     char *output = malloc(output_len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -48179,6 +48180,7 @@ static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const 
         ptn_abort_out_of_memory();
     }
     size_t output_len = input.len * times;
+    ptn_string_result_enforce_memory_limit(runtime, output_len, line);
     char *output = malloc(output_len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -208907,6 +208909,7 @@ static int ptn_fiber_init_object(
     data->running = 0;
     data->completed = 0;
     data->threw = 0;
+    data->fatal_error = 0;
     data->resume_credit = 0;
     data->resume_throw = 0;
     data->close_requested = 0;
@@ -208968,6 +208971,7 @@ static PtnValue ptn_fiber_start(
     }
     data->started = 1;
     data->threw = 0;
+    data->fatal_error = 0;
     data->completed = 0;
     data->resume_credit = 0;
     ptn_value_destroy(&data->suspend_value);
@@ -209171,6 +209175,21 @@ static PTN_UNUSED PtnValue ptn_fiber_call_method(
                 runtime,
                 "FiberError",
                 ptn_duplicate_string("Cannot get fiber return value: The fiber has not been started"),
+                runtime->source_path,
+                line,
+                "Fiber->getReturn",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return ptn_null();
+        }
+        if (data->fatal_error) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot get fiber return value: The fiber exited with a fatal error"),
                 runtime->source_path,
                 line,
                 "Fiber->getReturn",

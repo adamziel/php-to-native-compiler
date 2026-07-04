@@ -10740,6 +10740,31 @@ static PTN_UNUSED PtnValue *ptn_generator_traversable_delegate_source_value(
     return &entry->value;
 }
 
+static PTN_UNUSED int ptn_generator_promote_traversable_delegate_iterator(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t position,
+    PtnArrayIterator *iterator,
+    size_t line
+) {
+    if (
+        generator == NULL ||
+        generator->delegate_sources == NULL ||
+        position >= generator->delegate_sources->len ||
+        iterator == NULL ||
+        iterator->generator == NULL ||
+        iterator->generator->object == NULL
+    ) {
+        return 0;
+    }
+
+    PtnArrayEntry *entry = &generator->delegate_sources->entries[position];
+    PtnValue replacement = ptn_value_borrow(ptn_object(iterator->generator->object));
+    ptn_value_destroy_with_runtime_scope_at(runtime, &entry->value, line);
+    entry->value = ptn_value_clone_deref(replacement);
+    return 1;
+}
+
 static PTN_UNUSED int ptn_generator_validate_yield_from_delegate(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -12304,6 +12329,13 @@ static PTN_UNUSED PtnValue ptn_generator_current_at_position(
             runtime != NULL ? runtime->source_path : NULL,
             line
         );
+        ptn_generator_promote_traversable_delegate_iterator(
+            runtime,
+            generator,
+            position,
+            &iterator,
+            line
+        );
         PtnValue current = iterator.valid
             ? ptn_array_iterator_current_value(&iterator)
             : ptn_null();
@@ -12368,6 +12400,13 @@ static PTN_UNUSED PtnValue ptn_generator_key_at_position(
             ptn_value_deref(source_receiver),
             NULL,
             runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        ptn_generator_promote_traversable_delegate_iterator(
+            runtime,
+            generator,
+            position,
+            &iterator,
             line
         );
         PtnValue key = iterator.valid
@@ -12598,9 +12637,28 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
         if (delegate_source != NULL) {
             PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+            PtnGenerator *source_generator = ptn_generator_from_value(source_receiver);
+            size_t last_index = 0;
+            if (
+                source_generator != NULL &&
+                ptn_generator_pending_exception_after_last_yield(source_generator, &last_index) &&
+                source_generator->position == last_index
+            ) {
+                ptn_generator_throw_pending_exception_at_position_with_parent(
+                    runtime,
+                    source_generator,
+                    generator,
+                    generator->position,
+                    last_index,
+                    line,
+                    "next",
+                    0
+                );
+                ptn_value_destroy(&source_receiver);
+                return ptn_null();
+            }
             PtnValue advanced = ptn_generator_next(runtime, source_receiver, line);
             ptn_value_destroy(&advanced);
-            PtnGenerator *source_generator = ptn_generator_from_value(source_receiver);
             int source_still_valid = ptn_generator_position_valid(source_generator);
             ptn_value_destroy(&source_receiver);
             if (source_still_valid) {
@@ -12616,6 +12674,13 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 ptn_value_deref(source_receiver),
                 NULL,
                 runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
+            ptn_generator_promote_traversable_delegate_iterator(
+                runtime,
+                generator,
+                generator->position,
+                &iterator,
                 line
             );
             if (iterator.valid) {

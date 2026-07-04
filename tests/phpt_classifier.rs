@@ -3486,6 +3486,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
         recursive_fiber_memory_limit.starts_with("runnable\t"),
         "{recursive_fiber_memory_limit:?}"
     );
+
+    let fiber_get_return_after_bailout = classify_at_relative_path(
+        "--TEST--\nFiber::getReturn() after bailout\n--SKIPIF--\n<?php\nif (getenv(\"USE_ZEND_ALLOC\") === \"0\") {\n    die(\"skip Zend MM disabled\");\n}\n?>\n--FILE--\n<?php\nregister_shutdown_function(static function (): void {\n    global $fiber;\n    var_dump($fiber->getReturn());\n});\n$fiber = new Fiber(static function (): void {\n    str_repeat('X', PHP_INT_MAX);\n});\n$fiber->start();\n?>\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s(tried to allocate %d bytes) %sget-return-after-bailout.php on line %d\n\nFatal error: Uncaught FiberError: Cannot get fiber return value: The fiber exited with a fatal error in %sget-return-after-bailout.php:%d\n",
+        "Zend/tests/fibers/get-return-after-bailout.phpt",
+    );
+    assert!(
+        fiber_get_return_after_bailout.starts_with("runnable\t"),
+        "{fiber_get_return_after_bailout:?}"
+    );
 }
 
 #[test]
