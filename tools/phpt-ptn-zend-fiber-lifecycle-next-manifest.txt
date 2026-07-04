@@ -1,0 +1,6 @@
+# Focused Zend Fiber constructor lifecycle row pack.
+# Source: recent CI shard 14 red row, plus the tightly related terminated-fiber constructor row.
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: zend-fiber-constructor-lifecycle rows=2
+Zend/tests/fibers/multiple-calls-to-ctor.phpt
+Zend/tests/fibers/call-to-ctor-of-terminated-fiber.phpt

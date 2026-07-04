@@ -211226,7 +211226,6 @@ static int ptn_fiber_init_object(
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
     if (!ptn_fiber_check_exact_arguments(runtime, "__construct", argc, 1)) {
         return 0;
     }
@@ -211235,6 +211234,21 @@ static int ptn_fiber_init_object(
             runtime,
             "TypeError",
             "Fiber::__construct(): Argument #1 ($callback) must be of type callable"
+        );
+        return 0;
+    }
+    if (object->native_data != NULL) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "FiberError",
+            ptn_duplicate_string("Cannot call constructor twice"),
+            runtime->source_path,
+            line,
+            "Fiber->__construct",
+            runtime->source_path,
+            line,
+            argc,
+            args
         );
         return 0;
     }
@@ -211280,9 +211294,6 @@ static int ptn_fiber_init_object(
     data->suspended_generator = NULL;
 #endif
 
-    if (object->native_data_free != NULL) {
-        object->native_data_free(object->native_data);
-    }
     object->native_data = data;
     object->native_data_free = ptn_fiber_data_free;
     return 1;

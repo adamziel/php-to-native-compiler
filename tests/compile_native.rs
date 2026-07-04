@@ -3713,6 +3713,64 @@ foreach ([$fresh, $finished] as $candidate) {
 }
 
 #[test]
+fn compile_fiber_constructor_reentry_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-constructor-reentry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-constructor-reentry.php");
+    let output = root.join("fiber-constructor-reentry-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(fn() => 123);
+try {
+    $fiber->__construct(fn() => 321);
+} catch (FiberError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+$finished = new Fiber(fn() => 456);
+var_dump($finished->start());
+var_dump($finished->getReturn());
+try {
+    $finished->__construct(fn() => 654);
+} catch (FiberError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+try {
+    $finished->__construct();
+} catch (ArgumentCountError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot call constructor twice"));
+    assert!(c_source.contains("Fiber->__construct"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "FiberError: Cannot call constructor twice\n",
+            "NULL\n",
+            "int(456)\n",
+            "FiberError: Cannot call constructor twice\n",
+            "ArgumentCountError: Fiber::__construct() expects exactly 1 argument, 0 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_stack_size_ini_set_warning_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-stack-size-ini-warning");
     fs::create_dir_all(&root).unwrap();
