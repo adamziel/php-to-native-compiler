@@ -59938,6 +59938,67 @@ Cannot assign string to reference held by property Test::$prop of type int\n"
 }
 
 #[test]
+fn compile_intl_number_formatter_type_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-type-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-type-validation.php");
+    let output = root.join("intl-number-formatter-type-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$formatter = new NumberFormatter('en_US', NumberFormatter::PATTERN_DECIMAL);\n\
+$cases = [\n\
+    fn() => numfmt_format($formatter, 5, -20),\n\
+    fn() => $formatter->format(5, -20),\n\
+    fn() => numfmt_parse($formatter, '5', -20),\n\
+    fn() => $formatter->parse('5', -20),\n\
+    fn() => numfmt_format($formatter, 5, NumberFormatter::TYPE_CURRENCY),\n\
+    fn() => $formatter->format(5, NumberFormatter::TYPE_CURRENCY),\n\
+    fn() => numfmt_parse($formatter, '5', NumberFormatter::TYPE_CURRENCY),\n\
+    fn() => $formatter->parse('5', NumberFormatter::TYPE_CURRENCY),\n\
+];\n\
+foreach ($cases as $case) {\n\
+    try {\n\
+        $case();\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "numfmt_format(): Argument #3 ($type) must be a NumberFormatter::TYPE_* constant\n\
+NumberFormatter::format(): Argument #2 ($type) must be a NumberFormatter::TYPE_* constant\n\
+numfmt_parse(): Argument #3 ($type) must be a NumberFormatter::TYPE_* constant\n\
+NumberFormatter::parse(): Argument #2 ($type) must be a NumberFormatter::TYPE_* constant\n\
+\n\
+Deprecated: Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3 in ptn on line 8\n\
+numfmt_format(): Argument #3 ($type) cannot be NumberFormatter::TYPE_CURRENCY constant, use numfmt_format_currency() function instead\n\
+\n\
+Deprecated: Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3 in ptn on line 9\n\
+NumberFormatter::format(): Argument #2 ($type) cannot be NumberFormatter::TYPE_CURRENCY constant, use NumberFormatter::formatCurrency() method instead\n\
+\n\
+Deprecated: Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3 in ptn on line 10\n\
+numfmt_parse(): Argument #3 ($type) cannot be NumberFormatter::TYPE_CURRENCY constant, use numfmt_parse_currency() function instead\n\
+\n\
+Deprecated: Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3 in ptn on line 11\n\
+NumberFormatter::parse(): Argument #2 ($type) cannot be NumberFormatter::TYPE_CURRENCY constant, use NumberFormatter::parseCurrency() method instead\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_number_formatter_validate_type"));
+    assert!(c_source.contains("Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3"));
+    assert!(c_source.contains("\"numfmt_parse\""));
+}
+
+#[test]
 fn compile_intl_locale_resourcebundle_current_red_edges_to_native_binary() {
     let root = temp_dir("ptn-native-intl-locale-resourcebundle-current-red");
     fs::create_dir_all(&root).unwrap();

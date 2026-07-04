@@ -43499,6 +43499,11 @@ fn builtin_constant_deprecated_warning(name: &str) -> Option<String> {
 }
 
 fn builtin_class_constant_deprecated_warning(class_name: &str, name: &str) -> Option<String> {
+    if name.eq_ignore_ascii_case("TYPE_CURRENCY")
+        && class_name.eq_ignore_ascii_case("NumberFormatter")
+    {
+        return Some("Constant NumberFormatter::TYPE_CURRENCY is deprecated since 8.3".to_string());
+    }
     if name.eq_ignore_ascii_case("RFC7231")
         && (class_name.eq_ignore_ascii_case("DateTime")
             || class_name.eq_ignore_ascii_case("DateTimeImmutable")
@@ -55154,9 +55159,37 @@ impl ValueEmitter {
                 if let Some(value) =
                     compact_intl_class_constant_value_expr(&resolved_class_name, name)
                 {
-                    out.push_str(" = ptn_int(");
-                    out.push_str(value);
-                    out.push_str(");\n");
+                    if let Some((message, dependency)) =
+                        self.class_constant_deprecation(class_name, name)
+                    {
+                        out.push_str(" = ptn_null();\n");
+                        if let Some(dependency) = dependency {
+                            emit_deprecated_message_dependency(
+                                out,
+                                "    ",
+                                dependency,
+                                &line.to_string(),
+                            );
+                        }
+                        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                        out.push_str("        ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                        out.push_str(&c_string(&message));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                        out.push_str("        ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_int(");
+                        out.push_str(value);
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                    } else {
+                        out.push_str(" = ptn_int(");
+                        out.push_str(value);
+                        out.push_str(");\n");
+                    }
                 } else if let Some((message, dependency)) =
                     self.class_constant_deprecation(class_name, name)
                 {
