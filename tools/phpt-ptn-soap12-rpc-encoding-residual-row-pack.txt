@@ -1,0 +1,8 @@
+ext/soap/tests/soap12/T41.phpt
+ext/soap/tests/soap12/T43.phpt
+ext/soap/tests/soap12/T44.phpt
+ext/soap/tests/soap12/T45.phpt
+ext/soap/tests/soap12/T46.phpt
+ext/soap/tests/soap12/T56.phpt
+ext/soap/tests/soap12/T57.phpt
+ext/soap/tests/soap12/T61.phpt

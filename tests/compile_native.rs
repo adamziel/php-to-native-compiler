@@ -72702,6 +72702,167 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap12_rpc_encoded_wsdl_order_and_refs_to_native_binary() {
+    let root = temp_dir("ptn-native-soap12-rpc-encoded-wsdl-order-refs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap12-rpc-encoded-wsdl-order-refs.php");
+    let output = root.join("soap12-rpc-encoded-wsdl-order-refs-bin");
+    fs::write(
+        &input,
+        r##"<?php
+class Soap12Service {
+    public function echoSimpleTypesAsStruct($string, $int, $float) {
+        return (object)["varString" => $string, "varInt" => $int, "varFloat" => $float];
+    }
+
+    public function echoString($inputString) {
+        return $inputString;
+    }
+}
+
+$wsdl = __DIR__ . '/soap12-rpc-encoded.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="Soap12Rpc"
+  targetNamespace="http://example.org/wsdl"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://example.org/wsdl"
+  xmlns:types="http://example.org/ts-tests/xsd">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://example.org/ts-tests/xsd">
+      <complexType name="SOAPStruct">
+        <all>
+          <element name="varString" type="xsd:string"/>
+          <element name="varInt" type="xsd:int"/>
+          <element name="varFloat" type="xsd:float"/>
+        </all>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoSimpleTypesAsStructRequest">
+    <part name="inputString" type="xsd:string"/>
+    <part name="inputInt" type="xsd:int"/>
+    <part name="inputFloat" type="xsd:float"/>
+  </message>
+  <message name="echoSimpleTypesAsStructResponse">
+    <part name="return" type="types:SOAPStruct"/>
+  </message>
+  <message name="echoStringRequest">
+    <part name="inputString" type="xsd:string"/>
+  </message>
+  <message name="echoStringResponse">
+    <part name="return" type="xsd:string"/>
+  </message>
+  <portType name="Soap12RpcPortType">
+    <operation name="echoSimpleTypesAsStruct" parameterOrder="inputString inputInt inputFloat">
+      <input message="tns:echoSimpleTypesAsStructRequest"/>
+      <output message="tns:echoSimpleTypesAsStructResponse"/>
+    </operation>
+    <operation name="echoString" parameterOrder="inputString">
+      <input message="tns:echoStringRequest"/>
+      <output message="tns:echoStringResponse"/>
+    </operation>
+  </portType>
+  <binding name="Soap12RpcBinding" type="tns:Soap12RpcPortType">
+    <soap12:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoSimpleTypesAsStruct">
+      <soap12:operation/>
+      <input>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </input>
+      <output>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </output>
+    </operation>
+    <operation name="echoString">
+      <soap12:operation/>
+      <input>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </input>
+      <output>
+        <soap12:body use="encoded" namespace="http://example.org/ts-tests" encodingStyle="http://www.w3.org/2003/05/soap-encoding"/>
+      </output>
+    </operation>
+  </binding>
+</definitions>
+WSDL);
+
+function handle_request($wsdl, $request) {
+    $server = new SoapServer($wsdl, ['soap_version' => SOAP_1_2]);
+    $server->setClass(Soap12Service::class);
+    ob_start();
+    $server->handle($request);
+    return ob_get_clean();
+}
+
+$structRequest = <<<'XML'
+<?xml version="1.0"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"
+              xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <env:Body>
+    <test:echoSimpleTypesAsStruct xmlns:test="http://example.org/ts-tests"
+          env:encodingStyle="http://www.w3.org/2003/05/soap-encoding">
+      <inputInt xsi:type="xsd:int">42</inputInt>
+      <inputFloat xsi:type="xsd:float">0.005</inputFloat>
+      <inputString xsi:type="xsd:string">hello world</inputString>
+    </test:echoSimpleTypesAsStruct>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$structResponse = handle_request($wsdl, $structRequest);
+echo strpos($structResponse, '<return xsi:type="ns2:SOAPStruct"><varString xsi:type="xsd:string">hello world</varString><varInt xsi:type="xsd:int">42</varInt><varFloat xsi:type="xsd:float">0.005</varFloat></return>') !== false ? "struct-ok\n" : $structResponse;
+
+$refRequest = <<<'XML'
+<?xml version="1.0"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"
+              xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xmlns:enc="http://www.w3.org/2003/05/soap-encoding">
+  <env:Header>
+    <test:DataHolder xmlns:test="http://example.org/ts-tests">
+      <test:Data enc:id="data" xsi:type="xsd:string">hello world</test:Data>
+    </test:DataHolder>
+  </env:Header>
+  <env:Body>
+    <test:echoString xmlns:test="http://example.org/ts-tests"
+          env:encodingStyle="http://www.w3.org/2003/05/soap-encoding">
+      <test:inputString enc:ref="#data" xsi:type="xsd:string" />
+    </test:echoString>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$refResponse = handle_request($wsdl, $refRequest);
+echo strpos($refResponse, '<return xsi:type="xsd:string">hello world</return>') !== false ? "ref-ok\n" : $refResponse;
+        "##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "struct-ok\nref-ok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap12_resolve_encoding_ref"));
+    assert!(c_source.contains("ptn_soap_append_soap12_response_schema_value_xml"));
+}
+
+#[test]
 fn compile_soap_server_handle_soapfault_responses_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-handle-soapfaults");
     fs::create_dir_all(&root).unwrap();
