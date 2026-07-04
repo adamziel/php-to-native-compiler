@@ -196001,15 +196001,45 @@ static PtnValue ptn_stream_socket_server_open_tcp(
     }
     freeaddrinfo(addresses);
     if (descriptor < 0) {
-        char detail[192];
         const char *message = error_code == 0 ? "bind failed" : strerror(error_code);
-        int written = snprintf(detail, sizeof(detail), "stream_socket_server(): unable to bind tcp socket: %s", message);
-        if (written < 0 || (size_t)written >= sizeof(detail)) {
+        char *display = ptn_stream_socket_address_display_alloc(address);
+        int warning_needed = snprintf(
+            NULL,
+            0,
+            "stream_socket_server(): Unable to connect to %s (%s)",
+            display,
+            message
+        );
+        if (warning_needed < 0) {
+            free(display);
             free(host);
             free(service);
             ptn_abort_out_of_memory();
         }
-        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        char *warning = malloc((size_t)warning_needed + 1);
+        if (warning == NULL) {
+            free(display);
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        int warning_written = snprintf(
+            warning,
+            (size_t)warning_needed + 1,
+            "stream_socket_server(): Unable to connect to %s (%s)",
+            display,
+            message
+        );
+        if (warning_written < 0 || warning_written != warning_needed) {
+            free(warning);
+            free(display);
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        free(warning);
+        free(display);
         ptn_stream_socket_server_assign_error(runtime, argc, args, error_code, message);
         free(host);
         free(service);

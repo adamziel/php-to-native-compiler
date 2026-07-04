@@ -37674,6 +37674,42 @@ false=no:98\n"
 }
 
 #[test]
+fn compile_stream_socket_server_bind_error_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-server-bind-error-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-server-bind-error-warning.php");
+    let output = root.join("stream-socket-server-bind-error-warning-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$server1 = stream_socket_server("tcp://127.0.0.1:0");
+$name = stream_socket_get_name($server1, false);
+$server2 = stream_socket_server("tcp://$name", $errno, $errstr);
+echo "server2=", is_resource($server2) ? "resource" : "false", ":", $errno, ":", $errstr, "\n";
+fclose($server1);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: stream_socket_server(): Unable to connect to tcp://127.0.0.1:"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("(Address already in use)"), "{stdout}");
+    assert!(stdout.contains("server2=false:"), "{stdout}");
+    assert!(stdout.contains(":Address already in use\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_socket_server"));
+}
+
+#[test]
 fn compile_socket_addrinfo_bind_and_mtu_option_to_native_binary() {
     let root = temp_dir("ptn-native-socket-addrinfo-bind-mtu-option");
     fs::create_dir_all(&root).unwrap();

@@ -1,0 +1,4 @@
+# network stream/socket PHPT lane current-red manifest.
+# Focus: stream_socket_server() bind failure behavior.
+# bucket: network-stream-socket rows=1
+ext/standard/tests/network/stream_socket_server_bind_error.phpt
