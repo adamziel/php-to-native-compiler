@@ -1,0 +1,7 @@
+# Focused stream wrapper unregister/restore state row pack.
+ext/standard/tests/file/stream_001.phpt
+ext/standard/tests/streams/bug76943.phpt
+Zend/tests/gh8548.phpt
+Zend/tests/gh8548_2.phpt
+Zend/tests/gh11735_1.phpt
+Zend/tests/gh11735_2.phpt

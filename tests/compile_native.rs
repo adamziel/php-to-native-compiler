@@ -37011,6 +37011,72 @@ file_put_contents('partialwrite://file.txt', 'foobarbaz');
 }
 
 #[test]
+fn compile_stream_wrapper_unregister_restore_state_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-wrapper-unregister-restore-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-wrapper-unregister-restore-state.php");
+    let output = root.join("stream-wrapper-unregister-restore-state-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/wrapped.txt";
+file_put_contents($path, "ok");
+
+var_dump(in_array("file", stream_get_wrappers(), true));
+var_dump(stream_wrapper_unregister("file"));
+var_dump(in_array("file", stream_get_wrappers(), true));
+var_dump(@fopen("file://" . $path, "r"));
+var_dump(stream_wrapper_restore("file"));
+var_dump(in_array("file", stream_get_wrappers(), true));
+$fp = fopen("file://" . $path, "r");
+echo fgets($fp), "\n";
+fclose($fp);
+unlink($path);
+
+class FooWrapper {
+    public $context;
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        stream_wrapper_unregister("foo");
+        return true;
+    }
+    public function stream_eof() { return true; }
+}
+
+var_dump(stream_wrapper_register("foo", FooWrapper::class));
+$foo = fopen("foo://bar", "r");
+var_dump(is_resource($foo));
+fclose($foo);
+var_dump(stream_wrapper_register("foo", FooWrapper::class));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+ok\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_wrapper_unregister"));
+    assert!(c_source.contains("ptn_internal_stream_wrapper_restore"));
+    assert!(c_source.contains("ptn_disabled_builtin_stream_wrapper_mask"));
+}
+
+#[test]
 fn compile_copy_to_user_stream_wrapper_writes_chunks_to_native_binary() {
     let root = temp_dir("ptn-native-copy-to-user-stream-wrapper");
     fs::create_dir_all(&root).unwrap();

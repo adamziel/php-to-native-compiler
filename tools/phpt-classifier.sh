@@ -2799,11 +2799,6 @@ ptn_phpt_first_unsupported_internal_surface() {
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(unregister|restore)[[:space:]]*\(/) {
-                print "unsupported-internal\trequires user stream wrapper unregister/restore state transitions outside PTN modeled stream/resource runtime"
-                found = 1
-                exit
-            }
         }
         END {
             exit found ? 0 : 1

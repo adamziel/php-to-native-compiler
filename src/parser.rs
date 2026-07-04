@@ -24544,6 +24544,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_socket_shutdown"
             | "stream_register_wrapper"
             | "stream_wrapper_register"
+            | "stream_wrapper_restore"
+            | "stream_wrapper_unregister"
             | "zlib_get_coding_type"
             | "tmpfile"
             | "get_cfg_var"

@@ -54818,6 +54818,20 @@ typedef struct {
 static PtnUserStreamWrapper *ptn_user_stream_wrappers = NULL;
 static size_t ptn_user_stream_wrapper_count = 0;
 static size_t ptn_user_stream_wrapper_capacity = 0;
+static const char *const ptn_builtin_stream_wrappers[] = {
+    "https",
+    "php",
+    "file",
+    "data",
+    "http",
+    "ftp",
+    "ftps",
+    "compress.zlib",
+    "phar",
+};
+static const size_t ptn_builtin_stream_wrapper_count =
+    sizeof(ptn_builtin_stream_wrappers) / sizeof(ptn_builtin_stream_wrappers[0]);
+static unsigned int ptn_disabled_builtin_stream_wrapper_mask = 0;
 static PtnUserStreamFilterRegistration *ptn_user_stream_filters = NULL;
 static size_t ptn_user_stream_filter_count = 0;
 static size_t ptn_user_stream_filter_capacity = 0;
@@ -56372,6 +56386,88 @@ static PtnUserStreamWrapper *ptn_user_stream_wrapper_find_path(const char *path)
     return wrapper;
 }
 
+static int ptn_stream_wrapper_builtin_index(const char *scheme) {
+    if (scheme == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < ptn_builtin_stream_wrapper_count; i++) {
+        if (ptn_ascii_case_equal(ptn_builtin_stream_wrappers[i], scheme)) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
+    return ptn_stream_wrapper_builtin_index(scheme) >= 0;
+}
+
+static int ptn_stream_wrapper_builtin_disabled(const char *scheme) {
+    int index = ptn_stream_wrapper_builtin_index(scheme);
+    if (index < 0) {
+        return 0;
+    }
+    return (ptn_disabled_builtin_stream_wrapper_mask & (1u << (unsigned int)index)) != 0;
+}
+
+static int ptn_stream_wrapper_builtin_active(const char *scheme) {
+    int index = ptn_stream_wrapper_builtin_index(scheme);
+    if (index < 0) {
+        return 0;
+    }
+    return (ptn_disabled_builtin_stream_wrapper_mask & (1u << (unsigned int)index)) == 0;
+}
+
+static void ptn_stream_wrapper_disable_builtin(const char *scheme) {
+    int index = ptn_stream_wrapper_builtin_index(scheme);
+    if (index >= 0) {
+        ptn_disabled_builtin_stream_wrapper_mask |= 1u << (unsigned int)index;
+    }
+}
+
+static void ptn_stream_wrapper_restore_builtin(const char *scheme) {
+    int index = ptn_stream_wrapper_builtin_index(scheme);
+    if (index >= 0) {
+        ptn_disabled_builtin_stream_wrapper_mask &= ~(1u << (unsigned int)index);
+    }
+}
+
+static int ptn_user_stream_wrapper_remove_scheme(const char *scheme) {
+    if (scheme == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < ptn_user_stream_wrapper_count; i++) {
+        if (!ptn_ascii_case_equal(ptn_user_stream_wrappers[i].scheme, scheme)) {
+            continue;
+        }
+        free(ptn_user_stream_wrappers[i].scheme);
+        free(ptn_user_stream_wrappers[i].class_name);
+        if (i + 1 < ptn_user_stream_wrapper_count) {
+            memmove(
+                &ptn_user_stream_wrappers[i],
+                &ptn_user_stream_wrappers[i + 1],
+                (ptn_user_stream_wrapper_count - i - 1) * sizeof(PtnUserStreamWrapper)
+            );
+        }
+        ptn_user_stream_wrapper_count--;
+        return 1;
+    }
+    return 0;
+}
+
+static char *ptn_stream_disabled_builtin_scheme_for_path(const char *path) {
+    char *scheme = ptn_user_stream_scheme_copy(path);
+    if (scheme == NULL) {
+        return NULL;
+    }
+    if (ptn_user_stream_wrapper_find_scheme(scheme) != NULL ||
+        !ptn_stream_wrapper_builtin_disabled(scheme)) {
+        free(scheme);
+        return NULL;
+    }
+    return scheme;
+}
+
 static void ptn_user_stream_resource_data_free(void *raw) {
     PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
     if (data == NULL) {
@@ -57567,6 +57663,57 @@ static PtnValue ptn_new_user_stream_wrapper_object(
     return object;
 }
 
+static void ptn_emit_unknown_stream_wrapper_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *scheme,
+    size_t line
+);
+
+static void ptn_emit_disabled_stream_wrapper_open_warnings(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *display_path,
+    const char *scheme,
+    size_t line
+) {
+    ptn_emit_unknown_stream_wrapper_warning(runtime, function_name, scheme, line);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): %s:// wrapper is disabled in the server configuration",
+        function_name,
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): %s:// wrapper is disabled in the server configuration",
+        function_name,
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+    ptn_emit_file_warning(
+        runtime,
+        function_name,
+        display_path,
+        "Failed to open stream: no suitable wrapper could be found",
+        line
+    );
+}
+
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
     const char *function_name,
@@ -57687,6 +57834,20 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    char *disabled_scheme = ptn_stream_disabled_builtin_scheme_for_path(uri == NULL ? path : uri);
+    if (disabled_scheme != NULL) {
+        ptn_emit_disabled_stream_wrapper_open_warnings(
+            runtime,
+            "fopen",
+            uri == NULL ? path : uri,
+            disabled_scheme,
+            line
+        );
+        free(disabled_scheme);
+        free(uri);
+        free(path);
         return ptn_bool(0);
     }
     if (ptn_ascii_case_has_prefix(path, "file://") && !ptn_ascii_case_has_prefix(path, "file:///")) {
@@ -64393,24 +64554,12 @@ static PtnValue ptn_internal_stream_clear_errors(PtnRuntime *runtime, size_t arg
     return ptn_null();
 }
 
-static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
-    return ptn_ascii_case_equal(scheme, "file") ||
-        ptn_ascii_case_equal(scheme, "php") ||
-        ptn_ascii_case_equal(scheme, "data") ||
-        ptn_ascii_case_equal(scheme, "phar") ||
-        ptn_ascii_case_equal(scheme, "compress.zlib") ||
-        ptn_ascii_case_equal(scheme, "ftp") ||
-        ptn_ascii_case_equal(scheme, "ftps") ||
-        ptn_ascii_case_equal(scheme, "http") ||
-        ptn_ascii_case_equal(scheme, "https");
-}
-
 static char *ptn_unknown_stream_wrapper_scheme(const char *path) {
     char *scheme = ptn_user_stream_scheme_copy(path);
     if (scheme == NULL) {
         return NULL;
     }
-    if (ptn_stream_wrapper_builtin_scheme(scheme) ||
+    if (ptn_stream_wrapper_builtin_active(scheme) ||
         ptn_user_stream_wrapper_find_scheme(scheme) != NULL) {
         free(scheme);
         return NULL;
@@ -64523,6 +64672,119 @@ static char *ptn_unknown_wrapper_local_fallback_path(const char *path) {
     return output;
 }
 
+static char *ptn_stream_wrapper_protocol_arg_scheme(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, function_name, 1, "protocol", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    char *scheme = malloc(protocol.len + 1);
+    if (scheme == NULL) {
+        ptn_string_operand_free(protocol);
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < protocol.len; i++) {
+        scheme[i] = (char)tolower((unsigned char)protocol.data[i]);
+    }
+    scheme[protocol.len] = '\0';
+    ptn_string_operand_free(protocol);
+    return scheme;
+}
+
+static void ptn_emit_stream_wrapper_unregister_warning(PtnRuntime *runtime, const char *scheme, size_t line) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "stream_wrapper_unregister(): Unable to unregister protocol %s://",
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "stream_wrapper_unregister(): Unable to unregister protocol %s://",
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_emit_stream_wrapper_restore_warning(PtnRuntime *runtime, const char *scheme, size_t line) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "stream_wrapper_restore(): %s:// never existed, nothing to restore",
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "stream_wrapper_restore(): %s:// never existed, nothing to restore",
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_emit_stream_wrapper_restore_notice(PtnRuntime *runtime, const char *scheme, size_t line) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "stream_wrapper_restore(): %s:// was never changed, nothing to restore",
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "stream_wrapper_restore(): %s:// was never changed, nothing to restore",
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_notice_with_path(
+        &runtime->diagnostics,
+        message,
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        1
+    );
+    free(message);
+}
+
 static PtnValue ptn_internal_stream_wrapper_register_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -64566,13 +64828,13 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
     ptn_string_operand_free(class_name);
     int64_t flags = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
 
-    if (ptn_stream_wrapper_builtin_scheme(scheme) || ptn_user_stream_wrapper_find_scheme(scheme) != NULL) {
+    if (ptn_stream_wrapper_builtin_active(scheme) || ptn_user_stream_wrapper_find_scheme(scheme) != NULL) {
         free(scheme);
         free(class_copy);
         ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): Protocol already defined", line);
         return ptn_bool(0);
     }
-    if (!ptn_declared_runtime_user_class_exists(runtime, class_copy)) {
+    if (!ptn_user_stream_filter_class_exists(runtime, class_copy)) {
         int needed = snprintf(
             NULL,
             0,
@@ -64638,26 +64900,60 @@ static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t
     return ptn_internal_stream_wrapper_register_named(runtime, "stream_register_wrapper", argc, args, line);
 }
 
+static PtnValue ptn_internal_stream_wrapper_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *scheme = ptn_stream_wrapper_protocol_arg_scheme(runtime, "stream_wrapper_unregister", args[0], line);
+    if (scheme == NULL) {
+        return ptn_null();
+    }
+    if (ptn_user_stream_wrapper_remove_scheme(scheme)) {
+        free(scheme);
+        return ptn_bool(1);
+    }
+    if (ptn_stream_wrapper_builtin_active(scheme)) {
+        ptn_stream_wrapper_disable_builtin(scheme);
+        free(scheme);
+        return ptn_bool(1);
+    }
+    ptn_emit_stream_wrapper_unregister_warning(runtime, scheme, line);
+    free(scheme);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_stream_wrapper_restore(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *scheme = ptn_stream_wrapper_protocol_arg_scheme(runtime, "stream_wrapper_restore", args[0], line);
+    if (scheme == NULL) {
+        return ptn_null();
+    }
+    if (!ptn_stream_wrapper_builtin_scheme(scheme)) {
+        ptn_emit_stream_wrapper_restore_warning(runtime, scheme, line);
+        free(scheme);
+        return ptn_bool(0);
+    }
+    (void)ptn_user_stream_wrapper_remove_scheme(scheme);
+    if (ptn_stream_wrapper_builtin_disabled(scheme)) {
+        ptn_stream_wrapper_restore_builtin(scheme);
+        free(scheme);
+        return ptn_bool(1);
+    }
+    ptn_emit_stream_wrapper_restore_notice(runtime, scheme, line);
+    free(scheme);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
-    static const char *builtin_wrappers[] = {
-        "https",
-        "php",
-        "file",
-        "data",
-        "http",
-        "ftp",
-        "ftps",
-        "compress.zlib",
-        "phar",
-    };
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     int64_t index = 0;
-    for (size_t i = 0; i < sizeof(builtin_wrappers) / sizeof(builtin_wrappers[0]); i++) {
-        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(builtin_wrappers[i]));
+    for (size_t i = 0; i < ptn_builtin_stream_wrapper_count; i++) {
+        if ((ptn_disabled_builtin_stream_wrapper_mask & (1u << (unsigned int)i)) != 0) {
+            continue;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(ptn_builtin_stream_wrappers[i]));
     }
     for (size_t i = 0; i < ptn_user_stream_wrapper_count; i++) {
         ptn_array_set_entry(
@@ -64912,7 +65208,7 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
             ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
         );
     }
-    if (user_stream != NULL && !user_stream->is_directory) {
+    if (user_stream != NULL) {
         ptn_stream_meta_set(
             result.as.array,
             "wrapper_data",
@@ -226727,6 +227023,8 @@ static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_wrapper_restore(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_wrapper_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_set_write_buffer(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_set_chunk_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_set_timeout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -228330,6 +228628,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
         { "stream_register_wrapper", 2, 3, ptn_internal_stream_register_wrapper },
         { "stream_wrapper_register", 2, 3, ptn_internal_stream_wrapper_register },
+        { "stream_wrapper_restore", 1, 1, ptn_internal_stream_wrapper_restore },
+        { "stream_wrapper_unregister", 1, 1, ptn_internal_stream_wrapper_unregister },
         { "strip_tags", 1, 2, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripos", 2, 3, ptn_internal_stripos },

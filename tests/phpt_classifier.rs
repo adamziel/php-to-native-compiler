@@ -961,6 +961,32 @@ fn phpt_classifier_keeps_user_stream_registration_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_stream_wrapper_state_rows_runnable() {
+    let cases = [
+        (
+            "stream wrapper unregister",
+            "--TEST--\nstream wrapper unregister\n--FILE--\n<?php\nstream_wrapper_unregister('file');\n--EXPECT--\n",
+        ),
+        (
+            "stream wrapper restore",
+            "--TEST--\nstream wrapper restore\n--FILE--\n<?php\nstream_wrapper_restore('file');\n--EXPECT--\n",
+        ),
+        (
+            "stream wrapper unregister from open",
+            "--TEST--\nstream wrapper unregister from open\n--FILE--\n<?php\nclass FooWrapper { public function stream_open($path, $mode, $options, &$opened_path) { stream_wrapper_unregister('foo'); return true; } }\nstream_wrapper_register('foo', 'FooWrapper');\nfopen('foo://bar', 'r');\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_allows_literal_eval_class_declarations() {
     let cases = [
         (
