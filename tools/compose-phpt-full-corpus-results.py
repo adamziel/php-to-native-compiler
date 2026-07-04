@@ -224,14 +224,23 @@ def main() -> int:
     present = set(by_shard)
     missing = sorted(expected - present)
     extra = sorted(present - expected)
-    selected = sum(item.selected for item in by_shard.values())
-    runnable = sum(item.runnable for item in by_shard.values())
-    excluded = sum(item.excluded for item in by_shard.values())
-    tests = sum(item.tests for item in by_shard.values())
-    passed = sum(item.passed for item in by_shard.values())
-    failed = sum(item.failed for item in by_shard.values())
-    skipped = sum(item.skipped for item in by_shard.values())
-    warned = sum(item.warned for item in by_shard.values())
+    complete_summaries = [
+        item for item in by_shard.values() if item.run_tests_exit is not None
+    ]
+    incomplete_summaries = [
+        item for item in by_shard.values() if item.run_tests_exit is None
+    ]
+    selected = sum(item.selected for item in complete_summaries)
+    runnable = sum(item.runnable for item in complete_summaries)
+    excluded = sum(item.excluded for item in complete_summaries)
+    tests = sum(item.tests for item in complete_summaries)
+    passed = sum(item.passed for item in complete_summaries)
+    failed = sum(item.failed for item in complete_summaries)
+    skipped = sum(item.skipped for item in complete_summaries)
+    warned = sum(item.warned for item in complete_summaries)
+    incomplete_selected = sum(item.selected for item in incomplete_summaries)
+    incomplete_runnable = sum(item.runnable for item in incomplete_summaries)
+    incomplete_excluded = sum(item.excluded for item in incomplete_summaries)
     nonzero = sum(
         1
         for item in by_shard.values()
@@ -250,7 +259,9 @@ def main() -> int:
 
     payload = {
         "expected_shards": args.expected_shards,
-        "completed_shards": len(present),
+        "shard_summaries_found": len(present),
+        "completed_shards": len(complete_summaries),
+        "incomplete_shards": [item.shard for item in incomplete_summaries],
         "missing_shards": missing,
         "extra_shards": extra,
         "unassigned_summaries": [summary_to_dict(item) for item in unassigned],
@@ -267,6 +278,9 @@ def main() -> int:
             "pass_rate_of_corpus": percent(passed, selected),
             "pass_rate_of_runnable": percent(passed, runnable),
             "nonzero_shard_exits": nonzero,
+            "incomplete_selected": incomplete_selected,
+            "incomplete_runnable": incomplete_runnable,
+            "incomplete_excluded": incomplete_excluded,
         },
         "commits": dict(commits),
         "corpus_revisions": dict(corpus_revisions),
@@ -284,7 +298,9 @@ def main() -> int:
         "| Metric | Count |",
         "| --- | ---: |",
         f"| Expected shards | {args.expected_shards} |",
-        f"| Completed shards | {len(present)} |",
+        f"| Shard summaries found | {len(present)} |",
+        f"| Complete shard summaries | {len(complete_summaries)} |",
+        f"| Incomplete shard summaries | {len(incomplete_summaries)} |",
         f"| Selected corpus rows | {selected} |",
         f"| Runnable rows | {runnable} |",
         f"| Classified exclusions | {excluded} |",
@@ -297,6 +313,9 @@ def main() -> int:
         f"| Pass rate of corpus | {percent(passed, selected)} |",
         f"| Pass rate of runnable rows | {percent(passed, runnable)} |",
         f"| Nonzero shard exits | {nonzero} |",
+        f"| Rows in incomplete shard summaries | {incomplete_selected} |",
+        f"| Runnable rows in incomplete shard summaries | {incomplete_runnable} |",
+        f"| Exclusions in incomplete shard summaries | {incomplete_excluded} |",
         "",
     ]
 
@@ -339,6 +358,27 @@ def main() -> int:
         lines.extend(["## Missing Shards", "", ", ".join(str(item) for item in missing), ""])
     if extra:
         lines.extend(["## Extra Shards", "", ", ".join(str(item) for item in extra), ""])
+    if incomplete_summaries:
+        lines.extend(
+            [
+                "## Incomplete Shards",
+                "",
+                "These shards wrote a header but did not reach `run-tests-exit`; they are usually canceled or runner-terminated and are excluded from pass-rate totals.",
+                "",
+                "| Shard | Selected | Runnable | Excluded | Summary |",
+                "| ---: | ---: | ---: | ---: | --- |",
+            ]
+        )
+        for item in sorted(
+            incomplete_summaries,
+            key=lambda summary: -1 if summary.shard is None else summary.shard,
+        ):
+            shard = "" if item.shard is None else str(item.shard)
+            lines.append(
+                f"| {shard} | {item.selected} | {item.runnable} | "
+                f"{item.excluded} | `{item.path}` |"
+            )
+        lines.append("")
 
     lines.extend(
         [
@@ -362,7 +402,7 @@ def main() -> int:
     (args.out_dir / "summary.md").write_text(markdown)
     print(markdown)
 
-    return 1 if missing else 0
+    return 1 if missing or incomplete_summaries else 0
 
 
 if __name__ == "__main__":
