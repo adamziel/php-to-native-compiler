@@ -71945,6 +71945,114 @@ echo $client->__getLastRequest();
 }
 
 #[test]
+fn compile_soap_simple_content_extension_inherits_base_attributes_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-simple-content-extension-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-simple-content-extension-attributes.php");
+    let output = root.join("soap-simple-content-extension-attributes-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$seen = null;
+function test($input) {
+    global $seen;
+    $seen = $input;
+}
+
+$wsdl = __DIR__ . '/simple-content-extension-attributes.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://test-uri/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://test-uri/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <complexType name="testType2">
+        <simpleContent>
+          <extension base="int">
+            <attribute name="int" type="int"/>
+          </extension>
+        </simpleContent>
+      </complexType>
+      <complexType name="testType">
+        <simpleContent>
+          <extension base="tns:testType2">
+            <attribute name="int2" type="int"/>
+          </extension>
+        </simpleContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="testMessage"><part name="testParam" type="tns:testType"/></message>
+  <message name="testResponse"/>
+  <portType name="testPortType">
+    <operation name="test"><input message="tns:testMessage"/><output message="tns:testResponse"/></operation>
+  </portType>
+  <binding name="testBinding" type="tns:testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+      <output>
+        <soap:body use="encoded" namespace="http://test-uri/"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding"><soap:address location="test://"/></port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$server = new SoapServer($wsdl);
+$server->addFunction('test');
+$client->test((object)['_' => 123.5, 'int' => 123.5, 'int2' => 123.5]);
+$request = $client->__getLastRequest();
+echo $request;
+ob_start();
+$server->handle($request);
+ob_end_clean();
+var_dump($seen);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "<testParam xsi:type=\"ns1:testType\" int=\"123\" int2=\"123\">123</testParam>"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"_\"]=>\n  int(123)"), "{stdout}");
+    assert!(stdout.contains("[\"int\"]=>\n  int(123)"), "{stdout}");
+    assert!(stdout.contains("[\"int2\"]=>\n  int(123)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_type_copy_fields"));
+}
+
+#[test]
 fn compile_soap_simple_content_null_attribute_request_uses_xsi_before_xsd_to_native_binary() {
     let root = temp_dir("ptn-native-soap-simple-content-null-attribute-namespace-order");
     fs::create_dir_all(&root).unwrap();

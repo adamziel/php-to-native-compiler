@@ -1,0 +1,7 @@
+# Focused SOAP interop/schema current-red row pack.
+# Paths are relative to PHP_SRC_PHPT.
+#
+#   tools/run-bounded-phpt.sh tools/phpt-soap-interop-schema-next-manifest.txt
+
+ext/soap/tests/interop/Round2/Base/r2_base_006s.phpt
+ext/soap/tests/schema/schema043.phpt

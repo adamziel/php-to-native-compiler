@@ -217905,6 +217905,8 @@ static void ptn_soap_parse_complex_type_in_range(
     if (ptn_soap_range_has_tag(start, end, "simpleContent")) {
         type->has_simple_content = 1;
         ptn_soap_type_set_base_type(type, simple_base == NULL ? "string" : simple_base);
+        PtnSoapType *base_type = ptn_soap_type_list_find(types, type_count, simple_base);
+        ptn_soap_type_copy_fields(type, base_type);
         ptn_soap_parse_fields_in_range(
             document_start,
             document_end,
@@ -230225,7 +230227,7 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         }
     } else if (request_starts_with_encoded_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
