@@ -32,6 +32,7 @@ const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
     "Using ${expr} (variable variables) in strings is deprecated, use {${expr}} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
+    "DoOperationNoCast",
     "php_user_filter",
     "Phar",
     "PharData",
@@ -11581,6 +11582,7 @@ fn emit_class_metadata_helpers(
     for class_name in [
         "stdClass",
         "InternalIterator",
+        "DoOperationNoCast",
         "DatePeriod",
         "BcMath\\Number",
         "Generator",
@@ -12476,6 +12478,7 @@ fn emit_class_metadata_helpers(
     for builtin in [
         "stdClass",
         "InternalIterator",
+        "DoOperationNoCast",
         "BcMath\\Number",
         "Generator",
         "Fiber",

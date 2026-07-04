@@ -1025,6 +1025,46 @@ static PTN_UNUSED PtnValue ptn_uri_new(
 #endif
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PtnValue ptn_zend_test_do_operation_no_cast_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "DoOperationNoCast::__construct() expects exactly 1 argument");
+        return ptn_null();
+    }
+    int64_t value = ptn_internal_expect_integer_arg(runtime, "DoOperationNoCast::__construct", 1, "val", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell_at(runtime, "DoOperationNoCast", line);
+    ptn_object_register_property_metadata(
+        object.as.object,
+        "val",
+        "DoOperationNoCast",
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_PRIVATE,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0
+    );
+    char *storage_key = ptn_object_private_storage_key("DoOperationNoCast", "val");
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(storage_key), ptn_int(value));
+    free(storage_key);
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_date_period_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1272,6 +1312,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_curl_file(lookup_class_name)) {
         return ptn_curl_file_new(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "DoOperationNoCast")) {
+        return ptn_zend_test_do_operation_no_cast_new(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||

@@ -77770,6 +77770,74 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_zend_test_do_operation_no_cast_array_aggregates_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-do-operation-no-cast-array-aggregates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-do-operation-no-cast-array-aggregates.php");
+    let output = root.join("zend-test-do-operation-no-cast-array-aggregates-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$sum = [new DoOperationNoCast(25), new DoOperationNoCast(6)];\n\
+var_dump(array_sum($sum));\n\
+var_dump(array_reduce($sum, fn($carry, $value) => $carry + $value, 0));\n\
+$product = [new DoOperationNoCast(25), new DoOperationNoCast(6), new DoOperationNoCast(10)];\n\
+var_dump(array_product($product));\n\
+var_dump(array_reduce($product, fn($carry, $value) => $carry * $value, 1));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: array_sum(): Addition is not supported on type DoOperationNoCast in ptn on line 3\n\
+\nWarning: array_sum(): Addition is not supported on type DoOperationNoCast in ptn on line 3\n\
+int(0)\n\
+object(DoOperationNoCast)#5 (1) {\n  [\"val\":\"DoOperationNoCast\":private]=>\n  int(31)\n\
+}\n\
+\nWarning: array_product(): Multiplication is not supported on type DoOperationNoCast in ptn on line 6\n\
+\nWarning: array_product(): Multiplication is not supported on type DoOperationNoCast in ptn on line 6\n\
+\nWarning: array_product(): Multiplication is not supported on type DoOperationNoCast in ptn on line 6\n\
+int(1)\n\
+object(DoOperationNoCast)#7 (1) {\n  [\"val\":\"DoOperationNoCast\":private]=>\n  int(1500)\n\
+}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_do_operation_no_cast_new"));
+    assert!(c_source.contains("ptn_zend_test_do_operation_no_cast_binary_op"));
+}
+
+#[test]
+fn phpc_zend_test_do_operation_no_cast_runs_with_internal_dispatch() {
+    let root = temp_dir("ptn-phpc-zend-test-do-operation-no-cast");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-do-operation-no-cast.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = new DoOperationNoCast(25);\n\
+$b = new DoOperationNoCast(6);\n\
+var_dump($a + $b);\n\
+var_dump($a * $b);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(DoOperationNoCast)#"));
+    assert!(stdout.contains("int(31)\n"));
+    assert!(stdout.contains("int(150)\n"));
+    assert!(!stdout.contains("Class \"DoOperationNoCast\" not found"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strtr_dereferences_replacement_array_entries_to_native_binary() {
     let root = temp_dir("ptn-native-strtr-reference-map");
     fs::create_dir_all(&root).unwrap();

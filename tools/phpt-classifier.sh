@@ -1175,6 +1175,7 @@ ptn_phpt_requires_zend_test_native_helper() {
     local helper_pattern="zend_test_|zend_get_current_func_name|_ZendTest|ZendTest|ZEND_TEST|DoOperationNoCast|ReflectionExtension[[:space:]]*[(][[:space:]]*['\"]zend_test['\"]"
 
     [[ "$row" == ext/zend_test/tests/* ]] || return 1
+    [[ "$row" == "ext/zend_test/tests/do_operation_not_cast.phpt" ]] && return 1
 
     if LC_ALL=C grep -Eq "$helper_pattern" "$path"; then
         return 0

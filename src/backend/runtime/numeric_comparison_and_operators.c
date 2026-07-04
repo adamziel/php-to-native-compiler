@@ -1461,6 +1461,80 @@ static PTN_UNUSED PtnValue ptn_add_integers(int64_t left, int64_t right) {
     return ptn_int(left + right);
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_multiply_integers(int64_t left, int64_t right);
+
+static int ptn_zend_test_do_operation_no_cast_object_value(PtnValue value, int64_t *out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_ascii_case_equal(value.as.object->class_name, "DoOperationNoCast")) {
+        return 0;
+    }
+    char *storage_key = ptn_object_private_storage_key("DoOperationNoCast", "val");
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(value.as.object->properties, key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue stored = ptn_value_deref(entry->value);
+    if (stored.type != PTN_INT) {
+        return 0;
+    }
+    *out = stored.as.integer;
+    return 1;
+}
+
+static int ptn_zend_test_do_operation_no_cast_operand_long(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    int64_t *out
+) {
+    if (ptn_zend_test_do_operation_no_cast_object_value(value, out)) {
+        return 1;
+    }
+
+    PtnNumber number;
+    if (!ptn_arithmetic_number(runtime, value, line, &number)) {
+        return 0;
+    }
+    *out = number.type == PTN_NUMBER_FLOAT
+        ? ptn_float_to_php_integer(number.floating)
+        : number.integer;
+    return 1;
+}
+
+static int ptn_zend_test_do_operation_no_cast_binary_op(
+    PtnRuntime *runtime,
+    const char *operator,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnValue *out
+) {
+    int64_t left_value = 0;
+    int64_t right_value = 0;
+    int64_t ignored = 0;
+    if (!ptn_zend_test_do_operation_no_cast_object_value(left, &ignored) &&
+        !ptn_zend_test_do_operation_no_cast_object_value(right, &ignored)) {
+        return 0;
+    }
+    if (!ptn_zend_test_do_operation_no_cast_operand_long(runtime, left, line, &left_value) ||
+        !ptn_zend_test_do_operation_no_cast_operand_long(runtime, right, line, &right_value)) {
+        return 0;
+    }
+    PtnValue arg = ptn_ascii_case_equal(operator, "+")
+        ? ptn_add_integers(left_value, right_value)
+        : ptn_multiply_integers(left_value, right_value);
+    PtnValue args[1] = { arg };
+    *out = ptn_zend_test_do_operation_no_cast_new(runtime, 1, args, line);
+    ptn_value_destroy(&arg);
+    return 1;
+}
+#endif
+
 static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -1469,6 +1543,9 @@ static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue 
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue internal_result = ptn_null();
+    if (ptn_zend_test_do_operation_no_cast_binary_op(runtime, "+", left, right, line, &internal_result)) {
+        return internal_result;
+    }
     if (ptn_bcmath_number_binary_op(runtime, "+", left, right, line, &internal_result)) {
         return internal_result;
     }
@@ -1564,6 +1641,9 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnV
     right = ptn_value_deref(right);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue internal_result = ptn_null();
+    if (ptn_zend_test_do_operation_no_cast_binary_op(runtime, "*", left, right, line, &internal_result)) {
+        return internal_result;
+    }
     if (ptn_bcmath_number_binary_op(runtime, "*", left, right, line, &internal_result)) {
         return internal_result;
     }

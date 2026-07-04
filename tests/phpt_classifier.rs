@@ -244,6 +244,19 @@ fn phpt_classifier_supports_plain_zend_test_extension_rows() {
 }
 
 #[test]
+fn phpt_classifier_supports_modeled_do_operation_no_cast_row() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nDoOperationNoCast modeled helper\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\n$a = new DoOperationNoCast(25);\n$b = new DoOperationNoCast(6);\nvar_dump($a + $b);\n--EXPECT--\n",
+        "ext/zend_test/tests/do_operation_not_cast.phpt",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_zend_test_native_helper_rows() {
     let classification = classify_at_relative_path(
         "--TEST--\ncompile to ast\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nzend_test_compile_to_ast('<?php echo 1;');\n--EXPECT--\n",

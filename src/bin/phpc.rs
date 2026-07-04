@@ -1708,13 +1708,15 @@ fn compile_and_run(
     };
     let native = TempPath::new("ptn-phpc-native", "bin");
     let archive_wrapper = phar_archive_main_wrapper(script)?;
-    if archive_wrapper.is_some() {
-        source_options.force_internal_function_dispatch = true;
-    }
     let compile_script = archive_wrapper
         .as_ref()
         .map(|wrapper| wrapper.path())
         .unwrap_or(script);
+    if archive_wrapper.is_some()
+        || source_references_modeled_extension_internal_class(compile_script)
+    {
+        source_options.force_internal_function_dispatch = true;
+    }
     let preload_files = opcache_preload_files(&ini, script);
     compile_file_with_preloads_and_source_options(
         compile_script,
@@ -2051,6 +2053,16 @@ fn compile_and_run(
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
+}
+
+fn source_references_modeled_extension_internal_class(script: &Path) -> bool {
+    const MODELED_CLASS_MARKERS: &[&[u8]] = &[b"DoOperationNoCast"];
+    let Ok(source) = fs::read(script) else {
+        return false;
+    };
+    MODELED_CLASS_MARKERS
+        .iter()
+        .any(|marker| source.windows(marker.len()).any(|window| window == *marker))
 }
 
 fn shell_single_quote(value: &str) -> String {
