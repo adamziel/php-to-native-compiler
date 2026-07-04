@@ -557,7 +557,15 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
 }
 
 ptn_phpt_supported_recursive_fiber_resource_limit_row() {
-    [[ "$1" == "Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt" ]]
+    case "$1" in
+        Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt|\
+        Zend/tests/fibers/get-return-after-bailout.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 ptn_phpt_php_constant_defined() {

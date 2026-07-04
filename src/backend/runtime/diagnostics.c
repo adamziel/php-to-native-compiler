@@ -2317,6 +2317,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
         }
     }
     PtnRuntime *root = ptn_runtime_root(runtime);
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     if (root != NULL && root->fatal_error_recovery_frame != NULL) {
         longjmp(root->fatal_error_recovery_frame->jump, 1);
     }
@@ -2355,6 +2356,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
         }
     }
     PtnRuntime *root = ptn_runtime_root(runtime);
+    ptn_runtime_mark_current_fiber_fatal_error(runtime);
     if (root != NULL && root->fatal_error_recovery_frame != NULL) {
         longjmp(root->fatal_error_recovery_frame->jump, 1);
     }

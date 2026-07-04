@@ -4354,6 +4354,50 @@ $fiber->start();
 }
 
 #[test]
+fn compile_fiber_get_return_after_memory_bailout_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-get-return-after-memory-bailout");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-get-return-after-memory-bailout.php");
+    let output = root.join("fiber-get-return-after-memory-bailout-bin");
+    fs::write(
+        &input,
+        r#"<?php
+register_shutdown_function(static function (): void {
+    global $fiber;
+    var_dump($fiber->getReturn());
+});
+
+$fiber = new Fiber(static function (): void {
+    str_repeat('X', PHP_INT_MAX);
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_string_result_enforce_memory_limit"));
+    assert!(c_source.contains("The fiber exited with a fatal error"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("Fatal error: Allowed memory size of "),
+        "{combined}"
+    );
+    assert!(combined.contains("tried to allocate "), "{combined}");
+    assert!(
+        combined.contains("Fatal error: Uncaught FiberError: Cannot get fiber return value: The fiber exited with a fatal error"),
+        "{combined}"
+    );
+    assert!(!combined.contains("Fiber->start"), "{combined}");
+}
+
+#[test]
 fn compile_reflection_fiber_suspend_trace_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-fiber-suspend-trace");
     fs::create_dir_all(&root).unwrap();
@@ -26136,6 +26180,7 @@ function f() {
 $gen = f();
 var_dump($gen->current());
 $gen->next();
+gc_collect_cycles();
 "#,
     )
     .unwrap();

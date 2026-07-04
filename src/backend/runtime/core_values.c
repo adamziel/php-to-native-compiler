@@ -2263,6 +2263,7 @@ static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runti
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object);
+static PTN_UNUSED void ptn_runtime_mark_current_fiber_fatal_error(PtnRuntime *runtime);
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name
