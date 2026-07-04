@@ -218409,10 +218409,10 @@ static int ptn_soap_build_rpc_encoded_request(
         }
     } else if (has_array_part) {
         ptn_string_buffer_append(&body, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
-        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (part_count != 0) {
             ptn_string_buffer_append(&body, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
+        ptn_string_buffer_append(&body, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (custom_namespace != NULL && custom_namespace[0] != '\0') {
             ptn_soap_append_ns2_namespace_declaration(&body, custom_namespace);
         }

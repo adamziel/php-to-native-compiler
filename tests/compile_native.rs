@@ -70396,6 +70396,98 @@ echo $client->__getLastRequest();
 }
 
 #[test]
+fn compile_soap_rpc_encoded_array_request_namespace_order_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-rpc-encoded-array-namespace-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-rpc-encoded-array-namespace-order.php");
+    let output = root.join("soap-rpc-encoded-array-namespace-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/round4-grouph-simple.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/wsdl"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://soapinterop.org/wsdl"
+  xmlns:types="http://soapinterop.org/types"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/types">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <complexType name="ArrayOfFloat">
+        <complexContent>
+          <restriction base="SOAP-ENC:Array">
+            <attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="xsd:float[]"/>
+          </restriction>
+        </complexContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoMultipleFaults1Request">
+    <part name="whichFault" type="xsd:int"/>
+    <part name="param1" type="xsd:string"/>
+    <part name="param2" type="types:ArrayOfFloat"/>
+  </message>
+  <message name="echoMultipleFaults1Response"/>
+  <portType name="InteropTestPortType">
+    <operation name="echoMultipleFaults1">
+      <input message="tns:echoMultipleFaults1Request"/>
+      <output message="tns:echoMultipleFaults1Response"/>
+    </operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoMultipleFaults1">
+      <soap:operation soapAction="http://soapinterop.org/wsdl"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding">
+      <soap:address location="http://localhost/interop"/>
+    </port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoMultipleFaults1(4, 'Hello world', [12.345, 45, 678]);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:ns2=\"http://soapinterop.org/types\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<param2 SOAP-ENC:arrayType=\"xsd:float[3]\" xsi:type=\"ns2:ArrayOfFloat\"><item xsi:type=\"xsd:float\">12.345</item><item xsi:type=\"xsd:float\">45</item><item xsi:type=\"xsd:float\">678</item></param2>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_build_rpc_encoded_request"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();
