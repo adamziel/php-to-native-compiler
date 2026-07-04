@@ -10,11 +10,11 @@ on:
       timeout_seconds:
         description: Per-PHPT timeout passed to run-tests.php
         required: true
-        default: "900"
+        default: "3600"
       run_tests_jobs:
         description: Parallel run-tests.php workers per shard
         required: true
-        default: "2"
+        default: "4"
 
 permissions:
   contents: read
@@ -25,9 +25,9 @@ concurrency:
 
 jobs:
   full-phpt-shard:
-    name: shard ${{ matrix.shard }}/59
+    name: shard ${{ matrix.shard }}/119
     runs-on: ubuntu-latest
-    timeout-minutes: 1440
+    timeout-minutes: 2880
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +37,13 @@ jobs:
           20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
           30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
           40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-          50, 51, 52, 53, 54, 55, 56, 57, 58, 59
+          50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+          60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+          70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+          80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+          90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+          100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+          110, 111, 112, 113, 114, 115, 116, 117, 118, 119
         ]
 
     steps:
@@ -76,7 +82,7 @@ jobs:
         run: |
           tools/phpt-full-corpus-shard.sh \
             --shard-index "${{ matrix.shard }}" \
-            --shard-count 60 \
+            --shard-count 120 \
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
@@ -120,7 +126,7 @@ jobs:
       - name: Compose full-corpus result
         run: |
           tools/compose-phpt-full-corpus-results.py \
-            --expected-shards 60 \
+            --expected-shards 120 \
             --out-dir .runtime/full-phpt-composed \
             .runtime/full-phpt-artifacts
 

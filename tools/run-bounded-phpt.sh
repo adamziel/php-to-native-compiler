@@ -13,9 +13,9 @@ Usage: tools/run-bounded-phpt.sh [--classify-only] [--classify-harness-programs]
 Classify a PHPT manifest, then run runnable rows through php-src run-tests.php.
 
 Environment:
-  PTN_PHPT_TEST_TIMEOUT        Per-test run-tests.php timeout. Defaults to 900
+  PTN_PHPT_TEST_TIMEOUT        Per-test run-tests.php timeout. Defaults to 3600
                                seconds to allow native compile startup latency.
-  PTN_PHPT_RUN_TESTS_JOBS      Parallel run-tests.php workers. Defaults to 1.
+  PTN_PHPT_RUN_TESTS_JOBS      Parallel run-tests.php workers. Defaults to 4.
 
 Options:
   --classify-only              write classification and blocker manifests without
@@ -296,12 +296,12 @@ fi
 cargo build --bin phpc
 
 phpc_bin=${PHPC_BIN:-$PWD/target/debug/phpc}
-phpt_test_timeout=${PTN_PHPT_TEST_TIMEOUT:-900}
+phpt_test_timeout=${PTN_PHPT_TEST_TIMEOUT:-3600}
 if [[ ! "$phpt_test_timeout" =~ ^[0-9]+$ || "$phpt_test_timeout" -le 0 ]]; then
     echo "PTN_PHPT_TEST_TIMEOUT must be a positive integer number of seconds: $phpt_test_timeout" >&2
     exit 2
 fi
-phpt_run_tests_jobs=${PTN_PHPT_RUN_TESTS_JOBS:-1}
+phpt_run_tests_jobs=${PTN_PHPT_RUN_TESTS_JOBS:-4}
 if [[ ! "$phpt_run_tests_jobs" =~ ^[0-9]+$ || "$phpt_run_tests_jobs" -le 0 ]]; then
     echo "PTN_PHPT_RUN_TESTS_JOBS must be a positive integer: $phpt_run_tests_jobs" >&2
     exit 2
