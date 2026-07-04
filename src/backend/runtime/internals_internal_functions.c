@@ -195758,6 +195758,501 @@ static PtnValue ptn_internal_socket_recv(PtnRuntime *runtime, size_t argc, const
 #endif
 }
 
+static PtnArrayEntry *ptn_socket_cmsg_array_entry(PtnArray *array, const char *key_name) {
+    if (array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_socket_cmsg_array_integer(PtnArray *array, const char *key_name, int64_t *out) {
+    PtnArrayEntry *entry = ptn_socket_cmsg_array_entry(array, key_name);
+    if (entry == NULL) {
+        return 0;
+    }
+    *out = ptn_value_to_integer(entry->value);
+    return 1;
+}
+
+static void ptn_socket_sendmsg_iov_free(PtnStringOperand *operands, size_t count) {
+    if (operands == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_operand_free(operands[i]);
+    }
+    free(operands);
+}
+
+static int ptn_socket_cmsg_fd_from_value(PtnValue value, int *fd_out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || value.as.resource == NULL || !ptn_resource_is_open(value.as.resource)) {
+        return 0;
+    }
+    PtnSocketData *socket = ptn_socket_data(value.as.resource);
+    if (socket != NULL && socket->fd >= 0) {
+        *fd_out = socket->fd;
+        return 1;
+    }
+    if (value.as.resource->stream != NULL) {
+        int fd = fileno(value.as.resource->stream);
+        if (fd >= 0) {
+            *fd_out = fd;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *ptn_socket_fdopen_mode(int fd) {
+#if defined(_WIN32)
+    (void)fd;
+    return "r+";
+#else
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return "r+";
+    }
+    switch (flags & O_ACCMODE) {
+        case O_RDONLY:
+            return "r";
+        case O_WRONLY:
+            return "w";
+        default:
+            return "r+";
+    }
+#endif
+}
+
+static PtnValue ptn_internal_socket_cmsg_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t level = ptn_internal_expect_integer_arg(runtime, "socket_cmsg_space", 1, "level", args[0], line);
+    int64_t type = ptn_internal_expect_integer_arg(runtime, "socket_cmsg_space", 2, "type", args[1], line);
+    int64_t count = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_cmsg_space", 3, "num", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (count < 0 || (uint64_t)count > SIZE_MAX / sizeof(int)) {
+        return ptn_bool(0);
+    }
+#if defined(_WIN32) || !defined(SCM_RIGHTS)
+    (void)level;
+    (void)type;
+    return ptn_bool(0);
+#else
+    if (level != SOL_SOCKET || type != SCM_RIGHTS) {
+        return ptn_bool(0);
+    }
+    size_t payload_len = (size_t)count * sizeof(int);
+    return ptn_int((int64_t)CMSG_SPACE(payload_len));
+#endif
+}
+
+static int ptn_socket_sendmsg_parse_name(
+    PtnRuntime *runtime,
+    PtnSocketData *data,
+    PtnArray *message,
+    struct sockaddr_storage *storage,
+    socklen_t *storage_len,
+    size_t line
+) {
+    *storage_len = 0;
+    PtnArrayEntry *name_entry = ptn_socket_cmsg_array_entry(message, "name");
+    if (name_entry == NULL) {
+        return 1;
+    }
+    PtnValue name_value = ptn_value_deref(name_entry->value);
+    if (name_value.type == PTN_NULL) {
+        return 1;
+    }
+    if (name_value.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArrayEntry *path_entry = ptn_socket_cmsg_array_entry(name_value.as.array, "path");
+    if (path_entry == NULL) {
+        return 1;
+    }
+    if (data->domain != AF_UNIX) {
+        return 0;
+    }
+    PtnStringOperand path = ptn_value_to_string_operand_with_runtime(runtime, path_entry->value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(path);
+        return 0;
+    }
+    int ok = ptn_socket_make_unix_addr(
+        runtime,
+        "socket_sendmsg",
+        path,
+        (struct sockaddr_un *)storage,
+        storage_len,
+        line
+    );
+    ptn_string_operand_free(path);
+    return ok;
+}
+
+static int ptn_socket_sendmsg_parse_iov(
+    PtnRuntime *runtime,
+    PtnArray *message,
+    struct iovec **iov_out,
+    PtnStringOperand **operands_out,
+    size_t *iov_count_out,
+    size_t line
+) {
+    *iov_out = NULL;
+    *operands_out = NULL;
+    *iov_count_out = 0;
+    PtnArrayEntry *iov_entry = ptn_socket_cmsg_array_entry(message, "iov");
+    if (iov_entry == NULL || ptn_value_deref(iov_entry->value).type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArray *iov_array = ptn_value_deref(iov_entry->value).as.array;
+    if (iov_array->len == 0) {
+        return 1;
+    }
+    if (iov_array->len > SIZE_MAX / sizeof(struct iovec) ||
+        iov_array->len > SIZE_MAX / sizeof(PtnStringOperand)) {
+        ptn_abort_out_of_memory();
+    }
+    struct iovec *iov = calloc(iov_array->len, sizeof(struct iovec));
+    PtnStringOperand *operands = calloc(iov_array->len, sizeof(PtnStringOperand));
+    if (iov == NULL || operands == NULL) {
+        free(iov);
+        free(operands);
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < iov_array->len; i++) {
+        operands[i] = ptn_value_to_string_operand_with_runtime(runtime, iov_array->entries[i].value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_socket_sendmsg_iov_free(operands, i + 1);
+            free(iov);
+            return 0;
+        }
+        iov[i].iov_base = (void *)operands[i].data;
+        iov[i].iov_len = operands[i].len;
+    }
+    *iov_out = iov;
+    *operands_out = operands;
+    *iov_count_out = iov_array->len;
+    return 1;
+}
+
+static int ptn_socket_sendmsg_rights_fd_count(PtnArray *control_array, size_t *fd_count_out) {
+    size_t fd_count = 0;
+    for (size_t i = 0; i < control_array->len; i++) {
+        PtnValue control_value = ptn_value_deref(control_array->entries[i].value);
+        if (control_value.type != PTN_ARRAY) {
+            return 0;
+        }
+        int64_t level = 0;
+        int64_t type = 0;
+        if (!ptn_socket_cmsg_array_integer(control_value.as.array, "level", &level) ||
+            !ptn_socket_cmsg_array_integer(control_value.as.array, "type", &type) ||
+            level != SOL_SOCKET ||
+#if defined(SCM_RIGHTS)
+            type != SCM_RIGHTS
+#else
+            1
+#endif
+        ) {
+            return 0;
+        }
+        PtnArrayEntry *data_entry = ptn_socket_cmsg_array_entry(control_value.as.array, "data");
+        if (data_entry == NULL || ptn_value_deref(data_entry->value).type != PTN_ARRAY) {
+            return 0;
+        }
+        PtnArray *fd_array = ptn_value_deref(data_entry->value).as.array;
+        if (fd_array->len > SIZE_MAX - fd_count) {
+            ptn_abort_out_of_memory();
+        }
+        fd_count += fd_array->len;
+    }
+    *fd_count_out = fd_count;
+    return 1;
+}
+
+static int ptn_socket_sendmsg_fill_rights_fds(PtnArray *control_array, int *fds) {
+    size_t fd_offset = 0;
+    for (size_t i = 0; i < control_array->len; i++) {
+        PtnValue control_value = ptn_value_deref(control_array->entries[i].value);
+        PtnArrayEntry *data_entry = ptn_socket_cmsg_array_entry(control_value.as.array, "data");
+        PtnArray *fd_array = ptn_value_deref(data_entry->value).as.array;
+        for (size_t j = 0; j < fd_array->len; j++) {
+            int fd = -1;
+            if (!ptn_socket_cmsg_fd_from_value(fd_array->entries[j].value, &fd)) {
+                return 0;
+            }
+            fds[fd_offset++] = fd;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_socket_sendmsg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_sendmsg", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnArray *message = ptn_internal_expect_array_arg(runtime, "socket_sendmsg", 2, "message", args[1]);
+    int64_t flags = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_sendmsg", 3, "flags", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL || message == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32) || !defined(SCM_RIGHTS)
+    (void)flags;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    struct sockaddr_storage name_storage;
+    socklen_t name_len = 0;
+    if (!ptn_socket_sendmsg_parse_name(runtime, data, message, &name_storage, &name_len, line)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+
+    struct iovec *iov = NULL;
+    PtnStringOperand *iov_operands = NULL;
+    size_t iov_count = 0;
+    if (!ptn_socket_sendmsg_parse_iov(runtime, message, &iov, &iov_operands, &iov_count, line)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+
+    char *control_buffer = NULL;
+    size_t control_len = 0;
+    PtnArrayEntry *control_entry = ptn_socket_cmsg_array_entry(message, "control");
+    if (control_entry != NULL && ptn_value_deref(control_entry->value).type == PTN_ARRAY) {
+        PtnArray *control_array = ptn_value_deref(control_entry->value).as.array;
+        size_t fd_count = 0;
+        if (!ptn_socket_sendmsg_rights_fd_count(control_array, &fd_count)) {
+            ptn_socket_sendmsg_iov_free(iov_operands, iov_count);
+            free(iov);
+            return ptn_socket_false_with_error(data, EINVAL);
+        }
+        if (fd_count > 0) {
+            if (fd_count > SIZE_MAX / sizeof(int)) {
+                ptn_abort_out_of_memory();
+            }
+            size_t fd_bytes = fd_count * sizeof(int);
+            control_len = CMSG_SPACE(fd_bytes);
+            control_buffer = calloc(1, control_len);
+            if (control_buffer == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            struct msghdr control_msg;
+            memset(&control_msg, 0, sizeof(control_msg));
+            control_msg.msg_control = control_buffer;
+            control_msg.msg_controllen = control_len;
+            struct cmsghdr *cmsg = CMSG_FIRSTHDR(&control_msg);
+            if (cmsg == NULL) {
+                free(control_buffer);
+                ptn_socket_sendmsg_iov_free(iov_operands, iov_count);
+                free(iov);
+                return ptn_socket_false_with_error(data, EINVAL);
+            }
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(fd_bytes);
+            if (!ptn_socket_sendmsg_fill_rights_fds(control_array, (int *)CMSG_DATA(cmsg))) {
+                free(control_buffer);
+                ptn_socket_sendmsg_iov_free(iov_operands, iov_count);
+                free(iov);
+                return ptn_socket_false_with_error(data, EINVAL);
+            }
+        }
+    } else if (control_entry != NULL && ptn_value_deref(control_entry->value).type != PTN_NULL) {
+        ptn_socket_sendmsg_iov_free(iov_operands, iov_count);
+        free(iov);
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    if (name_len > 0) {
+        msg.msg_name = &name_storage;
+        msg.msg_namelen = name_len;
+    }
+    msg.msg_iov = iov;
+    msg.msg_iovlen = iov_count;
+    msg.msg_control = control_buffer;
+    msg.msg_controllen = control_len;
+
+    ssize_t sent;
+    do {
+        sent = sendmsg(data->fd, &msg, (int)flags);
+    } while (sent < 0 && errno == EINTR);
+    int saved_errno = errno;
+    free(control_buffer);
+    ptn_socket_sendmsg_iov_free(iov_operands, iov_count);
+    free(iov);
+    if (sent < 0) {
+        return ptn_socket_false_with_error(data, saved_errno);
+    }
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)sent);
+#endif
+}
+
+static PtnValue ptn_socket_recvmsg_name_value(const struct sockaddr_storage *addr, socklen_t addr_len) {
+    PtnValue name = ptn_array_from_literal_entries(0, NULL);
+    if (addr == NULL) {
+        return name;
+    }
+    if (addr->ss_family == AF_UNIX) {
+        char *path = ptn_socket_sockaddr_un_path((const struct sockaddr_un *)addr, addr_len);
+        ptn_array_set_entry(name.as.array, ptn_array_string_key("path"), ptn_owned_string(path));
+    } else if (addr->ss_family == AF_INET) {
+        char buffer[INET_ADDRSTRLEN];
+        const struct sockaddr_in *inet_addr = (const struct sockaddr_in *)addr;
+        const char *formatted = inet_ntop(AF_INET, &inet_addr->sin_addr, buffer, sizeof(buffer));
+        ptn_array_set_entry(name.as.array, ptn_array_string_key("addr"), formatted == NULL ? ptn_string("") : ptn_string(formatted));
+        ptn_array_set_entry(name.as.array, ptn_array_string_key("port"), ptn_int((int64_t)ntohs(inet_addr->sin_port)));
+    }
+    return name;
+}
+
+static PtnValue ptn_socket_recvmsg_rights_control_value(PtnRuntime *runtime, struct cmsghdr *cmsg) {
+    PtnValue control = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(control.as.array, ptn_array_string_key("level"), ptn_int(cmsg->cmsg_level));
+    ptn_array_set_entry(control.as.array, ptn_array_string_key("type"), ptn_int(cmsg->cmsg_type));
+    PtnValue fds = ptn_array_from_literal_entries(0, NULL);
+    size_t payload_len = cmsg->cmsg_len >= CMSG_LEN(0) ? cmsg->cmsg_len - CMSG_LEN(0) : 0;
+    size_t fd_count = payload_len / sizeof(int);
+    int *received_fds = (int *)CMSG_DATA(cmsg);
+    for (size_t i = 0; i < fd_count; i++) {
+        int fd = received_fds[i];
+        const char *mode = ptn_socket_fdopen_mode(fd);
+        FILE *stream = fdopen(fd, mode);
+        if (stream == NULL) {
+            close(fd);
+            continue;
+        }
+        char uri[64];
+        int written = snprintf(uri, sizeof(uri), "php://fd/%d", fd);
+        if (written < 0 || (size_t)written >= sizeof(uri)) {
+            fclose(stream);
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            fds.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_resource(ptn_resource_new_stream(stream, uri, mode))
+        );
+    }
+    (void)runtime;
+    ptn_array_set_entry(control.as.array, ptn_array_string_key("data"), fds);
+    return control;
+}
+
+static PtnValue ptn_internal_socket_recvmsg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_recvmsg", 1, "socket", args[0]);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnSocketData *data = ptn_socket_data(resource);
+    PtnArray *message = ptn_internal_expect_array_arg(runtime, "socket_recvmsg", 2, "message", args[1]);
+    int64_t flags = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "socket_recvmsg", 3, "flags", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL || message == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32) || !defined(SCM_RIGHTS)
+    (void)flags;
+    return ptn_socket_false_with_error(data, 0);
+#else
+    int64_t buffer_size = 0;
+    (void)ptn_socket_cmsg_array_integer(message, "buffer_size", &buffer_size);
+    if (buffer_size < 0 || (uint64_t)buffer_size > SIZE_MAX) {
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+    int64_t controllen = 0;
+    (void)ptn_socket_cmsg_array_integer(message, "controllen", &controllen);
+    if (controllen < 0 || (uint64_t)controllen > SIZE_MAX) {
+        return ptn_socket_false_with_error(data, EINVAL);
+    }
+
+    size_t buffer_len = (size_t)buffer_size;
+    char *buffer = malloc(buffer_len == 0 ? 1 : buffer_len);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t control_len = (size_t)controllen;
+    char *control_buffer = control_len == 0 ? NULL : calloc(1, control_len);
+    if (control_len != 0 && control_buffer == NULL) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+
+    struct iovec iov;
+    iov.iov_base = buffer;
+    iov.iov_len = buffer_len;
+    struct sockaddr_storage name_storage;
+    socklen_t name_len = sizeof(name_storage);
+    memset(&name_storage, 0, sizeof(name_storage));
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &name_storage;
+    msg.msg_namelen = name_len;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control_buffer;
+    msg.msg_controllen = control_len;
+
+    ssize_t received;
+    do {
+        received = recvmsg(data->fd, &msg, (int)flags);
+    } while (received < 0 && errno == EINTR);
+    int saved_errno = errno;
+    if (received < 0) {
+        free(control_buffer);
+        free(buffer);
+        return ptn_socket_false_with_error(data, saved_errno);
+    }
+
+    ptn_array_set_entry(
+        message,
+        ptn_array_string_key("name"),
+        ptn_socket_recvmsg_name_value((const struct sockaddr_storage *)msg.msg_name, msg.msg_namelen)
+    );
+    PtnValue iov_array = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        iov_array.as.array,
+        ptn_array_int_key(0),
+        ptn_owned_string_len(buffer, (size_t)received)
+    );
+    ptn_array_set_entry(message, ptn_array_string_key("iov"), iov_array);
+
+    PtnValue control_array = ptn_array_from_literal_entries(0, NULL);
+    size_t control_index = 0;
+    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+            ptn_array_set_entry(
+                control_array.as.array,
+                ptn_array_int_key((int64_t)control_index++),
+                ptn_socket_recvmsg_rights_control_value(runtime, cmsg)
+            );
+        }
+    }
+    ptn_array_set_entry(message, ptn_array_string_key("control"), control_array);
+    ptn_array_set_entry(message, ptn_array_string_key("controllen"), ptn_int((int64_t)msg.msg_controllen));
+    free(control_buffer);
+    ptn_socket_set_last_error(data, 0);
+    return ptn_int((int64_t)received);
+#endif
+}
+
 static PtnValue ptn_internal_socket_sendto(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_socket_arg(runtime, "socket_sendto", 1, "socket", args[0]);
     if (resource == NULL) {
@@ -233929,6 +234424,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "socket_clear_error", 0, 1, ptn_internal_socket_clear_error },
         { "socket_close", 1, 1, ptn_internal_socket_close },
         { "socket_connect", 2, 3, ptn_internal_socket_connect },
+        { "socket_cmsg_space", 2, 3, ptn_internal_socket_cmsg_space },
         { "socket_create", 3, 3, ptn_internal_socket_create },
         { "socket_create_listen", 1, 2, ptn_internal_socket_create_listen },
         { "socket_create_pair", 4, 4, ptn_internal_socket_create_pair },
@@ -233942,8 +234438,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "socket_listen", 1, 2, ptn_internal_socket_listen },
         { "socket_read", 2, 3, ptn_internal_socket_read },
         { "socket_recv", 4, 4, ptn_internal_socket_recv },
+        { "socket_recvmsg", 2, 3, ptn_internal_socket_recvmsg },
         { "socket_recvfrom", 5, 6, ptn_internal_socket_recvfrom },
         { "socket_select", 4, 5, ptn_internal_socket_select },
+        { "socket_sendmsg", 2, 3, ptn_internal_socket_sendmsg },
         { "socket_sendto", 5, 6, ptn_internal_socket_sendto },
         { "socket_set_block", 1, 1, ptn_internal_socket_set_block },
         { "socket_set_nonblock", 1, 1, ptn_internal_socket_set_nonblock },

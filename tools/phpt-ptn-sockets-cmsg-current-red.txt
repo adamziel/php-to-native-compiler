@@ -1,0 +1,1 @@
+ext/sockets/tests/socket_cmsg_rights.phpt

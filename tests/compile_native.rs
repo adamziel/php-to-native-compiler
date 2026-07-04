@@ -37802,6 +37802,79 @@ var_dump(socket_get_option($tcp, SOL_SOCKET, SO_RCVTIMEO));
 }
 
 #[test]
+#[cfg(unix)]
+fn compile_socket_sendmsg_recvmsg_scm_rights_to_native_binary() {
+    let root = temp_dir("ptn-native-socket-sendmsg-recvmsg-scm-rights");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("socket-sendmsg-recvmsg-scm-rights.php");
+    let output = root.join("socket-sendmsg-recvmsg-scm-rights-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = sys_get_temp_dir() . "/ptn_socket_cmsg_" . getmypid() . ".sock";
+@unlink($path);
+
+$send = socket_create(AF_UNIX, SOCK_DGRAM, 0);
+$recv = socket_create(AF_UNIX, SOCK_DGRAM, 0);
+socket_set_nonblock($recv);
+socket_bind($recv, $path);
+
+$sent = socket_sendmsg($send, [
+    "name" => ["path" => $path],
+    "iov" => ["test ", "thing", "\n"],
+    "control" => [[
+        "level" => SOL_SOCKET,
+        "type" => SCM_RIGHTS,
+        "data" => [$send, STDIN, STDOUT, STDERR],
+    ]],
+], 0);
+var_dump($sent);
+
+$data = [
+    "name" => [],
+    "buffer_size" => 2000,
+    "controllen" => socket_cmsg_space(SOL_SOCKET, SCM_RIGHTS, 4),
+];
+$received = false;
+for ($i = 0; $i < 50; $i++) {
+    $received = @socket_recvmsg($recv, $data, 0);
+    if ($received !== false) {
+        break;
+    }
+    usleep(10000);
+}
+var_dump($received);
+var_dump($data["iov"][0] === "test thing\n");
+var_dump(count($data["control"]));
+var_dump(count($data["control"][0]["data"]));
+var_dump(is_resource($data["control"][0]["data"][0]));
+@unlink($path);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(11)\n\
+int(11)\n\
+bool(true)\n\
+int(1)\n\
+int(4)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_socket_sendmsg"));
+    assert!(c_source.contains("ptn_internal_socket_recvmsg"));
+    assert!(c_source.contains("SCM_RIGHTS"));
+}
+
+#[test]
 fn compile_eval_worker_stream_socket_nodelay_to_native_binary() {
     let root = temp_dir("ptn-native-eval-worker-stream-socket-nodelay");
     fs::create_dir_all(&root).unwrap();

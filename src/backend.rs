@@ -7834,6 +7834,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("socket_recv") && argument_index == 1 {
         return Some("data");
     }
+    if name.eq_ignore_ascii_case("socket_recvmsg") && argument_index == 1 {
+        return Some("message");
+    }
     if name.eq_ignore_ascii_case("socket_recvfrom") && argument_index == 1 {
         return Some("data");
     }
