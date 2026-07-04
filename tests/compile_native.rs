@@ -3533,6 +3533,56 @@ var_dump(date_sunrise(1, SUNFUNCS_RET_STRING, 1, NAN));
 }
 
 #[test]
+fn compile_datetimezone_transition_abbreviations_to_native_binary() {
+    let root = temp_dir("ptn-native-datetimezone-transition-abbreviations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetimezone-transition-abbreviations.php");
+    let output = root.join("datetimezone-transition-abbreviations-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+$london = new DateTimeZone('Europe/London');
+foreach ($london->getTransitions(1648342200, 1667091600) as $transition) {
+    echo $transition['ts'], ' ', $transition['abbr'], ' ',
+        (int) $transition['isdst'], ' ', $transition['offset'], "\n";
+}
+
+$amsterdam = new DateTimeZone('Europe/Amsterdam');
+foreach ($amsterdam->getTransitions(strtotime('1996-01-01'), strtotime('1997-12-31')) as $transition) {
+    echo $transition['time'], ' ', $transition['abbr'], ' ', $transition['offset'], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1648342200 GMT 0 0\n",
+            "1648342800 BST 1 3600\n",
+            "1667091600 GMT 0 0\n",
+            "1996-01-01T00:00:00+00:00 CET 3600\n",
+            "1996-03-31T01:00:00+00:00 CEST 7200\n",
+            "1996-10-27T01:00:00+00:00 CET 3600\n",
+            "1997-03-30T01:00:00+00:00 CEST 7200\n",
+            "1997-10-26T01:00:00+00:00 CET 3600\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_datetime_timezone_null_byte_errors_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-null-byte-errors");
     fs::create_dir_all(&root).unwrap();

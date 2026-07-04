@@ -161633,7 +161633,9 @@ static void ptn_datetime_zone_append_transition(
     ptn_array_set_entry(
         row.as.array,
         ptn_array_string_key("abbr"),
-        ptn_string(ptn_timezone_abbreviation_for_name(timezone, (time_t)timestamp))
+        ptn_owned_string(
+            ptn_duplicate_string(ptn_timezone_abbreviation_for_name(timezone, (time_t)timestamp))
+        )
     );
     ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), row);
 }
