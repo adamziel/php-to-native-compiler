@@ -1123,6 +1123,7 @@ static char *ptn_output_rewrite_vars_output(PtnRuntime *runtime, const char *dat
 }
 
 static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer);
+static void ptn_output_buffer_refresh_active_trans_sid_snapshots(PtnRuntime *runtime);
 
 static void ptn_output_write_raw(PtnRuntime *runtime, PtnRuntime *root, const char *data, size_t len) {
     if (data == NULL || len == 0) {
@@ -1283,16 +1284,16 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
-        if (rewrite_vars_enabled) {
-            rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
-            output_data = rewrite_vars_rewritten;
-        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
+        }
+        if (rewrite_vars_enabled) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
         }
     }
     ptn_output_write_raw(runtime, root, output_data, rewritten_len);
@@ -1317,9 +1318,10 @@ static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) 
 }
 
 static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer) {
-    if (buffer == NULL || buffer->trans_sid_rewrite) {
+    if (buffer == NULL) {
         return;
     }
+    ptn_output_buffer_clear_trans_sid_snapshot(buffer);
     PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
     buffer->trans_sid_session_name = ptn_duplicate_string(
         state.session_name == NULL || state.session_name[0] == '\0' ? "PHPSESSID" : state.session_name
@@ -1330,6 +1332,21 @@ static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, Pt
         state.arg_separator_output == NULL || state.arg_separator_output[0] == '\0' ? "&" : state.arg_separator_output
     );
     buffer->trans_sid_rewrite = 1;
+}
+
+static void ptn_output_buffer_refresh_active_trans_sid_snapshots(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->output_buffers_len; i++) {
+        if (root->output_buffers[i].trans_sid_rewrite) {
+            ptn_output_buffer_capture_trans_sid_snapshot(runtime, &root->output_buffers[i]);
+        }
+    }
 }
 
 static void ptn_output_write_rewritten_buffer_output(PtnRuntime *runtime, const char *data, size_t len) {
@@ -1420,11 +1437,6 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
-        if (rewrite_vars_enabled) {
-            rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
-            output_data = rewrite_vars_rewritten;
-        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state;
             state.session_name = buffer->trans_sid_session_name;
@@ -1434,6 +1446,11 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
+        }
+        if (rewrite_vars_enabled) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
         }
         ptn_output_write_rewritten_buffer_output(runtime, output_data, rewritten_len);
     } else {
@@ -146301,10 +146318,12 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     ptn_value_destroy(&session_data);
     ptn_session_set_active(runtime, 1);
     ptn_session_mark_started(runtime, line, 0);
+    ptn_output_buffer_refresh_active_trans_sid_snapshots(runtime);
     if (!ptn_session_has_user_handler(runtime)) {
         PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
         ptn_value_destroy(&create_file_result);
         ptn_session_set_active(runtime, 1);
+        ptn_output_buffer_refresh_active_trans_sid_snapshots(runtime);
     } else {
         int64_t gc_probability = ptn_session_ini_integer(runtime, "session.gc_probability", 1);
         int64_t gc_divisor = ptn_session_ini_integer(runtime, "session.gc_divisor", 100);

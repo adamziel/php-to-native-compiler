@@ -22513,12 +22513,64 @@ echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
         concat!(
             "<a href=\"?PHPSESSID=testid\"></a>\n",
             "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
-            "<a href=\"?%3Cname%3E=%3Cvalue%3E&PHPSESSID=testid\"></a>\n",
+            "<a href=\"?PHPSESSID=testid&%3Cname%3E=%3Cvalue%3E\"></a>\n",
             "<a href=\"//url-rewriter.test/foo.php?%3Cname%3E=%3Cvalue%3E\"></a>\n",
-            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" /><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" />x</form>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" /><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
             "<a href=\"?PHPSESSID=testid\"></a>\n",
             "<a href=\"//url-rewriter.test/foo.php\"></a>\n",
             "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_trans_sid_buffer_uses_latest_started_session_to_native_binary() {
+    let root = temp_dir("ptn-native-session-trans-sid-buffer-latest-session");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-trans-sid-buffer-latest-session.php");
+    let output = root.join("session-trans-sid-buffer-latest-session-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start();\n\
+output_add_rewrite_var('testvar1', 'testvalue1');\n\
+session_id('test1');\n\
+session_start();\n\
+echo \"\\n<a href=\\\"/\\\">\\n<form action=\\\"\\\" method=\\\"post\\\">\\n</form>\\n\";\n\
+session_commit();\n\
+output_add_rewrite_var('testvar2', 'testvalue2');\n\
+session_id('test2');\n\
+session_start();\n\
+echo \"\\n<a href=\\\"/\\\">\\n<form action=\\\"\\\" method=\\\"post\\\">\\n</form>\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", &root)
+        .env("PTN_SESSION_USE_COOKIES", "0")
+        .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_TRANS_SID", "1")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\n<a href=\"/?PHPSESSID=test2&testvar1=testvalue1&testvar2=testvalue2\">\n",
+            "<form action=\"\" method=\"post\"><input type=\"hidden\" name=\"testvar1\" value=\"testvalue1\" /><input type=\"hidden\" name=\"testvar2\" value=\"testvalue2\" /><input type=\"hidden\" name=\"PHPSESSID\" value=\"test2\" />\n",
+            "</form>\n",
+            "\n<a href=\"/?PHPSESSID=test2&testvar1=testvalue1&testvar2=testvalue2\">\n",
+            "<form action=\"\" method=\"post\"><input type=\"hidden\" name=\"testvar1\" value=\"testvalue1\" /><input type=\"hidden\" name=\"testvar2\" value=\"testvalue2\" /><input type=\"hidden\" name=\"PHPSESSID\" value=\"test2\" />\n",
+            "</form>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
