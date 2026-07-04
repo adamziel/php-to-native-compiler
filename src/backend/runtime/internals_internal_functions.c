@@ -182102,7 +182102,7 @@ static int ptn_dom_libxml_accepts_document_source(
     capture.suppress_external_entity_resolution_warnings =
         ptn_libxml_external_entity_loader_is_configured &&
         ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
-    capture.parser_context_warnings = source != NULL;
+    capture.parser_context_warnings = source != NULL && (options & PTN_LIBXML_RECOVER) == 0;
     capture.source_data = source;
     capture.source_len = source_len;
     capture.display_uri = url;
@@ -182177,7 +182177,7 @@ static int ptn_dom_libxml_normalized_document_source(
     capture.suppress_external_entity_resolution_warnings =
         ptn_libxml_external_entity_loader_is_configured &&
         ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
-    capture.parser_context_warnings = source != NULL;
+    capture.parser_context_warnings = source != NULL && (options & PTN_LIBXML_RECOVER) == 0;
     capture.source_data = source;
     capture.source_len = source_len;
     capture.display_uri = url;

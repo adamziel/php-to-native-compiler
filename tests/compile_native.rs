@@ -62193,6 +62193,11 @@ echo $modern->saveXML();
         stdout.contains("Warning: DOMDocument::loadXML():"),
         "{stdout}"
     );
+    assert_eq!(
+        stdout.matches("Warning: DOMDocument::loadXML():").count(),
+        1,
+        "{stdout}"
+    );
     assert!(
         stdout.contains("bool(true)\n<?xml version=\"1.0\"?>\n<root><child/></root>\n"),
         "{stdout}"
@@ -62201,10 +62206,19 @@ echo $modern->saveXML();
         stdout.contains("Warning: Dom\\XMLDocument::createFromString():"),
         "{stdout}"
     );
+    assert_eq!(
+        stdout
+            .matches("Warning: Dom\\XMLDocument::createFromString():")
+            .count(),
+        1,
+        "{stdout}"
+    );
     assert!(
         stdout.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root><child/></root>"),
         "{stdout}"
     );
+    assert!(!stdout.contains("<root><child/> in "), "{stdout}");
+    assert!(!stdout.contains("^ in "), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
