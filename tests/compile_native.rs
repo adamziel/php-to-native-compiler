@@ -5796,6 +5796,48 @@ fn compile_interpolated_include_path_alias_to_native_binary() {
 }
 
 #[test]
+fn compile_included_user_function_by_ref_call_to_native_binary() {
+    let root = temp_dir("ptn-native-included-user-function-by-ref-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("encoding_tests.inc");
+    let output = root.join("included-user-function-by-ref-call-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/encoding_tests.inc";
+require $path;
+readConversionTable($from, $to);
+var_dump($from, $to);
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        r#"<?php
+function readConversionTable(&$from, &$to) {
+    $from = "jisx0212";
+    $to = "unicode";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"jisx0212\"\nstring(7) \"unicode\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_call_dynamic_function"));
+}
+
+#[test]
 fn compile_invalid_required_include_throws_catchable_parse_error_to_native_binary() {
     let root = temp_dir("ptn-native-invalid-required-include-parse-error");
     fs::create_dir_all(&root).unwrap();

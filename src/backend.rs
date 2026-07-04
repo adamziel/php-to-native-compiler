@@ -44500,6 +44500,15 @@ impl ValueEmitter {
             })
     }
 
+    fn runtime_user_function_by_resolved_name(&self, name: &str) -> Option<&FunctionDecl> {
+        self.user_functions.iter().find(|function| {
+            !function.is_anonymous
+                && !function_is_trait_body(function)
+                && (function.class_name.is_none() || function.is_static)
+                && function.name.eq_ignore_ascii_case(name)
+        })
+    }
+
     fn static_method_visibility_check(
         &self,
         resolved_name: &str,
@@ -60991,10 +61000,23 @@ impl ValueEmitter {
         let mut temps = Vec::with_capacity(arguments.len());
         let mut moved_argument_temps = Vec::with_capacity(arguments.len());
         let mut unwrap_array_dim_reference_temps = Vec::new();
+        let runtime_user_parameters = if direct_user.is_none() && !runtime_scoped_static_call {
+            self.runtime_user_function_by_resolved_name(&resolved_name)
+                .map(|function| function.parameters.clone())
+        } else {
+            None
+        };
         for (argument_index, argument) in arguments.iter().enumerate() {
-            let by_ref_parameter = direct_user.as_ref().and_then(|direct_user| {
-                by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
-            });
+            let by_ref_parameter = direct_user
+                .as_ref()
+                .and_then(|direct_user| {
+                    by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
+                })
+                .or_else(|| {
+                    runtime_user_parameters.as_deref().and_then(|parameters| {
+                        by_ref_parameter_for_argument(parameters, argument_index)
+                    })
+                });
             let temp = if let Some(parameter) = by_ref_parameter {
                 let parameter_name = if parameter.is_variadic {
                     ""
