@@ -194106,6 +194106,37 @@ static char *ptn_fsockopen_tcp_address(PtnStringOperand hostname, int64_t port) 
         return address;
     }
 
+    if (port < 0) {
+        int needed = snprintf(NULL, 0, "tcp://%.*s", (int)hostname.len, hostname.data);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *address = malloc((size_t)needed + 1);
+        if (address == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(address, (size_t)needed + 1, "tcp://%.*s", (int)hostname.len, hostname.data);
+        if (written < 0 || written != needed) {
+            free(address);
+            ptn_abort_out_of_memory();
+        }
+
+        PtnStringOperand borrowed = {
+            .data = address,
+            .owned = NULL,
+            .len = (size_t)needed,
+        };
+        char *parsed_host = NULL;
+        char *parsed_service = NULL;
+        if (ptn_stream_socket_address_parse_tcp(borrowed, &parsed_host, &parsed_service)) {
+            free(parsed_host);
+            free(parsed_service);
+            return address;
+        }
+        free(address);
+        return NULL;
+    }
+
     if (port < 0 || port > 65535) {
         return NULL;
     }
