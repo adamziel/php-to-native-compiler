@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T22:50:26Z |
+| last refresh | 2026-07-04T23:00:32Z |
 | source commit | `80afbc0e8860` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -23,9 +23,9 @@
 | --- | --- |
 | source commit | `80afbc0e8860` |
 | statused tests | 18527 |
-| passed tests | 1006 |
-| failed tests | 16299 |
-| skipped tests | 1221 |
+| passed tests | 1039 |
+| failed tests | 16265 |
+| skipped tests | 1222 |
 | warned tests | 1 |
 | unknown tests | 3340 |
 | run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T224612Z` |
@@ -34,16 +34,15 @@
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-04T22:00Z) | 0 |
-| last 24 hours (2026-07-03T23:00Z - 2026-07-04T22:00Z) | 48 |
-| last 7 days (2026-06-27T23:00Z - 2026-07-04T22:00Z) | 114 |
+| latest hour (2026-07-04T23:00Z) | 0 |
+| last 24 hours (2026-07-04T00:00Z - 2026-07-04T23:00Z) | 48 |
+| last 7 days (2026-06-28T00:00Z - 2026-07-04T23:00Z) | 114 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 1730 | 21867 |
-| hourly history retained 2026-06-27T23:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T00:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T01:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T02:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-04T19:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T20:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T21:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-04T22:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-27T23:00Z | 0 | 1616 |
 | 2026-06-28T00:00Z | 0 | 1616 |
 | 2026-06-28T01:00Z | 0 | 1616 |
 | 2026-06-28T02:00Z | 0 | 1616 |
@@ -352,3 +351,4 @@
 | 2026-07-04T20:00Z | 2 | 1730 |
 | 2026-07-04T21:00Z | 0 | 1730 |
 | 2026-07-04T22:00Z | 0 | 1730 |
+| 2026-07-04T23:00Z | 0 | 1730 |
