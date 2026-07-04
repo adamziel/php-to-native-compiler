@@ -8,10 +8,12 @@ import json
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+FAIL_RE = re.compile(r"\b(FAIL|BORK|WARN)\b.*\[(.+?\.phpt)\]")
 KEY_VALUE_RE = re.compile(r"([A-Za-z0-9_-]+)=([^ ]+)")
 SHARD_RE = re.compile(r"(?:^|[/_-])shard[-_/]?(\d+)(?:\D|$)")
 
@@ -32,6 +34,8 @@ class ShardSummary:
     skipped: int = 0
     warned: int = 0
     run_tests_exit: int | None = None
+    exclusions_by_category: Counter[str] = field(default_factory=Counter)
+    run_logs: list[str] = field(default_factory=list)
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,6 +80,58 @@ def infer_shard(path: Path) -> int | None:
     return None
 
 
+def normalize_row(row: str) -> str:
+    value = ANSI_RE.sub("", row).replace("\\", "/")
+    for marker in (".runtime/php-src-phpt/", "php-src-phpt/"):
+        if marker in value:
+            return value.split(marker, 1)[1]
+    return value.removeprefix("./")
+
+
+def row_subsystem(row: str) -> str:
+    parts = Path(normalize_row(row)).parts
+    if not parts:
+        return "unknown"
+    if parts[0] == "Zend":
+        return "/".join(parts[: min(3, len(parts))])
+    if len(parts) >= 4 and parts[0] == "ext":
+        ext = parts[1]
+        if ext == "standard" and len(parts) >= 4:
+            return f"ext/standard/{parts[3]}"
+        return f"ext/{ext}"
+    if parts[0] == "tests":
+        return "/".join(parts[: min(3, len(parts))])
+    return parts[0]
+
+
+def resolve_artifact_sibling(summary_path: Path, recorded_path: str) -> Path:
+    recorded = Path(recorded_path)
+    if recorded.is_file():
+        return recorded
+    sibling = summary_path.parent / recorded.name
+    return sibling if sibling.is_file() else recorded
+
+
+def failing_clusters_from_log(path: Path) -> Counter[str]:
+    clusters: Counter[str] = Counter()
+    if not path.is_file():
+        return clusters
+    seen: set[tuple[str, str]] = set()
+    for raw_line in path.read_text(errors="replace").splitlines():
+        for part in raw_line.replace("\r", "\n").split("\n"):
+            line = ANSI_RE.sub("", part).strip()
+            match = FAIL_RE.search(line)
+            if not match:
+                continue
+            status, row = match.group(1), normalize_row(match.group(2))
+            key = (status, row)
+            if key in seen:
+                continue
+            seen.add(key)
+            clusters[row_subsystem(row)] += 1
+    return clusters
+
+
 def parse_summary(path: Path) -> ShardSummary:
     summary = ShardSummary(shard=infer_shard(path), path=str(path))
     for raw_line in path.read_text(errors="replace").splitlines():
@@ -104,6 +160,15 @@ def parse_summary(path: Path) -> ShardSummary:
             summary.failed = int_value(values, "failed")
             summary.skipped = int_value(values, "skipped")
             summary.warned = int_value(values, "warned")
+        elif line.startswith("classification.") and ": rows=" in line:
+            category = line.split(":", 1)[0].removeprefix("classification.")
+            values = parse_key_values(line)
+            summary.exclusions_by_category[category] += int_value(values, "rows")
+        elif line.startswith("bucket: "):
+            values = parse_key_values(line)
+            log_value = values.get("log", "")
+            if log_value:
+                summary.run_logs.append(str(resolve_artifact_sibling(path, log_value)))
         elif line.startswith("run-tests-exit: "):
             value = line.removeprefix("run-tests-exit: ").strip()
             if value.isdigit():
@@ -115,6 +180,27 @@ def percent(part: int, total: int) -> str:
     if total <= 0:
         return "n/a"
     return f"{(part / total) * 100:.2f}%"
+
+
+def summary_to_dict(summary: ShardSummary) -> dict[str, object]:
+    return {
+        "shard": summary.shard,
+        "path": summary.path,
+        "commit": summary.commit,
+        "corpus": summary.corpus,
+        "corpus_revision": summary.corpus_revision,
+        "selected": summary.selected,
+        "runnable": summary.runnable,
+        "excluded": summary.excluded,
+        "tests": summary.tests,
+        "passed": summary.passed,
+        "failed": summary.failed,
+        "skipped": summary.skipped,
+        "warned": summary.warned,
+        "run_tests_exit": summary.run_tests_exit,
+        "exclusions_by_category": dict(summary.exclusions_by_category),
+        "run_logs": summary.run_logs,
+    }
 
 
 def main() -> int:
@@ -155,13 +241,19 @@ def main() -> int:
     corpus_revisions = Counter(
         item.corpus_revision for item in by_shard.values() if item.corpus_revision
     )
+    exclusion_categories: Counter[str] = Counter()
+    failure_clusters: Counter[str] = Counter()
+    for item in by_shard.values():
+        exclusion_categories.update(item.exclusions_by_category)
+        for log in item.run_logs:
+            failure_clusters.update(failing_clusters_from_log(Path(log)))
 
     payload = {
         "expected_shards": args.expected_shards,
         "completed_shards": len(present),
         "missing_shards": missing,
         "extra_shards": extra,
-        "unassigned_summaries": [asdict(item) for item in unassigned],
+        "unassigned_summaries": [summary_to_dict(item) for item in unassigned],
         "totals": {
             "selected": selected,
             "runnable": runnable,
@@ -178,7 +270,9 @@ def main() -> int:
         },
         "commits": dict(commits),
         "corpus_revisions": dict(corpus_revisions),
-        "shards": [asdict(by_shard[index]) for index in sorted(by_shard)],
+        "exclusion_categories": dict(exclusion_categories),
+        "failure_clusters": dict(failure_clusters),
+        "shards": [summary_to_dict(by_shard[index]) for index in sorted(by_shard)],
     }
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -216,6 +310,30 @@ def main() -> int:
             f"- `{revision}`: {count} shard(s)"
             for revision, count in corpus_revisions.items()
         )
+        lines.append("")
+    if exclusion_categories:
+        lines.extend(
+            [
+                "## Top Exclusion Categories",
+                "",
+                "| Category | Rows |",
+                "| --- | ---: |",
+            ]
+        )
+        for category, count in exclusion_categories.most_common(20):
+            lines.append(f"| `{category}` | {count} |")
+        lines.append("")
+    if failure_clusters:
+        lines.extend(
+            [
+                "## Top Failing Path Clusters",
+                "",
+                "| Cluster | Rows |",
+                "| --- | ---: |",
+            ]
+        )
+        for cluster, count in failure_clusters.most_common(20):
+            lines.append(f"| `{cluster}` | {count} |")
         lines.append("")
     if missing:
         lines.extend(["## Missing Shards", "", ", ".join(str(item) for item in missing), ""])
