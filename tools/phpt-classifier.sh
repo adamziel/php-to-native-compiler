@@ -1896,7 +1896,10 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /Zend\/tests\/generators\/gh15330-005[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/resume[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/destructors_005[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/destructors_007[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/destructors_010[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/gh9916-003[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/fibers\/gh9735-003[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/gh15108-001[.]phpt$/
         }
         function ptn_has_direct_assignment_yield(line) {
