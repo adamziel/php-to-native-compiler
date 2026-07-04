@@ -58847,6 +58847,62 @@ TypeError: IntlDateFormatter::setTimeZone(): Argument #1 ($timezone) Object of c
 }
 
 #[test]
+fn compile_intl_calendar_formatter_dispatch_aliases_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-formatter-dispatch-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-formatter-dispatch-aliases.php");
+    let output = root.join("intl-calendar-formatter-dispatch-aliases-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$cal = new IntlGregorianCalendar(null, 'pt_PT');\n\
+try { $cal->setMinimalDaysInFirstWeek(0); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($cal->setMinimalDaysInFirstWeek(6));\n\
+var_dump($cal->getMinimalDaysInFirstWeek());\n\
+var_dump(intlcal_set_minimal_days_in_first_week($cal, 5));\n\
+var_dump($cal->getMinimalDaysInFirstWeek());\n\
+var_dump($cal->isLeapYear(2012));\n\
+var_dump($cal->isLeapYear(1900));\n\
+var_dump(intlgregcal_is_leap_year($cal, 2012));\n\
+var_dump(intlgregcal_is_leap_year($cal, 1900));\n\
+$fmt = datefmt_create('en_US', IntlDateFormatter::FULL, IntlDateFormatter::FULL, 'US/Pacific', IntlDateFormatter::GREGORIAN);\n\
+echo $fmt->getTimeZoneId(), \"\\n\";\n\
+var_dump($fmt->setTimeZone('America/New_York'));\n\
+echo datefmt_get_timezone_id($fmt), \"\\n\";\n\
+var_dump(datefmt_set_timezone_id($fmt, 'America/Chicago'));\n\
+echo $fmt->getTimeZoneId(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_intlcal_set_minimal_days_in_first_week"));
+    assert!(c_source.contains("ptn_internal_intlgregcal_is_leap_year"));
+    assert!(c_source.contains("ptn_internal_datefmt_get_timezone_id"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "IntlCalendar::setMinimalDaysInFirstWeek(): Argument #1 ($days) must be between 1 and 7\n\
+bool(true)\n\
+int(6)\n\
+bool(true)\n\
+int(5)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+US/Pacific\n\
+bool(true)\n\
+America/New_York\n\
+bool(true)\n\
+America/Chicago\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_dateformatter_time_none_and_grapheme_empty_to_native_binary() {
     let root = temp_dir("ptn-native-intl-dateformatter-time-none-grapheme-empty");
     fs::create_dir_all(&root).unwrap();
