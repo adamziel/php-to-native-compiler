@@ -146144,6 +146144,18 @@ static void ptn_session_mark_uninitialized(PtnRuntime *runtime) {
     root->session_start_line = 0;
 }
 
+static void ptn_session_destroy_failed_decode(PtnRuntime *runtime) {
+    PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+    ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+    ptn_value_destroy(&empty);
+    ptn_session_mark_uninitialized(runtime);
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "Unknown: Failed to decode session object. Session has been destroyed",
+        0
+    );
+}
+
 static int64_t ptn_session_ini_integer(PtnRuntime *runtime, const char *name, int64_t fallback) {
     const char *value = ptn_runtime_session_ini(runtime, name);
     if (value == NULL || value[0] == '\0') {
@@ -148357,9 +148369,35 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
         ptn_runtime_write_global_variable(runtime, "_SESSION", empty_session);
         ptn_value_destroy(&empty_session);
         PtnValue decoded;
-        if (ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line)) {
+        int decode_ok = 0;
+        int fatal_during_decode = 0;
+        PtnRuntime *decode_root = ptn_session_root(runtime);
+        PtnTryFrame decode_fatal_frame;
+        PtnTryFrame *previous_fatal_frame = NULL;
+        if (decode_root != NULL) {
+            previous_fatal_frame = decode_root->fatal_error_recovery_frame;
+            decode_root->fatal_error_recovery_frame = &decode_fatal_frame;
+            if (setjmp(decode_fatal_frame.jump) == 0) {
+                decode_ok = ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line);
+            } else {
+                fatal_during_decode = 1;
+            }
+            decode_root->fatal_error_recovery_frame = previous_fatal_frame;
+        } else {
+            decode_ok = ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line);
+        }
+        if (decode_ok) {
             ptn_value_destroy(&session_data);
             session_data = decoded;
+        } else {
+            ptn_value_destroy(&session_data);
+            free(file_data);
+            ptn_session_destroy_failed_decode(runtime);
+            if (fatal_during_decode) {
+                ptn_runtime_shutdown_before_exit(runtime);
+                exit(255);
+            }
+            return ptn_bool(0);
         }
         free(file_data);
     }
@@ -278338,6 +278376,289 @@ static void ptn_eval_emit_reserved_class_declaration_fatal(
     );
 }
 
+static size_t ptn_eval_property_modifier_len(const char *code, size_t len, size_t pos) {
+    static const char *const modifiers[] = {
+        "abstract",
+        "final",
+        "public",
+        "protected",
+        "private",
+        "readonly",
+        "static",
+        "var",
+    };
+    for (size_t i = 0; i < sizeof(modifiers) / sizeof(modifiers[0]); i++) {
+        if (ptn_eval_keyword_at(code, len, pos, modifiers[i])) {
+            return strlen(modifiers[i]);
+        }
+    }
+    return 0;
+}
+
+static char *ptn_eval_compact_type_text(const char *code, size_t start, size_t end) {
+    while (start < end && isspace((unsigned char)code[start])) {
+        start++;
+    }
+    while (end > start && isspace((unsigned char)code[end - 1])) {
+        end--;
+    }
+    size_t capacity = end - start + 1;
+    char *type_text = malloc(capacity);
+    if (type_text == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out_len = 0;
+    for (size_t pos = start; pos < end; pos++) {
+        if (!isspace((unsigned char)code[pos])) {
+            type_text[out_len++] = code[pos];
+        }
+    }
+    type_text[out_len] = '\0';
+    if (out_len == 0) {
+        free(type_text);
+        return NULL;
+    }
+    return type_text;
+}
+
+static int ptn_eval_type_part_ascii_equal(
+    const char *type_text,
+    size_t start,
+    size_t end,
+    const char *expected
+) {
+    size_t expected_len = strlen(expected);
+    if (end - start != expected_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < expected_len; i++) {
+        if (ptn_ascii_lower_char(type_text[start + i]) != expected[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_eval_property_type_allows_null(const char *type_text) {
+    if (type_text[0] == '?') {
+        return 1;
+    }
+    size_t len = strlen(type_text);
+    if (ptn_eval_type_part_ascii_equal(type_text, 0, len, "mixed") ||
+        ptn_eval_type_part_ascii_equal(type_text, 0, len, "null")) {
+        return 1;
+    }
+    size_t part_start = 0;
+    for (size_t pos = 0; pos <= len; pos++) {
+        if (pos < len && type_text[pos] != '|') {
+            continue;
+        }
+        if (ptn_eval_type_part_ascii_equal(type_text, part_start, pos, "null")) {
+            return 1;
+        }
+        part_start = pos + 1;
+    }
+    return 0;
+}
+
+static char *ptn_eval_nullable_property_type_suggestion(const char *type_text) {
+    size_t len = strlen(type_text);
+    const char *union_separator = strchr(type_text, '|');
+    size_t suggestion_len = union_separator == NULL ? len + 1 : len + strlen("|null");
+    char *suggestion = malloc(suggestion_len + 1);
+    if (suggestion == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (union_separator == NULL) {
+        suggestion[0] = '?';
+        memcpy(suggestion + 1, type_text, len + 1);
+    } else {
+        memcpy(suggestion, type_text, len);
+        memcpy(suggestion + len, "|null", strlen("|null") + 1);
+    }
+    return suggestion;
+}
+
+static void ptn_eval_emit_property_null_default_fatal(
+    PtnRuntime *runtime,
+    const char *type_text,
+    const char *code,
+    size_t default_pos,
+    size_t call_line
+) {
+    char *nullable_type = ptn_eval_nullable_property_type_suggestion(type_text);
+    int needed = snprintf(
+        NULL,
+        0,
+        "Default value for property of type %s may not be null. Use the nullable type %s to allow null default value",
+        type_text,
+        nullable_type
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Default value for property of type %s may not be null. Use the nullable type %s to allow null default value",
+        type_text,
+        nullable_type
+    );
+    char *path = ptn_eval_source_path(runtime, call_line);
+    ptn_emit_fatal_error_at(
+        runtime,
+        message,
+        path,
+        ptn_eval_line_for_pos(code, default_pos, 1)
+    );
+}
+
+static size_t ptn_eval_skip_property_initializer(
+    const char *code,
+    size_t len,
+    size_t cursor
+) {
+    size_t depth = 0;
+    while (cursor < len) {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, len, cursor);
+            continue;
+        }
+        if (ptn_eval_skip_comment(code, len, &cursor)) {
+            continue;
+        }
+        char ch = code[cursor];
+        if (ch == '(' || ch == '[' || ch == '{') {
+            depth++;
+        } else if (ch == ')' || ch == ']' || ch == '}') {
+            if (depth == 0) {
+                return cursor;
+            }
+            depth--;
+        } else if (depth == 0 && (ch == ',' || ch == ';')) {
+            return cursor;
+        }
+        cursor++;
+    }
+    return cursor;
+}
+
+static void ptn_eval_validate_property_null_defaults(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t body_start,
+    size_t body_end,
+    size_t call_line
+) {
+    size_t depth = 0;
+    for (size_t pos = body_start; pos < body_end; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, body_end, pos);
+            continue;
+        }
+        if (ptn_eval_skip_comment(code, body_end, &pos)) {
+            continue;
+        }
+        if (code[pos] == '{') {
+            depth++;
+            continue;
+        }
+        if (code[pos] == '}') {
+            if (depth != 0) {
+                depth--;
+            }
+            continue;
+        }
+        if (depth != 0) {
+            continue;
+        }
+
+        size_t cursor = pos;
+        int saw_modifier = 0;
+        while (cursor < body_end) {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor);
+            size_t modifier_len = ptn_eval_property_modifier_len(code, body_end, cursor);
+            if (modifier_len == 0) {
+                break;
+            }
+            saw_modifier = 1;
+            cursor += modifier_len;
+        }
+        if (!saw_modifier) {
+            continue;
+        }
+
+        cursor = ptn_eval_skip_ws(code, body_end, cursor);
+        if (ptn_eval_keyword_at(code, body_end, cursor, "function") ||
+            ptn_eval_keyword_at(code, body_end, cursor, "const")) {
+            continue;
+        }
+        if (cursor >= body_end || code[cursor] == '$') {
+            continue;
+        }
+
+        size_t type_start = cursor;
+        while (cursor < body_end &&
+            code[cursor] != '$' &&
+            code[cursor] != ';' &&
+            code[cursor] != '{') {
+            cursor++;
+        }
+        if (cursor >= body_end || code[cursor] != '$') {
+            continue;
+        }
+        char *type_text = ptn_eval_compact_type_text(code, type_start, cursor);
+        if (type_text == NULL) {
+            continue;
+        }
+        if (ptn_eval_property_type_allows_null(type_text)) {
+            free(type_text);
+            continue;
+        }
+
+        while (cursor < body_end && code[cursor] != ';' && code[cursor] != '{') {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor);
+            if (cursor >= body_end || code[cursor] != '$') {
+                break;
+            }
+            cursor++;
+            if (cursor >= body_end || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+                break;
+            }
+            while (cursor < body_end &&
+                ptn_eval_identifier_part((unsigned char)code[cursor])) {
+                cursor++;
+            }
+            cursor = ptn_eval_skip_ws(code, body_end, cursor);
+            if (cursor < body_end && code[cursor] == '=') {
+                size_t default_pos = ptn_eval_skip_ws(code, body_end, cursor + 1);
+                if (ptn_eval_keyword_at(code, body_end, default_pos, "null")) {
+                    ptn_eval_emit_property_null_default_fatal(
+                        runtime,
+                        type_text,
+                        code,
+                        default_pos,
+                        call_line
+                    );
+                }
+                cursor = ptn_eval_skip_property_initializer(code, body_end, default_pos);
+            }
+            cursor = ptn_eval_skip_ws(code, body_end, cursor);
+            if (cursor < body_end && code[cursor] == ',') {
+                cursor++;
+                continue;
+            }
+            break;
+        }
+        free(type_text);
+        pos = cursor;
+    }
+}
+
 static char *ptn_eval_class_constructor_body(
     const char *code,
     size_t body_start,
@@ -278507,6 +278828,13 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
         char *constructor_body = NULL;
         if (body_open < len && code[body_open] == '{') {
             body_close = ptn_eval_find_matching_brace(code, len, body_open);
+            ptn_eval_validate_property_null_defaults(
+                runtime,
+                code,
+                body_open + 1,
+                body_close,
+                line
+            );
             constructor_body = ptn_eval_class_constructor_body(
                 code,
                 body_open + 1,
