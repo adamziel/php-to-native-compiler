@@ -6826,8 +6826,28 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_string("language");
             return 1;
         }
+        if (strcmp(constant, "EXTLANG_TAG") == 0) {
+            *out = ptn_string("extlang");
+            return 1;
+        }
+        if (strcmp(constant, "SCRIPT_TAG") == 0) {
+            *out = ptn_string("script");
+            return 1;
+        }
         if (strcmp(constant, "REGION_TAG") == 0) {
             *out = ptn_string("region");
+            return 1;
+        }
+        if (strcmp(constant, "VARIANT_TAG") == 0) {
+            *out = ptn_string("variant");
+            return 1;
+        }
+        if (strcmp(constant, "GRANDFATHERED_LANG_TAG") == 0) {
+            *out = ptn_string("grandfathered");
+            return 1;
+        }
+        if (strcmp(constant, "PRIVATE_TAG") == 0) {
+            *out = ptn_string("private");
             return 1;
         }
         if (strcmp(constant, "ACTUAL_LOCALE") == 0) {
