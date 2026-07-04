@@ -29954,6 +29954,10 @@ Version=\"0.0\"\n\
 Parent=\"DefaultProperties\"\n\
 Browser=\"Foo\"\n\
 \n\
+[Mozilla/5.0 Foo*Bar*]\n\
+Parent=\"DefaultProperties\"\n\
+Browser=\"FooBar\"\n\
+\n\
 [*]\n\
 Parent=\"DefaultProperties\"\n\
 Browser=\"Fallback\"\n",
@@ -29965,6 +29969,9 @@ Browser=\"Fallback\"\n",
 $matched = get_browser('Mozilla/5.0 FooAgent', true);\n\
 echo $matched['browser_name_pattern'], \"\\n\";\n\
 echo $matched['browser'], \"\\n\";\n\
+$specific = get_browser('Mozilla/5.0 FooAgent BarThing', true);\n\
+echo $specific['browser_name_pattern'], \"\\n\";\n\
+echo $specific['browser'], \"\\n\";\n\
 $fallback = get_browser('Other Agent', true);\n\
 echo $fallback['browser_name_pattern'], \"\\n\";\n\
 echo $fallback['browser'], \"\\n\";\n",
@@ -29985,7 +29992,7 @@ echo $fallback['browser'], \"\\n\";\n",
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Mozilla/5.0 Foo*\nFoo\n*\nFallback\n"
+        "Mozilla/5.0 Foo*\nFoo\nMozilla/5.0 Foo*Bar*\nFooBar\n*\nFallback\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -93192,6 +93199,62 @@ echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php
     );
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\nOK\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_cli_server_include_transform_handles_http_context_loopback() {
+    let root = temp_dir("ptn-native-php-cli-server-loopback-http-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-cli-server-http-context.php");
+    let output = root.join("php-cli-server-http-context-bin");
+    let include = root.join("php_cli_server.inc");
+    fs::write(
+        &include,
+        "<?php die('real server harness should be transformed');",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+include __DIR__ . '/php_cli_server.inc';
+
+php_cli_server_start(<<<'PHP'
+$uri = $_SERVER['REQUEST_URI'];
+if (isset($_GET["desired_status"]) && $uri[strlen($uri) - 1] !== '/') {
+    http_response_code((int) $_GET["desired_status"]);
+    header("Location: $uri/");
+    exit;
+}
+echo "method: ", $_SERVER['REQUEST_METHOD'], "; body: ", file_get_contents('php://input'), "\n";
+PHP);
+
+echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/test?desired_status=302', false, stream_context_create(['http' => ['method' => 'POST', 'content' => 'hello=world']]));
+echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/test?desired_status=308', false, stream_context_create(['http' => ['method' => 'PATCH', 'content' => 'hello=world']]));
+
+php_cli_server_start('header("X-Request-Method: ".$_SERVER["REQUEST_METHOD"]);');
+$headers = get_headers('http://' . PHP_CLI_SERVER_ADDRESS, 1, stream_context_create(['http' => ['method' => 'HEAD']]));
+echo $headers['X-Request-Method'], "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "method: GET; body: \nmethod: PATCH; body: hello=world\nHEAD\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_http_request_once_loopback_server"));
 }
 
 #[test]

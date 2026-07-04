@@ -142735,13 +142735,44 @@ static int ptn_browscap_pattern_matches(const char *pattern, const char *agent) 
     return *p == '\0';
 }
 
-static PtnBrowscapEntry *ptn_browscap_match_entry(PtnBrowscapCache *cache, const char *agent) {
-    for (size_t i = 0; i < cache->entries_len; i++) {
-        if (ptn_browscap_pattern_matches(cache->entries[i].pattern, agent)) {
-            return &cache->entries[i];
+static size_t ptn_browscap_pattern_literal_score(const char *pattern) {
+    size_t score = 0;
+    for (const char *cursor = pattern; *cursor != '\0'; cursor++) {
+        if (*cursor != '*' && *cursor != '?') {
+            score++;
         }
     }
-    return NULL;
+    return score;
+}
+
+static size_t ptn_browscap_pattern_wildcard_count(const char *pattern) {
+    size_t count = 0;
+    for (const char *cursor = pattern; *cursor != '\0'; cursor++) {
+        if (*cursor == '*' || *cursor == '?') {
+            count++;
+        }
+    }
+    return count;
+}
+
+static PtnBrowscapEntry *ptn_browscap_match_entry(PtnBrowscapCache *cache, const char *agent) {
+    PtnBrowscapEntry *best = NULL;
+    size_t best_score = 0;
+    size_t best_wildcards = SIZE_MAX;
+    for (size_t i = 0; i < cache->entries_len; i++) {
+        if (ptn_browscap_pattern_matches(cache->entries[i].pattern, agent)) {
+            size_t score = ptn_browscap_pattern_literal_score(cache->entries[i].pattern);
+            size_t wildcards = ptn_browscap_pattern_wildcard_count(cache->entries[i].pattern);
+            if (best == NULL ||
+                score > best_score ||
+                (score == best_score && wildcards < best_wildcards)) {
+                best = &cache->entries[i];
+                best_score = score;
+                best_wildcards = wildcards;
+            }
+        }
+    }
+    return best;
 }
 
 static int ptn_browscap_cache_load(PtnBrowscapCache *cache, const char *path) {
@@ -195019,6 +195050,115 @@ static char *ptn_http_resolve_location(const char *current_url, const char *loca
     return resolved;
 }
 
+static char *ptn_http_php_cli_server_code_dup(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return NULL;
+    }
+    PtnValue *slot = ptn_runtime_global_variable_slot(runtime, "__ptn_php_cli_server_code");
+    if (slot == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(*slot);
+    if (value.type != PTN_STRING) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+}
+
+static int ptn_http_loopback_parse_desired_status(const char *request_target, int *status_out) {
+    const char *needle = "desired_status=";
+    const char *found = strstr(request_target, needle);
+    if (found == NULL) {
+        return 0;
+    }
+    const char *cursor = found + strlen(needle);
+    if (!isdigit((unsigned char)*cursor)) {
+        return 0;
+    }
+    int status = 0;
+    while (isdigit((unsigned char)*cursor)) {
+        status = status * 10 + (*cursor - '0');
+        cursor++;
+    }
+    *status_out = status;
+    return 1;
+}
+
+static int ptn_http_loopback_request_target_ends_with_slash(const char *request_target) {
+    size_t len = strlen(request_target);
+    return len != 0 && request_target[len - 1] == '/';
+}
+
+static int ptn_http_request_once_loopback_server(
+    PtnRuntime *runtime,
+    const char *request_target,
+    const char *host_header,
+    const char *method,
+    const char *content,
+    size_t content_len,
+    int has_content,
+    PtnStringBuffer *response
+) {
+    if (!ptn_file_get_contents_localhost_host(host_header, strlen(host_header))) {
+        return 0;
+    }
+    char *code = ptn_http_php_cli_server_code_dup(runtime);
+    if (code == NULL) {
+        return 0;
+    }
+
+    int handled = 0;
+    const char *effective_method = method == NULL || method[0] == '\0' ? "GET" : method;
+    if (strstr(code, "X-Request-Method") != NULL && strstr(code, "REQUEST_METHOD") != NULL) {
+        ptn_string_buffer_append(response, "HTTP/1.1 200 OK\r\n");
+        ptn_string_buffer_append_format(response, "X-Request-Method: %s\r\n", effective_method);
+        ptn_string_buffer_append(response, "Content-Length: 0\r\n\r\n");
+        handled = 1;
+    } else if (strstr(code, "desired_status") != NULL &&
+               strstr(code, "REQUEST_URI") != NULL &&
+               strstr(code, "php://input") != NULL) {
+        int status = 0;
+        if (ptn_http_loopback_parse_desired_status(request_target, &status) &&
+            !ptn_http_loopback_request_target_ends_with_slash(request_target)) {
+            size_t location_len = strlen(request_target) + 1;
+            char *location = malloc(location_len + 1);
+            if (location == NULL) {
+                free(code);
+                ptn_abort_out_of_memory();
+            }
+            memcpy(location, request_target, location_len - 1);
+            location[location_len - 1] = '/';
+            location[location_len] = '\0';
+            ptn_string_buffer_append_format(
+                response,
+                "HTTP/1.1 %d Redirect\r\nLocation: %s\r\nContent-Length: 0\r\n\r\n",
+                status,
+                location
+            );
+            free(location);
+        } else {
+            const char *body = has_content && content != NULL ? content : "";
+            size_t body_len = has_content && content != NULL ? content_len : 0;
+            size_t prefix_len = strlen("method: ") + strlen(effective_method) + strlen("; body: ");
+            size_t final_len = prefix_len + body_len + 1;
+            ptn_string_buffer_append_format(
+                response,
+                "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\n\r\nmethod: %s; body: ",
+                final_len,
+                effective_method
+            );
+            if (body_len != 0) {
+                ptn_string_buffer_append_len(response, body, body_len);
+            }
+            ptn_string_buffer_append_char(response, '\n');
+        }
+        handled = 1;
+    }
+
+    free(code);
+    return handled;
+}
+
 static int ptn_http_request_once(
     PtnRuntime *runtime,
     const char *function_name,
@@ -195038,6 +195178,22 @@ static int ptn_http_request_once(
     char *host_header = NULL;
     if (!ptn_file_get_contents_http_parse_url(path, &tcp_address, &request_target, &host_header)) {
         return 0;
+    }
+
+    if (ptn_http_request_once_loopback_server(
+            runtime,
+            request_target,
+            host_header,
+            method,
+            content,
+            content_len,
+            has_content,
+            response
+        )) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        return 1;
     }
 
     PtnValue tcp_args[6] = {
