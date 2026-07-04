@@ -4650,6 +4650,9 @@ static PTN_UNUSED const char *ptn_resource_curl_class_name(PtnResource *resource
     if (strcmp(resource->type_name, "curl_multi") == 0) {
         return "CurlMultiHandle";
     }
+    if (strcmp(resource->type_name, "curl_share") == 0) {
+        return "CurlShareHandle";
+    }
     return NULL;
 }
 

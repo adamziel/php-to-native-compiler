@@ -68401,6 +68401,38 @@ var_dump(curl_setopt($ch, CURLOPT_POSTFIELDS, new CurlBody()));\n",
 }
 
 #[test]
+fn compile_curl_handle_direct_construction_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-handle-direct-construction");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-handle-direct-construction.php");
+    let output = root.join("curl-handle-direct-construction-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { new CurlHandle; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { new CurlMultiHandle; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { new CurlShareHandle; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot directly construct CurlHandle, use curl_init() instead\n",
+            "Cannot directly construct CurlMultiHandle, use curl_multi_init() instead\n",
+            "Cannot directly construct CurlShareHandle, use curl_share_init() instead\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_class_name_is_curl_handle"));
+}
+
+#[test]
 fn compile_curl_file_read_and_write_callbacks_to_native_binary() {
     let root = temp_dir("ptn-native-curl-file-read-write-callbacks");
     fs::create_dir_all(&root).unwrap();

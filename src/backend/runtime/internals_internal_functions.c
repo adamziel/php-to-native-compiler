@@ -73367,6 +73367,18 @@ static PTN_UNUSED int ptn_internal_class_name_is_curl_file(const char *class_nam
     return ptn_ascii_case_equal(class_name, "CURLFile");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_curl_handle(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "CurlHandle");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_curl_multi_handle(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "CurlMultiHandle");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_curl_share_handle(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "CurlShareHandle");
+}
+
 static PTN_UNUSED PtnValue ptn_curl_file_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -236004,6 +236016,9 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_sqlite3(class_name)
         || ptn_internal_class_name_is_sqlite3_stmt(class_name)
         || ptn_internal_class_name_is_sqlite3_result(class_name)
+        || ptn_internal_class_name_is_curl_handle(class_name)
+        || ptn_internal_class_name_is_curl_multi_handle(class_name)
+        || ptn_internal_class_name_is_curl_share_handle(class_name)
         || ptn_internal_class_name_is_curl_file(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_random_interval_boundary(class_name)

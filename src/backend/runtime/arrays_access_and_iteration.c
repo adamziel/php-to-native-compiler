@@ -1100,6 +1100,9 @@ static PTN_UNUSED PtnValue ptn_random_engine_new(
 );
 static PTN_UNUSED PtnValue ptn_random_engine_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_curl_handle(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_curl_multi_handle(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_curl_share_handle(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_curl_file(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
@@ -1321,6 +1324,18 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_sqlite3_stmt(lookup_class_name) ||
         ptn_internal_class_name_is_sqlite3_result(lookup_class_name)) {
         ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_curl_handle(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly construct CurlHandle, use curl_init() instead");
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_curl_multi_handle(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly construct CurlMultiHandle, use curl_multi_init() instead");
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_curl_share_handle(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly construct CurlShareHandle, use curl_share_init() instead");
         return ptn_null();
     }
     if (ptn_internal_class_name_is_curl_file(lookup_class_name)) {
