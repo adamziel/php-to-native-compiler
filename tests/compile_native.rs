@@ -69417,6 +69417,108 @@ run_schema(
 }
 
 #[test]
+fn compile_soap_wsdl_rpc_encoded_array_request_namespace_order_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-rpc-array-namespace-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-rpc-array-namespace-order.php");
+    let output = root.join("soap-wsdl-rpc-array-namespace-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/array-rpc.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="ArrayRequest"
+  targetNamespace="http://soapinterop.org/wsdl"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:tns="http://soapinterop.org/wsdl"
+  xmlns:s="http://soapinterop.org/types">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/types">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <complexType name="ArrayOfFloat">
+        <complexContent>
+          <restriction base="SOAP-ENC:Array">
+            <attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="xsd:float[]"/>
+          </restriction>
+        </complexContent>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoArrayRequest">
+    <part name="whichFault" type="xsd:int"/>
+    <part name="param1" type="xsd:string"/>
+    <part name="param2" type="s:ArrayOfFloat"/>
+  </message>
+  <message name="echoArrayResponse"><part name="return" type="xsd:string"/></message>
+  <portType name="ArrayPortType">
+    <operation name="echoArray"><input message="tns:echoArrayRequest"/><output message="tns:echoArrayResponse"/></operation>
+  </portType>
+  <binding name="ArrayBinding" type="tns:ArrayPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoArray">
+      <soap:operation soapAction="http://soapinterop.org/wsdl#echoArray" style="rpc"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="ArrayService">
+    <port name="ArrayPort" binding="tns:ArrayBinding"><soap:address location="test://array"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class CapturingSoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        exit(0);
+    }
+}
+
+$client = new CapturingSoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoArray(4, 'Hello world', [12.345, 45, 678]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" ",
+            "xmlns:ns1=\"http://soapinterop.org/wsdl\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" ",
+            "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ",
+            "xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" ",
+            "xmlns:ns2=\"http://soapinterop.org/types\" ",
+            "SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">",
+            "<SOAP-ENV:Body><ns1:echoArray><whichFault xsi:type=\"xsd:int\">4</whichFault>",
+            "<param1 xsi:type=\"xsd:string\">Hello world</param1>",
+            "<param2 SOAP-ENC:arrayType=\"xsd:float[3]\" xsi:type=\"ns2:ArrayOfFloat\">",
+            "<item xsi:type=\"xsd:float\">12.345</item><item xsi:type=\"xsd:float\">45</item>",
+            "<item xsi:type=\"xsd:float\">678</item></param2></ns1:echoArray>",
+            "</SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_build_rpc_encoded_request"));
+}
+
+#[test]
 fn compile_soap_classmap_derived_magic_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-classmap-derived-magic");
     fs::create_dir_all(&root).unwrap();
