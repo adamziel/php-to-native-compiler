@@ -3216,6 +3216,42 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let stream_socket_context_refcount = classify_at_relative_path(
+        "--TEST--\nstream socket server context refcount\n--FILE--\n<?php\n$context = stream_context_create();\n$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);\ndebug_zval_dump($context);\n--EXPECTF--\nresource(%d) of type (stream-context) refcount(3)\n",
+        "ext/standard/tests/gh10885.phpt",
+    );
+    assert_eq!(
+        stream_socket_context_refcount,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let file_get_contents_http_redirect_context = classify_at_relative_path(
+        "--TEST--\nfile_get_contents http method redirect\n--INI--\nallow_url_fopen=1\n--CONFLICTS--\nserver\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo $_SERVER[\"REQUEST_METHOD\"];');\necho file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS, false, stream_context_create(['http' => ['method' => 'POST', 'content' => 'x']]));\n--EXPECT--\nPOST\n",
+        "ext/standard/tests/http/gh11274.phpt",
+    );
+    assert_eq!(
+        file_get_contents_http_redirect_context,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let get_headers_context = classify_at_relative_path(
+        "--TEST--\nget_headers context\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('header(\"X-Request-Method: \".$_SERVER[\"REQUEST_METHOD\"]);');\n$headers = get_headers('http://' . PHP_CLI_SERVER_ADDRESS, true, stream_context_create(['http' => ['method' => 'HEAD']]));\necho $headers['X-Request-Method'];\n--EXPECT--\nHEAD\n",
+        "ext/standard/tests/url/get_headers_error_003.phpt",
+    );
+    assert_eq!(
+        get_headers_context,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let get_browser_browscap_ini = classify_at_relative_path(
+        "--TEST--\nget_browser browscap ini\n--INI--\nbrowscap={PWD}/browscap.ini\n--FILE--\n<?php\nvar_dump(get_browser('Mozilla/5.0', true)['browser_name_pattern']);\n--EXPECT--\nstring(1) \"*\"\n",
+        "ext/standard/tests/misc/get_browser_variation3.phpt",
+    );
+    assert_eq!(
+        get_browser_browscap_ini,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
     let unmodeled_ftp_directory_harness = classify_at_relative_path(
         "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
         "ext/standard/tests/streams/unmodeled-opendir-ftp.phpt",

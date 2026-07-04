@@ -142559,6 +142559,351 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_bool(0);
 }
 
+typedef struct {
+    char *key;
+    char *value;
+} PtnBrowscapProperty;
+
+typedef struct {
+    char *pattern;
+    char *parent;
+    PtnBrowscapProperty *properties;
+    size_t properties_len;
+    size_t properties_capacity;
+} PtnBrowscapEntry;
+
+typedef struct {
+    char *path;
+    PtnBrowscapEntry *entries;
+    size_t entries_len;
+    size_t entries_capacity;
+} PtnBrowscapCache;
+
+static PtnBrowscapCache ptn_browscap_cache = {0};
+
+static void ptn_browscap_trim(const char **start_io, size_t *len_io) {
+    const char *start = *start_io;
+    size_t len = *len_io;
+    while (len > 0 && isspace((unsigned char)start[0])) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1])) {
+        len--;
+    }
+    *start_io = start;
+    *len_io = len;
+}
+
+static char *ptn_browscap_normalized_key(const char *key, size_t key_len) {
+    char *normalized = malloc(key_len + 1);
+    if (normalized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < key_len; i++) {
+        unsigned char byte = (unsigned char)key[i];
+        normalized[i] = (char)(isalnum(byte) ? tolower(byte) : '_');
+    }
+    normalized[key_len] = '\0';
+    return normalized;
+}
+
+static void ptn_browscap_entry_free(PtnBrowscapEntry *entry) {
+    if (entry == NULL) {
+        return;
+    }
+    free(entry->pattern);
+    free(entry->parent);
+    for (size_t i = 0; i < entry->properties_len; i++) {
+        free(entry->properties[i].key);
+        free(entry->properties[i].value);
+    }
+    free(entry->properties);
+}
+
+static void ptn_browscap_cache_clear(PtnBrowscapCache *cache) {
+    if (cache == NULL) {
+        return;
+    }
+    free(cache->path);
+    for (size_t i = 0; i < cache->entries_len; i++) {
+        ptn_browscap_entry_free(&cache->entries[i]);
+    }
+    free(cache->entries);
+    cache->path = NULL;
+    cache->entries = NULL;
+    cache->entries_len = 0;
+    cache->entries_capacity = 0;
+}
+
+static PtnBrowscapEntry *ptn_browscap_cache_add_entry(PtnBrowscapCache *cache, const char *pattern, size_t pattern_len) {
+    if (cache->entries_len == cache->entries_capacity) {
+        size_t new_capacity = cache->entries_capacity == 0 ? 64 : cache->entries_capacity * 2;
+        if (new_capacity < cache->entries_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnBrowscapEntry)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnBrowscapEntry *new_entries = realloc(cache->entries, new_capacity * sizeof(PtnBrowscapEntry));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        cache->entries = new_entries;
+        cache->entries_capacity = new_capacity;
+    }
+    PtnBrowscapEntry *entry = &cache->entries[cache->entries_len++];
+    entry->pattern = ptn_duplicate_string_len(pattern, pattern_len);
+    entry->parent = NULL;
+    entry->properties = NULL;
+    entry->properties_len = 0;
+    entry->properties_capacity = 0;
+    return entry;
+}
+
+static void ptn_browscap_entry_set_property(
+    PtnBrowscapEntry *entry,
+    const char *key,
+    size_t key_len,
+    const char *value,
+    size_t value_len
+) {
+    char *normalized_key = ptn_browscap_normalized_key(key, key_len);
+    for (size_t i = 0; i < entry->properties_len; i++) {
+        if (strcmp(entry->properties[i].key, normalized_key) == 0) {
+            free(entry->properties[i].value);
+            entry->properties[i].value = ptn_duplicate_string_len(value, value_len);
+            free(normalized_key);
+            return;
+        }
+    }
+    if (entry->properties_len == entry->properties_capacity) {
+        size_t new_capacity = entry->properties_capacity == 0 ? 8 : entry->properties_capacity * 2;
+        if (new_capacity < entry->properties_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnBrowscapProperty)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnBrowscapProperty *new_properties = realloc(
+            entry->properties,
+            new_capacity * sizeof(PtnBrowscapProperty)
+        );
+        if (new_properties == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        entry->properties = new_properties;
+        entry->properties_capacity = new_capacity;
+    }
+    entry->properties[entry->properties_len].key = normalized_key;
+    entry->properties[entry->properties_len].value = ptn_duplicate_string_len(value, value_len);
+    entry->properties_len++;
+}
+
+static PtnBrowscapEntry *ptn_browscap_find_entry(PtnBrowscapCache *cache, const char *pattern) {
+    for (size_t i = 0; i < cache->entries_len; i++) {
+        if (strcmp(cache->entries[i].pattern, pattern) == 0) {
+            return &cache->entries[i];
+        }
+    }
+    return NULL;
+}
+
+static int ptn_browscap_pattern_matches(const char *pattern, const char *agent) {
+    const char *p = pattern;
+    const char *a = agent;
+    const char *star = NULL;
+    const char *retry = NULL;
+    while (*a != '\0') {
+        if (*p == '*') {
+            star = p++;
+            retry = a;
+            continue;
+        }
+        if (*p == '?' ||
+            (*p != '\0' && tolower((unsigned char)*p) == tolower((unsigned char)*a))) {
+            p++;
+            a++;
+            continue;
+        }
+        if (star != NULL) {
+            p = star + 1;
+            a = ++retry;
+            continue;
+        }
+        return 0;
+    }
+    while (*p == '*') {
+        p++;
+    }
+    return *p == '\0';
+}
+
+static PtnBrowscapEntry *ptn_browscap_match_entry(PtnBrowscapCache *cache, const char *agent) {
+    for (size_t i = 0; i < cache->entries_len; i++) {
+        if (ptn_browscap_pattern_matches(cache->entries[i].pattern, agent)) {
+            return &cache->entries[i];
+        }
+    }
+    return NULL;
+}
+
+static int ptn_browscap_cache_load(PtnBrowscapCache *cache, const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+    if (cache->path != NULL && strcmp(cache->path, path) == 0) {
+        return 1;
+    }
+    ptn_browscap_cache_clear(cache);
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        free(data);
+        return 0;
+    }
+    cache->path = ptn_duplicate_string(path);
+
+    PtnBrowscapEntry *current = NULL;
+    size_t offset = 0;
+    while (offset < data_len) {
+        size_t line_start = offset;
+        while (offset < data_len && data[offset] != '\n') {
+            offset++;
+        }
+        size_t line_len = offset - line_start;
+        if (offset < data_len && data[offset] == '\n') {
+            offset++;
+        }
+        const char *line = (const char *)data + line_start;
+        if (line_len > 0 && line[line_len - 1] == '\r') {
+            line_len--;
+        }
+        ptn_browscap_trim(&line, &line_len);
+        if (line_len == 0 || line[0] == ';') {
+            continue;
+        }
+        if (line[0] == '[' && line_len >= 2 && line[line_len - 1] == ']') {
+            const char *pattern = line + 1;
+            size_t pattern_len = line_len - 2;
+            ptn_browscap_trim(&pattern, &pattern_len);
+            current = ptn_browscap_cache_add_entry(cache, pattern, pattern_len);
+            ptn_browscap_entry_set_property(
+                current,
+                "browser_name_pattern",
+                strlen("browser_name_pattern"),
+                current->pattern,
+                strlen(current->pattern)
+            );
+            continue;
+        }
+        if (current == NULL) {
+            continue;
+        }
+        const char *equals = memchr(line, '=', line_len);
+        if (equals == NULL) {
+            continue;
+        }
+        const char *key = line;
+        size_t key_len = (size_t)(equals - line);
+        ptn_browscap_trim(&key, &key_len);
+        const char *value = equals + 1;
+        size_t value_len = line_len - (size_t)(equals + 1 - line);
+        ptn_browscap_trim(&value, &value_len);
+        if (value_len >= 2 && value[0] == '"' && value[value_len - 1] == '"') {
+            value++;
+            value_len -= 2;
+        }
+        if (key_len == strlen("Parent") && ptn_ascii_case_equal_n(key, "Parent", key_len)) {
+            free(current->parent);
+            current->parent = ptn_duplicate_string_len(value, value_len);
+        }
+        ptn_browscap_entry_set_property(current, key, key_len, value, value_len);
+    }
+
+    free(data);
+    return cache->entries_len != 0;
+}
+
+static void ptn_browscap_apply_entry(PtnBrowscapCache *cache, PtnBrowscapEntry *entry, PtnValue result, size_t depth) {
+    if (entry == NULL || depth > 64) {
+        return;
+    }
+    if (entry->parent != NULL) {
+        ptn_browscap_apply_entry(cache, ptn_browscap_find_entry(cache, entry->parent), result, depth + 1);
+    }
+    for (size_t i = 0; i < entry->properties_len; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(entry->properties[i].key),
+            ptn_owned_string(ptn_duplicate_string(entry->properties[i].value))
+        );
+    }
+}
+
+static PtnValue ptn_browscap_result_value(PtnRuntime *runtime, PtnBrowscapCache *cache, PtnBrowscapEntry *entry, int return_array) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_browscap_apply_entry(cache, entry, result, 0);
+    if (return_array) {
+        return result;
+    }
+    PtnValue object = ptn_object_new_shell(runtime, "stdClass");
+    for (size_t i = 0; i < result.as.array->len; i++) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_key_clone(result.as.array->entries[i].key),
+            ptn_value_clone(result.as.array->entries[i].value)
+        );
+    }
+    ptn_value_destroy(&result);
+    return object;
+}
+
+static PtnValue ptn_internal_get_browser(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    const char *configured_browscap = ptn_runtime_browscap(runtime);
+    if (configured_browscap == NULL || configured_browscap[0] == '\0') {
+        ptn_emit_warning(&runtime->diagnostics, "get_browser(): browscap ini directive not set", line);
+        return ptn_bool(0);
+    }
+
+    char *agent = NULL;
+    if (argc > 0 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand user_agent = ptn_internal_expect_string_arg(runtime, "get_browser", 1, "user_agent", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(user_agent);
+            return ptn_null();
+        }
+        agent = ptn_duplicate_string_len(user_agent.data, user_agent.len);
+        ptn_string_operand_free(user_agent);
+    } else {
+        const char *environment_agent = getenv("HTTP_USER_AGENT");
+        agent = ptn_duplicate_string(environment_agent == NULL ? "" : environment_agent);
+    }
+
+    if (!ptn_browscap_cache_load(&ptn_browscap_cache, configured_browscap)) {
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_browser(): browscap ini directive points to an unreadable file: %s",
+            configured_browscap
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            free(agent);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(agent);
+        return ptn_bool(0);
+    }
+
+    PtnBrowscapEntry *entry = ptn_browscap_match_entry(&ptn_browscap_cache, agent);
+    free(agent);
+    if (entry == NULL) {
+        return ptn_bool(0);
+    }
+    int return_array = argc >= 2 && ptn_is_truthy(args[1]);
+    return ptn_browscap_result_value(runtime, &ptn_browscap_cache, entry, return_array);
+}
+
 static PtnValue ptn_internal_getenv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc == 0) {
         (void)runtime;
@@ -193173,7 +193518,6 @@ static PtnValue ptn_stream_socket_client_open_tcp(
 
     char *uri = ptn_duplicate_string_len(address.data, address.len);
     PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
-    ptn_stream_resource_retain_context(resource, ptn_stream_context_arg_from_call(argc, args, 4));
     PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
@@ -194394,8 +194738,470 @@ static void ptn_http_headers_append(PtnValue headers, const char *line, size_t l
     );
 }
 
+typedef struct {
+    char *method;
+    char *headers;
+    size_t headers_len;
+    char *content;
+    size_t content_len;
+    int has_content;
+    int follow_location;
+    int max_redirects;
+} PtnHttpRequestOptions;
+
+static void ptn_http_request_options_free(PtnHttpRequestOptions *options) {
+    if (options == NULL) {
+        return;
+    }
+    free(options->method);
+    free(options->headers);
+    free(options->content);
+    options->method = NULL;
+    options->headers = NULL;
+    options->content = NULL;
+}
+
+static char *ptn_http_context_option_string_dup(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *option_name,
+    int *present_out,
+    size_t *len_out,
+    size_t line
+) {
+    *present_out = 0;
+    if (len_out != NULL) {
+        *len_out = 0;
+    }
+    PtnValue *option = ptn_stream_context_option(context, "http", option_name);
+    if (option == NULL) {
+        return NULL;
+    }
+    *present_out = 1;
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, *option, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    char *copy = ptn_duplicate_string_len(operand.data, operand.len);
+    if (len_out != NULL) {
+        *len_out = operand.len;
+    }
+    ptn_string_operand_free(operand);
+    return copy;
+}
+
+static PtnHttpRequestOptions ptn_http_request_options_from_context(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *default_method,
+    size_t line
+) {
+    PtnHttpRequestOptions options;
+    options.method = ptn_duplicate_string(default_method == NULL ? "GET" : default_method);
+    options.headers = NULL;
+    options.headers_len = 0;
+    options.content = NULL;
+    options.content_len = 0;
+    options.has_content = 0;
+    options.follow_location = 1;
+    options.max_redirects = 20;
+
+    PtnResource *effective_context = context == NULL ? ptn_default_stream_context_ensure() : context;
+    int present = 0;
+    size_t len = 0;
+    char *method = ptn_http_context_option_string_dup(runtime, effective_context, "method", &present, &len, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_http_request_options_free(&options);
+        return options;
+    }
+    if (present) {
+        free(options.method);
+        options.method = method;
+    }
+
+    char *headers = ptn_http_context_option_string_dup(runtime, effective_context, "header", &present, &len, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_http_request_options_free(&options);
+        return options;
+    }
+    if (present) {
+        options.headers = headers;
+        options.headers_len = len;
+    }
+
+    char *content = ptn_http_context_option_string_dup(runtime, effective_context, "content", &present, &len, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_http_request_options_free(&options);
+        return options;
+    }
+    if (present) {
+        options.content = content;
+        options.content_len = len;
+        options.has_content = 1;
+    }
+
+    PtnValue *follow = ptn_stream_context_option(effective_context, "http", "follow_location");
+    if (follow != NULL) {
+        options.follow_location = ptn_is_truthy(*follow) ? 1 : 0;
+    }
+    PtnValue *max_redirects = ptn_stream_context_option(effective_context, "http", "max_redirects");
+    if (max_redirects != NULL) {
+        int64_t requested = ptn_value_to_integer(*max_redirects);
+        if (requested < 0) {
+            requested = 0;
+        }
+        if (requested > 100) {
+            requested = 100;
+        }
+        options.max_redirects = (int)requested;
+    }
+    return options;
+}
+
+static void ptn_http_append_context_headers(PtnStringBuffer *request, const char *headers, size_t headers_len) {
+    size_t start = 0;
+    while (start < headers_len) {
+        size_t end = start;
+        while (end < headers_len && headers[end] != '\n') {
+            end++;
+        }
+        size_t line_len = end - start;
+        if (line_len > 0 && headers[start + line_len - 1] == '\r') {
+            line_len--;
+        }
+        if (line_len != 0) {
+            ptn_string_buffer_append_len(request, headers + start, line_len);
+            ptn_string_buffer_append(request, "\r\n");
+        }
+        start = end < headers_len ? end + 1 : end;
+    }
+}
+
+static int ptn_http_response_status_code(const char *bytes, size_t len, int *status_out) {
+    const char *line = NULL;
+    size_t line_len = 0;
+    size_t offset = 0;
+    if (!ptn_http_next_line(bytes, len, &offset, &line, &line_len) ||
+        line_len < 12 ||
+        !ptn_ascii_case_equal_n(line, "HTTP/", strlen("HTTP/"))) {
+        return 0;
+    }
+    size_t cursor = 5;
+    while (cursor < line_len && line[cursor] != ' ') {
+        cursor++;
+    }
+    while (cursor < line_len && line[cursor] == ' ') {
+        cursor++;
+    }
+    if (cursor + 3 > line_len ||
+        !isdigit((unsigned char)line[cursor]) ||
+        !isdigit((unsigned char)line[cursor + 1]) ||
+        !isdigit((unsigned char)line[cursor + 2])) {
+        return 0;
+    }
+    *status_out =
+        (line[cursor] - '0') * 100 +
+        (line[cursor + 1] - '0') * 10 +
+        (line[cursor + 2] - '0');
+    return 1;
+}
+
+static char *ptn_http_response_location_dup(const char *bytes, size_t len) {
+    const char *line = NULL;
+    size_t line_len = 0;
+    size_t offset = 0;
+    if (!ptn_http_next_line(bytes, len, &offset, &line, &line_len)) {
+        return NULL;
+    }
+    while (ptn_http_next_line(bytes, len, &offset, &line, &line_len)) {
+        if (line_len == 0) {
+            break;
+        }
+        size_t value_offset = 0;
+        if (ptn_http_header_name_equal(line, line_len, "Location", &value_offset)) {
+            return ptn_duplicate_string_len(line + value_offset, line_len - value_offset);
+        }
+    }
+    return NULL;
+}
+
+static int ptn_http_status_is_redirect(int status_code) {
+    return status_code == 301 ||
+        status_code == 302 ||
+        status_code == 303 ||
+        status_code == 307 ||
+        status_code == 308;
+}
+
 static int ptn_http_response_body(
     PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    const char *bytes,
+    size_t len,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+);
+
+static char *ptn_http_resolve_location(const char *current_url, const char *location) {
+    if (ptn_ascii_case_equal_n(location, "http://", strlen("http://"))) {
+        return ptn_duplicate_string(location);
+    }
+    if (strncmp(location, "//", 2) == 0) {
+        int needed = snprintf(NULL, 0, "http:%s", location);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *resolved = malloc((size_t)needed + 1);
+        if (resolved == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(resolved, (size_t)needed + 1, "http:%s", location);
+        if (written < 0 || written != needed) {
+            free(resolved);
+            ptn_abort_out_of_memory();
+        }
+        return resolved;
+    }
+
+    const char *prefix = "http://";
+    size_t prefix_len = strlen(prefix);
+    if (!ptn_ascii_case_equal_n(current_url, prefix, prefix_len)) {
+        return ptn_duplicate_string(location);
+    }
+    const char *authority = current_url + prefix_len;
+    const char *path = strpbrk(authority, "/?#");
+    const char *authority_end = path == NULL ? current_url + strlen(current_url) : path;
+    size_t base_len = (size_t)(authority_end - current_url);
+    if (location[0] == '/') {
+        size_t location_len = strlen(location);
+        char *resolved = malloc(base_len + location_len + 1);
+        if (resolved == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(resolved, current_url, base_len);
+        memcpy(resolved + base_len, location, location_len + 1);
+        return resolved;
+    }
+
+    const char *path_start = path != NULL && *path == '/' ? path : authority_end;
+    const char *query = path_start == authority_end ? NULL : strpbrk(path_start, "?#");
+    const char *path_end = query == NULL ? current_url + strlen(current_url) : query;
+    if (location[0] == '?') {
+        size_t head_len = (size_t)(path_end - current_url);
+        size_t location_len = strlen(location);
+        char *resolved = malloc(head_len + location_len + 1);
+        if (resolved == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(resolved, current_url, head_len);
+        memcpy(resolved + head_len, location, location_len + 1);
+        return resolved;
+    }
+
+    const char *last_slash = NULL;
+    for (const char *cursor = path_start; cursor < path_end; cursor++) {
+        if (*cursor == '/') {
+            last_slash = cursor;
+        }
+    }
+    size_t directory_len = last_slash == NULL ? base_len + 1 : (size_t)(last_slash + 1 - current_url);
+    size_t location_len = strlen(location);
+    char *resolved = malloc(directory_len + location_len + 1);
+    if (resolved == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(resolved, current_url, directory_len);
+    memcpy(resolved + directory_len, location, location_len + 1);
+    return resolved;
+}
+
+static int ptn_http_request_once(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    const char *method,
+    const char *headers,
+    size_t headers_len,
+    const char *content,
+    size_t content_len,
+    int has_content,
+    PtnStringBuffer *response,
+    size_t line
+) {
+    char *tcp_address = NULL;
+    char *request_target = NULL;
+    char *host_header = NULL;
+    if (!ptn_file_get_contents_http_parse_url(path, &tcp_address, &request_target, &host_header)) {
+        return 0;
+    }
+
+    PtnValue tcp_args[6] = {
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        ptn_null(),
+        context == NULL ? ptn_null() : ptn_resource(context),
+    };
+    PtnStringOperand tcp_operand = {
+        .data = tcp_address,
+        .owned = NULL,
+        .len = strlen(tcp_address),
+    };
+    PtnValue stream = ptn_stream_socket_client_open_tcp(
+        runtime,
+        function_name,
+        tcp_operand,
+        tcp_args[1],
+        tcp_args[2],
+        line
+    );
+    if (stream.type != PTN_RESOURCE || stream.as.resource == NULL) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    PtnStringBuffer request;
+    ptn_string_buffer_init(&request);
+    ptn_string_buffer_append_format(
+        &request,
+        "%s %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n",
+        method == NULL || method[0] == '\0' ? "GET" : method,
+        request_target,
+        host_header
+    );
+    if (headers != NULL && headers_len != 0) {
+        ptn_http_append_context_headers(&request, headers, headers_len);
+    }
+    if (has_content) {
+        ptn_string_buffer_append_format(&request, "Content-Length: %zu\r\n", content_len);
+    }
+    ptn_string_buffer_append(&request, "\r\n");
+    if (has_content && content_len != 0) {
+        ptn_string_buffer_append_len(&request, content, content_len);
+    }
+
+    size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
+    free(request.data);
+    free(tcp_address);
+    free(request_target);
+    free(host_header);
+    if (written == 0 || written < request.len) {
+        ptn_value_destroy(&stream);
+        return -1;
+    }
+
+    unsigned char chunk[8192];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(stream.as.resource, chunk, sizeof(chunk));
+        if (read_len == 0) {
+            break;
+        }
+        ptn_string_buffer_append_len(response, (const char *)chunk, read_len);
+    }
+    ptn_value_destroy(&stream);
+    return 1;
+}
+
+static int ptn_http_fetch_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    PtnResource *context,
+    const char *default_method,
+    unsigned char **data_out,
+    size_t *data_len_out,
+    size_t line
+) {
+    PtnHttpRequestOptions options = ptn_http_request_options_from_context(runtime, context, default_method, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return -1;
+    }
+
+    char *current_path = ptn_duplicate_string(path);
+    char *current_method = ptn_duplicate_string(options.method);
+    const char *current_content = options.content;
+    size_t current_content_len = options.content_len;
+    int current_has_content = options.has_content;
+    int result = -1;
+
+    for (int redirect_count = 0; redirect_count <= options.max_redirects; redirect_count++) {
+        PtnStringBuffer response;
+        ptn_string_buffer_init(&response);
+        int request_result = ptn_http_request_once(
+            runtime,
+            function_name,
+            current_path,
+            context,
+            current_method,
+            options.headers,
+            options.headers_len,
+            current_content,
+            current_content_len,
+            current_has_content,
+            &response,
+            line
+        );
+        if (request_result <= 0) {
+            free(response.data);
+            result = request_result;
+            break;
+        }
+
+        int status_code = 0;
+        char *location = NULL;
+        if (options.follow_location &&
+            redirect_count < options.max_redirects &&
+            ptn_http_response_status_code(response.data == NULL ? "" : response.data, response.len, &status_code) &&
+            ptn_http_status_is_redirect(status_code) &&
+            (location = ptn_http_response_location_dup(response.data == NULL ? "" : response.data, response.len)) != NULL) {
+            char *next_path = ptn_http_resolve_location(current_path, location);
+            free(location);
+            free(current_path);
+            current_path = next_path;
+            if (status_code == 301 || status_code == 302 || status_code == 303) {
+                free(current_method);
+                current_method = ptn_duplicate_string("GET");
+                current_content = NULL;
+                current_content_len = 0;
+                current_has_content = 0;
+            }
+            free(response.data);
+            continue;
+        }
+
+        result = ptn_http_response_body(
+            runtime,
+            function_name,
+            current_path,
+            context == NULL ? ptn_default_stream_context_ensure() : context,
+            response.data == NULL ? "" : response.data,
+            response.len,
+            data_out,
+            data_len_out,
+            line
+        );
+        free(response.data);
+        break;
+    }
+
+    free(current_path);
+    free(current_method);
+    ptn_http_request_options_free(&options);
+    return result;
+}
+
+static int ptn_http_response_body(
+    PtnRuntime *runtime,
+    const char *function_name,
     const char *path,
     PtnResource *context,
     const char *bytes,
@@ -194431,7 +195237,7 @@ static int ptn_http_response_body(
             if (written < 0 || (size_t)written >= sizeof(detail)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
+            ptn_emit_file_warning(runtime, function_name, path, detail, line);
             return -2;
         }
 
@@ -194445,12 +195251,12 @@ static int ptn_http_response_body(
                     sizeof(detail),
                     "Failed to open stream: HTTP Location header size is over the limit of 8182 bytes"
                 );
-                if (written < 0 || (size_t)written >= sizeof(detail)) {
-                    ptn_abort_out_of_memory();
+                    if (written < 0 || (size_t)written >= sizeof(detail)) {
+                        ptn_abort_out_of_memory();
+                    }
+                    ptn_emit_file_warning(runtime, function_name, path, detail, line);
+                    return -2;
                 }
-                ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
-                return -2;
-            }
         }
 
         ptn_http_headers_append(headers, header_line, header_line_len, &header_index);
@@ -194496,76 +195302,152 @@ static int ptn_file_get_contents_http_bytes(
     size_t *data_len_out,
     size_t line
 ) {
-    char *tcp_address = NULL;
-    char *request_target = NULL;
-    char *host_header = NULL;
-    if (!ptn_file_get_contents_http_parse_url(path, &tcp_address, &request_target, &host_header)) {
-        return 0;
-    }
-
-    PtnValue tcp_args[3] = { ptn_null(), ptn_null(), ptn_null() };
-    PtnStringOperand tcp_operand = {
-        .data = tcp_address,
-        .owned = NULL,
-        .len = strlen(tcp_address),
-    };
-    PtnValue stream = ptn_stream_socket_client_open_tcp(
+    return ptn_http_fetch_bytes(
         runtime,
         "file_get_contents",
-        tcp_operand,
-        tcp_args[1],
-        tcp_args[2],
-        line
-    );
-    if (stream.type != PTN_RESOURCE || stream.as.resource == NULL) {
-        free(tcp_address);
-        free(request_target);
-        free(host_header);
-        ptn_value_destroy(&stream);
-        return -1;
-    }
-
-    PtnStringBuffer request;
-    ptn_string_buffer_init(&request);
-    ptn_string_buffer_append_format(
-        &request,
-        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
-        request_target,
-        host_header
-    );
-    size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
-    free(request.data);
-    free(tcp_address);
-    free(request_target);
-    free(host_header);
-    if (written == 0 || written < request.len) {
-        ptn_value_destroy(&stream);
-        return -1;
-    }
-
-    PtnStringBuffer response;
-    ptn_string_buffer_init(&response);
-    unsigned char chunk[8192];
-    for (;;) {
-        size_t read_len = ptn_stream_read_bytes(stream.as.resource, chunk, sizeof(chunk));
-        if (read_len == 0) {
-            break;
-        }
-        ptn_string_buffer_append_len(&response, (const char *)chunk, read_len);
-    }
-    int result = ptn_http_response_body(
-        runtime,
         path,
         context,
-        response.data == NULL ? "" : response.data,
-        response.len,
+        "GET",
         data_out,
         data_len_out,
         line
     );
-    free(response.data);
-    ptn_value_destroy(&stream);
+}
+
+static int ptn_get_headers_validate_context_arg(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnResource **context_out
+) {
+    *context_out = NULL;
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type != PTN_RESOURCE) {
+        const char *given = value.type == PTN_OBJECT
+            ? value.as.object->class_name
+            : ptn_offset_container_type_name(value);
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_headers(): Argument #3 ($context) must be of type resource or null, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        (void)line;
+        return 0;
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "get_headers(): supplied resource is not a valid Stream-Context resource"
+        );
+        return 0;
+    }
+    *context_out = value.as.resource;
+    return 1;
+}
+
+static PtnValue ptn_http_headers_associative(PtnValue headers) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue resolved = ptn_value_deref(headers);
+    if (resolved.type != PTN_ARRAY) {
+        return result;
+    }
+
+    int64_t numeric_index = 0;
+    for (size_t i = 0; i < resolved.as.array->len; i++) {
+        PtnValue header_value = ptn_value_deref(resolved.as.array->entries[i].value);
+        if (header_value.type != PTN_STRING) {
+            continue;
+        }
+        const char *line = (const char *)header_value.as.string.data;
+        size_t line_len = header_value.as.string.len;
+        const char *colon = memchr(line, ':', line_len);
+        if (colon == NULL) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(numeric_index++),
+                ptn_value_clone(header_value)
+            );
+            continue;
+        }
+        size_t name_len = (size_t)(colon - line);
+        while (name_len > 0 && (line[name_len - 1] == ' ' || line[name_len - 1] == '\t')) {
+            name_len--;
+        }
+        size_t value_offset = (size_t)(colon - line) + 1;
+        while (value_offset < line_len && (line[value_offset] == ' ' || line[value_offset] == '\t')) {
+            value_offset++;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key_len(line, name_len),
+            ptn_owned_string_len(
+                ptn_duplicate_string_len(line + value_offset, line_len - value_offset),
+                line_len - value_offset
+            )
+        );
+    }
     return result;
+}
+
+static PtnValue ptn_internal_get_headers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand url = ptn_internal_expect_string_arg(runtime, "get_headers", 1, "url", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(url);
+        return ptn_null();
+    }
+    if (memchr(url.data, '\0', url.len) != NULL) {
+        ptn_string_operand_free(url);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "get_headers(): Argument #1 ($url) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+    char *path = ptn_duplicate_string_len(url.data, url.len);
+    ptn_string_operand_free(url);
+
+    int associative = argc >= 2 && ptn_is_truthy(args[1]);
+    PtnResource *context = NULL;
+    if (argc >= 3 && !ptn_get_headers_validate_context_arg(runtime, args[2], line, &context)) {
+        free(path);
+        return ptn_null();
+    }
+
+    unsigned char *body = NULL;
+    size_t body_len = 0;
+    int result = ptn_http_fetch_bytes(runtime, "get_headers", path, context, "HEAD", &body, &body_len, line);
+    free(body);
+    free(path);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (result <= 0) {
+        return ptn_bool(0);
+    }
+
+    PtnValue headers = ptn_internal_http_get_last_response_headers(runtime, 0, NULL, line);
+    PtnValue resolved = ptn_value_deref(headers);
+    if (resolved.type != PTN_ARRAY) {
+        ptn_value_destroy(&headers);
+        return ptn_bool(0);
+    }
+    if (!associative) {
+        return headers;
+    }
+    PtnValue associated = ptn_http_headers_associative(headers);
+    ptn_value_destroy(&headers);
+    return associated;
 }
 
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
@@ -228137,6 +229019,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gc_enabled", 0, 0, ptn_internal_gc_enabled },
         { "gc_status", 0, 0, ptn_internal_gc_status },
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
+        { "get_browser", 0, 2, ptn_internal_get_browser },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
         { "get_class_methods", 1, 1, ptn_internal_get_class_methods },
@@ -228156,6 +229039,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_error_handler", 0, 0, ptn_internal_get_error_handler },
         { "get_exception_handler", 0, 0, ptn_internal_get_exception_handler },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
+        { "get_headers", 1, 3, ptn_internal_get_headers },
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_required_files", 0, 0, ptn_internal_get_required_files },

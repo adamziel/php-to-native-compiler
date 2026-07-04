@@ -29938,6 +29938,62 @@ var_dump(get_meta_tags($filename));\n\
 }
 
 #[test]
+fn compile_get_browser_browscap_to_native_binary() {
+    let root = temp_dir("ptn-native-get-browser-browscap");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-browser.php");
+    let output = root.join("get-browser-bin");
+    let browscap = root.join("browscap.ini");
+    fs::write(
+        &browscap,
+        "[DefaultProperties]\n\
+Browser=\"Default\"\n\
+Version=\"0.0\"\n\
+\n\
+[Mozilla/5.0 Foo*]\n\
+Parent=\"DefaultProperties\"\n\
+Browser=\"Foo\"\n\
+\n\
+[*]\n\
+Parent=\"DefaultProperties\"\n\
+Browser=\"Fallback\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$matched = get_browser('Mozilla/5.0 FooAgent', true);\n\
+echo $matched['browser_name_pattern'], \"\\n\";\n\
+echo $matched['browser'], \"\\n\";\n\
+$fallback = get_browser('Other Agent', true);\n\
+echo $fallback['browser_name_pattern'], \"\\n\";\n\
+echo $fallback['browser'], \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_BROWSCAP", &browscap)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Mozilla/5.0 Foo*\nFoo\n*\nFallback\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_browser"));
+}
+
+#[test]
 fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-highlight-string-ob");
     fs::create_dir_all(&root).unwrap();
@@ -37333,6 +37389,56 @@ fclose($server2);
     assert!(c_source.contains("ptn_stream_read_socket_bytes"));
     assert!(c_source.contains("stream_socket_tcp_nodelay"));
     assert!(c_source.contains("stream_timed_out"));
+}
+
+#[test]
+fn compile_stream_socket_server_retains_context_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-server-retains-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-server-retains-context.php");
+    let output = root.join("stream-socket-server-retains-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function has_refcount(&$value, int $count): bool {
+    ob_start();
+    debug_zval_dump($value);
+    $dump = ob_get_clean();
+    return preg_match('/refcount\(' . $count . '\)/', $dump) === 1;
+}
+
+$context = stream_context_create();
+echo has_refcount($context, 2) ? "1" : "0";
+$server = stream_socket_server(
+    "tcp://127.0.0.1:0",
+    $errno,
+    $errstr,
+    STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+    $context
+);
+echo has_refcount($context, 3) ? "1" : "0";
+fclose($server);
+unset($server);
+echo has_refcount($context, 2) ? "1" : "0";
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "111\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_resource_retain_context"));
 }
 
 #[test]

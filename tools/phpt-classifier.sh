@@ -3054,11 +3054,14 @@ ptn_phpt_supported_php_cli_server_harness_row() {
 ptn_phpt_supported_standard_network_mail_http_residual_row() {
     case "$1" in
         ext/standard/tests/mail/gh20257.phpt|\
+        ext/standard/tests/gh10885.phpt|\
         ext/standard/tests/mail/gh19188_mixed_mode.phpt|\
         ext/standard/tests/mail/mail_variation3.phpt|\
+        ext/standard/tests/http/gh11274.phpt|\
         ext/standard/tests/http/ghsa-v8xr-gpvj-cx9g-004.phpt|\
         ext/standard/tests/network/so_reuseport.phpt|\
         ext/standard/tests/http/ghsa-52jp-hrpf-2jff-002.phpt|\
+        ext/standard/tests/url/get_headers_error_003.phpt|\
         ext/standard/tests/streams/stream_get_meta_data_socket_variation2.phpt)
             return 0
             ;;
@@ -3078,6 +3081,7 @@ ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
         ext/standard/tests/mail/gh20257.phpt:mail.cr_lf_mode|\
         ext/standard/tests/mail/gh19188_mixed_mode.phpt:sendmail_path|\
         ext/standard/tests/mail/gh19188_mixed_mode.phpt:mail.cr_lf_mode|\
+        ext/standard/tests/misc/get_browser_variation3.phpt:browscap|\
         ext/standard/tests/mail/mail_variation3.phpt:sendmail_path)
             return 0
             ;;
