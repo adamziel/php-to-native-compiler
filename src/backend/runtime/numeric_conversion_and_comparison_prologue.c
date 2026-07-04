@@ -310,6 +310,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->upload_tmp_dir = NULL;
     runtime->expose_php = NULL;
     runtime->docref_root = NULL;
+    runtime->user_agent = NULL;
+    runtime->browscap = NULL;
     runtime->unserialize_callback_func = NULL;
     runtime->unserialize_max_depth = caller_runtime->unserialize_max_depth;
     runtime->request_body = NULL;
@@ -1245,6 +1247,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->docref_root = NULL;
         free(runtime->user_agent);
         runtime->user_agent = NULL;
+        free(runtime->browscap);
+        runtime->browscap = NULL;
         free(runtime->unserialize_callback_func);
         runtime->unserialize_callback_func = NULL;
         free(runtime->assert_callback_ini);

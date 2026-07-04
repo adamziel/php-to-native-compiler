@@ -3337,6 +3337,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_upload_tmp_dir = getenv("PTN_UPLOAD_TMP_DIR");
     const char *configured_expose_php = getenv("PTN_EXPOSE_PHP");
     const char *configured_user_agent = getenv("PTN_USER_AGENT");
+    const char *configured_browscap = getenv("PTN_BROWSCAP");
     const char *configured_unserialize_callback_func =
         getenv("PTN_UNSERIALIZE_CALLBACK_FUNC");
     runtime->auto_detect_line_endings = ptn_duplicate_string(
@@ -3507,6 +3508,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->docref_root = ptn_duplicate_string("");
     runtime->user_agent = ptn_duplicate_string(
         configured_user_agent == NULL ? "" : configured_user_agent
+    );
+    runtime->browscap = ptn_duplicate_string(
+        configured_browscap == NULL ? "" : configured_browscap
     );
     runtime->unserialize_callback_func = ptn_duplicate_string(
         configured_unserialize_callback_func == NULL ? "" : configured_unserialize_callback_func

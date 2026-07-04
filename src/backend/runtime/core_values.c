@@ -2052,6 +2052,7 @@ struct PtnRuntime {
     char *expose_php;
     char *docref_root;
     char *user_agent;
+    char *browscap;
     char *unserialize_callback_func;
     int unserialize_max_depth;
     char *request_body;

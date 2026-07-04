@@ -536,6 +536,7 @@ struct RuntimeIni {
     upload_tmp_dir: Option<String>,
     expose_php: Option<String>,
     user_agent: Option<String>,
+    browscap: Option<String>,
     exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
     allow_url_fopen: Option<String>,
@@ -885,6 +886,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.expose_php = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("user_agent") {
         ini.user_agent = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("browscap") {
+        ini.browscap = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("allow_url_fopen") {
         ini.allow_url_fopen = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("allow_url_include") {
@@ -1655,6 +1658,7 @@ fn compile_and_run(
         upload_tmp_dir: ini.upload_tmp_dir.clone(),
         expose_php: ini.expose_php.clone(),
         user_agent: ini.user_agent.clone(),
+        browscap: ini.browscap.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
         allow_url_fopen: ini.allow_url_fopen.clone(),
@@ -1989,6 +1993,9 @@ fn compile_and_run(
     }
     if let Some(user_agent) = &ini.user_agent {
         command.env("PTN_USER_AGENT", user_agent);
+    }
+    if let Some(browscap) = &ini.browscap {
+        command.env("PTN_BROWSCAP", browscap);
     }
     if let Some(allow_url_fopen) = &ini.allow_url_fopen {
         command.env("PTN_ALLOW_URL_FOPEN", allow_url_fopen);

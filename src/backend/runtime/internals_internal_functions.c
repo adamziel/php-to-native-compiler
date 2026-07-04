@@ -140170,6 +140170,14 @@ static const char *ptn_runtime_user_agent(PtnRuntime *runtime) {
     return root->user_agent;
 }
 
+static const char *ptn_runtime_browscap(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->browscap == NULL) {
+        return "";
+    }
+    return root->browscap;
+}
+
 static const char *ptn_runtime_unserialize_callback_func(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->unserialize_callback_func == NULL) {
@@ -141182,6 +141190,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "browscap")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_browscap(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "unserialize_callback_func")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_unserialize_callback_func(runtime)));
         return 1;
@@ -141391,6 +141403,11 @@ static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const cha
 static void ptn_runtime_set_user_agent(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->user_agent, value);
+}
+
+static void ptn_runtime_set_browscap(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->browscap, value);
 }
 
 static void ptn_runtime_set_docref_root(PtnRuntime *runtime, const char *value) {
@@ -141753,6 +141770,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
         ptn_runtime_set_user_agent(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "browscap")) {
+        const char *configured = getenv("PTN_BROWSCAP");
+        ptn_runtime_set_browscap(runtime, configured == NULL ? "" : configured);
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -142504,6 +142527,14 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
         char *next = ptn_ini_value_to_string(args[1]);
         ptn_runtime_set_user_agent(runtime, next);
+        free(next);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "browscap")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_browscap(runtime)));
+        char *next = ptn_ini_value_to_string(args[1]);
+        ptn_runtime_set_browscap(runtime, next);
         free(next);
         ptn_string_operand_free(option);
         return previous;
@@ -192810,6 +192841,39 @@ static void ptn_stream_socket_server_assign_error(
     const char *message
 );
 
+typedef struct {
+    PtnResource *context;
+} PtnRetainedStreamContextData;
+
+static void ptn_retained_stream_context_close_hook(PtnResource *resource, void *data) {
+    (void)resource;
+    (void)data;
+}
+
+static void ptn_retained_stream_context_data_free(void *data) {
+    PtnRetainedStreamContextData *retained = (PtnRetainedStreamContextData *)data;
+    if (retained == NULL) {
+        return;
+    }
+    ptn_resource_release(retained->context);
+    free(retained);
+}
+
+static void ptn_stream_resource_retain_context(PtnResource *resource, PtnResource *context) {
+    if (resource == NULL || context == NULL || resource->close_hook != NULL) {
+        return;
+    }
+    PtnRetainedStreamContextData *data = calloc(1, sizeof(PtnRetainedStreamContextData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_resource_retain(context);
+    data->context = context;
+    resource->close_hook = ptn_retained_stream_context_close_hook;
+    resource->close_hook_data = data;
+    resource->close_hook_data_free = ptn_retained_stream_context_data_free;
+}
+
 static void ptn_stream_socket_client_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
     if (arg.type == PTN_REFERENCE) {
         (void)ptn_reference_assign(runtime, arg.as.reference, value);
@@ -193108,7 +193172,9 @@ static PtnValue ptn_stream_socket_client_open_tcp(
     }
 
     char *uri = ptn_duplicate_string_len(address.data, address.len);
-    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
+    ptn_stream_resource_retain_context(resource, ptn_stream_context_arg_from_call(argc, args, 4));
+    PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
     ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
@@ -193211,6 +193277,7 @@ static PtnValue ptn_stream_socket_server_open_tcp(
     char *uri = ptn_duplicate_string_len(address.data, address.len);
     PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
     resource->stream_socket_tcp_nodelay = tcp_nodelay;
+    ptn_stream_resource_retain_context(resource, context);
     PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
@@ -253006,6 +253073,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "default_charset");
         ptn_extension_ini_set_entry(runtime, result, "filter.default");
         ptn_extension_ini_set_entry(runtime, result, "user_agent");
+        ptn_extension_ini_set_entry(runtime, result, "browscap");
         return result;
     }
     return result;
