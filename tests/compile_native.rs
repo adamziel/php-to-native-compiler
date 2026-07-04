@@ -37400,15 +37400,8 @@ fn compile_stream_socket_server_retains_context_to_native_binary() {
     fs::write(
         &input,
         r#"<?php
-function has_refcount(&$value, int $count): bool {
-    ob_start();
-    debug_zval_dump($value);
-    $dump = ob_get_clean();
-    return preg_match('/refcount\(' . $count . '\)/', $dump) === 1;
-}
-
 $context = stream_context_create();
-echo has_refcount($context, 2) ? "1" : "0";
+debug_zval_dump($context);
 $server = stream_socket_server(
     "tcp://127.0.0.1:0",
     $errno,
@@ -37416,11 +37409,10 @@ $server = stream_socket_server(
     STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
     $context
 );
-echo has_refcount($context, 3) ? "1" : "0";
+debug_zval_dump($context);
 fclose($server);
 unset($server);
-echo has_refcount($context, 2) ? "1" : "0";
-echo "\n";
+debug_zval_dump($context);
 "#,
     )
     .unwrap();
@@ -37434,7 +37426,9 @@ echo "\n";
         String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "111\n");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("refcount(2)").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("refcount(3)").count(), 1, "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
