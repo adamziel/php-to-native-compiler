@@ -67,6 +67,45 @@ fn discover_pcre2_library() -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.exists())
 }
 
+fn discover_openssl_include_dir_for_test() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("OPENSSL_INCLUDE_DIR").map(PathBuf::from) {
+        if path.join("openssl/x509v3.h").is_file() && path.join("openssl/evp.h").is_file() {
+            return Some(path);
+        }
+    }
+    if let Some(root) = std::env::var_os("OPENSSL_DIR").map(PathBuf::from) {
+        let path = root.join("include");
+        if path.join("openssl/x509v3.h").is_file() && path.join("openssl/evp.h").is_file() {
+            return Some(path);
+        }
+    }
+
+    for path in [
+        PathBuf::from("/usr/include"),
+        PathBuf::from("/usr/local/include"),
+        PathBuf::from("/run/current-system/sw/include"),
+    ] {
+        if path.join("openssl/x509v3.h").is_file() && path.join("openssl/evp.h").is_file() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(entries) = fs::read_dir("/nix/store") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.contains("-openssl-") || !name.ends_with("-dev") {
+                continue;
+            }
+            let path = entry.path().join("include");
+            if path.join("openssl/x509v3.h").is_file() && path.join("openssl/evp.h").is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 #[test]
 fn parser_preserves_echo_expression_order() {
     let program = parser::parse("<?php echo \"a\", 12, true, false, null;").unwrap();
@@ -42596,6 +42635,64 @@ var_dump(strlen(file_get_contents(__DIR__ . '/key-out.pem')) > 0);
         "int(0)\nbool(true)\nint(64)\nint(128)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(15) \"row-pack-export\"\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_openssl_x509_purposes_without_code_sign_header_macro_to_native_object() {
+    let Some(openssl_include_dir) = discover_openssl_include_dir_for_test() else {
+        eprintln!("skipping OpenSSL X509 purpose portability test: OpenSSL headers were not found");
+        return;
+    };
+
+    let root = temp_dir("ptn-native-openssl-x509-purpose-portability");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("openssl-x509-purpose-portability.php");
+    let output = root.join("openssl-x509-purpose-portability-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(openssl_x509_parse('not a certificate'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = compiled.c_source.unwrap();
+    let c_source_text = fs::read_to_string(&c_source).unwrap();
+    assert!(c_source_text.contains("ptn_openssl_x509_purposes_value"));
+    assert!(c_source_text.contains("#ifdef X509_PURPOSE_CODE_SIGN"));
+
+    let fake_include_dir = root.join("fake-openssl-include");
+    let fake_openssl_dir = fake_include_dir.join("openssl");
+    fs::create_dir_all(&fake_openssl_dir).unwrap();
+    fs::write(
+        fake_openssl_dir.join("x509v3.h"),
+        "#include_next <openssl/x509v3.h>\n#undef X509_PURPOSE_CODE_SIGN\n",
+    )
+    .unwrap();
+
+    let cc = std::env::var_os("CC")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("cc"));
+    let object = root.join("openssl-x509-purpose-portability.o");
+    let compile = Command::new(cc)
+        .arg("-std=c11")
+        .arg("-DPTN_HAVE_OPENSSL=1")
+        .arg("-I")
+        .arg(&fake_include_dir)
+        .arg("-I")
+        .arg(&openssl_include_dir)
+        .arg("-c")
+        .arg(&c_source)
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "cc failed compiling generated C with X509_PURPOSE_CODE_SIGN hidden\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(object.exists());
 }
 
 #[test]

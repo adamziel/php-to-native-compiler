@@ -135102,52 +135102,47 @@ static void ptn_openssl_x509_add_purpose(
 }
 
 static PtnValue ptn_openssl_x509_purposes_value(X509 *x509, int short_names) {
-    static const int purposes[] = {
-        X509_PURPOSE_SSL_CLIENT,
-        X509_PURPOSE_SSL_SERVER,
-        X509_PURPOSE_NS_SSL_SERVER,
-        X509_PURPOSE_SMIME_SIGN,
-        X509_PURPOSE_SMIME_ENCRYPT,
-        X509_PURPOSE_CRL_SIGN,
-        X509_PURPOSE_ANY,
-        X509_PURPOSE_OCSP_HELPER,
-        X509_PURPOSE_TIMESTAMP_SIGN,
-        X509_PURPOSE_CODE_SIGN
-    };
-    static const char *short_labels[] = {
-        "sslclient",
-        "sslserver",
-        "nssslserver",
-        "smimesign",
-        "smimeencrypt",
-        "crlsign",
-        "any",
-        "ocsphelper",
-        "timestampsign",
-        "codesign"
-    };
-    static const char *long_labels[] = {
-        "SSL client",
-        "SSL server",
-        "Netscape SSL server",
-        "S/MIME signing",
-        "S/MIME encryption",
-        "CRL signing",
-        "Any Purpose",
-        "OCSP helper",
-        "Time Stamp signing",
-        "Code signing"
-    };
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < sizeof(purposes) / sizeof(purposes[0]); i++) {
-        ptn_openssl_x509_add_purpose(
-            result,
-            x509,
-            (int)i + 1,
-            purposes[i],
-            short_names ? short_labels[i] : long_labels[i]
-        );
-    }
+    int index = 1;
+
+/* X509_PURPOSE_* macros vary across OpenSSL header sets. */
+#define PTN_OPENSSL_ADD_X509_PURPOSE(symbol, short_label, long_label) \
+    do { \
+        ptn_openssl_x509_add_purpose(result, x509, index++, symbol, short_names ? short_label : long_label); \
+    } while (0)
+
+#ifdef X509_PURPOSE_SSL_CLIENT
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_SSL_CLIENT, "sslclient", "SSL client");
+#endif
+#ifdef X509_PURPOSE_SSL_SERVER
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_SSL_SERVER, "sslserver", "SSL server");
+#endif
+#ifdef X509_PURPOSE_NS_SSL_SERVER
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_NS_SSL_SERVER, "nssslserver", "Netscape SSL server");
+#endif
+#ifdef X509_PURPOSE_SMIME_SIGN
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_SMIME_SIGN, "smimesign", "S/MIME signing");
+#endif
+#ifdef X509_PURPOSE_SMIME_ENCRYPT
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_SMIME_ENCRYPT, "smimeencrypt", "S/MIME encryption");
+#endif
+#ifdef X509_PURPOSE_CRL_SIGN
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_CRL_SIGN, "crlsign", "CRL signing");
+#endif
+#ifdef X509_PURPOSE_ANY
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_ANY, "any", "Any Purpose");
+#endif
+#ifdef X509_PURPOSE_OCSP_HELPER
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_OCSP_HELPER, "ocsphelper", "OCSP helper");
+#endif
+#ifdef X509_PURPOSE_TIMESTAMP_SIGN
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_TIMESTAMP_SIGN, "timestampsign", "Time Stamp signing");
+#endif
+#ifdef X509_PURPOSE_CODE_SIGN
+    PTN_OPENSSL_ADD_X509_PURPOSE(X509_PURPOSE_CODE_SIGN, "codesign", "Code signing");
+#endif
+
+#undef PTN_OPENSSL_ADD_X509_PURPOSE
     return result;
 }
 
