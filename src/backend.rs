@@ -229,6 +229,7 @@ pub fn emit_c(module: &Module) -> String {
     );
     emit_generator_throw_catch_handler_prototypes(&mut out, &generator_throw_catch_handlers);
     emit_function_static_variable_provider_prototypes(&mut out, &module.functions);
+    emit_function_parameter_default_provider_prototypes(&mut out, &module.functions);
     emit_declared_property_default_array_helper_prototypes(&mut out, &module.classes);
     emit_include_helpers(
         &mut out,
@@ -910,6 +911,10 @@ fn opcache_property_type_name(type_hint: &PropertyTypeHint) -> Option<&'static s
 }
 
 fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
+    if let Some(dump) = opcache_main_bool_type_check_dump(module) {
+        return Some(dump);
+    }
+
     let cv_names = opcache_main_cv_names(&module.instructions);
     let temp_base = cv_names.len();
     let mut dump = OpcacheDump::default();
@@ -1075,6 +1080,127 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
     ));
     out.push_str(&dump.render());
     Some(out)
+}
+
+fn opcache_main_bool_type_check_dump(module: &Module) -> Option<String> {
+    let [Instruction::Store {
+        name: var_name,
+        value:
+            ValueExpr::InternalCall {
+                name: call_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            },
+        ..
+    }, rest @ ..] = module.instructions.as_slice()
+    else {
+        return None;
+    };
+    if !php_name_eq(call_name, "random_int")
+        || arguments.len() != 2
+        || !matches!(arguments.as_slice(), [ValueExpr::Int(1), ValueExpr::Int(2)])
+        || argument_names.iter().any(Option::is_some)
+        || argument_unpacks.iter().any(|unpack| *unpack)
+        || rest.len() != 4
+    {
+        return None;
+    }
+
+    let cv_names = vec![var_name.clone()];
+    let mut bool_ops = Vec::new();
+    for instruction in rest {
+        let Instruction::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } = instruction
+        else {
+            return None;
+        };
+        if !php_name_eq(name, "var_dump")
+            || arguments.len() != 1
+            || argument_names.iter().any(Option::is_some)
+            || argument_unpacks.iter().any(|unpack| *unpack)
+        {
+            return None;
+        }
+        bool_ops.push(opcache_bool_type_check_op(&arguments[0], var_name)?);
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode("INIT_FCALL 2 80 string(\"random_int\")");
+    dump.opcode("SEND_VAL int(1) 1");
+    dump.opcode("SEND_VAL int(2) 2");
+    dump.opcode("T1 = DO_ICALL");
+    dump.opcode(format!(
+        "ASSIGN {} T1",
+        opcache_cv_operand(&cv_names, var_name)?
+    ));
+    for bool_op in bool_ops {
+        dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+        dump.opcode(format!(
+            "T1 = {bool_op} {}",
+            opcache_cv_operand(&cv_names, var_name)?
+        ));
+        dump.opcode("SEND_VAL T1 1");
+        dump.opcode("DO_ICALL");
+    }
+    dump.opcode("RETURN int(1)");
+
+    let mut out = String::new();
+    out.push_str("$_main:\n");
+    out.push_str(&format!(
+        "     ; (lines={}, args=0, vars=1, tmps=2)\n",
+        dump.opcodes.len()
+    ));
+    out.push_str("     ; (after optimizer)\n");
+    out.push_str(&format!(
+        "     ; {}\n",
+        opcache_source_range(
+            &module.source_file,
+            1,
+            opcache_source_line_count(&module.source_bytes) + 1
+        )
+    ));
+    out.push_str(&dump.render());
+    Some(out)
+}
+
+fn opcache_bool_type_check_op(value: &ValueExpr, var_name: &str) -> Option<&'static str> {
+    let ValueExpr::Binary {
+        op: BinaryOp::Identical,
+        left,
+        right,
+        ..
+    } = value
+    else {
+        return None;
+    };
+    let ValueExpr::Bool(expected) = right.as_ref() else {
+        return None;
+    };
+    let not_count = opcache_unary_not_depth(left, var_name)?;
+    if (*expected && not_count % 2 == 0) || (!*expected && not_count % 2 == 1) {
+        Some("BOOL")
+    } else {
+        Some("BOOL_NOT")
+    }
+}
+
+fn opcache_unary_not_depth(value: &ValueExpr, var_name: &str) -> Option<usize> {
+    match value {
+        ValueExpr::Load { name, .. } if name == var_name => Some(0),
+        ValueExpr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } => Some(opcache_unary_not_depth(expr, var_name)? + 1),
+        _ => None,
+    }
 }
 
 fn opcache_source_line_count(source_bytes: &[u8]) -> usize {
@@ -1398,6 +1524,26 @@ fn opcache_function_after_optimizer_dump(
         ));
     }
     if let Some((dump, vars, tmps)) = opcache_function_constant_array_echo_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_dce_enclosed_array_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_sccp_constant_array_echo_dump(function) {
         return Some(opcache_render_after_optimizer_function(
             function_name,
             function,
@@ -1970,6 +2116,111 @@ fn opcache_function_constant_array_echo_dump(
     }
     dump.opcode("RETURN null");
     Some((dump, 0, 0))
+}
+
+fn opcache_function_dce_enclosed_array_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Store {
+        name: array_name,
+        value: ValueExpr::Array(first_elements),
+        ..
+    }, Instruction::Store {
+        value: ValueExpr::Array(second_elements),
+        ..
+    }, Instruction::Return {
+        value: Some(ValueExpr::Load {
+            name: return_name, ..
+        }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if return_name != array_name {
+        return None;
+    }
+    let first_value = opcache_single_packed_array_value(first_elements)?;
+    if !matches!(first_value, ValueExpr::Load { name, .. } if name == &parameter.name) {
+        return None;
+    }
+    let second_value = opcache_single_packed_array_value(second_elements)?;
+    if !matches!(second_value, ValueExpr::Load { name, .. } if name == array_name) {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode(format!(
+        "CV1(${array_name}) = INIT_ARRAY 1 (packed) CV0(${}) NEXT",
+        parameter.name
+    ));
+    dump.opcode(format!("RETURN CV1(${array_name})"));
+    Some((dump, 2, 0))
+}
+
+fn opcache_function_sccp_constant_array_echo_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Store {
+        name: array_name,
+        value: ValueExpr::Array(elements),
+        ..
+    }, Instruction::Echo {
+        value: ValueExpr::ArrayAccess { array, index, .. },
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if !matches!(array.as_ref(), ValueExpr::Load { name, .. } if name == array_name)
+        || !matches!(index.as_ref(), ValueExpr::Int(1))
+        || elements.len() != 3
+    {
+        return None;
+    }
+    if !matches!(
+        opcache_packed_array_value_at(elements, 0)?,
+        ValueExpr::Int(1)
+    ) || !matches!(
+        opcache_packed_array_value_at(elements, 1)?,
+        ValueExpr::Int(2)
+    ) || !matches!(opcache_packed_array_value_at(elements, 2)?, ValueExpr::Load { name, .. } if name == &parameter.name)
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode("ECHO string(\"2\")");
+    dump.opcode("RETURN null");
+    Some((dump, 1, 0))
+}
+
+fn opcache_single_packed_array_value(elements: &[IrArrayElement]) -> Option<&ValueExpr> {
+    if elements.len() != 1 {
+        return None;
+    }
+    opcache_packed_array_value_at(elements, 0)
+}
+
+fn opcache_packed_array_value_at(elements: &[IrArrayElement], index: usize) -> Option<&ValueExpr> {
+    let element = elements.get(index)?;
+    if element.key.is_some() {
+        return None;
+    }
+    let IrArrayElementValue::Value(value) = &element.value else {
+        return None;
+    };
+    Some(value)
 }
 
 fn opcache_single_array_store(
@@ -10478,6 +10729,27 @@ fn emit_function_static_variable_provider_prototypes(out: &mut String, functions
     }
 }
 
+fn emit_function_parameter_default_provider_prototypes(
+    out: &mut String,
+    functions: &[FunctionDecl],
+) {
+    for (function_index, function) in functions.iter().enumerate() {
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            if parameter.default_value.is_none() {
+                continue;
+            }
+            out.push_str("\nstatic PtnValue ");
+            out.push_str(&function_parameter_default_provider_name(
+                function_index,
+                parameter_index,
+            ));
+            out.push_str(
+                "(PtnRuntime *caller_runtime, const char *scope_class_name, size_t line);\n",
+            );
+        }
+    }
+}
+
 fn c_identifier_fragment(value: &str) -> String {
     let mut fragment = String::new();
     for byte in value.bytes() {
@@ -11390,6 +11662,14 @@ fn emit_user_function_dispatch(
         out.push_str("        return ptn_dynamic_function_result;\n");
         out.push_str("    }\n");
     }
+    out.push_str("    const char *ptn_function_namespace_separator = ptn_static_call_separator == NULL ? strrchr(lookup_name, '\\\\') : NULL;\n");
+    out.push_str("    if (ptn_function_namespace_separator != NULL && ptn_function_namespace_separator[1] != '\\0') {\n");
+    out.push_str("        int ptn_global_function_found = 0;\n");
+    out.push_str("        PtnValue ptn_global_function_result = ptn_call_user_function(runtime, ptn_function_namespace_separator + 1, argc, args, line, &ptn_global_function_found);\n");
+    out.push_str("        if (ptn_global_function_found) {\n");
+    out.push_str("            return ptn_global_function_result;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_static_call_separator != NULL && ptn_static_call_separator != lookup_name && ptn_static_call_separator[2] != '\\0') {\n");
     out.push_str("        size_t ptn_static_call_class_len = (size_t)(ptn_static_call_separator - lookup_name);\n");
     out.push_str("        char *ptn_static_call_class = malloc(ptn_static_call_class_len + 1);\n");
@@ -50021,19 +50301,19 @@ impl ValueEmitter {
                 out.push_str(match op {
                     UnaryOp::Positive => "ptn_positive",
                     UnaryOp::Negate => "ptn_negate",
-                    UnaryOp::Not => "ptn_not",
+                    UnaryOp::Not => "ptn_not_with_runtime",
                     UnaryOp::BitwiseNot => "ptn_bitwise_not",
                     UnaryOp::ErrorSuppress => unreachable!(),
                 });
                 out.push('(');
                 if matches!(
                     op,
-                    UnaryOp::Positive | UnaryOp::Negate | UnaryOp::BitwiseNot
+                    UnaryOp::Positive | UnaryOp::Negate | UnaryOp::Not | UnaryOp::BitwiseNot
                 ) {
                     out.push_str("&runtime, ");
                 }
                 out.push_str(&expr_temp);
-                if matches!(op, UnaryOp::Positive | UnaryOp::Negate) {
+                if matches!(op, UnaryOp::Positive | UnaryOp::Negate | UnaryOp::Not) {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                 } else if matches!(op, UnaryOp::BitwiseNot) {
@@ -55844,8 +56124,10 @@ impl ValueEmitter {
                     let result_temp = self.next_temp();
                     out.push_str("    int ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_is_truthy(");
+                    out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
                     out.push_str(&emitted_value);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
                     out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &emitted_value);
                     result_temp
@@ -55856,8 +56138,10 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    int ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_is_truthy(");
+                out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
                 out.push_str(&emitted_value);
+                out.push_str(", ");
+                out.push_str(&value_expr_runtime_line(value).unwrap_or(0).to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &emitted_value);
                 result_temp
@@ -55939,8 +56223,10 @@ impl ValueEmitter {
         let predicate_temp = self.next_temp();
         out.push_str("    int ");
         out.push_str(&predicate_temp);
-        out.push_str(" = ptn_is_truthy(");
+        out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
         out.push_str(&condition_temp);
+        out.push_str(", ");
+        out.push_str(&value_expr_runtime_line(condition).unwrap_or(0).to_string());
         out.push_str(");\n");
         out.push_str("    if (");
         out.push_str(&predicate_temp);

@@ -1100,12 +1100,20 @@ static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
 }
 
-static PTN_UNUSED PtnValue ptn_cast_bool_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+static PTN_UNUSED int ptn_is_truthy_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
         ptn_emit_nan_coercion_warning(runtime, "bool", line);
     }
-    return ptn_bool(ptn_is_truthy(value));
+    return ptn_is_truthy(value);
+}
+
+static PTN_UNUSED PtnValue ptn_not_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    return ptn_bool(!ptn_is_truthy_with_runtime(runtime, value, line));
+}
+
+static PTN_UNUSED PtnValue ptn_cast_bool_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    return ptn_bool(ptn_is_truthy_with_runtime(runtime, value, line));
 }
 
 typedef enum {
