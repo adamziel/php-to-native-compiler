@@ -61930,9 +61930,14 @@ class DeferredReceiverParser {
     assert!(stdout.contains(
         "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n"
     ));
-    assert!(stdout.contains(
-        "TypeError: xml_set_element_handler(): Argument #3 ($end_handler) must be of type callable|string|null\n"
-    ));
+    assert_eq!(
+        stdout
+            .matches(
+                "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n"
+            )
+            .count(),
+        2
+    );
     assert_eq!(
         stdout
             .matches("Deprecated: xml_set_element_handler(): Passing non-callable strings is deprecated since 8.4")
@@ -62036,6 +62041,125 @@ var_dump($holder->values, $holder->index);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_xml_parse"));
     assert!(c_source.contains("ptn_internal_xml_parse_into_struct"));
+}
+
+#[test]
+fn compile_xml_parse_into_struct_same_reference_and_depth_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parse-into-struct-same-reference-depth");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parse-into-struct-same-reference-depth.php");
+    let output = root.join("xml-parse-into-struct-same-reference-depth-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$parser = xml_parser_create();
+xml_parse_into_struct($parser, '<container><child/></container>', $same, $same);
+var_dump(array_keys($same), $same['CHILD'], $same['CONTAINER']);
+
+class SameReferenceStructMutation {
+    public $parser;
+    public $data;
+    public $arrayCopy;
+
+    public function __construct() {
+        $this->parser = xml_parser_create();
+        xml_set_element_handler(
+            $this->parser,
+            function ($parser, $name, $attributes) {
+                $this->arrayCopy = [$this];
+                $this->data = $this->arrayCopy;
+            },
+            function ($parser, $name) {}
+        );
+    }
+
+    public function run() {
+        $this->data = [];
+        xml_parse_into_struct($this->parser, '<container><child/></container>', $this->data, $this->data);
+        return $this->data;
+    }
+}
+
+$holder = new SameReferenceStructMutation();
+$mutated = $holder->run();
+var_dump(
+    array_keys($mutated),
+    $mutated['CHILD'],
+    $mutated['CONTAINER'],
+    $mutated[0] === $holder,
+    array_keys($holder->arrayCopy)
+);
+
+xml_parse_into_struct(xml_parser_create_ns(), str_repeat('<blah>', 260), $depth);
+echo 'depth-count:', count($depth), PHP_EOL;
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout
+        .contains("Warning: xml_parse_into_struct(): Maximum depth exceeded - Results truncated"));
+    assert!(stdout.contains("depth-count:255\n"));
+    assert!(stdout.contains(concat!(
+        "array(5) {\n",
+        "  [0]=>\n",
+        "  string(9) \"CONTAINER\"\n",
+        "  [1]=>\n",
+        "  int(0)\n",
+        "  [2]=>\n",
+        "  string(5) \"CHILD\"\n",
+        "  [3]=>\n",
+        "  int(1)\n",
+        "  [4]=>\n",
+        "  int(2)\n",
+        "}\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  int(1)\n",
+        "}\n",
+        "array(2) {\n",
+        "  [0]=>\n",
+        "  int(0)\n",
+        "  [1]=>\n",
+        "  int(2)\n",
+        "}\n"
+    )));
+    assert!(stdout.contains(concat!(
+        "array(5) {\n",
+        "  [0]=>\n",
+        "  int(0)\n",
+        "  [1]=>\n",
+        "  string(5) \"CHILD\"\n",
+        "  [2]=>\n",
+        "  int(1)\n",
+        "  [3]=>\n",
+        "  string(9) \"CONTAINER\"\n",
+        "  [4]=>\n",
+        "  int(2)\n",
+        "}\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  int(1)\n",
+        "}\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  int(2)\n",
+        "}\n",
+        "bool(true)\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  int(0)\n",
+        "}\n"
+    )));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_XML_PARSE_INTO_STRUCT_MAX_DEPTH"));
+    assert!(c_source.contains("ptn_xml_parse_into_struct_combined_output"));
 }
 
 #[test]

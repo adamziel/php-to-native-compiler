@@ -169139,6 +169139,8 @@ typedef struct {
     size_t pending_len;
 } PtnXmlParserData;
 
+#define PTN_XML_PARSE_INTO_STRUCT_MAX_DEPTH 255
+
 static void ptn_xml_parser_frame_free(PtnXmlParserFrame *frame);
 
 static const char *ptn_dom_canonical_class_name(const char *class_name) {
@@ -192670,6 +192672,54 @@ static int ptn_xml_parser_current_receiver_string_handler_is_valid(PtnRuntime *r
     return ptn_xml_parser_object_string_handler_is_valid_for_object(runtime, receiver, handler);
 }
 
+static int ptn_xml_parser_array_handler_is_valid(PtnRuntime *runtime, PtnValue handler) {
+    handler = ptn_value_deref(handler);
+    if (handler.type != PTN_ARRAY || handler.as.array == NULL || handler.as.array->len != 2) {
+        return 0;
+    }
+    PtnArrayKey scope_key = ptn_array_int_key(0);
+    PtnArrayKey method_key = ptn_array_int_key(1);
+    PtnArrayEntry *scope_entry = ptn_array_entry_for_key(handler.as.array, scope_key);
+    PtnArrayEntry *method_entry = ptn_array_entry_for_key(handler.as.array, method_key);
+    ptn_array_key_free(scope_key);
+    ptn_array_key_free(method_key);
+    if (scope_entry == NULL || method_entry == NULL) {
+        return 0;
+    }
+    PtnValue scope = ptn_value_deref(scope_entry->value);
+    PtnValue method = ptn_value_deref(method_entry->value);
+    if (method.type != PTN_STRING) {
+        return 0;
+    }
+    char *method_name = ptn_value_to_string(method);
+    int valid = 0;
+    if (scope.type == PTN_OBJECT && scope.as.object != NULL) {
+        const char *class_name = scope.as.object->class_name;
+        valid = ptn_internal_class_method_exists(class_name, method_name) ||
+            ptn_declared_class_method_is_callable(class_name, method_name, NULL);
+    } else if (scope.type == PTN_STRING) {
+        char *class_name = ptn_value_to_string(scope);
+        const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+        const char *resolved_class_name = runtime == NULL
+            ? lookup_class_name
+            : ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
+        valid = ptn_declared_class_static_method_is_callable(resolved_class_name, method_name, NULL) ||
+            (ptn_internal_class_exists_name(resolved_class_name) &&
+                ptn_internal_class_static_method_exists(resolved_class_name, method_name));
+        free(class_name);
+    }
+    free(method_name);
+    return valid;
+}
+
+static int ptn_xml_parser_handler_is_valid_callable(PtnRuntime *runtime, PtnValue handler) {
+    PtnValue deref = ptn_value_deref(handler);
+    if (deref.type == PTN_ARRAY) {
+        return ptn_xml_parser_array_handler_is_valid(runtime, deref);
+    }
+    return ptn_callable_is_valid(runtime, deref, 0);
+}
+
 static int ptn_xml_parser_validate_handler(
     PtnRuntime *runtime,
     PtnXmlParserData *data,
@@ -192746,7 +192796,7 @@ static int ptn_xml_parser_validate_handler(
         }
         return 1;
     }
-    if (ptn_callable_is_valid(runtime, deref, 0)) {
+    if (ptn_xml_parser_handler_is_valid_callable(runtime, deref)) {
         return 1;
     }
     if (runtime->exceptions->active_exception != NULL) {
@@ -194705,6 +194755,11 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
             free(raw_name);
             goto fail;
         }
+        if (into_struct && frame_count >= PTN_XML_PARSE_INTO_STRUCT_MAX_DEPTH) {
+            ptn_emit_warning(&runtime->diagnostics, "xml_parse_into_struct(): Maximum depth exceeded - Results truncated", line);
+            free(raw_name);
+            goto struct_truncated;
+        }
         PtnXmlParserAttributeList attributes;
         ptn_xml_parser_attributes_init(&attributes);
         PtnXmlParserFrame namespace_scope;
@@ -194848,6 +194903,19 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
         ptn_string_buffer_init(&frame.text);
         ptn_xml_parser_frame_push(&frames, &frame_count, &frame_capacity, frame);
         ptn_xml_parser_attributes_free(&attributes);
+    }
+struct_truncated:
+    if (into_struct && pos < len) {
+        if (frame_count > 0) {
+            ptn_xml_parser_flush_open_frame_text(parser, values, index, &row_count, &frames[frame_count - 1]);
+        }
+        while (frame_count > 0) {
+            ptn_xml_parser_frame_free(&frames[--frame_count]);
+        }
+        *values_out = values;
+        *index_out = index;
+        free(frames);
+        return 1;
     }
     if (into_struct) {
         while (frame_count > 0) {
@@ -195049,6 +195117,54 @@ static int ptn_xml_parse_into_struct_reference_unchanged(PtnReference *reference
     return 0;
 }
 
+static const char *ptn_xml_parse_into_struct_row_tag(PtnValue row) {
+    row = ptn_value_deref(row);
+    if (row.type != PTN_ARRAY || row.as.array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key("tag");
+    PtnArrayEntry *entry = ptn_array_entry_for_key(row.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return NULL;
+    }
+    PtnValue tag = ptn_value_deref(entry->value);
+    return tag.type == PTN_STRING ? tag.as.string.data : NULL;
+}
+
+static PtnValue ptn_xml_parse_into_struct_combined_output(PtnValue current, PtnValue values) {
+    current = ptn_value_deref(current);
+    PtnValue combined = current.type == PTN_ARRAY
+        ? ptn_array(ptn_array_clone(current.as.array))
+        : ptn_array_from_literal_entries(0, NULL);
+    values = ptn_value_deref(values);
+    if (values.type != PTN_ARRAY || values.as.array == NULL) {
+        return combined;
+    }
+    for (size_t i = 0; i < values.as.array->len; i++) {
+        PtnArrayEntry *entry = &values.as.array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_INT) {
+            continue;
+        }
+        PtnArrayKey row_key = ptn_array_key_clone(entry->key);
+        int row_slot_replaced = ptn_array_entry_for_key(combined.as.array, row_key) != NULL;
+        ptn_array_key_free(row_key);
+        if (row_slot_replaced) {
+            continue;
+        }
+        const char *tag = ptn_xml_parse_into_struct_row_tag(entry->value);
+        if (tag != NULL) {
+            ptn_xml_parser_index_append(combined, tag, entry->key.as.integer);
+        }
+        ptn_array_set_entry(
+            combined.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+    return combined;
+}
+
 static char *ptn_xml_parser_declared_source_encoding_alloc(const char *data, size_t len) {
     size_t pos = 0;
     if (len >= 3 && memcmp(data, "\xEF\xBB\xBF", 3) == 0) {
@@ -195222,6 +195338,11 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
     PtnValue index_before = argc >= 4 && args[3].type == PTN_REFERENCE
         ? ptn_value_clone_deref(args[3].as.reference->value)
         : ptn_null();
+    int same_output_reference =
+        argc >= 4 &&
+        args[2].type == PTN_REFERENCE &&
+        args[3].type == PTN_REFERENCE &&
+        args[2].as.reference == args[3].as.reference;
     parser->parsing = 1;
     int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 1, 1, &values, &index);
     parser->parsing = 0;
@@ -195230,18 +195351,31 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
     }
     ptn_string_operand_free(data);
     if (ok) {
-        if (
-            args[2].type == PTN_REFERENCE &&
-            ptn_xml_parse_into_struct_reference_unchanged(args[2].as.reference, values_before)
-        ) {
-            ptn_reference_assign(runtime, args[2].as.reference, values);
-        }
-        if (
-            argc >= 4 &&
-            args[3].type == PTN_REFERENCE &&
-            ptn_xml_parse_into_struct_reference_unchanged(args[3].as.reference, index_before)
-        ) {
-            ptn_reference_assign(runtime, args[3].as.reference, index);
+        if (same_output_reference) {
+            PtnReference *reference = args[2].as.reference;
+            PtnValue current = ptn_xml_parse_into_struct_reference_unchanged(reference, values_before)
+                ? ptn_null()
+                : ptn_value_clone_deref(reference->value);
+            if (current.type == PTN_NULL || ptn_value_deref(current).type == PTN_ARRAY) {
+                PtnValue combined = ptn_xml_parse_into_struct_combined_output(current, values);
+                ptn_reference_assign(runtime, reference, combined);
+                ptn_value_drop(&combined);
+            }
+            ptn_value_destroy(&current);
+        } else {
+            if (
+                args[2].type == PTN_REFERENCE &&
+                ptn_xml_parse_into_struct_reference_unchanged(args[2].as.reference, values_before)
+            ) {
+                ptn_reference_assign(runtime, args[2].as.reference, values);
+            }
+            if (
+                argc >= 4 &&
+                args[3].type == PTN_REFERENCE &&
+                ptn_xml_parse_into_struct_reference_unchanged(args[3].as.reference, index_before)
+            ) {
+                ptn_reference_assign(runtime, args[3].as.reference, index);
+            }
         }
         ptn_value_drop(&values);
         ptn_value_drop(&index);
