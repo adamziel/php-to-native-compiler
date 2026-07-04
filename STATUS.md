@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T21:50:10Z |
+| last refresh | 2026-07-04T22:00:15Z |
 | source commit | `69bbad2a8393` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,29 +21,28 @@
 
 | field | value |
 | --- | --- |
-| source commit | `69bbad2a8393` |
-| statused tests | 144 |
-| passed tests | 111 |
-| failed tests | 31 |
-| skipped tests | 2 |
-| warned tests | 0 |
-| unknown tests | 21723 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T214329Z` |
+| source commit | `b043e906381d` |
+| statused tests | 4768 |
+| passed tests | 626 |
+| failed tests | 4060 |
+| skipped tests | 81 |
+| warned tests | 1 |
+| unknown tests | 17099 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260704T215202Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-04T21:00Z) | 0 |
-| last 24 hours (2026-07-03T22:00Z - 2026-07-04T21:00Z) | 48 |
-| last 7 days (2026-06-27T22:00Z - 2026-07-04T21:00Z) | 114 |
+| latest hour (2026-07-04T22:00Z) | 0 |
+| last 24 hours (2026-07-03T23:00Z - 2026-07-04T22:00Z) | 48 |
+| last 7 days (2026-06-27T23:00Z - 2026-07-04T22:00Z) | 114 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 12877 | 21867 |
-| hourly history retained 2026-06-27T22:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T23:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T00:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T01:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-04T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T19:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T20:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-04T21:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-27T22:00Z | 0 | 12763 |
 | 2026-06-27T23:00Z | 0 | 12763 |
 | 2026-06-28T00:00Z | 0 | 12763 |
 | 2026-06-28T01:00Z | 0 | 12763 |
@@ -352,3 +351,4 @@
 | 2026-07-04T19:00Z | 3 | 12875 |
 | 2026-07-04T20:00Z | 2 | 12877 |
 | 2026-07-04T21:00Z | 0 | 12877 |
+| 2026-07-04T22:00Z | 0 | 12877 |
