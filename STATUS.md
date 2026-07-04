@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T13:50:13Z |
+| last refresh | 2026-07-04T14:59:28Z |
 | source commit | `7a377e6f2565` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -23,8 +23,8 @@
 | --- | --- |
 | source commit | `7a377e6f2565` |
 | statused tests | 132 |
-| passed tests | 99 |
-| failed tests | 31 |
+| passed tests | 92 |
+| failed tests | 38 |
 | skipped tests | 2 |
 | warned tests | 0 |
 | unknown tests | 21735 |
@@ -34,16 +34,15 @@
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-04T13:00Z) | 17 |
-| last 24 hours (2026-07-03T14:00Z - 2026-07-04T13:00Z) | 40 |
-| last 7 days (2026-06-27T14:00Z - 2026-07-04T13:00Z) | 106 |
+| latest hour (2026-07-04T14:00Z) | 0 |
+| last 24 hours (2026-07-03T15:00Z - 2026-07-04T14:00Z) | 40 |
+| last 7 days (2026-06-27T15:00Z - 2026-07-04T14:00Z) | 106 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 12914 | 21867 |
-| hourly history retained 2026-06-27T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T15:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T16:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-27T17:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-04T10:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T11:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-04T12:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-04T13:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-27T14:00Z | 0 | 12808 |
 | 2026-06-27T15:00Z | 0 | 12808 |
 | 2026-06-27T16:00Z | 0 | 12808 |
 | 2026-06-27T17:00Z | 0 | 12808 |
@@ -352,3 +351,4 @@
 | 2026-07-04T11:00Z | 0 | 12893 |
 | 2026-07-04T12:00Z | 4 | 12897 |
 | 2026-07-04T13:00Z | 17 | 12914 |
+| 2026-07-04T14:00Z | 0 | 12914 |
