@@ -12045,6 +12045,80 @@ static PTN_UNUSED int ptn_generator_try_throw_catch(
     return 0;
 }
 
+static PTN_UNUSED PtnValue ptn_generator_throw_uncaught(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    PtnValue thrown,
+    size_t line
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        ptn_generator_close_for_throw(runtime, generator);
+        return ptn_throw_value(
+            runtime,
+            thrown,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+    }
+
+    PtnTryFrame throw_frame;
+    ptn_try_frame_push(runtime, &throw_frame);
+    if (setjmp(throw_frame.jump) == 0) {
+        return ptn_throw_value(
+            runtime,
+            thrown,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+    }
+    ptn_try_frame_pop(runtime, &throw_frame);
+
+    PtnException *throw_exception = runtime->exceptions->active_exception;
+    PtnTryFrame close_frame;
+    ptn_try_frame_push(runtime, &close_frame);
+    if (setjmp(close_frame.jump) == 0) {
+        ptn_generator_close_for_throw(runtime, generator);
+        ptn_runtime_clear_temporary_roots(runtime);
+        if (
+            runtime->exceptions->active_exception != NULL &&
+            runtime->exceptions->active_exception != throw_exception
+        ) {
+            ptn_generator_rewrite_throw_unwind_exception_trace(
+                runtime,
+                generator,
+                runtime->exceptions->active_exception,
+                line
+            );
+        }
+        ptn_try_frame_pop(runtime, &close_frame);
+    } else {
+        ptn_try_frame_pop(runtime, &close_frame);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_generator_rewrite_throw_unwind_exception_trace(
+                runtime,
+                generator,
+                runtime->exceptions->active_exception,
+                line
+            );
+        }
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int previous_defer_uncaught_exception_emit = root == NULL
+        ? 0
+        : root->defer_uncaught_exception_emit;
+    if (root != NULL) {
+        root->defer_uncaught_exception_emit = 1;
+    }
+    ptn_runtime_shutdown_before_exit(runtime);
+    if (root != NULL) {
+        root->defer_uncaught_exception_emit = previous_defer_uncaught_exception_emit;
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -12105,13 +12179,16 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
         ptn_value_destroy(&thrown);
         return caught_result;
     }
-    ptn_generator_close_for_throw(runtime, generator);
-    return ptn_throw_value(
-        runtime,
-        thrown,
-        runtime != NULL ? runtime->source_path : NULL,
-        line
-    );
+    if (ptn_try_frame_stack_has_user_try(runtime)) {
+        ptn_generator_close_for_throw(runtime, generator);
+        return ptn_throw_value(
+            runtime,
+            thrown,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+    }
+    return ptn_generator_throw_uncaught(runtime, generator, thrown, line);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_current_or_last(
