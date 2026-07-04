@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-04T10:25:10Z |
+| last refresh | 2026-07-04T10:30:09Z |
 | source commit | `d47f857df0d0` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -23,8 +23,8 @@
 | --- | --- |
 | source commit | `d47f857df0d0` |
 | statused tests | 154 |
-| passed tests | 125 |
-| failed tests | 27 |
+| passed tests | 112 |
+| failed tests | 40 |
 | skipped tests | 2 |
 | warned tests | 0 |
 | unknown tests | 21713 |
