@@ -107128,7 +107128,7 @@ var_dump($dynamic->isReadable(null, $lazy));
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
-            "bool(true)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -107136,6 +107136,109 @@ var_dump($dynamic->isReadable(null, $lazy));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_reflection_property_settable_type_metadata"));
     assert!(c_source.contains("ptn_declared_class_reflection_property_has_set_hook"));
+}
+
+#[test]
+fn compile_reflection_property_get_raw_value_warns_for_missing_dynamic_slot_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-raw-dynamic-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-raw-dynamic-warning.php");
+    let output = root.join("reflection-property-raw-dynamic-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectRawDynamic {
+    public $a;
+}
+
+$a = new ReflectRawDynamic();
+$b = new ReflectRawDynamic();
+$b->dyn = 1;
+
+$prop = new ReflectionProperty($b, 'dyn');
+var_dump($prop->getRawValue($a));
+$prop->setRawValue($a, 1);
+var_dump($a->dyn);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Undefined property: ReflectRawDynamic::$dyn in "));
+    assert!(stdout.contains(" on line 11"));
+    assert!(stdout.contains("NULL\n"));
+    assert!(stdout.ends_with("int(1)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_get_raw_object_value"));
+    assert!(c_source.contains("ptn_emit_undefined_property_warning"));
+}
+
+#[test]
+fn compile_reflection_property_dynamic_lazy_readability_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-dynamic-lazy-readability");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-dynamic-lazy-readability.php");
+    let output = root.join("reflection-property-dynamic-lazy-readability-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class ReflectLazyDynamicReadable {
+    public $_;
+    public function __construct() { $this->prop = 1; }
+}
+
+#[AllowDynamicProperties]
+class ReflectLazyDynamicIsset {
+    public $_;
+    public function __construct() { $this->prop = 1; }
+    public function __isset($name) { return false; }
+    public function __get($name) { return null; }
+}
+
+function dumpReadable(string $class): void {
+    $lazy = (new ReflectionClass($class))->newLazyProxy(fn() => new $class());
+    $property = new ReflectionProperty(new $class(), 'prop');
+    var_dump($property->isReadable(null, $lazy));
+}
+
+dumpReadable(ReflectLazyDynamicReadable::class);
+dumpReadable(ReflectLazyDynamicIsset::class);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("bool(true)\n", "bool(false)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_is_readable_result"));
+    assert!(c_source.contains("ptn_reflection_property_initialize_lazy_target"));
 }
 
 #[test]

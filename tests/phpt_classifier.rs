@@ -3804,15 +3804,25 @@ fn phpt_classifier_keeps_verified_metadata_rows_runnable_by_path() {
 }
 
 #[test]
-fn phpt_classifier_leaves_lazy_is_readable_reflection_row_excluded_by_path() {
-    let classification = classify_at_relative_path(
-        "--TEST--\nlazy isReadable remains excluded\n--FILE--\n<?php\n#[AllowDynamicProperties]\nclass Box { public function __isset($name) { return true; } }\n$lazy = (new ReflectionClass(Box::class))->newLazyProxy(fn() => new Box());\n$ref = new ReflectionProperty(new Box(), 'prop');\nvar_dump($ref->isReadable(null, $lazy));\n--EXPECT--\n",
-        "ext/reflection/tests/ReflectionProperty_isReadable_lazy_isset.phpt",
-    );
-    assert!(
-        classification.starts_with("unsupported-internal-reflection-metadata\t"),
-        "{classification:?}"
-    );
+fn phpt_classifier_keeps_lazy_is_readable_reflection_rows_runnable_by_path() {
+    let cases = [
+        (
+            "ext/reflection/tests/ReflectionProperty_isReadable_lazy_dynamic.phpt",
+            "--TEST--\nlazy dynamic isReadable\n--FILE--\n<?php\n#[AllowDynamicProperties]\nclass Box { public function __construct() { $this->prop = 1; } }\n$lazy = (new ReflectionClass(Box::class))->newLazyProxy(fn() => new Box());\n$ref = new ReflectionProperty(new Box(), 'prop');\nvar_dump($ref->isReadable(null, $lazy));\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionProperty_isReadable_lazy_isset.phpt",
+            "--TEST--\nlazy isset isReadable\n--FILE--\n<?php\n#[AllowDynamicProperties]\nclass Box { public function __isset($name) { return false; } public function __get($name) { return null; } }\n$lazy = (new ReflectionClass(Box::class))->newLazyProxy(fn() => new Box());\n$ref = new ReflectionProperty(new Box(), 'prop');\nvar_dump($ref->isReadable(null, $lazy));\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{path}"
+        );
+    }
 }
 
 #[test]

@@ -2315,6 +2315,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /(^|\/)Zend\/tests\/lazy_objects\/realize_proxy_overridden[.]phpt$/ ||
                 ptn_path ~ /(^|\/)ext\/reflection\/tests\/property_hooks\/gh17713[.]phpt$/
         }
+        function ptn_supported_lazy_reflection_property_is_readable_row() {
+            return ptn_path ~ /(^|\/)ext\/reflection\/tests\/ReflectionProperty_isReadable_lazy_(dynamic|isset)[.]phpt$/
+        }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/asymmetric_visibility\/virtual_(get|set)_only[.]phpt$/ ||
@@ -2548,7 +2551,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     exit
                 }
             }
-            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
+            if ((line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ &&
+                    !ptn_supported_lazy_reflection_property_is_readable_row()) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&

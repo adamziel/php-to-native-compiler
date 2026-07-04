@@ -240807,6 +240807,9 @@ static PtnValue ptn_reflection_property_get_raw_object_value(
             line
         );
     }
+    if (is_dynamic && metadata == NULL) {
+        ptn_emit_undefined_property_warning(runtime, target.as.object, property_name, line);
+    }
     return ptn_null();
 }
 
@@ -240890,6 +240893,12 @@ static int ptn_reflection_property_is_readable_result(
         }
         if (ptn_reflection_property_target_has_method(target, "__isset")) {
             return ptn_object_property_is_set(runtime, target, data->name, scope_class, line);
+        }
+        if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
+            return 0;
+        }
+        if (ptn_reflection_property_object_storage_initialized(target, data->name, NULL)) {
+            return 1;
         }
         return ptn_reflection_property_target_has_method(target, "__get");
     }
