@@ -59918,6 +59918,70 @@ var_dump(NumberFormatter::DECIMAL_COMPACT_SHORT, NumberFormatter::DECIMAL_COMPAC
 }
 
 #[test]
+fn compile_intl_number_range_formatter_current_red_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-range-formatter-current-red");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-range-formatter-current-red.php");
+    let output = root.join("intl-number-range-formatter-current-red-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$empty = IntlNumberRangeFormatter::createFromSkeleton(\n\
+    '',\n\
+    'en_GB',\n\
+    IntlNumberRangeFormatter::COLLAPSE_AUTO,\n\
+    IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY\n\
+);\n\
+var_dump($empty->format(5.1, 5.2));\n\
+\n\
+$single = IntlNumberRangeFormatter::createFromSkeleton(\n\
+    '',\n\
+    'en_US',\n\
+    IntlNumberRangeFormatter::COLLAPSE_AUTO,\n\
+    IntlNumberRangeFormatter::IDENTITY_FALLBACK_SINGLE_VALUE\n\
+);\n\
+var_dump(preg_replace('/[^0-9]/', '', $single->format(9007199254740993, 9007199254740993)));\n\
+\n\
+foreach (['.##', '.#'] as $precision) {\n\
+    echo 'Approximate with ' . $precision . PHP_EOL;\n\
+    $formatter = IntlNumberRangeFormatter::createFromSkeleton(\n\
+        $precision,\n\
+        'en_GB',\n\
+        IntlNumberRangeFormatter::COLLAPSE_AUTO,\n\
+        IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY\n\
+    );\n\
+    var_dump($formatter->format(5.1, 5.2));\n\
+    var_dump($formatter->format(5.01, 5.02));\n\
+    var_dump($formatter->format(5.001, 5.002));\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_number_range_formatter_format"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(9) \"5.1\u{2013}5.2\"\n",
+            "string(16) \"9007199254740993\"\n",
+            "Approximate with .##\n",
+            "string(9) \"5.1\u{2013}5.2\"\n",
+            "string(11) \"5.01\u{2013}5.02\"\n",
+            "string(2) \"~5\"\n",
+            "Approximate with .#\n",
+            "string(9) \"5.1\u{2013}5.2\"\n",
+            "string(2) \"~5\"\n",
+            "string(2) \"~5\"\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_number_formatter_icu_style_matrix_to_native_binary() {
     let root = temp_dir("ptn-native-intl-number-formatter-icu-style-matrix");
     fs::create_dir_all(&root).unwrap();

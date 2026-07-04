@@ -92586,6 +92586,99 @@ static PtnValue ptn_intl_number_range_formatter_create_from_skeleton(
     return object;
 }
 
+static int ptn_intl_number_range_skeleton_max_fraction_digits(const char *skeleton) {
+    if (skeleton == NULL || skeleton[0] == '\0') {
+        return -1;
+    }
+    if (strcmp(skeleton, ".##") == 0) {
+        return 2;
+    }
+    if (strcmp(skeleton, ".#") == 0) {
+        return 1;
+    }
+    return -1;
+}
+
+static char *ptn_intl_number_range_format_number(PtnValue value, int max_fraction_digits) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_INT) {
+        int needed = snprintf(NULL, 0, "%lld", (long long)resolved.as.integer);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *result = malloc((size_t)needed + 1);
+        if (result == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(result, (size_t)needed + 1, "%lld", (long long)resolved.as.integer);
+        return result;
+    }
+
+    double number = ptn_value_to_double(resolved);
+    char buffer[96];
+    int written = 0;
+    if (max_fraction_digits >= 0) {
+        written = snprintf(buffer, sizeof(buffer), "%.*f", max_fraction_digits, number);
+    } else {
+        written = snprintf(buffer, sizeof(buffer), "%.15g", number);
+    }
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    if (strchr(buffer, '.') != NULL) {
+        char *end = buffer + strlen(buffer) - 1;
+        while (end > buffer && *end == '0') {
+            *end = '\0';
+            end--;
+        }
+        if (end > buffer && *end == '.') {
+            *end = '\0';
+        }
+    }
+    if (strcmp(buffer, "-0") == 0) {
+        return ptn_duplicate_string("0");
+    }
+    return ptn_duplicate_string(buffer);
+}
+
+static PtnValue ptn_intl_number_range_formatter_format(
+    PtnRuntime *runtime,
+    PtnIntlNumberRangeFormatterData *data,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc != 2) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "IntlNumberRangeFormatter::format() expects exactly 2 arguments");
+        return ptn_null();
+    }
+    int max_fraction_digits = ptn_intl_number_range_skeleton_max_fraction_digits(data->skeleton);
+    char *start = ptn_intl_number_range_format_number(args[0], max_fraction_digits);
+    char *end = ptn_intl_number_range_format_number(args[1], max_fraction_digits);
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (strcmp(start, end) == 0 &&
+        data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY) {
+        ptn_string_buffer_append_char(&output, '~');
+        ptn_string_buffer_append(&output, start);
+    } else if (strcmp(start, end) == 0 &&
+        (data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE ||
+         data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE)) {
+        ptn_string_buffer_append(&output, start);
+    } else {
+        ptn_string_buffer_append(&output, start);
+        ptn_string_buffer_append(&output, "\xE2\x80\x93");
+        ptn_string_buffer_append(&output, end);
+    }
+    free(start);
+    free(end);
+    free(data->error_message);
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PTN_UNUSED PtnValue ptn_intl_number_range_formatter_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -92616,9 +92709,7 @@ static PTN_UNUSED PtnValue ptn_intl_number_range_formatter_call_method(
         return ptn_owned_string(ptn_duplicate_string(data->error_message));
     }
     if (ptn_ascii_case_equal(name, "format")) {
-        (void)argc;
-        (void)args;
-        return ptn_string("");
+        return ptn_intl_number_range_formatter_format(runtime, data, argc, args);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
