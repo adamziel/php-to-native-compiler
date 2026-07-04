@@ -22690,9 +22690,14 @@ fn reflection_default_class_constant_class_name_repr(class_name: &str) -> String
         || class_name.eq_ignore_ascii_case("parent")
         || class_name.eq_ignore_ascii_case("static")
     {
-        class_name.to_string()
+        return class_name.to_string();
+    }
+
+    let normalized = class_name.trim_start_matches('\\');
+    if class_name.starts_with('\\') || normalized.contains('\\') {
+        format!("\\{normalized}")
     } else {
-        class_name.trim_start_matches('\\').to_string()
+        normalized.to_string()
     }
 }
 
