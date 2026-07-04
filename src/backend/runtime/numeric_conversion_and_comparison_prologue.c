@@ -1173,6 +1173,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_enable_cli = NULL;
         free(runtime->opcache_fast_shutdown);
         runtime->opcache_fast_shutdown = NULL;
+        free(runtime->opcache_file_cache);
+        runtime->opcache_file_cache = NULL;
         free(runtime->opcache_file_cache_only);
         runtime->opcache_file_cache_only = NULL;
         free(runtime->opcache_file_update_protection);
@@ -1197,6 +1199,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_preload_user = NULL;
         free(runtime->opcache_protect_memory);
         runtime->opcache_protect_memory = NULL;
+        free(runtime->opcache_record_warnings);
+        runtime->opcache_record_warnings = NULL;
         free(runtime->opcache_revalidate_freq);
         runtime->opcache_revalidate_freq = NULL;
         free(runtime->opcache_save_comments);

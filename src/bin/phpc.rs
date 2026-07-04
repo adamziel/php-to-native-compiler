@@ -978,6 +978,7 @@ fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
         "opcache.preload" => Some("opcache.preload"),
         "opcache.preload_user" => Some("opcache.preload_user"),
         "opcache.protect_memory" => Some("opcache.protect_memory"),
+        "opcache.record_warnings" => Some("opcache.record_warnings"),
         "opcache.revalidate_freq" => Some("opcache.revalidate_freq"),
         "opcache.revalidate_path" => Some("opcache.revalidate_path"),
         "opcache.save_comments" => Some("opcache.save_comments"),

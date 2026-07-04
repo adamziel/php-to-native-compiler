@@ -2013,6 +2013,7 @@ struct PtnRuntime {
     char *opcache_enable;
     char *opcache_enable_cli;
     char *opcache_fast_shutdown;
+    char *opcache_file_cache;
     char *opcache_file_cache_only;
     char *opcache_file_update_protection;
     char *opcache_interned_strings_buffer;
@@ -2025,6 +2026,7 @@ struct PtnRuntime {
     char *opcache_preload;
     char *opcache_preload_user;
     char *opcache_protect_memory;
+    char *opcache_record_warnings;
     char *opcache_revalidate_freq;
     char *opcache_save_comments;
     char *opcache_validate_timestamps;

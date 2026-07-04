@@ -139752,6 +139752,9 @@ static const char *ptn_opcache_ini_default(const char *name) {
     if (ptn_ascii_case_equal(name, "opcache.fast_shutdown")) {
         return "0";
     }
+    if (ptn_ascii_case_equal(name, "opcache.file_cache")) {
+        return "";
+    }
     if (ptn_ascii_case_equal(name, "opcache.file_cache_only")) {
         return "0";
     }
@@ -139788,6 +139791,9 @@ static const char *ptn_opcache_ini_default(const char *name) {
     if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
         return "0";
     }
+    if (ptn_ascii_case_equal(name, "opcache.record_warnings")) {
+        return "0";
+    }
     if (ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
         return "2";
     }
@@ -139816,6 +139822,9 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     }
     if (ptn_ascii_case_equal(name, "opcache.fast_shutdown")) {
         return &root->opcache_fast_shutdown;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.file_cache")) {
+        return &root->opcache_file_cache;
     }
     if (ptn_ascii_case_equal(name, "opcache.file_cache_only")) {
         return &root->opcache_file_cache_only;
@@ -139853,6 +139862,9 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
         return &root->opcache_protect_memory;
     }
+    if (ptn_ascii_case_equal(name, "opcache.record_warnings")) {
+        return &root->opcache_record_warnings;
+    }
     if (ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
         return &root->opcache_revalidate_freq;
     }
@@ -139880,6 +139892,7 @@ static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, co
         "opcache.enable",
         "opcache.enable_cli",
         "opcache.fast_shutdown",
+        "opcache.file_cache",
         "opcache.file_cache_only",
         "opcache.file_update_protection",
         "opcache.interned_strings_buffer",
@@ -139892,6 +139905,7 @@ static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, co
         "opcache.preload",
         "opcache.preload_user",
         "opcache.protect_memory",
+        "opcache.record_warnings",
         "opcache.revalidate_freq",
         "opcache.save_comments",
         "opcache.validate_timestamps",
@@ -146407,6 +146421,7 @@ static void ptn_opcache_configuration_set_directive(PtnRuntime *runtime, PtnValu
         ptn_ascii_case_equal(name, "opcache.fast_shutdown") ||
         ptn_ascii_case_equal(name, "opcache.file_cache_only") ||
         ptn_ascii_case_equal(name, "opcache.protect_memory") ||
+        ptn_ascii_case_equal(name, "opcache.record_warnings") ||
         ptn_ascii_case_equal(name, "opcache.save_comments") ||
         ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
         value = ptn_bool(ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, name), 1));
@@ -146430,6 +146445,7 @@ static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
         "opcache.enable",
         "opcache.enable_cli",
         "opcache.fast_shutdown",
+        "opcache.file_cache",
         "opcache.file_cache_only",
         "opcache.file_update_protection",
         "opcache.interned_strings_buffer",
@@ -146442,6 +146458,7 @@ static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
         "opcache.preload",
         "opcache.preload_user",
         "opcache.protect_memory",
+        "opcache.record_warnings",
         "opcache.revalidate_freq",
         "opcache.save_comments",
         "opcache.validate_timestamps",
@@ -146656,6 +146673,118 @@ static int ptn_opcache_path_exists(PtnStringOperand path) {
     return exists;
 }
 
+static char *ptn_opcache_file_cache_artifact_path(PtnRuntime *runtime, PtnStringOperand path) {
+    const char *root = ptn_runtime_opcache_ini_value(runtime, "opcache.file_cache");
+    if (root == NULL || root[0] == '\0') {
+        return NULL;
+    }
+
+    char *raw_path = ptn_duplicate_string_len(path.data, path.len);
+    char *canonical = realpath(raw_path, NULL);
+    const char *source = canonical != NULL ? canonical : raw_path;
+    size_t root_len = strlen(root);
+    size_t source_len = strlen(source);
+    size_t capacity = root_len + source_len + 16;
+    char *artifact = malloc(capacity);
+    if (artifact == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = 0;
+    memcpy(artifact, root, root_len);
+    len = root_len;
+    while (len > 0 && (artifact[len - 1] == '/' || artifact[len - 1] == '\\')) {
+        len--;
+    }
+    artifact[len++] = '/';
+    memcpy(artifact + len, "ptn", 3);
+    len += 3;
+
+    const char *cursor = source;
+    while (*cursor != '\0') {
+        while (*cursor == '/' || *cursor == '\\') {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != '/' && *cursor != '\\') {
+            cursor++;
+        }
+        size_t part_len = (size_t)(cursor - start);
+        if (part_len == 0 || (part_len == 1 && start[0] == '.')) {
+            continue;
+        }
+        const char *part = start;
+        if (part_len == 2 && start[0] == '.' && start[1] == '.') {
+            part = "__parent";
+            part_len = strlen(part);
+        }
+        if (len + 1 + part_len + 5 >= capacity) {
+            while (len + 1 + part_len + 5 >= capacity) {
+                capacity *= 2;
+            }
+            artifact = realloc(artifact, capacity);
+            if (artifact == NULL) {
+                ptn_abort_out_of_memory();
+            }
+        }
+        artifact[len++] = '/';
+        memcpy(artifact + len, part, part_len);
+        len += part_len;
+    }
+    if (len + 5 >= capacity) {
+        capacity = len + 5;
+        artifact = realloc(artifact, capacity);
+        if (artifact == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    memcpy(artifact + len, ".bin", 5);
+
+    free(canonical);
+    free(raw_path);
+    return artifact;
+}
+
+static int ptn_opcache_file_cache_artifact_exists(PtnRuntime *runtime, PtnStringOperand path) {
+    char *artifact = ptn_opcache_file_cache_artifact_path(runtime, path);
+    if (artifact == NULL) {
+        return 0;
+    }
+    struct stat info;
+    int exists = stat(artifact, &info) == 0 && S_ISREG(info.st_mode);
+    free(artifact);
+    return exists;
+}
+
+static int ptn_opcache_write_file_cache_artifact(PtnRuntime *runtime, PtnStringOperand path) {
+    char *artifact = ptn_opcache_file_cache_artifact_path(runtime, path);
+    if (artifact == NULL) {
+        return 0;
+    }
+    char *parent = ptn_opcache_blacklist_dirname_alloc(artifact);
+    int ok = ptn_mkdir_recursive(parent, 0777) || errno == EEXIST;
+    free(parent);
+    if (ok) {
+        FILE *file = fopen(artifact, "wb");
+        if (file != NULL) {
+            static const char payload[] = "PTN OPcache file cache artifact\n";
+            ok = fwrite(payload, 1, sizeof(payload) - 1, file) == sizeof(payload) - 1;
+            ok = fclose(file) == 0 && ok;
+        } else {
+            ok = 0;
+        }
+    }
+    free(artifact);
+    return ok;
+}
+
+static void ptn_opcache_remove_file_cache_artifact(PtnRuntime *runtime, PtnStringOperand path) {
+    char *artifact = ptn_opcache_file_cache_artifact_path(runtime, path);
+    if (artifact != NULL) {
+        (void)unlink(artifact);
+        free(artifact);
+    }
+}
+
 static PtnValue ptn_internal_opcache_is_script_cached(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_is_script_cached", 1, "filename", args[0], line);
@@ -146664,10 +146793,21 @@ static PtnValue ptn_internal_opcache_is_script_cached(PtnRuntime *runtime, size_
     return ptn_bool(exists);
 }
 
+static PtnValue ptn_internal_opcache_is_script_cached_in_file_cache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_is_script_cached_in_file_cache", 1, "filename", args[0], line);
+    int exists = ptn_opcache_enabled(runtime) && ptn_opcache_file_cache_artifact_exists(runtime, path);
+    ptn_string_operand_free(path);
+    return ptn_bool(exists);
+}
+
 static PtnValue ptn_internal_opcache_invalidate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_invalidate", 1, "filename", args[0], line);
     int force = argc >= 2 && ptn_is_truthy(args[1]);
     int ok = ptn_opcache_path_exists(path) || force;
+    if (ok) {
+        ptn_opcache_remove_file_cache_artifact(runtime, path);
+    }
     ptn_string_operand_free(path);
     return ptn_bool(ok);
 }
@@ -146680,6 +146820,9 @@ static PtnValue ptn_internal_opcache_compile_file(PtnRuntime *runtime, size_t ar
         ptn_emit_notice(&runtime->diagnostics, "Zend OPcache has not been properly started, can't compile file", line);
     }
     int ok = enabled && ptn_opcache_path_exists(path);
+    if (ok) {
+        (void)ptn_opcache_write_file_cache_artifact(runtime, path);
+    }
     ptn_string_operand_free(path);
     return ptn_bool(ok);
 }
@@ -228450,6 +228593,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_get_status", 0, 1, ptn_internal_opcache_get_status },
         { "opcache_invalidate", 1, 2, ptn_internal_opcache_invalidate },
         { "opcache_is_script_cached", 1, 1, ptn_internal_opcache_is_script_cached },
+        { "opcache_is_script_cached_in_file_cache", 1, 1, ptn_internal_opcache_is_script_cached_in_file_cache },
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },

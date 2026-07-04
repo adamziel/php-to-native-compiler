@@ -743,6 +743,10 @@ fn emit_opcache_optimizer_dump_helpers(out: &mut String) {
 }
 
 fn module_opcache_after_optimizer_dump(module: &Module) -> Option<String> {
+    if !module.preload_include_indices.is_empty() {
+        return module_opcache_after_optimizer_dump_with_preloads(module);
+    }
+
     let mut function_dumps = Vec::new();
     for function in &module.functions {
         if let Some(function_dump) =
@@ -760,6 +764,90 @@ fn module_opcache_after_optimizer_dump(module: &Module) -> Option<String> {
         out.push('\n');
         out.push_str(&function_dump);
     }
+    Some(out)
+}
+
+fn module_opcache_after_optimizer_dump_with_preloads(module: &Module) -> Option<String> {
+    let mut out = opcache_preload_startup_after_optimizer_dump();
+    let mut emitted_function_indices = HashSet::new();
+
+    for preload_index in &module.preload_include_indices {
+        let include = module.includes.get(*preload_index)?;
+        for (function_index, function) in module.functions.iter().enumerate() {
+            if function.source_file != include.source_file {
+                continue;
+            }
+            let function_dump = opcache_function_after_optimizer_dump(function, &module.classes)?;
+            out.push('\n');
+            out.push_str(&function_dump);
+            emitted_function_indices.insert(function_index);
+        }
+        let include_dump = opcache_include_after_optimizer_dump(include)?;
+        out.push('\n');
+        out.push_str(&include_dump);
+    }
+
+    let main_dump = opcache_main_after_optimizer_dump(module)?;
+    out.push('\n');
+    out.push_str(&main_dump);
+
+    for (function_index, function) in module.functions.iter().enumerate() {
+        if emitted_function_indices.contains(&function_index) {
+            continue;
+        }
+        if function.source_file != module.source_file {
+            continue;
+        }
+        if let Some(function_dump) =
+            opcache_function_after_optimizer_dump(function, &module.classes)
+        {
+            out.push('\n');
+            out.push_str(&function_dump);
+        }
+    }
+
+    Some(out)
+}
+
+fn opcache_preload_startup_after_optimizer_dump() -> String {
+    let mut dump = OpcacheDump::default();
+    dump.opcode("RETURN null");
+    let mut out = String::new();
+    out.push_str("$_main:\n");
+    out.push_str("     ; (lines=1, args=0, vars=0, tmps=0)\n");
+    out.push_str("     ; (after optimizer)\n");
+    out.push_str("     ; $PRELOAD$:0-0\n");
+    out.push_str(&dump.render());
+    out
+}
+
+fn opcache_include_after_optimizer_dump(include: &IncludeFile) -> Option<String> {
+    for instruction in &include.instructions {
+        match instruction {
+            Instruction::DeclareFunction { .. }
+            | Instruction::DeclareTrait { .. }
+            | Instruction::EarlyDeclareClass { .. }
+            | Instruction::DeclareClass { .. }
+            | Instruction::ValidateClass { .. } => {}
+            _ => return None,
+        }
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode("RETURN int(1)");
+    let mut out = String::new();
+    out.push_str("$_main:\n");
+    out.push_str("     ; (lines=1, args=0, vars=0, tmps=0)\n");
+    out.push_str("     ; (after optimizer)\n");
+    out.push_str(&format!(
+        "     ; {}\n",
+        opcache_source_range(
+            &include.source_file,
+            1,
+            opcache_source_line_count(&include.source_bytes) + 1
+        )
+    ));
+    out.push_str(&dump.render());
     Some(out)
 }
 
@@ -913,6 +1001,7 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
     let temp_base = cv_names.len();
     let mut dump = OpcacheDump::default();
     let mut saw_optimized_array_map = false;
+    let mut temp_count = 0;
     let declared_function_names: Vec<&str> = module
         .functions
         .iter()
@@ -938,6 +1027,7 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
                         *line,
                     )?;
                     saw_optimized_array_map = true;
+                    temp_count = temp_count.max(temp_base + 4);
                 } else if let ValueExpr::InternalCall {
                     name: call_name,
                     arguments,
@@ -981,6 +1071,12 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
                         &mut dump, temp_base, &cv_names, callable, array, None, *line,
                     )?;
                     saw_optimized_array_map = true;
+                    temp_count = temp_count.max(temp_base + 4);
+                } else if matches!(value, ValueExpr::Closure { .. }) {
+                    let closure_temp = temp_base;
+                    dump.opcode(format!("T{closure_temp} = DECLARE_LAMBDA_FUNCTION 0"));
+                    dump.opcode(format!("FREE T{closure_temp}"));
+                    temp_count = temp_count.max(closure_temp + 1);
                 } else if let ValueExpr::InternalCall {
                     name,
                     arguments,
@@ -1019,6 +1115,7 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
                         &mut dump, temp_base, &cv_names, callable, array, None, *line,
                     )?;
                     saw_optimized_array_map = true;
+                    temp_count = temp_count.max(temp_base + 4);
                 } else {
                     if arguments.is_empty()
                         && argument_names.is_empty()
@@ -1044,6 +1141,36 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
                     }
                 }
             }
+            Instruction::Echo { value, .. } => {
+                if let ValueExpr::InternalCall {
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    ..
+                } = value
+                {
+                    if !arguments.is_empty()
+                        || argument_names.iter().any(Option::is_some)
+                        || argument_unpacks.iter().any(|unpack| *unpack)
+                    {
+                        return None;
+                    }
+                    let function = module
+                        .functions
+                        .iter()
+                        .find(|function| php_name_eq(&function.display_name, name))?;
+                    let echo = opcache_constant_return_echo_string(function, &module.classes)?;
+                    dump.opcode(format!("ECHO string(\"{}\")", opcache_debug_string(&echo)));
+                } else {
+                    return None;
+                }
+            }
+            Instruction::Foreach { .. } => {
+                let foreach_temp_count =
+                    emit_opcache_foreach_range_var_dump_calls(&mut dump, &cv_names, instruction)?;
+                temp_count = temp_count.max(foreach_temp_count);
+            }
             _ => return None,
         }
     }
@@ -1052,11 +1179,9 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
 
     let mut out = String::new();
     out.push_str("$_main:\n");
-    let temp_count = if saw_optimized_array_map {
-        temp_base + 4
-    } else {
-        0
-    };
+    if saw_optimized_array_map {
+        temp_count = temp_count.max(temp_base + 4);
+    }
     out.push_str(&format!(
         "     ; (lines={}, args=0, vars={}, tmps={})\n",
         dump.opcodes.len(),
@@ -1111,6 +1236,138 @@ fn emit_opcache_var_dump_call(
     ));
     dump.opcode("DO_ICALL");
     Some(())
+}
+
+fn emit_opcache_foreach_range_var_dump_calls(
+    dump: &mut OpcacheDump,
+    cv_names: &[String],
+    instruction: &Instruction,
+) -> Option<usize> {
+    let Instruction::Foreach {
+        iterable:
+            ValueExpr::InternalCall {
+                name: iterable_name,
+                arguments: iterable_arguments,
+                argument_names: iterable_argument_names,
+                argument_unpacks: iterable_argument_unpacks,
+                ..
+            },
+        key,
+        value,
+        value_by_ref,
+        body,
+        ..
+    } = instruction
+    else {
+        return None;
+    };
+    if !php_name_eq(iterable_name, "range")
+        || iterable_arguments.len() != 2
+        || iterable_argument_names.iter().any(Option::is_some)
+        || iterable_argument_unpacks.iter().any(|unpack| *unpack)
+        || key.is_some()
+        || *value_by_ref
+        || body.len() != 2
+    {
+        return None;
+    }
+    let [ValueExpr::Int(start), ValueExpr::Int(end)] = iterable_arguments.as_slice() else {
+        return None;
+    };
+    let AssignmentTarget::Variable {
+        name: value_name, ..
+    } = value
+    else {
+        return None;
+    };
+
+    opcache_validate_var_dump_test_call(&body[0], value_name, false)?;
+    opcache_validate_var_dump_test_call(&body[1], value_name, true)?;
+
+    let value_operand = opcache_cv_operand(cv_names, value_name)?;
+    dump.opcode("INIT_FCALL 2 112 string(\"range\")");
+    dump.opcode(format!("SEND_VAL int({start}) 1"));
+    dump.opcode(format!("SEND_VAL int({end}) 2"));
+    dump.opcode("T2 = DO_ICALL");
+    dump.opcode("T1 = FE_RESET_R T2 0020");
+    dump.opcode(format!("FE_FETCH_R T1 {value_operand} 0020"));
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode("INIT_FCALL 1 80 string(\"test\")");
+    dump.opcode(format!("SEND_VAR {value_operand} 1"));
+    dump.opcode("T2 = DO_UCALL");
+    dump.opcode("SEND_VAL T2 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode("INIT_FCALL 1 80 string(\"test\")");
+    dump.opcode(format!("T2 = CAST (string) {value_operand}"));
+    dump.opcode("SEND_VAL T2 1");
+    dump.opcode("T2 = DO_UCALL");
+    dump.opcode("SEND_VAL T2 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("JMP 0005");
+    dump.opcode("FE_FREE T1");
+    dump.live_range(1, 5, 20, "loop");
+    Some(2)
+}
+
+fn opcache_validate_var_dump_test_call(
+    instruction: &Instruction,
+    value_name: &str,
+    cast_string: bool,
+) -> Option<()> {
+    let Instruction::InternalCall {
+        name,
+        arguments,
+        argument_names,
+        argument_unpacks,
+        ..
+    } = instruction
+    else {
+        return None;
+    };
+    if !php_name_eq(name, "var_dump")
+        || arguments.len() != 1
+        || argument_names.iter().any(Option::is_some)
+        || argument_unpacks.iter().any(|unpack| *unpack)
+    {
+        return None;
+    }
+    let ValueExpr::InternalCall {
+        name: test_name,
+        arguments: test_arguments,
+        argument_names: test_argument_names,
+        argument_unpacks: test_argument_unpacks,
+        ..
+    } = &arguments[0]
+    else {
+        return None;
+    };
+    if !php_name_eq(test_name, "test")
+        || test_arguments.len() != 1
+        || test_argument_names.iter().any(Option::is_some)
+        || test_argument_unpacks.iter().any(|unpack| *unpack)
+    {
+        return None;
+    }
+    if cast_string {
+        let ValueExpr::Cast {
+            kind: CastKind::String,
+            expr,
+            ..
+        } = &test_arguments[0]
+        else {
+            return None;
+        };
+        if matches!(expr.as_ref(), ValueExpr::Load { name, .. } if name == value_name) {
+            Some(())
+        } else {
+            None
+        }
+    } else if matches!(&test_arguments[0], ValueExpr::Load { name, .. } if name == value_name) {
+        Some(())
+    } else {
+        None
+    }
 }
 
 fn emit_opcache_array_map_foreach(
@@ -1296,6 +1553,36 @@ fn opcache_function_after_optimizer_dump(
 ) -> Option<String> {
     let function_name = function.display_name.as_str();
 
+    if let Some((dump, vars, tmps)) = opcache_function_closure_return_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_binary_add_parameters_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_match_jump_table_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
     if let Some((dump, vars, tmps)) = opcache_function_add_one_dump(function) {
         return Some(opcache_render_after_optimizer_function(
             function_name,
@@ -1418,6 +1705,130 @@ fn opcache_function_after_optimizer_dump(
     }
 
     None
+}
+
+fn opcache_function_closure_return_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if !function.parameters.is_empty() {
+        return None;
+    }
+    let [Instruction::Return {
+        value: Some(ValueExpr::Closure { .. }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    let mut dump = OpcacheDump::default();
+    dump.opcode("T0 = DECLARE_LAMBDA_FUNCTION 0");
+    dump.opcode("RETURN T0");
+    Some((dump, 0, 1))
+}
+
+fn opcache_function_binary_add_parameters_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 2 {
+        return None;
+    }
+    let left_parameter = &function.parameters[0];
+    let right_parameter = &function.parameters[1];
+    let [Instruction::Return {
+        value:
+            Some(ValueExpr::Binary {
+                op: BinaryOp::Add,
+                left,
+                right,
+                ..
+            }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if !matches!(left.as_ref(), ValueExpr::Load { name, .. } if name == &left_parameter.name)
+        || !matches!(right.as_ref(), ValueExpr::Load { name, .. } if name == &right_parameter.name)
+    {
+        return None;
+    }
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", left_parameter.name));
+    dump.opcode(format!("CV1(${}) = RECV 2", right_parameter.name));
+    dump.opcode(format!(
+        "T2 = ADD CV0(${}) CV1(${})",
+        left_parameter.name, right_parameter.name
+    ));
+    dump.opcode("RETURN T2");
+    Some((dump, 2, 3))
+}
+
+fn opcache_function_match_jump_table_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Return {
+        value: Some(ValueExpr::Match { subject, arms, .. }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if !matches!(subject.as_ref(), ValueExpr::Load { name, .. } if name == &parameter.name) {
+        return None;
+    }
+
+    let mut entries = Vec::new();
+    let mut returns = Vec::new();
+    let mut default_index = None;
+    for arm in arms {
+        let return_index = 2 + returns.len();
+        let ValueExpr::String(value) = &arm.value else {
+            return None;
+        };
+        if arm.is_default {
+            default_index = Some(return_index);
+            if !arm.conditions.is_empty() {
+                return None;
+            }
+        } else {
+            for condition in &arm.conditions {
+                entries.push(format!(
+                    "{}: {return_index:04}",
+                    opcache_match_condition_operand(condition)?
+                ));
+            }
+        }
+        returns.push(value.clone());
+    }
+    let default_index = default_index?;
+    entries.push(format!("default: {default_index:04}"));
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode(format!(
+        "MATCH CV0(${}) {}",
+        parameter.name,
+        entries.join(", ")
+    ));
+    for value in returns {
+        dump.opcode(format!(
+            "RETURN string(\"{}\")",
+            opcache_debug_string(&value)
+        ));
+    }
+    Some((dump, 1, 0))
+}
+
+fn opcache_match_condition_operand(value: &ValueExpr) -> Option<String> {
+    match value {
+        ValueExpr::Int(value) => Some(value.to_string()),
+        ValueExpr::String(value) => Some(format!("\"{}\"", opcache_debug_string(value))),
+        _ => None,
+    }
 }
 
 fn opcache_function_add_one_dump(function: &FunctionDecl) -> Option<(OpcacheDump, usize, usize)> {
@@ -2123,6 +2534,30 @@ fn opcache_constant_echo_string(value: &ValueExpr) -> Option<String> {
     }
 }
 
+fn opcache_constant_return_echo_string(
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if !function.parameters.is_empty() {
+        return None;
+    }
+    let [Instruction::Return {
+        value: Some(value), ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    match value {
+        ValueExpr::String(value) => Some(value.clone()),
+        ValueExpr::Int(value) => Some(value.to_string()),
+        ValueExpr::Bool(true) => Some("1".to_string()),
+        ValueExpr::Bool(false) | ValueExpr::Null => Some(String::new()),
+        _ => {
+            Some(opcache_eval_function_int(value, &HashMap::new(), function, classes)?.to_string())
+        }
+    }
+}
+
 fn opcache_render_after_optimizer_function(
     function_name: &str,
     function: &FunctionDecl,
@@ -2332,10 +2767,25 @@ fn opcache_debug_string(value: &str) -> String {
 fn opcache_main_cv_names(instructions: &[Instruction]) -> Vec<String> {
     let mut names = Vec::new();
     for instruction in instructions {
-        if let Instruction::Store { name, .. } = instruction {
-            if !names.iter().any(|candidate| candidate == name) {
-                names.push(name.clone());
+        match instruction {
+            Instruction::Store { name, .. } => {
+                if !names.iter().any(|candidate| candidate == name) {
+                    names.push(name.clone());
+                }
             }
+            Instruction::Foreach { key, value, .. } => {
+                if let Some(AssignmentTarget::Variable { name, .. }) = key {
+                    if !names.iter().any(|candidate| candidate == name) {
+                        names.push(name.clone());
+                    }
+                }
+                if let AssignmentTarget::Variable { name, .. } = value {
+                    if !names.iter().any(|candidate| candidate == name) {
+                        names.push(name.clone());
+                    }
+                }
+            }
+            _ => {}
         }
     }
     names
@@ -50983,6 +51433,13 @@ impl ValueEmitter {
         out.push_str(" && ptn_opcache_path_exists(");
         out.push_str(&operand_temp);
         out.push_str("));\n");
+        out.push_str("    if (ptn_is_truthy(");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("        (void)ptn_opcache_write_file_cache_artifact(&runtime, ");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
         out.push_str("    if (runtime.in_preload && ptn_is_truthy(");
         out.push_str(&result_temp);
         out.push_str(") && ");

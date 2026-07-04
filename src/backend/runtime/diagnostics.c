@@ -3295,6 +3295,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
     const char *configured_opcache_enable_cli = getenv("PTN_OPCACHE_ENABLE_CLI");
     const char *configured_opcache_fast_shutdown = getenv("PTN_OPCACHE_FAST_SHUTDOWN");
+    const char *configured_opcache_file_cache = getenv("PTN_OPCACHE_FILE_CACHE");
     const char *configured_opcache_file_cache_only = getenv("PTN_OPCACHE_FILE_CACHE_ONLY");
     const char *configured_opcache_file_update_protection =
         getenv("PTN_OPCACHE_FILE_UPDATE_PROTECTION");
@@ -3312,6 +3313,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_preload = getenv("PTN_OPCACHE_PRELOAD");
     const char *configured_opcache_preload_user = getenv("PTN_OPCACHE_PRELOAD_USER");
     const char *configured_opcache_protect_memory = getenv("PTN_OPCACHE_PROTECT_MEMORY");
+    const char *configured_opcache_record_warnings = getenv("PTN_OPCACHE_RECORD_WARNINGS");
     const char *configured_opcache_revalidate_freq = getenv("PTN_OPCACHE_REVALIDATE_FREQ");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
     const char *configured_opcache_validate_timestamps =
@@ -3400,6 +3402,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->opcache_fast_shutdown = ptn_duplicate_string(
         configured_opcache_fast_shutdown == NULL ? "0" : configured_opcache_fast_shutdown
     );
+    runtime->opcache_file_cache = ptn_duplicate_string(
+        configured_opcache_file_cache == NULL ? "" : configured_opcache_file_cache
+    );
     runtime->opcache_file_cache_only = ptn_duplicate_string(
         configured_opcache_file_cache_only == NULL ? "0" : configured_opcache_file_cache_only
     );
@@ -3435,6 +3440,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_protect_memory = ptn_duplicate_string(
         configured_opcache_protect_memory == NULL ? "0" : configured_opcache_protect_memory
+    );
+    runtime->opcache_record_warnings = ptn_duplicate_string(
+        configured_opcache_record_warnings == NULL ? "0" : configured_opcache_record_warnings
     );
     runtime->opcache_revalidate_freq = ptn_duplicate_string(
         configured_opcache_revalidate_freq == NULL ? "2" : configured_opcache_revalidate_freq
