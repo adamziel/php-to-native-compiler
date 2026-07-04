@@ -41656,6 +41656,41 @@ var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML
 }
 
 #[test]
+fn compile_mbstring_pseudo_encoding_decodes_raw_bytes_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-pseudo-encoding-raw-decode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-pseudo-encoding-raw-decode.php");
+    let output = root.join("mb-pseudo-encoding-raw-decode-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+$raw = \"\\xe3\\x81\\x82\";\n\
+$qprint = mb_convert_encoding($raw, 'QPrint', '8bit');\n\
+echo $qprint, \"\\n\";\n\
+echo bin2hex(mb_convert_encoding($qprint, '8bit', 'QPrint')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding($qprint, 'binary', 'Quoted-Printable')), \"\\n\";\n\
+$base64 = mb_convert_encoding($raw, 'Base64', '8bit');\n\
+echo bin2hex(mb_convert_encoding($base64, '8bit', 'Base64')), \"\\n\";\n\
+$wrapped = mb_convert_encoding(str_repeat('a', 72) . 'b', 'QPrint', '8bit');\n\
+$parts = explode(\"\\r\\n\", $wrapped);\n\
+echo strlen($parts[0]), ':', $parts[0][72], ':', $parts[1], \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(\"a\\nb\", 'QPrint', '8bit')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "=E3=81=82\ne38182\ne38182\ne38182\n73:=:b\n610d0a62\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_parse_str_converts_decoded_query_encoding_to_native_binary() {
     let root = temp_dir("ptn-native-mb-parse-str-query-encoding");
     fs::create_dir_all(&root).unwrap();

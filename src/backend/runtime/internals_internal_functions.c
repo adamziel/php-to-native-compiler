@@ -125971,6 +125971,45 @@ static PtnValue ptn_mb_base64_encode_wrapped(PtnRuntime *runtime, PtnStringOpera
     return ptn_owned_string_len(output, out);
 }
 
+static PtnValue ptn_mb_qprint_encode(PtnStringOperand input) {
+    static const char hex[] = "0123456789ABCDEF";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t line_len = 0;
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte == '\0') {
+            ptn_string_buffer_append_char(&output, '\0');
+            line_len = 0;
+            continue;
+        }
+        if (byte == '\n') {
+            ptn_string_buffer_append(&output, "\r\n");
+            line_len = 0;
+            continue;
+        }
+        if (byte == '\r') {
+            continue;
+        }
+        if (line_len >= 72) {
+            ptn_quoted_printable_encode_append_soft_break(&output);
+            line_len = 0;
+        }
+        if (byte >= 0x80 || byte == '=') {
+            char encoded[3];
+            encoded[0] = '=';
+            encoded[1] = hex[(byte >> 4) & 0x0f];
+            encoded[2] = hex[byte & 0x0f];
+            ptn_string_buffer_append_len(&output, encoded, sizeof(encoded));
+            line_len += 3;
+        } else {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            line_len++;
+        }
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PtnValue ptn_mb_base64_or_qp_convert(
     PtnRuntime *runtime,
     const char *function_name,
@@ -125983,10 +126022,8 @@ static PtnValue ptn_mb_base64_or_qp_convert(
         ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling Base64 via mbstring is deprecated; use base64_encode/base64_decode instead", line);
         result = ptn_mb_base64_encode_wrapped(runtime, input, line);
     } else {
-        PtnValue temp = ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len);
         ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling QPrint via mbstring is deprecated; use quoted_printable_encode/quoted_printable_decode instead", line);
-        result = ptn_internal_quoted_printable_encode(runtime, 1, &temp, line);
-        ptn_value_destroy(&temp);
+        result = ptn_mb_qprint_encode(input);
     }
     (void)function_name;
     return result;
@@ -126007,6 +126044,9 @@ static PtnValue ptn_mb_convert_string_operand(
         PtnValue decoded = ptn_internal_base64_decode(runtime, 1, &temp, line);
         ptn_value_destroy(&temp);
         if (ptn_value_deref(decoded).type == PTN_STRING) {
+            if (ptn_mb_encoding_is_raw(to_encoding)) {
+                return decoded;
+            }
             PtnStringOperand decoded_operand = ptn_value_to_string_operand(decoded);
             size_t out_len = 0;
             char *out = ptn_mb_iconv_convert_alloc_counting(decoded_operand.data, decoded_operand.len, "UTF-8", to_encoding, &out_len);
@@ -126017,9 +126057,11 @@ static PtnValue ptn_mb_convert_string_operand(
         return decoded;
     }
     if (ptn_ascii_case_equal(from_encoding, "Quoted-Printable")) {
-        ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling QPrint via mbstring is deprecated; use quoted_printable_encode/quoted_printable_decode instead", line);
         size_t decoded_len = 0;
         char *decoded = ptn_quoted_printable_decode_string(input.data, input.len, &decoded_len);
+        if (ptn_mb_encoding_is_raw(to_encoding)) {
+            return ptn_owned_string_len(decoded, decoded_len);
+        }
         size_t out_len = 0;
         char *out = ptn_mb_iconv_convert_alloc_counting(decoded, decoded_len, "UTF-8", to_encoding, &out_len);
         free(decoded);
