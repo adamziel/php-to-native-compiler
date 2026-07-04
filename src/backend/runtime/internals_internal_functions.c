@@ -85050,6 +85050,7 @@ static char *ptn_intl_gmt_short_label(const char *timezone) {
 
 static PtnValue ptn_intl_format_en_us(
     int date_type,
+    int time_type,
     int year,
     int month,
     int day,
@@ -85068,6 +85069,79 @@ static PtnValue ptn_intl_format_en_us(
     char *short_tz = ptn_intl_gmt_short_label(timezone);
     int needed;
     char *formatted;
+    if (date_type < 0) {
+        switch (time_type) {
+            case 3:
+                needed = snprintf(NULL, 0, "%d:%02d%s%s", display_hour, minute, ampm_sep, ampm);
+                break;
+            case 2:
+                needed = snprintf(NULL, 0, "%d:%02d:%02d%s%s", display_hour, minute, second, ampm_sep, ampm);
+                break;
+            case 1:
+                needed = snprintf(NULL, 0, "%d:%02d:%02d%s%s %s", display_hour, minute, second, ampm_sep, ampm, short_tz);
+                break;
+            case 0:
+                needed = snprintf(
+                    NULL,
+                    0,
+                    "%d:%02d:%02d%s%s %s",
+                    display_hour,
+                    minute,
+                    second,
+                    ampm_sep,
+                    ampm,
+                    ptn_intl_timezone_display_name_for_id(timezone, month)
+                );
+                break;
+            default:
+                needed = snprintf(
+                    NULL, 0, "%04d%02d%02d %02d:%02d %s",
+                    year, month, day, display_hour, minute, ampm
+                );
+                break;
+        }
+        if (needed < 0) {
+            free(short_tz);
+            ptn_abort_out_of_memory();
+        }
+        formatted = malloc((size_t)needed + 1);
+        if (formatted == NULL) {
+            free(short_tz);
+            ptn_abort_out_of_memory();
+        }
+        switch (time_type) {
+            case 3:
+                snprintf(formatted, (size_t)needed + 1, "%d:%02d%s%s", display_hour, minute, ampm_sep, ampm);
+                break;
+            case 2:
+                snprintf(formatted, (size_t)needed + 1, "%d:%02d:%02d%s%s", display_hour, minute, second, ampm_sep, ampm);
+                break;
+            case 1:
+                snprintf(formatted, (size_t)needed + 1, "%d:%02d:%02d%s%s %s", display_hour, minute, second, ampm_sep, ampm, short_tz);
+                break;
+            case 0:
+                snprintf(
+                    formatted,
+                    (size_t)needed + 1,
+                    "%d:%02d:%02d%s%s %s",
+                    display_hour,
+                    minute,
+                    second,
+                    ampm_sep,
+                    ampm,
+                    ptn_intl_timezone_display_name_for_id(timezone, month)
+                );
+                break;
+            default:
+                snprintf(
+                    formatted, (size_t)needed + 1, "%04d%02d%02d %02d:%02d %s",
+                    year, month, day, display_hour, minute, ampm
+                );
+                break;
+        }
+        free(short_tz);
+        return ptn_owned_string(formatted);
+    }
     switch (date_type) {
         case 0:
             needed = snprintf(
@@ -85192,7 +85266,17 @@ static PtnValue ptn_intl_format_parts(
     if (strncmp(locale, "fr", 2) == 0) {
         return ptn_intl_format_fr(data, year, month, day, hour, minute, second);
     }
-    return ptn_intl_format_en_us(data == NULL ? 0 : data->date_type, year, month, day, hour, minute, second, timezone);
+    return ptn_intl_format_en_us(
+        data == NULL ? 0 : data->date_type,
+        data == NULL ? 0 : data->time_type,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        timezone
+    );
 }
 
 static char *ptn_intl_object_string_property(PtnValue object_value, const char *name) {
@@ -85300,6 +85384,48 @@ static PtnValue ptn_internal_datefmt_get_timezone_id(PtnRuntime *runtime, size_t
     }
     PtnIntlDateFormatterData *data = ptn_intl_date_formatter_ensure_data(formatter);
     return data == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(data->timezone));
+}
+
+static const char *ptn_intl_date_formatter_pattern(PtnIntlDateFormatterData *data) {
+    if (data == NULL) {
+        return "";
+    }
+    if (data->pattern != NULL && data->pattern[0] != '\0') {
+        return data->pattern;
+    }
+    if (data->date_type < 0) {
+        switch (data->time_type) {
+            case 3:
+                return "h:mm\xE2\x80\xAF" "a";
+            case 2:
+                return "h:mm:ss\xE2\x80\xAF" "a";
+            case 1:
+                return "h:mm:ss\xE2\x80\xAF" "a z";
+            case 0:
+                return "h:mm:ss\xE2\x80\xAF" "a zzzz";
+            default:
+                return "yMMdd hh:mm a";
+        }
+    }
+    if (data->date_type == 3 && data->time_type < 0) {
+        return "M/d/yy";
+    }
+    if (data->date_type == 3 && data->time_type == 3) {
+        return "M/d/yy, h:mm\xE2\x80\xAF" "a";
+    }
+    return "yMMdd hh:mm a";
+}
+
+static PtnValue ptn_internal_datefmt_get_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnValue formatter = ptn_value_deref(args[0]);
+    if (formatter.type != PTN_OBJECT || !ptn_ascii_case_equal(formatter.as.object->class_name, "IntlDateFormatter")) {
+        return ptn_bool(0);
+    }
+    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_ensure_data(formatter);
+    return data == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(ptn_intl_date_formatter_pattern(data)));
 }
 
 static PtnValue ptn_internal_datefmt_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -85490,6 +85616,14 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
     if (ptn_ascii_case_equal(name, "getTimeZoneId")) {
         PtnValue call_args[1] = { receiver };
         return ptn_internal_datefmt_get_timezone_id(runtime, 1, call_args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getPattern")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "IntlDateFormatter::getPattern() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        PtnValue call_args[1] = { receiver };
+        return ptn_internal_datefmt_get_pattern(runtime, 1, call_args, line);
     }
     if (ptn_ascii_case_equal(name, "setPattern")) {
         if (argc < 1) {
@@ -89699,7 +89833,7 @@ static PtnValue ptn_internal_datefmt_format_object(PtnRuntime *runtime, size_t a
         }
         if (date_type == 0) {
             ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
-            return ptn_intl_format_en_us(0, year, month, day, hour, minute, second, timezone);
+            return ptn_intl_format_en_us(0, time_type, year, month, day, hour, minute, second, timezone);
         }
     }
     PtnIntlDateFormatterData temp = {
@@ -158274,6 +158408,55 @@ static PtnDateTimeData *ptn_datetime_data_from_value(PtnValue value) {
     return (PtnDateTimeData *)value.as.object->native_data;
 }
 
+static int ptn_date_stored_string_equals(PtnValue value, const char *expected) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING || expected == NULL) {
+        return 0;
+    }
+    size_t expected_len = strlen(expected);
+    return value.as.string.len == expected_len &&
+        memcmp(value.as.string.data, expected, expected_len) == 0;
+}
+
+static PTN_UNUSED int ptn_internal_date_debug_property_read_is_hidden(
+    PtnObject *object,
+    const char *property,
+    PtnValue stored_value
+) {
+    if (object == NULL || property == NULL || object->native_data == NULL) {
+        return 0;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "DateTime") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable")) {
+        PtnDateTimeData *data = (PtnDateTimeData *)object->native_data;
+        if (strcmp(property, "date") == 0) {
+            char *date = ptn_datetime_format_property(data->timestamp, data->microsecond, data->timezone);
+            int matches = ptn_date_stored_string_equals(stored_value, date);
+            free(date);
+            return matches;
+        }
+        if (strcmp(property, "timezone_type") == 0) {
+            PtnValue value = ptn_value_deref(stored_value);
+            return value.type == PTN_INT && value.as.integer == data->timezone_type;
+        }
+        if (strcmp(property, "timezone") == 0) {
+            return ptn_date_stored_string_equals(stored_value, data->timezone);
+        }
+        return 0;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeZone")) {
+        PtnDateTimeZoneData *data = (PtnDateTimeZoneData *)object->native_data;
+        if (strcmp(property, "timezone_type") == 0) {
+            PtnValue value = ptn_value_deref(stored_value);
+            return value.type == PTN_INT && value.as.integer == data->type;
+        }
+        if (strcmp(property, "timezone") == 0) {
+            return ptn_date_stored_string_equals(stored_value, data->name);
+        }
+    }
+    return 0;
+}
+
 static PtnDateIntervalData *ptn_date_interval_data_from_value(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT ||
@@ -159267,12 +159450,62 @@ static int ptn_datetime_parse_meridian_time_token(
     return 1;
 }
 
-static int ptn_datetime_tail_is_space(const char *input, int consumed) {
-    const char *tail = input + consumed;
-    while (isspace((unsigned char)*tail)) {
-        tail++;
+static const char *ptn_datetime_skip_space_or_icu_separator(const char *cursor) {
+    while (*cursor != '\0') {
+        if (isspace((unsigned char)*cursor)) {
+            cursor++;
+            continue;
+        }
+        if ((unsigned char)cursor[0] == 0xC2 &&
+            cursor[1] != '\0' &&
+            (unsigned char)cursor[1] == 0xA0) {
+            cursor += 2;
+            continue;
+        }
+        if ((unsigned char)cursor[0] == 0xE2 &&
+            cursor[1] != '\0' &&
+            cursor[2] != '\0' &&
+            (unsigned char)cursor[1] == 0x80 &&
+            (unsigned char)cursor[2] == 0xAF) {
+            cursor += 3;
+            continue;
+        }
+        break;
     }
-    return *tail == '\0';
+    return cursor;
+}
+
+static int ptn_datetime_tail_is_space(const char *input, int consumed) {
+    return *ptn_datetime_skip_space_or_icu_separator(input + consumed) == '\0';
+}
+
+static int ptn_datetime_consume_meridian_suffix(const char **tail_inout, int *hour_inout) {
+    const char *tail = ptn_datetime_skip_space_or_icu_separator(*tail_inout);
+    char meridian0 = (char)tolower((unsigned char)tail[0]);
+    char meridian1 = (char)tolower((unsigned char)tail[1]);
+    if ((meridian0 != 'a' && meridian0 != 'p') || meridian1 != 'm') {
+        *tail_inout = tail;
+        return 1;
+    }
+    const char *after = tail + 2;
+    if (*after != '\0' &&
+        !isspace((unsigned char)*after) &&
+        !((unsigned char)after[0] == 0xC2 && after[1] != '\0' && (unsigned char)after[1] == 0xA0) &&
+        !((unsigned char)after[0] == 0xE2 && after[1] != '\0' && after[2] != '\0' &&
+            (unsigned char)after[1] == 0x80 && (unsigned char)after[2] == 0xAF)) {
+        *tail_inout = tail;
+        return 1;
+    }
+    if (*hour_inout < 1 || *hour_inout > 12) {
+        return 0;
+    }
+    if (meridian0 == 'a') {
+        *hour_inout = *hour_inout == 12 ? 0 : *hour_inout;
+    } else if (*hour_inout != 12) {
+        *hour_inout += 12;
+    }
+    *tail_inout = after;
+    return 1;
 }
 
 static int ptn_datetime_components_to_timestamp(
@@ -159710,6 +159943,20 @@ static int ptn_datetime_parse_date_string(
                 isdigit((unsigned char)normalized[i - 1]) &&
                 isdigit((unsigned char)normalized[i + 1])) {
                 normalized[i] = ' ';
+            } else if ((unsigned char)normalized[i] == 0xC2 &&
+                i + 1 < input_len &&
+                (unsigned char)normalized[i + 1] == 0xA0) {
+                normalized[i] = ' ';
+                normalized[i + 1] = ' ';
+                i++;
+            } else if ((unsigned char)normalized[i] == 0xE2 &&
+                i + 2 < input_len &&
+                (unsigned char)normalized[i + 1] == 0x80 &&
+                (unsigned char)normalized[i + 2] == 0xAF) {
+                normalized[i] = ' ';
+                normalized[i + 1] = ' ';
+                normalized[i + 2] = ' ';
+                i += 2;
             }
         }
         input = normalized;
@@ -159843,9 +160090,10 @@ static int ptn_datetime_parse_date_string(
                 digits++;
             }
         }
-        while (isspace((unsigned char)*tail)) {
-            tail++;
+        if (!ptn_datetime_consume_meridian_suffix(&tail, &hour)) {
+            return 0;
         }
+        tail = ptn_datetime_skip_space_or_icu_separator(tail);
         if (*tail != '\0') {
             size_t suffix_len = strcspn(tail, " \t\r\n");
             if (suffix_len == 0 || suffix_len >= sizeof(timezone_suffix)) {
@@ -159854,18 +160102,17 @@ static int ptn_datetime_parse_date_string(
             memcpy(timezone_suffix, tail, suffix_len);
             timezone_suffix[suffix_len] = '\0';
             tail += suffix_len;
-            while (isspace((unsigned char)*tail)) {
-                tail++;
-            }
+            tail = ptn_datetime_skip_space_or_icu_separator(tail);
             if (*tail != '\0') {
                 return 0;
             }
         }
     } else if (parsed >= 5) {
         const char *tail = input + consumed;
-        while (isspace((unsigned char)*tail)) {
-            tail++;
+        if (!ptn_datetime_consume_meridian_suffix(&tail, &hour)) {
+            return 0;
         }
+        tail = ptn_datetime_skip_space_or_icu_separator(tail);
         if (*tail != '\0') {
             size_t suffix_len = strcspn(tail, " \t\r\n");
             if (suffix_len == 0 || suffix_len >= sizeof(timezone_suffix)) {
@@ -159874,9 +160121,7 @@ static int ptn_datetime_parse_date_string(
             memcpy(timezone_suffix, tail, suffix_len);
             timezone_suffix[suffix_len] = '\0';
             tail += suffix_len;
-            while (isspace((unsigned char)*tail)) {
-                tail++;
-            }
+            tail = ptn_datetime_skip_space_or_icu_separator(tail);
             if (*tail != '\0') {
                 return 0;
             }
@@ -232499,6 +232744,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_interval_format", 2, 2, ptn_internal_date_interval_format },
         { "datefmt_create", 1, 6, ptn_internal_datefmt_create },
         { "datefmt_format", 2, 2, ptn_internal_datefmt_format },
+        { "datefmt_get_pattern", 1, 1, ptn_internal_datefmt_get_pattern },
         { "datefmt_get_timezone_id", 1, 1, ptn_internal_datefmt_get_timezone_id },
         { "datefmt_localtime", 2, 3, ptn_internal_datefmt_localtime },
         { "datefmt_parse", 2, 3, ptn_internal_datefmt_parse },
@@ -237545,6 +237791,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "getPattern")
+            || ptn_ascii_case_equal(method_name, "getTimeZoneId")
             || ptn_ascii_case_equal(method_name, "setTimeZone")
             || ptn_ascii_case_equal(method_name, "setPattern")
             || ptn_ascii_case_equal(method_name, "setCalendar")

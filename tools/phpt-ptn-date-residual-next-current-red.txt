@@ -1,0 +1,5 @@
+# Date/DateTime residual current-red rows for lane/date-residual-next-20260704.
+# Scope: ext/date bug regressions not covered by the earlier GH-8471 fix.
+# bucket: date-residual-next rows=2
+ext/date/tests/bug-gh11600.phpt
+ext/date/tests/bug75232.phpt

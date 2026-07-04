@@ -5389,6 +5389,11 @@ static PTN_UNUSED int ptn_internal_date_interval_property_read(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_internal_date_debug_property_read_is_hidden(
+    PtnObject *object,
+    const char *property,
+    PtnValue stored_value
+);
 static PTN_UNUSED int ptn_internal_xml_property_write(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -6872,6 +6877,13 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             return hook_value;
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (entry != NULL &&
+        ptn_internal_date_debug_property_read_is_hidden(receiver.as.object, property, entry->value)) {
+        ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+        return ptn_null();
+    }
+#endif
     if (entry == NULL) {
         if (metadata != NULL && metadata->lazy_skip) {
             if (ptn_property_type_is_declared(metadata->type_kind)) {
@@ -8062,6 +8074,14 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             goto done;
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (entry != NULL &&
+        ptn_internal_date_debug_property_read_is_hidden(receiver.as.object, property, entry->value)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        goto done;
+    }
+#endif
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
@@ -8218,6 +8238,14 @@ static PTN_UNUSED int ptn_object_property_is_set(
             goto done;
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (entry != NULL &&
+        ptn_internal_date_debug_property_read_is_hidden(receiver.as.object, property, entry->value)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        goto done;
+    }
+#endif
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
