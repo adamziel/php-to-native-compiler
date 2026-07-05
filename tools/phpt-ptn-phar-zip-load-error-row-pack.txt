@@ -1,0 +1,5 @@
+# PHAR zip archive load-error verification row pack
+# Focus: ext/phar/tests/bug69441.phpt, zip local header without EOCD.
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=180 tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-phar-zip-load-error-row-pack.txt
+ext/phar/tests/bug69441.phpt

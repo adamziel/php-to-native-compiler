@@ -206258,16 +206258,51 @@ static void ptn_phar_archive_set_zip_large_signature_error(PtnPharArchiveState *
     ptn_phar_archive_set_load_error_owned(archive, message);
 }
 
-static int ptn_phar_zip_has_split_archive_eocd(const unsigned char *data, size_t len) {
+static void ptn_phar_archive_set_zip_missing_eocd_error(PtnPharArchiveState *archive) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "phar error: end of central directory not found in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "phar error: end of central directory not found in zip-based phar \"%s\"",
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_phar_archive_set_load_error_owned(archive, message);
+}
+
+static int ptn_phar_zip_find_eocd_offset(const unsigned char *data, size_t len, size_t *offset_out) {
     if (data == NULL || len < 22) {
         return 0;
     }
     size_t min_cursor = len > 0x10000u + 22u ? len - (0x10000u + 22u) : 0;
     for (size_t cursor = len - 22; cursor + 22 <= len; cursor--) {
         if (ptn_phar_read_u32_le(data + cursor) == 0x06054b50u) {
-            uint16_t disk_number = ptn_phar_read_u16_le(data + cursor + 4);
-            uint16_t central_start_disk = ptn_phar_read_u16_le(data + cursor + 6);
-            return disk_number != 0 || central_start_disk != 0;
+            uint16_t comment_len = ptn_phar_read_u16_le(data + cursor + 20);
+            if ((size_t)comment_len != len - cursor - 22u) {
+                if (cursor == min_cursor) {
+                    break;
+                }
+                continue;
+            }
+            if (offset_out != NULL) {
+                *offset_out = cursor;
+            }
+            return 1;
         }
         if (cursor == min_cursor) {
             break;
@@ -206276,7 +206311,22 @@ static int ptn_phar_zip_has_split_archive_eocd(const unsigned char *data, size_t
     return 0;
 }
 
+static int ptn_phar_zip_has_split_archive_eocd(const unsigned char *data, size_t len) {
+    size_t eocd_offset = 0;
+    if (!ptn_phar_zip_find_eocd_offset(data, len, &eocd_offset)) {
+        return 0;
+    }
+    uint16_t disk_number = ptn_phar_read_u16_le(data + eocd_offset + 4);
+    uint16_t central_start_disk = ptn_phar_read_u16_le(data + eocd_offset + 6);
+    return disk_number != 0 || central_start_disk != 0;
+}
+
 static void ptn_phar_parse_zip(PtnPharArchiveState *archive, const unsigned char *data, size_t len) {
+    if (ptn_phar_zip_data_looks_like_archive(data, len) &&
+        !ptn_phar_zip_find_eocd_offset(data, len, NULL)) {
+        ptn_phar_archive_set_zip_missing_eocd_error(archive);
+        return;
+    }
     if (ptn_phar_zip_has_split_archive_eocd(data, len)) {
         ptn_phar_archive_set_zip_split_archive_error(archive);
         return;

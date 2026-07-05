@@ -3725,6 +3725,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_zip_missing_eocd = classify_at_relative_path(
+        "--TEST--\nphar zip missing end of central directory\n--EXTENSIONS--\nphar\n--FILE--\n<?php\ntry { new Phar(__DIR__ . '/bug69441.phar', 0); } catch (UnexpectedValueException $e) { echo $e; }\n--EXPECTF--\nUnexpectedValueException: phar error: end of central directory not found in zip-based phar \"%sbug69441.phar\" in %sbug69441.php:%d\n",
+        "ext/phar/tests/bug69441.phpt",
+    );
+    assert_eq!(
+        phar_zip_missing_eocd.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_cache_list_recursive_iterator = classify_at_relative_path(
         "--TEST--\nphar cache-list recursive iterator\n--EXTENSIONS--\nphar\n--INI--\nphar.cache_list={PWD}/files/nophar.phar\n--FILE--\n<?php\n$p = 'phar://' . __DIR__ . '/files/nophar.phar';\nforeach (new RecursiveIteratorIterator(new Phar($p)) as $f) echo $f->getPathName(), \"\\n\";\n--EXPECT--\n",
         "ext/phar/tests/cached_manifest_1.phpt",

@@ -3419,6 +3419,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/024.phpt|\
         ext/phar/tests/033a.phpt|\
         ext/phar/tests/bug76584.phpt|\
+        ext/phar/tests/bug69441.phpt|\
         ext/phar/tests/bug60164.phpt|\
         ext/phar/tests/bug69279a.phpt|\
         ext/phar/tests/bug71391.phpt|\

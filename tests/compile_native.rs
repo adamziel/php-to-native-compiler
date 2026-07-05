@@ -72175,6 +72175,55 @@ var_dump(method_exists('Phar', 'mungServer'));
 }
 
 #[test]
+fn compile_phar_zip_archive_missing_eocd_rejected_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-zip-missing-eocd");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-zip-missing-eocd.php");
+    let output = root.join("phar-zip-missing-eocd-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/bug69441.phar';
+file_put_contents(
+    $fname,
+    "\x50\x4b\x03\x04" . str_repeat("\0", 26) .
+    "\x50\x4b\x05\x06" . str_repeat("\0", 18) .
+    "TEST_2_Data"
+);
+
+try {
+    new Phar($fname, 0);
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "UnexpectedValueException:phar error: end of central directory not found in zip-based phar \"{}\"\n",
+            root.join("bug69441.phar").display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_set_zip_missing_eocd_error"));
+    assert!(c_source.contains("ptn_phar_zip_find_eocd_offset"));
+}
+
+#[test]
 fn compile_phar_unlink_archive_resets_cached_archive_to_native_binary() {
     let root = temp_dir("ptn-native-phar-unlink-archive");
     fs::create_dir_all(&root).unwrap();
