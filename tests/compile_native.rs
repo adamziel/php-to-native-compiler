@@ -70302,6 +70302,51 @@ include 'phar://dyn/entry.php';
 }
 
 #[test]
+fn compile_phar_dynamic_include_assignment_while_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-dynamic-include-assignment-while");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-dynamic-include-assignment-while.php");
+    let output = root.join("phar-dynamic-include-assignment-while-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$archive = __DIR__ . '/dynamic-while.phar.php';
+@unlink($archive);
+$entry = "<?php\n\$items = array('foo', 'bar');\n\$seen = array();\n\$i = 0;\nwhile (false !== (\$item = \$items[\$i] ?? false)) {\n    \$seen[] = \$item;\n    \$i += 1;\n}\nforeach (\$seen as \$item) {\n    echo \$item, \"\\n\";\n}\n?>";
+$manifest = pack('VnVV', 1, 0x1000, 0, 3) . 'dyn' . pack('V', 0);
+$manifest .= pack('V', 9) . 'entry.php';
+$manifest .= pack('VVVVVV', strlen($entry), 0, strlen($entry), crc32($entry), 0, 0);
+$file = "<?php\nPhar::mapPhar('dyn');\n__HALT_COMPILER(); ?>";
+$file .= pack('V', strlen($manifest)) . $manifest . $entry;
+file_put_contents($archive, $file);
+include $archive;
+include 'phar://dyn/entry.php';
+@unlink($archive);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "foo\nbar\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_phar_php_entry"));
+    assert!(c_source.contains("ptn_dynamic_execute_while_statement"));
+    assert!(c_source.contains("ptn_dynamic_execute_foreach_statement"));
+    assert!(c_source.contains("ptn_eval_parse_assignment_expression"));
+}
+
+#[test]
 fn compile_soap_extension_constant_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-soap-extension-constant-metadata");
     fs::create_dir_all(&root).unwrap();
