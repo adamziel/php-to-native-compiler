@@ -64280,6 +64280,34 @@ echo $modern->saveXML();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("bool(true)\nint(1)\nint(1)\n"), "{stdout}");
+    assert_eq!(
+        stdout.matches("Warning: DOMDocument::loadXML():").count(),
+        1,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("Warning: Dom\\XMLDocument::createFromString():")
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: DOMDocument::loadXML(): <root><child/>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: DOMDocument::loadXML():               ^"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: Dom\\XMLDocument::createFromString(): <root><child/>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: Dom\\XMLDocument::createFromString():               ^"),
+        "{stdout}"
+    );
     assert!(
         stdout.contains("Warning: DOMDocument::loadXML():"),
         "{stdout}"

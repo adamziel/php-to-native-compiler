@@ -176283,6 +176283,7 @@ typedef struct {
     int suppress_failed_load_warning;
     int suppress_external_entity_resolution_warnings;
     int parser_context_warnings;
+    int suppress_parser_context_details;
     const char *source_data;
     size_t source_len;
     const char *display_uri;
@@ -176736,6 +176737,9 @@ static int ptn_libxml2_emit_reader_context_warnings(
         );
     }
     ptn_libxml_emit_warning_message(capture, warning, needed);
+    if (capture->suppress_parser_context_details) {
+        return 1;
+    }
 
     size_t line_start = 0;
     size_t line_len = 0;
@@ -186532,6 +186536,7 @@ static int ptn_dom_libxml_accepts_document_source(
         ptn_libxml_external_entity_loader_is_configured &&
         ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
     capture.parser_context_warnings = source != NULL;
+    capture.suppress_parser_context_details = (options & PTN_LIBXML_RECOVER) != 0;
     capture.source_data = source;
     capture.source_len = source_len;
     capture.display_uri = url;
@@ -186607,6 +186612,7 @@ static int ptn_dom_libxml_normalized_document_source(
         ptn_libxml_external_entity_loader_is_configured &&
         ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
     capture.parser_context_warnings = source != NULL;
+    capture.suppress_parser_context_details = (options & PTN_LIBXML_RECOVER) != 0;
     capture.source_data = source;
     capture.source_len = source_len;
     capture.display_uri = url;
