@@ -1010,6 +1010,30 @@ fn phpt_classifier_unlocks_verified_mbstring_mail_skipif_row() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_openssl_version_skipif_rows() {
+    let openssl_version_skipif = "--TEST--\nopenssl version gate\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php if (OPENSSL_VERSION_NUMBER < 0x30200000) die('skip For OpenSSL >= 3.2'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    for path in [
+        "ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt",
+        "ext/openssl/tests/gh13343_openssl33.phpt",
+    ] {
+        let classification =
+            classify_at_relative_path_with_harness_programs(openssl_version_skipif, path);
+        assert!(
+            classification.starts_with("runnable\t")
+                && classification.contains("verified OpenSSL --SKIPIF-- row"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        openssl_version_skipif,
+        "ext/openssl/tests/unverified_version_gate.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(

@@ -3550,6 +3550,18 @@ ptn_phpt_supported_soap_verified_skipif_row() {
     esac
 }
 
+ptn_phpt_supported_openssl_verified_skipif_row() {
+    case "$1" in
+        ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt|\
+        ext/openssl/tests/gh13343_openssl33.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_supported_mbstring_verified_skipif_row() {
     case "$1" in
         ext/mbstring/tests/mb_send_mail06.phpt)
@@ -3693,6 +3705,8 @@ ptn_phpt_classify_row() {
             modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_soap_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified SOAP --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_openssl_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified OpenSSL --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_mbstring_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified mbstring --SKIPIF-- row forced-runnable on PTN"
         else
