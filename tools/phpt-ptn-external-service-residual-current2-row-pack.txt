@@ -1,0 +1,6 @@
+# Focused external-service residual current2 row pack.
+# Source: /home/claude/ptn-lanes/integration/.runtime/phpt-dashboard-current/exclusions.tsv.
+# bucket: external-service-local-current2 rows=3
+ext/standard/tests/file/fgets_socket_variation1.phpt
+ext/curl/tests/curl_copy_handle_basic_002.phpt
+ext/curl/tests/curl_copy_handle_variation3_clone.phpt

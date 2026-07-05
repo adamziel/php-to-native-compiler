@@ -3798,6 +3798,8 @@ ptn_phpt_first_unsupported_zip_archive_surface() {
 ptn_phpt_supported_curl_server_harness_row() {
     case "$1" in
         ext/curl/tests/bug79033.phpt|\
+        ext/curl/tests/curl_copy_handle_basic_002.phpt|\
+        ext/curl/tests/curl_copy_handle_variation3_clone.phpt|\
         ext/curl/tests/curl_copy_handle_variation4.phpt|\
         ext/curl/tests/curl_basic_013.phpt|\
         ext/curl/tests/curl_basic_023.phpt|\
@@ -3833,6 +3835,10 @@ ptn_phpt_supported_standard_stream_server_harness_row() {
             return 1
             ;;
     esac
+}
+
+ptn_phpt_supported_standard_local_socket_row() {
+    [[ "$1" == "ext/standard/tests/file/fgets_socket_variation1.phpt" ]]
 }
 
 ptn_phpt_supported_openssl_tls_server_harness_row() {
@@ -3886,6 +3892,38 @@ ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
         ext/standard/tests/mail/gh19188_mixed_mode.phpt:sendmail_path|\
         ext/standard/tests/mail/gh19188_mixed_mode.phpt:mail.cr_lf_mode|\
         ext/standard/tests/mail/mail_variation3.phpt:sendmail_path)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_first_unsupported_local_service_residual_runtime() {
+    case "$1" in
+        ext/standard/tests/gh10885.phpt)
+            printf 'unsupported-stream-context-metadata\trequires stream_socket_server context resource refcount metadata, outside PTN modeled stream-context runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/http/gh16810.phpt)
+            printf 'unsupported-http-stream-wrapper-runtime\trequires HTTP stream wrapper timeout handling against the local PHP CLI server harness, outside PTN modeled URL stream runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/gh10031.phpt)
+            printf 'unsupported-http-stream-wrapper-runtime\trequires HTTP stream wrapper progress notifications against the local PHP CLI server harness, outside PTN modeled URL stream runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/url/get_headers_error_003.phpt)
+            printf 'unsupported-standard-url-runtime\trequires get_headers() HTTP wrapper behavior, outside PTN modeled standard URL functions\n'
+            return 0
+            ;;
+        ext/zlib/tests/gh16883.phpt)
+            printf 'unsupported-zlib-http-wrapper-runtime\trequires gzopen/gzfile/readgzfile over HTTP with PHP CLI server constants, outside PTN modeled zlib stream-wrapper runtime\n'
+            return 0
+            ;;
+        ext/curl/tests/curl_copy_handle_basic_007.phpt)
+            printf 'unsupported-curl-option-runtime\trequires CURLOPT_HTTPHEADER and array POST copy-handle behavior, outside PTN modeled curl option surface\n'
             return 0
             ;;
         *)
@@ -4106,10 +4144,16 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
+    if value=$(ptn_phpt_first_unsupported_local_service_residual_runtime "$rel"); then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
     if ptn_phpt_has_external_service_harness "$path" &&
         ! ptn_phpt_supported_curl_server_harness_row "$rel" &&
         ! ptn_phpt_supported_ftp_server_harness_row "$rel" &&
         ! ptn_phpt_supported_standard_stream_server_harness_row "$rel" &&
+        ! ptn_phpt_supported_standard_local_socket_row "$rel" &&
         ! ptn_phpt_supported_openssl_tls_server_harness_row "$rel" &&
         ! ptn_phpt_supported_php_cli_server_harness_row "$rel" &&
         ! ptn_phpt_supported_standard_network_mail_http_residual_row "$rel"; then

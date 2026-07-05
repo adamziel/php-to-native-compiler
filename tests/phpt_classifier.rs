@@ -4201,6 +4201,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let standard_file_local_socket_row = classify_at_relative_path(
+        "--TEST--\nfgets with a local socket stream\n--FILE--\n<?php\n$server = stream_socket_server('tcp://127.0.0.1:31333');\n$client = fsockopen('tcp://127.0.0.1:31333');\n$socket = stream_socket_accept($server);\nfwrite($socket, \"line1\\n\");\nvar_dump(fgets($client));\n--EXPECT--\n",
+        "ext/standard/tests/file/fgets_socket_variation1.phpt",
+    );
+    assert_eq!(
+        standard_file_local_socket_row.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let verified_loopback_stream_rows = [
         "ext/standard/tests/streams/stream_get_meta_data_socket_variation4.phpt",
         "ext/standard/tests/streams/gh8472.phpt",
@@ -4263,6 +4272,21 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    for row in [
+        "ext/curl/tests/curl_copy_handle_basic_002.phpt",
+        "ext/curl/tests/curl_copy_handle_variation3_clone.phpt",
+    ] {
+        let classification = classify_at_relative_path(
+            "--TEST--\ncurl copy handle local server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/get.inc?test=getpost');\ncurl_exec($ch);\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification,
+            "runnable\tselected for PTN semantic measurement\n",
+            "{row}"
+        );
+    }
+
     let unmodeled_curl_harness = classify_at_relative_path(
         "--TEST--\ncurl unmodeled server harness\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/other.inc');\ncurl_exec($ch);\n--EXPECT--\n",
         "ext/curl/tests/unmodeled_server_harness.phpt",
@@ -4271,6 +4295,46 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         unmodeled_curl_harness.starts_with("external-service\t"),
         "{unmodeled_curl_harness:?}"
     );
+
+    let unsupported_local_service_residual_rows = [
+        (
+            "ext/standard/tests/gh10885.phpt",
+            "unsupported-stream-context-metadata\t",
+            "--TEST--\nstream context refcount metadata\n--FILE--\n<?php\n$context = stream_context_create();\n$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);\ndebug_zval_dump($context);\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/http/gh16810.phpt",
+            "unsupported-http-stream-wrapper-runtime\t",
+            "--TEST--\nhttp wrapper timeout local server\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo 1;');\nfopen('http://' . PHP_CLI_SERVER_ADDRESS . '/test', 'r', false, stream_context_create(['http' => ['timeout' => PHP_INT_MIN]]));\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/streams/gh10031.phpt",
+            "unsupported-http-stream-wrapper-runtime\t",
+            "--TEST--\nhttp wrapper progress notification local server\n--SKIPIF--\n<?php\nif (getenv('SKIP_SLOW_TESTS')) die('skip slow test');\n?>\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo str_repeat(\"x\", 1000);');\nfile_get_contents('http://' . PHP_CLI_SERVER_ADDRESS, false, stream_context_create(['http' => ['ignore_errors' => true]]));\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/url/get_headers_error_003.phpt",
+            "unsupported-standard-url-runtime\t",
+            "--TEST--\nget_headers local server\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('header(\"X-Request-Method: \".$_SERVER[\"REQUEST_METHOD\"]);');\nget_headers('http://' . PHP_CLI_SERVER_ADDRESS, 1);\n--EXPECT--\n",
+        ),
+        (
+            "ext/zlib/tests/gh16883.phpt",
+            "unsupported-zlib-http-wrapper-runtime\t",
+            "--TEST--\nzlib http wrapper local server\n--EXTENSIONS--\nzlib\n--FILE--\n<?php\nrequire __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo $_SERVER[\"HTTP_USER_AGENT\"];');\ngzopen('http://' . PHP_CLI_SERVER_HOSTNAME . ':' . PHP_CLI_SERVER_PORT, 'r');\n--EXPECT--\n",
+        ),
+        (
+            "ext/curl/tests/curl_copy_handle_basic_007.phpt",
+            "unsupported-curl-option-runtime\t",
+            "--TEST--\ncurl copy handle with HTTP header option\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init($host . '/get.inc?test=getpost');\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Expect:']);\n--EXPECT--\n",
+        ),
+    ];
+    for (row, expected_prefix, body) in unsupported_local_service_residual_rows {
+        let classification = classify_at_relative_path(body, row);
+        assert!(
+            classification.starts_with(expected_prefix),
+            "{row}: {classification:?}"
+        );
+    }
 
     let openssl_tls_server_harness =
         "--TEST--\nopenssl tls server harness\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\nrequire __DIR__ . '/ServerClientTestCase.inc';\n$server = stream_socket_server('tls://127.0.0.1:0');\n--EXPECT--\n";
