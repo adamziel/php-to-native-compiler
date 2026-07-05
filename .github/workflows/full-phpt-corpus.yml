@@ -10,7 +10,7 @@ on:
       timeout_seconds:
         description: Per-PHPT timeout passed to run-tests.php
         required: true
-        default: "7200"
+        default: "300"
       run_tests_jobs:
         description: Parallel run-tests.php workers per shard
         required: true
@@ -18,7 +18,7 @@ on:
       shard_count:
         description: Number of full-corpus shards to split the run into
         required: true
-        default: "240"
+        default: "480"
 
 permissions:
   contents: read
