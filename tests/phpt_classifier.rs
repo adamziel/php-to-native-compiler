@@ -3818,6 +3818,34 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{unmodeled_curl_harness:?}"
     );
 
+    let openssl_tls_server_harness =
+        "--TEST--\nopenssl tls server harness\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\nrequire __DIR__ . '/ServerClientTestCase.inc';\n$server = stream_socket_server('tls://127.0.0.1:0');\n--EXPECT--\n";
+    for row in [
+        "ext/openssl/tests/bug48182.phpt",
+        "ext/openssl/tests/tls_psk_client_callback_null.phpt",
+        "ext/openssl/tests/tls_wrapper_with_tls_v1.3.phpt",
+        "ext/openssl/tests/stream_crypto_flags_004.phpt",
+        "ext/openssl/tests/sni_server_key_cert.phpt",
+        "ext/openssl/tests/session_resumption_persistent_reject.phpt",
+    ] {
+        let classification = classify_at_relative_path(openssl_tls_server_harness, row);
+        assert_eq!(
+            classification, "runnable\tselected for PTN semantic measurement\n",
+            "{row}"
+        );
+    }
+
+    for row in [
+        "ext/openssl/tests/bug65538_001.phpt",
+        "ext/openssl/tests/session_resumption_new_cb_no_context.phpt",
+    ] {
+        let classification = classify_at_relative_path(openssl_tls_server_harness, row);
+        assert!(
+            classification.starts_with("external-service\t"),
+            "{row}: {classification:?}"
+        );
+    }
+
     let filter_loopback_validation_fixture = classify_at_relative_path(
         "--TEST--\nfilter loopback validation fixture\n--EXTENSIONS--\nfilter\n--FILE--\n<?php\nvar_dump(filter_var('127.0.0.1', FILTER_VALIDATE_IP));\nvar_dump(filter_var('::1', FILTER_VALIDATE_IP));\nvar_dump(filter_var('http://test@[::1]', FILTER_VALIDATE_URL));\n--EXPECT--\n",
         "ext/filter/tests/loopback_validation_fixture.phpt",

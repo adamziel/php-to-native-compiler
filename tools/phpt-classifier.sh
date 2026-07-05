@@ -3503,6 +3503,22 @@ ptn_phpt_supported_standard_stream_server_harness_row() {
     esac
 }
 
+ptn_phpt_supported_openssl_tls_server_harness_row() {
+    case "$1" in
+        ext/openssl/tests/bug48182.phpt|\
+        ext/openssl/tests/tls_psk_client_callback_null.phpt|\
+        ext/openssl/tests/tls_wrapper_with_tls_v1.3.phpt|\
+        ext/openssl/tests/stream_crypto_flags_004.phpt|\
+        ext/openssl/tests/sni_server_key_cert.phpt|\
+        ext/openssl/tests/session_resumption_persistent_reject.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_supported_php_cli_server_harness_row() {
     [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]] ||
         [[ "$1" == "ext/soap/tests/custom_content_type.phpt" ]] ||
@@ -3656,6 +3672,7 @@ ptn_phpt_classify_row() {
         ! ptn_phpt_supported_curl_server_harness_row "$rel" &&
         ! ptn_phpt_supported_ftp_server_harness_row "$rel" &&
         ! ptn_phpt_supported_standard_stream_server_harness_row "$rel" &&
+        ! ptn_phpt_supported_openssl_tls_server_harness_row "$rel" &&
         ! ptn_phpt_supported_php_cli_server_harness_row "$rel" &&
         ! ptn_phpt_supported_standard_network_mail_http_residual_row "$rel"; then
         printf 'external-service\trequires external service or php-src server harness\n'
