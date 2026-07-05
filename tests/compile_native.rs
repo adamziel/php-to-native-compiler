@@ -64029,24 +64029,28 @@ echo '/n:foo/n:bar=', count($xpath->query('/n:foo/n:bar')), "\n";
 }
 
 #[test]
-fn compile_dom_element_set_attribute_returns_null_to_native_binary() {
-    let root = temp_dir("ptn-native-dom-element-set-attribute-returns-null");
+fn compile_dom_element_set_attribute_return_values_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-element-set-attribute-return-values");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("dom-element-set-attribute-returns-null.php");
-    let output = root.join("dom-element-set-attribute-returns-null-bin");
+    let input = root.join("dom-element-set-attribute-return-values.php");
+    let output = root.join("dom-element-set-attribute-return-values-bin");
     fs::write(
         &input,
         r#"<?php
 $doc = new DOMDocument();
 $root = $doc->appendChild($doc->createElement('root'));
-var_dump($root->setAttribute('id', 'a'));
+$attr = $root->setAttribute('id', 'a');
+var_dump($attr instanceof DOMAttr, $attr->ownerElement === $root);
 var_dump($root->getAttribute('id'));
-var_dump($root->setAttribute('id', 'b'));
+$attr = $root->setAttribute('id', 'b');
+var_dump($attr instanceof DOMAttr, $attr->ownerElement === $root);
 var_dump($root->getAttribute('id'));
 var_dump($root->setAttributeNS('urn:x', 'x:id', 'c'));
 var_dump($root->getAttributeNS('urn:x', 'id'));
 echo $root->setAttributeNS('urn:x', 'x:id', 'd') . "after\n";
 var_dump($root->getAttributeNS('urn:x', 'id'));
+$doc->removeChild($root);
+var_dump($attr->ownerElement);
 "#,
     )
     .unwrap();
@@ -64063,14 +64067,17 @@ var_dump($root->getAttributeNS('urn:x', 'id'));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "NULL\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "string(1) \"a\"\n",
-            "NULL\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "string(1) \"b\"\n",
             "NULL\n",
             "string(1) \"c\"\n",
             "after\n",
             "string(1) \"d\"\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
