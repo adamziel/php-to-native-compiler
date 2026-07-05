@@ -885,24 +885,17 @@ fn phpt_classifier_models_common_environment_skipif_preconditions() {
 fn phpt_classifier_unlocks_verified_bounded_slow_skipif_rows() {
     let slow = "--TEST--\nverified slow row\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
 
-    let classification = classify_at_relative_path_with_harness_programs(
-        slow,
+    for path in [
         "ext/standard/tests/file/lstat_stat_variation16.phpt",
-    );
-    assert!(
-        classification.starts_with("runnable\t") && classification.contains("resource-limit"),
-        "{classification:?}"
-    );
-
-    let classification = classify_at_relative_path_with_harness_programs(
-        slow,
         "ext/standard/tests/file/lstat_stat_variation17.phpt",
-    );
-    assert!(
-        classification.starts_with("skipif-precondition\t")
-            && classification.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
-        "{classification:?}"
-    );
+        "ext/standard/tests/file/bug22414.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(slow, path);
+        assert!(
+            classification.starts_with("runnable\t") && classification.contains("resource-limit"),
+            "{path}: {classification:?}"
+        );
+    }
 
     let classification =
         classify_at_relative_path_with_harness_programs(slow, "ext/standard/tests/file/new.phpt");
@@ -967,9 +960,12 @@ fn phpt_classifier_unlocks_verified_mbstring_slow_encoding_rows() {
 
     for path in [
         "ext/mbstring/tests/cp5022x_encoding.phpt",
+        "ext/mbstring/tests/cp1254_encoding.phpt",
+        "ext/mbstring/tests/cp936_encoding.phpt",
         "ext/mbstring/tests/iso2022jp_2004_encoding.phpt",
         "ext/mbstring/tests/iso2022jp_encoding.phpt",
         "ext/mbstring/tests/other_encodings.phpt",
+        "ext/mbstring/tests/utf8_mobile_encodings.phpt",
     ] {
         let classification = classify_at_relative_path_with_harness_programs(slow, path);
         assert!(
@@ -986,6 +982,22 @@ fn phpt_classifier_unlocks_verified_mbstring_slow_encoding_rows() {
         unverified.starts_with("skipif-precondition\t")
             && unverified.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
         "{unverified:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_reports_platform_skipif_before_resource_limit_gate() {
+    let windows_then_slow = "--TEST--\nwindows then slow\n--SKIPIF--\n<?php\nif (PHP_OS_FAMILY !== 'Windows') die('skip windows only test');\nif (getenv('SKIP_SLOW_TESTS')) die('skip slow test');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    let classification = classify_with_harness_programs_and_env(
+        windows_then_slow,
+        true,
+        &[("PTN_PHPT_PHP_OS_FAMILY", "Linux")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_OS_FAMILY guard"),
+        "{classification:?}"
     );
 }
 

@@ -601,10 +601,12 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation11.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation13.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation16.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation17.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation21.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation4.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation5.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/lstat_stat_variation8.phpt|\
+        SKIP_SLOW_TESTS:ext/standard/tests/file/bug22414.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/file/touch_basic.phpt|\
         SKIP_SLOW_TESTS:ext/date/tests/bug73837.phpt|\
         SKIP_SLOW_TESTS:ext/pcre/tests/bug69864.phpt|\
@@ -614,10 +616,13 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
         SKIP_SLOW_TESTS:ext/standard/tests/network/gethostbyname_basic001.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/password/password_hash.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/password/password_removed_salt_option.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/cp1254_encoding.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/cp936_encoding.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/cp5022x_encoding.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/iso2022jp_2004_encoding.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/iso2022jp_encoding.phpt|\
-        SKIP_SLOW_TESTS:ext/mbstring/tests/other_encodings.phpt)
+        SKIP_SLOW_TESTS:ext/mbstring/tests/other_encodings.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/utf8_mobile_encodings.phpt)
             return 0
             ;;
     esac
@@ -905,6 +910,46 @@ ptn_phpt_modeled_skipif_precondition() {
     in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
     stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
+
+    local early_string_condition_lines
+    local early_condition
+    local early_op
+    local early_expected
+    local early_os_family
+    early_os_family=$(ptn_phpt_php_os_family)
+    early_string_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ -]+['\"]" \
+        || true)
+    if [[ -n "$early_string_condition_lines" ]]; then
+        while IFS= read -r early_condition; do
+            early_op=$(printf '%s\n' "$early_condition" | sed -E "s/PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][^'\"]+['\"]/\1/")
+            early_expected=$(printf '%s\n' "$early_condition" | sed -E "s/PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"]([^'\"]+)['\"]/\2/")
+            if ptn_phpt_eval_string_condition "$early_os_family" "$early_op" "$early_expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_OS_FAMILY guard skips when PHP_OS_FAMILY %s %s; modeled PHP_OS_FAMILY=%s\n' \
+                    "$early_op" "$early_expected" "$early_os_family"
+                return 0
+            fi
+        done <<< "$early_string_condition_lines"
+    fi
+
+    local early_php_os
+    early_php_os=$(ptn_phpt_php_os)
+    early_string_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "substr[[:space:]]*\\([[:space:]]*PHP_OS[[:space:]]*,[[:space:]]*0[[:space:]]*,[[:space:]]*[0-9]+[[:space:]]*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ -]+['\"]" \
+        || true)
+    if [[ -n "$early_string_condition_lines" ]]; then
+        while IFS= read -r early_condition; do
+            local early_length
+            early_length=$(printf '%s\n' "$early_condition" | sed -E "s/substr[[:space:]]*\\([[:space:]]*PHP_OS[[:space:]]*,[[:space:]]*0[[:space:]]*,[[:space:]]*([0-9]+)[[:space:]]*\\).*/\1/")
+            early_op=$(printf '%s\n' "$early_condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][^'\"]+['\"]/\1/")
+            early_expected=$(printf '%s\n' "$early_condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"]([^'\"]+)['\"]/\2/")
+            if ptn_phpt_eval_string_condition "${early_php_os:0:early_length}" "$early_op" "$early_expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_OS prefix guard skips when substr(PHP_OS, 0, %s) %s %s; modeled PHP_OS=%s\n' \
+                    "$early_length" "$early_op" "$early_expected" "$early_php_os"
+                return 0
+            fi
+        done <<< "$early_string_condition_lines"
+    fi
 
     local env_probe_lines
     local parsed_env_count=0
