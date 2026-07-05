@@ -2187,6 +2187,26 @@ fn phpt_classifier_allows_generator_fiber_lifecycle_row_pack() {
             "Zend/tests/fibers/suspend-in-force-close-fiber.phpt",
             fiber_body,
         ),
+        (
+            "ext/reflection/tests/ReflectionFiber_basic.phpt",
+            fiber_body,
+        ),
+        (
+            "ext/reflection/tests/ReflectionFiber_backtrace.phpt",
+            fiber_body,
+        ),
+        (
+            "ext/reflection/tests/ReflectionFiber_bug_gh11121_1.phpt",
+            fiber_body,
+        ),
+        (
+            "ext/reflection/tests/ReflectionFiber_bug_gh11121_2.phpt",
+            fiber_body,
+        ),
+        (
+            "ext/reflection/tests/ReflectionFiber_errors.phpt",
+            fiber_body,
+        ),
     ];
 
     for (relative_path, phpt) in cases {
@@ -2703,6 +2723,10 @@ fn phpt_classifier_keeps_supported_autoload_metadata_rows_runnable_by_path() {
             "Zend/tests/autoload/bug46665.phpt",
             "--TEST--\nautoload include class declaration\n--FILE--\n<?php\nspl_autoload_register(function ($class) { var_dump($class); require __DIR__ . '/bug46665_autoload.inc'; });\n$baz = '\\\\Foo\\\\Bar\\\\Baz';\nnew $baz();\n--EXPECT--\nstring(11) \"Foo\\Bar\\Baz\"\n",
         ),
+        (
+            "ext/reflection/tests/bug74454.phpt",
+            "--TEST--\nreflection autoload parse error\n--FILE--\n<?php\nspl_autoload_register('load_file');\ntry { new ReflectionMethod('A', 'b'); } catch (Throwable $e) { echo $e->getMessage(); }\nfunction load_file() { require __DIR__ . '/bug74454.inc'; }\n--EXPECT--\n",
+        ),
     ];
 
     for (path, phpt) in cases {
@@ -2744,6 +2768,12 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "autoload call helper",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_call('Missing');\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "method named __autoload",
+            "--TEST--\nmethod named __autoload\n--FILE--\n<?php\nclass Test { public function __autoload() {} }\n$r = new ReflectionClass('Test');\nvar_dump($r->hasMethod('__autoload'));\n--EXPECT--\nbool(true)\n",
             "runnable\t",
             "selected for PTN semantic measurement",
         ),

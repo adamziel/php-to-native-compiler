@@ -214678,6 +214678,17 @@ static PtnFiberData *ptn_fiber_data(PtnRuntime *runtime, PtnValue receiver) {
     return (PtnFiberData *)resolved.as.object->native_data;
 }
 
+static PtnFiberData *ptn_fiber_data_from_object(PtnObject *object) {
+    if (
+        object == NULL ||
+        !ptn_internal_class_name_is_fiber(object->class_name) ||
+        object->native_data == NULL
+    ) {
+        return NULL;
+    }
+    return (PtnFiberData *)object->native_data;
+}
+
 static void ptn_fiber_clear_suspension(PtnFiberData *data) {
     if (data == NULL) {
         return;
@@ -215384,6 +215395,16 @@ static PtnTraceFrame *ptn_reflection_fiber_live_trace_start(
     if (runtime->current_fiber == data->object) {
         return runtime->trace_frame;
     }
+#if !defined(_WIN32)
+    PtnFiberData *current_data = ptn_fiber_data_from_object(runtime->current_fiber);
+    if (
+        current_data != NULL &&
+        current_data->caller_fiber == data->object &&
+        current_data->active_method_frame != NULL
+    ) {
+        return current_data->active_method_frame;
+    }
+#endif
     for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
         if (
             frame->function_name != NULL &&
@@ -215402,6 +215423,11 @@ static PtnTraceFrame *ptn_reflection_fiber_live_file_frame(
     for (PtnTraceFrame *frame = ptn_reflection_fiber_live_trace_start(runtime, data);
          frame != NULL;
          frame = frame->previous) {
+#if !defined(_WIN32)
+        if (frame == data->active_method_frame) {
+            continue;
+        }
+#endif
         if (frame->file != NULL && frame->line != 0) {
             return frame;
         }
@@ -215444,9 +215470,15 @@ static PtnValue ptn_reflection_fiber_live_trace(
             ptn_fiber_trace_frame_array(&method_frame, options)
         );
         for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
+#if !defined(_WIN32)
+            if (frame == data->active_method_frame || frame->function_name == NULL) {
+                continue;
+            }
+#else
             if (frame->function_name == NULL) {
                 continue;
             }
+#endif
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_int_key(index++),
@@ -215457,6 +215489,23 @@ static PtnValue ptn_reflection_fiber_live_trace(
     }
 
     PtnTraceFrame *frame = ptn_reflection_fiber_live_trace_start(runtime, data);
+#if !defined(_WIN32)
+    PtnTraceFrame nested_start_frame;
+    PtnFiberData *current_data = runtime == NULL
+        ? NULL
+        : ptn_fiber_data_from_object(runtime->current_fiber);
+    if (
+        current_data != NULL &&
+        data != NULL &&
+        current_data->caller_fiber == data->object &&
+        frame == current_data->active_method_frame &&
+        current_data->caller_trace_frame != NULL
+    ) {
+        nested_start_frame = *frame;
+        nested_start_frame.previous = current_data->caller_trace_frame;
+        frame = &nested_start_frame;
+    }
+#endif
     PtnTraceFrame synthetic_start_frame;
     if (
         runtime != NULL &&
@@ -215487,9 +215536,15 @@ static PtnValue ptn_reflection_fiber_live_trace(
     }
 
     for (; frame != NULL; frame = frame->previous) {
+#if !defined(_WIN32)
+        if (frame == data->active_method_frame || frame->function_name == NULL) {
+            continue;
+        }
+#else
         if (frame->function_name == NULL) {
             continue;
         }
+#endif
         ptn_array_set_entry(
             result.as.array,
             ptn_array_int_key(index++),

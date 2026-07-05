@@ -4586,6 +4586,126 @@ var_dump(substr($wrappedTrace[2]["function"], 0, 9) === "{closure:", isset($wrap
 }
 
 #[test]
+fn compile_reflection_fiber_running_self_trace_omits_start_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-fiber-running-self-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-fiber-running-self-trace.php");
+    let output = root.join("reflection-fiber-running-self-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    $reflection = new ReflectionFiber(Fiber::getCurrent());
+    $expectedLine = __LINE__ + 1;
+    var_dump($reflection->getExecutingLine() === $expectedLine);
+    $expectedTraceLine = __LINE__ + 1;
+    $trace = $reflection->getTrace();
+    var_dump(count($trace));
+    var_dump($trace[0]["function"]);
+    var_dump($trace[0]["class"]);
+    var_dump($trace[0]["type"]);
+    var_dump($trace[0]["line"] === $expectedTraceLine);
+    var_dump(substr($trace[1]["function"], 0, 9) === "{closure:");
+    foreach ($trace as $frame) {
+        if (($frame["class"] ?? null) === "Fiber") {
+            echo "fiber-frame\n";
+        }
+    }
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(2)\n",
+            "string(8) \"getTrace\"\n",
+            "string(15) \"ReflectionFiber\"\n",
+            "string(2) \"->\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_fiber_nested_caller_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-fiber-nested-caller-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-fiber-nested-caller-trace.php");
+    let output = root.join("reflection-fiber-nested-caller-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function inspect_outer(): void {
+    global $outer;
+    $trace = (new ReflectionFiber($outer))->getTrace();
+    var_dump(count($trace));
+    var_dump($trace[0]["function"]);
+    var_dump($trace[0]["class"]);
+    var_dump($trace[0]["type"]);
+    var_dump($trace[0]["object"] === Fiber::getCurrent());
+    var_dump($trace[1]["function"]);
+    var_dump(substr($trace[2]["function"], 0, 9) === "{closure:");
+    foreach ($trace as $frame) {
+        if (($frame["class"] ?? null) === "Fiber" && ($frame["object"] ?? null) === $outer) {
+            echo "outer-start\n";
+        }
+    }
+}
+
+function g(): void {
+    (new Fiber(function (): void {
+        inspect_outer();
+    }))->start();
+}
+
+$outer = new Fiber(function (): void {
+    g();
+});
+$outer->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(3)\n",
+            "string(5) \"start\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(2) \"->\"\n",
+            "bool(true)\n",
+            "string(1) \"g\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_constructor_allocates_before_argument_objects_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-constructor-object-id-order");
     fs::create_dir_all(&root).unwrap();

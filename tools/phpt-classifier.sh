@@ -2220,7 +2220,8 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_path ~ /Zend\/tests\/anon\/008[.]phpt$/
         }
         function ptn_supported_autoload_include_class_declaration_row() {
-            return ptn_path ~ /Zend\/tests\/autoload\/bug46665[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/autoload\/bug46665[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/bug74454[.]phpt$/
         }
         function ptn_supported_autoload_parameter_default_class_constant_row() {
             return ptn_path ~ /Zend\/tests\/autoload\/bug42798[.]phpt$/
@@ -2284,7 +2285,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /Zend\/tests\/fibers\/destructors_008[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/gh9916-003[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/fibers\/gh15108-001[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/fibers\/suspend-in-force-close-fiber[.]phpt$/
+                ptn_path ~ /Zend\/tests\/fibers\/suspend-in-force-close-fiber[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionFiber_basic[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionFiber_backtrace[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionFiber_bug_gh11121_[12][.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionFiber_errors[.]phpt$/
         }
         function ptn_has_direct_assignment_yield(line) {
             return line ~ /(^|[^=!<>])[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*yield([^[:alnum:]_]|$)/
@@ -2424,6 +2429,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 saw_spl_autoload_register = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/ &&
+                !(ptn_class_body_depth > 0 && line ~ /function[[:space:]]+&?[[:space:]]*__autoload[[:space:]]*\(/) &&
                 !ptn_supported_spl_autoload_helper_row()) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
@@ -2920,6 +2926,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/ &&
+                !(ptn_class_body_depth > 0 && line ~ /function[[:space:]]+&?[[:space:]]*__autoload[[:space:]]*\(/) &&
                 !ptn_supported_spl_autoload_helper_row()) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
