@@ -1,0 +1,12 @@
+# Focused external-service residual current4 row pack.
+# Source: /home/claude/ptn-lanes/integration/.runtime/phpt-dashboard-current/exclusions.tsv.
+# bucket: external-service-openssl-curl-pdo-mysql-current4 rows=9
+ext/pdo_mysql/tests/bug_37445.phpt
+ext/curl/tests/curl_fnmatch_trampoline.phpt
+ext/curl/tests/curl_setopt_CURLOPT_DEBUGFUNCTION.phpt
+ext/openssl/tests/bug65538_001.phpt
+ext/openssl/tests/session_resumption_new_cb_no_context.phpt
+ext/openssl/tests/tls_psk_client_no_identity.phpt
+ext/openssl/tests/tls_psk_callback_wrong_type.phpt
+ext/openssl/tests/bug54992.phpt
+ext/openssl/tests/bug72333.phpt

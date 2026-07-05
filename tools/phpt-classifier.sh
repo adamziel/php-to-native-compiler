@@ -3960,6 +3960,47 @@ ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
     esac
 }
 
+ptn_phpt_first_unsupported_external_service_residual_runtime() {
+    case "$1" in
+        ext/pdo_mysql/tests/bug_37445.phpt)
+            printf 'unsupported-pdo-mysql-service\trequires MySQLPDOTest external MySQL service connection/factory, outside PTN modeled PDO MySQL runtime\n'
+            return 0
+            ;;
+        ext/curl/tests/curl_fnmatch_trampoline.phpt)
+            printf 'unsupported-curl-ftp-callback-runtime\trequires CURLOPT_FNMATCH_FUNCTION wildcard callback over the php-src curl FTP-style server harness, outside PTN modeled curl callback/FTP transfer runtime\n'
+            return 0
+            ;;
+        ext/curl/tests/curl_setopt_CURLOPT_DEBUGFUNCTION.phpt)
+            printf 'unsupported-curl-debug-callback-runtime\trequires CURLOPT_DEBUGFUNCTION verbose/debug callback and CURLINFO_HEADER_OUT state across php-src curl server requests, outside PTN modeled curl callback surface\n'
+            return 0
+            ;;
+        ext/openssl/tests/bug65538_001.phpt)
+            printf 'unsupported-openssl-stream-wrapper-runtime\trequires HTTPS stream wrapper cafile verification against ServerClientTestCase TLS server, outside PTN modeled OpenSSL stream-wrapper runtime\n'
+            return 0
+            ;;
+        ext/openssl/tests/session_resumption_new_cb_no_context.phpt)
+            printf 'unsupported-openssl-session-callback-runtime\trequires TLS session_new_cb/session_get_cb validation with verify_peer in ServerClientTestCase, outside PTN modeled OpenSSL session callback runtime\n'
+            return 0
+            ;;
+        ext/openssl/tests/tls_psk_client_no_identity.phpt|\
+        ext/openssl/tests/tls_psk_callback_wrong_type.phpt)
+            printf 'unsupported-openssl-psk-callback-runtime\trequires OpenSSL PSK client callback validation during TLS handshake, outside PTN modeled OpenSSL PSK callback runtime\n'
+            return 0
+            ;;
+        ext/openssl/tests/bug54992.phpt)
+            printf 'unsupported-openssl-peer-verification-runtime\trequires SSL peer CN mismatch verification diagnostics through ServerClientTestCase, outside PTN modeled OpenSSL peer verification runtime\n'
+            return 0
+            ;;
+        ext/openssl/tests/bug72333.phpt)
+            printf 'unsupported-openssl-nonblocking-stream-runtime\trequires nonblocking SSL socket fwrite/read coordination through ServerClientTestCase, outside PTN modeled OpenSSL stream runtime\n'
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_first_unsupported_local_service_residual_runtime() {
     case "$1" in
         tests/basic/bug67198.phpt)
@@ -4225,6 +4266,11 @@ ptn_phpt_classify_row() {
 
     if ptn_phpt_supported_zend_test_class_metadata_row "$rel"; then
         printf 'runnable\tselected for PTN semantic measurement\n'
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_external_service_residual_runtime "$rel"); then
+        printf '%s\n' "$value"
         return 0
     fi
 

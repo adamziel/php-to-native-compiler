@@ -4138,6 +4138,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{pdo_mysql_service:?}"
     );
 
+    let pdo_mysql_external_service = classify_at_relative_path(
+        "--TEST--\npdo mysql bug 37445\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n$stmt = $db->prepare(\"SELECT 1\");\n--EXPECT--\n",
+        "ext/pdo_mysql/tests/bug_37445.phpt",
+    );
+    assert!(
+        pdo_mysql_external_service.starts_with("unsupported-pdo-mysql-service\t"),
+        "{pdo_mysql_external_service:?}"
+    );
+
     let supported_ftp_directory_harness = classify_at_relative_path(
         "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (array_search('ftp', stream_get_wrappers()) === false) die('skip');\nif (!function_exists('pcntl_fork')) die('skip');\n?>\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
         "ext/standard/tests/streams/opendir-004.phpt",
@@ -4362,13 +4371,19 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         );
     }
 
-    for row in [
-        "ext/openssl/tests/bug65538_001.phpt",
-        "ext/openssl/tests/session_resumption_new_cb_no_context.phpt",
+    for (row, expected_prefix) in [
+        (
+            "ext/openssl/tests/bug65538_001.phpt",
+            "unsupported-openssl-stream-wrapper-runtime\t",
+        ),
+        (
+            "ext/openssl/tests/session_resumption_new_cb_no_context.phpt",
+            "unsupported-openssl-session-callback-runtime\t",
+        ),
     ] {
         let classification = classify_at_relative_path(openssl_tls_server_harness, row);
         assert!(
-            classification.starts_with("external-service\t"),
+            classification.starts_with(expected_prefix),
             "{row}: {classification:?}"
         );
     }
@@ -4503,6 +4518,65 @@ fn phpt_classifier_splits_external_service_residual_current3_rows() {
             "ext/standard/tests/streams/gh11418.phpt",
             "unsupported-stream-peer-harness-runtime\t",
             "--TEST--\nsplit-read peer stream harness\n--FILE--\n<?php\n$serverCode = <<<'CODE'\n$server = stream_socket_server('tcp://127.0.0.1:0');\nphpt_notify_server_start($server);\nCODE;\n$clientCode = <<<'CODE'\n$fp = fsockopen('tcp://{{ ADDR }}');\nCODE;\ninclude sprintf('%s/../../../openssl/tests/ServerClientTestCase.inc', __DIR__);\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (row, expected_prefix, body) in cases {
+        let classification = classify_at_relative_path(body, row);
+        assert!(
+            classification.starts_with(expected_prefix),
+            "{row}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_splits_external_service_residual_current4_rows() {
+    let cases = [
+        (
+            "ext/pdo_mysql/tests/bug_37445.phpt",
+            "unsupported-pdo-mysql-service\t",
+            "--TEST--\npdo mysql external service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
+        ),
+        (
+            "ext/curl/tests/curl_fnmatch_trampoline.phpt",
+            "unsupported-curl-ftp-callback-runtime\t",
+            "--TEST--\ncurl fnmatch callback\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init(\"ftp://{$host}/file*\");\ncurl_setopt($ch, CURLOPT_WILDCARDMATCH, 1);\ncurl_setopt($ch, CURLOPT_FNMATCH_FUNCTION, 'fnmatch_cb');\n--EXPECT--\n",
+        ),
+        (
+            "ext/curl/tests/curl_setopt_CURLOPT_DEBUGFUNCTION.phpt",
+            "unsupported-curl-debug-callback-runtime\t",
+            "--TEST--\ncurl debug callback\n--EXTENSIONS--\ncurl\n--FILE--\n<?php\ninclude 'server.inc';\n$host = curl_cli_server_start();\n$ch = curl_init(\"{$host}/get.inc?test=file\");\ncurl_setopt($ch, CURLOPT_VERBOSE, 1);\ncurl_setopt($ch, CURLOPT_DEBUGFUNCTION, static function() {});\ncurl_getinfo($ch, CURLINFO_HEADER_OUT);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/bug65538_001.phpt",
+            "unsupported-openssl-stream-wrapper-runtime\t",
+            "--TEST--\nopenssl cafile stream wrapper\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (!function_exists('proc_open')) die('skip no proc_open');\n?>\n--FILE--\n<?php\n$serverCode = \"stream_socket_server('ssl://127.0.0.1:0');\";\n$clientCode = \"file_get_contents('https://{{ ADDR }}/', false, stream_context_create(['ssl' => ['cafile' => 'file://ca.pem']]));\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/session_resumption_new_cb_no_context.phpt",
+            "unsupported-openssl-session-callback-runtime\t",
+            "--TEST--\nopenssl session callback\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$serverCode = \"stream_context_create(['ssl' => ['session_new_cb' => function() {}, 'verify_peer' => true]]);\";\n$clientCode = \"stream_socket_client('tls://{{ ADDR }}');\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/tls_psk_client_no_identity.phpt",
+            "unsupported-openssl-psk-callback-runtime\t",
+            "--TEST--\nopenssl psk callback\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$serverCode = \"stream_socket_server('tls://127.0.0.1:0');\";\n$clientCode = \"stream_context_create(['ssl' => ['psk_client_cb' => function() { return new Openssl\\\\Psk('k'); }]]);\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/tls_psk_callback_wrong_type.phpt",
+            "unsupported-openssl-psk-callback-runtime\t",
+            "--TEST--\nopenssl psk callback wrong type\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$serverCode = \"stream_socket_server('tls://127.0.0.1:0');\";\n$clientCode = \"stream_context_create(['ssl' => ['psk_client_cb' => function() { return 'bad'; }]]);\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/bug54992.phpt",
+            "unsupported-openssl-peer-verification-runtime\t",
+            "--TEST--\nopenssl peer mismatch\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$serverCode = \"stream_socket_server('ssl://127.0.0.1:0');\";\n$clientCode = \"stream_socket_client('ssl://{{ ADDR }}', context: stream_context_create(['ssl' => ['verify_peer' => true, 'peer_name' => 'wrong']]));\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+        (
+            "ext/openssl/tests/bug72333.phpt",
+            "unsupported-openssl-nonblocking-stream-runtime\t",
+            "--TEST--\nopenssl nonblocking fwrite\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$serverCode = \"stream_socket_server('ssl://127.0.0.1:0');\";\n$clientCode = \"stream_set_blocking(stream_socket_client('ssl://{{ ADDR }}'), false);\";\ninclude 'ServerClientTestCase.inc';\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
         ),
     ];
 
