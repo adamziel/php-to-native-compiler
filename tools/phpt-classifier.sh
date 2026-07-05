@@ -1528,7 +1528,8 @@ ptn_phpt_first_unsupported_section() {
 ptn_phpt_supported_file_external_row() {
     local rel=$1
 
-    [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]]
+    [[ "$rel" == "ext/dom/tests/DOMDocument_loadXML_variation4.phpt" ]] ||
+        [[ "$rel" == "ext/phar/tests/cache_list/frontcontroller18.phpt" ]]
 }
 
 ptn_phpt_supported_process_boundary_row() {
@@ -3034,6 +3035,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/phar_dir_iterate.phpt|\
         ext/phar/tests/phar_oo_006.phpt|\
         ext/phar/tests/zip/phar_buildfromiterator4.phpt|\
+        ext/phar/tests/zip/open_for_write_newfile_c.phpt|\
         ext/phar/tests/zip/corrupt_010.phpt|\
         ext/phar/tests/zip/open_for_write_existing_b.phpt|\
         ext/phar/tests/phar_buildfromiterator10.phpt|\

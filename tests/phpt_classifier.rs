@@ -3247,6 +3247,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_readonly_zip_missing_include = classify_at_relative_path(
+        "--TEST--\nphar zip readonly write-open missing include\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.zip');\n$phar->setStub('<?php __HALT_COMPILER(); ?>');\n$phar['b/c.php'] = '<?php echo \"This is b/c\\n\"; ?>';\n$phar->stopBuffering();\nini_set('phar.readonly', 1);\nvar_dump(fopen('phar://' . __DIR__ . '/archive.phar.zip/b/new.php', 'wb'));\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/b/c.php';\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/b/new.php';\n--EXPECT--\n",
+        "ext/phar/tests/zip/open_for_write_newfile_c.phpt",
+    );
+    assert_eq!(
+        phar_readonly_zip_missing_include.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_zlib_corrupt_dir_rows = [
         "ext/phar/tests/zip/corrupt_010.phpt",
         "ext/phar/tests/phar_oo_006.phpt",
@@ -4409,6 +4418,15 @@ fn phpt_classifier_allows_supported_dom_file_external_row() {
     );
     assert_eq!(
         supported,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_phar_front_controller = classify_at_relative_path(
+        "--TEST--\nphar cache-list front controller\n--INI--\nphar.cache_list={PWD}/frontcontroller18.php\n--EXTENSIONS--\nphar\n--FILE_EXTERNAL--\nfiles/frontcontroller9.phar\n--EXPECTF--\nFatal error: Uncaught PharException\n",
+        "ext/phar/tests/cache_list/frontcontroller18.phpt",
+    );
+    assert_eq!(
+        supported_phar_front_controller,
         "runnable\tselected for PTN semantic measurement\n"
     );
 

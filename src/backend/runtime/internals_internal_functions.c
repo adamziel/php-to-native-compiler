@@ -209753,7 +209753,6 @@ static int ptn_include_phar_php_entry(
                 free(data);
                 ptn_abort_out_of_memory();
             }
-            ptn_output_write_cstr(runtime, "\n");
             ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
             free(message);
             if (runtime != NULL &&

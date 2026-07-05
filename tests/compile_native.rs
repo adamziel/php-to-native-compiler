@@ -71510,6 +71510,61 @@ include $alias . '/b/c.php';
 }
 
 #[test]
+fn compile_phar_readonly_zip_write_open_missing_include_warning_spacing_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-readonly-zip-write-open-missing-include");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-readonly-zip-write-open-missing-include.php");
+    let output = root.join("phar-readonly-zip-write-open-missing-include-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/readonly-write.phar.zip';
+$alias = 'phar://' . $fname;
+$phar = new Phar($fname);
+$phar->setStub("<?php __HALT_COMPILER(); ?>");
+$phar['b/c.php'] = '<?php echo "This is b/c\n"; ?>';
+$phar->stopBuffering();
+ini_set('phar.readonly', 1);
+var_dump(fopen($alias . '/b/new.php', 'wb'));
+include $alias . '/b/c.php';
+include $alias . '/b/new.php';
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: fopen(phar://{}/readonly-write.phar.zip/b/new.php): Failed to open stream: phar error: write operations disabled by the php.ini setting phar.readonly in {} on line 9\nbool(false)\nThis is b/c\n\nWarning: include(phar://{}/readonly-write.phar.zip/b/new.php): Failed to open stream: phar error: \"b/new.php\" is not a file in phar \"{}/readonly-write.phar.zip\" in {} on line 11\n\nWarning: include(): Failed opening 'phar://{}/readonly-write.phar.zip/b/new.php' for inclusion (include_path='.') in {} on line 11\n",
+            root.display(),
+            input.display(),
+            root.display(),
+            root.display(),
+            input.display(),
+            root.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_phar_php_entry"));
+    assert!(c_source.contains("ptn_include_phar_plain_entry"));
+}
+
+#[test]
 fn compile_phar_data_empty_dir_count_and_zip_stat_name_to_native_binary() {
     let root = temp_dir("ptn-native-phar-data-empty-dir-zip-stat");
     fs::create_dir_all(&root).unwrap();
