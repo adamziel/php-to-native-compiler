@@ -3516,6 +3516,28 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_open_write_rows = [
+        "ext/phar/tests/open_for_write_newfile_c.phpt",
+        "ext/phar/tests/tar/open_for_write_newfile_c.phpt",
+        "ext/phar/tests/tar/tar_003.phpt",
+        "ext/phar/tests/phar_metadata_write2.phpt",
+        "ext/phar/tests/zip/phar_buildfromiterator6.phpt",
+        "ext/phar/tests/033a.phpt",
+        "ext/phar/tests/024.phpt",
+        "ext/phar/tests/zip/open_for_write_newfile_b.phpt",
+    ];
+    for row in phar_open_write_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar open/write residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.zip');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/a.php';\n--EXPECT--\na\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let phar_zlib_corrupt_dir_rows = [
         "ext/phar/tests/zip/corrupt_010.phpt",
         "ext/phar/tests/phar_oo_006.phpt",

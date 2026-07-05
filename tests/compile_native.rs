@@ -70801,6 +70801,65 @@ echo $phar['entry.txt']->getContent();
 }
 
 #[test]
+fn compile_phar_build_from_iterator_rejects_integer_key_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-integer-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-integer-key.php");
+    let output = root.join("phar-build-from-iterator-integer-key-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyIterator implements Iterator {
+    private array $a;
+    public function __construct(array $a) { $this->a = $a; }
+    public function next(): void { echo "next\n"; next($this->a); }
+    public function current(): mixed { echo "current\n"; return current($this->a); }
+    public function key(): mixed { echo "key\n"; return key($this->a); }
+    public function valid(): bool { echo "valid\n"; return current($this->a); }
+    public function rewind(): void { echo "rewind\n"; reset($this->a); }
+}
+
+chdir(__DIR__);
+file_put_contents('iterator-source.txt', "payload\n");
+$phar = new Phar(__DIR__ . '/iterator-integer-key.phar.zip');
+try {
+    $phar->buildFromIterator(new MyIterator(['iterator-source.txt']));
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "rewind\n",
+            "valid\n",
+            "current\n",
+            "key\n",
+            "UnexpectedValueException:Iterator MyIterator returned an invalid key (must return a string)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_throw_iterator_invalid_key"));
+}
+
+#[test]
 fn compile_phar_iterator_mtime_and_add_from_string_to_native_binary() {
     let root = temp_dir("ptn-native-phar-iterator-mtime-add-string");
     fs::create_dir_all(&root).unwrap();
@@ -71675,6 +71734,54 @@ include $alias . '/b/new.php';
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_phar_php_entry"));
     assert!(c_source.contains("ptn_include_phar_plain_entry"));
+}
+
+#[test]
+fn compile_phar_file_info_chmod_respects_readonly_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-file-info-chmod-readonly");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-file-info-chmod-readonly.php");
+    let output = root.join("phar-file-info-chmod-readonly-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/readonly-chmod.phar.php';
+$phar = new Phar($fname);
+$phar['a.php'] = '<?php echo "a\n";';
+ini_set('phar.readonly', 1);
+try {
+    $phar['a.php']->chmod(0777);
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+var_dump($phar['a.php']->isExecutable());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "PharException:Cannot modify permissions for file \"a.php\" in phar \"{}/readonly-chmod.phar.php\", write operations are prohibited\n",
+                "bool(false)\n",
+            ),
+            root.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot modify permissions for file"));
 }
 
 #[test]

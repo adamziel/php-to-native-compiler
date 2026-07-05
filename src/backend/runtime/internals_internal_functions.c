@@ -206874,6 +206874,34 @@ static void ptn_phar_throw_iterator_invalid_value(PtnRuntime *runtime, const cha
     free(message);
 }
 
+static void ptn_phar_throw_iterator_invalid_key(PtnRuntime *runtime, const char *iterator_class) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Iterator %s returned an invalid key (must return a string)",
+        iterator_class == NULL ? "Iterator" : iterator_class
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Iterator %s returned an invalid key (must return a string)",
+        iterator_class == NULL ? "Iterator" : iterator_class
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
 static void ptn_phar_throw_iterator_file_open_failed(
     PtnRuntime *runtime,
     const char *iterator_class,
@@ -207031,12 +207059,12 @@ static PtnValue ptn_phar_build_from_iterator_result(
             char *entry_name_override = NULL;
             if (base_directory == NULL) {
                 PtnValue key_value = ptn_value_deref(key);
-                if (key_value.type == PTN_STRING ||
-                    key_value.type == PTN_INT ||
-                    key_value.type == PTN_FLOAT) {
+                if (key_value.type == PTN_STRING) {
                     entry_name_override = ptn_phar_iterator_string_from_value(key);
                     free(entry_name);
                     entry_name = ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
+                } else {
+                    ptn_phar_throw_iterator_invalid_key(runtime, iterator_class);
                 }
             }
             int64_t timestamp = 0;
@@ -208913,6 +208941,36 @@ static PtnValue ptn_phar_file_info_call_method(
         int64_t permissions =
             ptn_internal_expect_integer_arg(runtime, "PharFileInfo::chmod", 1, "permissions", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1)) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "Cannot modify permissions for file \"%s\" in phar \"%s\", write operations are prohibited",
+                data->entry_name == NULL ? "" : data->entry_name,
+                data->archive == NULL || data->archive->path == NULL ? "" : data->archive->path
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "Cannot modify permissions for file \"%s\" in phar \"%s\", write operations are prohibited",
+                data->entry_name == NULL ? "" : data->entry_name,
+                data->archive == NULL || data->archive->path == NULL ? "" : data->archive->path
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "PharException", message);
+            free(message);
             return ptn_null();
         }
         entry->flags = (entry->flags & ~(uint32_t)0777) |
