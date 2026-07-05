@@ -3639,6 +3639,17 @@ ptn_phpt_supported_pcre_verified_skipif_row() {
     esac
 }
 
+ptn_phpt_supported_xml_verified_skipif_row() {
+    case "$1" in
+        ext/xml/tests/bug32001b.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_supported_mbstring_verified_skipif_row() {
     case "$1" in
         ext/mbstring/tests/mb_send_mail06.phpt)
@@ -3787,6 +3798,8 @@ ptn_phpt_classify_row() {
             modeled_skipif_reason="verified OpenSSL --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_pcre_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified PCRE --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_xml_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified XML --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_mbstring_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified mbstring --SKIPIF-- row forced-runnable on PTN"
         else

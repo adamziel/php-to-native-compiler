@@ -1066,6 +1066,27 @@ fn phpt_classifier_unlocks_verified_pcre_skipif_rows() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_xml_encoding_skipif_row() {
+    let xml_encoding_skipif = "--TEST--\nxml verified encoding skipif\n--EXTENSIONS--\niconv\nxml\n--SKIPIF--\n<?php\nforeach(array('EUC-JP', 'Shift_JISP', 'GB2312') as $encoding) {\n    try {\n        xml_parser_create($encoding);\n    } catch (ValueError) {\n        die(\"skip libxml2 does not support $encoding encoding\");\n    }\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    let classification = classify_at_relative_path_with_harness_programs(
+        xml_encoding_skipif,
+        "ext/xml/tests/bug32001b.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified XML --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        xml_encoding_skipif,
+        "ext/xml/tests/unverified_encoding_probe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(
