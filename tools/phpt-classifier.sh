@@ -1894,13 +1894,30 @@ ptn_phpt_supported_process_boundary_row() {
 
     [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/general_functions/proc_open_sockets2.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_pipes2.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_pipes3.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_redirect.phpt" ]] ||
         [[ "$rel" == "ext/soap/tests/bugs/bug62900.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/file/bug60120.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/streams/proc_open_bug60120.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug72853.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug64770.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/stream_context_set_options_error.phpt" ]]
+}
+
+ptn_phpt_first_modeled_skipif_exclusion() {
+    local path=$1
+    local rel=$2
+    local value
+    local category
+
+    ptn_phpt_classify_harness_programs || return 1
+    value=$(ptn_phpt_modeled_skipif_precondition "$path" "$rel") || return 1
+    category=${value%%$'\t'*}
+    [[ "$category" != "modeled-skipif" ]] || return 1
+    printf '%s\n' "$value"
 }
 
 ptn_phpt_supported_zlib_output_ini_row() {
@@ -3839,6 +3856,9 @@ ptn_phpt_classify_row() {
         elif ptn_phpt_has_unsupported_cli_option_probe "$path"; then
             printf 'unsupported-cli-option\trequires PHP CLI option behavior outside PTN phpc supported runner modes (-f, -r, -d, -v, -m, and bounded CGI -C)\n'
             return 0
+        elif ptn_phpt_csv_contains_ci "SKIPIF" "$sections" && value=$(ptn_phpt_first_modeled_skipif_exclusion "$path" "$rel"); then
+            printf '%s\n' "$value"
+            return 0
         elif ptn_phpt_has_process_boundary "$path" && ! ptn_phpt_supported_process_boundary_row "$rel"; then
             printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
             return 0
@@ -3848,6 +3868,13 @@ ptn_phpt_classify_row() {
         fi
     elif [[ "$rel" == sapi/* ]]; then
         printf 'sapi-behavior\texercises php-src SAPI executable behavior outside PTN script execution\n'
+        return 0
+    fi
+
+    if [[ "$supported_cli_self_probe" -ne 1 ]] \
+        && ptn_phpt_csv_contains_ci "SKIPIF" "$sections" \
+        && value=$(ptn_phpt_first_modeled_skipif_exclusion "$path" "$rel"); then
+        printf '%s\n' "$value"
         return 0
     fi
 

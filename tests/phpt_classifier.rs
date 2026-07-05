@@ -5082,6 +5082,52 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "runnable\tselected for PTN semantic measurement; verified standard file/proc --SKIPIF-- row forced-runnable on PTN\n"
     );
 
+    let supported_proc_no_pipe_row = classify_at_relative_path(
+        "--TEST--\nproc no pipe\n--FILE--\n<?php\nproc_open([PHP_BINARY, '-r', ''], [], $pipes);\nvar_dump($pipes);\n--EXPECT--\narray(0) {\n}\n",
+        "ext/standard/tests/general_functions/proc_open_pipes2.phpt",
+    );
+    assert_eq!(
+        supported_proc_no_pipe_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_proc_invalid_pipe_row = classify_at_relative_path(
+        "--TEST--\nproc invalid descriptor\n--FILE--\n<?php\nproc_open([PHP_BINARY, '-r', ''], [3 => ['pi']], $pipes);\n--EXPECTF--\nWarning: proc_open(): pi is not a valid descriptor spec/mode\n",
+        "ext/standard/tests/general_functions/proc_open_pipes3.phpt",
+    );
+    assert_eq!(
+        supported_proc_invalid_pipe_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_proc_redirect_row = classify_at_relative_path(
+        "--TEST--\nproc redirect\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, '-r', 'fwrite(STDERR, \"e\");'], [1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_redirect.phpt",
+    );
+    assert_eq!(
+        supported_proc_redirect_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_stream_proc_pipe_row = classify_at_relative_path(
+        "--TEST--\nstream proc pipe drain\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, '-r', 'echo stream_get_contents(STDIN);'], [['pipe', 'r'], ['pipe', 'w']], $pipes);\nstream_set_blocking($pipes[1], false);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/streams/proc_open_bug60120.phpt",
+    );
+    assert_eq!(
+        supported_stream_proc_pipe_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let windows_only_proc_row = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nwindows-only proc\n--SKIPIF--\n<?php\nif (PHP_OS_FAMILY !== \"Windows\") die(\"skip only for Windows\");\n?>\n--FILE--\n<?php\nproc_open('@echo hello', [['pipe', 'r']], $pipes);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_cmd.phpt",
+    );
+    assert!(
+        windows_only_proc_row.starts_with("skipif-precondition\t")
+            && windows_only_proc_row.contains("PHP_OS_FAMILY guard"),
+        "{windows_only_proc_row:?}"
+    );
+
     let supported_proc_environment_row = classify_at_relative_path(
         "--TEST--\nproc env array\n--FILE--\n<?php\n$env = ['test' => [1, 2]];\n$proc = proc_open('printf ok', [1 => ['pipe', 'w']], $pipes, __DIR__, $env);\n--EXPECT--\n",
         "ext/standard/tests/streams/bug60602.phpt",

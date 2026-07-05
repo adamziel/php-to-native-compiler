@@ -1,0 +1,4 @@
+ext/standard/tests/general_functions/proc_open_pipes2.phpt
+ext/standard/tests/general_functions/proc_open_pipes3.phpt
+ext/standard/tests/general_functions/proc_open_redirect.phpt
+ext/standard/tests/streams/proc_open_bug60120.phpt
