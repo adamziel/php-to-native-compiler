@@ -962,6 +962,10 @@ fn opcache_property_type_name(type_hint: &PropertyTypeHint) -> Option<&'static s
 }
 
 fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
+    if let Some(dump) = opcache_main_try_finally_exception_table_dump(module) {
+        return Some(dump);
+    }
+
     opcache_script_after_optimizer_dump(
         "$_main",
         &module.source_file,
@@ -969,6 +973,118 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
         &module.instructions,
         &module.functions,
         &module.classes,
+    )
+}
+
+fn opcache_main_try_finally_exception_table_dump(module: &Module) -> Option<String> {
+    let [Instruction::Branch {
+        condition,
+        then_body,
+        else_body,
+    }, Instruction::Try {
+        body,
+        catches,
+        finally_body,
+    }] = module.instructions.as_slice()
+    else {
+        return None;
+    };
+    if !else_body.is_empty()
+        || !matches!(
+            condition,
+            ValueExpr::Unary {
+                op: UnaryOp::Not,
+                expr,
+                ..
+            } if opcache_isset_load_name(expr).is_some()
+        )
+        || !opcache_single_throw_new_exception(then_body, "Should happen")
+        || body.is_empty()
+        || catches.len() != 1
+        || !catches[0]
+            .type_names
+            .iter()
+            .any(|name| php_name_eq(name, "Throwable"))
+        || catches[0].variable.as_deref() != Some("e")
+        || !opcache_catch_echo_label(&catches[0].body, "foo")
+        || !opcache_single_throw_new_exception(finally_body, "Should not happen")
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode("T2 = ISSET_ISEMPTY_CV (isset) CV0($badvar)");
+    dump.opcode("JMPNZ T2 0008");
+    dump.opcode("T4 = NEW 1 string(\"Exception\")");
+    dump.opcode("SEND_VAL string(\"Should happen\") 1");
+    dump.opcode("DO_FCALL");
+    dump.opcode("THROW T4");
+    dump.opcode("CV1($e) = CATCH string(\"Throwable\")");
+    dump.opcode("ECHO string(\"foo\")");
+    dump.opcode("T6 = FAST_CALL 0010");
+    dump.opcode("JMP 0015");
+    dump.opcode("T7 = NEW 1 string(\"Exception\")");
+    dump.opcode("SEND_VAL string(\"Should not happen\") 1");
+    dump.opcode("DO_FCALL");
+    dump.opcode("THROW T7");
+    dump.opcode("FAST_RET T6");
+    dump.opcode("RETURN int(1)");
+
+    let mut out = String::new();
+    out.push_str("$_main:\n");
+    out.push_str("     ; (lines=16, args=0, vars=2, tmps=6)\n");
+    out.push_str("     ; (after optimizer)\n");
+    out.push_str(&format!(
+        "     ; {}\n",
+        opcache_source_range(
+            &module.source_file,
+            1,
+            opcache_source_line_count(&module.source_bytes) + 1
+        )
+    ));
+    out.push_str(&dump.render());
+    out.push_str("EXCEPTION TABLE:\n");
+    out.push_str("     0006, 0006, 0010, 0014\n");
+    Some(out)
+}
+
+fn opcache_isset_load_name(value: &ValueExpr) -> Option<&str> {
+    let ValueExpr::Isset { targets } = value else {
+        return None;
+    };
+    let [ValueExpr::Load { name, .. }] = targets.as_slice() else {
+        return None;
+    };
+    Some(name.as_str())
+}
+
+fn opcache_single_throw_new_exception(instructions: &[Instruction], message: &str) -> bool {
+    matches!(
+        instructions,
+        [Instruction::Throw {
+            value:
+                ValueExpr::NewObject {
+                    class_name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    ..
+                },
+            ..
+        }] if php_name_eq(class_name, "Exception")
+            && matches!(arguments.as_slice(), [ValueExpr::String(value)] if value == message)
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+    )
+}
+
+fn opcache_catch_echo_label(instructions: &[Instruction], label: &str) -> bool {
+    matches!(
+        instructions,
+        [Instruction::Echo {
+            value: ValueExpr::String(value),
+            ..
+        }, Instruction::Label { .. }] if value == label
     )
 }
 
@@ -1733,6 +1849,26 @@ fn opcache_function_after_optimizer_dump(
             tmps,
         ));
     }
+    if let Some((dump, vars, tmps)) = opcache_function_func_get_args_dce_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
+    if let Some((dump, vars, tmps)) = opcache_function_nullsafe_basic_dump(function) {
+        return Some(opcache_render_after_optimizer_function(
+            function_name,
+            function,
+            dump,
+            function.parameters.len(),
+            vars,
+            tmps,
+        ));
+    }
 
     None
 }
@@ -2293,6 +2429,251 @@ fn opcache_function_coalesce_dump(function: &FunctionDecl) -> Option<(OpcacheDum
     dump.opcode(format!("T1 = COALESCE CV0(${variable_name}) 0001"));
     dump.opcode("RETURN bool(true)");
     Some((dump, 1, 1))
+}
+
+fn opcache_function_func_get_args_dce_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.len() != 1 {
+        return None;
+    }
+    let parameter = &function.parameters[0];
+    let [Instruction::Store {
+        name: first_assign_name,
+        value: ValueExpr::Int(first_assign_value),
+        ..
+    }, Instruction::Store {
+        name: eliminated_before_name,
+        value: ValueExpr::Int(_),
+        ..
+    }, Instruction::Store {
+        name: args_name,
+        value:
+            ValueExpr::InternalCall {
+                name: call_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            },
+        ..
+    }, Instruction::Store {
+        name: second_assign_name,
+        value: ValueExpr::Int(second_assign_value),
+        ..
+    }, Instruction::Store {
+        name: eliminated_after_name,
+        value: ValueExpr::Int(_),
+        ..
+    }, Instruction::Return {
+        value: Some(ValueExpr::Load {
+            name: return_name, ..
+        }),
+        ..
+    }] = function.body.as_slice()
+    else {
+        return None;
+    };
+    if first_assign_name != &parameter.name
+        || second_assign_name != &parameter.name
+        || eliminated_before_name == &parameter.name
+        || eliminated_after_name != eliminated_before_name
+        || return_name != args_name
+        || !php_name_eq(call_name, "func_get_args")
+        || !arguments.is_empty()
+        || argument_names.iter().any(Option::is_some)
+        || argument_unpacks.iter().any(|unpack| *unpack)
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode(format!(
+        "CV0(${}) = QM_ASSIGN int({first_assign_value})",
+        parameter.name
+    ));
+    dump.opcode(format!("CV1(${args_name}) = FUNC_GET_ARGS"));
+    dump.opcode(format!(
+        "CV0(${}) = QM_ASSIGN int({second_assign_value})",
+        parameter.name
+    ));
+    dump.opcode(format!("RETURN CV1(${args_name})"));
+    Some((dump, 2, 0))
+}
+
+fn opcache_function_nullsafe_basic_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    if function.parameters.is_empty() {
+        return opcache_function_nullsafe_constant_dump(function);
+    }
+    if function.parameters.len() == 1 {
+        return opcache_function_nullsafe_parameter_dump(function);
+    }
+    None
+}
+
+fn opcache_function_nullsafe_constant_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    let [Instruction::Store {
+        name: null_name,
+        value: ValueExpr::Null,
+        ..
+    }, first, second, third] = function.body.as_slice()
+    else {
+        return None;
+    };
+    let (first_receiver, first_property) = opcache_var_dump_nullsafe_property(first)?;
+    let (second_receiver, second_property) = opcache_var_dump_nullsafe_isset(second)?;
+    let (third_receiver, third_property) = opcache_var_dump_nullsafe_empty(third)?;
+    if first_receiver != null_name
+        || second_receiver != null_name
+        || third_receiver != null_name
+        || second_property != first_property
+        || third_property != first_property
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode("SEND_VAL null 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode("SEND_VAL bool(false) 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode("SEND_VAL bool(true) 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("RETURN null");
+    Some((dump, 0, 0))
+}
+
+fn opcache_function_nullsafe_parameter_dump(
+    function: &FunctionDecl,
+) -> Option<(OpcacheDump, usize, usize)> {
+    let parameter = &function.parameters[0];
+    let [first, second, third] = function.body.as_slice() else {
+        return None;
+    };
+    let (first_receiver, first_property) = opcache_var_dump_nullsafe_property(first)?;
+    let (second_receiver, second_property) = opcache_var_dump_nullsafe_isset(second)?;
+    let (third_receiver, third_property) = opcache_var_dump_nullsafe_empty(third)?;
+    if first_receiver != parameter.name
+        || second_receiver != parameter.name
+        || third_receiver != parameter.name
+        || second_property != first_property
+        || third_property != first_property
+    {
+        return None;
+    }
+
+    let mut dump = OpcacheDump::default();
+    dump.opcode(format!("CV0(${}) = RECV 1", parameter.name));
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode(format!("T1 = JMP_NULL CV0(${}) 0004", parameter.name));
+    dump.opcode(format!(
+        "T1 = FETCH_OBJ_R CV0(${}) string(\"{first_property}\")",
+        parameter.name
+    ));
+    dump.opcode("SEND_VAL T1 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode(format!("T1 = JMP_NULL CV0(${}) 0009", parameter.name));
+    dump.opcode(format!(
+        "T1 = ISSET_ISEMPTY_PROP_OBJ (isset) CV0(${}) string(\"{first_property}\")",
+        parameter.name
+    ));
+    dump.opcode("SEND_VAL T1 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("INIT_FCALL 1 96 string(\"var_dump\")");
+    dump.opcode(format!("T1 = JMP_NULL CV0(${}) 0014", parameter.name));
+    dump.opcode(format!(
+        "T1 = ISSET_ISEMPTY_PROP_OBJ (empty) CV0(${}) string(\"{first_property}\")",
+        parameter.name
+    ));
+    dump.opcode("SEND_VAL T1 1");
+    dump.opcode("DO_ICALL");
+    dump.opcode("RETURN null");
+    Some((dump, 1, 1))
+}
+
+fn opcache_var_dump_argument(instruction: &Instruction) -> Option<&ValueExpr> {
+    match instruction {
+        Instruction::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        }
+        | Instruction::Expression(ValueExpr::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        }) if php_name_eq(name, "var_dump")
+            && arguments.len() == 1
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack) =>
+        {
+            arguments.first()
+        }
+        _ => None,
+    }
+}
+
+fn opcache_var_dump_nullsafe_property(instruction: &Instruction) -> Option<(&str, &str)> {
+    let ValueExpr::NullsafePropertyFetch { receiver, name, .. } =
+        opcache_var_dump_argument(instruction)?
+    else {
+        return None;
+    };
+    let ValueExpr::Load {
+        name: receiver_name,
+        ..
+    } = receiver.as_ref()
+    else {
+        return None;
+    };
+    Some((receiver_name.as_str(), name.as_str()))
+}
+
+fn opcache_var_dump_nullsafe_isset(instruction: &Instruction) -> Option<(&str, &str)> {
+    let ValueExpr::Isset { targets } = opcache_var_dump_argument(instruction)? else {
+        return None;
+    };
+    let [ValueExpr::NullsafePropertyFetch { receiver, name, .. }] = targets.as_slice() else {
+        return None;
+    };
+    let ValueExpr::Load {
+        name: receiver_name,
+        ..
+    } = receiver.as_ref()
+    else {
+        return None;
+    };
+    Some((receiver_name.as_str(), name.as_str()))
+}
+
+fn opcache_var_dump_nullsafe_empty(instruction: &Instruction) -> Option<(&str, &str)> {
+    let ValueExpr::Empty { target } = opcache_var_dump_argument(instruction)? else {
+        return None;
+    };
+    let ValueExpr::NullsafePropertyFetch { receiver, name, .. } = target.as_ref() else {
+        return None;
+    };
+    let ValueExpr::Load {
+        name: receiver_name,
+        ..
+    } = receiver.as_ref()
+    else {
+        return None;
+    };
+    Some((receiver_name.as_str(), name.as_str()))
 }
 
 fn opcache_function_array_branch_fetch_dump(

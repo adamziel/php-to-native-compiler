@@ -96860,6 +96860,107 @@ function constant_array_echo() {\n\
 }
 
 #[test]
+fn phpc_opcache_residual_optimizer_dump_shapes() {
+    let root = temp_dir("ptn-phpc-opcache-residual-optimizer-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-residual-optimizer-dump.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function dce_arg(int $a) {\n\
+    $a = 10;\n\
+    $b = 20;\n\
+    $x = func_get_args();\n\
+    $a = 30;\n\
+    $b = 40;\n\
+    return $x;\n\
+}\n\
+function ns_const() {\n\
+    $null = null;\n\
+    var_dump($null?->foo);\n\
+    var_dump(isset($null?->foo));\n\
+    var_dump(empty($null?->foo));\n\
+}\n\
+function ns_param(object $obj) {\n\
+    var_dump($obj?->foo);\n\
+    var_dump(isset($obj?->foo));\n\
+    var_dump(empty($obj?->foo));\n\
+}\n\
+if (!isset($badvar)) {\n\
+    throw new Exception(\"Should happen\");\n\
+}\n\
+try {\n\
+    goto foo;\n\
+} catch (Throwable $e) {\n\
+    echo \"foo\";\n\
+    foo:;\n\
+} finally {\n\
+    throw new Exception(\"Should not happen\");\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("dce_arg:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0000 CV0($a) = RECV 1\n\
+0001 CV0($a) = QM_ASSIGN int(10)\n\
+0002 CV1($x) = FUNC_GET_ARGS\n\
+0003 CV0($a) = QM_ASSIGN int(30)\n\
+0004 RETURN CV1($x)\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("ns_const:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0000 INIT_FCALL 1 96 string(\"var_dump\")\n\
+0001 SEND_VAL null 1\n\
+0002 DO_ICALL\n\
+0003 INIT_FCALL 1 96 string(\"var_dump\")\n\
+0004 SEND_VAL bool(false) 1\n\
+0005 DO_ICALL\n\
+0006 INIT_FCALL 1 96 string(\"var_dump\")\n\
+0007 SEND_VAL bool(true) 1\n\
+0008 DO_ICALL\n\
+0009 RETURN null\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("ns_param:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0002 T1 = JMP_NULL CV0($obj) 0004\n\
+0003 T1 = FETCH_OBJ_R CV0($obj) string(\"foo\")\n\
+0004 SEND_VAL T1 1\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("EXCEPTION TABLE:\n"), "{stdout}");
+    assert!(stdout.contains("0006, 0006, 0010, 0014\n"), "{stdout}");
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception: Should happen"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_match_foreach_and_nested_closure_dump_after_optimizer_shapes() {
     let root = temp_dir("ptn-phpc-opcache-match-closure-dump");
     fs::create_dir_all(&root).unwrap();
