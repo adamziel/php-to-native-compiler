@@ -96059,6 +96059,128 @@ function constant_array_echo() {\n\
 }
 
 #[test]
+fn phpc_opcache_match_foreach_and_nested_closure_dump_after_optimizer_shapes() {
+    let root = temp_dir("ptn-phpc-opcache-match-closure-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-match-closure-dump.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function test($value) {\n\
+    return match ($value) {\n\
+        1 => '1 int',\n\
+        '1' => '1 string',\n\
+        2 => '2 int',\n\
+        '2' => '2 string',\n\
+        3 => '3 int',\n\
+        '3' => '3 string',\n\
+        4 => '4 int',\n\
+        '4' => '4 string',\n\
+        5 => '5 int',\n\
+        '5' => '5 string',\n\
+        default => 'default',\n\
+    };\n\
+}\n\
+foreach (range(0, 6) as $number) {\n\
+    var_dump(test($number));\n\
+    var_dump(test((string) $number));\n\
+}\n\
+fn() => fn($a, $b) => $a + $b;\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("0004 T1 = FE_RESET_R T2 0020\n0005 FE_FETCH_R T1 CV0($number) 0020\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("0014 T2 = CAST (string) CV0($number)\n0015 SEND_VAL T2 1\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("test:\n"), "{stdout}");
+    assert!(
+        stdout.contains("0001 MATCH CV0($value) 1: 0002, \"1\": 0003, 2: 0004, \"2\": 0005"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("0002 T2 = ADD CV0($a) CV1($b)\n0003 RETURN T2\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("T0 = DECLARE_LAMBDA_FUNCTION 0\n0001 RETURN T0\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(8) \"5 string\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_preload_optimizer_dump_includes_preload_and_root_scripts() {
+    let root = temp_dir("ptn-phpc-opcache-preload-optimizer-dump");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload_optimizer.inc");
+    let input = root.join("preload_optimizer.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+\n\
+function foo() {\n\
+    return 42;\n\
+}\n",
+    )
+    .unwrap();
+    fs::write(&input, "<?php\n\necho foo();\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("$PRELOAD$:0-0\n0000 RETURN null\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("foo:\n"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("{}:3-5\n0000 RETURN int(42)\n", preload.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{}:1-6\n0000 RETURN int(1)\n", preload.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("0000 ECHO string(\"42\")\n0001 RETURN int(1)\n"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("42"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_coalesce_functions_dump_after_optimizer_shape() {
     let root = temp_dir("ptn-phpc-opcache-coalesce-dump");
     fs::create_dir_all(&root).unwrap();
