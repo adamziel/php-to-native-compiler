@@ -37811,6 +37811,64 @@ string(1) \"r\"\n"
 }
 
 #[test]
+fn compile_proc_open_residual_descriptors_to_native_binary() {
+    let root = temp_dir("ptn-native-proc-open-residual-descriptors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("proc-open-residual-descriptors.php");
+    let output = root.join("proc-open-residual-descriptors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    proc_open("does_not_matter", [], $pipes, "bad\0cwd");
+} catch (ValueError $e) {
+    echo "cwd=", $e->getMessage(), "\n";
+}
+
+$cmd = "printf Test; printf Error >&2";
+$proc = proc_open($cmd, [1 => ["null"], 2 => ["pipe", "w"]], $pipes);
+echo "stderr=", stream_get_contents($pipes[2]), "\n";
+proc_close($proc);
+
+$proc = proc_open($cmd, [1 => ["pipe", "w"], 2 => ["null"]], $pipes);
+echo "stdout=", stream_get_contents($pipes[1]), "\n";
+proc_close($proc);
+
+$proc = proc_open("printf sock-out", [0 => ["pipe", "r"], 1 => ["socket"]], $pipes);
+stream_set_blocking($pipes[1], false);
+$r = [$pipes[1]];
+$w = null;
+$e = null;
+echo "select=", stream_select($r, $w, $e, 2), "\n";
+echo "socket=", fread($pipes[1], 8), "\n";
+fclose($pipes[0]);
+fclose($pipes[1]);
+proc_close($proc);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "cwd=proc_open(): Argument #4 ($cwd) must not contain any null bytes\n\
+stderr=Error\n\
+stdout=Test\n\
+select=1\n\
+socket=sock-out\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_proc_open"));
+    assert!(c_source.contains("ptn_process_open_null_descriptor"));
+    assert!(c_source.contains("socketpair"));
+}
+
+#[test]
 fn compile_stream_socket_accept_metadata_proc_env_and_nodelay_to_native_binary() {
     let root = temp_dir("ptn-native-stream-socket-accept-metadata");
     fs::create_dir_all(&root).unwrap();

@@ -1,0 +1,5 @@
+ext/standard/tests/general_functions/proc_open-mb0.phpt
+ext/standard/tests/general_functions/proc_open-mb1.phpt
+ext/standard/tests/general_functions/proc_open_cwd_null_bytes.phpt
+ext/standard/tests/general_functions/proc_open_null.phpt
+ext/standard/tests/general_functions/proc_open_sockets3.phpt

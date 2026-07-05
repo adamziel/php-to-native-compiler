@@ -2104,8 +2104,13 @@ ptn_phpt_supported_file_external_row() {
 ptn_phpt_supported_process_boundary_row() {
     local rel=$1
 
-    [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
+    [[ "$rel" == "ext/standard/tests/general_functions/proc_open-mb0.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open-mb1.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_array.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_cwd_null_bytes.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_null.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/general_functions/proc_open_sockets2.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/general_functions/proc_open_sockets3.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/general_functions/proc_open_pipes2.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/general_functions/proc_open_pipes3.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/general_functions/proc_open_redirect.phpt" ]] ||

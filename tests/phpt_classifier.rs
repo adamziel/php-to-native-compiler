@@ -5547,6 +5547,60 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let proc_open_mb0 = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc open multibyte bypass shell\n--SKIPIF--\n<?php\nif (!function_exists(\"proc_open\")) echo \"skip proc_open() is not available\";\n?>\n--FILE--\n<?php\n$proc = proc_open(\"php -r 'echo 1;'\", [['pipe', 'r'], ['pipe', 'w']], $pipes, null, null, ['bypass_shell' => true]);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open-mb0.phpt",
+    );
+    assert_eq!(
+        proc_open_mb0,
+        "runnable\tselected for PTN semantic measurement; modeled static --SKIPIF-- preconditions satisfied: function-exists\n"
+    );
+
+    let proc_open_mb1 = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc open multibyte shell\n--SKIPIF--\n<?php\nif (!function_exists(\"proc_open\")) echo \"skip proc_open() is not available\";\n?>\n--FILE--\n<?php\n$proc = proc_open(\"php -r 'echo 1;'\", [['pipe', 'r'], ['pipe', 'w']], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open-mb1.phpt",
+    );
+    assert_eq!(
+        proc_open_mb1,
+        "runnable\tselected for PTN semantic measurement; modeled static --SKIPIF-- preconditions satisfied: function-exists\n"
+    );
+
+    let proc_open_cwd_null_bytes = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc cwd null bytes\n--SKIPIF--\n<?php\nif (!function_exists(\"proc_open\")) echo \"skip proc_open() is not available\";\n?>\n--FILE--\n<?php\ntry { proc_open('cmd', [], $pipes, \"foo\\0bar\"); } catch (ValueError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_cwd_null_bytes.phpt",
+    );
+    assert_eq!(
+        proc_open_cwd_null_bytes,
+        "runnable\tselected for PTN semantic measurement; modeled static --SKIPIF-- preconditions satisfied: function-exists\n"
+    );
+
+    let proc_open_null = classify_at_relative_path(
+        "--TEST--\nproc null descriptors\n--FILE--\n<?php\n$proc = proc_open('printf ok', [1 => ['null'], 2 => ['pipe', 'w']], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_null.phpt",
+    );
+    assert_eq!(
+        proc_open_null,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let proc_open_sockets3 = classify_at_relative_path(
+        "--TEST--\nproc open socket and pipe\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, __DIR__ . '/proc_open_sockets2.inc'], [['pipe', 'r'], ['socket']], $pipes);\nstream_set_blocking($pipes[1], false);\nstream_select($r = [$pipes[1]], $w = null, $e = null, null);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_sockets3.phpt",
+    );
+    assert_eq!(
+        proc_open_sockets3,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let proc_open_multiplex = classify_at_relative_path(
+        "--TEST--\nproc open multiplex\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, '-r', \"usleep(10000); echo 'hello';\"], [['null'], ['pipe', 'w']], $pipes);\n$r = [$pipes[1]];\n$w = $e = null;\nstream_select($r, $w, $e, 1);\necho fread($pipes[1], 6);\n--EXPECT--\nhello\n",
+        "ext/standard/tests/general_functions/proc_open_multiplex.phpt",
+    );
+    assert!(
+        proc_open_multiplex.starts_with("process-boundary\t"),
+        "{proc_open_multiplex:?}"
+    );
+
     let proc_open_wrong_resource_type = classify_at_relative_path(
         "--TEST--\nproc wrong resource\n--FILE--\n<?php\n$context = stream_context_create();\nproc_open('missing', [0 => $context], $pipes);\n--EXPECT--\n",
         "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt",
