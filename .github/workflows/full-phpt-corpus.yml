@@ -15,6 +15,10 @@ on:
         description: Parallel run-tests.php workers per shard
         required: true
         default: "8"
+      shard_count:
+        description: Number of full-corpus shards to split the run into
+        required: true
+        default: "240"
 
 permissions:
   contents: read
@@ -24,27 +28,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan-full-phpt-shards:
+    name: plan full PHPT shards
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.shards.outputs.shards }}
+
+    steps:
+      - name: Build shard matrix
+        id: shards
+        run: |
+          set -euo pipefail
+          shard_count='${{ inputs.shard_count }}'
+          if ! [[ "$shard_count" =~ ^[0-9]+$ ]] || [[ "$shard_count" -le 0 ]]; then
+            echo "shard_count must be a positive integer: $shard_count" >&2
+            exit 1
+          fi
+          python3 - "$shard_count" <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+
+          count = int(sys.argv[1])
+          print("shards=" + json.dumps(list(range(count))))
+          PY
+
   full-phpt-shard:
-    name: shard ${{ matrix.shard }}/119
+    name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
+    needs: [plan-full-phpt-shards]
     runs-on: ubuntu-latest
     timeout-minutes: 2880
     strategy:
       fail-fast: false
       matrix:
-        shard: [
-          0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-          10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-          20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-          30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-          40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-          50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
-          60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
-          70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-          80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
-          90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
-          100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-          110, 111, 112, 113, 114, 115, 116, 117, 118, 119
-        ]
+        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.shards) }}
 
     steps:
       - name: Checkout compiler
@@ -82,7 +98,7 @@ jobs:
         run: |
           tools/phpt-full-corpus-shard.sh \
             --shard-index "${{ matrix.shard }}" \
-            --shard-count 120 \
+            --shard-count "${{ inputs.shard_count }}" \
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
@@ -99,7 +115,7 @@ jobs:
           phpt_pid=$!
           while kill -0 "$phpt_pid" 2>/dev/null; do
             sleep 60
-            echo "[full-phpt] shard ${{ matrix.shard }}/119 still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           done
           wait "$phpt_pid"
 
@@ -133,7 +149,7 @@ jobs:
       - name: Compose full-corpus result
         run: |
           tools/compose-phpt-full-corpus-results.py \
-            --expected-shards 120 \
+            --expected-shards "${{ inputs.shard_count }}" \
             --out-dir .runtime/full-phpt-composed \
             .runtime/full-phpt-artifacts
 
