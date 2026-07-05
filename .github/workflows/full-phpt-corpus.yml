@@ -107,13 +107,14 @@ jobs:
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
+        continue-on-error: true
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
@@ -126,9 +127,9 @@ jobs:
           set +e
           wait "$phpt_pid"
           shard_exit=$?
-          set -e
           echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
           echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
+          exit 0
 
       - name: Upload shard artifact
         if: always()
@@ -204,13 +205,14 @@ jobs:
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
+        continue-on-error: true
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
@@ -223,9 +225,9 @@ jobs:
           set +e
           wait "$phpt_pid"
           shard_exit=$?
-          set -e
           echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
           echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
+          exit 0
 
       - name: Upload shard artifact
         if: always()
