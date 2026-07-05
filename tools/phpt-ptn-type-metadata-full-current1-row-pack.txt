@@ -1,0 +1,8 @@
+# Focused generator return-type/laziness row pack for type-metadata-full-current1.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260705T230047Z
+
+Zend/tests/return_types/generators002.phpt
+Zend/tests/return_types/generators003.phpt
+Zend/tests/return_types/generators004.phpt
+Zend/tests/return_types/generators005.phpt
+Zend/tests/return_types/generators006.phpt

@@ -7975,17 +7975,35 @@ fn emit_user_functions(
             }
         }
         if function.is_generator {
-            out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
+            out.push_str("    PtnGenerator *ptn_generator_activation_target = caller_runtime != NULL ? caller_runtime->activating_generator : NULL;\n");
+            out.push_str("    PtnValue ptn_generator_value;\n");
+            out.push_str("    if (ptn_generator_activation_target == NULL) {\n");
+            out.push_str("        ptn_generator_value = ptn_generator_new(&runtime, ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
             out.push_str(");\n");
             if function.is_anonymous {
                 out.push_str(
-                    "    ptn_generator_adopt_pending_assignment_capture(&runtime, ptn_generator_value);\n",
+                    "        ptn_generator_adopt_pending_assignment_capture(&runtime, ptn_generator_value);\n",
                 );
                 out.push_str(
-                    "    ptn_generator_adopt_pending_yield_from_delegate(&runtime, ptn_generator_value);\n",
+                    "        ptn_generator_adopt_pending_yield_from_delegate(&runtime, ptn_generator_value);\n",
                 );
             }
+            out.push_str("        ptn_generator_set_lazy_invocation(ptn_generator_value, ");
+            out.push_str(&c_name);
+            out.push_str(", receiver, argc, args, ptn_call_arg_names, line);\n");
+            out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+            out.push_str("        ptn_runtime_drop_call_frame_arguments(&runtime);\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            if function.is_anonymous {
+                out.push_str("        free(ptn_closure_trace_name);\n");
+            }
+            out.push_str("        return ptn_generator_value;\n");
+            out.push_str("    }\n");
+            out.push_str(
+                "    ptn_generator_value = ptn_object(ptn_generator_activation_target->object);\n",
+            );
+            out.push_str("    ptn_generator_value.owned = 0;\n");
             out.push_str(
                 "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
             );

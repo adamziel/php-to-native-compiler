@@ -3310,6 +3310,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
+    runtime->activating_generator = NULL;
     runtime->pending_generator_assignment_name = NULL;
     runtime->pending_yield_from_generator = NULL;
     runtime->pending_yield_from_line = 0;

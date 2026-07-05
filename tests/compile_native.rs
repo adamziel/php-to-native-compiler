@@ -26178,6 +26178,57 @@ var_dump($g->current());
 }
 
 #[test]
+fn compile_generator_body_is_lazy_until_observed_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-lazy-body");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-lazy-body.php");
+    let output = root.join("generator-lazy-body-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    echo "body\n";
+    yield 1;
+}
+
+class SomeCollection implements IteratorAggregate {
+    public function getIterator(): Iterator {
+        echo "method body\n";
+        foreach ($this->data as $key => $value) {
+            yield $key => $value;
+        }
+    }
+}
+
+$g = gen();
+echo "created\n";
+var_dump($g instanceof Generator);
+echo "before current\n";
+var_dump($g->current());
+
+$some = new SomeCollection();
+echo get_class($some->getIterator()), "\n";
+echo "method not activated\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "created\nbool(true)\nbefore current\nbody\nint(1)\nGenerator\nmethod not activated\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_set_lazy_invocation"));
+    assert!(c_source.contains("ptn_generator_ensure_initialized"));
+}
+
+#[test]
 fn compile_generator_throwing_in_foreach_trace_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throwing-in-foreach");
     fs::create_dir_all(&root).unwrap();

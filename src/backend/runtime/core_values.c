@@ -993,6 +993,14 @@ typedef struct {
     } as;
 } PtnValue;
 
+typedef PtnValue (*PtnGeneratorLazyHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_value_with_by_ref_return_fallback(PtnValue value, int fallback) {
     value.by_ref_return_fallback = fallback ? 1 : 0;
     return value;
@@ -1334,6 +1342,14 @@ struct PtnGenerator {
     size_t source_line;
     PtnRuntime *activation_object_id_runtime;
     size_t activation_object_id;
+    PtnGeneratorLazyHandler lazy_handler;
+    PtnValue lazy_receiver;
+    PtnValue *lazy_args;
+    char **lazy_arg_names;
+    size_t lazy_argc;
+    size_t lazy_line;
+    int has_lazy_invocation;
+    int lazy_activating;
     size_t position;
     int64_t next_auto_key;
     int completed;
@@ -2007,6 +2023,7 @@ struct PtnRuntime {
     const char *destructor_access_scope;
     int destructor_shutdown_phase;
     PtnGenerator *current_generator;
+    PtnGenerator *activating_generator;
     const char *pending_generator_assignment_name;
     PtnGenerator *pending_yield_from_generator;
     size_t pending_yield_from_line;
@@ -2233,6 +2250,8 @@ static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
 );
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED void ptn_generator_begin_activation(PtnRuntime *runtime, PtnGenerator *generator);
+static PTN_UNUSED void ptn_generator_clear_lazy_invocation(PtnGenerator *generator);
+static PTN_UNUSED int ptn_generator_ensure_initialized(PtnRuntime *runtime, PtnGenerator *generator, size_t line);
 static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
@@ -2250,6 +2269,7 @@ static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtim
 static PTN_UNUSED void ptn_generator_register_throw_catch(PtnRuntime *runtime, size_t handler_id);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
+static PTN_UNUSED void ptn_generator_set_lazy_invocation(PtnValue receiver, PtnGeneratorLazyHandler handler, PtnValue call_receiver, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH

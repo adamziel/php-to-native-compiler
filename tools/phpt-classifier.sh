@@ -2692,6 +2692,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/generators\/yield_by_reference[.]phpt$/
         }
+        function ptn_supported_generator_creation_laziness_row() {
+            return ptn_path ~ /Zend\/tests\/return_types\/generators00[35][.]phpt$/
+        }
         function ptn_supported_generator_by_reference_assignment_yield_row() {
             return ptn_path ~ /Zend\/tests\/generators\/yield_by_reference_optimization[.]phpt$/
         }
@@ -2961,7 +2964,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 if (ptn_in_by_ref_function && !ptn_supported_generator_by_reference_yield_from_diagnostic_row()) {
                     ptn_defer_generator_boundary("unsupported-generator-reference-boundary", "requires generator yield-from by-reference rejection, outside PTN collected generator runtime")
                 }
-                if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
+                if (ptn_generator_foreach_context &&
+                    !ptn_supported_generator_foreach_cleanup_row() &&
+                    !ptn_supported_generator_creation_laziness_row()) {
                     if (!ptn_supported_generator_fiber_lifecycle_row()) {
                         ptn_defer_generator_boundary("unsupported-generator-lazy-body", "requires generator body laziness and suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
                     }
@@ -2981,7 +2986,9 @@ ptn_phpt_first_unsupported_language_surface() {
                     ptn_defer_generator_boundary("unsupported-generator-reference-boundary", "requires generator suspension timing for by-reference yielded assignment expressions, outside PTN collected generator runtime")
                     next
                 }
-                if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
+                if (ptn_generator_foreach_context &&
+                    !ptn_supported_generator_foreach_cleanup_row() &&
+                    !ptn_supported_generator_creation_laziness_row()) {
                     if (!ptn_supported_generator_fiber_lifecycle_row()) {
                         ptn_defer_generator_boundary("unsupported-generator-lazy-body", "requires generator body laziness and suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
                     }

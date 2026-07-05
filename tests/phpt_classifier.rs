@@ -2279,11 +2279,7 @@ fn phpt_classifier_splits_generator_runtime_residual_rows() {
     ] {
         let classification = classify_at_relative_path(return_type_generator, relative_path);
         assert!(
-            classification.starts_with("unsupported-generator-lazy-body\t"),
-            "{relative_path}: {classification:?}"
-        );
-        assert!(
-            classification.contains("requires generator body laziness"),
+            classification.starts_with("runnable\t"),
             "{relative_path}: {classification:?}"
         );
     }
@@ -4400,8 +4396,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             row,
         );
         assert_eq!(
-            classification,
-            "runnable\tselected for PTN semantic measurement\n",
+            classification, "runnable\tselected for PTN semantic measurement\n",
             "{row}"
         );
     }

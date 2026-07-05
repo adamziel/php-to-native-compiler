@@ -10806,6 +10806,33 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     PtnGenerator *generator
 );
 
+static PTN_UNUSED void ptn_generator_clear_lazy_invocation(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return;
+    }
+    ptn_value_destroy(&generator->lazy_receiver);
+    if (generator->lazy_args != NULL) {
+        for (size_t i = 0; i < generator->lazy_argc; i++) {
+            ptn_value_destroy(&generator->lazy_args[i]);
+        }
+        free(generator->lazy_args);
+    }
+    if (generator->lazy_arg_names != NULL) {
+        for (size_t i = 0; i < generator->lazy_argc; i++) {
+            free(generator->lazy_arg_names[i]);
+        }
+        free(generator->lazy_arg_names);
+    }
+    generator->lazy_handler = NULL;
+    generator->lazy_receiver = ptn_null();
+    generator->lazy_args = NULL;
+    generator->lazy_arg_names = NULL;
+    generator->lazy_argc = 0;
+    generator->lazy_line = 0;
+    generator->has_lazy_invocation = 0;
+    generator->lazy_activating = 0;
+}
+
 static PTN_UNUSED void ptn_generator_data_free(void *data) {
     PtnGenerator *generator = (PtnGenerator *)data;
     if (generator == NULL) {
@@ -10895,6 +10922,7 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     }
     free(generator->function_name);
     free(generator->source_file);
+    ptn_generator_clear_lazy_invocation(generator);
     free(generator);
 }
 
@@ -10982,6 +11010,14 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->source_line = 0;
     generator->activation_object_id_runtime = NULL;
     generator->activation_object_id = 0;
+    generator->lazy_handler = NULL;
+    generator->lazy_receiver = ptn_null();
+    generator->lazy_args = NULL;
+    generator->lazy_arg_names = NULL;
+    generator->lazy_argc = 0;
+    generator->lazy_line = 0;
+    generator->has_lazy_invocation = 0;
+    generator->lazy_activating = 0;
     if (runtime != NULL && runtime->call_frame != NULL && runtime->call_frame->argc > 0) {
         generator->trace_argc = runtime->call_frame->argc;
         generator->trace_args = malloc(sizeof(PtnValue) * generator->trace_argc);
@@ -11107,6 +11143,88 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     ptn_value_destroy(&assigned);
     ptn_value_destroy(&function_value);
     return object;
+}
+
+static PTN_UNUSED void ptn_generator_set_lazy_invocation(
+    PtnValue receiver,
+    PtnGeneratorLazyHandler handler,
+    PtnValue call_receiver,
+    size_t argc,
+    const PtnValue *args,
+    const char *const *arg_names,
+    size_t line
+) {
+    PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (generator == NULL || handler == NULL) {
+        return;
+    }
+    ptn_generator_clear_lazy_invocation(generator);
+    generator->lazy_handler = handler;
+    generator->lazy_receiver = ptn_value_share(call_receiver);
+    generator->lazy_argc = argc;
+    generator->lazy_line = line;
+    if (argc != 0) {
+        generator->lazy_args = calloc(argc, sizeof(PtnValue));
+        if (generator->lazy_args == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < argc; i++) {
+            generator->lazy_args[i] = ptn_value_share(args[i]);
+        }
+        if (arg_names != NULL) {
+            generator->lazy_arg_names = calloc(argc, sizeof(char *));
+            if (generator->lazy_arg_names == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < argc; i++) {
+                if (arg_names[i] != NULL) {
+                    generator->lazy_arg_names[i] = ptn_duplicate_string(arg_names[i]);
+                }
+            }
+        }
+    }
+    generator->has_lazy_invocation = 1;
+}
+
+static PTN_UNUSED int ptn_generator_ensure_initialized(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
+    if (generator == NULL || !generator->has_lazy_invocation || generator->lazy_activating) {
+        return 1;
+    }
+    PtnGeneratorLazyHandler handler = generator->lazy_handler;
+    if (handler == NULL) {
+        ptn_generator_clear_lazy_invocation(generator);
+        return 1;
+    }
+    generator->lazy_activating = 1;
+    PtnGenerator *previous_activation_target =
+        runtime == NULL ? NULL : runtime->activating_generator;
+    const char *const *previous_arg_names =
+        runtime == NULL ? NULL : runtime->next_call_arg_names;
+    if (runtime != NULL) {
+        runtime->activating_generator = generator;
+        runtime->next_call_arg_names = (const char *const *)generator->lazy_arg_names;
+    }
+    PtnValue result = handler(
+        runtime,
+        generator->lazy_receiver,
+        generator->lazy_argc,
+        generator->lazy_args,
+        generator->lazy_line != 0 ? generator->lazy_line : line
+    );
+    ptn_value_destroy(&result);
+    if (runtime != NULL) {
+        runtime->activating_generator = previous_activation_target;
+        runtime->next_call_arg_names = previous_arg_names;
+    }
+    generator->lazy_activating = 0;
+    ptn_generator_clear_lazy_invocation(generator);
+    return runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL;
 }
 
 static PTN_UNUSED int ptn_generator_guard_not_executing(
@@ -12874,6 +12992,9 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
         return ptn_null();
     }
 
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     PtnValue thrown = ptn_value_clone_deref(resolved_exception);
     if (generator != NULL) {
         generator->started = 1;
@@ -13065,6 +13186,9 @@ static PTN_UNUSED PtnValue ptn_generator_current_or_last(
     size_t line
 ) {
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (generator != NULL) {
         if (!generator->started) {
             ptn_generator_skip_exhausted_delegates(generator);
@@ -13101,6 +13225,9 @@ static PTN_UNUSED PtnValue ptn_generator_key_or_last(
     size_t line
 ) {
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (ptn_generator_position_valid(generator)) {
         return ptn_generator_key(runtime, receiver, line);
     }
@@ -13114,6 +13241,9 @@ static PTN_UNUSED PtnValue ptn_generator_key_or_last(
 
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (generator != NULL) {
         if (!generator->started) {
             ptn_generator_skip_exhausted_delegates(generator);
@@ -13151,6 +13281,9 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
 static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (generator != NULL && generator->has_pending_exception) {
         ptn_generator_throw_pending_exception_at_position(
             runtime,
@@ -13200,6 +13333,9 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (generator != NULL) {
         if (!generator->started) {
             ptn_generator_skip_exhausted_delegates(generator);
@@ -13259,6 +13395,9 @@ static PTN_UNUSED PtnValue ptn_call_declared_method(
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
+        return ptn_null();
+    }
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
         return ptn_null();
     }
     if (generator != NULL) {
@@ -14003,6 +14142,9 @@ static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue rece
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
         return ptn_null();
     }
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (generator != NULL) {
         generator->started = 1;
     }
@@ -14048,6 +14190,9 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
+        return ptn_null();
+    }
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
         return ptn_null();
     }
     if (generator != NULL) {
@@ -14104,6 +14249,9 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGe
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_bool(0);
+    }
     if (generator != NULL) {
         if (!generator->started) {
             ptn_generator_skip_exhausted_delegates(generator);
@@ -15729,6 +15877,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
             path,
             line
         );
+        return iterator;
+    }
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
         return iterator;
     }
     iterator.array = generator->values;
