@@ -2033,6 +2033,9 @@ struct PtnRuntime {
     char *opcache_jit_buffer_size;
     char *opcache_jit_hot_func;
     char *opcache_log_verbosity_level;
+    char *opcache_memory_consumption;
+    char *opcache_max_accelerated_files;
+    char *opcache_max_wasted_percentage;
     char *opcache_optimization_level;
     char *opcache_opt_debug_level;
     char *opcache_preload;

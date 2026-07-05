@@ -1259,6 +1259,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_jit_hot_func = NULL;
         free(runtime->opcache_log_verbosity_level);
         runtime->opcache_log_verbosity_level = NULL;
+        free(runtime->opcache_memory_consumption);
+        runtime->opcache_memory_consumption = NULL;
+        free(runtime->opcache_max_accelerated_files);
+        runtime->opcache_max_accelerated_files = NULL;
+        free(runtime->opcache_max_wasted_percentage);
+        runtime->opcache_max_wasted_percentage = NULL;
         free(runtime->opcache_optimization_level);
         runtime->opcache_optimization_level = NULL;
         free(runtime->opcache_opt_debug_level);

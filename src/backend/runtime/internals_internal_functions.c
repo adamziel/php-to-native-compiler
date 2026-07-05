@@ -143683,6 +143683,15 @@ static const char *ptn_opcache_ini_default(const char *name) {
     if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
         return "1";
     }
+    if (ptn_ascii_case_equal(name, "opcache.memory_consumption")) {
+        return "128";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.max_accelerated_files")) {
+        return "10000";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.max_wasted_percentage")) {
+        return "5";
+    }
     if (ptn_ascii_case_equal(name, "opcache.optimization_level")) {
         return "0x7FFEBFFF";
     }
@@ -143751,6 +143760,15 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
         return &root->opcache_log_verbosity_level;
     }
+    if (ptn_ascii_case_equal(name, "opcache.memory_consumption")) {
+        return &root->opcache_memory_consumption;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.max_accelerated_files")) {
+        return &root->opcache_max_accelerated_files;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.max_wasted_percentage")) {
+        return &root->opcache_max_wasted_percentage;
+    }
     if (ptn_ascii_case_equal(name, "opcache.optimization_level")) {
         return &root->opcache_optimization_level;
     }
@@ -143801,6 +143819,9 @@ static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, co
         "opcache.jit_buffer_size",
         "opcache.jit_hot_func",
         "opcache.log_verbosity_level",
+        "opcache.memory_consumption",
+        "opcache.max_accelerated_files",
+        "opcache.max_wasted_percentage",
         "opcache.optimization_level",
         "opcache.opt_debug_level",
         "opcache.preload",
@@ -150542,10 +150563,15 @@ static void ptn_opcache_configuration_set_directive(PtnRuntime *runtime, PtnValu
                ptn_ascii_case_equal(name, "opcache.interned_strings_buffer") ||
                ptn_ascii_case_equal(name, "opcache.jit_hot_func") ||
                ptn_ascii_case_equal(name, "opcache.log_verbosity_level") ||
+               ptn_ascii_case_equal(name, "opcache.max_accelerated_files") ||
                ptn_ascii_case_equal(name, "opcache.optimization_level") ||
                ptn_ascii_case_equal(name, "opcache.opt_debug_level") ||
                ptn_ascii_case_equal(name, "opcache.revalidate_freq")) {
         value = ptn_int(ptn_opcache_ini_integer_value(runtime, name));
+    } else if (ptn_ascii_case_equal(name, "opcache.memory_consumption")) {
+        value = ptn_int(ptn_opcache_ini_integer_value(runtime, name) * 1024 * 1024);
+    } else if (ptn_ascii_case_equal(name, "opcache.max_wasted_percentage")) {
+        value = ptn_float((double)ptn_opcache_ini_integer_value(runtime, name) / 100.0);
     } else {
         value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, name)));
     }
@@ -150566,6 +150592,9 @@ static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
         "opcache.jit_buffer_size",
         "opcache.jit_hot_func",
         "opcache.log_verbosity_level",
+        "opcache.memory_consumption",
+        "opcache.max_accelerated_files",
+        "opcache.max_wasted_percentage",
         "opcache.optimization_level",
         "opcache.opt_debug_level",
         "opcache.preload",
@@ -261036,6 +261065,9 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "opcache.jit_buffer_size");
         ptn_extension_ini_set_entry(runtime, result, "opcache.jit_hot_func");
         ptn_extension_ini_set_entry(runtime, result, "opcache.log_verbosity_level");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.memory_consumption");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.max_accelerated_files");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.max_wasted_percentage");
         ptn_extension_ini_set_entry(runtime, result, "opcache.optimization_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.opt_debug_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.preload");

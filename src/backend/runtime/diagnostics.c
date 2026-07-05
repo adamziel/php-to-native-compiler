@@ -3057,6 +3057,52 @@ static PTN_UNUSED void ptn_emit_define_case_insensitive_ignored_warning(
     fputc('\n', stdout);
 }
 
+static int ptn_parse_ini_i64(const char *value, int64_t *out) {
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(value, &end, 0);
+    if (end == value || errno == ERANGE) {
+        return 0;
+    }
+    *out = (int64_t)parsed;
+    return 1;
+}
+
+static void ptn_opcache_normalize_integer_ini(
+    PtnRuntime *runtime,
+    char **slot,
+    const char *default_value,
+    const char *warning,
+    int (*invalid)(int64_t)
+) {
+    int64_t parsed = 0;
+    if (!ptn_parse_ini_i64(*slot, &parsed) || invalid(parsed)) {
+        if (runtime->diagnostics.display_errors) {
+            fputs("PTN: Warning ", stdout);
+            fputs(warning, stdout);
+            fputs("\n\n", stdout);
+            fflush(stdout);
+        }
+        free(*slot);
+        *slot = ptn_duplicate_string(default_value);
+    }
+}
+
+static int ptn_opcache_memory_consumption_invalid(int64_t value) {
+    return value < 8;
+}
+
+static int ptn_opcache_max_accelerated_files_invalid(int64_t value) {
+    return value < 200;
+}
+
+static int ptn_opcache_max_wasted_percentage_invalid(int64_t value) {
+    return value < 1 || value > 50;
+}
+
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     runtime->global_symbols = &runtime->symbols;
@@ -3362,6 +3408,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_jit_hot_func = getenv("PTN_OPCACHE_JIT_HOT_FUNC");
     const char *configured_opcache_log_verbosity_level =
         getenv("PTN_OPCACHE_LOG_VERBOSITY_LEVEL");
+    const char *configured_opcache_memory_consumption =
+        getenv("PTN_OPCACHE_MEMORY_CONSUMPTION");
+    const char *configured_opcache_max_accelerated_files =
+        getenv("PTN_OPCACHE_MAX_ACCELERATED_FILES");
+    const char *configured_opcache_max_wasted_percentage =
+        getenv("PTN_OPCACHE_MAX_WASTED_PERCENTAGE");
     const char *configured_opcache_optimization_level =
         getenv("PTN_OPCACHE_OPTIMIZATION_LEVEL");
     const char *configured_opcache_opt_debug_level = getenv("PTN_OPCACHE_OPT_DEBUG_LEVEL");
@@ -3480,6 +3532,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->opcache_log_verbosity_level = ptn_duplicate_string(
         configured_opcache_log_verbosity_level == NULL ? "1" : configured_opcache_log_verbosity_level
     );
+    runtime->opcache_memory_consumption = ptn_duplicate_string(
+        configured_opcache_memory_consumption == NULL ? "128" : configured_opcache_memory_consumption
+    );
+    runtime->opcache_max_accelerated_files = ptn_duplicate_string(
+        configured_opcache_max_accelerated_files == NULL ? "10000" : configured_opcache_max_accelerated_files
+    );
+    runtime->opcache_max_wasted_percentage = ptn_duplicate_string(
+        configured_opcache_max_wasted_percentage == NULL ? "5" : configured_opcache_max_wasted_percentage
+    );
     runtime->opcache_optimization_level = ptn_duplicate_string(
         configured_opcache_optimization_level == NULL ? "0x7FFEBFFF" : configured_opcache_optimization_level
     );
@@ -3503,6 +3564,27 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_validate_timestamps = ptn_duplicate_string(
         configured_opcache_validate_timestamps == NULL ? "1" : configured_opcache_validate_timestamps
+    );
+    ptn_opcache_normalize_integer_ini(
+        runtime,
+        &runtime->opcache_memory_consumption,
+        "128",
+        "opcache.memory_consumption is set below the required 8MB.",
+        ptn_opcache_memory_consumption_invalid
+    );
+    ptn_opcache_normalize_integer_ini(
+        runtime,
+        &runtime->opcache_max_accelerated_files,
+        "10000",
+        "opcache.max_accelerated_files is set below the required minimum (200).",
+        ptn_opcache_max_accelerated_files_invalid
+    );
+    ptn_opcache_normalize_integer_ini(
+        runtime,
+        &runtime->opcache_max_wasted_percentage,
+        "5",
+        "opcache.max_wasted_percentage must be set between 1 and 50.",
+        ptn_opcache_max_wasted_percentage_invalid
     );
     runtime->phar_readonly = ptn_duplicate_string(
         configured_phar_readonly == NULL ? "1" : configured_phar_readonly

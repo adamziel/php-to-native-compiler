@@ -97049,7 +97049,7 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
             "bool(false)\n",
             "int(-1)\n",
             "bool(true)\n",
-            "int(0)\n",
+            "int(1)\n",
             "int(16777216)\n",
             "int(16777216)\n",
             "bool(true)\n",
@@ -97064,6 +97064,73 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
             "string(1) \"1\"\n",
             "string(2) \"-1\"\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_configuration_normalizes_startup_bounds_to_native_binary() {
+    let root = temp_dir("ptn-phpc-opcache-startup-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-startup-bounds.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$config = opcache_get_configuration();\n\
+var_dump(ini_get('opcache.max_wasted_percentage'));\n\
+var_dump($config['directives']['opcache.max_wasted_percentage']);\n\
+var_dump(ini_get('opcache.memory_consumption'));\n\
+var_dump($config['directives']['opcache.memory_consumption']);\n\
+var_dump(ini_get('opcache.max_accelerated_files'));\n\
+var_dump($config['directives']['opcache.max_accelerated_files']);\n\
+$inis = (new ReflectionExtension('Zend OPcache'))->getINIEntries();\n\
+var_dump($inis['opcache.max_wasted_percentage'], $inis['opcache.memory_consumption'], $inis['opcache.max_accelerated_files']);",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.max_wasted_percentage=60")
+        .arg("-d")
+        .arg("opcache.memory_consumption=7")
+        .arg("-d")
+        .arg("opcache.max_accelerated_files=10")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("PTN: Warning opcache.memory_consumption is set below the required 8MB.\n\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "PTN: Warning opcache.max_accelerated_files is set below the required minimum (200).\n\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "PTN: Warning opcache.max_wasted_percentage must be set between 1 and 50.\n\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with(concat!(
+            "string(1) \"5\"\n",
+            "float(0.05)\n",
+            "string(3) \"128\"\n",
+            "int(134217728)\n",
+            "string(5) \"10000\"\n",
+            "int(10000)\n",
+            "string(1) \"5\"\n",
+            "string(3) \"128\"\n",
+            "string(5) \"10000\"\n",
+        )),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
