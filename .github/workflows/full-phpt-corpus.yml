@@ -107,7 +107,6 @@ jobs:
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
-        continue-on-error: true
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
@@ -134,7 +133,7 @@ jobs:
           exit 0
 
       - name: Upload shard artifact
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: phpt-full-corpus-shard-${{ matrix.shard }}
@@ -144,7 +143,7 @@ jobs:
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
 
       - name: Fail shard on nonzero PHPT exit
-        if: always()
+        if: ${{ always() }}
         run: |
           exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
           if [[ ! -f "$exit_code_path" ]]; then
@@ -207,7 +206,6 @@ jobs:
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
 
       - name: Run full-corpus shard
-        continue-on-error: true
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
@@ -234,7 +232,7 @@ jobs:
           exit 0
 
       - name: Upload shard artifact
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: phpt-full-corpus-shard-${{ matrix.shard }}
@@ -244,7 +242,7 @@ jobs:
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
 
       - name: Fail shard on nonzero PHPT exit
-        if: always()
+        if: ${{ always() }}
         run: |
           exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
           if [[ ! -f "$exit_code_path" ]]; then
@@ -261,7 +259,7 @@ jobs:
     name: compose full PHPT number
     runs-on: ubuntu-latest
     needs: [full-phpt-shard-a, full-phpt-shard-b]
-    if: always()
+    if: ${{ always() }}
 
     steps:
       - name: Checkout compiler
@@ -282,14 +280,14 @@ jobs:
             .runtime/full-phpt-artifacts
 
       - name: Add composed result to job summary
-        if: always()
+        if: ${{ always() }}
         run: |
           if [[ -f .runtime/full-phpt-composed/summary.md ]]; then
             cat .runtime/full-phpt-composed/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload composed result
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: phpt-full-corpus-summary
