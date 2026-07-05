@@ -113,10 +113,12 @@ jobs:
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
         run: |
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
-          tools/run-bounded-phpt.sh \
+          timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
+            tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
           phpt_pid=$!
@@ -211,10 +213,12 @@ jobs:
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
         run: |
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
-          tools/run-bounded-phpt.sh \
+          timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
+            tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
           phpt_pid=$!
