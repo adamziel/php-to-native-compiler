@@ -3476,6 +3476,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let supported_ftp_directory_harness_with_skipif = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (array_search('ftp', stream_get_wrappers()) === false) die('skip');\nif (!function_exists('pcntl_fork')) die('skip');\n?>\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
+        "ext/standard/tests/streams/opendir-004.phpt",
+    );
+    assert_eq!(
+        supported_ftp_directory_harness_with_skipif,
+        "runnable\tselected for PTN semantic measurement; verified standard stream --SKIPIF-- row forced-runnable on PTN\n"
+    );
+
     let unmodeled_ftp_directory_harness = classify_at_relative_path(
         "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\n$ds = opendir('ftps://127.0.0.1:' . $port . '/');\n--EXPECT--\n",
         "ext/standard/tests/streams/unmodeled-opendir-ftp.phpt",
@@ -3483,6 +3492,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     assert!(
         unmodeled_ftp_directory_harness.starts_with("external-service\t"),
         "{unmodeled_ftp_directory_harness:?}"
+    );
+
+    let supported_tcp_nodelay_server = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nstream context tcp_nodelay server\n--EXTENSIONS--\nsockets\n--SKIPIF--\n<?php\nif (!function_exists('proc_open')) die('skip no proc_open');\n?>\n--FILE--\n<?php\n$server = stream_socket_server('tcp://127.0.0.1:0');\n$client = stream_socket_client('tcp://127.0.0.1:1234');\n--EXPECT--\n",
+        "ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt",
+    );
+    assert_eq!(
+        supported_tcp_nodelay_server,
+        "runnable\tselected for PTN semantic measurement; modeled static --SKIPIF-- preconditions satisfied: function-exists\n"
+    );
+
+    let supported_null_byte_stream_client = classify_at_relative_path(
+        "--TEST--\nstream socket client null byte\n--FILE--\n<?php\n$server = stream_socket_server('tcp://localhost:0');\n$client = stream_socket_client(\"tcp://localhost\\0.example.com:1234\");\n--EXPECT--\n",
+        "ext/standard/tests/streams/ghsa-3cr5-j632-f35r.phpt",
+    );
+    assert_eq!(
+        supported_null_byte_stream_client,
+        "runnable\tselected for PTN semantic measurement\n"
     );
 
     let socket_dontfragment = classify_at_relative_path(
@@ -4541,6 +4568,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert_eq!(
         supported_proc_environment_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_stream_select_proc_pipe_row = classify_at_relative_path(
+        "--TEST--\nstream select proc pipe\n--FILE--\n<?php\n$proc = proc_open('ls', [1 => ['pipe', 'w']], $pipes);\n$r = [$pipes[1]];\n$w = $e = null;\nstream_select($r, $w, $e, 1);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/streams/bug64770.phpt",
+    );
+    assert_eq!(
+        supported_stream_select_proc_pipe_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
 

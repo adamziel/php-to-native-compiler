@@ -1769,6 +1769,7 @@ ptn_phpt_supported_process_boundary_row() {
         [[ "$rel" == "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/file/bug60120.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug72853.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/streams/bug64770.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
 }
 
@@ -3387,6 +3388,18 @@ ptn_phpt_supported_ftp_server_harness_row() {
     [[ "$1" == "ext/standard/tests/streams/opendir-004.phpt" ]]
 }
 
+ptn_phpt_supported_standard_stream_server_harness_row() {
+    case "$1" in
+        ext/standard/tests/streams/ghsa-3cr5-j632-f35r.phpt|\
+        ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_supported_php_cli_server_harness_row() {
     [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]] ||
         [[ "$1" == "ext/soap/tests/bugs/cookie_parse_options_offset.phpt" ]] ||
@@ -3453,6 +3466,17 @@ ptn_phpt_supported_session_verified_skipif_row() {
     esac
 }
 
+ptn_phpt_supported_standard_stream_verified_skipif_row() {
+    case "$1" in
+        ext/standard/tests/streams/opendir-004.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -3492,6 +3516,7 @@ ptn_phpt_classify_row() {
     if ptn_phpt_has_external_service_harness "$path" &&
         ! ptn_phpt_supported_curl_server_harness_row "$rel" &&
         ! ptn_phpt_supported_ftp_server_harness_row "$rel" &&
+        ! ptn_phpt_supported_standard_stream_server_harness_row "$rel" &&
         ! ptn_phpt_supported_php_cli_server_harness_row "$rel" &&
         ! ptn_phpt_supported_standard_network_mail_http_residual_row "$rel"; then
         printf 'external-service\trequires external service or php-src server harness\n'
@@ -3580,6 +3605,8 @@ ptn_phpt_classify_row() {
             fi
         elif ptn_phpt_supported_session_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified Session --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_standard_stream_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
         else
             unmodeled_skipif=1
         fi
