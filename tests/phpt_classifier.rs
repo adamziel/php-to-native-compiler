@@ -3688,6 +3688,20 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_soap_skipif_cli_server_row() {
+    let classification = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nsoap custom content type\n--EXTENSIONS--\nsoap\n--SKIPIF--\n<?php\nif (!file_exists(__DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc')) echo 'skip';\n?>\n--FILE--\n<?php\ninclude __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri']);\n--EXPECT--\n",
+        "ext/soap/tests/custom_content_type.phpt",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified SOAP --SKIPIF-- row"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     let cases = [
         (

@@ -3402,6 +3402,7 @@ ptn_phpt_supported_standard_stream_server_harness_row() {
 
 ptn_phpt_supported_php_cli_server_harness_row() {
     [[ "$1" == "ext/opcache/tests/issue0149.phpt" ]] ||
+        [[ "$1" == "ext/soap/tests/custom_content_type.phpt" ]] ||
         [[ "$1" == "ext/soap/tests/bugs/cookie_parse_options_offset.phpt" ]] ||
         [[ "$1" == "ext/soap/tests/bugs/bug55639.phpt" ]]
 }
@@ -3469,6 +3470,17 @@ ptn_phpt_supported_session_verified_skipif_row() {
 ptn_phpt_supported_standard_stream_verified_skipif_row() {
     case "$1" in
         ext/standard/tests/streams/opendir-004.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_soap_verified_skipif_row() {
+    case "$1" in
+        ext/soap/tests/custom_content_type.phpt)
             return 0
             ;;
         *)
@@ -3607,6 +3619,8 @@ ptn_phpt_classify_row() {
             modeled_skipif_reason="verified Session --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_standard_stream_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_soap_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified SOAP --SKIPIF-- row forced-runnable on PTN"
         else
             unmodeled_skipif=1
         fi
