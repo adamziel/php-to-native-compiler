@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-05T05:50:12Z |
+| last refresh | 2026-07-05T06:00:10Z |
 | source commit | `9a59b0590db5` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,29 +21,28 @@
 
 | field | value |
 | --- | --- |
-| source commit | `9a59b0590db5` |
-| statused tests | 195 |
-| passed tests | 135 |
-| failed tests | 58 |
-| skipped tests | 2 |
+| source commit | `01671d4c3bf9` |
+| statused tests | 183 |
+| passed tests | 134 |
+| failed tests | 49 |
+| skipped tests | 0 |
 | warned tests | 0 |
-| unknown tests | 21672 |
-| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260705T053728Z` |
+| unknown tests | 21684 |
+| run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260705T055717Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-05T05:00Z) | 9 |
-| last 24 hours (2026-07-04T06:00Z - 2026-07-05T05:00Z) | 198 |
-| last 7 days (2026-06-28T06:00Z - 2026-07-05T05:00Z) | 264 |
+| latest hour (2026-07-05T06:00Z) | 0 |
+| last 24 hours (2026-07-04T07:00Z - 2026-07-05T06:00Z) | 198 |
+| last 7 days (2026-06-28T07:00Z - 2026-07-05T06:00Z) | 264 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 1841 | 21867 |
-| hourly history retained 2026-06-28T06:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T07:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-28T08:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T14:00Z | 0 | 0 | 0 |
@@ -179,12 +178,12 @@
 | hourly history retained 2026-07-05T02:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-05T03:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-05T04:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-05T05:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-28T06:00Z | 0 | 1577 |
 | 2026-06-28T07:00Z | 0 | 1577 |
 | 2026-06-28T08:00Z | 0 | 1577 |
 | 2026-06-28T09:00Z | 0 | 1577 |
@@ -352,3 +351,4 @@
 | 2026-07-05T03:00Z | 0 | 1820 |
 | 2026-07-05T04:00Z | 12 | 1832 |
 | 2026-07-05T05:00Z | 9 | 1841 |
+| 2026-07-05T06:00Z | 0 | 1841 |
