@@ -3871,7 +3871,15 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/create_new_phar_c.phpt|\
         ext/phar/tests/readfile.phpt|\
         ext/phar/tests/phar_magic.phpt|\
-        ext/phar/tests/zip/phar_magic.phpt)
+        ext/phar/tests/zip/phar_magic.phpt|\
+        ext/phar/tests/zip/phar_copy.phpt|\
+        ext/phar/tests/tar/phar_copy.phpt|\
+        ext/phar/tests/zip/dir.phpt|\
+        ext/phar/tests/tar/dir.phpt|\
+        ext/phar/tests/zip/exists_as_phar.phpt|\
+        ext/phar/tests/tar/exists_as_phar.phpt|\
+        ext/phar/tests/zip/refcount1.phpt|\
+        ext/phar/tests/tar/refcount1.phpt)
             return 0
             ;;
     esac

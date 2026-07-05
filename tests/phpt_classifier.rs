@@ -4208,6 +4208,28 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         );
     }
 
+    let phar_current6_rows = [
+        "ext/phar/tests/zip/phar_copy.phpt",
+        "ext/phar/tests/tar/phar_copy.phpt",
+        "ext/phar/tests/zip/dir.phpt",
+        "ext/phar/tests/tar/dir.phpt",
+        "ext/phar/tests/zip/exists_as_phar.phpt",
+        "ext/phar/tests/tar/exists_as_phar.phpt",
+        "ext/phar/tests/zip/refcount1.phpt",
+        "ext/phar/tests/tar/refcount1.phpt",
+    ];
+    for row in phar_current6_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar current6 archive runtime row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.zip');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\ncopy(__DIR__ . '/archive.phar.zip', __DIR__ . '/archive2.phar.zip');\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/a.php';\n--EXPECT--\na\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let pdo_mysql_service = classify_at_relative_path(
         "--TEST--\npdo mysql service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
         "ext/pdo_mysql/tests/service.phpt",

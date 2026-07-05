@@ -208709,6 +208709,38 @@ static PTN_UNUSED PtnValue ptn_phar_new(
     int archive_format = ptn_phar_archive_path_format(path);
     int archive_path_exists = ptn_path_exists_c(path);
     PtnPharArchiveState *existing_archive = ptn_phar_archive_find_path_len(path, strlen(path));
+    if ((archive_format == PTN_PHAR_FORMAT_ZIP || archive_format == PTN_PHAR_FORMAT_TAR) &&
+        archive_path_exists &&
+        existing_archive != NULL &&
+        existing_archive->format == PTN_PHAR_FORMAT_PHAR) {
+        const char *message_format = archive_format == PTN_PHAR_FORMAT_ZIP
+            ? "phar zip error: phar \"%s\" already exists as a regular phar and must be deleted from disk prior to creating as a zip-based phar"
+            : "phar tar error: \"%s\" already exists as a regular phar and must be deleted from disk prior to creating as a tar-based phar";
+        int needed = snprintf(NULL, 0, message_format, path);
+        if (needed < 0) {
+            free(requested_alias);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(requested_alias);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, message_format, path);
+        if (written < 0 || written != needed) {
+            free(message);
+            free(requested_alias);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "UnexpectedValueException", message);
+        free(message);
+        free(requested_alias);
+        free(path);
+        return ptn_null();
+    }
     if (archive_format == PTN_PHAR_FORMAT_ZIP && archive_path_exists) {
         unsigned char *zip_data = NULL;
         size_t zip_len = 0;

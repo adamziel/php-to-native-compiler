@@ -72524,6 +72524,69 @@ var_dump($data->getSignature());
 }
 
 #[test]
+fn compile_phar_rejects_regular_archive_copied_to_tar_zip_name_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-regular-archive-format-conflict");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-regular-archive-format-conflict.php");
+    let output = root.join("phar-regular-archive-format-conflict-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/exists_as_phar.phar';
+$zip = __DIR__ . '/exists_as_phar.phar.zip';
+$tar = __DIR__ . '/exists_as_phar.phar.tar';
+
+$phar = new Phar($fname);
+$phar['a.php'] = '<?php echo "a\n"; ?>';
+$phar->setAlias('hio');
+$phar->stopBuffering();
+
+copy($fname, $zip);
+copy($fname, $tar);
+$phar->setAlias('hio2');
+
+foreach (['zip' => $zip, 'tar' => $tar] as $label => $path) {
+    try {
+        new Phar($path);
+    } catch (Throwable $e) {
+        echo $label, ':', get_class($e), ':', $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_READONLY", "0")
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "zip:UnexpectedValueException:phar zip error: phar \"{}\" already exists as a regular phar and must be deleted from disk prior to creating as a zip-based phar\n",
+                "tar:UnexpectedValueException:phar tar error: \"{}\" already exists as a regular phar and must be deleted from disk prior to creating as a tar-based phar\n",
+            ),
+            root.join("exists_as_phar.phar.zip").display(),
+            root.join("exists_as_phar.phar.tar").display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("already exists as a regular phar"));
+}
+
+#[test]
 fn compile_phar_zip_archive_missing_eocd_rejected_to_native_binary() {
     let root = temp_dir("ptn-native-phar-zip-missing-eocd");
     fs::create_dir_all(&root).unwrap();

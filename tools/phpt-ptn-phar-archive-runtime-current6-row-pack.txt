@@ -1,0 +1,11 @@
+# PHAR archive-runtime current6 focused row pack.
+# Focus: tar/zip PHAR copy, mkdir/rmdir, regular-PHAR format conflict,
+# and open-entry unlink refcount behavior.
+ext/phar/tests/zip/phar_copy.phpt
+ext/phar/tests/tar/phar_copy.phpt
+ext/phar/tests/zip/dir.phpt
+ext/phar/tests/tar/dir.phpt
+ext/phar/tests/zip/exists_as_phar.phpt
+ext/phar/tests/tar/exists_as_phar.phpt
+ext/phar/tests/zip/refcount1.phpt
+ext/phar/tests/tar/refcount1.phpt
