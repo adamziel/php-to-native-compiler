@@ -238,6 +238,7 @@ pub fn emit_c(module: &Module) -> String {
     );
     emit_generator_throw_catch_handler_prototypes(&mut out, &generator_throw_catch_handlers);
     emit_function_static_variable_provider_prototypes(&mut out, &module.functions);
+    emit_function_parameter_default_provider_prototypes(&mut out, &module.functions);
     emit_declared_property_default_array_helper_prototypes(&mut out, &module.classes);
     emit_include_helpers(
         &mut out,
@@ -11677,6 +11678,27 @@ fn function_parameter_default_provider_name(
     parameter_index: usize,
 ) -> String {
     format!("ptn_function_{function_index}_parameter_{parameter_index}_default_value")
+}
+
+fn emit_function_parameter_default_provider_prototypes(
+    out: &mut String,
+    functions: &[FunctionDecl],
+) {
+    for (function_index, function) in functions.iter().enumerate() {
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            if parameter.default_value.is_none() {
+                continue;
+            }
+            out.push_str("static PtnValue ");
+            out.push_str(&function_parameter_default_provider_name(
+                function_index,
+                parameter_index,
+            ));
+            out.push_str(
+                "(PtnRuntime *caller_runtime, const char *scope_class_name, size_t line);\n",
+            );
+        }
+    }
 }
 
 fn emit_function_parameter_default_providers(

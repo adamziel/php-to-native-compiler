@@ -5996,6 +5996,47 @@ function readConversionTable(&$from, &$to) {
 }
 
 #[test]
+fn compile_included_closure_default_parameter_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-included-closure-default-parameter-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("renderer.inc");
+    let output = root.join("included-closure-defaults-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$renderer = require __DIR__ . "/renderer.inc";
+echo $renderer(), "\n";
+$reflection = new ReflectionFunction($renderer);
+foreach ($reflection->getParameters() as $parameter) {
+    $value = $parameter->getDefaultValue();
+    echo $parameter->getName(), ':', gettype($value), ':', is_array($value) ? count($value) : var_export($value, true), "\n";
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        r#"<?php
+return function (mixed $in = null, array $options = []) {
+    return ($in === null ? "null" : "value") . ":" . count($options);
+};
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "null:0\nin:NULL:NULL\noptions:array:0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_invalid_required_include_throws_catchable_parse_error_to_native_binary() {
     let root = temp_dir("ptn-native-invalid-required-include-parse-error");
     fs::create_dir_all(&root).unwrap();
