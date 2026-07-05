@@ -198900,6 +198900,43 @@ static PtnValue ptn_stream_socket_client_open_tls(
     const PtnValue *args,
     size_t line
 ) {
+    PtnResource *context = argc >= 6 ? ptn_fopen_context_arg(args[5]) : NULL;
+    int64_t flags = argc >= 5 ? ptn_value_to_integer(args[4]) : 0;
+    if ((flags & PTN_STREAM_CLIENT_PERSISTENT) != 0 &&
+        ptn_stream_context_ssl_option(context, "session_new_cb") != NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): session_new_cb is not supported for persistent streams", line);
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): Failed to enable crypto", line);
+        int warning_needed = snprintf(
+            NULL,
+            0,
+            "stream_socket_client(): Unable to connect to %.*s",
+            (int)address.len,
+            address.data
+        );
+        if (warning_needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *warning = malloc((size_t)warning_needed + 1);
+        if (warning == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int warning_written = snprintf(
+            warning,
+            (size_t)warning_needed + 1,
+            "stream_socket_client(): Unable to connect to %.*s",
+            (int)address.len,
+            address.data
+        );
+        if (warning_written < 0 || warning_written != warning_needed) {
+            free(warning);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        free(warning);
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string("Failed to enable crypto"));
+        return ptn_bool(0);
+    }
     char *tcp_address = ptn_stream_socket_tls_tcp_address(address, prefix_len);
     PtnStringOperand tcp_operand = { .data = tcp_address, .owned = NULL, .len = strlen(tcp_address) };
     PtnValue result = ptn_stream_socket_client_open_tcp(
@@ -198919,7 +198956,6 @@ static PtnValue ptn_stream_socket_client_open_tls(
         free(host);
         return result;
     }
-    PtnResource *context = argc >= 6 ? ptn_fopen_context_arg(args[5]) : NULL;
     SSL_CTX *ctx = ptn_stream_tls_context_create(runtime, context, scheme, 0, NULL, NULL, line);
     SSL *ssl = ctx == NULL ? NULL : SSL_new(ctx);
     PtnResource *resource = result.as.resource;

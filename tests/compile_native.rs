@@ -43212,6 +43212,55 @@ var_dump(openssl_error_string());
 }
 
 #[test]
+fn compile_openssl_tls_persistent_session_callback_reject_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-tls-persistent-session-callback-reject");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("openssl-tls-persistent-session-callback-reject.php");
+    let output = root.join("openssl-tls-persistent-session-callback-reject-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$clientCtx = stream_context_create(['ssl' => [
+    'session_new_cb' => function($stream, $session) {},
+]]);
+
+$client = stream_socket_client('tls://127.0.0.1:1', $errno, $errstr, 1, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $clientCtx);
+echo "client=", $client === false ? "false" : "resource", "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: stream_socket_client(): session_new_cb is not supported for persistent streams"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: stream_socket_client(): Failed to enable crypto"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: stream_socket_client(): Unable to connect to tls://127.0.0.1:1"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("client=false\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("session_new_cb is not supported for persistent streams"));
+}
+
+#[test]
 fn compile_openssl_dh_key_details_to_native_binary() {
     let root = temp_dir("ptn-native-openssl-dh-key-details");
     fs::create_dir_all(&root).unwrap();
