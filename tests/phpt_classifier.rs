@@ -4468,6 +4468,45 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 }
 
 #[test]
+fn phpt_classifier_splits_external_service_residual_current3_rows() {
+    let cases = [
+        (
+            "tests/basic/bug67198.phpt",
+            "unsupported-http-stream-wrapper-runtime\t",
+            "--TEST--\nphp input over cli server\n--INI--\nallow_url_fopen=1\n--SKIPIF--\n<?php\ninclude __DIR__ . '/../../sapi/cli/tests/skipif.inc';\n?>\n--FILE--\n<?php\nrequire __DIR__ . '/../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('exit(file_get_contents(\"php://input\"));', null, ['-d', 'enable_post_data_reading=Off']);\nfile_get_contents('http://' . PHP_CLI_SERVER_ADDRESS, false, stream_context_create(['http' => ['method' => 'POST', 'content' => 'PASS']]));\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/http/gh11274.phpt",
+            "unsupported-http-stream-wrapper-runtime\t",
+            "--TEST--\nhttp wrapper redirect local server\n--INI--\nallow_url_fopen=1\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php header(\"Location: /test/\"); http_response_code(308);');\nfile_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/test', false, stream_context_create(['http' => ['method' => 'PATCH', 'content' => 'hello=world']]));\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/streams/opendir-003.phpt",
+            "unsupported-ftp-stream-wrapper-runtime\t",
+            "--TEST--\nftps opendir harness\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (array_search('ftp', stream_get_wrappers()) === false) die('skip');\nif (!function_exists('pcntl_fork')) die('skip');\n?>\n--FILE--\n<?php\n$ssl = true;\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\nopendir('ftps://127.0.0.1:' . $port . '/bogusdir');\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/streams/bug77765.phpt",
+            "unsupported-ftp-stream-wrapper-runtime\t",
+            "--TEST--\nftp stat harness\n--SKIPIF--\n<?php\nif (array_search('ftp', stream_get_wrappers()) === false) die('skip');\nif (!function_exists('pcntl_fork')) die('skip');\n?>\n--FILE--\n<?php\nrequire __DIR__ . '/../../../ftp/tests/server.inc';\nstat('ftp://localhost:' . $port . '/www');\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/streams/gh11418.phpt",
+            "unsupported-stream-peer-harness-runtime\t",
+            "--TEST--\nsplit-read peer stream harness\n--FILE--\n<?php\n$serverCode = <<<'CODE'\n$server = stream_socket_server('tcp://127.0.0.1:0');\nphpt_notify_server_start($server);\nCODE;\n$clientCode = <<<'CODE'\n$fp = fsockopen('tcp://{{ ADDR }}');\nCODE;\ninclude sprintf('%s/../../../openssl/tests/ServerClientTestCase.inc', __DIR__);\nServerClientTestCase::getInstance()->run($clientCode, $serverCode);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (row, expected_prefix, body) in cases {
+        let classification = classify_at_relative_path(body, row);
+        assert!(
+            classification.starts_with(expected_prefix),
+            "{row}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_unlocks_verified_soap_skipif_cli_server_row() {
     let classification = classify_at_relative_path_with_harness_programs(
         "--TEST--\nsoap custom content type\n--EXTENSIONS--\nsoap\n--SKIPIF--\n<?php\nif (!file_exists(__DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc')) echo 'skip';\n?>\n--FILE--\n<?php\ninclude __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri']);\n--EXPECT--\n",

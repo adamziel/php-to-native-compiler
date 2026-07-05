@@ -3942,6 +3942,14 @@ ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
 
 ptn_phpt_first_unsupported_local_service_residual_runtime() {
     case "$1" in
+        tests/basic/bug67198.phpt)
+            printf 'unsupported-http-stream-wrapper-runtime\trequires HTTP stream wrapper POST reuse against a PHP CLI server with request-body ini changes, outside PTN modeled URL stream runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/http/gh11274.phpt)
+            printf 'unsupported-http-stream-wrapper-runtime\trequires HTTP stream wrapper POST/PATCH redirect semantics against the local PHP CLI server harness, outside PTN modeled URL stream runtime\n'
+            return 0
+            ;;
         ext/standard/tests/gh10885.phpt)
             printf 'unsupported-stream-context-metadata\trequires stream_socket_server context resource refcount metadata, outside PTN modeled stream-context runtime\n'
             return 0
@@ -3952,6 +3960,18 @@ ptn_phpt_first_unsupported_local_service_residual_runtime() {
             ;;
         ext/standard/tests/streams/gh10031.phpt)
             printf 'unsupported-http-stream-wrapper-runtime\trequires HTTP stream wrapper progress notifications against the local PHP CLI server harness, outside PTN modeled URL stream runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/opendir-003.phpt)
+            printf 'unsupported-ftp-stream-wrapper-runtime\trequires FTPS opendir() behavior against the php-src FTP server harness, outside PTN modeled stream-wrapper runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/bug77765.phpt)
+            printf 'unsupported-ftp-stream-wrapper-runtime\trequires FTP stat() behavior against the php-src FTP server harness, outside PTN modeled stream-wrapper runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/gh11418.phpt)
+            printf 'unsupported-stream-peer-harness-runtime\trequires split-read client/server stream behavior through the php-src ServerClientTestCase harness, outside PTN modeled stream runtime\n'
             return 0
             ;;
         ext/standard/tests/url/get_headers_error_003.phpt)

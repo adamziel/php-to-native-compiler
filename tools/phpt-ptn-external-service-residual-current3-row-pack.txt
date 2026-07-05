@@ -1,0 +1,8 @@
+# Focused external-service residual current3 row pack.
+# Source: /home/claude/ptn-lanes/integration/.runtime/phpt-dashboard-current/exclusions.tsv.
+# bucket: external-service-standard-http-stream-current3 rows=5
+tests/basic/bug67198.phpt
+ext/standard/tests/http/gh11274.phpt
+ext/standard/tests/streams/opendir-003.phpt
+ext/standard/tests/streams/bug77765.phpt
+ext/standard/tests/streams/gh11418.phpt
