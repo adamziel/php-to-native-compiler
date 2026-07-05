@@ -10847,6 +10847,18 @@ static PTN_UNUSED void ptn_emit_nan_coercion_warning(PtnRuntime *runtime, const 
     ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
 }
 
+static PTN_UNUSED int ptn_is_truthy_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue deref = ptn_value_deref(value);
+    if (deref.type == PTN_FLOAT && isnan(deref.as.floating)) {
+        ptn_emit_nan_coercion_warning(runtime, "bool", line);
+    }
+    return ptn_is_truthy(deref);
+}
+
+static PTN_UNUSED PtnValue ptn_not_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    return ptn_bool(!ptn_is_truthy_with_runtime(runtime, value, line));
+}
+
 static PTN_UNUSED int64_t ptn_float_string_to_php_integer(double value) {
     if (!isfinite(value)) {
         return 0;

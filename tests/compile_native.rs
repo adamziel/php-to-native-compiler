@@ -57962,6 +57962,57 @@ var_dump($test->a);
 }
 
 #[test]
+fn compile_nan_bool_coercion_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-nan-bool-coercion-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nan-bool-coercion-warnings.php");
+    let output = root.join("nan-bool-coercion-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function check(float $a, bool $b) {\n\
+    if ($a) echo \"if\\n\";\n\
+    var_dump(!$a);\n\
+    var_dump($a && $b);\n\
+    var_dump($a || false);\n\
+}\n\
+check(NAN, true);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Warning: unexpected NAN value was coerced to bool")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    for line in [3, 4, 5, 6] {
+        assert!(
+            stdout.contains(&format!(
+                "Warning: unexpected NAN value was coerced to bool in ptn on line {line}"
+            )),
+            "missing line {line} warning in:\n{stdout}"
+        );
+    }
+    assert!(stdout.contains("if\n"), "{stdout}");
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bug30726_is_float_shape_to_native_binary() {
     let root = temp_dir("ptn-native-bug30726-is-float");
     fs::create_dir_all(&root).unwrap();

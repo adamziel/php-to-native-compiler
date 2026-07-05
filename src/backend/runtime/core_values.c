@@ -2158,6 +2158,8 @@ typedef struct {
 static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
+static PTN_UNUSED int ptn_is_truthy_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line);
+static PTN_UNUSED PtnValue ptn_not_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runtime, PtnValue *value, size_t line);

@@ -51888,19 +51888,19 @@ impl ValueEmitter {
                 out.push_str(match op {
                     UnaryOp::Positive => "ptn_positive",
                     UnaryOp::Negate => "ptn_negate",
-                    UnaryOp::Not => "ptn_not",
+                    UnaryOp::Not => "ptn_not_with_runtime",
                     UnaryOp::BitwiseNot => "ptn_bitwise_not",
                     UnaryOp::ErrorSuppress => unreachable!(),
                 });
                 out.push('(');
                 if matches!(
                     op,
-                    UnaryOp::Positive | UnaryOp::Negate | UnaryOp::BitwiseNot
+                    UnaryOp::Positive | UnaryOp::Negate | UnaryOp::Not | UnaryOp::BitwiseNot
                 ) {
                     out.push_str("&runtime, ");
                 }
                 out.push_str(&expr_temp);
-                if matches!(op, UnaryOp::Positive | UnaryOp::Negate) {
+                if matches!(op, UnaryOp::Positive | UnaryOp::Negate | UnaryOp::Not) {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                 } else if matches!(op, UnaryOp::BitwiseNot) {
@@ -57764,8 +57764,10 @@ impl ValueEmitter {
                     let result_temp = self.next_temp();
                     out.push_str("    int ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_is_truthy(");
+                    out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
                     out.push_str(&emitted_value);
+                    out.push_str(", ");
+                    out.push_str(&value_expr_runtime_line(value).unwrap_or(0).to_string());
                     out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &emitted_value);
                     result_temp
@@ -57776,8 +57778,10 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    int ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_is_truthy(");
+                out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
                 out.push_str(&emitted_value);
+                out.push_str(", ");
+                out.push_str(&value_expr_runtime_line(value).unwrap_or(0).to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &emitted_value);
                 result_temp
@@ -57859,8 +57863,10 @@ impl ValueEmitter {
         let predicate_temp = self.next_temp();
         out.push_str("    int ");
         out.push_str(&predicate_temp);
-        out.push_str(" = ptn_is_truthy(");
+        out.push_str(" = ptn_is_truthy_with_runtime(&runtime, ");
         out.push_str(&condition_temp);
+        out.push_str(", ");
+        out.push_str(&value_expr_runtime_line(condition).unwrap_or(0).to_string());
         out.push_str(");\n");
         out.push_str("    if (");
         out.push_str(&predicate_temp);
