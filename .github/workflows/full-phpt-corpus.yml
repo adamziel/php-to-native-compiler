@@ -32,7 +32,8 @@ jobs:
     name: plan full PHPT shards
     runs-on: ubuntu-latest
     outputs:
-      shards: ${{ steps.shards.outputs.shards }}
+      first_shards: ${{ steps.shards.outputs.first_shards }}
+      second_shards: ${{ steps.shards.outputs.second_shards }}
 
     steps:
       - name: Build shard matrix
@@ -40,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           shard_count='${{ inputs.shard_count }}'
-          if ! [[ "$shard_count" =~ ^[0-9]+$ ]] || [[ "$shard_count" -le 0 ]]; then
-            echo "shard_count must be a positive integer: $shard_count" >&2
+          if ! [[ "$shard_count" =~ ^[0-9]+$ ]] || [[ "$shard_count" -le 1 ]]; then
+            echo "shard_count must be an integer greater than 1: $shard_count" >&2
             exit 1
           fi
           python3 - "$shard_count" <<'PY' >> "$GITHUB_OUTPUT"
@@ -49,10 +50,14 @@ jobs:
           import sys
 
           count = int(sys.argv[1])
-          print("shards=" + json.dumps(list(range(count))))
+          split = (count + 1) // 2
+          if split > 256 or count - split > 256:
+              raise SystemExit(f"shard_count={count} exceeds the two-matrix limit")
+          print("first_shards=" + json.dumps(list(range(split))))
+          print("second_shards=" + json.dumps(list(range(split, count))))
           PY
 
-  full-phpt-shard:
+  full-phpt-shard-a:
     name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
     needs: [plan-full-phpt-shards]
     runs-on: ubuntu-latest
@@ -60,7 +65,84 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.shards) }}
+        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.first_shards) }}
+
+    steps:
+      - name: Checkout compiler
+        uses: actions/checkout@v4
+
+      - name: Checkout PHPT corpus
+        uses: actions/checkout@v4
+        with:
+          repository: php/php-src
+          ref: ${{ inputs.php_src_ref }}
+          path: .runtime/php-src-phpt
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld pkg-config php-cli
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Generate full-corpus shard
+        env:
+          PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+        run: |
+          tools/phpt-full-corpus-shard.sh \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count "${{ inputs.shard_count }}" \
+            --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
+
+      - name: Run full-corpus shard
+        env:
+          PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+          PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
+          PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
+          PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
+        run: |
+          set -euo pipefail
+          tools/run-bounded-phpt.sh \
+            --classify-harness-programs \
+            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
+          phpt_pid=$!
+          while kill -0 "$phpt_pid" 2>/dev/null; do
+            sleep 60
+            echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          done
+          wait "$phpt_pid"
+
+      - name: Upload shard artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpt-full-corpus-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          path: |
+            .runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt
+            .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
+
+  full-phpt-shard-b:
+    name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
+    needs: [plan-full-phpt-shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2880
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.second_shards) }}
 
     steps:
       - name: Checkout compiler
@@ -132,7 +214,7 @@ jobs:
   compose-full-phpt-number:
     name: compose full PHPT number
     runs-on: ubuntu-latest
-    needs: [full-phpt-shard]
+    needs: [full-phpt-shard-a, full-phpt-shard-b]
     if: always()
 
     steps:
