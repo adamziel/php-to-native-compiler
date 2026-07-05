@@ -72378,6 +72378,76 @@ var_dump(method_exists('Phar', 'mungServer'));
 }
 
 #[test]
+fn compile_phar_signature_algorithms_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-signature-algorithms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-signature-algorithms.php");
+    let output = root.join("phar-signature-algorithms-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_sig(string $label, array $signature): void {
+    echo $label, ':', $signature['hash_type'], ':', strlen($signature['hash']), "\n";
+}
+
+$phar = new Phar(__DIR__ . '/signature.phar.tar');
+var_dump($phar->getSignature());
+$phar['file1.txt'] = 'hi';
+dump_sig('default', $phar->getSignature());
+
+foreach ([
+    'MD5' => Phar::MD5,
+    'SHA1' => Phar::SHA1,
+    'SHA256' => Phar::SHA256,
+    'SHA512' => Phar::SHA512,
+    'OPENSSL' => Phar::OPENSSL,
+    'OPENSSL_SHA512' => Phar::OPENSSL_SHA512,
+    'OPENSSL_SHA256' => Phar::OPENSSL_SHA256,
+] as $label => $algorithm) {
+    $phar->setSignatureAlgorithm($algorithm, 'private-key-placeholder');
+    dump_sig($label, $phar->getSignature());
+}
+
+$data = new PharData(__DIR__ . '/signature-data.tar');
+$data['file1.txt'] = 'hi';
+var_dump($data->getSignature());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "default:SHA-256:64\n",
+            "MD5:MD5:32\n",
+            "SHA1:SHA-1:40\n",
+            "SHA256:SHA-256:64\n",
+            "SHA512:SHA-512:128\n",
+            "OPENSSL:OpenSSL:64\n",
+            "OPENSSL_SHA512:OpenSSL_SHA512:128\n",
+            "OPENSSL_SHA256:OpenSSL_SHA256:64\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_signature_type_name"));
+    assert!(c_source.contains("ptn_phar_archive_ensure_default_signature"));
+    assert!(c_source.contains("ptn_hash_sha512_digest_bytes"));
+}
+
+#[test]
 fn compile_phar_zip_archive_missing_eocd_rejected_to_native_binary() {
     let root = temp_dir("ptn-native-phar-zip-missing-eocd");
     fs::create_dir_all(&root).unwrap();

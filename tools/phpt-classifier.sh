@@ -3745,6 +3745,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/tar/rmdir.phpt|\
         ext/phar/tests/tar/tar_nohash.phpt|\
         ext/phar/tests/tar/phar_setdefaultstub.phpt|\
+        ext/phar/tests/tar/phar_setsignaturealgo2.phpt|\
         ext/phar/tests/tar/links.phpt|\
         ext/phar/tests/tar/links2.phpt|\
         ext/phar/tests/tar/links3.phpt|\

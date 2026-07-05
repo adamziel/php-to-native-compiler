@@ -1,0 +1,3 @@
+# PHAR archive-runtime current4 focused row pack.
+# Focus: tar PHAR signature algorithms and default executable SHA-256 signature.
+ext/phar/tests/tar/phar_setsignaturealgo2.phpt

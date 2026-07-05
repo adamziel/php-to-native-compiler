@@ -4000,6 +4000,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_tar_signature_algorithms = classify_at_relative_path(
+        "--TEST--\nphar tar signature algorithms\n--EXTENSIONS--\nphar\nopenssl\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$p = new Phar(__DIR__ . '/archive.phar.tar');\n$p['file1.txt'] = 'hi';\n$p->setSignatureAlgorithm(Phar::SHA256);\nvar_dump($p->getSignature()['hash_type']);\n--EXPECT--\n",
+        "ext/phar/tests/tar/phar_setsignaturealgo2.phpt",
+    );
+    assert_eq!(
+        phar_tar_signature_algorithms.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_tar_delete_and_unlink_archive_rows = [
         "ext/phar/tests/tar/delete.phpt",
         "ext/phar/tests/tar/all.phpt",

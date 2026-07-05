@@ -9584,6 +9584,8 @@ static void ptn_phar_archive_set_entry(
 static int ptn_phar_archive_retain_entry(PtnPharArchiveState *archive, const char *entry_name);
 static void ptn_phar_archive_release_entry(PtnPharArchiveState *archive, const char *entry_name);
 static uint32_t ptn_crc32_bytes(const unsigned char *input, size_t input_len);
+static void ptn_hash_sha256_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[32]);
+static void ptn_hash_sha512_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[64]);
 static void ptn_spl_file_info_init_data(
     PtnSplFileInfoData *data,
     char *path,
@@ -207601,8 +207603,37 @@ static char *ptn_phar_append_compression_suffix(char *path, int64_t compression)
     return result;
 }
 
+static const char *ptn_phar_signature_type_name(uint32_t algorithm) {
+    switch (algorithm) {
+        case PTN_PHAR_SIGNATURE_MD5:
+            return "MD5";
+        case PTN_PHAR_SIGNATURE_SHA1:
+            return "SHA-1";
+        case PTN_PHAR_SIGNATURE_SHA256:
+            return "SHA-256";
+        case PTN_PHAR_SIGNATURE_SHA512:
+            return "SHA-512";
+        case PTN_PHAR_SIGNATURE_OPENSSL:
+            return "OpenSSL";
+        case PTN_PHAR_SIGNATURE_OPENSSL_SHA256:
+            return "OpenSSL_SHA256";
+        case PTN_PHAR_SIGNATURE_OPENSSL_SHA512:
+            return "OpenSSL_SHA512";
+        default:
+            return NULL;
+    }
+}
+
+static int ptn_phar_signature_algorithm_supported(uint32_t algorithm) {
+    return ptn_phar_signature_type_name(algorithm) != NULL;
+}
+
 static void ptn_phar_archive_recompute_signature(PtnPharArchiveState *archive, uint32_t algorithm) {
     if (archive == NULL) {
+        return;
+    }
+    const char *signature_type = ptn_phar_signature_type_name(algorithm);
+    if (signature_type == NULL) {
         return;
     }
     PtnStringBuffer buffer;
@@ -207622,21 +207653,38 @@ static void ptn_phar_archive_recompute_signature(PtnPharArchiveState *archive, u
     }
     const unsigned char *digest_input =
         (const unsigned char *)(buffer.data == NULL ? "" : buffer.data);
+    char *hash = NULL;
     if (algorithm == PTN_PHAR_SIGNATURE_MD5) {
         unsigned char digest[16];
         ptn_md5_digest_bytes(digest_input, buffer.len, digest);
-        char *hash = ptn_digest_hex_string(digest, sizeof(digest));
-        ptn_phar_archive_set_signature(archive, hash, "MD5");
-        free(hash);
-    } else {
+        hash = ptn_digest_hex_string(digest, sizeof(digest));
+    } else if (algorithm == PTN_PHAR_SIGNATURE_SHA1) {
         unsigned char digest[20];
         ptn_sha1_digest_bytes(digest_input, buffer.len, digest);
-        char *hash = ptn_digest_hex_string(digest, sizeof(digest));
-        ptn_phar_archive_set_signature(archive, hash, "SHA-1");
-        free(hash);
+        hash = ptn_digest_hex_string(digest, sizeof(digest));
+    } else if (algorithm == PTN_PHAR_SIGNATURE_SHA512 ||
+               algorithm == PTN_PHAR_SIGNATURE_OPENSSL_SHA512) {
+        unsigned char digest[64];
+        ptn_hash_sha512_digest_bytes(digest_input, buffer.len, digest);
+        hash = ptn_digest_hex_string(digest, sizeof(digest));
+    } else {
+        unsigned char digest[32];
+        ptn_hash_sha256_digest_bytes(digest_input, buffer.len, digest);
+        hash = ptn_digest_hex_string(digest, sizeof(digest));
     }
+    ptn_phar_archive_set_signature(archive, hash, signature_type);
+    free(hash);
     free(buffer.data);
     ptn_phar_archive_mark_modified(archive);
+}
+
+static void ptn_phar_archive_ensure_default_signature(PtnPharArchiveState *archive) {
+    if (archive == NULL ||
+        archive->entry_count == 0 ||
+        (archive->signature_hash != NULL && archive->signature_hash[0] != '\0')) {
+        return;
+    }
+    ptn_phar_archive_recompute_signature(archive, PTN_PHAR_SIGNATURE_SHA256);
 }
 
 static PtnValue ptn_phar_signature_array(PtnRuntime *runtime, PtnPharArchiveState *archive) {
@@ -209544,6 +209592,13 @@ static PtnValue ptn_phar_call_method(
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
             return ptn_null();
         }
+        PtnValue receiver_value = ptn_value_deref(receiver);
+        const char *receiver_class = receiver_value.type == PTN_OBJECT
+            ? receiver_value.as.object->class_name
+            : "Phar";
+        if (!ptn_internal_class_name_is_phar_data(receiver_class)) {
+            ptn_phar_archive_ensure_default_signature(data->archive);
+        }
         return ptn_phar_signature_array(runtime, data->archive);
     }
     if (ptn_ascii_case_equal(name, "getAlias")) {
@@ -209702,7 +209757,7 @@ static PtnValue ptn_phar_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        if (algorithm != PTN_PHAR_SIGNATURE_MD5 && algorithm != PTN_PHAR_SIGNATURE_SHA1) {
+        if (!ptn_phar_signature_algorithm_supported((uint32_t)algorithm)) {
             ptn_throw_exception(runtime, "UnexpectedValueException", "Unknown signature algorithm specified");
             return ptn_null();
         }
