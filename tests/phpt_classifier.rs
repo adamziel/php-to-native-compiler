@@ -1087,6 +1087,50 @@ fn phpt_classifier_unlocks_verified_xml_encoding_skipif_row() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_xmlreader_libxml_skipif_rows() {
+    let expand_skipif = "--TEST--\nxmlreader expand verified skipif\n--EXTENSIONS--\nxmlreader\ndom\n--SKIPIF--\n<?php $reader = new XMLReader();\nif (!method_exists($reader, 'expand')) print \"skip\";\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    for path in [
+        "ext/xmlreader/tests/expand.phpt",
+        "ext/xmlreader/tests/expand_error.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(expand_skipif, path);
+        assert!(
+            classification.starts_with("runnable\t")
+                && classification.contains("verified XML --SKIPIF-- row"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let libxml_version_skipif = "--TEST--\nlibxml verified skipif\n--EXTENSIONS--\nxmlreader\n--SKIPIF--\n<?php\nif (LIBXML_VERSION === 20904) die('skip fails with libxml 2.9.4');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        libxml_version_skipif,
+        "ext/xmlreader/tests/bug73053.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified XML --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let libxml_open_basedir_skipif = "--TEST--\nlibxml open_basedir verified skipif\n--EXTENSIONS--\ndom\n--SKIPIF--\n<?php\nif (LIBXML_VERSION < 20912) die('skip For libxml2 >= 2.9.12 only');\nif (preg_match('/[^\\x00-\\x7F]/', __DIR__)) die('skip path contains non-ASCII characters');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        libxml_open_basedir_skipif,
+        "ext/libxml/tests/bug61367-read_2.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified XML --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        expand_skipif,
+        "ext/xmlreader/tests/unverified_expand_probe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(

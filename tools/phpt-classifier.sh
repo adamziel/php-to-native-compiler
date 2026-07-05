@@ -3649,7 +3649,11 @@ ptn_phpt_supported_pcre_verified_skipif_row() {
 
 ptn_phpt_supported_xml_verified_skipif_row() {
     case "$1" in
-        ext/xml/tests/bug32001b.phpt)
+        ext/xml/tests/bug32001b.phpt|\
+        ext/xmlreader/tests/expand.phpt|\
+        ext/xmlreader/tests/expand_error.phpt|\
+        ext/xmlreader/tests/bug73053.phpt|\
+        ext/libxml/tests/bug61367-read_2.phpt)
             return 0
             ;;
         *)
