@@ -114,6 +114,7 @@ jobs:
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
           set -euo pipefail
+          mkdir -p "$PHPT_PROGRESS_DIR"
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
@@ -122,7 +123,12 @@ jobs:
             sleep 60
             echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           done
+          set +e
           wait "$phpt_pid"
+          shard_exit=$?
+          set -e
+          echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
+          echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
 
       - name: Upload shard artifact
         if: always()
@@ -133,6 +139,20 @@ jobs:
           path: |
             .runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
+
+      - name: Fail shard on nonzero PHPT exit
+        if: always()
+        run: |
+          exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
+          if [[ ! -f "$exit_code_path" ]]; then
+            echo "missing shard exit code: $exit_code_path" >&2
+            exit 1
+          fi
+          exit_code="$(cat "$exit_code_path")"
+          if [[ "$exit_code" != "0" ]]; then
+            echo "PHPT shard ${{ matrix.shard }}/${{ inputs.shard_count }} failed with exit code $exit_code" >&2
+            exit "$exit_code"
+          fi
 
   full-phpt-shard-b:
     name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
@@ -191,6 +211,7 @@ jobs:
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
           set -euo pipefail
+          mkdir -p "$PHPT_PROGRESS_DIR"
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
@@ -199,7 +220,12 @@ jobs:
             sleep 60
             echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           done
+          set +e
           wait "$phpt_pid"
+          shard_exit=$?
+          set -e
+          echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
+          echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
 
       - name: Upload shard artifact
         if: always()
@@ -210,6 +236,20 @@ jobs:
           path: |
             .runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
+
+      - name: Fail shard on nonzero PHPT exit
+        if: always()
+        run: |
+          exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
+          if [[ ! -f "$exit_code_path" ]]; then
+            echo "missing shard exit code: $exit_code_path" >&2
+            exit 1
+          fi
+          exit_code="$(cat "$exit_code_path")"
+          if [[ "$exit_code" != "0" ]]; then
+            echo "PHPT shard ${{ matrix.shard }}/${{ inputs.shard_count }} failed with exit code $exit_code" >&2
+            exit "$exit_code"
+          fi
 
   compose-full-phpt-number:
     name: compose full PHPT number
