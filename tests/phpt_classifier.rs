@@ -2906,6 +2906,7 @@ fn phpt_classifier_keeps_supported_typed_static_reflection_rows_runnable_by_path
         "ext/reflection/tests/ReflectionProperty_typed_static.phpt",
         "ext/reflection/tests/gh12856.phpt",
         "ext/standard/tests/file/gh13136.phpt",
+        "ext/standard/tests/filters/user_filter_seek_03.phpt",
     ];
 
     for row in rows {
@@ -5008,6 +5009,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     );
     assert_eq!(
         supported_stream_pipe_blocking_row,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let supported_stream_context_process_resource_error_row = classify_at_relative_path(
+        "--TEST--\nstream context process resource error\n--FILE--\n<?php\n$process = proc_open('nothing', [], $pipes);\nstream_context_set_options($process, []);\n--EXPECT--\n",
+        "ext/standard/tests/streams/stream_context_set_options_error.phpt",
+    );
+    assert_eq!(
+        supported_stream_context_process_resource_error_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
 

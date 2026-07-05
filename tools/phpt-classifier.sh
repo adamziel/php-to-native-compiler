@@ -1854,7 +1854,8 @@ ptn_phpt_supported_process_boundary_row() {
         [[ "$rel" == "ext/standard/tests/file/bug60120.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug72853.phpt" ]] ||
         [[ "$rel" == "ext/standard/tests/streams/bug64770.phpt" ]] ||
-        [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]]
+        [[ "$rel" == "ext/standard/tests/streams/bug60602.phpt" ]] ||
+        [[ "$rel" == "ext/standard/tests/streams/stream_context_set_options_error.phpt" ]]
 }
 
 ptn_phpt_supported_zlib_output_ini_row() {
@@ -2718,6 +2719,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_reflection_property_typed_metadata_row ||
                 ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_setStaticPropertyValue_003|ReflectionProperty_(isReadable_static|isWritable_static|typed_static)|gh12856)[.]phpt$/ ||
                 ptn_path ~ /ext\/standard\/tests\/file\/gh13136[.]phpt$/ ||
+                ptn_path ~ /ext\/standard\/tests\/filters\/user_filter_seek_03[.]phpt$/ ||
                 ptn_path ~ /(^|\/)Zend\/tests\/type_declarations\/typed_properties_043[.]phpt$/
         }
         function ptn_supported_assertion_closure_source_row() {
