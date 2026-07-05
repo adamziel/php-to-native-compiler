@@ -3341,6 +3341,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/019.phpt|\
         ext/phar/tests/019b.phpt|\
         ext/phar/tests/020.phpt|\
+        ext/phar/tests/025.phpt|\
         ext/phar/tests/029.phpt|\
         ext/phar/tests/030.phpt|\
         ext/phar/tests/024.phpt|\
@@ -3357,6 +3358,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/delete.phpt|\
         ext/phar/tests/rename_dir.phpt|\
         ext/phar/tests/gh20882.phpt|\
+        ext/phar/tests/gh13836.phpt|\
         ext/phar/tests/019c.phpt|\
         ext/phar/tests/bug54395.phpt|\
         ext/phar/tests/bug79503.phpt|\
