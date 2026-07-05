@@ -22776,9 +22776,9 @@ echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
         concat!(
             "<a href=\"?PHPSESSID=testid\"></a>\n",
             "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
-            "<a href=\"?%3Cname%3E=%3Cvalue%3E&PHPSESSID=testid\"></a>\n",
+            "<a href=\"?PHPSESSID=testid&%3Cname%3E=%3Cvalue%3E\"></a>\n",
             "<a href=\"//url-rewriter.test/foo.php?%3Cname%3E=%3Cvalue%3E\"></a>\n",
-            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" /><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" />x</form>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" /><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
             "<a href=\"?PHPSESSID=testid\"></a>\n",
             "<a href=\"//url-rewriter.test/foo.php\"></a>\n",
             "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",

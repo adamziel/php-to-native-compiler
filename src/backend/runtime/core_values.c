@@ -1404,16 +1404,24 @@ typedef struct {
 } PtnArrayLiteralEntry;
 
 typedef struct {
-    PtnStringBuffer buffer;
-    int has_callback;
-    PtnValue callback;
-    size_t chunk_size;
-    int64_t flags;
+    size_t start;
+    int session_active;
     int trans_sid_rewrite;
     char *trans_sid_session_name;
     char *trans_sid_session_id;
     char *trans_sid_hosts;
     char *trans_sid_arg_separator_output;
+} PtnOutputBufferTransSidSegment;
+
+typedef struct {
+    PtnStringBuffer buffer;
+    int has_callback;
+    PtnValue callback;
+    size_t chunk_size;
+    int64_t flags;
+    PtnOutputBufferTransSidSegment *trans_sid_segments;
+    size_t trans_sid_segments_len;
+    size_t trans_sid_segments_capacity;
 } PtnOutputBuffer;
 
 typedef struct {

@@ -1261,7 +1261,13 @@ static void ptn_output_rewrite_append_form_inputs(PtnRuntime *runtime, PtnString
     }
 }
 
-static char *ptn_output_rewrite_vars_output(PtnRuntime *runtime, const char *data, size_t len, size_t *rewritten_len) {
+static char *ptn_output_rewrite_vars_output(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    int rewrite_actionless_forms,
+    size_t *rewritten_len
+) {
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t cursor = 0;
@@ -1303,7 +1309,7 @@ static char *ptn_output_rewrite_vars_output(PtnRuntime *runtime, const char *dat
                 tag_end + 1 - absolute_attr_start - attr_len
             );
         } else if (form) {
-            int allowed = 1;
+            int allowed = rewrite_actionless_forms;
             if (ptn_session_html_find_attr(data + tag_start, tag_len, "action", 6, &attr_start, &attr_len)) {
                 size_t absolute_attr_start = tag_start + attr_start;
                 allowed = ptn_output_rewrite_url_allowed(runtime, data + absolute_attr_start, attr_len);
@@ -1321,7 +1327,7 @@ static char *ptn_output_rewrite_vars_output(PtnRuntime *runtime, const char *dat
     return output.data;
 }
 
-static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer);
+static void ptn_output_buffer_record_trans_sid_state(PtnRuntime *runtime, PtnOutputBuffer *buffer);
 
 static void ptn_output_write_raw(PtnRuntime *runtime, PtnRuntime *root, const char *data, size_t len) {
     if (data == NULL || len == 0) {
@@ -1425,9 +1431,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     }
     if (output_buffers_len != 0) {
         PtnOutputBuffer *buffer = &root->output_buffers[output_buffers_len - 1];
-        if (ptn_session_trans_sid_output_enabled(runtime)) {
-            ptn_output_buffer_capture_trans_sid_snapshot(runtime, buffer);
-        }
+        ptn_output_buffer_record_trans_sid_state(runtime, buffer);
         ptn_string_buffer_append_len(&buffer->buffer, data, len);
         if (buffer->chunk_size != 0 && buffer->buffer.len >= buffer->chunk_size) {
             (void)ptn_output_buffer_flush_top_chunk(
@@ -1490,7 +1494,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         }
         if (rewrite_vars_enabled) {
             rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, 1, &rewritten_len);
             output_data = rewrite_vars_rewritten;
         }
     }
@@ -1500,36 +1504,149 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     free(combined);
 }
 
-static void ptn_output_buffer_clear_trans_sid_snapshot(PtnOutputBuffer *buffer) {
-    if (buffer == NULL) {
+static void ptn_output_buffer_trans_sid_segment_clear(PtnOutputBufferTransSidSegment *segment) {
+    if (segment == NULL) {
         return;
     }
-    free(buffer->trans_sid_session_name);
-    free(buffer->trans_sid_session_id);
-    free(buffer->trans_sid_hosts);
-    free(buffer->trans_sid_arg_separator_output);
-    buffer->trans_sid_session_name = NULL;
-    buffer->trans_sid_session_id = NULL;
-    buffer->trans_sid_hosts = NULL;
-    buffer->trans_sid_arg_separator_output = NULL;
-    buffer->trans_sid_rewrite = 0;
+    free(segment->trans_sid_session_name);
+    free(segment->trans_sid_session_id);
+    free(segment->trans_sid_hosts);
+    free(segment->trans_sid_arg_separator_output);
+    segment->trans_sid_session_name = NULL;
+    segment->trans_sid_session_id = NULL;
+    segment->trans_sid_hosts = NULL;
+    segment->trans_sid_arg_separator_output = NULL;
+    segment->session_active = 0;
+    segment->trans_sid_rewrite = 0;
 }
 
-static void ptn_output_buffer_capture_trans_sid_snapshot(PtnRuntime *runtime, PtnOutputBuffer *buffer) {
+static void ptn_output_buffer_clear_trans_sid_segments(PtnOutputBuffer *buffer) {
     if (buffer == NULL) {
         return;
     }
-    ptn_output_buffer_clear_trans_sid_snapshot(buffer);
-    PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
-    buffer->trans_sid_session_name = ptn_duplicate_string(
-        state.session_name == NULL || state.session_name[0] == '\0' ? "PHPSESSID" : state.session_name
-    );
-    buffer->trans_sid_session_id = ptn_duplicate_string(state.session_id == NULL ? "" : state.session_id);
-    buffer->trans_sid_hosts = ptn_duplicate_string(state.trans_sid_hosts == NULL ? "" : state.trans_sid_hosts);
-    buffer->trans_sid_arg_separator_output = ptn_duplicate_string(
-        state.arg_separator_output == NULL || state.arg_separator_output[0] == '\0' ? "&" : state.arg_separator_output
-    );
-    buffer->trans_sid_rewrite = 1;
+    for (size_t i = 0; i < buffer->trans_sid_segments_len; i++) {
+        ptn_output_buffer_trans_sid_segment_clear(&buffer->trans_sid_segments[i]);
+    }
+    free(buffer->trans_sid_segments);
+    buffer->trans_sid_segments = NULL;
+    buffer->trans_sid_segments_len = 0;
+    buffer->trans_sid_segments_capacity = 0;
+}
+
+static int ptn_output_buffer_trans_sid_segment_matches(
+    PtnOutputBufferTransSidSegment *segment,
+    int session_active,
+    int trans_sid_enabled,
+    const char *hosts,
+    const char *session_name,
+    const char *session_id,
+    const char *arg_separator
+) {
+    if (
+        segment == NULL ||
+        segment->session_active != session_active ||
+        segment->trans_sid_rewrite != trans_sid_enabled
+    ) {
+        return 0;
+    }
+    if (!session_active) {
+        return 1;
+    }
+    if (strcmp(segment->trans_sid_hosts == NULL ? "" : segment->trans_sid_hosts, hosts) != 0) {
+        return 0;
+    }
+    if (!trans_sid_enabled) {
+        return 1;
+    }
+    return strcmp(segment->trans_sid_session_name == NULL ? "" : segment->trans_sid_session_name, session_name) == 0 &&
+        strcmp(segment->trans_sid_session_id == NULL ? "" : segment->trans_sid_session_id, session_id) == 0 &&
+        strcmp(
+            segment->trans_sid_arg_separator_output == NULL ? "" : segment->trans_sid_arg_separator_output,
+            arg_separator
+        ) == 0;
+}
+
+static void ptn_output_buffer_record_trans_sid_state(PtnRuntime *runtime, PtnOutputBuffer *buffer) {
+    if (buffer == NULL) {
+        return;
+    }
+
+    int trans_sid_enabled = ptn_session_trans_sid_output_enabled(runtime);
+    int session_active = ptn_output_session_active(runtime);
+    PtnSessionTransSidRewriteState state = {0};
+    const char *session_name = "";
+    const char *session_id = "";
+    const char *hosts = "";
+    const char *arg_separator = "";
+    if (session_active || trans_sid_enabled) {
+        state = ptn_session_trans_sid_current_state(runtime);
+        hosts = state.trans_sid_hosts == NULL ? "" : state.trans_sid_hosts;
+        if (trans_sid_enabled) {
+            session_name = state.session_name == NULL || state.session_name[0] == '\0' ? "PHPSESSID" : state.session_name;
+            session_id = state.session_id == NULL ? "" : state.session_id;
+            arg_separator =
+                state.arg_separator_output == NULL || state.arg_separator_output[0] == '\0' ? "&" : state.arg_separator_output;
+        }
+    }
+
+    if (buffer->trans_sid_segments_len == 0 && !session_active && !trans_sid_enabled) {
+        return;
+    }
+
+    PtnOutputBufferTransSidSegment *last = buffer->trans_sid_segments_len == 0
+        ? NULL
+        : &buffer->trans_sid_segments[buffer->trans_sid_segments_len - 1];
+    if (
+        ptn_output_buffer_trans_sid_segment_matches(
+            last,
+            session_active,
+            trans_sid_enabled,
+            hosts,
+            session_name,
+            session_id,
+            arg_separator
+        )
+    ) {
+        return;
+    }
+
+    size_t start = buffer->buffer.len;
+    if (last != NULL && last->start == start) {
+        ptn_output_buffer_trans_sid_segment_clear(last);
+    } else {
+        if (buffer->trans_sid_segments_len == buffer->trans_sid_segments_capacity) {
+            size_t new_capacity = buffer->trans_sid_segments_capacity == 0
+                ? 4
+                : buffer->trans_sid_segments_capacity * 2;
+            if (new_capacity < buffer->trans_sid_segments_capacity ||
+                new_capacity > SIZE_MAX / sizeof(PtnOutputBufferTransSidSegment)) {
+                ptn_abort_out_of_memory();
+            }
+            PtnOutputBufferTransSidSegment *new_segments = realloc(
+                buffer->trans_sid_segments,
+                new_capacity * sizeof(PtnOutputBufferTransSidSegment)
+            );
+            if (new_segments == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            buffer->trans_sid_segments = new_segments;
+            buffer->trans_sid_segments_capacity = new_capacity;
+        }
+        last = &buffer->trans_sid_segments[buffer->trans_sid_segments_len++];
+        memset(last, 0, sizeof(*last));
+        last->start = start;
+    }
+
+    last->session_active = session_active;
+    last->trans_sid_rewrite = trans_sid_enabled;
+    if (session_active) {
+        last->trans_sid_hosts = ptn_duplicate_string(hosts);
+    }
+    if (trans_sid_enabled) {
+        last->trans_sid_session_name = ptn_duplicate_string(session_name);
+        last->trans_sid_session_id = ptn_duplicate_string(session_id);
+        last->trans_sid_arg_separator_output = ptn_duplicate_string(arg_separator);
+    }
 }
 
 static void ptn_output_write_rewritten_buffer_output(PtnRuntime *runtime, const char *data, size_t len) {
@@ -1569,7 +1686,12 @@ static void ptn_output_write_rewritten_buffer_output(PtnRuntime *runtime, const 
     ptn_output_write_raw(runtime, root, data, len);
 }
 
-static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuffer *buffer, const char *data, size_t len) {
+static void ptn_output_write_trans_sid_buffer_segment(
+    PtnRuntime *runtime,
+    const PtnOutputBufferTransSidSegment *segment,
+    const char *data,
+    size_t len
+) {
     if (data == NULL || len == 0) {
         ptn_output_write(runtime, data, len);
         return;
@@ -1580,9 +1702,7 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
     char *rewrite_vars_rewritten = NULL;
     char *trans_sid_rewritten = NULL;
     int rewrite_vars_enabled = ptn_output_rewrite_vars_enabled(runtime);
-    int trans_sid_enabled = buffer != NULL && buffer->trans_sid_rewrite;
-    int rewrite_vars_first =
-        rewrite_vars_enabled && trans_sid_enabled && ptn_output_rewrite_vars_before_trans_sid(runtime);
+    int trans_sid_enabled = segment != NULL && segment->trans_sid_rewrite;
     if (rewrite_vars_enabled || trans_sid_enabled) {
         PtnRuntime *root = ptn_runtime_root(runtime);
         if (root == NULL) {
@@ -1622,24 +1742,26 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
-        if (rewrite_vars_enabled && (!trans_sid_enabled || rewrite_vars_first)) {
-            rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
-            output_data = rewrite_vars_rewritten;
-        }
         if (trans_sid_enabled) {
-            PtnSessionTransSidRewriteState state;
-            state.session_name = buffer->trans_sid_session_name;
-            state.session_id = buffer->trans_sid_session_id;
-            state.trans_sid_hosts = buffer->trans_sid_hosts;
-            state.arg_separator_output = buffer->trans_sid_arg_separator_output;
+            PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
         }
-        if (rewrite_vars_enabled && trans_sid_enabled && !rewrite_vars_first) {
+        if (rewrite_vars_enabled) {
+            int rewrite_actionless_forms = !(
+                segment != NULL &&
+                segment->session_active &&
+                (segment->trans_sid_hosts == NULL || segment->trans_sid_hosts[0] == '\0')
+            );
             rewrite_vars_rewritten =
-                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, &rewritten_len);
+                ptn_output_rewrite_vars_output(
+                    runtime,
+                    output_data,
+                    rewritten_len,
+                    rewrite_actionless_forms,
+                    &rewritten_len
+                );
             output_data = rewrite_vars_rewritten;
         }
         ptn_output_write_rewritten_buffer_output(runtime, output_data, rewritten_len);
@@ -1649,6 +1771,41 @@ static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuff
     free(rewrite_vars_rewritten);
     free(trans_sid_rewritten);
     free(combined);
+}
+
+static void ptn_output_write_trans_sid_buffer(PtnRuntime *runtime, PtnOutputBuffer *buffer, const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        ptn_output_write(runtime, data, len);
+        return;
+    }
+    if (buffer == NULL || buffer->trans_sid_segments_len == 0) {
+        ptn_output_write_trans_sid_buffer_segment(runtime, NULL, data, len);
+        return;
+    }
+
+    size_t cursor = 0;
+    for (size_t i = 0; i < buffer->trans_sid_segments_len; i++) {
+        PtnOutputBufferTransSidSegment *segment = &buffer->trans_sid_segments[i];
+        if (segment->start > len) {
+            break;
+        }
+        if (segment->start > cursor) {
+            ptn_output_write_trans_sid_buffer_segment(runtime, NULL, data + cursor, segment->start - cursor);
+        }
+        size_t next = i + 1 < buffer->trans_sid_segments_len
+            ? buffer->trans_sid_segments[i + 1].start
+            : len;
+        if (next > len) {
+            next = len;
+        }
+        if (next > segment->start) {
+            ptn_output_write_trans_sid_buffer_segment(runtime, segment, data + segment->start, next - segment->start);
+        }
+        cursor = next;
+    }
+    if (cursor < len) {
+        ptn_output_write_trans_sid_buffer_segment(runtime, NULL, data + cursor, len - cursor);
+    }
 }
 
 static PTN_UNUSED void ptn_output_write_cstr(PtnRuntime *runtime, const char *data) {
@@ -8594,7 +8751,7 @@ static void ptn_output_buffer_destroy(PtnOutputBuffer *buffer) {
     buffer->callback = ptn_null();
     buffer->chunk_size = 0;
     buffer->flags = 0;
-    ptn_output_buffer_clear_trans_sid_snapshot(buffer);
+    ptn_output_buffer_clear_trans_sid_segments(buffer);
 }
 
 static void ptn_output_buffer_push(
@@ -8630,11 +8787,9 @@ static void ptn_output_buffer_push(
     buffer->callback = has_callback ? ptn_value_clone_deref(callback) : ptn_null();
     buffer->chunk_size = chunk_size;
     buffer->flags = flags;
-    buffer->trans_sid_rewrite = 0;
-    buffer->trans_sid_session_name = NULL;
-    buffer->trans_sid_session_id = NULL;
-    buffer->trans_sid_hosts = NULL;
-    buffer->trans_sid_arg_separator_output = NULL;
+    buffer->trans_sid_segments = NULL;
+    buffer->trans_sid_segments_len = 0;
+    buffer->trans_sid_segments_capacity = 0;
 }
 
 static PTN_UNUSED void ptn_runtime_startup_output_handler(PtnRuntime *runtime) {
@@ -8828,11 +8983,9 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
     PtnStringBuffer chunk_buffer = buffer->buffer;
     chunk.buffer = chunk_buffer;
     ptn_string_buffer_init(&buffer->buffer);
-    buffer->trans_sid_rewrite = 0;
-    buffer->trans_sid_session_name = NULL;
-    buffer->trans_sid_session_id = NULL;
-    buffer->trans_sid_hosts = NULL;
-    buffer->trans_sid_arg_separator_output = NULL;
+    buffer->trans_sid_segments = NULL;
+    buffer->trans_sid_segments_len = 0;
+    buffer->trans_sid_segments_capacity = 0;
     int handler_output_warned = 0;
     PtnValue output = ptn_output_buffer_apply_callback(
         runtime,
@@ -8868,7 +9021,7 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
     }
     free(handler_name);
     ptn_value_destroy(&output);
-    ptn_output_buffer_clear_trans_sid_snapshot(&chunk);
+    ptn_output_buffer_clear_trans_sid_segments(&chunk);
     return 1;
 }
 

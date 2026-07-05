@@ -1,0 +1,17 @@
+# ptn string/output full-corpus current1 row pack.
+# Source: latest full-dashboard failure cluster from ext/standard output,
+# error, include-path, and file helper rows at php-src revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+
+ext/standard/tests/general_functions/output_add_rewrite_var_basic1.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic2.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic3.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic4.phpt
+ext/standard/tests/general_functions/error_get_last.phpt
+ext/standard/tests/general_functions/error_get_last_002.phpt
+ext/standard/tests/general_functions/include_path.phpt
+ext/standard/tests/general_functions/get_include_path_basic.phpt
+ext/standard/tests/file/readfile_basic.phpt
+ext/standard/tests/file/readfile_error.phpt
+ext/standard/tests/file/file_get_contents_basic.phpt
+ext/standard/tests/file/file_error.phpt
