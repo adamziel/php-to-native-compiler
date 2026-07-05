@@ -115951,8 +115951,8 @@ try { @var_dump(~$missing); } catch (\\TypeError $e) { echo \"suppressed: \", $e
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Cannot perform bitwise not on null\n\
-Cannot perform bitwise not on bool\n\
-Cannot perform bitwise not on bool\n\
+Cannot perform bitwise not on false\n\
+Cannot perform bitwise not on true\n\
 suppressed: Cannot perform bitwise not on null\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
