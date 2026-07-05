@@ -54958,6 +54958,41 @@ try {
 }
 
 #[test]
+fn compile_keyword_named_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-named-class-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-named-class-constants.php");
+    let output = root.join("keyword-named-class-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+final class KeywordConstantBox {
+    private const CONTINUE = -1;
+    public const MATCH = 7;
+
+    public function value(): int {
+        return self::CONTINUE + self::MATCH;
+    }
+}
+
+echo (new KeywordConstantBox())->value(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "6\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("strcmp(constant_name, \"CONTINUE\") == 0"));
+    assert!(c_source.contains("strcmp(constant_name, \"MATCH\") == 0"));
+}
+
+#[test]
 fn compile_static_typed_enum_constants_to_native_binary() {
     let root = temp_dir("ptn-native-static-typed-enum-constants");
     fs::create_dir_all(&root).unwrap();
