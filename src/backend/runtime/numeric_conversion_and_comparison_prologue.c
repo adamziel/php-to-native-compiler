@@ -6346,6 +6346,13 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "_ZendTestClass")) {
+        if (strcmp(constant, "TYPED_CLASS_CONST2") == 0 ||
+            strcmp(constant, "ZEND_TEST_DEPRECATED") == 0) {
+            *out = ptn_int(42);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DatePeriod")) {
         if (strcmp(constant, "EXCLUDE_START_DATE") == 0) {
             *out = ptn_int(1);

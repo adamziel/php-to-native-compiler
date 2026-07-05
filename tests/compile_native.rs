@@ -50622,6 +50622,73 @@ echo $types[0], \"\\n\", $types[1], \"\\n\";
 }
 
 #[test]
+fn compile_internal_zend_test_class_constant_and_variadic_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-class-constant-variadic-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-class-constant-variadic-metadata.php");
+    let output = root.join("internal-zend-test-class-constant-variadic-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+$deprecated = new ReflectionClassConstant('_ZendTestClass', 'ZEND_TEST_DEPRECATED');
+var_dump($deprecated->getValue());
+var_dump($deprecated->isDeprecated());
+
+$typed = new ReflectionClassConstant('_ZendTestClass', 'TYPED_CLASS_CONST2');
+var_dump($typed->getValue());
+var_dump($typed->isDeprecated());
+
+$reflection = new ReflectionMethod('_ZendTestClass', 'variadicTest');
+$arguments = $reflection->getParameters();
+
+echo (string) $arguments[0], \"\\n\";
+var_dump($arguments[0]->isVariadic());
+
+$type = $arguments[0]->getType();
+var_dump($type instanceof ReflectionUnionType);
+
+$types = $type->getTypes();
+var_dump($types[0]->getName());
+var_dump($types[0]->allowsNull());
+var_dump($types[1]->getName());
+var_dump($types[1]->allowsNull());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(42)\n",
+            "bool(true)\n",
+            "int(42)\n",
+            "bool(false)\n",
+            "Parameter #0 [ <optional> Iterator|string ...$elements ]\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(8) \"Iterator\"\n",
+            "bool(false)\n",
+            "string(6) \"string\"\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("_ZendTestClass::variadicTest"));
+    assert!(c_source.contains("ZEND_TEST_DEPRECATED"));
+}
+
+#[test]
 fn compile_failed_internal_typed_property_assignment_releases_receiver_guard_to_native_binary() {
     let root = temp_dir("ptn-native-internal-typed-property-receiver-guard");
     fs::create_dir_all(&root).unwrap();

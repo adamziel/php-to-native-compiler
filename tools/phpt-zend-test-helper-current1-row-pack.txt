@@ -1,0 +1,8 @@
+# ext/zend_test helper rows from the current dashboard unsupported helper pack.
+# Avoids observer/proc/PHAR/harness-skipif residual rows owned by other lanes.
+ext/zend_test/tests/gh16908.phpt
+ext/zend_test/tests/zend_internal_class_prop_intersection.phpt
+ext/zend_test/tests/class_constant_deprecated.phpt
+ext/zend_test/tests/attribute-deprecated.phpt
+ext/zend_test/tests/variadic_arguments.phpt
+ext/zend_test/tests/internal-call-internal-static-return.phpt

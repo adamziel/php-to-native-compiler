@@ -1541,6 +1541,7 @@ ptn_phpt_requires_zend_test_native_helper() {
 
     [[ "$row" == ext/zend_test/tests/* ]] || return 1
     [[ "$row" == "ext/zend_test/tests/do_operation_not_cast.phpt" ]] && return 1
+    ptn_phpt_supported_zend_test_class_metadata_row "$row" && return 1
 
     if LC_ALL=C grep -Eq "$helper_pattern" "$path"; then
         return 0
@@ -1563,6 +1564,46 @@ ptn_phpt_requires_zend_test_native_helper() {
     )
 
     return 1
+}
+
+ptn_phpt_supported_zend_test_class_metadata_row() {
+    case "$1" in
+        ext/zend_test/tests/zend_internal_class_prop_intersection.phpt|\
+        ext/zend_test/tests/class_constant_deprecated.phpt|\
+        ext/zend_test/tests/variadic_arguments.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_requires_zend_test_deprecated_attribute_stubs() {
+    local row=$1
+    local path=$2
+
+    [[ "$row" == ext/zend_test/tests/* ]] || return 1
+    [[ "$row" == "ext/zend_test/tests/attribute-deprecated.phpt" ]] && return 0
+    LC_ALL=C grep -Eq "zend_test_deprecated_attr|ZEND_TEST_DEPRECATED_ATTR|ZEND_TEST_ATTRIBUTED_CONSTANT" "$path"
+}
+
+ptn_phpt_requires_zend_test_magic_call_forward() {
+    local row=$1
+    local path=$2
+
+    [[ "$row" == ext/zend_test/tests/* ]] || return 1
+    [[ "$row" == "ext/zend_test/tests/gh16908.phpt" ]] && return 0
+    LC_ALL=C grep -Eq "_ZendTestMagicCallForward" "$path"
+}
+
+ptn_phpt_requires_zend_test_zend_call_method() {
+    local row=$1
+    local path=$2
+
+    [[ "$row" == ext/zend_test/tests/* ]] || return 1
+    [[ "$row" == "ext/zend_test/tests/internal-call-internal-static-return.phpt" ]] && return 0
+    LC_ALL=C grep -Eq "zend_call_method[[:space:]]*\\(" "$path"
 }
 
 ptn_phpt_first_unsupported_ini() {
@@ -3810,8 +3851,28 @@ ptn_phpt_classify_row() {
         fi
     fi
 
+    if ptn_phpt_requires_zend_test_deprecated_attribute_stubs "$rel" "$path"; then
+        printf 'unsupported-zend-test-deprecated-attribute-stubs\trequires zend_test Deprecated attribute function and constant stubs not modeled by the PTN runtime extension shim\n'
+        return 0
+    fi
+
+    if ptn_phpt_requires_zend_test_magic_call_forward "$rel" "$path"; then
+        printf 'unsupported-zend-test-magic-call-forward\trequires _ZendTestMagicCallForward by-reference magic call helper not modeled by the PTN runtime extension shim\n'
+        return 0
+    fi
+
+    if ptn_phpt_requires_zend_test_zend_call_method "$rel" "$path"; then
+        printf 'unsupported-zend-test-zend-call-method\trequires zend_call_method() internal dispatch helper not modeled by the PTN runtime extension shim\n'
+        return 0
+    fi
+
     if ptn_phpt_requires_zend_test_native_helper "$rel" "$path"; then
         printf 'unsupported-zend-test-helper\trequires zend_test native helper API not modeled by the PTN runtime extension shim\n'
+        return 0
+    fi
+
+    if ptn_phpt_supported_zend_test_class_metadata_row "$rel"; then
+        printf 'runnable\tselected for PTN semantic measurement\n'
         return 0
     fi
 

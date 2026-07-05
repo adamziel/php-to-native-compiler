@@ -292,6 +292,34 @@ fn phpt_classifier_supports_modeled_do_operation_no_cast_row() {
 }
 
 #[test]
+fn phpt_classifier_supports_modeled_zend_test_class_metadata_rows() {
+    for (row, source) in [
+        (
+            "ext/zend_test/tests/zend_internal_class_prop_intersection.phpt",
+            "--TEST--\nintersection property\n--EXTENSIONS--\nzend_test\nspl\n--FILE--\n<?php\nclass I extends EmptyIterator implements Countable { public function count(): int { return 1; } }\n$o = new _ZendTestClass();\n$o->classIntersectionProp = new I();\n--EXPECT--\n",
+        ),
+        (
+            "ext/zend_test/tests/class_constant_deprecated.phpt",
+            "--TEST--\nclass constant deprecation\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\n$r = new ReflectionClassConstant('_ZendTestClass', 'ZEND_TEST_DEPRECATED');\nvar_dump($r->isDeprecated());\n--EXPECT--\n",
+        ),
+        (
+            "ext/zend_test/tests/variadic_arguments.phpt",
+            "--TEST--\nvariadic metadata\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\n$reflection = new ReflectionMethod('_ZendTestClass', 'variadicTest');\nvar_dump($reflection->getParameters());\n--EXPECT--\n",
+        ),
+    ] {
+        let classification = classify_at_relative_path(
+            source,
+            row,
+        );
+
+        assert_eq!(
+            classification, "runnable\tselected for PTN semantic measurement\n",
+            "{row}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_excludes_zend_test_native_helper_rows() {
     let classification = classify_at_relative_path(
         "--TEST--\ncompile to ast\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nzend_test_compile_to_ast('<?php echo 1;');\n--EXPECT--\n",
@@ -306,6 +334,41 @@ fn phpt_classifier_excludes_zend_test_native_helper_rows() {
         classification.contains("zend_test native helper API"),
         "{classification:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_excludes_precise_zend_test_helper_residual_rows() {
+    let rows = [
+        (
+            "ext/zend_test/tests/attribute-deprecated.phpt",
+            "<?php\nzend_test_deprecated_attr();\n_ZendTestClass::ZEND_TEST_DEPRECATED_ATTR;\n",
+            "unsupported-zend-test-deprecated-attribute-stubs\t",
+        ),
+        (
+            "ext/zend_test/tests/gh16908.phpt",
+            "<?php\nnew _ZendTestMagicCallForward();\n",
+            "unsupported-zend-test-magic-call-forward\t",
+        ),
+        (
+            "ext/zend_test/tests/internal-call-internal-static-return.phpt",
+            "<?php\nzend_call_method(_ZendTestClass::class, 'returnsStatic');\n",
+            "unsupported-zend-test-zend-call-method\t",
+        ),
+    ];
+
+    for (row, body, expected_prefix) in rows {
+        let classification = classify_at_relative_path(
+            &format!(
+                "--TEST--\nprecise zend_test residual\n--EXTENSIONS--\nzend_test\n--FILE--\n{body}--EXPECT--\n"
+            ),
+            row,
+        );
+
+        assert!(
+            classification.starts_with(expected_prefix),
+            "{row}: {classification:?}"
+        );
+    }
 }
 
 #[test]

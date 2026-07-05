@@ -235863,6 +235863,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_walk", 2, 3, ptn_internal_array_walk },
         { "array_walk_recursive", 2, 3, ptn_internal_array_walk_recursive },
         { "ArrayObject::__construct", 0, 3, ptn_internal_method_metadata_stub },
+        { "_ZendTestClass::variadicTest", 0, PTN_VARIADIC_ARGS, ptn_internal_method_metadata_stub },
         { "arsort", 1, 2, ptn_internal_arsort },
         { "asin", 1, 1, ptn_internal_asin },
         { "asinh", 1, 1, ptn_internal_asinh },
@@ -237437,6 +237438,9 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "flags", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
         { "iteratorClass", "string", "string", 0, 1, 0, 0, 1, "\"ArrayIterator\"", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_ZEND_TEST_VARIADIC_TEST_PARAMETERS[] = {
+        { "elements", NULL, "Iterator|string", 0, 0, 0, 1, 1, NULL, NULL, NULL },
+    };
     static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
         { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
         { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
@@ -237589,6 +237593,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             NULL,
             NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "_ZendTestClass::variadicTest")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ZEND_TEST_VARIADIC_TEST_PARAMETERS) /
+                sizeof(PTN_INTERNAL_ZEND_TEST_VARIADIC_TEST_PARAMETERS[0]),
+            0,
+            1,
+            PTN_INTERNAL_ZEND_TEST_VARIADIC_TEST_PARAMETERS,
+            0,
+            "_ZendTestClass",
+            "static",
             0,
             0
         );
@@ -241637,6 +241657,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "errorCode")
             || ptn_ascii_case_equal(method_name, "errorInfo")
             || ptn_ascii_case_equal(method_name, "closeCursor");
+    }
+    if ((ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
+        ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass")) &&
+        ptn_ascii_case_equal(method_name, "variadicTest")) {
+        return 1;
     }
     if (ptn_internal_class_name_is_sqlite3(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -246189,6 +246215,12 @@ static const char *ptn_reflection_method_internal_declaring_class(
         ptn_internal_class_name_is_reflection_function(class_name)) &&
         ptn_reflection_function_abstract_method_exists(method_name)) {
         return "ReflectionFunctionAbstract";
+    }
+    if ((ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
+        ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass")) &&
+        ptn_ascii_case_equal(method_name, "variadicTest")) {
+        return "_ZendTestClass";
     }
     return class_name;
 }
@@ -254249,7 +254281,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         if (constant_name == NULL) {
             return ptn_null();
         }
-        int result = ptn_declared_class_reflection_constant_is_deprecated(data->class_name, constant_name);
+        int result = ptn_declared_class_reflection_constant_is_deprecated(data->class_name, constant_name) ||
+            (ptn_ascii_case_equal(data->class_name, "_ZendTestClass") &&
+                strcmp(constant_name, "ZEND_TEST_DEPRECATED") == 0);
         free(constant_name);
         return ptn_bool(result);
     }
