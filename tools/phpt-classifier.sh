@@ -1861,8 +1861,12 @@ ptn_phpt_unsupported_ini_blocker() {
     key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
 
     case "$key" in
-        fatal_error_backtraces|log_errors|report_memleaks)
+        fatal_error_backtraces|log_errors|error_log_mode|report_memleaks)
             printf 'unsupported-diagnostics-ini\trequires engine diagnostic/logging mode %s; PTN diagnostics do not yet model that runtime channel\n' "$key"
+            return 0
+            ;;
+        browscap)
+            printf 'unsupported-browscap-ini\trequires browscap parser/user-agent database support for get_browser(); PTN does not yet model that standard extension surface\n'
             return 0
             ;;
         enable_post_data_reading)
@@ -1875,6 +1879,22 @@ ptn_phpt_unsupported_ini_blocker() {
             ;;
         sendmail_path|sys_temp_dir)
             printf 'unsupported-host-path-ini\trequires host path ini %s; PTN runtime does not yet model this process-global configuration\n' "$key"
+            return 0
+            ;;
+        opcache.record_warnings)
+            printf 'unsupported-opcache-diagnostics-ini\trequires opcache compile-warning recording state; PTN does not yet model cached opcache diagnostic replay\n'
+            return 0
+            ;;
+        zend_test.replace_zend_execute_ex)
+            printf 'unsupported-zend-test-execute-hook-ini\trequires zend_test executor replacement hooks; PTN does not model Zend executor override instrumentation\n'
+            return 0
+            ;;
+        zend_test.observer.execute_internal|zend_test.observer.observe_all|zend_test.observer.show_output|zend_test.observer.show_return_value)
+            printf 'unsupported-zend-test-observer-ini\trequires zend_test observer instrumentation output; PTN does not model Zend observer callbacks\n'
+            return 0
+            ;;
+        zlib.output_compression)
+            printf 'unsupported-zlib-output-compression-ini\trequires zlib output-compression header/body handling; PTN only models verified bounded zlib output-buffer rows\n'
             return 0
             ;;
     esac

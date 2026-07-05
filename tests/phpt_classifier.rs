@@ -3785,6 +3785,18 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "engine diagnostic/logging mode",
         ),
         (
+            "error log mode diagnostics",
+            "error_log_mode=0600",
+            "unsupported-diagnostics-ini\t",
+            "engine diagnostic/logging mode",
+        ),
+        (
+            "browscap database",
+            "browscap={PWD}/browscap.ini",
+            "unsupported-browscap-ini\t",
+            "browscap parser/user-agent database",
+        ),
+        (
             "function disabling",
             "disable_functions=assert",
             "unsupported-function-disable-ini\t",
@@ -3795,6 +3807,30 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "sys_temp_dir=/tmp",
             "unsupported-host-path-ini\t",
             "host path ini",
+        ),
+        (
+            "opcache warning recording",
+            "opcache.record_warnings=1",
+            "unsupported-opcache-diagnostics-ini\t",
+            "opcache compile-warning recording state",
+        ),
+        (
+            "zend_test executor hook",
+            "zend_test.replace_zend_execute_ex=1",
+            "unsupported-zend-test-execute-hook-ini\t",
+            "zend_test executor replacement hooks",
+        ),
+        (
+            "zend_test observer hook",
+            "zend_test.observer.show_output=1",
+            "unsupported-zend-test-observer-ini\t",
+            "zend_test observer instrumentation output",
+        ),
+        (
+            "zlib output compression",
+            "zlib.output_compression=On",
+            "unsupported-zlib-output-compression-ini\t",
+            "zlib output-compression header/body handling",
         ),
     ];
 
