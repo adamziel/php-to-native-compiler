@@ -2050,6 +2050,11 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
             "--TEST--\nyield assignment by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield $v = 0;\n}\n--EXPECTF--\n",
             "requires generator suspension timing for by-reference yielded assignment expressions",
         ),
+        (
+            "unbounded generator loop",
+            "--TEST--\ninfinite generator\n--FILE--\n<?php\nfunction gen() {\n    while (true) {\n        yield 1;\n    }\n}\nforeach (gen() as $value) {\n    break;\n}\n--EXPECT--\n",
+            "requires lazy generator suspension for unbounded generator loops",
+        ),
     ];
 
     for (name, phpt, reason) in cases {

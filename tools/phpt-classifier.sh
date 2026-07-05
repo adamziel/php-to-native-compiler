@@ -2409,6 +2409,10 @@ ptn_phpt_first_unsupported_language_surface() {
             if (ptn_has_generator_resume_call(line)) {
                 ptn_generator_resume_call_context = 1
             }
+            if (ptn_function_body_depth > 0 &&
+                line ~ /(^|[^[:alnum:]_$])while[[:space:]]*\([[:space:]]*(true|1)[[:space:]]*\)/) {
+                ptn_unbounded_generator_loop_depth = ptn_function_body_depth
+            }
             if (ptn_generator_assignment_yield_context &&
                 ptn_generator_resume_call_context &&
                 !ptn_supported_generator_fiber_lifecycle_row()) {
@@ -2515,6 +2519,12 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_generator_foreach_context = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
+                if (ptn_unbounded_generator_loop_depth > 0 &&
+                    ptn_function_body_depth >= ptn_unbounded_generator_loop_depth) {
+                    print "unsupported-generator-runtime\trequires lazy generator suspension for unbounded generator loops, outside PTN collected generator runtime"
+                    found = 1
+                    exit
+                }
                 if (ptn_in_by_ref_function && !ptn_supported_generator_by_reference_yield_from_diagnostic_row()) {
                     ptn_defer_generator_reason("requires generator yield-from by-reference rejection, outside PTN collected generator runtime")
                 }
@@ -2526,6 +2536,12 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
+                if (ptn_unbounded_generator_loop_depth > 0 &&
+                    ptn_function_body_depth >= ptn_unbounded_generator_loop_depth) {
+                    print "unsupported-generator-runtime\trequires lazy generator suspension for unbounded generator loops, outside PTN collected generator runtime"
+                    found = 1
+                    exit
+                }
                 if (ptn_in_by_ref_function &&
                     line ~ /yield[^;]*[^=!<>]=([^=>]|$)/ &&
                     !ptn_supported_generator_by_reference_assignment_yield_row()) {
@@ -2548,6 +2564,10 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_function_body_depth -= ptn_line_close_braces
                 if (ptn_function_body_depth < 0) {
                     ptn_function_body_depth = 0
+                }
+                if (ptn_unbounded_generator_loop_depth > 0 &&
+                    ptn_function_body_depth < ptn_unbounded_generator_loop_depth) {
+                    ptn_unbounded_generator_loop_depth = 0
                 }
                 if (ptn_by_ref_function_body_depth > 0 &&
                     ptn_function_body_depth < ptn_by_ref_function_body_depth) {
