@@ -2110,34 +2110,39 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
         (
             "fiber by-ref return",
             "--TEST--\nfiber\n--FILE--\n<?php\n$fiber = new Fiber(function &() {\n    Fiber::suspend();\n    return $var;\n});\n--EXPECT--\n",
+            "unsupported-generator-runtime",
             "requires Fiber coroutine runtime and by-reference return/getReturn boundary",
         ),
         (
             "by-ref generator yield from",
             "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
+            "unsupported-generator-reference-boundary",
             "requires generator yield-from by-reference rejection",
         ),
         (
             "generator foreach cleanup",
             "--TEST--\ngenerator foreach cleanup\n--FILE--\n<?php\nfunction gen(array $array) {\n    foreach ($array as $value) {\n        yield $value;\n    }\n}\n--EXPECT--\n",
-            "requires generator suspension cleanup for live foreach variables and premature close",
+            "unsupported-generator-lazy-body",
+            "requires generator body laziness and suspension cleanup for live foreach variables and premature close",
         ),
         (
             "by-ref yielded assignment expression",
             "--TEST--\nyield assignment by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield $v = 0;\n}\n--EXPECTF--\n",
+            "unsupported-generator-reference-boundary",
             "requires generator suspension timing for by-reference yielded assignment expressions",
         ),
         (
             "unbounded generator loop",
             "--TEST--\ninfinite generator\n--FILE--\n<?php\nfunction gen() {\n    while (true) {\n        yield 1;\n    }\n}\nforeach (gen() as $value) {\n    break;\n}\n--EXPECT--\n",
+            "unsupported-generator-lazy-suspension",
             "requires lazy generator suspension for unbounded generator loops",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt, category, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-generator-runtime\t"),
+            classification.starts_with(&format!("{category}\t")),
             "{name}: {classification:?}"
         );
         assert!(
@@ -2145,6 +2150,37 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_splits_generator_runtime_residual_rows() {
+    let return_type_generator = "--TEST--\nReturn type covariance works with generators\n--FILE--\n<?php\ninterface Collection extends IteratorAggregate {\n    function getIterator(): Iterator;\n}\n\nclass SomeCollection implements Collection {\n    function getIterator(): Generator {\n        foreach ($this->data as $key => $value) {\n            yield $key => $value;\n        }\n    }\n}\n\n$some = new SomeCollection();\necho get_class($some->getIterator());\n--EXPECT--\nGenerator\n";
+    for relative_path in [
+        "Zend/tests/return_types/generators003.phpt",
+        "Zend/tests/return_types/generators005.phpt",
+    ] {
+        let classification = classify_at_relative_path(return_type_generator, relative_path);
+        assert!(
+            classification.starts_with("unsupported-generator-lazy-body\t"),
+            "{relative_path}: {classification:?}"
+        );
+        assert!(
+            classification.contains("requires generator body laziness"),
+            "{relative_path}: {classification:?}"
+        );
+    }
+
+    let zlib_stream_loop = "--TEST--\nzlib stream generator loop\n--EXTENSIONS--\nzlib\n--FILE--\n<?php\nfunction deflateStream($mode) {\n    $deflated = null;\n    while (true) {\n        $dataToCompress = yield $deflated;\n        $deflated = $dataToCompress;\n    }\n}\n$stream = deflateStream(ZLIB_ENCODING_RAW);\n$stream->send('a');\n--EXPECT--\n";
+    let classification =
+        classify_at_relative_path(zlib_stream_loop, "ext/zlib/tests/deflate_add_basic.phpt");
+    assert!(
+        classification.starts_with("unsupported-generator-lazy-suspension\t"),
+        "{classification:?}"
+    );
+    assert!(
+        classification.contains("requires lazy generator suspension for unbounded generator loops"),
+        "{classification:?}"
+    );
 }
 
 #[test]
