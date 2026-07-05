@@ -3800,7 +3800,11 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         );
     }
 
-    let phar_verified_wrapper_rows = ["ext/phar/tests/025.phpt", "ext/phar/tests/gh13836.phpt"];
+    let phar_verified_wrapper_rows = [
+        "ext/phar/tests/025.phpt",
+        "ext/phar/tests/gh13836.phpt",
+        "ext/phar/tests/phar_gobyebye.phpt",
+    ];
     for row in phar_verified_wrapper_rows {
         let classification = classify_at_relative_path(
             "--TEST--\nphar verified wrapper residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\ninclude 'phar://' . __DIR__ . '/archive.phar/a.php';\n--EXPECT--\na\n",
