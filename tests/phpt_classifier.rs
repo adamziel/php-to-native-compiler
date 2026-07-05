@@ -2110,7 +2110,7 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
         (
             "fiber by-ref return",
             "--TEST--\nfiber\n--FILE--\n<?php\n$fiber = new Fiber(function &() {\n    Fiber::suspend();\n    return $var;\n});\n--EXPECT--\n",
-            "unsupported-generator-runtime",
+            "unsupported-generator-reference-boundary",
             "requires Fiber coroutine runtime and by-reference return/getReturn boundary",
         ),
         (
@@ -2150,6 +2150,33 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_splits_remaining_generator_runtime_dashboard_rows() {
+    let fiber_return_by_ref = "--TEST--\nFiber function may return by ref, but getReturn() always returns by val\n--FILE--\n<?php\n$fiber = new Fiber(function &() {\n    Fiber::suspend();\n    return $var;\n});\n$fiber->start();\n$fiber->resume();\nvar_dump($fiber->getReturn());\n--EXPECT--\nNULL\n";
+    let classification =
+        classify_at_relative_path(fiber_return_by_ref, "Zend/tests/fibers/return-by-ref.phpt");
+    assert!(
+        classification.starts_with("unsupported-generator-reference-boundary\t"),
+        "{classification:?}"
+    );
+
+    let arrow_yield = "--TEST--\nYield inside arrow functions\n--FILE--\n<?php\n$fn = fn() => yield 123;\nforeach ($fn() as $val) {\n    var_dump($val);\n}\n$fn = fn() => yield from [456, 789];\nforeach ($fn() as $val) {\n    var_dump($val);\n}\n$fn = fn() => fn() => yield 987;\nforeach ($fn()() as $val) {\n    var_dump($val);\n}\n--EXPECT--\nint(123)\nint(456)\nint(789)\nint(987)\n";
+    let classification =
+        classify_at_relative_path(arrow_yield, "Zend/tests/arrow_functions/008.phpt");
+    assert!(
+        classification.starts_with("unsupported-generator-lazy-body\t"),
+        "{classification:?}"
+    );
+
+    let fibonacci = "--TEST--\nCreating an infinite fibonacci list using a generator\n--FILE--\n<?php\nfunction fib() {\n    list($a, $b) = [1, 1];\n    while (true) {\n        yield $b;\n        list($a, $b) = [$b, $a + $b];\n    }\n}\nforeach (fib() as $n) {\n    if ($n > 1000) break;\n    var_dump($n);\n}\n--EXPECT--\nint(1)\n";
+    let classification =
+        classify_at_relative_path(fibonacci, "Zend/tests/generators/fibonacci.phpt");
+    assert!(
+        classification.starts_with("unsupported-generator-lazy-suspension\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]

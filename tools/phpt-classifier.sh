@@ -2651,7 +2651,7 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/ &&
                 !ptn_supported_fiber_surface_line(line) &&
                 !ptn_supported_generator_fiber_lifecycle_row()) {
-                print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                print "unsupported-generator-reference-boundary\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit
             }
