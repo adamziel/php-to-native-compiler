@@ -209409,10 +209409,10 @@ static int ptn_phar_uri_open_directory(const char *uri, PtnPharDirectoryData **d
 
 static mode_t ptn_phar_archive_entry_mode(PtnPharArchiveEntry *entry) {
     int is_dir = ptn_phar_archive_entry_is_dir(entry);
-    mode_t permissions = entry == NULL ? 0 : (mode_t)(entry->flags & 0777);
-    if (permissions == 0 && (entry == NULL || (entry->flags & PTN_PHAR_ENTRY_MODE_SET) == 0)) {
-        permissions = is_dir ? 0777 : 0666;
-    }
+    int mode_set = entry != NULL && (entry->flags & PTN_PHAR_ENTRY_MODE_SET) != 0;
+    mode_t permissions = mode_set
+        ? (mode_t)(entry->flags & 0777)
+        : (is_dir ? 0555 : 0444);
 #if defined(S_IFDIR) && defined(S_IFREG)
     return (is_dir ? S_IFDIR : S_IFREG) | permissions;
 #else
@@ -209465,9 +209465,9 @@ static int ptn_phar_uri_stat(const char *uri, struct stat *info) {
             memset(info, 0, sizeof(*info));
             info->st_dev = 12;
 #if defined(S_IFDIR)
-            info->st_mode = S_IFDIR | 0777;
+            info->st_mode = S_IFDIR | 0555;
 #else
-            info->st_mode = 0040000 | 0777;
+            info->st_mode = 0040000 | 0555;
 #endif
             info->st_nlink = 1;
             info->st_rdev = -1;
@@ -209771,7 +209771,12 @@ static int ptn_include_phar_php_entry(
                 free(data);
                 ptn_abort_out_of_memory();
             }
-            ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+            ptn_emit_compile_warning_with_leading_newline(
+                runtime,
+                message,
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
             free(message);
             if (runtime != NULL &&
                 runtime->exceptions != NULL &&
@@ -209856,7 +209861,12 @@ static int ptn_include_phar_php_entry(
                 free(data);
                 ptn_abort_out_of_memory();
             }
-            ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+            ptn_emit_compile_warning_with_leading_newline(
+                runtime,
+                message,
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
             free(message);
             free(detail);
             free(data);
@@ -209950,7 +209960,12 @@ static int ptn_include_phar_plain_entry(
             free(message);
             ptn_abort_out_of_memory();
         }
-        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+        ptn_emit_compile_warning_with_leading_newline(
+            runtime,
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
         free(message);
         if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
             if (result_out != NULL) {
@@ -210023,7 +210038,12 @@ static int ptn_include_phar_plain_entry(
             free(message);
             ptn_abort_out_of_memory();
         }
-        ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+        ptn_emit_compile_warning_with_leading_newline(
+            runtime,
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
         free(message);
         if (result_out != NULL) {
             *result_out = ptn_bool(0);

@@ -2809,6 +2809,26 @@ static PTN_UNUSED void ptn_emit_compile_warning_direct(PtnRuntime *runtime, cons
     );
 }
 
+static PTN_UNUSED void ptn_emit_compile_warning_direct_with_leading_newline(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    diagnostics->emitted_warning = 1;
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        path != NULL ? path : "ptn",
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_emit_compile_warning(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
@@ -2819,6 +2839,23 @@ static PTN_UNUSED void ptn_emit_compile_warning(PtnRuntime *runtime, const char 
         return;
     }
     ptn_emit_compile_warning_direct(runtime, message, path, line);
+}
+
+static PTN_UNUSED void ptn_emit_compile_warning_with_leading_newline(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
+        diagnostics->emitted_warning = 1;
+        return;
+    }
+    ptn_emit_compile_warning_direct_with_leading_newline(runtime, message, path, line);
 }
 
 static PTN_UNUSED void ptn_emit_compile_deprecation_direct(PtnRuntime *runtime, const char *message, const char *path, size_t line) {

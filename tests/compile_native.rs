@@ -71127,7 +71127,7 @@ include $fname;
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "stat\nint(12)\nint(33206)\nint(2)\nint(33206)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
+        "stat\nint(12)\nint(33060)\nint(2)\nint(33060)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -71624,6 +71624,57 @@ include $alias . '/b/new.php';
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_phar_php_entry"));
     assert!(c_source.contains("ptn_include_phar_plain_entry"));
+}
+
+#[test]
+fn compile_phar_deleted_entry_include_warning_spacing_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-deleted-entry-include-warning-spacing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-deleted-entry-include-warning-spacing.php");
+    let output = root.join("phar-deleted-entry-include-warning-spacing-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/deleted-entry.phar.php';
+$alias = 'phar://' . $fname;
+$phar = new Phar($fname);
+$phar['a.php'] = '<?php echo "This is a\n"; ?>';
+$phar['b/c.php'] = '<?php echo "This is b/c\n"; ?>';
+include $alias . '/a.php';
+unlink($alias . '/b/c.php');
+include $alias . '/b/c.php';
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_READONLY", "0")
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "This is a\n\nWarning: include(phar://{}/deleted-entry.phar.php/b/c.php): Failed to open stream: phar error: \"b/c.php\" is not a file in phar \"{}/deleted-entry.phar.php\" in {} on line 9\n\nWarning: include(): Failed opening 'phar://{}/deleted-entry.phar.php/b/c.php' for inclusion (include_path='.') in {} on line 9\n",
+            root.display(),
+            root.display(),
+            input.display(),
+            root.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_phar_php_entry"));
 }
 
 #[test]
