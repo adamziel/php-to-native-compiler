@@ -113,27 +113,87 @@ jobs:
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
+          PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
+          PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
         run: |
-          set +e
-          set -uo pipefail
-          mkdir -p "$PHPT_PROGRESS_DIR"
-          # Keep PHPT child processes in a separate session so signal-heavy tests
-          # cannot kill the runner shell before shard artifacts are uploaded.
-          setsid timeout --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
-            tools/run-bounded-phpt.sh \
-            --classify-harness-programs \
-            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
-          phpt_pid=$!
-          while kill -0 "$phpt_pid" 2>/dev/null; do
-            sleep 60
-            echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          done
-          set +e
-          wait "$phpt_pid"
-          shard_exit=$?
-          echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
-          echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
-          exit 0
+          python3 <<'PY'
+          import datetime
+          import os
+          import pathlib
+          import signal
+          import subprocess
+          import sys
+          import time
+
+          shard = os.environ["PTN_PHPT_SHARD_INDEX"]
+          shard_count = os.environ["PTN_PHPT_SHARD_COUNT"]
+          progress_dir = pathlib.Path(os.environ["PHPT_PROGRESS_DIR"])
+          progress_dir.mkdir(parents=True, exist_ok=True)
+          shard_manifest = f".runtime/full-phpt-shards/shard-{shard}.txt"
+          timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
+          command = [
+              "tools/run-bounded-phpt.sh",
+              "--classify-harness-programs",
+              shard_manifest,
+          ]
+
+          def timestamp() -> str:
+              return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+          print(
+              f"[full-phpt] shard {shard}/{shard_count} starting at {timestamp()}",
+              flush=True,
+          )
+          process = subprocess.Popen(command, start_new_session=True)
+          deadline = time.monotonic() + timeout_seconds
+          next_progress = time.monotonic() + 60
+          exit_code = None
+
+          try:
+              while True:
+                  exit_code = process.poll()
+                  if exit_code is not None:
+                      break
+                  now = time.monotonic()
+                  if now >= deadline:
+                      print(
+                          f"[full-phpt] shard {shard}/{shard_count} timed out at {timestamp()}",
+                          flush=True,
+                      )
+                      os.killpg(process.pid, signal.SIGTERM)
+                      try:
+                          exit_code = process.wait(timeout=30)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid, signal.SIGKILL)
+                          exit_code = process.wait()
+                      if exit_code == 0:
+                          exit_code = 124
+                      break
+                  if now >= next_progress:
+                      print(
+                          f"[full-phpt] shard {shard}/{shard_count} still running at {timestamp()}",
+                          flush=True,
+                      )
+                      next_progress = now + 60
+                  time.sleep(min(5, max(0.1, deadline - now)))
+          finally:
+              if exit_code is None:
+                  exit_code = process.poll()
+                  if exit_code is None:
+                      try:
+                          os.killpg(process.pid, signal.SIGTERM)
+                          exit_code = process.wait(timeout=30)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid, signal.SIGKILL)
+                          exit_code = process.wait()
+              (progress_dir / "shard-exit-code.txt").write_text(f"{exit_code}\n")
+              print(
+                  f"[full-phpt] shard {shard}/{shard_count} exited with {exit_code}",
+                  flush=True,
+              )
+
+          sys.exit(0)
+          PY
 
       - name: Upload shard artifact
         if: ${{ always() }}
@@ -215,27 +275,87 @@ jobs:
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
+          PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
+          PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
         run: |
-          set +e
-          set -uo pipefail
-          mkdir -p "$PHPT_PROGRESS_DIR"
-          # Keep PHPT child processes in a separate session so signal-heavy tests
-          # cannot kill the runner shell before shard artifacts are uploaded.
-          setsid timeout --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
-            tools/run-bounded-phpt.sh \
-            --classify-harness-programs \
-            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
-          phpt_pid=$!
-          while kill -0 "$phpt_pid" 2>/dev/null; do
-            sleep 60
-            echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          done
-          set +e
-          wait "$phpt_pid"
-          shard_exit=$?
-          echo "$shard_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
-          echo "[full-phpt] shard ${{ matrix.shard }}/${{ inputs.shard_count }} exited with $shard_exit"
-          exit 0
+          python3 <<'PY'
+          import datetime
+          import os
+          import pathlib
+          import signal
+          import subprocess
+          import sys
+          import time
+
+          shard = os.environ["PTN_PHPT_SHARD_INDEX"]
+          shard_count = os.environ["PTN_PHPT_SHARD_COUNT"]
+          progress_dir = pathlib.Path(os.environ["PHPT_PROGRESS_DIR"])
+          progress_dir.mkdir(parents=True, exist_ok=True)
+          shard_manifest = f".runtime/full-phpt-shards/shard-{shard}.txt"
+          timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
+          command = [
+              "tools/run-bounded-phpt.sh",
+              "--classify-harness-programs",
+              shard_manifest,
+          ]
+
+          def timestamp() -> str:
+              return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+          print(
+              f"[full-phpt] shard {shard}/{shard_count} starting at {timestamp()}",
+              flush=True,
+          )
+          process = subprocess.Popen(command, start_new_session=True)
+          deadline = time.monotonic() + timeout_seconds
+          next_progress = time.monotonic() + 60
+          exit_code = None
+
+          try:
+              while True:
+                  exit_code = process.poll()
+                  if exit_code is not None:
+                      break
+                  now = time.monotonic()
+                  if now >= deadline:
+                      print(
+                          f"[full-phpt] shard {shard}/{shard_count} timed out at {timestamp()}",
+                          flush=True,
+                      )
+                      os.killpg(process.pid, signal.SIGTERM)
+                      try:
+                          exit_code = process.wait(timeout=30)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid, signal.SIGKILL)
+                          exit_code = process.wait()
+                      if exit_code == 0:
+                          exit_code = 124
+                      break
+                  if now >= next_progress:
+                      print(
+                          f"[full-phpt] shard {shard}/{shard_count} still running at {timestamp()}",
+                          flush=True,
+                      )
+                      next_progress = now + 60
+                  time.sleep(min(5, max(0.1, deadline - now)))
+          finally:
+              if exit_code is None:
+                  exit_code = process.poll()
+                  if exit_code is None:
+                      try:
+                          os.killpg(process.pid, signal.SIGTERM)
+                          exit_code = process.wait(timeout=30)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid, signal.SIGKILL)
+                          exit_code = process.wait()
+              (progress_dir / "shard-exit-code.txt").write_text(f"{exit_code}\n")
+              print(
+                  f"[full-phpt] shard {shard}/{shard_count} exited with {exit_code}",
+                  flush=True,
+              )
+
+          sys.exit(0)
+          PY
 
       - name: Upload shard artifact
         if: ${{ always() }}
