@@ -63623,6 +63623,60 @@ static int ptn_read_file_bytes_with_normalized_probe(
     return result;
 }
 
+static int ptn_read_phar_uri_bytes_with_opened_path(
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **opened_path_out
+) {
+    if (path == NULL || strncmp(path, "phar://", 7) != 0) {
+        return 0;
+    }
+    int result = ptn_phar_uri_read_entry(path, data_out, len_out);
+    if (opened_path_out != NULL) {
+        *opened_path_out = ptn_duplicate_string(path);
+    }
+    if (result == 0 && errno == 0) {
+        errno = ENOENT;
+    }
+    return result;
+}
+
+static int ptn_read_current_phar_source_relative_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **opened_path_out
+) {
+    if (runtime == NULL ||
+        runtime->source_path == NULL ||
+        strncmp(runtime->source_path, "phar://", 7) != 0 ||
+        path == NULL ||
+        path[0] == '\0' ||
+        ptn_path_string_is_absolute(path) ||
+        ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return 0;
+    }
+    char *source_dir = ptn_runtime_source_dir_alloc(runtime);
+    if (source_dir == NULL) {
+        return 0;
+    }
+    char *candidate = ptn_path_join_alloc(source_dir, path);
+    free(source_dir);
+    int result = ptn_phar_uri_read_entry(candidate, data_out, len_out);
+    if (result != 0) {
+        if (opened_path_out != NULL) {
+            *opened_path_out = candidate;
+        } else {
+            free(candidate);
+        }
+        return result;
+    }
+    free(candidate);
+    return 0;
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *function_name,
@@ -63634,6 +63688,20 @@ static int ptn_read_file_bytes_with_search(
     size_t line
 ) {
     int result = 0;
+    result = ptn_read_phar_uri_bytes_with_opened_path(path, data_out, len_out, opened_path_out);
+    if (result != 0 || (path != NULL && strncmp(path, "phar://", 7) == 0)) {
+        return result;
+    }
+    result = ptn_read_current_phar_source_relative_bytes(
+        runtime,
+        path,
+        data_out,
+        len_out,
+        opened_path_out
+    );
+    if (result != 0) {
+        return result;
+    }
     if (!use_include_path || ptn_path_string_is_absolute(path)) {
         if (!ptn_open_basedir_allows_path(runtime, path)) {
             ptn_emit_open_basedir_warning(runtime, function_name, path, line);
@@ -63660,6 +63728,13 @@ static int ptn_read_file_bytes_with_search(
         char *directory = ptn_duplicate_string_len(segment, segment_len);
         char *candidate = ptn_path_join_alloc(directory, path);
         free(directory);
+        if (strncmp(candidate, "phar://", 7) == 0) {
+            result = ptn_phar_uri_read_entry(candidate, data_out, len_out);
+            if (result != 0) {
+                *opened_path_out = candidate;
+                return result;
+            }
+        }
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
             result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
@@ -63675,6 +63750,13 @@ static int ptn_read_file_bytes_with_search(
     if (source_dir != NULL) {
         char *candidate = ptn_path_join_alloc(source_dir, path);
         free(source_dir);
+        if (strncmp(candidate, "phar://", 7) == 0) {
+            result = ptn_phar_uri_read_entry(candidate, data_out, len_out);
+            if (result != 0) {
+                *opened_path_out = candidate;
+                return result;
+            }
+        }
         if (ptn_open_basedir_allows_path(runtime, candidate)) {
             result = ptn_read_file_bytes_with_normalized_probe(runtime, candidate, data_out, len_out);
             if (result != 0) {
@@ -204711,29 +204793,76 @@ static int ptn_phar_archive_find_entry_index(
     if (archive == NULL || name == NULL) {
         return 0;
     }
-    size_t name_len = strlen(name);
-    int name_has_trailing_separator =
-        name_len > 0 && (name[name_len - 1] == '/' || name[name_len - 1] == '\\');
-    for (size_t i = 0; i < archive->entry_count; i++) {
-        if (archive->entries[i].name != NULL && strcmp(archive->entries[i].name, name) == 0) {
-            if (index_out != NULL) {
-                *index_out = i;
+
+    char *normalized_name = ptn_duplicate_string(name);
+    size_t normalized_len = 0;
+    for (size_t cursor = 0; name[cursor] != '\0';) {
+        while (name[cursor] == '/' || name[cursor] == '\\') {
+            cursor++;
+        }
+        size_t segment_start = cursor;
+        while (name[cursor] != '\0' && name[cursor] != '/' && name[cursor] != '\\') {
+            cursor++;
+        }
+        size_t segment_len = cursor - segment_start;
+        if (segment_len == 0 ||
+            (segment_len == 1 && name[segment_start] == '.')) {
+            continue;
+        }
+        if (segment_len == 2 && name[segment_start] == '.' && name[segment_start + 1] == '.') {
+            while (normalized_len > 0 && normalized_name[normalized_len - 1] == '/') {
+                normalized_len--;
             }
-            return 1;
+            while (normalized_len > 0 && normalized_name[normalized_len - 1] != '/') {
+                normalized_len--;
+            }
+            continue;
+        }
+        if (normalized_len != 0 && normalized_name[normalized_len - 1] != '/') {
+            normalized_name[normalized_len++] = '/';
+        }
+        memcpy(normalized_name + normalized_len, name + segment_start, segment_len);
+        normalized_len += segment_len;
+    }
+    size_t original_len = strlen(name);
+    if (normalized_len != 0 &&
+        original_len != 0 &&
+        (name[original_len - 1] == '/' || name[original_len - 1] == '\\') &&
+        normalized_name[normalized_len - 1] != '/') {
+        normalized_name[normalized_len++] = '/';
+    }
+    normalized_name[normalized_len] = '\0';
+
+    size_t name_len = normalized_len;
+    int name_has_trailing_separator =
+        name_len > 0 && (normalized_name[name_len - 1] == '/' || normalized_name[name_len - 1] == '\\');
+    int found = 0;
+    size_t found_index = 0;
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        if (archive->entries[i].name != NULL && strcmp(archive->entries[i].name, normalized_name) == 0) {
+            found = 1;
+            found_index = i;
+            break;
         }
         if (!name_has_trailing_separator && archive->entries[i].name != NULL) {
             size_t entry_len = strlen(archive->entries[i].name);
             if (entry_len == name_len + 1 &&
-                strncmp(archive->entries[i].name, name, name_len) == 0 &&
+                strncmp(archive->entries[i].name, normalized_name, name_len) == 0 &&
                 (archive->entries[i].name[name_len] == '/' || archive->entries[i].name[name_len] == '\\')) {
-                if (index_out != NULL) {
-                    *index_out = i;
-                }
-                return 1;
+                found = 1;
+                found_index = i;
+                break;
             }
         }
     }
-    return 0;
+    free(normalized_name);
+    if (!found) {
+        return 0;
+    }
+    if (index_out != NULL) {
+        *index_out = found_index;
+    }
+    return 1;
 }
 
 static int ptn_phar_archive_entry_is_dir(PtnPharArchiveEntry *entry) {

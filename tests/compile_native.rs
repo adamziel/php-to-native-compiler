@@ -71267,6 +71267,82 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_readfile_and_dotdot_entry_lookup_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_manifest_entry(manifest: &mut Vec<u8>, name: &[u8], content: &[u8]) {
+        push_u32(manifest, name.len() as u32);
+        manifest.extend_from_slice(name);
+        push_u32(manifest, content.len() as u32);
+        push_u32(manifest, 0);
+        push_u32(manifest, content.len() as u32);
+        push_u32(manifest, 0);
+        push_u32(manifest, 0);
+        push_u32(manifest, 0);
+    }
+
+    let root = temp_dir("ptn-native-phar-readfile-dotdot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readfile-dotdot.phar.php");
+    let output = root.join("readfile-dotdot-bin");
+
+    let index = b"<?php readfile(\"dir/file1.txt\"); readfile(\"file1.txt\", true); include \"b/c.php\";";
+    let nested = b"<?php include \"../d\";";
+    let dotdot_target = b"<?php echo \"in d\\n\";";
+    let text = b"hi";
+
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 4);
+    push_u16(&mut manifest, 0x0011);
+    push_u32(&mut manifest, 0x00010000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_manifest_entry(&mut manifest, b"index.php", index);
+    push_manifest_entry(&mut manifest, b"dir/file1.txt", text);
+    push_manifest_entry(&mut manifest, b"b/c.php", nested);
+    push_manifest_entry(&mut manifest, b"d", dotdot_target);
+
+    let mut source = Vec::new();
+    source.extend_from_slice(
+        b"<?php\n\
+Phar::mapPhar('magic.phar');\n\
+set_include_path('phar://magic.phar/dir' . PATH_SEPARATOR . 'phar://magic.phar');\n\
+include 'phar://magic.phar/index.php';\n\
+__HALT_COMPILER(); ?>\r\n",
+    );
+    push_u32(&mut source, manifest.len() as u32);
+    source.extend_from_slice(&manifest);
+    source.extend_from_slice(index);
+    source.extend_from_slice(text);
+    source.extend_from_slice(nested);
+    source.extend_from_slice(dotdot_target);
+    fs::write(&input, source).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "hihiin d\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_read_current_phar_source_relative_bytes"));
+    assert!(c_source.contains("ptn_phar_uri_read_entry"));
+}
+
+#[test]
 fn compile_phar_entry_long_include_path_tail_to_native_binary() {
     let root = temp_dir("ptn-native-phar-entry-long-include-path");
     fs::create_dir_all(&root).unwrap();

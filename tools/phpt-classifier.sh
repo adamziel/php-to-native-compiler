@@ -3846,7 +3846,12 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/phar_stub_write.phpt|\
         ext/phar/tests/zip/phar_stub_error.phpt|\
         ext/phar/tests/zip/delete_in_phar_b.phpt|\
-        ext/phar/tests/tar/delete_in_phar_b.phpt)
+        ext/phar/tests/tar/delete_in_phar_b.phpt|\
+        ext/phar/tests/opendir_edgecases.phpt|\
+        ext/phar/tests/create_new_phar_c.phpt|\
+        ext/phar/tests/readfile.phpt|\
+        ext/phar/tests/phar_magic.phpt|\
+        ext/phar/tests/zip/phar_magic.phpt)
             return 0
             ;;
     esac

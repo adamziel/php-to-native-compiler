@@ -1,0 +1,7 @@
+# PHAR archive-runtime current5 focused row pack.
+# Focus: phar:// source-relative reads, include-path reads, normalized dot-dot entry lookup, and stale passing rows.
+ext/phar/tests/opendir_edgecases.phpt
+ext/phar/tests/create_new_phar_c.phpt
+ext/phar/tests/readfile.phpt
+ext/phar/tests/phar_magic.phpt
+ext/phar/tests/zip/phar_magic.phpt
