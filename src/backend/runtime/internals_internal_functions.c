@@ -207061,6 +207061,66 @@ static int ptn_phar_build_from_iterator_add_path(
     return 1;
 }
 
+static int ptn_phar_build_from_iterator_add_stream(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    PtnResource *resource,
+    const char *iterator_class,
+    const char *entry_name_raw,
+    PtnValue result,
+    size_t line
+) {
+    if (archive == NULL || entry_name_raw == NULL) {
+        return 0;
+    }
+    char *entry_name = ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_raw));
+    if (ptn_phar_entry_name_is_magic_directory_tree(entry_name)) {
+        free(entry_name);
+        return 1;
+    }
+    if (!ptn_stream_resource_is_open(resource)) {
+        ptn_phar_throw_iterator_file_open_failed(runtime, iterator_class, entry_name);
+        free(entry_name);
+        return 0;
+    }
+
+    PtnValue contents = ptn_stream_read_remaining(
+        runtime,
+        "Phar::buildFromIterator",
+        resource,
+        -1,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_drop(&contents);
+        free(entry_name);
+        return 0;
+    }
+    PtnValue contents_value = ptn_value_deref(contents);
+    if (contents_value.type != PTN_STRING) {
+        ptn_value_drop(&contents);
+        ptn_phar_throw_iterator_file_open_failed(runtime, iterator_class, entry_name);
+        free(entry_name);
+        return 0;
+    }
+
+    ptn_phar_archive_set_entry_with_timestamp(
+        archive,
+        entry_name,
+        contents_value.as.string.data,
+        contents_value.as.string.len,
+        (int64_t)time(NULL)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key(entry_name),
+        ptn_owned_string(ptn_duplicate_string("[stream]"))
+    );
+    ptn_value_drop(&contents);
+    free(entry_name);
+    return 1;
+}
+
 static PtnValue ptn_phar_build_from_iterator_result(
     PtnRuntime *runtime,
     PtnPharArchiveState *archive,
@@ -207102,42 +207162,62 @@ static PtnValue ptn_phar_build_from_iterator_result(
             ptn_value_destroy(&key);
             break;
         }
-        char *path = ptn_phar_iterator_item_path(runtime, current, key, line);
-        if (runtime->exceptions->active_exception == NULL && path == NULL) {
-            ptn_phar_throw_iterator_invalid_value(runtime, iterator_class);
-        }
-        if (runtime->exceptions->active_exception == NULL) {
-            char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
-            char *entry_name_override = NULL;
-            if (base_directory == NULL) {
-                PtnValue key_value = ptn_value_deref(key);
-                if (key_value.type == PTN_STRING) {
-                    entry_name_override = ptn_phar_iterator_string_from_value(key);
-                    free(entry_name);
-                    entry_name = ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
-                } else {
-                    ptn_phar_throw_iterator_invalid_key(runtime, iterator_class);
-                }
-            }
-            int64_t timestamp = 0;
-            if (ptn_phar_iterator_item_timestamp(runtime, current, path, entry_name, line, &timestamp) &&
-                runtime->exceptions->active_exception == NULL) {
-                ptn_phar_build_from_iterator_add_path(
+        PtnValue current_value = ptn_value_deref(current);
+        if (current_value.type == PTN_RESOURCE) {
+            PtnValue key_value = ptn_value_deref(key);
+            if (key_value.type != PTN_STRING) {
+                ptn_phar_throw_iterator_invalid_key(runtime, iterator_class);
+            } else {
+                char *entry_name = ptn_phar_iterator_string_from_value(key);
+                ptn_phar_build_from_iterator_add_stream(
                     runtime,
                     archive,
-                    path,
-                    base_directory,
+                    current_value.as.resource,
                     iterator_class,
-                    entry_name_override,
-                    timestamp,
+                    entry_name,
                     result,
                     line
                 );
+                free(entry_name);
             }
-            free(entry_name_override);
-            free(entry_name);
+        } else {
+            char *path = ptn_phar_iterator_item_path(runtime, current, key, line);
+            if (runtime->exceptions->active_exception == NULL && path == NULL) {
+                ptn_phar_throw_iterator_invalid_value(runtime, iterator_class);
+            }
+            if (runtime->exceptions->active_exception == NULL) {
+                char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
+                char *entry_name_override = NULL;
+                if (base_directory == NULL) {
+                    PtnValue key_value = ptn_value_deref(key);
+                    if (key_value.type == PTN_STRING) {
+                        entry_name_override = ptn_phar_iterator_string_from_value(key);
+                        free(entry_name);
+                        entry_name = ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
+                    } else {
+                        ptn_phar_throw_iterator_invalid_key(runtime, iterator_class);
+                    }
+                }
+                int64_t timestamp = 0;
+                if (ptn_phar_iterator_item_timestamp(runtime, current, path, entry_name, line, &timestamp) &&
+                    runtime->exceptions->active_exception == NULL) {
+                    ptn_phar_build_from_iterator_add_path(
+                        runtime,
+                        archive,
+                        path,
+                        base_directory,
+                        iterator_class,
+                        entry_name_override,
+                        timestamp,
+                        result,
+                        line
+                    );
+                }
+                free(entry_name_override);
+                free(entry_name);
+            }
+            free(path);
         }
-        free(path);
         ptn_value_destroy(&current);
         ptn_value_destroy(&key);
         if (runtime->exceptions->active_exception != NULL) {

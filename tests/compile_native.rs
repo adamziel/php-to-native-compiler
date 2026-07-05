@@ -70923,6 +70923,66 @@ try {
 }
 
 #[test]
+fn compile_phar_build_from_iterator_stream_resource_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-stream-resource");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-stream-resource.php");
+    let output = root.join("phar-build-from-iterator-stream-resource-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyIterator implements Iterator {
+    private array $a;
+    public function __construct(array $a) { $this->a = $a; }
+    public function next(): void { next($this->a); }
+    public function current(): mixed { return current($this->a); }
+    public function key(): mixed { return key($this->a); }
+    public function valid(): bool { return is_resource(current($this->a)); }
+    public function rewind(): void { reset($this->a); }
+}
+
+chdir(__DIR__);
+file_put_contents('stream-source.txt', "header\npayload\n");
+$stream = fopen('stream-source.txt', 'rb');
+fread($stream, 7);
+$phar = new Phar(__DIR__ . '/iterator-stream.phar');
+$result = $phar->buildFromIterator(new MyIterator(['stream.txt' => $stream]));
+var_dump($result);
+echo $phar['stream.txt']->getContent();
+fclose($stream);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"stream.txt\"]=>\n",
+            "  string(8) \"[stream]\"\n",
+            "}\n",
+            "payload\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_build_from_iterator_add_stream"));
+}
+
+#[test]
 fn compile_phar_build_from_iterator_skips_magic_entries_to_native_binary() {
     let root = temp_dir("ptn-native-phar-build-from-iterator-magic-entries");
     fs::create_dir_all(&root).unwrap();

@@ -3507,6 +3507,20 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    for row in [
+        "ext/phar/tests/phar_buildfromiterator9.phpt",
+        "ext/phar/tests/zip/phar_buildfromiterator9.phpt",
+    ] {
+        let phar_build_from_iterator_stream_resource = classify_at_relative_path(
+            "--TEST--\nphar buildFromIterator stream resource\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\nclass It implements Iterator { function rewind(): void {} function valid(): bool { return false; } function current(): mixed {} function key(): mixed {} function next(): void {} }\n$phar = new Phar(__DIR__ . '/archive.phar');\n$phar->buildFromIterator(new It);\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            phar_build_from_iterator_stream_resource.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack"
+        );
+    }
+
     let phar_readonly_zip_missing_include = classify_at_relative_path(
         "--TEST--\nphar zip readonly write-open missing include\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.zip');\n$phar->setStub('<?php __HALT_COMPILER(); ?>');\n$phar['b/c.php'] = '<?php echo \"This is b/c\\n\"; ?>';\n$phar->stopBuffering();\nini_set('phar.readonly', 1);\nvar_dump(fopen('phar://' . __DIR__ . '/archive.phar.zip/b/new.php', 'wb'));\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/b/c.php';\ninclude 'phar://' . __DIR__ . '/archive.phar.zip/b/new.php';\n--EXPECT--\n",
         "ext/phar/tests/zip/open_for_write_newfile_c.phpt",
