@@ -72176,6 +72176,62 @@ include $alias . '/b/new.php';
 }
 
 #[test]
+fn compile_phar_file_info_open_file_defaults_to_read_mode_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-file-info-open-file-read-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-file-info-open-file-read-mode.php");
+    let output = root.join("phar-file-info-open-file-read-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/readonly-open-file.phar.php';
+$phar = new Phar($fname);
+$phar['a.php'] = "<?php echo \"from include\\n\"; ?>";
+ini_set('phar.readonly', 1);
+$file = $phar['a.php']->openFile();
+echo $file->fgets();
+include $phar['a.php']->getPathName();
+try {
+    $phar['a.php']->openFile('r+');
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "<?php echo \"from include\\n\"; ?>",
+                "from include\n",
+                "\nWarning: fopen(phar://{}/readonly-open-file.phar.php/a.php): Failed to open stream: phar error: write operations disabled by the php.ini setting phar.readonly in {} on line 10\n",
+                "RuntimeException:SplFileObject::__construct(phar://{}/readonly-open-file.phar.php/a.php): Failed to open stream\n",
+            ),
+            root.display(),
+            input.display(),
+            root.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PharFileInfo::openFile"));
+    assert!(c_source.contains("ptn_runtime_phar_readonly"));
+}
+
+#[test]
 fn compile_phar_file_info_chmod_respects_readonly_to_native_binary() {
     let root = temp_dir("ptn-native-phar-file-info-chmod-readonly");
     fs::create_dir_all(&root).unwrap();

@@ -3711,6 +3711,28 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         );
     }
 
+    let phar_fileinfo_stub_and_link_rows = [
+        "ext/phar/tests/016b.phpt",
+        "ext/phar/tests/019.phpt",
+        "ext/phar/tests/019b.phpt",
+        "ext/phar/tests/029.phpt",
+        "ext/phar/tests/bug76584.phpt",
+        "ext/phar/tests/phar_oo_003.phpt",
+        "ext/phar/tests/tar/links2.phpt",
+        "ext/phar/tests/zip/delete_in_phar_b.phpt",
+    ];
+    for row in phar_fileinfo_stub_and_link_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar fileinfo stub gzip links residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.php');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\necho $phar['a.php']->openFile()->fgets();\ninclude 'phar://' . __DIR__ . '/archive.phar.php/a.php';\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let phar_open_write_rows = [
         "ext/phar/tests/open_for_write_newfile_c.phpt",
         "ext/phar/tests/tar/open_for_write_newfile_c.phpt",

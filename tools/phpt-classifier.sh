@@ -3335,10 +3335,15 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/013.phpt|\
         ext/phar/tests/014.phpt|\
         ext/phar/tests/016.phpt|\
+        ext/phar/tests/016b.phpt|\
+        ext/phar/tests/019.phpt|\
+        ext/phar/tests/019b.phpt|\
         ext/phar/tests/020.phpt|\
+        ext/phar/tests/029.phpt|\
         ext/phar/tests/030.phpt|\
         ext/phar/tests/024.phpt|\
         ext/phar/tests/033a.phpt|\
+        ext/phar/tests/bug76584.phpt|\
         ext/phar/tests/bug60164.phpt|\
         ext/phar/tests/bug69279a.phpt|\
         ext/phar/tests/bug71391.phpt|\
@@ -3359,6 +3364,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/phar_buildfromiterator4.phpt|\
         ext/phar/tests/phar_buildfromiterator9.phpt|\
         ext/phar/tests/phar_metadata_write2.phpt|\
+        ext/phar/tests/phar_oo_003.phpt|\
         ext/phar/tests/phar_oo_006.phpt|\
         ext/phar/tests/phar_stub_write_file.phpt|\
         ext/phar/tests/open_for_write_newfile_c.phpt|\
@@ -3386,6 +3392,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/tar/tar_nohash.phpt|\
         ext/phar/tests/tar/phar_setdefaultstub.phpt|\
         ext/phar/tests/tar/links.phpt|\
+        ext/phar/tests/tar/links2.phpt|\
         ext/phar/tests/tar/links3.phpt|\
         ext/phar/tests/tar/links4.phpt|\
         ext/phar/tests/tar/delete.phpt|\
@@ -3393,6 +3400,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/tar/bug71317-duplicate-filename.phpt|\
         ext/phar/tests/phar_stub_write.phpt|\
         ext/phar/tests/zip/phar_stub_error.phpt|\
+        ext/phar/tests/zip/delete_in_phar_b.phpt|\
         ext/phar/tests/tar/delete_in_phar_b.phpt)
             return 0
             ;;
