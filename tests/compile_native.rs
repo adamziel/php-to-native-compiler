@@ -101100,6 +101100,55 @@ echo \"included\\n\";\n",
 }
 
 #[test]
+fn compile_include_throwing_continue_warning_declares_function_to_native_binary() {
+    let root = temp_dir("ptn-native-include-throwing-continue-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("include-warning.inc");
+    let output = root.join("include-throwing-continue-warning-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function (int $errno, string $errstr, string $errfile, int $errline) {\n\
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);\n\
+});\n\
+try {\n\
+    require __DIR__ . '/include-warning.inc';\n\
+} catch (Exception $e) {\n\
+    echo \"Caught: \", $e->getMessage(), \"\\n\";\n\
+}\n\
+included_warning();\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function included_warning() {\n\
+    switch (1) {\n\
+        case 1:\n\
+            echo \"OK: \", __FUNCTION__, \"\\n\";\n\
+            continue;\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Caught: \"continue\" targeting switch is equivalent to \"break\"\nOK: included_warning\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_compile_warning_exception"));
+    assert!(c_source.contains("ptn_rethrow_exception(&runtime)"));
+}
+
+#[test]
 fn compile_include_warning_before_redeclare_fatal_bypasses_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-include-warning-function-redeclare-bypass-handler");
     fs::create_dir_all(&root).unwrap();

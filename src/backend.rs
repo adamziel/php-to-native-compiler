@@ -8810,6 +8810,26 @@ fn include_has_duplicate_function_declaration(
     false
 }
 
+fn include_recoverable_warning_function_declaration_count(
+    include: &IncludeFile,
+    functions: &[FunctionDecl],
+) -> usize {
+    if include.compile_warnings.is_empty()
+        || include_has_duplicate_function_declaration(include, functions)
+        || include
+            .compile_warnings
+            .iter()
+            .any(|warning| matches!(warning.kind, CompileWarningKind::UncaughtError))
+    {
+        return 0;
+    }
+    include
+        .instructions
+        .iter()
+        .take_while(|instruction| matches!(instruction, Instruction::DeclareFunction { .. }))
+        .count()
+}
+
 fn emit_include_helpers(
     out: &mut String,
     includes: &[IncludeFile],
@@ -8859,6 +8879,11 @@ fn emit_include_helpers(
         let mut control_targets = Vec::new();
         let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_include_return");
+        let recoverable_warning_function_declaration_count =
+            include_recoverable_warning_function_declaration_count(include, functions);
+        if recoverable_warning_function_declaration_count > 0 {
+            out.push_str("    int ptn_include_compile_warning_exception = 0;\n");
+        }
         if let Some(parse_error) = &include.parse_error {
             out.push_str("    ptn_throw_exception_at(&runtime, \"ParseError\", \"");
             out.push_str(&c_string(&parse_error.message));
@@ -8870,12 +8895,47 @@ fn emit_include_helpers(
             out.push_str(&return_label);
             out.push_str(";\n");
         }
-        emit_compile_warnings(
-            out,
-            &include.compile_warnings,
-            &include.source_file,
-            include_has_duplicate_function_declaration(include, functions),
-        );
+        if recoverable_warning_function_declaration_count > 0 {
+            out.push_str("    PtnTryFrame ptn_include_compile_warning_frame;\n");
+            out.push_str("    ptn_try_frame_push(&runtime, &ptn_include_compile_warning_frame);\n");
+            out.push_str("    if (setjmp(ptn_include_compile_warning_frame.jump) == 0) {\n");
+            emit_compile_warnings(out, &include.compile_warnings, &include.source_file, false);
+            out.push_str(
+                "        ptn_try_frame_pop(&runtime, &ptn_include_compile_warning_frame);\n",
+            );
+            out.push_str("    } else {\n");
+            out.push_str(
+                "        ptn_try_frame_pop(&runtime, &ptn_include_compile_warning_frame);\n",
+            );
+            for instruction in include
+                .instructions
+                .iter()
+                .take(recoverable_warning_function_declaration_count)
+            {
+                emit_instruction(
+                    out,
+                    &mut values,
+                    instruction,
+                    &mut control_targets,
+                    &mut finally_stack,
+                    &include.source_file,
+                    None,
+                    None,
+                );
+            }
+            out.push_str("        ptn_include_compile_warning_exception = 1;\n");
+            out.push_str("        goto ");
+            out.push_str(&return_label);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+        } else {
+            emit_compile_warnings(
+                out,
+                &include.compile_warnings,
+                &include.source_file,
+                include_has_duplicate_function_declaration(include, functions),
+            );
+        }
         emit_preload_unlinked_class_warnings(out, include, classes);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
@@ -8902,6 +8962,11 @@ fn emit_include_helpers(
         out.push_str("    runtime.source_snapshot_len = ptn_previous_source_snapshot_len;\n");
         out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
         out.push_str("    runtime.tick_enabled = ptn_previous_tick_enabled;\n");
+        if recoverable_warning_function_declaration_count > 0 {
+            out.push_str("    if (ptn_include_compile_warning_exception) {\n");
+            out.push_str("        ptn_rethrow_exception(&runtime);\n");
+            out.push_str("    }\n");
+        }
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
