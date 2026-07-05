@@ -2164,7 +2164,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/autoloading\/bug74372[.]phpt$/
         }
         function ptn_supported_zend_trait_autoload_eval_row() {
-            return ptn_path ~ /Zend\/tests\/traits\/bug62907[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/traits\/bug62907[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/traits\/bug63305[.]phpt$/
         }
         function ptn_supported_tokenizer_eval_row() {
             return ptn_path ~ /ext\/tokenizer\/tests\/gh19507_eval[.]phpt$/ ||

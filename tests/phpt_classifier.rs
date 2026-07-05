@@ -1349,6 +1349,10 @@ fn phpt_classifier_allows_zend_trait_autoload_eval_row_by_path() {
         classify_at_relative_path(phpt, "Zend/tests/traits/bug62907.phpt"),
         "runnable\tselected for PTN semantic measurement\n"
     );
+    assert_eq!(
+        classify_at_relative_path(phpt, "Zend/tests/traits/bug63305.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
     let unrelated = classify_at_relative_path(phpt, "Zend/tests/traits/other_eval_trait.phpt");
     assert!(
         unrelated.starts_with("unsupported-dynamic-eval\t"),
