@@ -3532,6 +3532,22 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     for row in [
+        "ext/phar/tests/phar_stub_write_file.phpt",
+        "ext/phar/tests/bug60164.phpt",
+        "ext/phar/tests/bug69279a.phpt",
+        "ext/phar/tests/bug71391.phpt",
+    ] {
+        let phar_verified_archive_row = classify_at_relative_path(
+            "--TEST--\nphar verified archive residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar');\n$phar->setStub('<?php __HALT_COMPILER(); ?>');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\n$phar->stopBuffering();\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            phar_verified_archive_row.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack"
+        );
+    }
+
+    for row in [
         "ext/phar/tests/phar_buildfromiterator9.phpt",
         "ext/phar/tests/zip/phar_buildfromiterator9.phpt",
     ] {

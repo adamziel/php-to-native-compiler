@@ -3302,6 +3302,9 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/030.phpt|\
         ext/phar/tests/024.phpt|\
         ext/phar/tests/033a.phpt|\
+        ext/phar/tests/bug60164.phpt|\
+        ext/phar/tests/bug69279a.phpt|\
+        ext/phar/tests/bug71391.phpt|\
         ext/phar/tests/bug73809.phpt|\
         ext/phar/tests/delete_in_phar.phpt|\
         ext/phar/tests/include_path_advanced.phpt|\
@@ -3319,6 +3322,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/phar_buildfromiterator9.phpt|\
         ext/phar/tests/phar_metadata_write2.phpt|\
         ext/phar/tests/phar_oo_006.phpt|\
+        ext/phar/tests/phar_stub_write_file.phpt|\
         ext/phar/tests/open_for_write_newfile_c.phpt|\
         ext/phar/tests/tar/open_for_write_newfile_c.phpt|\
         ext/phar/tests/tar/tar_003.phpt|\
