@@ -175049,30 +175049,26 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         free(element_prefix);
     }
     if (document != NULL && document->modern_dom && !document->html_document) {
-        for (int namespace_pass = 1; namespace_pass >= 0; namespace_pass--) {
-            for (size_t i = 0; i < node->attribute_count; i++) {
-                PtnXmlNode *attr = node->attributes[i];
-                if (ptn_xml_attribute_is_namespace_declaration(attr) != namespace_pass) {
-                    continue;
-                }
-                if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
-                    continue;
-                }
-                if (!namespace_pass) {
-                    ptn_xml_append_attribute_namespace_declaration(
-                        buffer,
-                        node,
-                        attr,
-                        document,
-                        ascii_only,
-                        emitted_element_namespace_prefix,
-                        emitted_element_namespace_uri
-                    );
-                }
-                ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
-                if (namespace_pass) {
-                    ptn_xml_serialize_namespace_binding_push_attribute(attr);
-                }
+        for (size_t i = 0; i < node->attribute_count; i++) {
+            PtnXmlNode *attr = node->attributes[i];
+            int namespace_declaration = ptn_xml_attribute_is_namespace_declaration(attr);
+            if (!ptn_xml_namespace_declaration_should_serialize(node, attr)) {
+                continue;
+            }
+            if (!namespace_declaration) {
+                ptn_xml_append_attribute_namespace_declaration(
+                    buffer,
+                    node,
+                    attr,
+                    document,
+                    ascii_only,
+                    emitted_element_namespace_prefix,
+                    emitted_element_namespace_uri
+                );
+            }
+            ptn_xml_append_serialized_element_attribute(buffer, attr, document, ascii_only);
+            if (namespace_declaration) {
+                ptn_xml_serialize_namespace_binding_push_attribute(attr);
             }
         }
     } else {
