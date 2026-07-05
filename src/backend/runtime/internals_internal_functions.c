@@ -86969,7 +86969,31 @@ static int ptn_intl_message_pattern_type_allowed_len(const char *type, size_t le
         (len == 4 && ptn_ascii_case_equal_n(type, "time", len)) ||
         (len == 8 && ptn_ascii_case_equal_n(type, "spellout", len)) ||
         (len == 7 && ptn_ascii_case_equal_n(type, "ordinal", len)) ||
-        (len == 8 && ptn_ascii_case_equal_n(type, "duration", len));
+        (len == 8 && ptn_ascii_case_equal_n(type, "duration", len)) ||
+        (len == 6 && ptn_ascii_case_equal_n(type, "select", len)) ||
+        (len == 6 && ptn_ascii_case_equal_n(type, "plural", len)) ||
+        (len == 13 && ptn_ascii_case_equal_n(type, "selectordinal", len));
+}
+
+static const char *ptn_intl_message_find_matching_brace(const char *open) {
+    if (open == NULL || *open != '{') {
+        return NULL;
+    }
+    size_t depth = 0;
+    for (const char *cursor = open; *cursor != '\0'; cursor++) {
+        if (*cursor == '{') {
+            depth++;
+        } else if (*cursor == '}') {
+            if (depth == 0) {
+                return NULL;
+            }
+            depth--;
+            if (depth == 0) {
+                return cursor;
+            }
+        }
+    }
+    return NULL;
 }
 
 typedef struct {
@@ -87003,7 +87027,7 @@ static PtnIntlMessagePatternError ptn_intl_message_pattern_error(const char *loc
         if (*cursor != '{') {
             continue;
         }
-        const char *close = strchr(cursor + 1, '}');
+        const char *close = ptn_intl_message_find_matching_brace(cursor);
         if (close == NULL) {
             PtnIntlMessagePatternError error = { "message formatter creation failed", "U_UNMATCHED_BRACES" };
             return error;
@@ -87274,7 +87298,8 @@ static PtnValue ptn_intl_message_formatter_new(
 static PtnIntlMessageFormatterData *ptn_intl_message_formatter_data(PtnValue receiver) {
     PtnValue resolved = ptn_value_deref(receiver);
     if (resolved.type != PTN_OBJECT || resolved.as.object->native_data == NULL ||
-        !ptn_internal_class_name_is_message_formatter(resolved.as.object->class_name)) {
+        !(ptn_internal_class_name_is_message_formatter(resolved.as.object->class_name) ||
+          ptn_declared_class_is_same_or_descendant(resolved.as.object->class_name, "MessageFormatter"))) {
         return NULL;
     }
     return (PtnIntlMessageFormatterData *)resolved.as.object->native_data;
@@ -87428,7 +87453,7 @@ static int ptn_intl_message_validate_pattern_arguments(
         if (*cursor != '{') {
             continue;
         }
-        const char *close = strchr(cursor + 1, '}');
+        const char *close = ptn_intl_message_find_matching_brace(cursor);
         if (close == NULL) {
             break;
         }
@@ -87564,7 +87589,8 @@ static void ptn_intl_message_append_grouped_int(PtnStringBuffer *output, int64_t
 static PtnStringOperand ptn_intl_message_decimal_separator(const char *locale) {
     if (ptn_intl_locale_has_prefix(locale, "ru") ||
         ptn_intl_locale_has_prefix(locale, "uk") ||
-        ptn_intl_locale_has_prefix(locale, "de")) {
+        ptn_intl_locale_has_prefix(locale, "de") ||
+        ptn_intl_locale_has_prefix(locale, "fr")) {
         return ptn_string_operand_borrowed(",");
     }
     return ptn_string_operand_borrowed(".");
@@ -87574,6 +87600,9 @@ static PtnStringOperand ptn_intl_message_grouping_separator(const char *locale) 
     if (ptn_intl_locale_has_prefix(locale, "ru") ||
         ptn_intl_locale_has_prefix(locale, "uk")) {
         return ptn_string_operand_borrowed("\xC2\xA0");
+    }
+    if (ptn_intl_locale_has_prefix(locale, "fr")) {
+        return ptn_string_operand_borrowed("\xE2\x80\xAF");
     }
     if (ptn_intl_locale_has_prefix(locale, "de")) {
         return ptn_string_operand_borrowed(".");
@@ -87772,13 +87801,236 @@ static void ptn_intl_message_append_date_or_time(
     );
 }
 
+static char *ptn_intl_message_trimmed_copy(const char *start, size_t len) {
+    char *copy = ptn_duplicate_string_len(start, len);
+    char *trimmed = ptn_intl_message_trim_token(copy);
+    if (trimmed != copy) {
+        memmove(copy, trimmed, strlen(trimmed) + 1);
+    }
+    return copy;
+}
+
+static int ptn_intl_message_next_subpattern(
+    const char **cursor_io,
+    char **selector_out,
+    const char **body_out,
+    size_t *body_len_out
+) {
+    const char *cursor = *cursor_io;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == '\0') {
+        return 0;
+    }
+    const char *selector_start = cursor;
+    while (*cursor != '\0' && !isspace((unsigned char)*cursor) && *cursor != '{') {
+        cursor++;
+    }
+    const char *selector_end = cursor;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != '{') {
+        return 0;
+    }
+    const char *close = ptn_intl_message_find_matching_brace(cursor);
+    if (close == NULL) {
+        return 0;
+    }
+    *selector_out = ptn_intl_message_trimmed_copy(selector_start, (size_t)(selector_end - selector_start));
+    *body_out = cursor + 1;
+    *body_len_out = (size_t)(close - cursor - 1);
+    *cursor_io = close + 1;
+    return 1;
+}
+
+static int ptn_intl_message_selector_exact_number_matches(const char *selector, double number) {
+    if (selector == NULL || selector[0] != '=') {
+        return 0;
+    }
+    char *end = NULL;
+    double exact = strtod(selector + 1, &end);
+    return end != selector + 1 && end != NULL && *end == '\0' && fabs(number - exact) < 0.000001;
+}
+
+static const char *ptn_intl_message_selectordinal_category(const char *locale, double number) {
+    double whole = floor(number);
+    if (fabs(number - whole) > 0.000001) {
+        return "other";
+    }
+    if (!ptn_intl_locale_has_prefix(locale, "en")) {
+        return "other";
+    }
+    int64_t integer = (int64_t)whole;
+    int64_t magnitude = integer < 0 ? -integer : integer;
+    int64_t mod10 = magnitude % 10;
+    int64_t mod100 = magnitude % 100;
+    if (mod10 == 1 && mod100 != 11) {
+        return "one";
+    }
+    if (mod10 == 2 && mod100 != 12) {
+        return "two";
+    }
+    if (mod10 == 3 && mod100 != 13) {
+        return "few";
+    }
+    return "other";
+}
+
+static double ptn_intl_message_plural_offset(const char **style_io) {
+    const char *cursor = *style_io;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (!ptn_ascii_case_equal_n(cursor, "offset:", 7)) {
+        *style_io = cursor;
+        return 0.0;
+    }
+    cursor += 7;
+    char *end = NULL;
+    double offset = strtod(cursor, &end);
+    if (end != NULL && end != cursor) {
+        cursor = end;
+    }
+    *style_io = cursor;
+    return offset;
+}
+
+static int ptn_intl_message_select_subpattern(
+    const char *type,
+    const char *style,
+    PtnValue value,
+    const char *locale,
+    const char **body_out,
+    size_t *body_len_out,
+    int *has_hash_out,
+    double *hash_number_out
+) {
+    if (style == NULL) {
+        return 0;
+    }
+    const char *cursor = style;
+    const char *fallback_body = NULL;
+    size_t fallback_len = 0;
+    int is_select = ptn_ascii_case_equal(type, "select");
+    int is_plural = ptn_ascii_case_equal(type, "plural");
+    int is_selectordinal = ptn_ascii_case_equal(type, "selectordinal");
+    double number = ptn_intl_message_numeric_value(value);
+    double offset = is_plural ? ptn_intl_message_plural_offset(&cursor) : 0.0;
+    const char *category = is_selectordinal
+        ? ptn_intl_message_selectordinal_category(locale, number)
+        : "other";
+    PtnStringOperand select_string = is_select
+        ? ptn_value_to_string_operand(value)
+        : ptn_string_operand_borrowed("");
+
+    char *selector = NULL;
+    const char *body = NULL;
+    size_t body_len = 0;
+    while (ptn_intl_message_next_subpattern(&cursor, &selector, &body, &body_len)) {
+        int matched = 0;
+        if (is_select) {
+            matched = strlen(selector) == select_string.len &&
+                memcmp(selector, select_string.data, select_string.len) == 0;
+        } else if (ptn_intl_message_selector_exact_number_matches(selector, number)) {
+            matched = 1;
+        } else if (is_selectordinal) {
+            matched = ptn_ascii_case_equal(selector, category);
+        }
+        if (ptn_ascii_case_equal(selector, "other")) {
+            fallback_body = body;
+            fallback_len = body_len;
+            if (!is_select && !is_selectordinal) {
+                matched = 1;
+            }
+        }
+        if (matched) {
+            *body_out = body;
+            *body_len_out = body_len;
+            *has_hash_out = !is_select;
+            *hash_number_out = is_plural ? number - offset : number;
+            free(selector);
+            ptn_string_operand_free(select_string);
+            return 1;
+        }
+        free(selector);
+        selector = NULL;
+    }
+
+    ptn_string_operand_free(select_string);
+    if (fallback_body != NULL) {
+        *body_out = fallback_body;
+        *body_len_out = fallback_len;
+        *has_hash_out = !is_select;
+        *hash_number_out = is_plural ? number - offset : number;
+        return 1;
+    }
+    return 0;
+}
+
 static void ptn_intl_message_append_placeholder(
     PtnStringBuffer *output,
     PtnArray *values,
-    char *placeholder,
-    const char *locale
+    const char *placeholder_start,
+    size_t placeholder_len,
+    const char *locale,
+    int has_hash,
+    double hash_number
+);
+
+static void ptn_intl_message_append_pattern_fragment(
+    PtnStringBuffer *output,
+    PtnArray *values,
+    const char *pattern,
+    size_t pattern_len,
+    const char *locale,
+    int has_hash,
+    double hash_number
 ) {
-    char *original = ptn_duplicate_string(placeholder);
+    for (size_t i = 0; i < pattern_len; i++) {
+        if (has_hash && pattern[i] == '#') {
+            ptn_intl_message_append_number_trimmed(
+                output,
+                hash_number,
+                fabs(hash_number - floor(hash_number)) > 0.000001 ? 3 : 0,
+                locale
+            );
+            continue;
+        }
+        if (pattern[i] != '{') {
+            ptn_string_buffer_append_char(output, pattern[i]);
+            continue;
+        }
+        const char *close = ptn_intl_message_find_matching_brace(pattern + i);
+        if (close == NULL || close >= pattern + pattern_len) {
+            ptn_string_buffer_append_char(output, pattern[i]);
+            continue;
+        }
+        ptn_intl_message_append_placeholder(
+            output,
+            values,
+            pattern + i + 1,
+            (size_t)(close - (pattern + i + 1)),
+            locale,
+            has_hash,
+            hash_number
+        );
+        i = (size_t)(close - pattern);
+    }
+}
+
+static void ptn_intl_message_append_placeholder(
+    PtnStringBuffer *output,
+    PtnArray *values,
+    const char *placeholder_start,
+    size_t placeholder_len,
+    const char *locale,
+    int has_hash,
+    double hash_number
+) {
+    char *placeholder = ptn_duplicate_string_len(placeholder_start, placeholder_len);
+    char *original = ptn_duplicate_string_len(placeholder_start, placeholder_len);
     char *type = NULL;
     char *style = NULL;
     char *comma = strchr(placeholder, ',');
@@ -87800,12 +88052,14 @@ static void ptn_intl_message_append_placeholder(
         ptn_string_buffer_append(output, original);
         ptn_string_buffer_append_char(output, '}');
         free(original);
+        free(placeholder);
         return;
     }
     free(original);
     PtnValue value = ptn_value_deref(entry->value);
     if (type == NULL || *type == '\0') {
         ptn_intl_message_append_string_value(output, value);
+        free(placeholder);
         return;
     }
     double number = ptn_intl_message_numeric_value(value);
@@ -87821,6 +88075,33 @@ static void ptn_intl_message_append_placeholder(
         } else {
             ptn_intl_message_append_number_trimmed(output, number, fabs(number - floor(number)) > 0.000001 ? 3 : 0, locale);
         }
+    } else if (ptn_ascii_case_equal(type, "select") ||
+        ptn_ascii_case_equal(type, "plural") ||
+        ptn_ascii_case_equal(type, "selectordinal")) {
+        const char *body = NULL;
+        size_t body_len = 0;
+        int nested_has_hash = 0;
+        double nested_hash_number = 0.0;
+        if (ptn_intl_message_select_subpattern(
+            type,
+            style,
+            value,
+            locale,
+            &body,
+            &body_len,
+            &nested_has_hash,
+            &nested_hash_number
+        )) {
+            ptn_intl_message_append_pattern_fragment(
+                output,
+                values,
+                body,
+                body_len,
+                locale,
+                nested_has_hash,
+                nested_hash_number
+            );
+        }
     } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
         ptn_intl_message_append_date_or_time(output, number, type, style);
     } else if (ptn_ascii_case_equal(type, "spellout")) {
@@ -87829,9 +88110,12 @@ static void ptn_intl_message_append_placeholder(
         ptn_intl_message_append_ordinal(output, number);
     } else if (ptn_ascii_case_equal(type, "duration")) {
         ptn_intl_message_append_duration(output, number);
+    } else if (has_hash && ptn_ascii_case_equal(type, "#")) {
+        ptn_intl_message_append_number_trimmed(output, hash_number, fabs(hash_number - floor(hash_number)) > 0.000001 ? 3 : 0, locale);
     } else {
         ptn_intl_message_append_string_value(output, value);
     }
+    free(placeholder);
 }
 
 static int ptn_intl_message_validate_array_values(
@@ -87907,28 +88191,256 @@ static PtnValue ptn_intl_message_format_array(
     ptn_string_buffer_init(&output);
     const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
     const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
-    size_t pattern_len = strlen(pattern);
-    for (size_t i = 0; i < pattern_len; i++) {
-        if (pattern[i] != '{') {
-            ptn_string_buffer_append_char(&output, pattern[i]);
-            continue;
-        }
-        const char *close = strchr(pattern + i + 1, '}');
-        if (close == NULL) {
-            ptn_string_buffer_append_char(&output, pattern[i]);
-            continue;
-        }
-        size_t placeholder_len = (size_t)(close - (pattern + i + 1));
-        char *placeholder = ptn_duplicate_string_len(pattern + i + 1, placeholder_len);
-        ptn_intl_message_append_placeholder(&output, values, placeholder, locale);
-        free(placeholder);
-        i += placeholder_len + 1;
-    }
+    ptn_intl_message_append_pattern_fragment(
+        &output,
+        values,
+        pattern,
+        strlen(pattern),
+        locale,
+        0,
+        0.0
+    );
     ptn_intl_message_formatter_set_error(runtime, data, "U_ZERO_ERROR");
     return ptn_owned_string_len(output.data, output.len);
 }
 
-static PtnValue ptn_intl_message_parse(PtnRuntime *runtime, PtnValue input_value) {
+static const char *ptn_intl_message_find_bytes(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len
+) {
+    if (needle_len == 0) {
+        return haystack;
+    }
+    if (needle_len > haystack_len) {
+        return NULL;
+    }
+    for (size_t i = 0; i <= haystack_len - needle_len; i++) {
+        if (memcmp(haystack + i, needle, needle_len) == 0) {
+            return haystack + i;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_intl_message_placeholder_parts(
+    const char *placeholder_start,
+    size_t placeholder_len,
+    char **name_out,
+    char **type_out,
+    char **style_out
+) {
+    char *placeholder = ptn_duplicate_string_len(placeholder_start, placeholder_len);
+    char *type = NULL;
+    char *style = NULL;
+    char *comma = strchr(placeholder, ',');
+    if (comma != NULL) {
+        *comma = '\0';
+        type = comma + 1;
+        char *second_comma = strchr(type, ',');
+        if (second_comma != NULL) {
+            *second_comma = '\0';
+            style = second_comma + 1;
+        }
+    }
+    char *name = ptn_intl_message_trim_token(placeholder);
+    type = type == NULL ? NULL : ptn_intl_message_trim_token(type);
+    style = style == NULL ? NULL : ptn_intl_message_trim_token(style);
+    *name_out = ptn_duplicate_string(name);
+    *type_out = type == NULL ? NULL : ptn_duplicate_string(type);
+    *style_out = style == NULL ? NULL : ptn_duplicate_string(style);
+    free(placeholder);
+}
+
+static int ptn_intl_message_parse_numeric_segment(
+    const char *segment,
+    size_t segment_len,
+    const char *locale,
+    int integer_style,
+    PtnValue *value_out
+) {
+    char decimal = ptn_intl_message_decimal_separator(locale).data[0];
+    char *normalized = malloc(segment_len + 1);
+    if (normalized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = 0;
+    for (size_t i = 0; i < segment_len; i++) {
+        unsigned char byte = (unsigned char)segment[i];
+        if (isdigit(byte) || byte == '-' || byte == '+') {
+            normalized[len++] = (char)byte;
+            continue;
+        }
+        if (byte == (unsigned char)decimal) {
+            normalized[len++] = '.';
+            continue;
+        }
+        if (byte == 0xC2 && i + 1 < segment_len && (unsigned char)segment[i + 1] == 0xA0) {
+            i++;
+            continue;
+        }
+        if (byte == 0xE2 && i + 2 < segment_len &&
+            (unsigned char)segment[i + 1] == 0x80 &&
+            (unsigned char)segment[i + 2] == 0xAF) {
+            i += 2;
+            continue;
+        }
+        if (byte == ',' || byte == '.' || isspace(byte)) {
+            continue;
+        }
+    }
+    normalized[len] = '\0';
+    if (len == 0 || normalized[0] == '\0') {
+        free(normalized);
+        return 0;
+    }
+    char *end = NULL;
+    if (integer_style) {
+        long long parsed = strtoll(normalized, &end, 10);
+        if (end == normalized || end == NULL || *end != '\0') {
+            free(normalized);
+            return 0;
+        }
+        *value_out = ptn_int((int64_t)parsed);
+    } else {
+        double parsed = strtod(normalized, &end);
+        if (end == normalized || end == NULL || *end != '\0') {
+            free(normalized);
+            return 0;
+        }
+        *value_out = ptn_float(parsed);
+    }
+    free(normalized);
+    return 1;
+}
+
+static int ptn_intl_message_array_key_from_name(const char *name, PtnArrayKey *key_out) {
+    char *end = NULL;
+    long long integer = strtoll(name, &end, 10);
+    if (end != NULL && name[0] != '\0' && *end == '\0') {
+        *key_out = ptn_array_int_key(integer);
+        return 1;
+    }
+    *key_out = ptn_array_string_key(name);
+    return 1;
+}
+
+static PtnValue ptn_intl_message_parse_by_pattern(
+    PtnIntlMessageFormatterData *data,
+    const char *input_data,
+    size_t input_len
+) {
+    const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    const char *cursor = pattern;
+    const char *pattern_end = pattern + strlen(pattern);
+    size_t input_offset = 0;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    while (cursor < pattern_end) {
+        const char *open = strchr(cursor, '{');
+        if (open == NULL) {
+            size_t literal_len = (size_t)(pattern_end - cursor);
+            if (input_offset + literal_len > input_len ||
+                memcmp(input_data + input_offset, cursor, literal_len) != 0) {
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+            input_offset += literal_len;
+            break;
+        }
+        size_t literal_len = (size_t)(open - cursor);
+        if (input_offset + literal_len > input_len ||
+            memcmp(input_data + input_offset, cursor, literal_len) != 0) {
+            ptn_value_destroy(&result);
+            return ptn_bool(0);
+        }
+        input_offset += literal_len;
+
+        const char *close = ptn_intl_message_find_matching_brace(open);
+        if (close == NULL) {
+            ptn_value_destroy(&result);
+            return ptn_bool(0);
+        }
+        char *name = NULL;
+        char *type = NULL;
+        char *style = NULL;
+        ptn_intl_message_placeholder_parts(
+            open + 1,
+            (size_t)(close - open - 1),
+            &name,
+            &type,
+            &style
+        );
+
+        const char *after_placeholder = close + 1;
+        const char *next_open = strchr(after_placeholder, '{');
+        size_t next_literal_len = next_open == NULL
+            ? (size_t)(pattern_end - after_placeholder)
+            : (size_t)(next_open - after_placeholder);
+        const char *segment_end = input_data + input_len;
+        if (next_literal_len > 0) {
+            segment_end = ptn_intl_message_find_bytes(
+                input_data + input_offset,
+                input_len - input_offset,
+                after_placeholder,
+                next_literal_len
+            );
+            if (segment_end == NULL) {
+                free(name);
+                free(type);
+                free(style);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+        }
+
+        PtnValue parsed = ptn_null();
+        int integer_style = style != NULL && ptn_ascii_case_equal(style, "integer");
+        int is_number = type == NULL || *type == '\0' || ptn_ascii_case_equal(type, "number");
+        if (is_number) {
+            if (!ptn_intl_message_parse_numeric_segment(
+                input_data + input_offset,
+                (size_t)(segment_end - (input_data + input_offset)),
+                locale,
+                integer_style,
+                &parsed
+            )) {
+                free(name);
+                free(type);
+                free(style);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+        } else {
+            parsed = ptn_owned_string_len(
+                ptn_duplicate_string_len(
+                    input_data + input_offset,
+                    (size_t)(segment_end - (input_data + input_offset))
+                ),
+                (size_t)(segment_end - (input_data + input_offset))
+            );
+        }
+
+        PtnArrayKey key;
+        ptn_intl_message_array_key_from_name(name, &key);
+        ptn_array_set_entry(result.as.array, key, parsed);
+        input_offset = (size_t)(segment_end - input_data) + next_literal_len;
+        cursor = after_placeholder + next_literal_len;
+        free(name);
+        free(type);
+        free(style);
+    }
+
+    if (input_offset != input_len) {
+        ptn_value_destroy(&result);
+        return ptn_bool(0);
+    }
+    return result;
+}
+
+static PtnValue ptn_intl_message_parse_legacy_datetime(PtnValue input_value) {
     PtnStringOperand input = ptn_value_to_string_operand(input_value);
     char *copy = ptn_duplicate_string_len(input.data, input.len);
     ptn_string_operand_free(input);
@@ -87968,8 +88480,23 @@ static PtnValue ptn_intl_message_parse(PtnRuntime *runtime, PtnValue input_value
     double timestamp = (double)(wall - offset) + ((double)millisecond / 1000.0);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_float(timestamp));
-    (void)runtime;
     return result;
+}
+
+static PtnValue ptn_intl_message_parse(
+    PtnRuntime *runtime,
+    PtnIntlMessageFormatterData *data,
+    PtnValue input_value
+) {
+    PtnStringOperand input = ptn_value_to_string_operand(input_value);
+    PtnValue parsed = ptn_intl_message_parse_by_pattern(data, input.data, input.len);
+    ptn_string_operand_free(input);
+    if (ptn_value_deref(parsed).type != PTN_BOOL) {
+        (void)runtime;
+        return parsed;
+    }
+    ptn_value_destroy(&parsed);
+    return ptn_intl_message_parse_legacy_datetime(input_value);
 }
 
 static PtnValue ptn_internal_msgfmt_set_pattern_impl(
@@ -88075,7 +88602,7 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
         return ptn_string("");
     }
     if (ptn_ascii_case_equal(name, "parse")) {
-        return argc >= 1 ? ptn_intl_message_parse(runtime, args[0]) : ptn_bool(0);
+        return argc >= 1 ? ptn_intl_message_parse(runtime, data, args[0]) : ptn_bool(0);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -88820,6 +89347,13 @@ static PtnValue ptn_internal_msgfmt_set_pattern_impl(
 
 static PtnValue ptn_internal_msgfmt_set_pattern(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_msgfmt_set_pattern_impl(runtime, "msgfmt_set_pattern", argc, args, line);
+}
+
+static PtnValue ptn_internal_msgfmt_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        return ptn_bool(0);
+    }
+    return ptn_intl_message_formatter_call_method(runtime, args[0], "parse", argc - 1, args + 1, line);
 }
 
 static void ptn_intl_set_creating_message_formatter_failed(
@@ -235972,6 +236506,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "msgfmt_create", 2, 2, ptn_internal_msgfmt_create },
         { "msgfmt_format", 2, 2, ptn_internal_msgfmt_format },
         { "msgfmt_format_message", 3, 3, ptn_internal_msgfmt_format_message },
+        { "msgfmt_parse", 2, 2, ptn_internal_msgfmt_parse },
         { "msgfmt_parse_message", 3, 3, ptn_internal_msgfmt_parse_message },
         { "mktime", 1, 6, ptn_internal_mktime },
         { "mt_getrandmax", 0, 0, ptn_internal_getrandmax },

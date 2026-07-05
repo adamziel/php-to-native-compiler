@@ -61205,6 +61205,85 @@ int(9)\n\
 }
 
 #[test]
+fn compile_intl_message_formatter_subpattern_parse_and_clone_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-formatter-subpattern-parse-clone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-formatter-subpattern-parse-clone.php");
+    let output = root.join("intl-message-formatter-subpattern-parse-clone-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A extends MessageFormatter { public function __construct() {} }\n\
+try {\n\
+    var_dump(clone new A());\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+$ordinal = new MessageFormatter('en', '{n, selectordinal, =5 {five} one {#-one} two {#-two} few {#-few} other {#-other}}');\n\
+echo $ordinal->format(['n' => 42]), \"\\n\";\n\
+echo $ordinal->format(['n' => 2147483643]), \"\\n\";\n\
+$pattern = <<<'MSG'\n\
+{gender_of_host, select,\n\
+  female {{num_guests, plural, offset:1\n\
+      =0 {{host} does not give a party.}\n\
+      =1 {{host} invites {guest} to her party.}\n\
+      =2 {{host} invites {guest} and one other person to her party.}\n\
+     other {{host} invites {guest} as one of the # people invited to her party.}}}\n\
+  male {{num_guests, plural, offset:1\n\
+      =0 {{host} does not give a party.}\n\
+      =1 {{host} invites {guest} to his party.}\n\
+      =2 {{host} invites {guest} and one other person to his party.}\n\
+     other {{host} invites {guest} as one of the # other people invited to his party.}}}\n\
+  other {{num_guests, plural, offset:1\n\
+      =0 {{host} does not give a party.}\n\
+      =1 {{host} invites {guest} to their party.}\n\
+      =2 {{host} invites {guest} and one other person to their party.}\n\
+     other {{host} invites {guest} as one of the # other people invited to their party.}}}}\n\
+MSG;\n\
+echo MessageFormatter::formatMessage('en_US', $pattern, [\n\
+    'gender_of_host' => 'female',\n\
+    'num_guests' => 27,\n\
+    'host' => 'Alice',\n\
+    'guest' => 'Bob',\n\
+]), \"\\n\";\n\
+$fmt = msgfmt_create('de', '{0,number,integer} Affen über {1,number,integer} Bäume um {2,number} Affen pro Baum');\n\
+var_export(msgfmt_parse($fmt, '4.560 Affen über 123 Bäume um 37,073 Affen pro Baum'));\n\
+echo \"\\n\";\n\
+var_export(MessageFormatter::parseMessage('en_US', '{0,number,integer}', '-9,223,372,036,854,775,808'));\n\
+echo \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Cannot clone uninitialized MessageFormatter\n",
+            "42-two\n",
+            "2,147,483,643-few\n",
+            "Alice invites Bob as one of the 26 people invited to her party.\n",
+            "array (\n",
+            "  0 => 4560,\n",
+            "  1 => 123,\n",
+            "  2 => 37.073,\n",
+            ")\n",
+            "array (\n",
+            "  0 => -9223372036854775808,\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_message_find_matching_brace"));
+    assert!(c_source.contains("ptn_internal_msgfmt_parse"));
+    assert!(c_source.contains("ptn_declared_class_is_same_or_descendant(source->class_name, \"MessageFormatter\")"));
+}
+
+#[test]
 fn compile_intl_number_formatter_parse_currency_success_to_native_binary() {
     let root = temp_dir("ptn-native-intl-number-formatter-parse-currency");
     fs::create_dir_all(&root).unwrap();

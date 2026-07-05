@@ -2328,7 +2328,8 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized NumberFormatter");
         return ptn_null();
     }
-    if (ptn_internal_class_name_is_message_formatter(source->class_name)) {
+    if (ptn_internal_class_name_is_message_formatter(source->class_name) ||
+        ptn_declared_class_is_same_or_descendant(source->class_name, "MessageFormatter")) {
         if (source->native_data == NULL) {
             ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized MessageFormatter");
             return ptn_null();
