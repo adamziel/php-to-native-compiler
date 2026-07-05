@@ -209848,7 +209848,7 @@ static mode_t ptn_phar_archive_entry_mode(PtnPharArchiveEntry *entry) {
     int mode_set = entry != NULL && (entry->flags & PTN_PHAR_ENTRY_MODE_SET) != 0;
     mode_t permissions = mode_set
         ? (mode_t)(entry->flags & 0777)
-        : (is_dir ? 0555 : 0444);
+        : (is_dir ? 0555 : 0666);
 #if defined(S_IFDIR) && defined(S_IFREG)
     return (is_dir ? S_IFDIR : S_IFREG) | permissions;
 #else

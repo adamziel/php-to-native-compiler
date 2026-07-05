@@ -71544,7 +71544,7 @@ include $fname;
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "stat\nint(12)\nint(33060)\nint(2)\nint(33060)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
+        "stat\nint(12)\nint(33206)\nint(2)\nint(33206)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
