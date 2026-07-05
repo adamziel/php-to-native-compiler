@@ -1032,6 +1032,9 @@ fn phpt_classifier_unlocks_verified_bounded_residual_skipif_rows() {
         "ext/standard/tests/network/gethostbyname_basic001.phpt",
         "ext/standard/tests/password/password_hash.phpt",
         "ext/standard/tests/password/password_removed_salt_option.phpt",
+        "ext/zlib/tests/bug67724.phpt",
+        "ext/iconv/tests/gh17399_substr.phpt",
+        "tests/func/010.phpt",
     ] {
         let classification = classify_at_relative_path_with_harness_programs(slow, path);
         assert!(
@@ -1047,7 +1050,6 @@ fn phpt_classifier_unlocks_verified_bounded_residual_skipif_rows() {
         "ext/standard/tests/streams/bug74090.phpt",
         "tests/basic/timeout_variation_0.phpt",
         "tests/func/005a.phpt",
-        "tests/func/010.phpt",
     ] {
         let classification = classify_at_relative_path_with_harness_programs(slow, path);
         assert!(
@@ -1064,6 +1066,47 @@ fn phpt_classifier_unlocks_verified_bounded_residual_skipif_rows() {
         classification.starts_with("skipif-precondition\t")
             && classification.contains("resource-limit gate keeps SKIP_PERF_SENSITIVE rows"),
         "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_splits_resource_limit_residual_skipif_blockers() {
+    let eval_slow = "--TEST--\nslow eval residual\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php eval('echo 1;'); ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        eval_slow,
+        "Zend/tests/runtime_compile_time_binary_operands.phpt",
+    );
+    assert!(
+        classification.starts_with("unsupported-dynamic-eval\t"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        eval_slow,
+        "Zend/tests/unverified_slow_eval.phpt",
+    );
+    assert!(
+        adjacent.starts_with("skipif-precondition\t")
+            && adjacent.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
+        "{adjacent:?}"
+    );
+
+    let zlib_stream_loop = "--TEST--\nzlib stream generator slow residual\n--EXTENSIONS--\nzlib\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php\nfunction deflateStream($mode) {\n    $deflated = null;\n    while (true) {\n        $dataToCompress = yield $deflated;\n        $deflated = $dataToCompress;\n    }\n}\n$stream = deflateStream(ZLIB_ENCODING_RAW);\n$stream->send('a');\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        zlib_stream_loop,
+        "ext/zlib/tests/inflate_add_basic.phpt",
+    );
+    assert!(
+        classification.starts_with("unsupported-generator-lazy-suspension\t"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        zlib_stream_loop,
+        "ext/zlib/tests/unverified_slow_generator.phpt",
+    );
+    assert!(
+        adjacent.starts_with("skipif-precondition\t")
+            && adjacent.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
+        "{adjacent:?}"
     );
 }
 

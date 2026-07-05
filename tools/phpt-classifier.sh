@@ -616,6 +616,9 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
         SKIP_SLOW_TESTS:ext/standard/tests/network/gethostbyname_basic001.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/password/password_hash.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/password/password_removed_salt_option.phpt|\
+        SKIP_SLOW_TESTS:ext/zlib/tests/bug67724.phpt|\
+        SKIP_SLOW_TESTS:ext/iconv/tests/gh17399_substr.phpt|\
+        SKIP_SLOW_TESTS:tests/func/010.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/cp1254_encoding.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/cp936_encoding.phpt|\
         SKIP_SLOW_TESTS:ext/mbstring/tests/cp5022x_encoding.phpt|\
@@ -628,6 +631,28 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
     esac
 
     return 1
+}
+
+ptn_phpt_split_resource_limit_skipif() {
+    local rel=$1
+    local env_var=$2
+
+    case "$env_var:$rel" in
+        SKIP_SLOW_TESTS:Zend/tests/runtime_compile_time_binary_operands.phpt|\
+        SKIP_SLOW_TESTS:ext/zlib/tests/inflate_add_basic.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+ptn_phpt_default_unblocked_resource_limit_skipif() {
+    local rel=$1
+    local env_var=$2
+
+    ptn_phpt_default_runnable_resource_limit_skipif "$rel" "$env_var" \
+        || ptn_phpt_split_resource_limit_skipif "$rel" "$env_var"
 }
 
 ptn_phpt_supported_intl_icu_version_skipif_row() {
@@ -1069,14 +1094,14 @@ ptn_phpt_modeled_skipif_precondition() {
             case "$env_var" in
                 SKIP_PERF_SENSITIVE)
                     if ! ptn_phpt_run_perf_sensitive_tests \
-                        && ! ptn_phpt_default_runnable_resource_limit_skipif "$rel" "$env_var"; then
+                        && ! ptn_phpt_default_unblocked_resource_limit_skipif "$rel" "$env_var"; then
                         env_is_truthy=1
                         env_is_modeled_resource_limit=1
                     fi
                     ;;
                 SKIP_SLOW_TESTS)
                     if ! ptn_phpt_run_slow_tests \
-                        && ! ptn_phpt_default_runnable_resource_limit_skipif "$rel" "$env_var"; then
+                        && ! ptn_phpt_default_unblocked_resource_limit_skipif "$rel" "$env_var"; then
                         env_is_truthy=1
                         env_is_modeled_resource_limit=1
                     fi

@@ -1,0 +1,14 @@
+# Focused residual skipif-precondition row pack.
+# Source: /home/claude/ptn-lanes/integration/.runtime/phpt-dashboard-current/exclusions.tsv.
+# Run with:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-skipif-precondition-residual-current2-row-pack.txt
+#
+# bucket: skipif-precondition-residual-current2 rows=8
+ext/zlib/tests/bug67724.phpt
+ext/iconv/tests/gh17399_substr.phpt
+tests/func/010.phpt
+Zend/tests/runtime_compile_time_binary_operands.phpt
+ext/zlib/tests/inflate_add_basic.phpt
+ext/zlib/tests/deflate_add_block_v123.phpt
+ext/zlib/tests/gzgetc_basic.phpt
+ext/mbstring/tests/euc_tw_encoding.phpt
