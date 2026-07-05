@@ -1010,12 +1010,13 @@ fn phpt_classifier_unlocks_verified_mbstring_mail_skipif_row() {
 }
 
 #[test]
-fn phpt_classifier_unlocks_verified_openssl_version_skipif_rows() {
+fn phpt_classifier_unlocks_verified_openssl_skipif_rows() {
     let openssl_version_skipif = "--TEST--\nopenssl version gate\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php if (OPENSSL_VERSION_NUMBER < 0x30200000) die('skip For OpenSSL >= 3.2'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
 
     for path in [
         "ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt",
         "ext/openssl/tests/gh13343_openssl33.phpt",
+        "ext/openssl/tests/openssl_cms_encrypt_auth_env.phpt",
     ] {
         let classification =
             classify_at_relative_path_with_harness_programs(openssl_version_skipif, path);

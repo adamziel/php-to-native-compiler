@@ -3557,7 +3557,8 @@ ptn_phpt_supported_soap_verified_skipif_row() {
 ptn_phpt_supported_openssl_verified_skipif_row() {
     case "$1" in
         ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt|\
-        ext/openssl/tests/gh13343_openssl33.phpt)
+        ext/openssl/tests/gh13343_openssl33.phpt|\
+        ext/openssl/tests/openssl_cms_encrypt_auth_env.phpt)
             return 0
             ;;
         *)
