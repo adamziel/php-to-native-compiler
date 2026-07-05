@@ -1035,6 +1035,37 @@ fn phpt_classifier_unlocks_verified_openssl_skipif_rows() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_pcre_skipif_rows() {
+    let pcre_probe_skipif = "--TEST--\npcre verified skipif\n--SKIPIF--\n<?php\nif (@preg_match_all('/\\p{N}/', '0123456789', $dummy) === false) {\n    die('skip no support for \\p support PCRE library');\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        pcre_probe_skipif,
+        "ext/pcre/tests/pcre_anchored.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified PCRE --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let pcre_jit_skipif = "--TEST--\npcre jit verified skipif\n--SKIPIF--\n<?php\nif (ini_get(\"pcre.jit\") === FALSE) {\n    die(\"skip no jit built\");\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        pcre_jit_skipif,
+        "ext/pcre/tests/check_jit_enabled.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified PCRE --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        pcre_probe_skipif,
+        "ext/pcre/tests/unverified_probe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(
