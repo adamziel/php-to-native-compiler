@@ -4686,6 +4686,88 @@ fn phpt_classifier_narrows_harness_skipif_residual_current_rows() {
 }
 
 #[test]
+fn phpt_classifier_narrows_harness_skipif_residual_current2_rows() {
+    let libxml_defined_skipif = "--TEST--\nlibxml defined residual\n--EXTENSIONS--\nxml\n--SKIPIF--\n<?php\nif (!defined(\"LIBXML_VERSION\")) die('skip this is a libxml2 test');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    for row in [
+        "ext/xml/tests/XML_OPTION_PARSE_HUGE.phpt",
+        "ext/xml/tests/XML_OPTION_PARSE_HUGE_during_parsing.phpt",
+    ] {
+        let classification =
+            classify_at_relative_path_with_harness_programs(libxml_defined_skipif, row);
+        assert!(
+            classification.starts_with("runnable\t")
+                && classification.contains("verified XML --SKIPIF-- row"),
+            "{row}: {classification:?}"
+        );
+    }
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        libxml_defined_skipif,
+        "ext/xml/tests/unverified_libxml_defined.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let xml_ns_skipif = "--TEST--\nxml namespace residual\n--EXTENSIONS--\nxml\n--SKIPIF--\n<?php\nif (! @xml_parser_create_ns('ISO-8859-1')) { die(\"skip xml_parser_create_ns is not supported on this platform\");}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        xml_ns_skipif,
+        "ext/xml/tests/bug25666.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified XML --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let xmlreader_schema_skipif = "--TEST--\nxmlreader schema residual\n--EXTENSIONS--\nxmlreader\n--SKIPIF--\n<?php if (!method_exists('XMLReader','setSchema')) die('skip XMLReader::setSchema() not supported');?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        xmlreader_schema_skipif,
+        "ext/xmlreader/tests/013.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified XML --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let zend_debug_skipif = "--TEST--\nzend debug residual\n--EXTENSIONS--\nzend_test\n--SKIPIF--\n<?php\n// Internal function return types are only checked in debug builds\nif (!PHP_DEBUG) die('skip requires debug build');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        zend_debug_skipif,
+        "Zend/tests/return_types/internal_functions001.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_DEBUG guard"),
+        "{classification:?}"
+    );
+
+    let mbstring_slow_skipif = "--TEST--\nmbstring slow residual\n--EXTENSIONS--\nmbstring\n--SKIPIF--\n<?php\nif (getenv(\"SKIP_SLOW_TESTS\")) die(\"skip slow test\");\nif (PHP_INT_SIZE == 4 && !extension_loaded(\"ctype\")) die(\"skip needs ctype extension on 32-bit\");\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        mbstring_slow_skipif,
+        "ext/mbstring/tests/euc_tw_encoding.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("SKIP_SLOW_TESTS"),
+        "{classification:?}"
+    );
+
+    let libxml_no_xxe_skipif = "--TEST--\nlibxml no xxe residual\n--EXTENSIONS--\ndom\n--SKIPIF--\n<?php\nif (!defined('LIBXML_NO_XXE')) die('skip LIBXML_NO_XXE not available');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        libxml_no_xxe_skipif,
+        "ext/dom/tests/xml_parsing_LIBXML_NO_XXE.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("LIBXML_NO_XXE"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        libxml_no_xxe_skipif,
+        "ext/dom/tests/unverified_libxml_no_xxe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_excludes_memory_resource_limit_expectations() {
     let cases = [
         (

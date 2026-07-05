@@ -687,6 +687,18 @@ ptn_phpt_supported_openssl_ec_constant_skipif_row() {
     [[ "$1" == "ext/openssl/tests/gh21083.phpt" ]]
 }
 
+ptn_phpt_supported_libxml_no_xxe_constant_skipif_row() {
+    [[ "$1" == "ext/dom/tests/xml_parsing_LIBXML_NO_XXE.phpt" ]]
+}
+
+ptn_phpt_supported_php_debug_required_skipif_row() {
+    [[ "$1" == "Zend/tests/return_types/internal_functions001.phpt" ]]
+}
+
+ptn_phpt_supported_mbstring_resource_limit_skipif_row() {
+    [[ "$1" == "ext/mbstring/tests/euc_tw_encoding.phpt" ]]
+}
+
 ptn_phpt_ipv6_loopback_available() {
     printf '%s\n' "${PTN_PHPT_IPV6_LOOPBACK_AVAILABLE:-0}"
 }
@@ -824,6 +836,9 @@ ptn_phpt_php_constant_defined() {
         OPENSSL_KEYTYPE_EC)
             return 1
             ;;
+        LIBXML_NO_XXE)
+            return 1
+            ;;
     esac
 
     return 1
@@ -897,6 +912,23 @@ ptn_phpt_modeled_skipif_precondition() {
     code=$(ptn_phpt_skipif_code "$path")
     [[ -n "$code" ]] || return 1
 
+    if ptn_phpt_supported_php_debug_required_skipif_row "$rel" \
+        && printf '%s\n' "$code" | grep -Eq '![[:space:]]*PHP_DEBUG'; then
+        if ! ptn_phpt_php_truthy "$(ptn_phpt_php_debug)"; then
+            printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_DEBUG guard skips when PHP_DEBUG is false\n'
+            return 0
+        fi
+        printf 'modeled-skipif\tmodeled static --SKIPIF-- preconditions satisfied: PHP_DEBUG\n'
+        return 0
+    fi
+
+    if ptn_phpt_supported_mbstring_resource_limit_skipif_row "$rel" \
+        && printf '%s\n' "$code" | grep -Eq "getenv[[:space:]]*\\([[:space:]]*['\"]SKIP_SLOW_TESTS['\"][[:space:]]*\\)" \
+        && ! ptn_phpt_run_slow_tests; then
+        printf 'skipif-precondition\tmodeled static --SKIPIF-- resource-limit gate keeps SKIP_SLOW_TESTS rows out of default PTN sweeps; set PTN_PHPT_RUN_SLOW_TESTS=1 or PTN_PHPT_RUN_PERF_SENSITIVE=1 to opt in\n'
+        return 0
+    fi
+
     local inactive_windows_helper_count=0
     if [[ "$(ptn_phpt_php_os_family)" != "Windows" ]] \
         && printf '%s\n' "$code" | grep -Eq "if[[:space:]]*\\([[:space:]]*PHP_OS_FAMILY[[:space:]]*(===|==)[[:space:]]*['\"]Windows['\"][[:space:]]*\\)[[:space:]]*\\{[^{}]*skipIfSeCreateSymbolicLinkPrivilegeIsDisabled[^{}]*\\}"; then
@@ -913,7 +945,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERSION|ZLIB_VERNUM|PCRE_JIT_SUPPORT)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERSION|ZLIB_VERNUM|PCRE_JIT_SUPPORT|LIBXML_NO_XXE)
                 ;;
             *)
                 return 1
@@ -1384,6 +1416,9 @@ ptn_phpt_modeled_skipif_precondition() {
                     ;;
                 OPENSSL_KEYTYPE_EC)
                     ptn_phpt_supported_openssl_ec_constant_skipif_row "$rel" || return 1
+                    ;;
+                LIBXML_NO_XXE)
+                    ptn_phpt_supported_libxml_no_xxe_constant_skipif_row "$rel" || return 1
                     ;;
                 *)
                     return 1
@@ -4071,6 +4106,10 @@ ptn_phpt_supported_zip_verified_skipif_row() {
 
 ptn_phpt_supported_xml_verified_skipif_row() {
     case "$1" in
+        ext/xml/tests/XML_OPTION_PARSE_HUGE.phpt|\
+        ext/xml/tests/XML_OPTION_PARSE_HUGE_during_parsing.phpt|\
+        ext/xml/tests/bug25666.phpt|\
+        ext/xmlreader/tests/013.phpt|\
         ext/xml/tests/bug32001b.phpt|\
         ext/xmlreader/tests/expand.phpt|\
         ext/xmlreader/tests/expand_error.phpt|\

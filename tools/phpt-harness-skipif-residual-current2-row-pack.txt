@@ -1,0 +1,11 @@
+# Focused residual harness-SKIPIF row pack for current dashboard rows.
+# Run with:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-harness-skipif-residual-current2-row-pack.txt
+
+Zend/tests/return_types/internal_functions001.phpt
+ext/mbstring/tests/euc_tw_encoding.phpt
+ext/xml/tests/XML_OPTION_PARSE_HUGE.phpt
+ext/xml/tests/XML_OPTION_PARSE_HUGE_during_parsing.phpt
+ext/xml/tests/bug25666.phpt
+ext/xmlreader/tests/013.phpt
+ext/dom/tests/xml_parsing_LIBXML_NO_XXE.phpt
