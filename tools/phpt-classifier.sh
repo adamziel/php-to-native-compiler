@@ -3604,6 +3604,17 @@ ptn_phpt_supported_session_verified_skipif_row() {
     esac
 }
 
+ptn_phpt_supported_standard_file_verified_skipif_row() {
+    case "$1" in
+        ext/standard/tests/file/bug60120.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_supported_standard_stream_verified_skipif_row() {
     case "$1" in
         ext/standard/tests/streams/opendir-004.phpt)
@@ -3806,6 +3817,8 @@ ptn_phpt_classify_row() {
             fi
         elif ptn_phpt_supported_session_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified Session --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_standard_file_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified standard file/proc --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_standard_stream_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_soap_verified_skipif_row "$rel"; then

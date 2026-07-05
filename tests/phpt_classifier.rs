@@ -4997,6 +4997,14 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         supported_proc_stdin_pipe_row,
         "runnable\tselected for PTN semantic measurement\n"
     );
+    let supported_proc_stdin_pipe_row_with_skipif = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc stdin pipe\n--SKIPIF--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\nif (!$php) { die(\"skip No php executable defined\\n\"); }\nif (PHP_OS_FAMILY === 'Windows') die('skip not for Windows');\n?>\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\n$proc = proc_open($php . ' -r \"echo file_get_contents(\\'php://stdin\\');\"', [0 => ['pipe', 'r'], 1 => ['pipe', 'w']], $pipes);\nstream_set_blocking($pipes[1], false);\nproc_close($proc);\n--EXPECT--\n",
+        "ext/standard/tests/file/bug60120.phpt",
+    );
+    assert_eq!(
+        supported_proc_stdin_pipe_row_with_skipif,
+        "runnable\tselected for PTN semantic measurement; verified standard file/proc --SKIPIF-- row forced-runnable on PTN\n"
+    );
 
     let supported_proc_environment_row = classify_at_relative_path(
         "--TEST--\nproc env array\n--FILE--\n<?php\n$env = ['test' => [1, 2]];\n$proc = proc_open('printf ok', [1 => ['pipe', 'w']], $pipes, __DIR__, $env);\n--EXPECT--\n",
