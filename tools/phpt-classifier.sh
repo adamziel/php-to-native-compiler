@@ -2031,6 +2031,51 @@ ptn_phpt_has_unsupported_process_priority_runtime() {
     ' "$path"
 }
 
+ptn_phpt_first_unsupported_process_boundary_runtime() {
+    local rel=$1
+
+    case "$rel" in
+        tests/basic/GHSA-9pqp-7h25-4f32.phpt|tests/basic/gh16998.phpt)
+            printf 'unsupported-cgi-subprocess-harness\trequires spawning php-cgi with request environment and pipe-fed POST bodies, outside PTN native process boundary\n'
+            return 0
+            ;;
+        tests/basic/bug71273.phpt)
+            printf 'unsupported-cli-subprocess-ini-probe\trequires shell_exec() of a PHP CLI subprocess to inspect extension_dir/extension startup diagnostics, outside PTN native process boundary\n'
+            return 0
+            ;;
+        ext/standard/tests/general_functions/proc_open02.phpt)
+            printf 'unsupported-process-control-runtime\trequires proc_terminate() and proc_get_status() signal/status observation for a live child process, outside PTN modeled process runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/general_functions/proc_open_multiplex.phpt|ext/standard/tests/streams/proc_open_bug64438.phpt)
+            printf 'unsupported-process-pipe-multiplex-runtime\trequires concurrent proc_open() pipe readiness multiplexing with stream_select(), outside PTN modeled process pipe runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/general_functions/proc_open_pipes1.phpt)
+            printf 'unsupported-process-descriptor-table-runtime\trequires proc_open() high-number pipe descriptor allocation beyond PTN modeled process descriptor table\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/proc_open_bug51800_right.phpt|ext/standard/tests/streams/proc_open_bug51800_right2.phpt)
+            printf 'unsupported-process-stdio-drain-runtime\trequires draining child stdout/stderr pipe streams while coordinating proc_close(), outside PTN modeled process pipe runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/proc_open_bug69900.phpt)
+            printf 'unsupported-process-blocking-pipes-runtime\trequires proc_open() blocking_pipes option and blocking pipe stream-context behavior, outside PTN modeled process pipe runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/streams/stream_cast_loses_data.phpt)
+            printf 'unsupported-process-stream-descriptor-cast-runtime\trequires casting buffered popen() streams into child process descriptors with data-loss diagnostics, outside PTN modeled process pipe runtime\n'
+            return 0
+            ;;
+        ext/standard/tests/file/bug69442.phpt|ext/libxml/tests/libxml_get_external_entity_loader_error_callback_name.phpt)
+            printf 'unsupported-process-pty-runtime\trequires proc_open() PTY descriptor allocation and pseudo-terminal pipe behavior, outside PTN modeled process runtime\n'
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 ptn_phpt_has_unsupported_cli_option_probe() {
     local path=$1
 
@@ -4324,6 +4369,9 @@ ptn_phpt_classify_row() {
         elif ptn_phpt_csv_contains_ci "SKIPIF" "$sections" && value=$(ptn_phpt_first_modeled_skipif_exclusion "$path" "$rel"); then
             printf '%s\n' "$value"
             return 0
+        elif value=$(ptn_phpt_first_unsupported_process_boundary_runtime "$rel"); then
+            printf '%s\n' "$value"
+            return 0
         elif ptn_phpt_has_process_boundary "$path" && ! ptn_phpt_supported_process_boundary_row "$rel"; then
             printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
             return 0
@@ -4346,6 +4394,12 @@ ptn_phpt_classify_row() {
     if [[ "$supported_cli_self_probe" -ne 1 ]] \
         && ptn_phpt_has_unsupported_process_priority_runtime "$path"; then
         printf 'unsupported-process-priority-runtime\trequires proc_nice() process niceness mutation and host priority observation, outside PTN modeled process runtime\n'
+        return 0
+    fi
+
+    if [[ "$supported_cli_self_probe" -ne 1 ]] \
+        && value=$(ptn_phpt_first_unsupported_process_boundary_runtime "$rel"); then
+        printf '%s\n' "$value"
         return 0
     fi
 

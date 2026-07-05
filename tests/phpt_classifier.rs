@@ -5801,7 +5801,7 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "ext/standard/tests/general_functions/proc_open_multiplex.phpt",
     );
     assert!(
-        proc_open_multiplex.starts_with("process-boundary\t"),
+        proc_open_multiplex.starts_with("unsupported-process-pipe-multiplex-runtime\t"),
         "{proc_open_multiplex:?}"
     );
 
@@ -5988,6 +5988,77 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
     assert!(
         outside_owned_surface.starts_with("process-boundary\t"),
         "{outside_owned_surface:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_splits_process_boundary_residual_current4_rows() {
+    for (path, phpt, expected) in [
+        (
+            "tests/basic/GHSA-9pqp-7h25-4f32.phpt",
+            "--TEST--\ncgi multipart\n--SKIPIF--\n<?php\nif (!getenv('TEST_PHP_CGI_EXECUTABLE')) die('skip php-cgi not available');\n?>\n--FILE--\n<?php\n$cmd = [getenv('TEST_PHP_CGI_EXECUTABLE'), '-C', '-n', __DIR__ . '/case.inc'];\n$env = ['REQUEST_METHOD' => 'POST'];\n$handle = proc_open($cmd, [0 => ['pipe', 'r'], 1 => STDOUT, 2 => STDOUT], $pipes, getcwd(), $env);\nfwrite($pipes[0], 'body');\nproc_close($handle);\n--EXPECT--\n",
+            "unsupported-cgi-subprocess-harness\t",
+        ),
+        (
+            "tests/basic/bug71273.phpt",
+            "--TEST--\ncli ini subprocess\n--FILE--\n<?php\n$cmd = getenv('TEST_PHP_EXECUTABLE_ESCAPED') . ' -n -d extension_dir=a/x/w -d extension=missing.dll -v 2>&1';\n$out = shell_exec($cmd);\n--EXPECT--\n",
+            "unsupported-cli-subprocess-ini-probe\t",
+        ),
+        (
+            "ext/standard/tests/general_functions/proc_open02.phpt",
+            "--TEST--\nprocess control\n--FILE--\n<?php\n$proc = proc_open(['/bin/sleep', '2'], [['pipe', 'r']], $pipes);\nproc_terminate($proc, 0);\nvar_dump(proc_get_status($proc));\nproc_terminate($proc);\nproc_close($proc);\n--EXPECT--\n",
+            "unsupported-process-control-runtime\t",
+        ),
+        (
+            "ext/standard/tests/general_functions/proc_open_pipes1.phpt",
+            "--TEST--\nmany process pipes\n--FILE--\n<?php\nfor ($i = 3; $i <= 30; $i++) { $spec[$i] = ['pipe', 'w']; }\nproc_open('php -r \"\"', $spec, $pipes);\n--EXPECT--\n",
+            "unsupported-process-descriptor-table-runtime\t",
+        ),
+        (
+            "ext/standard/tests/streams/proc_open_bug51800_right.phpt",
+            "--TEST--\nstdio drain\n--FILE--\n<?php\n$proc = proc_open('php -r \"fwrite(STDOUT, 1); fwrite(STDERR, 2);\"', [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);\nwhile (!feof($pipes[1]) || !feof($pipes[2])) { fread($pipes[1], 1024); fread($pipes[2], 1024); }\nproc_close($proc);\n--EXPECT--\n",
+            "unsupported-process-stdio-drain-runtime\t",
+        ),
+        (
+            "ext/standard/tests/streams/proc_open_bug64438.phpt",
+            "--TEST--\nnonblocking process pipes\n--FILE--\n<?php\n$proc = proc_open('php -r \"echo stream_get_contents(STDIN);\"', [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);\nforeach ($pipes as $pipe) { stream_set_blocking($pipe, false); }\n$r = [$pipes[1]];\n$w = [$pipes[0]];\n$e = null;\nstream_select($r, $w, $e, 60);\nproc_terminate($proc);\n--EXPECT--\n",
+            "unsupported-process-pipe-multiplex-runtime\t",
+        ),
+        (
+            "ext/standard/tests/streams/proc_open_bug69900.phpt",
+            "--TEST--\nblocking pipes\n--FILE--\n<?php\n$proc = proc_open('php -r \"\"', [['pipe', 'r'], ['pipe', 'w']], $pipes, null, null, ['blocking_pipes' => true]);\nfgets($pipes[1]);\nproc_close($proc);\n--EXPECT--\n",
+            "unsupported-process-blocking-pipes-runtime\t",
+        ),
+        (
+            "ext/standard/tests/streams/stream_cast_loses_data.phpt",
+            "--TEST--\nstream descriptor cast\n--FILE--\n<?php\n$stream = popen('printf ok', 'r');\nfgets($stream);\n$process = proc_open('cat', [0 => $stream, 1 => ['pipe', 'w']], $pipes);\nstream_get_contents($pipes[1]);\n--EXPECT--\n",
+            "unsupported-process-stream-descriptor-cast-runtime\t",
+        ),
+        (
+            "ext/standard/tests/file/bug69442.phpt",
+            "--TEST--\npty process\n--FILE--\n<?php\n$proc = proc_open('echo foo', [['pty'], ['pty'], ['pty'], ['pipe', 'w']], $pipes);\nproc_close($proc);\n--EXPECT--\n",
+            "unsupported-process-pty-runtime\t",
+        ),
+        (
+            "ext/libxml/tests/libxml_get_external_entity_loader_error_callback_name.phpt",
+            "--TEST--\nlibxml pty process\n--EXTENSIONS--\ndom\n--FILE--\n<?php\n$proc = proc_open('echo foo', [['pty'], ['pty'], ['pty'], ['pipe', 'w']], $pipes);\n--EXPECT--\n",
+            "unsupported-process-pty-runtime\t",
+        ),
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(phpt, path);
+        assert!(
+            classification.starts_with(expected),
+            "{path}: expected {expected:?}, got {classification:?}"
+        );
+    }
+
+    let proc_nice_simple_skipif = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc nice bools\n--SKIPIF--\n<?php\nif (!function_exists('proc_nice')) die('skip proc_nice not available');\n?>\n--FILE--\n<?php\nvar_dump(proc_nice(true));\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_nice_variation2.phpt",
+    );
+    assert!(
+        proc_nice_simple_skipif.starts_with("skipif-precondition\t"),
+        "{proc_nice_simple_skipif:?}"
     );
 }
 

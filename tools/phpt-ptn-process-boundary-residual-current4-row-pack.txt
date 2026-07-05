@@ -1,0 +1,14 @@
+tests/basic/GHSA-9pqp-7h25-4f32.phpt
+tests/basic/bug71273.phpt
+tests/basic/gh16998.phpt
+ext/standard/tests/general_functions/proc_nice_variation2.phpt
+ext/standard/tests/general_functions/proc_open02.phpt
+ext/standard/tests/general_functions/proc_open_multiplex.phpt
+ext/standard/tests/general_functions/proc_open_pipes1.phpt
+ext/standard/tests/streams/proc_open_bug51800_right.phpt
+ext/standard/tests/streams/proc_open_bug51800_right2.phpt
+ext/standard/tests/streams/proc_open_bug64438.phpt
+ext/standard/tests/streams/proc_open_bug69900.phpt
+ext/standard/tests/streams/stream_cast_loses_data.phpt
+ext/standard/tests/file/bug69442.phpt
+ext/libxml/tests/libxml_get_external_entity_loader_error_callback_name.phpt
