@@ -96925,6 +96925,65 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
 }
 
 #[test]
+fn phpc_opcache_status_tracks_static_includes_before_runtime_require() {
+    let root = temp_dir("ptn-phpc-opcache-static-include-status");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-static-include-status.php");
+    let included = root.join("opcache-static-include-status.inc.php");
+    fs::write(&included, "<?php\n").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+namespace {\n\
+    $x = 0;\n\
+    function test() {\n\
+        global $x;\n\
+        $x += 1;\n\
+    }\n\
+}\n\
+namespace test {\n\
+    if (!isset(opcache_get_status()['scripts'][__DIR__ . '/opcache-static-include-status.inc.php'])) {\n\
+        $initialRequest = true;\n\
+        require __DIR__ . '/opcache-static-include-status.inc.php';\n\
+    } else {\n\
+        $initialRequest = false;\n\
+        $y = 0;\n\
+        function test() {\n\
+            global $y;\n\
+            $y += 1;\n\
+        }\n\
+    }\n\
+\n\
+    test(); test(); test(); test(); test();\n\
+    test(); test(); test(); test(); test();\n\
+    var_dump($initialRequest ? $x : $y);\n\
+    echo \"OK\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.file_update_protection=0")
+        .arg("-d")
+        .arg("opcache.revalidate_freq=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(10)\nOK\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_optimizer_reflection_static_variables_deref_to_native_binary() {
     let root = temp_dir("ptn-phpc-opcache-optimized-static-variables");
     fs::create_dir_all(&root).unwrap();

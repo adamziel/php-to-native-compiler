@@ -1982,6 +1982,9 @@ struct PtnRuntime {
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;
+    char **opcache_cached_scripts;
+    size_t opcache_cached_scripts_len;
+    size_t opcache_cached_scripts_capacity;
     char **opcache_file_cache_entries;
     size_t opcache_file_cache_entries_len;
     size_t opcache_file_cache_entries_capacity;
@@ -2525,6 +2528,47 @@ static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const
         root->included_files_capacity = new_capacity;
     }
     root->included_files[root->included_files_len++] = ptn_duplicate_string(path);
+}
+
+static PTN_UNUSED int ptn_runtime_has_opcache_cached_script(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || path == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < root->opcache_cached_scripts_len; i++) {
+        if (strcmp(root->opcache_cached_scripts[i], path) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_runtime_note_opcache_cached_script(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || path == NULL ||
+        ptn_runtime_has_opcache_cached_script(root, path)) {
+        return;
+    }
+    if (root->opcache_cached_scripts_len == root->opcache_cached_scripts_capacity) {
+        size_t new_capacity = root->opcache_cached_scripts_capacity == 0
+            ? 8
+            : root->opcache_cached_scripts_capacity * 2;
+        if (new_capacity < root->opcache_cached_scripts_capacity ||
+            new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_scripts = realloc(
+            root->opcache_cached_scripts,
+            new_capacity * sizeof(char *)
+        );
+        if (new_scripts == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->opcache_cached_scripts = new_scripts;
+        root->opcache_cached_scripts_capacity = new_capacity;
+    }
+    root->opcache_cached_scripts[root->opcache_cached_scripts_len++] =
+        ptn_duplicate_string(path);
 }
 
 static void ptn_runtime_push_free_object_id(PtnRuntime *root, size_t object_id) {

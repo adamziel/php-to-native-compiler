@@ -272,6 +272,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->opcache_cached_scripts = NULL;
+    runtime->opcache_cached_scripts_len = 0;
+    runtime->opcache_cached_scripts_capacity = 0;
     runtime->opcache_file_cache_entries = NULL;
     runtime->opcache_file_cache_entries_len = 0;
     runtime->opcache_file_cache_entries_capacity = 0;
@@ -1160,6 +1163,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->included_files = NULL;
         runtime->included_files_len = 0;
         runtime->included_files_capacity = 0;
+        for (size_t i = 0; i < runtime->opcache_cached_scripts_len; i++) {
+            free(runtime->opcache_cached_scripts[i]);
+        }
+        free(runtime->opcache_cached_scripts);
+        runtime->opcache_cached_scripts = NULL;
+        runtime->opcache_cached_scripts_len = 0;
+        runtime->opcache_cached_scripts_capacity = 0;
         for (size_t i = 0; i < runtime->opcache_file_cache_entries_len; i++) {
             free(runtime->opcache_file_cache_entries[i]);
         }

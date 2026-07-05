@@ -3293,6 +3293,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->opcache_cached_scripts = NULL;
+    runtime->opcache_cached_scripts_len = 0;
+    runtime->opcache_cached_scripts_capacity = 0;
     runtime->opcache_file_cache_entries = NULL;
     runtime->opcache_file_cache_entries_len = 0;
     runtime->opcache_file_cache_entries_capacity = 0;

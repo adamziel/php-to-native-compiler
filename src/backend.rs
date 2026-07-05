@@ -533,6 +533,15 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
+    if runtime_requirements.internal_function_dispatch && !module.includes.is_empty() {
+        out.push_str("    if (ptn_opcache_enabled(&runtime)) {\n");
+        for include in &module.includes {
+            out.push_str("        ptn_runtime_note_opcache_cached_script(&runtime, \"");
+            out.push_str(&c_string(&include.source_file));
+            out.push_str("\");\n");
+        }
+        out.push_str("    }\n");
+    }
     out.push_str("    const char *ptn_opcache_interned_strings_buffer = getenv(\"PTN_OPCACHE_INTERNED_STRINGS_BUFFER\");\n");
     out.push_str("    if (ptn_opcache_interned_strings_buffer != NULL && ptn_opcache_interned_strings_buffer[0] != '\\0') {\n");
     out.push_str("        errno = 0;\n");

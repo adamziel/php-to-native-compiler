@@ -150675,23 +150675,38 @@ static PtnValue ptn_internal_opcache_get_configuration(PtnRuntime *runtime, size
     return result;
 }
 
+static void ptn_opcache_status_add_script(PtnValue scripts, const char *path) {
+    if (path == NULL) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_string_key(path);
+    if (ptn_array_entry_for_key(scripts.as.array, key) != NULL) {
+        ptn_array_key_free(key);
+        return;
+    }
+    PtnValue script = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(script.as.array, ptn_array_string_key("full_path"), ptn_owned_string(ptn_duplicate_string(path)));
+    ptn_array_set_entry(script.as.array, ptn_array_string_key("hits"), ptn_int(1));
+    ptn_array_set_entry(script.as.array, ptn_array_string_key("memory_consumption"), ptn_int(0));
+    ptn_array_set_entry(script.as.array, ptn_array_string_key("timestamp"), ptn_int(0));
+    ptn_array_set_entry(scripts.as.array, key, script);
+}
+
 static PtnValue ptn_opcache_status_scripts(PtnRuntime *runtime) {
     PtnValue scripts = ptn_array_from_literal_entries(0, NULL);
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
         return scripts;
     }
+    for (size_t i = 0; i < root->opcache_cached_scripts_len; i++) {
+        ptn_opcache_status_add_script(scripts, root->opcache_cached_scripts[i]);
+    }
     for (size_t i = 0; i < root->included_files_len; i++) {
         const char *path = root->included_files[i];
         if (runtime != NULL && runtime->source_path != NULL && strcmp(path, runtime->source_path) == 0) {
             continue;
         }
-        PtnValue script = ptn_array_from_literal_entries(0, NULL);
-        ptn_array_set_entry(script.as.array, ptn_array_string_key("full_path"), ptn_owned_string(ptn_duplicate_string(path)));
-        ptn_array_set_entry(script.as.array, ptn_array_string_key("hits"), ptn_int(1));
-        ptn_array_set_entry(script.as.array, ptn_array_string_key("memory_consumption"), ptn_int(0));
-        ptn_array_set_entry(script.as.array, ptn_array_string_key("timestamp"), ptn_int(0));
-        ptn_array_set_entry(scripts.as.array, ptn_array_string_key(path), script);
+        ptn_opcache_status_add_script(scripts, path);
     }
     return scripts;
 }
