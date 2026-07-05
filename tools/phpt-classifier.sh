@@ -3429,6 +3429,30 @@ ptn_phpt_supported_standard_network_mail_http_residual_ini_row() {
     esac
 }
 
+ptn_phpt_supported_session_verified_skipif_row() {
+    case "$1" in
+        ext/session/tests/014.phpt|\
+        ext/session/tests/015.phpt|\
+        ext/session/tests/018.phpt|\
+        ext/session/tests/020.phpt|\
+        ext/session/tests/bug41600.phpt|\
+        ext/session/tests/bug51338.phpt|\
+        ext/session/tests/bug74892.phpt|\
+        ext/session/tests/gh13891.phpt|\
+        ext/session/tests/rfc1867_invalid_settings_2.phpt|\
+        ext/session/tests/session_basic4.phpt|\
+        ext/session/tests/session_basic5.phpt|\
+        ext/session/tests/session_decode_variation1.phpt|\
+        ext/session/tests/session_encode_serialize.phpt|\
+        ext/session/tests/session_ini_set.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -3554,6 +3578,8 @@ ptn_phpt_classify_row() {
                 printf '%s\n' "$value"
                 return 0
             fi
+        elif ptn_phpt_supported_session_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified Session --SKIPIF-- row forced-runnable on PTN"
         else
             unmodeled_skipif=1
         fi

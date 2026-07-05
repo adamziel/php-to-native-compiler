@@ -521,6 +521,46 @@ fn phpt_classifier_skipif_harness_is_opt_in() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_session_skipif_rows() {
+    let unmodeled_session_skipif = "--TEST--\nsession verified skipif\n--EXTENSIONS--\nsession\n--SKIPIF--\n<?php if (ini_get('session.use_trans_sid')) die('skip trans sid'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let verified_rows = [
+        "ext/session/tests/014.phpt",
+        "ext/session/tests/015.phpt",
+        "ext/session/tests/018.phpt",
+        "ext/session/tests/020.phpt",
+        "ext/session/tests/bug41600.phpt",
+        "ext/session/tests/bug51338.phpt",
+        "ext/session/tests/bug74892.phpt",
+        "ext/session/tests/gh13891.phpt",
+        "ext/session/tests/rfc1867_invalid_settings_2.phpt",
+        "ext/session/tests/session_basic4.phpt",
+        "ext/session/tests/session_basic5.phpt",
+        "ext/session/tests/session_decode_variation1.phpt",
+        "ext/session/tests/session_encode_serialize.phpt",
+        "ext/session/tests/session_ini_set.phpt",
+    ];
+
+    for row in verified_rows {
+        let classification =
+            classify_at_relative_path_with_harness_programs(unmodeled_session_skipif, row);
+        assert!(
+            classification.starts_with("runnable\t")
+                && classification.contains("verified Session --SKIPIF-- row"),
+            "{row}: {classification:?}"
+        );
+    }
+
+    let classification = classify_at_relative_path_with_harness_programs(
+        unmodeled_session_skipif,
+        "ext/session/tests/unverified_skipif.phpt",
+    );
+    assert!(
+        classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_models_static_skipif_preconditions() {
     let sanitizer = "--TEST--\nsanitizer\n--SKIPIF--\n<?php\nif (getenv('SKIP_ASAN')) die('skip asan');\nif (getenv('SKIP_MSAN')) die('skip msan');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs(sanitizer, true);
