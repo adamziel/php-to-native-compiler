@@ -5731,6 +5731,38 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "{proc_open_multiplex:?}"
     );
 
+    for (path, phpt) in [
+        (
+            "ext/standard/tests/general_functions/proc_nice_basic-win.phpt",
+            "--TEST--\nproc nice windows priority\n--SKIPIF--\n<?php\nif (!defined('PHP_WINDOWS_VERSION_MAJOR')) die('skip: Only for Windows');\nif (!shell_exec(\"where wmic 2>nul\")) die('skip wmic not available');\n?>\n--FILE--\n<?php\nproc_nice(10);\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/general_functions/proc_nice_basic.phpt",
+            "--TEST--\nproc nice host priority\n--SKIPIF--\n<?php\nif (!function_exists('proc_nice')) die('skip proc_nice not available');\nexec('ps -p 1 -o \"pid,nice\"', $output, $exit_code);\nif ($exit_code !== 0) die('skip ps not available');\n?>\n--FILE--\n<?php\nvar_dump(proc_nice(5));\n--EXPECT--\n",
+        ),
+        (
+            "ext/standard/tests/general_functions/proc_nice_variation5.phpt",
+            "--TEST--\nproc nice negative priority\n--SKIPIF--\n<?php\nif (!function_exists('proc_nice')) die('skip proc_nice not available');\nif (!function_exists('posix_geteuid')) die('skip posix_geteuid not available');\nif (posix_geteuid() == 0) print 'skip root';\n?>\n--FILE--\n<?php\nvar_dump(proc_nice(-2345));\n--EXPECTF--\n",
+        ),
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(phpt, path);
+        assert!(
+            classification.starts_with("unsupported-process-priority-runtime\t")
+                && classification.contains("proc_nice() process niceness mutation"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let proc_nice_simple_skipif = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nproc nice bools\n--SKIPIF--\n<?php\nif (!function_exists('proc_nice')) die('skip proc_nice not available');\n?>\n--FILE--\n<?php\nvar_dump(proc_nice(true));\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_nice_variation2.phpt",
+    );
+    assert!(
+        proc_nice_simple_skipif.starts_with("skipif-precondition\t")
+            && proc_nice_simple_skipif.contains("function availability guard requires proc_nice"),
+        "{proc_nice_simple_skipif:?}"
+    );
+
     let proc_open_wrong_resource_type = classify_at_relative_path(
         "--TEST--\nproc wrong resource\n--FILE--\n<?php\n$context = stream_context_create();\nproc_open('missing', [0 => $context], $pipes);\n--EXPECT--\n",
         "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt",

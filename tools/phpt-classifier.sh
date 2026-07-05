@@ -2012,6 +2012,25 @@ ptn_phpt_supported_cli_self_probe() {
     return 1
 }
 
+ptn_phpt_has_unsupported_process_priority_runtime() {
+    local path=$1
+
+    awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "FILE" || section == "CLEAN"
+            next
+        }
+        active && /(^|[^[:alnum:]_\$>:])proc_nice[[:space:]]*\(/ {
+            found = 1
+            exit
+        }
+        END { exit found ? 0 : 1 }
+    ' "$path"
+}
+
 ptn_phpt_has_unsupported_cli_option_probe() {
     local path=$1
 
@@ -4275,6 +4294,12 @@ ptn_phpt_classify_row() {
         && ptn_phpt_csv_contains_ci "SKIPIF" "$sections" \
         && value=$(ptn_phpt_first_modeled_skipif_exclusion "$path" "$rel"); then
         printf '%s\n' "$value"
+        return 0
+    fi
+
+    if [[ "$supported_cli_self_probe" -ne 1 ]] \
+        && ptn_phpt_has_unsupported_process_priority_runtime "$path"; then
+        printf 'unsupported-process-priority-runtime\trequires proc_nice() process niceness mutation and host priority observation, outside PTN modeled process runtime\n'
         return 0
     fi
 
