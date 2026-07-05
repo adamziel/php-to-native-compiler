@@ -10,11 +10,11 @@ on:
       timeout_seconds:
         description: Per-PHPT timeout passed to run-tests.php
         required: true
-        default: "3600"
+        default: "7200"
       run_tests_jobs:
         description: Parallel run-tests.php workers per shard
         required: true
-        default: "4"
+        default: "8"
 
 permissions:
   contents: read
@@ -92,9 +92,16 @@ jobs:
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
         run: |
+          set -euo pipefail
           tools/run-bounded-phpt.sh \
             --classify-harness-programs \
-            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
+            ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
+          phpt_pid=$!
+          while kill -0 "$phpt_pid" 2>/dev/null; do
+            sleep 60
+            echo "[full-phpt] shard ${{ matrix.shard }}/119 still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          done
+          wait "$phpt_pid"
 
       - name: Upload shard artifact
         if: always()
