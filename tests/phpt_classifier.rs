@@ -2744,12 +2744,28 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\nrecursive directory current mode\n--FILE--\n<?php\nnew RecursiveDirectoryIterator(__DIR__, FileSystemIterator::CURRENT_AS_PATHNAME);\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/bug67359.phpt",
+            "--TEST--\nrecursive directory seek current\n--FILE--\n<?php\n$rdi = new RecursiveDirectoryIterator(__DIR__, FileSystemIterator::SKIP_DOTS | FileSystemIterator::UNIX_PATHS);\n$it = new RecursiveIteratorIterator($rdi);\n$it->seek(1);\nwhile ($it->valid()) { $it->current(); $it->next(); }\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/RecursiveDirectoryIterator_getSubPath_basic.phpt",
+            "--TEST--\nrecursive directory subpath\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__));\nvar_dump($it->getSubPath());\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/dit_004.phpt",
             "--TEST--\ndirectory iterator clone\n--FILE--\n<?php\n$a = new DirectoryIterator(__DIR__);\n$b = clone $a;\nvar_dump($a->key(), $b->key());\n--EXPECT--\n",
         ),
         (
             "ext/spl/tests/iterator_028.phpt",
             "--TEST--\nrecursive max depth\n--FILE--\n<?php\n$it = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n$it->setMaxDepth(1);\nvar_dump($it->getMaxDepth());\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_043.phpt",
+            "--TEST--\nrecursive caching children\n--FILE--\n<?php\n$it = new RecursiveCachingIterator(new RecursiveArrayIterator([1, 2]));\nvar_dump($it->getChildren());\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/iterator_048.phpt",
+            "--TEST--\nrecursive regex iterator\n--FILE--\n<?php\nclass MyRecursiveRegexIterator extends RecursiveRegexIterator {}\n$it = new MyRecursiveRegexIterator(new RecursiveArrayIterator(['Foo']), '/Foo/');\nforeach (new RecursiveIteratorIterator($it) as $value) { echo $value; }\n--EXPECT--\n",
         ),
         (
             "ext/spl/tests/RecursiveIteratorIterator_dtor_order.phpt",
@@ -2768,8 +2784,16 @@ fn phpt_classifier_keeps_current_red_spl_iterator_helpers_runnable() {
             "--TEST--\ndirectory empty constructor\n--FILE--\n<?php\nnew DirectoryIterator('');\n--EXPECT--\n",
         ),
         (
+            "ext/spl/tests/GlobIterator_constructor_count.phpt",
+            "--TEST--\nglob iterator uninitialized count\n--FILE--\n<?php\n$rc = new ReflectionClass(GlobIterator::class);\n$in = $rc->newInstanceWithoutConstructor();\ncount($in);\n--EXPECT--\n",
+        ),
+        (
             "ext/spl/tests/gh16588.phpt",
             "--TEST--\nspl object storage serialize mutation\n--FILE--\n<?php\nclass C { function __serialize(): array { return []; } }\n$s = new SplObjectStorage();\n$s[new C] = new stdClass();\necho $s->serialize();\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/bug70053.phpt",
+            "--TEST--\nmultiple iterator empty keys\n--FILE--\n<?php\n$mit = new MultipleIterator(MultipleIterator::MIT_KEYS_ASSOC);\n$mit->attachIterator(new EmptyIterator(), '2');\n$mit->attachIterator(new EmptyIterator(), 2);\nvar_dump($mit->current());\n--EXPECT--\n",
         ),
         (
             "ext/spl/tests/bug72684.phpt",

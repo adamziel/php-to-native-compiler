@@ -1804,27 +1804,36 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009a[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/bug73209[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/iterator_028[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_043[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/iterator_048[.]phpt$/ ||
                 ptn_path ~ /ext\/simplexml\/tests\/gh15837[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_dtor_order[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/bug41828[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/bug67359[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/bug69970[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/iterator_023[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/iterator_033[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/RecursiveDirectoryIterator_getSubPath_basic[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/recursive_tree_iterator_004[.]phpt$/
         }
         function ptn_supported_recursive_iterator_iterator_surface_line(line) {
             return ptn_supported_recursive_iterator_iterator_surface_row() &&
-                line ~ /(^|[^[:alnum:]_$\\])(parentiterator|recursivearrayiterator|recursiveiteratoriterator|recursivetreeiterator)([^[:alnum:]_]|$)/
+                line ~ /(^|[^[:alnum:]_$\\])(parentiterator|recursivearrayiterator|recursivecachingiterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator)([^[:alnum:]_]|$)/
         }
         function ptn_supported_multiple_iterator_surface_line(line) {
-            return ptn_path ~ /ext\/spl\/tests\/bug81587[.]phpt$/ &&
-                line ~ /(^|[^[:alnum:]_$\\])multipleiterator([^[:alnum:]_]|$)/
+            return (ptn_path ~ /ext\/spl\/tests\/bug81587[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/bug70053[.]phpt$/) &&
+                line ~ /(^|[^[:alnum:]_$\\])(emptyiterator|multipleiterator)([^[:alnum:]_]|$)/
         }
         function ptn_supported_append_iterator_surface_line(line) {
             return ptn_path ~ /ext\/spl\/tests\/bug72684[.]phpt$/ &&
                 line ~ /(^|[^[:alnum:]_$\\])appenditerator([^[:alnum:]_]|$)/
+        }
+        function ptn_supported_glob_iterator_surface_line(line) {
+            return ptn_path ~ /ext\/spl\/tests\/GlobIterator_constructor_count[.]phpt$/ &&
+                line ~ /(^|[^[:alnum:]_$\\])globiterator([^[:alnum:]_]|$)/
         }
         function ptn_supported_spl_helper_function_line(line) {
             return ((ptn_path ~ /ext\/spl\/tests\/iterator_count_exception[.]phpt$/ ||
@@ -1842,7 +1851,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])spltempfileobject([^[:alnum:]_]|$)/
         }
         function ptn_supported_recursive_directory_iterator_surface_line(line) {
-            return ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ &&
+            return (ptn_path ~ /ext\/spl\/tests\/bug47534[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/bug67359[.]phpt$/ ||
+                    ptn_path ~ /ext\/spl\/tests\/RecursiveDirectoryIterator_getSubPath_basic[.]phpt$/) &&
                 line ~ /(^|[^[:alnum:]_$\\])(filesystemiterator|recursivedirectoryiterator)([^[:alnum:]_]|$)/
         }
         function ptn_supported_reflection_tentative_return_spl_surface_line(line) {
@@ -2112,6 +2123,7 @@ ptn_phpt_first_unsupported_language_surface() {
                     !ptn_supported_recursive_iterator_iterator_surface_line(line) &&
                     !ptn_supported_multiple_iterator_surface_line(line) &&
                     !ptn_supported_append_iterator_surface_line(line) &&
+                    !ptn_supported_glob_iterator_surface_line(line) &&
                     !ptn_supported_spl_temp_file_object_surface_line(line) &&
                     !ptn_supported_directory_iterator_surface_line(line) &&
                     !ptn_supported_recursive_directory_iterator_surface_line(line) &&
