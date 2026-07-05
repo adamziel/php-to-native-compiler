@@ -96,6 +96,7 @@ fn classify_at_relative_path_with_options_and_files_and_env(
         "PTN_PHPT_AVAILABLE_CLASSES",
         "PTN_PHPT_INTL_ICU_VERSION",
         "PTN_PHPT_SQLITE3_VERSION_NUMBER",
+        "PTN_PHPT_ZLIB_VERNUM",
         "PTN_PHPT_RUN_SLOW_TESTS",
         "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
@@ -205,6 +206,7 @@ fn classify_with_options(
         "PTN_PHPT_AVAILABLE_CLASSES",
         "PTN_PHPT_INTL_ICU_VERSION",
         "PTN_PHPT_SQLITE3_VERSION_NUMBER",
+        "PTN_PHPT_ZLIB_VERNUM",
         "PTN_PHPT_RUN_SLOW_TESTS",
         "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
@@ -719,6 +721,32 @@ fn phpt_classifier_unlocks_verified_intl_and_sqlite_static_skipif_rows() {
     );
     assert!(
         classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_zlib_vernum_skipif_preconditions() {
+    let zlib_vernum = "--TEST--\nzlib version gate\n--EXTENSIONS--\nzlib\n--SKIPIF--\n<?php\nif (ZLIB_VERNUM >= 0x1240) {\n    print \"skip - ZLIB < 1.2.4 required for test\";\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    let classification = classify_with_harness_programs_and_env(
+        zlib_vernum,
+        true,
+        &[("PTN_PHPT_ZLIB_VERNUM", "0x1310")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("ZLIB_VERNUM guard"),
+        "{classification:?}"
+    );
+
+    let classification = classify_with_harness_programs_and_env(
+        zlib_vernum,
+        true,
+        &[("PTN_PHPT_ZLIB_VERNUM", "0x1230")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("ZLIB_VERNUM"),
         "{classification:?}"
     );
 }

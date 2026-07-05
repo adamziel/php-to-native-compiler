@@ -682,6 +682,25 @@ ptn_phpt_sqlite3_version_number() {
     printf '0\n'
 }
 
+ptn_phpt_zlib_vernum() {
+    if [[ -n "${PTN_PHPT_ZLIB_VERNUM:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_ZLIB_VERNUM"
+        return 0
+    fi
+
+    local repo_root
+    local value
+    repo_root=$(ptn_phpt_repo_root)
+    value=$(sed -nE 's/^#define[[:space:]]+PTN_ZLIB_VERNUM[[:space:]]+(0x[0-9A-Fa-f]+|[0-9]+).*/\1/p' \
+        "$repo_root/src/backend/runtime/core_values.c" 2>/dev/null | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    printf '0\n'
+}
+
 ptn_phpt_supported_recursive_fiber_resource_limit_row() {
     case "$1" in
         Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt|\
@@ -819,13 +838,13 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
 
     code_without_strings=$(printf '%s\n' "$code" | ptn_phpt_strip_php_strings | ptn_phpt_squash_ws)
-    code_for_identifiers=$(printf '%s\n' "$code_without_strings" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*/ /g')
+    code_for_identifiers=$(printf '%s\n' "$code_without_strings" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*/ /g; s/0x[0-9A-Fa-f]+/ /g')
 
     local identifier
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERNUM)
                 ;;
             *)
                 return 1
@@ -848,6 +867,7 @@ ptn_phpt_modeled_skipif_precondition() {
     local class_exists_count
     local intl_icu_version_compare_count
     local sqlite3_version_count
+    local zlib_vernum_count
     local in_array_count
     local stream_get_filters_count
     local include_count
@@ -866,6 +886,7 @@ ptn_phpt_modeled_skipif_precondition() {
     class_exists_count=$(ptn_phpt_count_matches 'class_exists[[:space:]]*\(' "$code_without_strings")
     intl_icu_version_compare_count=$(ptn_phpt_count_matches 'version_compare[[:space:]]*\([[:space:]]*INTL_ICU_VERSION' "$code_without_strings")
     sqlite3_version_count=$(ptn_phpt_count_matches 'SQLite3::version[[:space:]]*\(' "$code_without_strings")
+    zlib_vernum_count=$(ptn_phpt_count_matches 'ZLIB_VERNUM' "$code_without_strings")
     in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
     stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
@@ -1030,6 +1051,28 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("SQLite3-version")
     fi
     [[ "$sqlite3_version_count" -eq "$parsed_sqlite3_version_count" ]] || return 1
+
+    local zlib_vernum_condition_lines
+    local parsed_zlib_vernum_count=0
+    local zlib_vernum
+    zlib_vernum=$(ptn_phpt_zlib_vernum)
+    zlib_vernum_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo 'ZLIB_VERNUM[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*(0x[0-9A-Fa-f]+|[0-9]+)' \
+        || true)
+    if [[ -n "$zlib_vernum_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E 's/ZLIB_VERNUM[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*(0x[0-9A-Fa-f]+|[0-9]+)/\1/')
+            expected=$(printf '%s\n' "$condition" | sed -E 's/ZLIB_VERNUM[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*(0x[0-9A-Fa-f]+|[0-9]+)/\2/')
+            parsed_zlib_vernum_count=$((parsed_zlib_vernum_count + 1))
+            if ptn_phpt_eval_int_condition "$zlib_vernum" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- ZLIB_VERNUM guard skips when ZLIB_VERNUM %s %s; modeled ZLIB_VERNUM=%s\n' \
+                    "$op" "$expected" "$zlib_vernum"
+                return 0
+            fi
+        done <<< "$zlib_vernum_condition_lines"
+        modeled_families+=("ZLIB_VERNUM")
+    fi
+    [[ "$zlib_vernum_count" -eq "$parsed_zlib_vernum_count" ]] || return 1
 
     local string_condition_lines
     local parsed_os_family_count=0
@@ -1306,7 +1349,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_zlib_vernum_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1
