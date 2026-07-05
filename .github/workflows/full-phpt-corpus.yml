@@ -114,6 +114,7 @@ jobs:
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
         run: |
+          set +e
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
           timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
@@ -133,7 +134,6 @@ jobs:
           exit 0
 
       - name: Upload shard artifact
-        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: phpt-full-corpus-shard-${{ matrix.shard }}
@@ -143,7 +143,6 @@ jobs:
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
 
       - name: Fail shard on nonzero PHPT exit
-        if: ${{ always() }}
         run: |
           exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
           if [[ ! -f "$exit_code_path" ]]; then
@@ -213,6 +212,7 @@ jobs:
           PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
         run: |
+          set +e
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
           timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
@@ -232,7 +232,6 @@ jobs:
           exit 0
 
       - name: Upload shard artifact
-        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: phpt-full-corpus-shard-${{ matrix.shard }}
@@ -242,7 +241,6 @@ jobs:
             .runtime/full-phpt-results/shard-${{ matrix.shard }}/**
 
       - name: Fail shard on nonzero PHPT exit
-        if: ${{ always() }}
         run: |
           exit_code_path=".runtime/full-phpt-results/shard-${{ matrix.shard }}/shard-exit-code.txt"
           if [[ ! -f "$exit_code_path" ]]; then
