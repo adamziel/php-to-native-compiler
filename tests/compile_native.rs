@@ -14971,6 +14971,44 @@ class D extends C { function f(array $a) {} }\n",
 }
 
 #[test]
+fn compile_runtime_signature_fatal_displays_class_scoped_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-signature-class-default");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-signature-class-default.php");
+    let output = root.join("runtime-signature-class-default-bin");
+    fs::write(
+        &input,
+        r#"<?php
+abstract class Foo {
+    function bar($a = self::class) {}
+}
+
+trait T {
+    public function bar() {}
+}
+
+class B extends Foo {
+    use T;
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Declaration of B::bar() must be compatible with Foo::bar($a = 'Foo')"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_imported_trait_method_signature_fatal_reports_trait_source_file_to_native_binary() {
     let root = temp_dir("ptn-native-trait-signature-source-file");
     fs::create_dir_all(&root).unwrap();

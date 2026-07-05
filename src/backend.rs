@@ -26110,11 +26110,16 @@ fn runtime_method_signature_display(
     }
     signature.push_str(&method.name);
     signature.push('(');
+    let required_parameter_count = runtime_signature_required_parameter_count(&function.parameters);
     for (index, parameter) in function.parameters.iter().enumerate() {
         if index > 0 {
             signature.push_str(", ");
         }
-        signature.push_str(&runtime_parameter_signature_display(parameter));
+        signature.push_str(&runtime_parameter_signature_display(
+            parameter,
+            index >= required_parameter_count,
+            function.class_name.as_deref(),
+        ));
     }
     signature.push(')');
     if let Some(return_type) = &function.return_type {
@@ -26124,7 +26129,11 @@ fn runtime_method_signature_display(
     signature
 }
 
-fn runtime_parameter_signature_display(parameter: &FunctionParameter) -> String {
+fn runtime_parameter_signature_display(
+    parameter: &FunctionParameter,
+    show_default: bool,
+    scope_class_name: Option<&str>,
+) -> String {
     let mut display = String::new();
     if let Some(type_hint) = &parameter.type_hint {
         display.push_str(&type_hint_label(type_hint));
@@ -26138,7 +26147,91 @@ fn runtime_parameter_signature_display(parameter: &FunctionParameter) -> String 
     }
     display.push('$');
     display.push_str(&parameter.name);
+    if show_default {
+        if let Some(default_value) = &parameter.default_value {
+            display.push_str(" = ");
+            display.push_str(&runtime_parameter_default_display(
+                default_value,
+                scope_class_name,
+            ));
+        }
+    }
     display
+}
+
+fn runtime_signature_required_parameter_count(parameters: &[FunctionParameter]) -> usize {
+    parameters
+        .iter()
+        .rposition(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+        .map_or(0, |index| index + 1)
+}
+
+fn runtime_parameter_default_display(
+    default_value: &ValueExpr,
+    scope_class_name: Option<&str>,
+) -> String {
+    match default_value {
+        ValueExpr::Null => "null".to_string(),
+        ValueExpr::Bool(value) => value.to_string(),
+        ValueExpr::Int(value) => value.to_string(),
+        ValueExpr::Float(value) => runtime_parameter_default_float_display(*value),
+        ValueExpr::String(value) => runtime_parameter_default_string_display(value),
+        ValueExpr::Array(elements) if elements.is_empty() => "[]".to_string(),
+        ValueExpr::Array(_) => "[...]".to_string(),
+        ValueExpr::Constant { name, .. } => name.trim_start_matches('\\').to_string(),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } if name.eq_ignore_ascii_case("class") => runtime_parameter_default_string_display(
+            runtime_parameter_default_class_name_display(class_name, scope_class_name).as_str(),
+        ),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => {
+            format!("{class_name}::{name}")
+        }
+        _ => "<expression>".to_string(),
+    }
+}
+
+fn runtime_parameter_default_class_name_display<'a>(
+    class_name: &'a str,
+    scope_class_name: Option<&'a str>,
+) -> String {
+    if matches!(class_name.to_ascii_lowercase().as_str(), "self" | "static") {
+        scope_class_name
+            .unwrap_or(class_name)
+            .trim_start_matches('\\')
+            .to_string()
+    } else {
+        class_name.trim_start_matches('\\').to_string()
+    }
+}
+
+fn runtime_parameter_default_float_display(value: f64) -> String {
+    let mut display = format!("{value:.13}");
+    if display.contains('.') {
+        display = display
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+    }
+    if display == "-0" {
+        "0".to_string()
+    } else {
+        display
+    }
+}
+
+fn runtime_parameter_default_string_display(value: &str) -> String {
+    let escaped = value.replace('\'', "\\'");
+    let display = if escaped.chars().count() > 15 {
+        let mut truncated = escaped.chars().take(10).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    } else {
+        escaped
+    };
+    format!("'{display}'")
 }
 
 fn collect_parent_runtime_abstract_methods(
@@ -31964,11 +32057,16 @@ fn method_runtime_signature_display(
     }
     signature.push_str(&method.name);
     signature.push('(');
+    let required_parameter_count = runtime_signature_required_parameter_count(&function.parameters);
     for (index, parameter) in function.parameters.iter().enumerate() {
         if index > 0 {
             signature.push_str(", ");
         }
-        signature.push_str(&parameter_runtime_signature_display(parameter));
+        signature.push_str(&parameter_runtime_signature_display(
+            parameter,
+            index >= required_parameter_count,
+            function.class_name.as_deref(),
+        ));
     }
     signature.push(')');
     if let Some(return_type) = &function.return_type {
@@ -31995,7 +32093,11 @@ fn class_method_runtime_signature_display(
     }
 }
 
-fn parameter_runtime_signature_display(parameter: &FunctionParameter) -> String {
+fn parameter_runtime_signature_display(
+    parameter: &FunctionParameter,
+    show_default: bool,
+    scope_class_name: Option<&str>,
+) -> String {
     let mut display = String::new();
     if let Some(type_hint) = &parameter.type_hint {
         display.push_str(&type_hint_label(type_hint));
@@ -32009,6 +32111,15 @@ fn parameter_runtime_signature_display(parameter: &FunctionParameter) -> String 
     }
     display.push('$');
     display.push_str(&parameter.name);
+    if show_default {
+        if let Some(default_value) = &parameter.default_value {
+            display.push_str(" = ");
+            display.push_str(&runtime_parameter_default_display(
+                default_value,
+                scope_class_name,
+            ));
+        }
+    }
     display
 }
 
