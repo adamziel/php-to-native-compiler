@@ -31629,6 +31629,12 @@ fn emit_instruction(
                 .current_function_index
                 .map(|index| index.to_string())
                 .unwrap_or_else(|| "((size_t)-1)".to_string());
+            let opcache_reflection_deref =
+                if static_local_initializer_uses_opcache_reflection_preview(value.as_ref()) {
+                    "1"
+                } else {
+                    "0"
+                };
             out.push_str("    static PtnReference *");
             out.push_str(&slot);
             out.push_str(" = NULL;\n");
@@ -31652,6 +31658,8 @@ fn emit_instruction(
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
                 out.push_str(&slot);
+                out.push_str(", ");
+                out.push_str(opcache_reflection_deref);
                 out.push_str(");\n");
                 out.push_str("        }\n");
                 emit_value_cleanup(out, "        ", &initial_value);
@@ -31665,6 +31673,8 @@ fn emit_instruction(
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
                 out.push_str(&slot);
+                out.push_str(", ");
+                out.push_str(opcache_reflection_deref);
                 out.push_str(");\n");
             }
             out.push_str("    }\n");
@@ -65647,6 +65657,31 @@ fn c_static_variable_preview_value_for_class(
         | Some(ValueExpr::Null)
         | None => c_property_default_value(value),
         _ => "ptn_null()".to_string(),
+    }
+}
+
+fn static_local_initializer_uses_opcache_reflection_preview(value: Option<&ValueExpr>) -> bool {
+    match value {
+        Some(ValueExpr::String(_))
+        | Some(ValueExpr::Int(_))
+        | Some(ValueExpr::Float(_))
+        | Some(ValueExpr::Bool(_))
+        | Some(ValueExpr::Null) => true,
+        Some(ValueExpr::Binary {
+            op, left, right, ..
+        }) => {
+            let (Some(left), Some(right)) = (
+                c_property_default_int_value(left),
+                c_property_default_int_value(right),
+            ) else {
+                return false;
+            };
+            c_property_default_eval_int_binary(*op, left, right).is_some()
+        }
+        Some(ValueExpr::Array(elements)) => {
+            c_static_variable_preview_array_value_for_class(elements, None).is_some()
+        }
+        _ => false,
     }
 }
 

@@ -1395,6 +1395,7 @@ typedef struct {
     size_t function_index;
     const char *name;
     PtnReference *reference;
+    int opcache_reflection_deref;
 } PtnStaticLocalSlot;
 
 typedef struct {

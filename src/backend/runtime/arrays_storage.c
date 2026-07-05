@@ -1555,7 +1555,8 @@ static PTN_UNUSED void ptn_runtime_register_static_local(
     PtnRuntime *runtime,
     size_t function_index,
     const char *name,
-    PtnReference *reference
+    PtnReference *reference,
+    int opcache_reflection_deref
 ) {
     if (runtime == NULL || reference == NULL) {
         return;
@@ -1565,6 +1566,7 @@ static PTN_UNUSED void ptn_runtime_register_static_local(
         if (root->static_local_slots[i].reference == reference) {
             root->static_local_slots[i].function_index = function_index;
             root->static_local_slots[i].name = name;
+            root->static_local_slots[i].opcache_reflection_deref = opcache_reflection_deref;
             return;
         }
     }
@@ -1589,6 +1591,8 @@ static PTN_UNUSED void ptn_runtime_register_static_local(
     root->static_local_slots[root->static_local_slots_len].function_index = function_index;
     root->static_local_slots[root->static_local_slots_len].name = name;
     root->static_local_slots[root->static_local_slots_len].reference = reference;
+    root->static_local_slots[root->static_local_slots_len].opcache_reflection_deref =
+        opcache_reflection_deref;
     root->static_local_slots_len++;
 }
 
@@ -1692,7 +1696,7 @@ static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
         ptn_array_set_entry(
             result.as.array,
             ptn_array_string_key(slot->name),
-            opcache_optimizer_enabled
+            opcache_optimizer_enabled && slot->opcache_reflection_deref
                 ? ptn_value_clone_deref(ptn_reference_value(slot->reference))
                 : ptn_value_clone(ptn_reference_value(slot->reference))
         );
@@ -1724,6 +1728,7 @@ static PTN_UNUSED void ptn_runtime_release_static_locals(PtnRuntime *runtime) {
         root->static_local_slots[i].function_index = 0;
         root->static_local_slots[i].name = NULL;
         root->static_local_slots[i].reference = NULL;
+        root->static_local_slots[i].opcache_reflection_deref = 0;
     }
     free(root->static_local_slots);
     root->static_local_slots = NULL;
