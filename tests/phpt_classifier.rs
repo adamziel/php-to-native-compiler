@@ -3671,6 +3671,25 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_tar_delete_and_unlink_archive_rows = [
+        "ext/phar/tests/tar/delete.phpt",
+        "ext/phar/tests/tar/all.phpt",
+        "ext/phar/tests/tar/bug71317-duplicate-filename.phpt",
+        "ext/phar/tests/tar/links4.phpt",
+        "ext/phar/tests/phar_stub_write.phpt",
+    ];
+    for row in phar_tar_delete_and_unlink_archive_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar tar delete unlinkArchive residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar.tar');\n$phar['a'] = 'a';\nunset($phar);\nPhar::unlinkArchive(__DIR__ . '/archive.phar.tar');\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let phar_open_write_rows = [
         "ext/phar/tests/open_for_write_newfile_c.phpt",
         "ext/phar/tests/tar/open_for_write_newfile_c.phpt",

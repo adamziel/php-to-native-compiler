@@ -71660,6 +71660,81 @@ var_dump(method_exists('Phar', 'mungServer'));
 }
 
 #[test]
+fn compile_phar_unlink_archive_resets_cached_archive_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-unlink-archive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-unlink-archive.php");
+    let output = root.join("phar-unlink-archive-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/unlink-target.phar.php';
+$uri = 'phar://' . $fname . '/a.txt';
+
+$phar = new Phar($fname);
+$phar['a.txt'] = 'a';
+unset($phar);
+
+echo 'before:', (int) file_exists($fname), ':', (int) file_exists($uri), "\n";
+Phar::unlinkArchive($fname);
+echo 'after:', (int) file_exists($fname), ':', (int) file_exists($uri), "\n";
+
+$phar = new Phar($fname);
+var_dump(count($phar));
+$phar['b.txt'] = 'b';
+unset($phar);
+
+$busy = new Phar($fname);
+try {
+    Phar::unlinkArchive($fname);
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+unset($busy);
+
+Phar::unlinkArchive($fname);
+echo 'final:', (int) file_exists($fname), "\n";
+var_dump(method_exists('Phar', 'unlinkArchive'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_READONLY", "0")
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "before:1:1\n",
+                "after:0:0\n",
+                "int(0)\n",
+                "UnexpectedValueException:phar archive \"{}\" has open file handles or objects.  fclose() all file handles, and unset() all objects prior to calling unlinkArchive()\n",
+                "final:0\n",
+                "bool(true)\n",
+            ),
+            root.join("unlink-target.phar.php").display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_unlink_archive"));
+    assert!(c_source.contains("ptn_phar_archive_reset_after_unlink"));
+}
+
+#[test]
 fn compile_phar_tar_hardlink_root_target_to_native_binary() {
     fn push_tar_entry(
         out: &mut Vec<u8>,

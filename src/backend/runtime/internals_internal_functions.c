@@ -210646,6 +210646,139 @@ static PtnValue ptn_internal_phar_load_phar(PtnRuntime *runtime, size_t argc, co
     return ptn_bool(1);
 }
 
+static void ptn_phar_archive_reset_after_unlink(PtnPharArchiveState *archive) {
+    if (archive == NULL) {
+        return;
+    }
+    int format = archive->format;
+    ptn_phar_archive_clear_contents(archive);
+    archive->format = format;
+    archive->alias = ptn_duplicate_string(archive->path == NULL ? "" : archive->path);
+    if (format == PTN_PHAR_FORMAT_PHAR) {
+        archive->stub = ptn_phar_make_sized_default_stub(6659, &archive->stub_len);
+    } else {
+        archive->stub = ptn_duplicate_string("");
+        archive->stub_len = 0;
+    }
+    archive->modified = 0;
+}
+
+static void ptn_phar_throw_unlink_archive_unknown(PtnRuntime *runtime, const char *path, const char *detail) {
+    int needed = detail == NULL
+        ? snprintf(NULL, 0, "Unknown phar archive \"%s\"", path == NULL ? "" : path)
+        : snprintf(NULL, 0, "Unknown phar archive \"%s\": %s", path == NULL ? "" : path, detail);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = detail == NULL
+        ? snprintf(message, (size_t)needed + 1, "Unknown phar archive \"%s\"", path == NULL ? "" : path)
+        : snprintf(message, (size_t)needed + 1, "Unknown phar archive \"%s\": %s", path == NULL ? "" : path, detail);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static PtnValue ptn_internal_phar_unlink_archive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "Phar::unlinkArchive() expects exactly 1 argument, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand filename =
+        ptn_internal_expect_string_arg(runtime, "Phar::unlinkArchive", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *path = ptn_path_operand_to_c_string(filename);
+    ptn_string_operand_free(filename);
+    if (path == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Phar::unlinkArchive(): Argument #1 ($filename) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+
+    PtnPharArchiveState *archive = ptn_phar_archive_find_path_len(path, strlen(path));
+    if (archive == NULL && ptn_path_exists_c(path) && ptn_phar_path_looks_like_archive(path)) {
+        archive = ptn_phar_archive_for_path(path);
+    }
+    if (archive == NULL) {
+        ptn_phar_throw_unlink_archive_unknown(runtime, path, NULL);
+        free(path);
+        return ptn_null();
+    }
+    if (archive->load_error != NULL) {
+        ptn_phar_throw_unlink_archive_unknown(runtime, path, archive->load_error);
+        free(path);
+        return ptn_null();
+    }
+    if (archive->object_refcount != 0 || ptn_phar_archive_has_open_entries(archive)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "phar archive \"%s\" has open file handles or objects.  fclose() all file handles, and unset() all objects prior to calling unlinkArchive()",
+            archive->path == NULL ? "" : archive->path
+        );
+        if (needed < 0) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "phar archive \"%s\" has open file handles or objects.  fclose() all file handles, and unset() all objects prior to calling unlinkArchive()",
+            archive->path == NULL ? "" : archive->path
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "UnexpectedValueException", message);
+        free(message);
+        free(path);
+        return ptn_null();
+    }
+
+#if defined(_WIN32)
+    int unlink_result = _unlink(path);
+#else
+    int unlink_result = unlink(path);
+#endif
+    if (unlink_result != 0 && errno != ENOENT) {
+        char detail[256];
+        int written = snprintf(detail, sizeof(detail), "phar archive \"%s\" could not be unlinked: %s", path, strerror(errno));
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "UnexpectedValueException", detail);
+        free(path);
+        return ptn_null();
+    }
+    ptn_phar_archive_reset_after_unlink(archive);
+    free(path);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_phar_map_phar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc > 2) {
         char message[128];
@@ -212986,6 +213119,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
         if (ptn_ascii_case_equal(name, "running")) {
             return ptn_internal_phar_running(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "unlinkArchive")) {
+            return ptn_internal_phar_unlink_archive(runtime, argc, args, line);
         }
     }
     if (ptn_internal_class_name_is_locale(class_name)) {
@@ -235699,6 +235835,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Phar::mount", 2, 2, ptn_internal_phar_mount },
         { "Phar::mungServer", 1, 1, ptn_internal_phar_mung_server },
         { "Phar::running", 0, 1, ptn_internal_phar_running },
+        { "Phar::unlinkArchive", 1, 1, ptn_internal_phar_unlink_archive },
         { "PharData::__construct", 1, 4, ptn_internal_method_metadata_stub },
         { "pi", 0, 0, ptn_internal_pi },
         { "pdo_drivers", 0, 0, ptn_internal_pdo_drivers },
@@ -240472,7 +240609,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")
             || ptn_ascii_case_equal(method_name, "mungServer")
-            || ptn_ascii_case_equal(method_name, "running");
+            || ptn_ascii_case_equal(method_name, "running")
+            || ptn_ascii_case_equal(method_name, "unlinkArchive");
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
         return ptn_ascii_case_equal(method_name, "chmod")
@@ -240765,7 +240903,8 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")
             || ptn_ascii_case_equal(method_name, "mungServer")
-            || ptn_ascii_case_equal(method_name, "running");
+            || ptn_ascii_case_equal(method_name, "running")
+            || ptn_ascii_case_equal(method_name, "unlinkArchive");
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return ptn_ascii_case_equal(method_name, "tokenize");
@@ -242414,6 +242553,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "setStub");
         ptn_append_method_name(result, &index, "startBuffering");
         ptn_append_method_name(result, &index, "stopBuffering");
+        ptn_append_method_name(result, &index, "unlinkArchive");
         ptn_append_method_name(result, &index, "valid");
         return result;
     }
