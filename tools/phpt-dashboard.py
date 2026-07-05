@@ -162,10 +162,10 @@ def parse_summary(path: Path, root: Path) -> Summary | None:
 def iter_summaries(roots: Iterable[Path]) -> list[Summary]:
     summaries: list[Summary] = []
     for root in roots:
-        progress_dir = root / ".runtime" / "phpt-progress"
-        if not progress_dir.is_dir():
+        runtime_dir = root / ".runtime"
+        if not runtime_dir.is_dir():
             continue
-        for path in sorted(progress_dir.glob("summary-*.txt")):
+        for path in sorted(runtime_dir.glob("**/summary-*.txt")):
             summary = parse_summary(path, root)
             if summary is not None and summary.result:
                 summaries.append(summary)
