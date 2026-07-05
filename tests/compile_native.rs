@@ -96263,6 +96263,79 @@ echo tempnam('directory_that_not_exists', 'prefix_');\n",
 }
 
 #[test]
+fn phpc_open_basedir_ini_relative_allows_script_dir_copy_from_data_wrapper() {
+    let root = temp_dir("ptn-phpc-open-basedir-data-copy");
+    let script_dir = root.join("script");
+    let runner_dir = root.join("runner");
+    fs::create_dir_all(&script_dir).unwrap();
+    fs::create_dir_all(&runner_dir).unwrap();
+    let input = script_dir.join("open-basedir-data-copy.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$file = __DIR__ . '/bug70362.txt';\n\
+$data = str_repeat('0', 4096);\n\
+$data = 'data://plain/text;base64,' . base64_encode($data);\n\
+var_dump(copy($data, $file));\n\
+var_dump(strlen(file_get_contents($file)));\n\
+@unlink($file);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&runner_dir)
+        .arg("-d")
+        .arg("open_basedir=.")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout, "bool(true)\nint(4096)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_open_basedir_ini_chdir_blocks_script_dir_copy_from_data_wrapper() {
+    let root = temp_dir("ptn-phpc-open-basedir-data-copy-chdir");
+    let script_dir = root.join("script");
+    let runner_dir = root.join("runner");
+    let confined_dir = root.join("confined");
+    fs::create_dir_all(&script_dir).unwrap();
+    fs::create_dir_all(&runner_dir).unwrap();
+    fs::create_dir_all(&confined_dir).unwrap();
+    let output = script_dir.join("blocked.txt");
+    let input = script_dir.join("open-basedir-data-copy-chdir.php");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+chdir({});\n\
+$file = __DIR__ . '/blocked.txt';\n\
+$data = 'data://plain/text;base64,' . base64_encode('blocked');\n\
+var_dump(@copy($data, $file));\n",
+            php_string_literal(&confined_dir)
+        ),
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&runner_dir)
+        .arg("-d")
+        .arg("open_basedir=.")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout, "bool(false)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(!output.exists());
+}
+
+#[test]
 fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors() {
     let root = temp_dir("ptn-phpc-bounded-runner-ini");
     fs::create_dir_all(&root).unwrap();

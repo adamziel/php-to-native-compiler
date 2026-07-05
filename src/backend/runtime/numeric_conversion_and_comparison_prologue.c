@@ -225,6 +225,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     }
     runtime->source_path = caller_runtime->source_path;
     runtime->call_site_source_path = caller_runtime->source_path;
+    runtime->startup_cwd = caller_runtime->startup_cwd;
     runtime->source_snapshot_data = caller_runtime->source_snapshot_data;
     runtime->source_snapshot_len = caller_runtime->source_snapshot_len;
     runtime->compiled_include_depth = caller_runtime->compiled_include_depth;
@@ -1146,6 +1147,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     runtime->magic_property_frame_len = 0;
     runtime->magic_property_frame_capacity = 0;
     if (runtime->lifecycle_root == runtime) {
+        free(runtime->startup_cwd);
+        runtime->startup_cwd = NULL;
         free(runtime->include_path);
         runtime->include_path = NULL;
         free(runtime->php_ini_loaded_file);

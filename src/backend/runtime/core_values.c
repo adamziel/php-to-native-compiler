@@ -1940,6 +1940,7 @@ struct PtnRuntime {
     PtnMagicPropertyFrame *magic_property_frames;
     size_t magic_property_frame_len;
     size_t magic_property_frame_capacity;
+    char *startup_cwd;
     const char *source_path;
     const char *call_site_source_path;
     const unsigned char *source_snapshot_data;

@@ -3242,6 +3242,13 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = 0;
     runtime->magic_property_frame_capacity = 0;
+    char startup_cwd[4096];
+#if defined(_WIN32)
+    char *startup_cwd_result = _getcwd(startup_cwd, sizeof(startup_cwd));
+#else
+    char *startup_cwd_result = getcwd(startup_cwd, sizeof(startup_cwd));
+#endif
+    runtime->startup_cwd = startup_cwd_result == NULL ? NULL : ptn_duplicate_string(startup_cwd);
     runtime->source_path = NULL;
     runtime->call_site_source_path = NULL;
     runtime->source_snapshot_data = NULL;

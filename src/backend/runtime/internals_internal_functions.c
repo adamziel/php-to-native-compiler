@@ -63465,12 +63465,51 @@ static int ptn_open_basedir_path_prefix_matches(const char *path, const char *ba
     return path_len == base_len || ptn_path_is_separator(path[base_len]);
 }
 
+static int ptn_open_basedir_relative_base_matches_source_dir(
+    PtnRuntime *runtime,
+    const char *normalized_path,
+    const char *base
+) {
+    if (base == NULL ||
+        base[0] == '\0' ||
+        ptn_path_string_is_absolute(base) ||
+        ptn_path_contains_scheme_separator(base, strlen(base))) {
+        return 0;
+    }
+    char *source_dir = ptn_runtime_source_dir_alloc(runtime);
+    if (source_dir == NULL) {
+        return 0;
+    }
+    char *source_base = ptn_path_join_alloc(source_dir, base);
+    free(source_dir);
+    char *normalized_base = ptn_open_basedir_absolute_normalized_path(source_base);
+    free(source_base);
+    int allowed = ptn_open_basedir_path_prefix_matches(normalized_path, normalized_base);
+    free(normalized_base);
+    return allowed;
+}
+
+static int ptn_open_basedir_current_cwd_is_startup_cwd(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->startup_cwd == NULL) {
+        return 0;
+    }
+    char cwd[4096];
+#if defined(_WIN32)
+    char *cwd_result = _getcwd(cwd, sizeof(cwd));
+#else
+    char *cwd_result = getcwd(cwd, sizeof(cwd));
+#endif
+    return cwd_result != NULL && strcmp(cwd, root->startup_cwd) == 0;
+}
+
 static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path) {
     const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
     if (open_basedir == NULL || open_basedir[0] == '\0') {
         return 1;
     }
     char *normalized_path = ptn_open_basedir_absolute_normalized_path(path);
+    int allow_source_dir_fallback = ptn_open_basedir_current_cwd_is_startup_cwd(runtime);
     const char separator =
 #if defined(_WIN32)
         ';';
@@ -63484,9 +63523,12 @@ static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path) {
         if (segment_len > 0) {
             char *base = ptn_duplicate_string_len(segment, segment_len);
             char *normalized_base = ptn_open_basedir_absolute_normalized_path(base);
-            free(base);
             int allowed = ptn_open_basedir_path_prefix_matches(normalized_path, normalized_base);
             free(normalized_base);
+            if (!allowed && allow_source_dir_fallback) {
+                allowed = ptn_open_basedir_relative_base_matches_source_dir(runtime, normalized_path, base);
+            }
+            free(base);
             if (allowed) {
                 free(normalized_path);
                 return 1;
@@ -68099,6 +68141,22 @@ static int ptn_copy_read_source_bytes(
     size_t *len_out,
     size_t line
 ) {
+    char *data_url_detail = NULL;
+    int data_url_result = ptn_try_read_data_url_bytes_with_detail(
+        source,
+        data_out,
+        len_out,
+        &data_url_detail
+    );
+    if (data_url_result != 0) {
+        if (data_url_result < 0 && data_url_detail != NULL) {
+            ptn_emit_file_warning(runtime, "copy", source, data_url_detail, line);
+            free(data_url_detail);
+            return PTN_COPY_IO_REPORTED_FAILURE;
+        }
+        free(data_url_detail);
+        return data_url_result;
+    }
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(source, &zlib_path)) {
         return ptn_zlib_read_path_bytes(zlib_path, data_out, len_out);
@@ -68175,7 +68233,8 @@ static int ptn_copy_write_dest_bytes(
 
 static int ptn_copy_path_uses_stream_wrapper(const char *path) {
     const char *zlib_path = NULL;
-    return ptn_zlib_uri_path(path, &zlib_path) ||
+    return ptn_data_url_has_scheme(path) ||
+        ptn_zlib_uri_path(path, &zlib_path) ||
         ptn_user_stream_wrapper_find_path(path) != NULL;
 }
 
