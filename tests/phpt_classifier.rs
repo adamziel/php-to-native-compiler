@@ -4552,10 +4552,6 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
             "allocation fatal",
             "--TEST--\nallocation fatal\n--INI--\nmemory_limit=2M\n--FILE--\n<?php\n$items = [];\nwhile (true) { $items[] = new stdClass(); }\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
         ),
-        (
-            "runtime lowering warning",
-            "--TEST--\nruntime lowering\n--FILE--\n<?php\n$a = str_repeat('0', 5 * 1024 * 1024);\nini_set('memory_limit', '3M');\n--EXPECTF--\nWarning: Failed to set memory limit to 3145728 bytes (Current memory usage is %d bytes) in %s on line %d\n",
-        ),
     ];
 
     for (name, phpt) in cases {
@@ -4569,6 +4565,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
             "{name}: {classification:?}"
         );
     }
+
+    let runtime_lowering_warning = classify_at_relative_path(
+        "--TEST--\nruntime lowering\n--FILE--\n<?php\n$a = str_repeat('0', 5 * 1024 * 1024);\nini_set('memory_limit', '3M');\n--EXPECTF--\nWarning: Failed to set memory limit to 3145728 bytes (Current memory usage is %d bytes) in %s on line %d\n",
+        "Zend/tests/bug81070.phpt",
+    );
+    assert!(
+        runtime_lowering_warning.starts_with("runnable\t"),
+        "{runtime_lowering_warning:?}"
+    );
 
     let memory_limit_read = classify(
         "--TEST--\nmemory ini read\n--INI--\nmemory_limit=128M\n--FILE--\n<?php\necho ini_get('memory_limit'), \"\\n\";\n--EXPECT--\n128M\n",

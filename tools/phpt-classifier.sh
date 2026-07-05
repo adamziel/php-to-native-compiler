@@ -1972,6 +1972,36 @@ ptn_phpt_has_resource_limit_expectation() {
     ' "$path"
 }
 
+ptn_phpt_has_modeled_memory_limit_lowering_warning() {
+    local path=$1
+    local file
+
+    if ! awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "EXPECT" || section == "EXPECTF" || section == "EXPECTREGEX"
+            next
+        }
+        active && /Allowed memory size/ {
+            fatal = 1
+            next
+        }
+        active && /Failed to set memory limit/ {
+            warning = 1
+            next
+        }
+        END { exit warning && !fatal ? 0 : 1 }
+    ' "$path"; then
+        return 1
+    fi
+
+    file=$(ptn_phpt_section "$path" FILE)
+    printf '%s\n' "$file" \
+        | grep -Eiq '(^|[^[:alnum:]_$])ini_set[[:space:]]*\([[:space:]]*["'\'']memory_limit["'\'']'
+}
+
 ptn_phpt_has_modeled_string_allocation_limit_expectation() {
     local path=$1
     local file
@@ -4179,6 +4209,7 @@ ptn_phpt_classify_row() {
     if ptn_phpt_has_resource_limit_expectation "$path" \
         && [[ "$rel" != "Zend/tests/fibers/get-return-after-bailout.phpt" ]] \
         && ! ptn_phpt_has_modeled_string_allocation_limit_expectation "$path" \
+        && ! ptn_phpt_has_modeled_memory_limit_lowering_warning "$path" \
         && ! ptn_phpt_supported_recursive_fiber_resource_limit_row "$rel" \
         && ! ptn_phpt_has_modeled_recursive_destructor_allocation_limit_expectation "$path"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'

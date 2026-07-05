@@ -914,6 +914,50 @@ typedef struct {
     int interned;
 } PtnStringPayload;
 
+#define PTN_SYNTHETIC_MEMORY_BASELINE ((size_t)1048576)
+static size_t ptn_synthetic_memory_current_usage = PTN_SYNTHETIC_MEMORY_BASELINE;
+
+static PTN_UNUSED size_t ptn_synthetic_memory_usage(void) {
+    return ptn_synthetic_memory_current_usage < PTN_SYNTHETIC_MEMORY_BASELINE
+        ? PTN_SYNTHETIC_MEMORY_BASELINE
+        : ptn_synthetic_memory_current_usage;
+}
+
+static void ptn_synthetic_memory_note_allocated_bytes(size_t bytes) {
+    if (bytes > SIZE_MAX - ptn_synthetic_memory_current_usage) {
+        ptn_synthetic_memory_current_usage = SIZE_MAX;
+        return;
+    }
+    ptn_synthetic_memory_current_usage += bytes;
+}
+
+static void ptn_synthetic_memory_note_freed_bytes(size_t bytes) {
+    size_t above_baseline = ptn_synthetic_memory_current_usage > PTN_SYNTHETIC_MEMORY_BASELINE
+        ? ptn_synthetic_memory_current_usage - PTN_SYNTHETIC_MEMORY_BASELINE
+        : 0;
+    if (bytes >= above_baseline) {
+        ptn_synthetic_memory_current_usage = PTN_SYNTHETIC_MEMORY_BASELINE;
+        return;
+    }
+    ptn_synthetic_memory_current_usage -= bytes;
+}
+
+static void ptn_synthetic_memory_note_string_alloc(size_t len) {
+    if (len == SIZE_MAX) {
+        ptn_synthetic_memory_current_usage = SIZE_MAX;
+        return;
+    }
+    ptn_synthetic_memory_note_allocated_bytes(len + 1);
+}
+
+static void ptn_synthetic_memory_note_string_free(size_t len) {
+    if (len == SIZE_MAX) {
+        ptn_synthetic_memory_current_usage = PTN_SYNTHETIC_MEMORY_BASELINE;
+        return;
+    }
+    ptn_synthetic_memory_note_freed_bytes(len + 1);
+}
+
 typedef struct {
     const unsigned char *data;
     size_t len;
@@ -4397,6 +4441,7 @@ static PTN_UNUSED PtnStringPayload *ptn_string_payload_from_owned(char *string, 
     payload->data = (unsigned char *)string;
     payload->data[len] = '\0';
     payload->interned = 0;
+    ptn_synthetic_memory_note_string_alloc(len);
     ptn_cow_debug_note_string_alloc();
     return payload;
 }
@@ -4428,6 +4473,7 @@ static PTN_UNUSED void ptn_string_payload_release(PtnStringPayload *payload) {
         return;
     }
     ptn_cow_debug_note_string_free();
+    ptn_synthetic_memory_note_string_free(payload->len);
     free(payload->data);
     free(payload);
 }
@@ -4460,6 +4506,9 @@ static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) 
     }
     if (new_len > old_len) {
         memset(data + old_len, ' ', new_len - old_len);
+        ptn_synthetic_memory_note_allocated_bytes(new_len - old_len);
+    } else if (old_len > new_len) {
+        ptn_synthetic_memory_note_freed_bytes(old_len - new_len);
     }
     data[new_len] = '\0';
     payload->data = data;

@@ -145161,22 +145161,17 @@ static void ptn_runtime_set_fiber_stack_size(PtnRuntime *runtime, const char *va
 }
 
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
-    int64_t max_value = ptn_parse_ini_quantity_operand(
-        runtime,
-        ptn_string_operand_borrowed(ptn_runtime_max_memory_limit(runtime)),
-        line
-    );
-    if (max_value < 0) {
-        ptn_runtime_set_memory_limit(runtime, requested);
-        return;
-    }
-
     int64_t requested_value = ptn_parse_ini_quantity_operand(
         runtime,
         ptn_string_operand_borrowed(requested),
         line
     );
-    if (requested_value > max_value) {
+    int64_t max_value = ptn_parse_ini_quantity_operand(
+        runtime,
+        ptn_string_operand_borrowed(ptn_runtime_max_memory_limit(runtime)),
+        line
+    );
+    if (max_value >= 0 && requested_value > max_value) {
         char message[192];
         snprintf(
             message,
@@ -145188,7 +145183,20 @@ static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requ
         ptn_emit_sourced_ini_warning(runtime, message, line);
         ptn_runtime_set_memory_limit(runtime, ptn_runtime_max_memory_limit(runtime));
     } else if (requested_value < 0) {
-        ptn_runtime_set_memory_limit(runtime, ptn_runtime_max_memory_limit(runtime));
+        ptn_runtime_set_memory_limit(
+            runtime,
+            max_value >= 0 ? ptn_runtime_max_memory_limit(runtime) : requested
+        );
+    } else if ((uint64_t)requested_value < (uint64_t)ptn_synthetic_memory_usage()) {
+        char message[192];
+        snprintf(
+            message,
+            sizeof(message),
+            "Failed to set memory limit to %lld bytes (Current memory usage is %zu bytes)",
+            (long long)requested_value,
+            ptn_synthetic_memory_usage()
+        );
+        ptn_emit_sourced_ini_warning(runtime, message, line);
     } else {
         ptn_runtime_set_memory_limit(runtime, requested);
     }

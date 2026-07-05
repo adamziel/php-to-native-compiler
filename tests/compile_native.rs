@@ -99399,6 +99399,43 @@ var_dump(ini_set('max_memory_limit', '128M'));\n",
 }
 
 #[test]
+fn compile_memory_limit_runtime_lowering_below_usage_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-memory-limit-runtime-lowering");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-memory-limit-lowering.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = str_repeat('0', 5 * 1024 * 1024);\n\
+var_dump(ini_set('memory_limit', '3M'));\n\
+echo ini_get('memory_limit'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(
+            "Warning: Failed to set memory limit to 3145728 bytes (Current memory usage is "
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            " bytes) in {} on line 3\nstring(4) \"128M\"\n128M\n",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_if_elseif_else_to_native_binary() {
     let root = temp_dir("ptn-native-if-elseif-else");
     fs::create_dir_all(&root).unwrap();

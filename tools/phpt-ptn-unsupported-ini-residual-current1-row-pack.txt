@@ -1,0 +1,3 @@
+Zend/tests/bug81070.phpt
+Zend/tests/bug40770.phpt
+Zend/tests/bug70258.phpt
