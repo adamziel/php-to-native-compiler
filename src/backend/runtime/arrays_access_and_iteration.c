@@ -15804,24 +15804,30 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
             return ptn_array_iterator_empty();
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int is_recursive_iterator_iterator =
+        iterator.iterator_object.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(
+            iterator.iterator_object.as.object->class_name,
+            "RecursiveIteratorIterator"
+        );
+#endif
     if (ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
         PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
         ptn_value_destroy(&rewind);
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (
-        iterator.iterator_object.type == PTN_OBJECT &&
-        ptn_declared_class_is_same_or_descendant(
-            iterator.iterator_object.as.object->class_name,
-            "RecursiveIteratorIterator"
-        )
-        ) {
-        (void)ptn_internal_recursive_iterator_iterator_foreach_rewind(
+    if (is_recursive_iterator_iterator) {
+        if (!ptn_internal_recursive_iterator_iterator_foreach_rewind(
             runtime,
             iterator.iterator_object,
             ptn_object_declares_iterator_method(runtime, iterator.iterator_object.as.object, "rewind"),
             line
-        );
+        ) && runtime != NULL && runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_rethrow_exception(runtime);
+            return ptn_array_iterator_empty();
+        }
     }
 #endif
     ptn_protocol_iterator_refresh_valid(&iterator);

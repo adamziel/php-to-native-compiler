@@ -276001,13 +276001,52 @@ static PtnValue ptn_recursive_iterator_iterator_resolve_inner(
 
 static void ptn_recursive_iterator_iterator_set_current(
     PtnRecursiveIteratorIteratorData *data,
-    PtnValue key,
     PtnValue value
 ) {
     ptn_recursive_iterator_iterator_clear_current(data);
     data->current = ptn_value_clone_deref(value);
-    data->key = ptn_value_clone_deref(key);
     data->valid = 1;
+}
+
+static int ptn_recursive_iterator_iterator_set_current_from_frame(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || data->frame_count == 0) {
+        return 0;
+    }
+    PtnRecursiveIteratorIteratorFrame *frame = &data->frames[data->frame_count - 1];
+    PtnValue valid = ptn_iterator_inner_call_no_args(runtime, frame->iterator, "valid", line);
+    int is_valid = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
+    ptn_value_destroy(&valid);
+    if (!is_valid || runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    PtnValue current = ptn_iterator_inner_call_no_args(runtime, frame->iterator, "current", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&current);
+        return 0;
+    }
+    ptn_recursive_iterator_iterator_set_current(data, current);
+    ptn_value_destroy(&current);
+    return 1;
+}
+
+static PtnValue ptn_recursive_iterator_iterator_current_key(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || !data->valid || data->frame_count == 0) {
+        return ptn_null();
+    }
+    return ptn_iterator_inner_call_no_args(
+        runtime,
+        data->frames[data->frame_count - 1].iterator,
+        "key",
+        line
+    );
 }
 
 static int ptn_recursive_iterator_iterator_push_frame(
@@ -276291,7 +276330,14 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
         }
 
         if (frame->has_post) {
-            ptn_recursive_iterator_iterator_set_current(data, frame->post_key, frame->post_value);
+            if (!ptn_recursive_iterator_iterator_set_current_from_frame(runtime, data, line)) {
+                if (runtime->exceptions->active_exception != NULL) {
+                    return;
+                }
+                frame->pending_advance = 1;
+                frame->has_post = 0;
+                continue;
+            }
             ptn_value_destroy(&frame->post_value);
             ptn_value_destroy(&frame->post_key);
             frame->post_value = ptn_null();
@@ -276358,23 +276404,9 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
             continue;
         }
 
-        PtnValue current = ptn_iterator_inner_call_no_args(runtime, frame->iterator, "current", line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&current);
-            return;
-        }
-        PtnValue key = ptn_iterator_inner_call_no_args(runtime, frame->iterator, "key", line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
-            return;
-        }
-        ptn_recursive_iterator_iterator_set_current(data, key, current);
         int has_children =
             ptn_recursive_iterator_iterator_call_has_children_for_traversal(runtime, data, line);
         if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
             return;
         }
 
@@ -276383,15 +276415,12 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
             (int64_t)(data->frame_count - 1) >= data->max_depth) {
             frame->pending_advance = 1;
             ptn_recursive_iterator_iterator_clear_current(data);
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
             continue;
         }
 
         if (!has_children) {
             frame->pending_advance = 1;
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
+            ptn_recursive_iterator_iterator_set_current_from_frame(runtime, data, line);
             return;
         }
 
@@ -276399,25 +276428,21 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
             !data->has_max_depth || data->frame_count <= (size_t)data->max_depth;
 
         if (data->mode == 1) {
-            ptn_recursive_iterator_iterator_set_current(data, key, current);
+            if (!ptn_recursive_iterator_iterator_set_current_from_frame(runtime, data, line)) {
+                return;
+            }
             frame->pending_descend = can_descend ? 1 : 0;
             frame->pending_advance = can_descend ? 0 : 1;
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
             return;
         }
 
         if (!can_descend) {
             frame->pending_advance = 1;
             ptn_recursive_iterator_iterator_clear_current(data);
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&key);
             continue;
         }
 
         if (data->mode == 2) {
-            frame->post_value = ptn_value_clone_deref(current);
-            frame->post_key = ptn_value_clone_deref(key);
             frame->has_post = 1;
         }
 
@@ -276429,8 +276454,6 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
                 frame->pending_advance = 1;
                 ptn_recursive_iterator_iterator_clear_current(data);
                 ptn_value_destroy(&child);
-                ptn_value_destroy(&current);
-                ptn_value_destroy(&key);
                 continue;
             }
             if (runtime->exceptions->active_exception == NULL) {
@@ -276443,16 +276466,11 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
                         line
                     )) {
                     ptn_value_destroy(&child);
-                    ptn_value_destroy(&current);
-                    ptn_value_destroy(&key);
                     return;
                 }
             }
             ptn_value_destroy(&child);
         }
-
-        ptn_value_destroy(&current);
-        ptn_value_destroy(&key);
     }
 }
 
@@ -280884,6 +280902,9 @@ static PTN_UNUSED int ptn_internal_recursive_iterator_iterator_foreach_rewind(
     if (data == NULL) {
         return 0;
     }
+    if (data->initialized) {
+        return runtime->exceptions->active_exception == NULL;
+    }
     int repeat_after_rewind = repeat_current_once && !data->initialized;
     ptn_recursive_iterator_iterator_rewind_data(runtime, data, line);
     if (repeat_after_rewind && data->valid) {
@@ -281128,7 +281149,7 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
         ptn_recursive_iterator_iterator_ensure_initialized(runtime, data, line);
         return runtime->exceptions->active_exception != NULL || !data->valid
             ? ptn_null()
-            : ptn_value_clone_deref(data->key);
+            : ptn_recursive_iterator_iterator_current_key(runtime, data, line);
     }
     if (ptn_ascii_case_equal(name, "next")) {
         ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);

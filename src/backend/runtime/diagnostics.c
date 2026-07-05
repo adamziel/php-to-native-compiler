@@ -3237,6 +3237,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_started_line = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
+    runtime->http_last_response_headers = ptn_null();
     runtime->header_callback_registered = 0;
     runtime->header_callback_running = 0;
     runtime->header_callback_completed = 0;

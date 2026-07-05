@@ -62963,6 +62963,74 @@ var_dump($rit->key());
 }
 
 #[test]
+fn compile_simplexml_recursive_iterator_subclass_call_order_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-recursive-iterator-call-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-recursive-iterator-call-order.php");
+    let output = root.join("simplexml-recursive-iterator-call-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = '<root><a><b>leaf</b></a><c>see</c></root>';
+
+class SXETest extends SimpleXMLIterator {
+    function rewind(): void { echo __METHOD__, "\n"; parent::rewind(); }
+    function valid(): bool { echo __METHOD__, "\n"; return parent::valid(); }
+    function current(): SimpleXMLElement { echo __METHOD__, "\n"; return parent::current(); }
+    function key(): string { echo __METHOD__, "\n"; return parent::key(); }
+    function next(): void { echo __METHOD__, "\n"; parent::next(); }
+    function hasChildren(): bool { echo __METHOD__, "\n"; return parent::hasChildren(); }
+    function getChildren(): ?SimpleXMLIterator { echo __METHOD__, "\n"; return parent::getChildren(); }
+}
+
+$rit = new RecursiveIteratorIterator(new SXETest($xml), RecursiveIteratorIterator::SELF_FIRST);
+foreach ($rit as $data) {
+    echo 'value:', trim((string) $data), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SXETest::rewind\n",
+            "SXETest::valid\n",
+            "SXETest::hasChildren\n",
+            "SXETest::valid\n",
+            "SXETest::current\n",
+            "value:\n",
+            "SXETest::getChildren\n",
+            "SXETest::rewind\n",
+            "SXETest::valid\n",
+            "SXETest::hasChildren\n",
+            "SXETest::valid\n",
+            "SXETest::current\n",
+            "value:leaf\n",
+            "SXETest::next\n",
+            "SXETest::valid\n",
+            "SXETest::next\n",
+            "SXETest::valid\n",
+            "SXETest::hasChildren\n",
+            "SXETest::valid\n",
+            "SXETest::current\n",
+            "value:see\n",
+            "SXETest::next\n",
+            "SXETest::valid\n",
+            "SXETest::valid\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_current_key"));
+}
+
+#[test]
 fn compile_simplexml_iterator_var_dump_preserves_property_view_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-iterator-var-dump-property-view");
     fs::create_dir_all(&root).unwrap();
