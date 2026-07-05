@@ -663,6 +663,34 @@ ptn_phpt_supported_sqlite3_version_skipif_row() {
     return 1
 }
 
+ptn_phpt_supported_sockets_ipv6_skipif_row() {
+    [[ "$1" == "ext/sockets/tests/socket_recvfrom_ipv6_missing_port_arg.phpt" ]]
+}
+
+ptn_phpt_supported_zlib_version_skipif_row() {
+    [[ "$1" == "ext/zlib/tests/gzgetc_basic.phpt" ]]
+}
+
+ptn_phpt_supported_php_os_direct_skipif_row() {
+    case "$1" in
+        ext/sockets/tests/socket_dontfragment.phpt|\
+        ext/zlib/tests/gzencode_variation2.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_openssl_ec_constant_skipif_row() {
+    [[ "$1" == "ext/openssl/tests/gh21083.phpt" ]]
+}
+
+ptn_phpt_ipv6_loopback_available() {
+    printf '%s\n' "${PTN_PHPT_IPV6_LOOPBACK_AVAILABLE:-0}"
+}
+
 ptn_phpt_intl_icu_version() {
     if [[ -n "${PTN_PHPT_INTL_ICU_VERSION:-}" ]]; then
         printf '%s\n' "$PTN_PHPT_INTL_ICU_VERSION"
@@ -711,6 +739,25 @@ ptn_phpt_zlib_vernum() {
     local value
     repo_root=$(ptn_phpt_repo_root)
     value=$(sed -nE 's/^#define[[:space:]]+PTN_ZLIB_VERNUM[[:space:]]+(0x[0-9A-Fa-f]+|[0-9]+).*/\1/p' \
+        "$repo_root/src/backend/runtime/core_values.c" 2>/dev/null | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    printf '0\n'
+}
+
+ptn_phpt_zlib_version() {
+    if [[ -n "${PTN_PHPT_ZLIB_VERSION:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_ZLIB_VERSION"
+        return 0
+    fi
+
+    local repo_root
+    local value
+    repo_root=$(ptn_phpt_repo_root)
+    value=$(sed -nE 's/^#define[[:space:]]+PTN_ZLIB_VERSION[[:space:]]+"([^"]+)".*/\1/p' \
         "$repo_root/src/backend/runtime/core_values.c" 2>/dev/null | head -n 1)
     if [[ -n "$value" ]]; then
         printf '%s\n' "$value"
@@ -772,6 +819,9 @@ ptn_phpt_php_constant_defined() {
                 [[ "$(php -r "echo defined('$constant') ? '1' : '0';" 2>/dev/null)" == "1" ]]
                 return
             fi
+            return 1
+            ;;
+        OPENSSL_KEYTYPE_EC)
             return 1
             ;;
     esac
@@ -863,7 +913,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERNUM|PCRE_JIT_SUPPORT)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERSION|ZLIB_VERNUM|PCRE_JIT_SUPPORT)
                 ;;
             *)
                 return 1
@@ -886,6 +936,7 @@ ptn_phpt_modeled_skipif_precondition() {
     local class_exists_count
     local intl_icu_version_compare_count
     local sqlite3_version_count
+    local zlib_version_compare_count
     local zlib_vernum_count
     local in_array_count
     local stream_get_filters_count
@@ -906,6 +957,7 @@ ptn_phpt_modeled_skipif_precondition() {
     class_exists_count=$(ptn_phpt_count_matches 'class_exists[[:space:]]*\(' "$code_without_strings")
     intl_icu_version_compare_count=$(ptn_phpt_count_matches 'version_compare[[:space:]]*\([[:space:]]*INTL_ICU_VERSION' "$code_without_strings")
     sqlite3_version_count=$(ptn_phpt_count_matches 'SQLite3::version[[:space:]]*\(' "$code_without_strings")
+    zlib_version_compare_count=$(ptn_phpt_count_matches 'version_compare[[:space:]]*\([[:space:]]*ZLIB_VERSION' "$code_without_strings")
     zlib_vernum_count=$(ptn_phpt_count_matches 'ZLIB_VERNUM' "$code_without_strings")
     in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
     stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
@@ -1112,6 +1164,29 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$sqlite3_version_count" -eq "$parsed_sqlite3_version_count" ]] || return 1
 
+    local zlib_version_condition_lines
+    local parsed_zlib_version_count=0
+    local zlib_version
+    zlib_version=$(ptn_phpt_zlib_version)
+    zlib_version_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "version_compare[[:space:]]*\\([[:space:]]*ZLIB_VERSION[[:space:]]*,[[:space:]]*['\"][0-9]+([.][0-9]+)*['\"][[:space:]]*\\)[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*0" \
+        || true)
+    if [[ -n "$zlib_version_condition_lines" ]]; then
+        ptn_phpt_supported_zlib_version_skipif_row "$rel" || return 1
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*0/\\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E "s/.*['\"]([0-9]+([.][0-9]+)*)['\"].*/\\1/")
+            parsed_zlib_version_count=$((parsed_zlib_version_count + 1))
+            if ptn_phpt_eval_version_compare_zero_condition "$zlib_version" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- ZLIB_VERSION guard skips when version_compare(ZLIB_VERSION, %s) %s 0; modeled ZLIB_VERSION=%s\n' \
+                    "$expected" "$op" "$zlib_version"
+                return 0
+            fi
+        done <<< "$zlib_version_condition_lines"
+        modeled_families+=("ZLIB_VERSION")
+    fi
+    [[ "$zlib_version_compare_count" -eq "$parsed_zlib_version_count" ]] || return 1
+
     local zlib_vernum_condition_lines
     local parsed_zlib_vernum_count=0
     local zlib_vernum
@@ -1159,6 +1234,23 @@ ptn_phpt_modeled_skipif_precondition() {
     local parsed_php_os_count=0
     local php_os
     php_os=$(ptn_phpt_php_os)
+    string_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "PHP_OS[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ .-]+['\"]" \
+        || true)
+    if [[ -n "$string_condition_lines" ]]; then
+        ptn_phpt_supported_php_os_direct_skipif_row "$rel" || return 1
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E "s/PHP_OS[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][^'\"]+['\"]/\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E "s/PHP_OS[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"]([^'\"]+)['\"]/\2/")
+            parsed_php_os_count=$((parsed_php_os_count + 1))
+            if ptn_phpt_eval_string_condition "$php_os" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_OS guard skips when PHP_OS %s %s; modeled PHP_OS=%s\n' \
+                    "$op" "$expected" "$php_os"
+                return 0
+            fi
+        done <<< "$string_condition_lines"
+        modeled_families+=("PHP_OS")
+    fi
     string_condition_lines=$(printf '%s\n' "$code" \
         | grep -Eo "substr[[:space:]]*\\([[:space:]]*PHP_OS[[:space:]]*,[[:space:]]*0[[:space:]]*,[[:space:]]*[0-9]+[[:space:]]*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ -]+['\"]" \
         || true)
@@ -1290,6 +1382,9 @@ ptn_phpt_modeled_skipif_precondition() {
             case "$constant" in
                 GLOB_BRACE)
                     ;;
+                OPENSSL_KEYTYPE_EC)
+                    ptn_phpt_supported_openssl_ec_constant_skipif_row "$rel" || return 1
+                    ;;
                 *)
                     return 1
                     ;;
@@ -1406,6 +1501,21 @@ ptn_phpt_modeled_skipif_precondition() {
 
     local root_helper_lines
     local parsed_include_count=0
+    local ipv6_helper_lines
+    ipv6_helper_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "(require|include)(_once)?[[:space:]]+['\"][^'\"]*ipv6_skipif\\.inc['\"][[:space:]]*;?" \
+        || true)
+    if [[ -n "$ipv6_helper_lines" ]]; then
+        ptn_phpt_supported_sockets_ipv6_skipif_row "$rel" || return 1
+        while IFS= read -r condition; do
+            parsed_include_count=$((parsed_include_count + 1))
+        done <<< "$ipv6_helper_lines"
+        if ! ptn_phpt_php_truthy "$(ptn_phpt_ipv6_loopback_available)"; then
+            printf 'skipif-precondition\tmodeled static --SKIPIF-- sockets IPv6 helper requires IPv6 loopback; modeled PTN IPv6 loopback unavailable\n'
+            return 0
+        fi
+        modeled_families+=("sockets-ipv6-helper")
+    fi
     root_helper_lines=$(printf '%s\n' "$code" \
         | grep -Eo "(require|include)(_once)?[[:space:]]+[^;]*['\"][^'\"]*skipif_(no_)?root\\.inc['\"][^;]*;?" \
         || true)
@@ -1431,7 +1541,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_zlib_vernum_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_pcre_jit_support_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_zlib_version_count + parsed_zlib_vernum_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_pcre_jit_support_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1
@@ -3760,7 +3870,32 @@ ptn_phpt_supported_standard_stream_verified_skipif_row() {
 
 ptn_phpt_supported_soap_verified_skipif_row() {
     case "$1" in
-        ext/soap/tests/custom_content_type.phpt)
+        ext/soap/tests/custom_content_type.phpt|\
+        ext/soap/tests/bugs/cookie_parse_options_offset.phpt|\
+        ext/soap/tests/bugs/bug55639.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_sockets_verified_skipif_row() {
+    case "$1" in
+        ext/sockets/tests/bug76839.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_opcache_verified_skipif_row() {
+    case "$1" in
+        ext/opcache/tests/bug65915.phpt|\
+        ext/opcache/tests/gh16979_check_file_cache_function.phpt)
             return 0
             ;;
         *)
@@ -3773,7 +3908,9 @@ ptn_phpt_supported_openssl_verified_skipif_row() {
     case "$1" in
         ext/openssl/tests/openssl_x509_parse_basic_openssl32.phpt|\
         ext/openssl/tests/gh13343_openssl33.phpt|\
-        ext/openssl/tests/openssl_cms_encrypt_auth_env.phpt)
+        ext/openssl/tests/openssl_cms_encrypt_auth_env.phpt|\
+        ext/openssl/tests/bug73711.phpt|\
+        ext/openssl/tests/openssl_free_key.phpt)
             return 0
             ;;
         *)
@@ -3786,6 +3923,29 @@ ptn_phpt_supported_pcre_verified_skipif_row() {
     case "$1" in
         ext/pcre/tests/pcre_anchored.phpt|\
         ext/pcre/tests/check_jit_enabled.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_zlib_verified_skipif_row() {
+    case "$1" in
+        ext/zlib/tests/zlib_wrapper_level.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ptn_phpt_supported_zip_verified_skipif_row() {
+    case "$1" in
+        ext/zip/tests/oo_cancel_trampoline.phpt|\
+        ext/zip/tests/bug80833.phpt)
             return 0
             ;;
         *)
@@ -3985,10 +4145,18 @@ ptn_phpt_classify_row() {
             modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_soap_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified SOAP --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_sockets_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified sockets --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_opcache_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified opcache --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_openssl_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified OpenSSL --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_pcre_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified PCRE --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_zlib_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified zlib --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_zip_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified ZipArchive --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_xml_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified XML --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_mbstring_verified_skipif_row "$rel"; then

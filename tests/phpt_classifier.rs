@@ -96,7 +96,9 @@ fn classify_at_relative_path_with_options_and_files_and_env(
         "PTN_PHPT_AVAILABLE_CLASSES",
         "PTN_PHPT_INTL_ICU_VERSION",
         "PTN_PHPT_SQLITE3_VERSION_NUMBER",
+        "PTN_PHPT_ZLIB_VERSION",
         "PTN_PHPT_ZLIB_VERNUM",
+        "PTN_PHPT_IPV6_LOOPBACK_AVAILABLE",
         "PTN_PHPT_RUN_SLOW_TESTS",
         "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
@@ -4260,6 +4262,210 @@ fn phpt_classifier_unlocks_verified_soap_skipif_cli_server_row() {
             && classification.contains("verified SOAP --SKIPIF-- row"),
         "{classification:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_narrows_harness_skipif_residual_current_rows() {
+    let soap_cli_server_skipif = "--TEST--\nsoap cli server residual\n--EXTENSIONS--\nsoap\n--SKIPIF--\n<?php\nif (!file_exists(__DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc')) echo 'skip';\n?>\n--FILE--\n<?php\ninclude __DIR__ . '/../../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'test-uri']);\n--EXPECT--\n";
+    for row in [
+        "ext/soap/tests/bugs/cookie_parse_options_offset.phpt",
+        "ext/soap/tests/bugs/bug55639.phpt",
+    ] {
+        let classification =
+            classify_at_relative_path_with_harness_programs(soap_cli_server_skipif, row);
+        assert!(
+            classification.starts_with("runnable\t")
+                && classification.contains("verified SOAP --SKIPIF-- row"),
+            "{row}: {classification:?}"
+        );
+    }
+
+    let socket_linux_skipif = "--TEST--\nsocket Linux only\n--EXTENSIONS--\nsockets\n--SKIPIF--\n<?php\nif (PHP_OS != 'Linux') die('skip For Linux only');\n?>\n--FILE--\n<?php\nsocket_create(AF_INET, SOCK_DGRAM, SOL_UDP);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        socket_linux_skipif,
+        "ext/sockets/tests/socket_dontfragment.phpt",
+        &[("PTN_PHPT_PHP_OS", "Linux")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_OS"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs_and_env(
+        socket_linux_skipif,
+        "ext/sockets/tests/unverified_linux_only.phpt",
+        &[("PTN_PHPT_PHP_OS", "Linux")],
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let socket_macos_skipif = "--TEST--\nsocket macOS residual\n--EXTENSIONS--\nsockets\n--SKIPIF--\n<?php\nif (strtolower(substr(PHP_OS, 0, 3)) === 'win') die('skip not valid for Windows.');\n?>\n--FILE--\n<?php\nsocket_create(AF_UNIX, SOCK_DGRAM, 0);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        socket_macos_skipif,
+        "ext/sockets/tests/bug76839.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified sockets --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let opcache_repeat_skipif = "--TEST--\nopcache repeat residual\n--EXTENSIONS--\nopcache\n--SKIPIF--\n<?php\n// We don't invalidate the file after the second write.\nif (getenv('SKIP_REPEAT')) die('skip Not repeatable');\n?>\n--FILE--\n<?php\nopcache_invalidate(__FILE__, true);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        opcache_repeat_skipif,
+        "ext/opcache/tests/bug65915.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified opcache --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let opcache_mkdir_skipif = "--TEST--\nopcache file cache residual\n--EXTENSIONS--\nopcache\n--SKIPIF--\n<?php\n@mkdir(__DIR__ . '/gh16979_cache', 0777, true);\n?>\n--FILE--\n<?php\nopcache_is_script_cached_in_file_cache(__FILE__);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        opcache_mkdir_skipif,
+        "ext/opcache/tests/gh16979_check_file_cache_function.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified opcache --SKIPIF-- row"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        opcache_mkdir_skipif,
+        "ext/opcache/tests/unverified_file_cache_setup.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let zlib_os_skipif = "--TEST--\nzlib OS residual\n--EXTENSIONS--\nzlib\n--SKIPIF--\n<?php\nif (substr(PHP_OS, 0, 3) == 'WIN') die('skip Windows');\nif (PHP_OS == 'Darwin') print 'skip Darwin';\n?>\n--FILE--\n<?php\ngzencode('data');\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        zlib_os_skipif,
+        "ext/zlib/tests/gzencode_variation2.phpt",
+        &[("PTN_PHPT_PHP_OS", "Linux")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_OS"),
+        "{classification:?}"
+    );
+
+    let zlib_version_skipif = "--TEST--\nzlib version residual\n--EXTENSIONS--\nzlib\n--SKIPIF--\n<?php\nif (version_compare(ZLIB_VERSION, '1.2.5') > 0) die('skip - only for zlib <= 1.2.5');\n?>\n--FILE--\n<?php\ngzopen(__FILE__, 'r');\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        zlib_version_skipif,
+        "ext/zlib/tests/gzgetc_basic.phpt",
+        &[("PTN_PHPT_ZLIB_VERSION", "1.3.1")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("ZLIB_VERSION guard"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs_and_env(
+        zlib_version_skipif,
+        "ext/zlib/tests/unverified_version_probe.phpt",
+        &[("PTN_PHPT_ZLIB_VERSION", "1.3.1")],
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let zlib_wrapper_skipif = "--TEST--\nzlib wrapper residual\n--EXTENSIONS--\nzlib\n--SKIPIF--\n<?php\nin_array('compress.zlib', stream_get_wrappers()) || die('skip No zlib wrapper');\n?>\n--FILE--\n<?php\nfopen('compress.zlib://' . __FILE__, 'r');\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        zlib_wrapper_skipif,
+        "ext/zlib/tests/zlib_wrapper_level.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified zlib --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let zip_method_skipif = "--TEST--\nzip method residual\n--EXTENSIONS--\nzip\n--SKIPIF--\n<?php\nif (!method_exists('ZipArchive', 'registerCancelCallback')) die('skip libzip too old');\n?>\n--FILE--\n<?php\nnew ZipArchive();\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        zip_method_skipif,
+        "ext/zip/tests/oo_cancel_trampoline.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified ZipArchive --SKIPIF-- row"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        zip_method_skipif,
+        "ext/zip/tests/unverified_cancel_callback_probe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let zip_encryption_skipif = "--TEST--\nzip encryption residual\n--EXTENSIONS--\nzip\n--SKIPIF--\n<?php\nif (!method_exists('ZipArchive', 'setEncryptionName')) die('skip encryption not supported');\n?>\n--FILE--\n<?php\nnew ZipArchive();\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        zip_encryption_skipif,
+        "ext/zip/tests/bug80833.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified ZipArchive --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let openssl_dsa_skipif = "--TEST--\nopenssl DSA residual\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (!defined('OPENSSL_KEYTYPE_DSA')) die('skip DSA disabled');\n?>\n--FILE--\n<?php\nopenssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_DSA]);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        openssl_dsa_skipif,
+        "ext/openssl/tests/bug73711.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified OpenSSL --SKIPIF-- row"),
+        "{classification:?}"
+    );
+    for failed_row in [
+        "ext/openssl/tests/bug81713.phpt",
+        "ext/openssl/tests/openssl_csr_sign_basic.phpt",
+    ] {
+        let classification =
+            classify_at_relative_path_with_harness_programs(openssl_dsa_skipif, failed_row);
+        assert!(
+            classification.starts_with("harness-skipif\t"),
+            "{failed_row}: {classification:?}"
+        );
+    }
+
+    let openssl_ec_skipif = "--TEST--\nopenssl EC residual\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php if (!defined('OPENSSL_KEYTYPE_EC')) die('skip EC disabled'); ?>\n--FILE--\n<?php\nopenssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC]);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        openssl_ec_skipif,
+        "ext/openssl/tests/gh21083.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("constant guard"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        openssl_ec_skipif,
+        "ext/openssl/tests/unverified_ec_probe.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+
+    let openssl_free_key_skipif = "--TEST--\nopenssl free key residual\n--EXTENSIONS--\nopenssl\n--SKIPIF--\n<?php\nif (!@openssl_pkey_new()) die('skip cannot create private key');\n?>\n--FILE--\n<?php\nopenssl_free_key(openssl_pkey_new());\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        openssl_free_key_skipif,
+        "ext/openssl/tests/openssl_free_key.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("verified OpenSSL --SKIPIF-- row"),
+        "{classification:?}"
+    );
+
+    let ipv6_skipif = "--TEST--\nsocket IPv6 residual\n--EXTENSIONS--\nsockets\n--SKIPIF--\n<?php\nrequire 'ipv6_skipif.inc';\n?>\n--FILE--\n<?php\nsocket_create(AF_INET6, SOCK_DGRAM, SOL_UDP);\n--EXPECT--\n";
+    let classification = classify_at_relative_path_with_harness_programs(
+        ipv6_skipif,
+        "ext/sockets/tests/socket_recvfrom_ipv6_missing_port_arg.phpt",
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("sockets IPv6 helper"),
+        "{classification:?}"
+    );
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        ipv6_skipif,
+        "ext/sockets/tests/unverified_ipv6_helper.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
 }
 
 #[test]
