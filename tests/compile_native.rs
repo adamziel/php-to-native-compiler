@@ -95962,6 +95962,41 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functi
 }
 
 #[test]
+fn phpc_opcache_optimizer_reflection_static_variables_deref_to_native_binary() {
+    let root = temp_dir("ptn-phpc-opcache-optimized-static-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-optimized-static-variables.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function foo() {\n\
+    static $a = 42;\n\
+    var_dump((new ReflectionFunction(__FUNCTION__))->getStaticVariables());\n\
+}\n\
+foo();\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [\"a\"]=>\n  int(42)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_opt_jit_row_pack_dumps_bounded_optimizer_shapes() {
     let root = temp_dir("ptn-phpc-opcache-opt-jit-row-pack-dumps");
     fs::create_dir_all(&root).unwrap();

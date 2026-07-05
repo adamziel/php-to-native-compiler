@@ -1614,6 +1614,58 @@ static PTN_UNUSED size_t ptn_runtime_static_local_count(
     return count;
 }
 
+static PTN_UNUSED int ptn_runtime_static_local_ini_bool(const char *value, int default_value) {
+    if (value == NULL || value[0] == '\0') {
+        return default_value;
+    }
+    if (ptn_ascii_case_equal(value, "0") ||
+        ptn_ascii_case_equal(value, "off") ||
+        ptn_ascii_case_equal(value, "false") ||
+        ptn_ascii_case_equal(value, "no")) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(value, "1") ||
+        ptn_ascii_case_equal(value, "on") ||
+        ptn_ascii_case_equal(value, "true") ||
+        ptn_ascii_case_equal(value, "yes")) {
+        return 1;
+    }
+    return default_value;
+}
+
+static PTN_UNUSED int64_t ptn_runtime_static_local_ini_integer(const char *value) {
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(value, &end, 0);
+    if (end == value || errno == ERANGE) {
+        return 0;
+    }
+    return (int64_t)parsed;
+}
+
+static PTN_UNUSED int ptn_runtime_static_local_opcache_optimizer_enabled(
+    PtnRuntime *runtime
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return 0;
+    }
+    if (getenv("PTN_OPCACHE_ENABLE") == NULL &&
+        getenv("PTN_OPCACHE_ENABLE_CLI") == NULL &&
+        getenv("PTN_OPCACHE_OPTIMIZATION_LEVEL") == NULL) {
+        return 0;
+    }
+    return ptn_runtime_static_local_ini_bool(root->opcache_enable, 1) &&
+        ptn_runtime_static_local_ini_bool(root->opcache_enable_cli, 1) &&
+        ptn_runtime_static_local_ini_integer(root->opcache_optimization_level) != 0;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
     PtnRuntime *runtime,
     size_t function_index,
@@ -1626,6 +1678,8 @@ static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
         return result;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    int opcache_optimizer_enabled =
+        ptn_runtime_static_local_opcache_optimizer_enabled(runtime);
     for (size_t i = 0; i < root->static_local_slots_len; i++) {
         PtnStaticLocalSlot *slot = &root->static_local_slots[i];
         if (
@@ -1638,7 +1692,9 @@ static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
         ptn_array_set_entry(
             result.as.array,
             ptn_array_string_key(slot->name),
-            ptn_value_clone(ptn_reference_value(slot->reference))
+            opcache_optimizer_enabled
+                ? ptn_value_clone_deref(ptn_reference_value(slot->reference))
+                : ptn_value_clone(ptn_reference_value(slot->reference))
         );
     }
     return result;
