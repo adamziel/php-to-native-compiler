@@ -3754,7 +3754,10 @@ ptn_phpt_supported_ftp_server_harness_row() {
 ptn_phpt_supported_standard_stream_server_harness_row() {
     case "$1" in
         ext/standard/tests/streams/ghsa-3cr5-j632-f35r.phpt|\
-        ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt)
+        ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt|\
+        ext/standard/tests/streams/stream_get_meta_data_socket_variation4.phpt|\
+        ext/standard/tests/streams/gh8472.phpt|\
+        ext/standard/tests/streams/bug69521.phpt)
             return 0
             ;;
         *)

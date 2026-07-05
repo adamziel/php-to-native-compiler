@@ -4074,6 +4074,32 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let verified_loopback_stream_rows = [
+        "ext/standard/tests/streams/stream_get_meta_data_socket_variation4.phpt",
+        "ext/standard/tests/streams/gh8472.phpt",
+        "ext/standard/tests/streams/bug69521.phpt",
+    ];
+    for row in verified_loopback_stream_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nverified local loopback stream row\n--FILE--\n<?php\n$server = stream_socket_server('tcp://127.0.0.1:31334');\n$client = fsockopen('tcp://127.0.0.1:31334');\n$socket = stream_socket_accept($server);\nvar_dump(stream_get_meta_data($client));\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{row}"
+        );
+    }
+
+    let unverified_loopback_stream_row = classify_at_relative_path(
+        "--TEST--\nunverified fixed-port loopback stream row\n--FILE--\n<?php\n$server = stream_socket_server('tcp://127.0.0.1:31334');\n$client = fsockopen('tcp://127.0.0.1:31334');\n--EXPECT--\n",
+        "ext/standard/tests/streams/unverified_loopback_socket.phpt",
+    );
+    assert!(
+        unverified_loopback_stream_row.starts_with("external-service\t"),
+        "{unverified_loopback_stream_row:?}"
+    );
+
     let soap_custom_content_type = classify_at_relative_path(
         "--TEST--\nsoap custom content type\n--EXTENSIONS--\nsoap\n--FILE--\n<?php\ninclude __DIR__ . '/../../../sapi/cli/tests/php_cli_server.inc';\nphp_cli_server_start('<?php echo \"ok\";');\n$client = new SoapClient(null, ['location' => 'http://' . PHP_CLI_SERVER_ADDRESS, 'uri' => 'misc-uri']);\n--EXPECT--\n",
         "ext/soap/tests/custom_content_type.phpt",
