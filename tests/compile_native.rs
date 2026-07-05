@@ -97362,6 +97362,84 @@ function b() {\n\
 }
 
 #[test]
+fn phpc_opcache_w17z1012_optimizer_dump_shapes() {
+    let root = temp_dir("ptn-phpc-opcache-w17z1012-optimizer-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-w17z1012-optimizer-dump.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$f = random_int(1, 2);\n\
+var_dump(!$f === true);\n\
+var_dump(!$f === false);\n\
+var_dump(!!$f === true);\n\
+var_dump(!!$f === false);\n\
+function esc($x) {\n\
+    $a = [$x];\n\
+    $b = [$a];\n\
+    return $a;\n\
+}\n\
+function foo(int $x) {\n\
+    $a = [1, 2, $x];\n\
+    echo $a[1];\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("opcache.opt_debug_level=0x20000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("$_main:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0000 INIT_FCALL 2 96 string(\"random_int\")\n\
+0001 SEND_VAL int(1) 1\n\
+0002 SEND_VAL int(2) 2\n\
+0003 T1 = DO_ICALL\n\
+0004 ASSIGN CV0($f) T1\n\
+0005 INIT_FCALL 1 96 string(\"var_dump\")\n\
+0006 T1 = BOOL_NOT CV0($f)\n\
+0007 SEND_VAL T1 1\n\
+0008 DO_ICALL\n\
+0009 INIT_FCALL 1 96 string(\"var_dump\")\n\
+0010 T1 = BOOL CV0($f)\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("esc:\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "0000 CV0($x) = RECV 1\n\
+0001 CV1($a) = INIT_ARRAY 1 (packed) CV0($x) NEXT\n\
+0002 RETURN CV1($a)\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("foo:\n"), "{stdout}");
+    assert!(
+        stdout.contains("0000 CV0($x) = RECV 1\n0001 ECHO string(\"2\")\n0002 RETURN null\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(false)\nbool(true)\nbool(true)\nbool(false)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_file_cache_writes_script_artifact() {
     let root = temp_dir("ptn-phpc-opcache-file-cache");
     fs::create_dir_all(&root).unwrap();
