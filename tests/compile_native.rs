@@ -70536,6 +70536,49 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_entry_long_include_path_tail_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-entry-long-include-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-entry-long-include-path.php");
+    let output = root.join("phar-entry-long-include-path-bin");
+    fs::write(
+        &input,
+        r#"<?php
+chdir(__DIR__);
+mkdir('path');
+file_put_contents('path/needle.php', '<?php echo "needle\n";');
+@unlink('sample.phar');
+$p = new Phar('sample.phar');
+$p['some/file'] = "<?php const MAXPATHLEN = 4096, OVERFLOW = 1, PATH = 'path'; set_include_path(str_repeat('x', MAXPATHLEN - strlen(__DIR__ . PATH_SEPARATOR . PATH_SEPARATOR . PATH) + OVERFLOW) . PATH_SEPARATOR . PATH); require('needle.php');";
+$p->setStub("<?php Phar::mapPhar('sample.phar'); __HALT_COMPILER();");
+require('phar://sample.phar/some/file');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_READONLY", "0")
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "needle\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_phar_php_entry"));
+    assert!(c_source.contains("ptn_resolve_existing_include_path"));
+}
+
+#[test]
 fn compile_phar_manifest_corruption_diagnostics_to_native_binary() {
     fn push_u16(bytes: &mut Vec<u8>, value: u16) {
         bytes.extend_from_slice(&value.to_le_bytes());

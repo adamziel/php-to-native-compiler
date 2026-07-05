@@ -344,6 +344,21 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     if (ptn_ascii_case_equal(name, "__FILE__")) {
         return ptn_owned_string(ptn_duplicate_string(path != NULL ? path : ""));
     }
+    if (ptn_ascii_case_equal(name, "__DIR__")) {
+        const char *source_path = path != NULL ? path : "";
+        const char *separator = strrchr(source_path, '/');
+#if defined(_WIN32)
+        const char *backslash = strrchr(source_path, '\\');
+        if (backslash != NULL && (separator == NULL || backslash > separator)) {
+            separator = backslash;
+        }
+#endif
+        if (separator == NULL) {
+            return ptn_string(".");
+        }
+        size_t dir_len = separator == source_path ? 1 : (size_t)(separator - source_path);
+        return ptn_owned_string(ptn_duplicate_string_len(source_path, dir_len));
+    }
     if (strcmp(name, "PATH_SEPARATOR") == 0) {
 #if defined(_WIN32)
         return ptn_string(";");
@@ -284433,19 +284448,22 @@ static int ptn_eval_parse_expression(
 
     while (1) {
         size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-        if (cursor >= len || code[cursor] != '+') {
+        if (cursor >= len || (code[cursor] != '+' && code[cursor] != '-')) {
             break;
         }
+        char operator = code[cursor];
         cursor++;
         PtnValue right = ptn_null();
         if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
             ptn_value_destroy(&left);
             return 0;
         }
-        PtnValue added = ptn_add(runtime, left, right, line);
+        PtnValue result = operator == '+'
+            ? ptn_add(runtime, left, right, line)
+            : ptn_subtract(runtime, left, right, line);
         ptn_value_destroy(&left);
         ptn_value_destroy(&right);
-        left = added;
+        left = result;
         *pos = cursor;
         if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
             *out = left;

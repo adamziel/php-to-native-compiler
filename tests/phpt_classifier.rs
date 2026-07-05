@@ -3571,6 +3571,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_long_include_path_tail = classify_at_relative_path(
+        "--TEST--\nphar long include path tail\n--EXTENSIONS--\nphar\n--INI--\nphar.readonly=0\n--FILE--\n<?php\n$p = new Phar('sample.phar');\n$p['some/file'] = \"<?php const MAXPATHLEN = 4096, OVERFLOW = 1, PATH = 'path'; set_include_path(str_repeat('x', MAXPATHLEN - strlen(__DIR__ . PATH_SEPARATOR . PATH_SEPARATOR . PATH) + OVERFLOW) . PATH_SEPARATOR . PATH); require('needle.php');\";\nrequire('phar://sample.phar/some/file');\n--EXPECT--\n",
+        "ext/phar/tests/bug74991.phpt",
+    );
+    assert_eq!(
+        phar_long_include_path_tail.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_open_write_rows = [
         "ext/phar/tests/open_for_write_newfile_c.phpt",
         "ext/phar/tests/tar/open_for_write_newfile_c.phpt",
