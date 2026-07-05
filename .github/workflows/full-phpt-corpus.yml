@@ -117,7 +117,9 @@ jobs:
           set +e
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
-          timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
+          # Keep PHPT child processes in a separate session so signal-heavy tests
+          # cannot kill the runner shell before shard artifacts are uploaded.
+          setsid timeout --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
             tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
@@ -215,7 +217,9 @@ jobs:
           set +e
           set -uo pipefail
           mkdir -p "$PHPT_PROGRESS_DIR"
-          timeout --foreground --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
+          # Keep PHPT child processes in a separate session so signal-heavy tests
+          # cannot kill the runner shell before shard artifacts are uploaded.
+          setsid timeout --kill-after=30s "${PTN_PHPT_SHARD_TIMEOUT_MINUTES}m" \
             tools/run-bounded-phpt.sh \
             --classify-harness-programs \
             ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt" &
