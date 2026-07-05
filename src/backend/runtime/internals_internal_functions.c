@@ -68355,6 +68355,16 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
         free(source);
         return ptn_bool(renamed);
     }
+    if (!ptn_open_basedir_check_local_path(runtime, "rename", source, line)) {
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+    if (!ptn_open_basedir_check_local_path(runtime, "rename", dest, line)) {
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
     if (rename(source, dest) == 0) {
         free(dest);
         free(source);

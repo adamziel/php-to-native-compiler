@@ -36103,6 +36103,8 @@ var_dump(opendir($outsideDir));
 var_dump(mkdir("../outside/new"));
 var_dump(unlink($outsideFile));
 var_dump(copy("ok.txt", "../outside/copy.txt"));
+var_dump(rename($outsideFile, "renamed.txt"));
+var_dump(rename("ok.txt", "../outside/renamed.txt"));
 var_dump(file_get_contents("ok.txt"));
 "#,
     )
@@ -36132,6 +36134,7 @@ var_dump(file_get_contents("ok.txt"));
         "mkdir",
         "unlink",
         "copy",
+        "rename",
     ] {
         assert!(
             stdout.contains(&format!(
@@ -36142,6 +36145,10 @@ var_dump(file_get_contents("ok.txt"));
     }
     assert!(
         stdout.contains("File(../outside/bad.txt) is not within the allowed path(s):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("File(../outside/renamed.txt) is not within the allowed path(s):"),
         "{stdout}"
     );
     assert!(
