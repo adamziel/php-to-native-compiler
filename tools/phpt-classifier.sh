@@ -3313,6 +3313,9 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/bug54395.phpt|\
         ext/phar/tests/bug79503.phpt|\
         ext/phar/tests/phar_dir_iterate.phpt|\
+        ext/phar/tests/metadata_read.phpt|\
+        ext/phar/tests/metadata_write.phpt|\
+        ext/phar/tests/phar_buildfromiterator4.phpt|\
         ext/phar/tests/phar_metadata_write2.phpt|\
         ext/phar/tests/phar_oo_006.phpt|\
         ext/phar/tests/open_for_write_newfile_c.phpt|\

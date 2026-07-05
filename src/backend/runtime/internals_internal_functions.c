@@ -207015,8 +207015,16 @@ static int ptn_phar_build_from_iterator_add_path(
     if (archive == NULL || path == NULL) {
         return 0;
     }
+    char *entry_name = entry_name_override == NULL
+        ? ptn_phar_relative_entry_name(path, base_directory)
+        : ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
+    if (ptn_phar_entry_name_is_magic_directory_tree(entry_name)) {
+        free(entry_name);
+        return 1;
+    }
     struct stat info;
     if (ptn_stat_path(path, &info) != 0 || !S_ISREG(info.st_mode)) {
+        free(entry_name);
         ptn_phar_throw_iterator_file_open_failed(runtime, iterator_class, path);
         return 0;
     }
@@ -207024,12 +207032,10 @@ static int ptn_phar_build_from_iterator_add_path(
     size_t data_len = 0;
     if (ptn_read_file_bytes(path, &data, &data_len) <= 0) {
         free(data);
+        free(entry_name);
         ptn_phar_throw_iterator_file_open_failed(runtime, iterator_class, path);
         return 0;
     }
-    char *entry_name = entry_name_override == NULL
-        ? ptn_phar_relative_entry_name(path, base_directory)
-        : ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
     ptn_phar_archive_set_entry_with_timestamp(archive, entry_name, data, data_len, timestamp);
     char *result_path = realpath(path, NULL);
     if (result_path == NULL) {

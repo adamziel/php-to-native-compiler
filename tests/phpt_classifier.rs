@@ -3538,6 +3538,23 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         );
     }
 
+    let phar_metadata_and_iterator_rows = [
+        "ext/phar/tests/phar_buildfromiterator4.phpt",
+        "ext/phar/tests/metadata_read.phpt",
+        "ext/phar/tests/metadata_write.phpt",
+    ];
+    for row in phar_metadata_and_iterator_rows {
+        let classification = classify_at_relative_path(
+            "--TEST--\nphar metadata and iterator residual row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar');\n$phar['a.php'] = '<?php echo \"a\\n\"; ?>';\n$phar['a.php']->setMetadata(['ok' => true]);\nvar_dump($phar['a.php']->getMetadata());\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            classification.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let phar_zlib_corrupt_dir_rows = [
         "ext/phar/tests/zip/corrupt_010.phpt",
         "ext/phar/tests/phar_oo_006.phpt",

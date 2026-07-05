@@ -70909,6 +70909,71 @@ try {
 }
 
 #[test]
+fn compile_phar_build_from_iterator_skips_magic_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-magic-entries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-magic-entries.php");
+    let output = root.join("phar-build-from-iterator-magic-entries-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyIterator implements Iterator {
+    private array $a;
+    public function __construct(array $a) { $this->a = $a; }
+    public function next(): void { next($this->a); }
+    public function current(): mixed { return current($this->a); }
+    public function key(): mixed { return key($this->a); }
+    public function valid(): bool { return current($this->a); }
+    public function rewind(): void { reset($this->a); }
+}
+
+chdir(__DIR__);
+file_put_contents('source.txt', "payload\n");
+$phar = new Phar(__DIR__ . '/iterator-magic.phar');
+$result = $phar->buildFromIterator(new MyIterator([
+    'a' => 'source.txt',
+    '.phar/stub.php' => 'source.txt',
+    '.phar/alias.txt' => 'source.txt',
+    '.phar/oops' => 'source.txt',
+]));
+var_dump(array_keys($result));
+var_dump(isset($phar['a']));
+var_dump(isset($phar['.phar/stub.php']));
+var_dump(isset($phar['.phar/alias.txt']));
+var_dump(isset($phar['.phar/oops']));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_entry_name_is_magic_directory_tree"));
+}
+
+#[test]
 fn compile_phar_iterator_mtime_and_add_from_string_to_native_binary() {
     let root = temp_dir("ptn-native-phar-iterator-mtime-add-string");
     fs::create_dir_all(&root).unwrap();
