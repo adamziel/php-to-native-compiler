@@ -50651,7 +50651,6 @@ static int ptn_preg_compile_pcre2(
     int jit_enabled = 0;
     if (
         ptn_preg_runtime_jit_enabled(runtime) &&
-        !ptn_preg_runtime_uses_custom_recursion_limit(runtime) &&
         api->jit_compile != NULL
     ) {
         jit_enabled = api->jit_compile(code, PTN_PCRE2_JIT_COMPLETE) == 0;
@@ -51468,8 +51467,12 @@ static int ptn_preg_program_match(
         uint32_t effective_match_options = match_options |
             program->pcre2_match_options |
             (program->utf_mode ? PTN_PCRE2_NO_UTF_CHECK : 0);
+        int empty_retry_under_custom_recursion_limit =
+            (match_options & PTN_PCRE2_EMPTY_RETRY_OPTIONS) == PTN_PCRE2_EMPTY_RETRY_OPTIONS &&
+            ptn_preg_runtime_uses_custom_recursion_limit(runtime);
         int use_jit = program->pcre2_jit_enabled &&
             (program->pcre2_match_options & PTN_PCRE2_NO_JIT_MATCH) == 0 &&
+            !empty_retry_under_custom_recursion_limit &&
             api->jit_match != NULL;
         int rc = use_jit
             ? api->jit_match(

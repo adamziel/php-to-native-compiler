@@ -1124,6 +1124,57 @@ fn phpt_classifier_models_constant_and_ci_skipif_preconditions() {
 }
 
 #[test]
+fn phpt_classifier_models_pcre_jit_support_skipif_preconditions() {
+    let pcre_jit_required = "--TEST--\npcre jit required\n--SKIPIF--\n<?php if (!PCRE_JIT_SUPPORT) die('skip pcre jit support required'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    for path in [
+        "ext/pcre/tests/no_jit_bug70110.phpt",
+        "ext/pcre/tests/grep2.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs_and_env(
+            pcre_jit_required,
+            path,
+            &[("PTN_PHPT_PCRE_JIT_SUPPORT", "1")],
+        );
+        assert!(
+            classification.starts_with("runnable\t") && classification.contains("PCRE_JIT_SUPPORT"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let classification = classify_with_harness_programs_and_env(
+        pcre_jit_required,
+        true,
+        &[("PTN_PHPT_PCRE_JIT_SUPPORT", "0")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PCRE_JIT_SUPPORT guard"),
+        "{classification:?}"
+    );
+
+    let no_pcre_jit_required = "--TEST--\npcre jit disabled required\n--SKIPIF--\n<?php if (PCRE_JIT_SUPPORT) die('skip no pcre jit support'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        no_pcre_jit_required,
+        true,
+        &[("PTN_PHPT_PCRE_JIT_SUPPORT", "1")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PCRE_JIT_SUPPORT guard"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        no_pcre_jit_required,
+        true,
+        &[("PTN_PHPT_PCRE_JIT_SUPPORT", "0")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PCRE_JIT_SUPPORT"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_models_inactive_windows_symlink_helper_blocks() {
     let windows_helper = "--TEST--\nwindows helper\n--SKIPIF--\n<?php\nif (PHP_OS_FAMILY === 'Windows') {\n    include __DIR__ . '/windows_links/common.inc';\n    skipIfSeCreateSymbolicLinkPrivilegeIsDisabled(__FILE__);\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(

@@ -39672,6 +39672,9 @@ var_dump($m[0][0][1], $m[0][1][1]);\n\
 var_dump(preg_split('/\\\\b/', \"a'\"));\n\
 var_dump(preg_last_error_msg() === 'No error');\n\
 preg_split('/(\\\\d*)/', 'ab2c3u');\n\
+var_dump(preg_last_error_msg());\n\
+$array = array(5=>'a', 'x' => '1', 'xyz'=>'q6', 'h20');\n\
+var_dump(preg_grep('@^[a-z]+@', $array));\n\
 var_dump(preg_last_error_msg());\n",
     )
     .unwrap();
@@ -39680,6 +39683,7 @@ var_dump(preg_last_error_msg());\n",
 
     let execution = Command::new(&output)
         .env("PTN_PCRE2_LIBRARY", &pcre2_library)
+        .env("PTN_PCRE_JIT", "1")
         .env("PTN_PCRE_RECURSION_LIMIT", "1")
         .output()
         .unwrap();
@@ -39706,6 +39710,15 @@ var_dump(preg_last_error_msg());\n",
             "}\n",
             "bool(true)\n",
             "string(25) \"Recursion limit exhausted\"\n",
+            "array(3) {\n",
+            "  [5]=>\n",
+            "  string(1) \"a\"\n",
+            "  [\"xyz\"]=>\n",
+            "  string(2) \"q6\"\n",
+            "  [6]=>\n",
+            "  string(3) \"h20\"\n",
+            "}\n",
+            "string(8) \"No error\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

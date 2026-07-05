@@ -552,6 +552,20 @@ ptn_phpt_php_zts() {
     printf '%s\n' "${PTN_PHPT_PHP_ZTS:-0}"
 }
 
+ptn_phpt_pcre_jit_support() {
+    if [[ -n "${PTN_PHPT_PCRE_JIT_SUPPORT:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_PCRE_JIT_SUPPORT"
+        return 0
+    fi
+
+    if command -v php >/dev/null 2>&1; then
+        php -r 'echo defined("PCRE_JIT_SUPPORT") && PCRE_JIT_SUPPORT ? "1" : "0";' 2>/dev/null
+        return 0
+    fi
+
+    printf '1\n'
+}
+
 ptn_phpt_effective_uid() {
     if [[ -n "${PTN_PHPT_EFFECTIVE_UID:-}" ]]; then
         printf '%s\n' "$PTN_PHPT_EFFECTIVE_UID"
@@ -844,7 +858,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERNUM)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME|ZLIB_VERNUM|PCRE_JIT_SUPPORT)
                 ;;
             *)
                 return 1
@@ -880,6 +894,7 @@ ptn_phpt_modeled_skipif_precondition() {
     php_os_count=$(ptn_phpt_count_matches 'PHP_OS([^_A-Za-z0-9]|$)' "$code_without_strings")
     php_debug_count=$(ptn_phpt_count_matches 'PHP_DEBUG' "$code_without_strings")
     php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
+    pcre_jit_support_count=$(ptn_phpt_count_matches '(^|[^_A-Za-z0-9])PCRE_JIT_SUPPORT([^_A-Za-z0-9]|$)' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
     defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
     function_exists_count=$(ptn_phpt_count_matches 'function_exists[[:space:]]*\(' "$code_without_strings")
@@ -1163,6 +1178,28 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$php_zts_count" -eq "$parsed_zts_count" ]] || return 1
 
+    local parsed_pcre_jit_support_count=0
+    local pcre_jit_support
+    pcre_jit_support=$(ptn_phpt_pcre_jit_support)
+    if [[ "$pcre_jit_support_count" -gt 0 ]]; then
+        if printf '%s\n' "$code_without_strings" | grep -Eq '![[:space:]]*PCRE_JIT_SUPPORT'; then
+            parsed_pcre_jit_support_count=$((parsed_pcre_jit_support_count + 1))
+            if ! ptn_phpt_php_truthy "$pcre_jit_support"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PCRE_JIT_SUPPORT guard skips when JIT support is false\n'
+                return 0
+            fi
+        fi
+        if printf '%s\n' "$code_without_strings" | grep -Eq '(^|[^!A-Za-z0-9_])PCRE_JIT_SUPPORT([^A-Za-z0-9_]|$)'; then
+            parsed_pcre_jit_support_count=$((parsed_pcre_jit_support_count + 1))
+            if ptn_phpt_php_truthy "$pcre_jit_support"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PCRE_JIT_SUPPORT guard skips when JIT support is true\n'
+                return 0
+            fi
+        fi
+        modeled_families+=("PCRE_JIT_SUPPORT")
+    fi
+    [[ "$pcre_jit_support_count" -eq "$parsed_pcre_jit_support_count" ]] || return 1
+
     local locale_invalid_count
     local locale_availability_count
     local parsed_locale_count=0
@@ -1349,7 +1386,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_zlib_vernum_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_zlib_vernum_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_pcre_jit_support_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1
