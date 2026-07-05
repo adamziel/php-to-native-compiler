@@ -4328,6 +4328,15 @@ fn phpt_classifier_splits_cli_option_and_process_residuals() {
         "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let proc_open_sockets2 = classify_at_relative_path(
+        "--TEST--\nproc open sockets\n--FILE--\n<?php\n$proc = proc_open([PHP_BINARY, __DIR__ . '/proc_open_sockets2.inc'], [['socket'], ['socket']], $pipes);\nstream_set_blocking($pipes[0], false);\nstream_select($pipes, $w = null, $e = null, null);\n--EXPECT--\n",
+        "ext/standard/tests/general_functions/proc_open_sockets2.phpt",
+    );
+    assert_eq!(
+        proc_open_sockets2,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
     let proc_open_wrong_resource_type = classify_at_relative_path(
         "--TEST--\nproc wrong resource\n--FILE--\n<?php\n$context = stream_context_create();\nproc_open('missing', [0 => $context], $pipes);\n--EXPECT--\n",
         "ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt",
