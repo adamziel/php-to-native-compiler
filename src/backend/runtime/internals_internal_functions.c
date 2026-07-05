@@ -240267,6 +240267,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_sqlite3_result(class_name)) {
         return ptn_ascii_case_equal(method_name, "fetchArray")
+            || ptn_ascii_case_equal(method_name, "fetchAll")
             || ptn_ascii_case_equal(method_name, "finalize")
             || ptn_ascii_case_equal(method_name, "reset")
             || ptn_ascii_case_equal(method_name, "numColumns")
@@ -242288,6 +242289,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_sqlite3_result(class_name)) {
         static const char *const names[] = {
             "fetchArray",
+            "fetchAll",
             "finalize",
             "reset",
             "numColumns",
@@ -256682,6 +256684,67 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
     return ptn_null();
 }
 
+static PtnValue ptn_sqlite3_result_row_array(PtnValue row, int mode) {
+    PtnValue out = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; row.type == PTN_ARRAY && i < row.as.array->len; i++) {
+        PtnArrayEntry *entry = &row.as.array->entries[i];
+        if (mode & PTN_SQLITE3_NUM) {
+            ptn_array_set_entry(out.as.array, ptn_array_int_key((int64_t)i), ptn_value_clone_deref(entry->value));
+        }
+        if ((mode & PTN_SQLITE3_ASSOC) && entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_array_set_entry(out.as.array, ptn_array_string_key_len(entry->key.as.string, entry->key.string_len), ptn_value_clone_deref(entry->value));
+        }
+    }
+    return out;
+}
+
+static PtnValue ptn_sqlite3_result_fetch_next(
+    PtnRuntime *runtime,
+    PtnSqlite3ResultData *result_data,
+    const char *method_name,
+    int mode,
+    size_t line
+) {
+    if (result_data->rows.type != PTN_ARRAY || result_data->cursor >= result_data->rows.as.array->len) {
+        if (result_data->fetch_error_message != NULL) {
+            char warning[256];
+            int written = snprintf(
+                warning,
+                sizeof(warning),
+                "SQLite3Result::%s(): %s",
+                method_name,
+                result_data->fetch_error_message
+            );
+            if (written < 0 || (size_t)written >= sizeof(warning)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_spaced_warning(&runtime->diagnostics, warning, line);
+        }
+        return ptn_bool(0);
+    }
+    PtnValue row = ptn_value_deref(result_data->rows.as.array->entries[result_data->cursor++].value);
+    return ptn_sqlite3_result_row_array(row, mode);
+}
+
+static PtnValue ptn_sqlite3_result_fetch_all(
+    PtnRuntime *runtime,
+    PtnSqlite3ResultData *result_data,
+    int mode,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    for (;;) {
+        PtnValue row = ptn_sqlite3_result_fetch_next(runtime, result_data, "fetchAll", mode, line);
+        if (row.type == PTN_BOOL && !row.as.boolean) {
+            ptn_value_destroy(&row);
+            break;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), row);
+    }
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -256698,34 +256761,11 @@ static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     }
     if (ptn_ascii_case_equal(name, "fetchArray")) {
         int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "SQLite3Result::fetchArray", 1, "mode", args[0], line) : PTN_SQLITE3_BOTH;
-        if (result_data->rows.type != PTN_ARRAY || result_data->cursor >= result_data->rows.as.array->len) {
-            if (result_data->fetch_error_message != NULL) {
-                char warning[256];
-                int written = snprintf(
-                    warning,
-                    sizeof(warning),
-                    "SQLite3Result::fetchArray(): %s",
-                    result_data->fetch_error_message
-                );
-                if (written < 0 || (size_t)written >= sizeof(warning)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_emit_spaced_warning(&runtime->diagnostics, warning, line);
-            }
-            return ptn_bool(0);
-        }
-        PtnValue row = ptn_value_deref(result_data->rows.as.array->entries[result_data->cursor++].value);
-        PtnValue out = ptn_array_from_literal_entries(0, NULL);
-        for (size_t i = 0; row.type == PTN_ARRAY && i < row.as.array->len; i++) {
-            PtnArrayEntry *entry = &row.as.array->entries[i];
-            if ((mode & PTN_SQLITE3_ASSOC) && entry->key.type == PTN_ARRAY_KEY_STRING) {
-                ptn_array_set_entry(out.as.array, ptn_array_string_key_len(entry->key.as.string, entry->key.string_len), ptn_value_clone_deref(entry->value));
-            }
-            if (mode & PTN_SQLITE3_NUM) {
-                ptn_array_set_entry(out.as.array, ptn_array_int_key((int64_t)i), ptn_value_clone_deref(entry->value));
-            }
-        }
-        return out;
+        return ptn_sqlite3_result_fetch_next(runtime, result_data, "fetchArray", mode, line);
+    }
+    if (ptn_ascii_case_equal(name, "fetchAll")) {
+        int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "SQLite3Result::fetchAll", 1, "mode", args[0], line) : PTN_SQLITE3_BOTH;
+        return ptn_sqlite3_result_fetch_all(runtime, result_data, mode, line);
     }
     if (ptn_ascii_case_equal(name, "finalize")) {
         result_data->finalized = 1;

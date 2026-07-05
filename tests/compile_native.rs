@@ -33052,6 +33052,62 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_sqlite3_result_fetch_all_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-sqlite3-result-fetch-all");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sqlite3-result-fetch-all.php");
+    let output = root.join("sqlite3-result-fetch-all-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$db = new SQLite3(':memory:');
+$db->exec('CREATE TABLE users (id INTEGER NOT NULL, num INTEGER NOT NULL, PRIMARY KEY(id))');
+$db->exec('INSERT INTO users (id, num) VALUES (1, 1)');
+$db->exec('INSERT INTO users (id, num) VALUES (2, 2)');
+
+$result = $db->query('SELECT * FROM users');
+var_dump(method_exists($result, 'fetchAll'));
+
+$both = $result->fetchAll();
+echo $both[0][0], ':', $both[0]['id'], ':', $both[0][1], ':', $both[0]['num'], "\n";
+echo $both[1][0], ':', $both[1]['id'], ':', $both[1][1], ':', $both[1]['num'], "\n";
+foreach ($both[0] as $key => $value) {
+    echo $key, '=', $value, ';';
+}
+echo "\n";
+
+$result->reset();
+$fetched = [];
+while (($row = $result->fetchArray())) {
+    $fetched[] = $row;
+}
+var_dump($both == $fetched);
+
+$result->reset();
+$num = $result->fetchAll(SQLITE3_NUM);
+echo $num[0][0], ':', $num[0][1], ':', $num[1][0], ':', $num[1][1], "\n";
+
+$result->reset();
+$assoc = $result->fetchAll(SQLITE3_ASSOC);
+echo $assoc[0]['id'], ':', $assoc[0]['num'], ':', $assoc[1]['id'], ':', $assoc[1]['num'], "\n";
+var_dump($result->fetchArray());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n1:1:1:1\n2:2:2:2\n0=1;id=1;1=1;num=1;\nbool(true)\n1:1:2:2\n1:1:2:2\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sqlite3_authorizer_bind_and_rename_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-sqlite3-authorizer-bind-rename");
     fs::create_dir_all(&root).unwrap();
