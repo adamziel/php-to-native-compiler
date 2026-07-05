@@ -28585,6 +28585,12 @@ fn emit_method_dispatch(
     out.push_str("    if (resolved.as.object->native_data == NULL && !ptn_ascii_case_equal(method_name, \"__construct\") && !ptn_internal_class_exists_name(class_name)) {\n");
     out.push_str("        const char *ptn_uninitialized_parent = ptn_declared_class_parent_name(class_name);\n");
     out.push_str("        while (ptn_uninitialized_parent != NULL) {\n");
+    out.push_str(
+        "            if (ptn_ascii_case_equal(ptn_uninitialized_parent, \"SplFileObject\")) {\n",
+    );
+    out.push_str("                ptn_throw_exception_at(runtime, \"Error\", \"The parent constructor was not called: the object is in an invalid state\", runtime->source_path, line);\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
     out.push_str("            if (ptn_ascii_case_equal(ptn_uninitialized_parent, \"RecursiveIteratorIterator\")) {\n");
     out.push_str("                char ptn_uninitialized_message[256];\n");
     out.push_str("                int ptn_uninitialized_written = snprintf(ptn_uninitialized_message, sizeof(ptn_uninitialized_message), \"The %s instance wasn't initialized properly\", class_name);\n");

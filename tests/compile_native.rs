@@ -1497,9 +1497,14 @@ fn compile_spl_constructor_and_autoload_residual_errors_to_native_binary() {
         &caught_input,
         format!(
             "<?php\n\
+class UninitializedFileObject extends SplFileObject {{\n\
+    public function __construct() {{}}\n\
+    public function fpassthru(): int {{ return 0; }}\n\
+}}\n\
 $path = {};\n\
 $file = new SplFileObject($path);\n\
 try {{ $file->__construct($path); }} catch (Error $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
+try {{ (new UninitializedFileObject())->fpassthru(); }} catch (Error $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
 try {{ spl_autoload_call([]); }} catch (TypeError $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
 try {{ new SplFileInfo(\"bad\\0good\"); }} catch (ValueError $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n",
             php_string_literal(&data_path)
@@ -1525,6 +1530,7 @@ try {{ new SplFileInfo(\"bad\\0good\"); }} catch (ValueError $e) {{ echo $e::cla
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "Error: Cannot call constructor twice\n",
+            "Error: The parent constructor was not called: the object is in an invalid state\n",
             "TypeError: spl_autoload_call(): Argument #1 ($class) must be of type string, array given\n",
             "ValueError: SplFileInfo::__construct(): Argument #1 ($filename) must not contain any null bytes\n",
         )

@@ -4358,6 +4358,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     size_t indent,
     PtnDirectValueDumpSeen *seen
 ) {
+    const char *exception_class_name = exception->class_name == NULL
+        ? "Exception"
+        : exception->class_name;
+    const char *base_class = ptn_exception_type_matches_name(exception_class_name, "Error")
+        ? "Error"
+        : "Exception";
     const char *path = exception->path == NULL ? "" : exception->path;
     const char *code_key = ptn_exception_name_equal(exception->class_name, "DOMException")
         ? "[\"code\"]=>\n"
@@ -4370,7 +4376,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     ptn_direct_dump_write(runtime, exception->message, exception->message_len);
     ptn_direct_dump_write_cstr(runtime, "\"\n");
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"string\":\"Exception\":private]=>\n");
+    ptn_direct_dump_printf(runtime, "[\"string\":\"%s\":private]=>\n", base_class);
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "string(0) \"\"\n");
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
@@ -4388,10 +4394,10 @@ static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_printf(runtime, "int(%zu)\n", exception->line);
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"trace\":\"Exception\":private]=>\n");
+    ptn_direct_dump_printf(runtime, "[\"trace\":\"%s\":private]=>\n", base_class);
     ptn_direct_value_var_dump_value_indented(runtime, exception->trace, indent + 1, seen);
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"previous\":\"Exception\":private]=>\n");
+    ptn_direct_dump_printf(runtime, "[\"previous\":\"%s\":private]=>\n", base_class);
     ptn_direct_value_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
     ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
@@ -6288,6 +6294,12 @@ static PTN_UNUSED void ptn_direct_var_dump_exception_indented(
     size_t indent,
     PtnDirectDumpSeen *seen
 ) {
+    const char *exception_class_name = exception->class_name == NULL
+        ? "Exception"
+        : exception->class_name;
+    const char *base_class = ptn_exception_type_matches_name(exception_class_name, "Error")
+        ? "Error"
+        : "Exception";
     const char *path = exception->path == NULL ? "" : exception->path;
     size_t field_count = 7 + (ptn_value_deref(exception->errors).type == PTN_ARRAY ? 1 : 0);
     const char *code_key = ptn_exception_name_equal(exception->class_name, "DOMException")
@@ -6307,7 +6319,7 @@ static PTN_UNUSED void ptn_direct_var_dump_exception_indented(
     ptn_output_write(runtime, exception->message, exception->message_len);
     ptn_output_write_cstr(runtime, "\"\n");
     ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_output_write_cstr(runtime, "[\"string\":\"Exception\":private]=>\n");
+    ptn_direct_var_dump_writef(runtime, "[\"string\":\"%s\":private]=>\n", base_class);
     ptn_direct_var_dump_indent(runtime, indent + 1);
     ptn_output_write_cstr(runtime, "string(0) \"\"\n");
     ptn_direct_var_dump_indent(runtime, indent + 1);
@@ -6325,10 +6337,10 @@ static PTN_UNUSED void ptn_direct_var_dump_exception_indented(
     ptn_direct_var_dump_indent(runtime, indent + 1);
     ptn_direct_var_dump_writef(runtime, "int(%zu)\n", exception->line);
     ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_output_write_cstr(runtime, "[\"trace\":\"Exception\":private]=>\n");
+    ptn_direct_var_dump_writef(runtime, "[\"trace\":\"%s\":private]=>\n", base_class);
     ptn_direct_var_dump_value_indented(runtime, exception->trace, indent + 1, seen);
     ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_output_write_cstr(runtime, "[\"previous\":\"Exception\":private]=>\n");
+    ptn_direct_var_dump_writef(runtime, "[\"previous\":\"%s\":private]=>\n", base_class);
     ptn_direct_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
     if (ptn_value_deref(exception->errors).type == PTN_ARRAY) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
@@ -9805,6 +9817,12 @@ static int ptn_debug_array_show_packed(PtnArray *array) {
 }
 
 static void ptn_var_dump_exception_indented(PtnException *exception, size_t indent, PtnDumpSeenArrays *seen) {
+    const char *exception_class_name = exception->class_name == NULL
+        ? "Exception"
+        : exception->class_name;
+    const char *base_class = ptn_exception_type_matches_name(exception_class_name, "Error")
+        ? "Error"
+        : "Exception";
     const char *path = exception->path == NULL ? "" : exception->path;
     int has_errors = ptn_exception_name_equal(exception->class_name, "Uri\\WhatWg\\InvalidUrlException");
     const char *code_key = ptn_exception_name_equal(exception->class_name, "DOMException")
@@ -9818,7 +9836,7 @@ static void ptn_var_dump_exception_indented(PtnException *exception, size_t inde
     fwrite(exception->message, 1, exception->message_len, stdout);
     fputs("\"\n", stdout);
     ptn_var_dump_indent(indent + 1);
-    fputs("[\"string\":\"Exception\":private]=>\n", stdout);
+    printf("[\"string\":\"%s\":private]=>\n", base_class);
     ptn_var_dump_indent(indent + 1);
     fputs("string(0) \"\"\n", stdout);
     ptn_var_dump_indent(indent + 1);
@@ -9836,10 +9854,10 @@ static void ptn_var_dump_exception_indented(PtnException *exception, size_t inde
     ptn_var_dump_indent(indent + 1);
     printf("int(%zu)\n", exception->line);
     ptn_var_dump_indent(indent + 1);
-    fputs("[\"trace\":\"Exception\":private]=>\n", stdout);
+    printf("[\"trace\":\"%s\":private]=>\n", base_class);
     ptn_var_dump_value_indented(exception->trace, indent + 1, seen);
     ptn_var_dump_indent(indent + 1);
-    fputs("[\"previous\":\"Exception\":private]=>\n", stdout);
+    printf("[\"previous\":\"%s\":private]=>\n", base_class);
     ptn_var_dump_value_indented(exception->previous, indent + 1, seen);
     if (has_errors) {
         ptn_var_dump_indent(indent + 1);
