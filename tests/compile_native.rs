@@ -72529,6 +72529,92 @@ var_dump($p['testit/link']->getContent());
 }
 
 #[test]
+fn compile_phar_tar_rejects_names_that_cannot_fit_ustar_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-tar-bignames");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-tar-bignames.php");
+    let output = root.join("phar-tar-bignames-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/bignames.tar';
+$fname2 = __DIR__ . '/bignames.2.tar';
+$fname3 = __DIR__ . '/bignames.3.tar';
+$fname4 = __DIR__ . '/bignames.4.tar';
+
+$p1 = new PharData($fname);
+$p1[str_repeat('a', 100) . '/b'] = 'hi';
+$p1[str_repeat('a', 155) . '/' . str_repeat('b', 100)] = 'hi2';
+copy($fname, $fname2);
+$p2 = new PharData($fname2);
+echo $p2[str_repeat('a', 100) . '/b']->getContent(), "\n";
+echo $p2[str_repeat('a', 155) . '/' . str_repeat('b', 100)]->getContent(), "\n";
+
+try {
+    $p2[str_repeat('a', 400)] = 'yuck';
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $p3 = new PharData($fname3);
+    $p3[str_repeat('a', 101)] = 'yuck';
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $p4 = new PharData($fname4);
+    $p4[str_repeat('b', 160) . '/' . str_repeat('a', 90)] = 'yuck';
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let too_long_400 = "a".repeat(400);
+    let too_long_101 = "a".repeat(101);
+    let too_long_split = format!("{}/{}", "b".repeat(160), "a".repeat(90));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "hi\n",
+                "hi2\n",
+                "tar-based phar \"{}\" cannot be created, filename \"{}\" is too long for tar file format\n",
+                "tar-based phar \"{}\" cannot be created, filename \"{}\" is too long for tar file format\n",
+                "tar-based phar \"{}\" cannot be created, filename \"{}\" is too long for tar file format\n",
+            ),
+            root.join("bignames.2.tar").display(),
+            too_long_400,
+            root.join("bignames.3.tar").display(),
+            too_long_101,
+            root.join("bignames.4.tar").display(),
+            too_long_split
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_tar_entry_name_fits"));
+    assert!(c_source.contains("too long for tar file format"));
+}
+
+#[test]
 fn compile_dynamic_phar_mung_server_empty_array_reports_call_location_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-phar-mung-server-empty-array");
     fs::create_dir_all(&root).unwrap();

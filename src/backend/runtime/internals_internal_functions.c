@@ -207135,6 +207135,60 @@ static int ptn_phar_entry_name_has_upper_directory_reference(const char *name) {
     return 0;
 }
 
+static int ptn_phar_tar_entry_name_fits(const char *name) {
+    if (name == NULL) {
+        return 1;
+    }
+    size_t name_len = strlen(name);
+    if (name_len <= 100) {
+        return 1;
+    }
+    for (size_t i = 1; i < name_len; i++) {
+        if (name[i] != '/' && name[i] != '\\') {
+            continue;
+        }
+        size_t prefix_len = i;
+        size_t leaf_len = name_len - i - 1;
+        if (prefix_len <= 155 && leaf_len > 0 && leaf_len <= 100) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_phar_throw_tar_filename_too_long(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    const char *entry_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "tar-based phar \"%s\" cannot be created, filename \"%s\" is too long for tar file format",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "tar-based phar \"%s\" cannot be created, filename \"%s\" is too long for tar file format",
+        archive == NULL || archive->path == NULL ? "" : archive->path,
+        entry_name == NULL ? "" : entry_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message(runtime, "UnexpectedValueException", message);
+}
+
 static void ptn_phar_throw_copy_error(
     PtnRuntime *runtime,
     const char *source_name,
@@ -207212,7 +207266,11 @@ static void ptn_phar_throw_copy_invalid_dest(
     free(message);
 }
 
-static int ptn_phar_validate_entry_create(PtnRuntime *runtime, const char *entry_name) {
+static int ptn_phar_validate_entry_create(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    const char *entry_name
+) {
     if (ptn_phar_entry_name_has_double_slash(entry_name)) {
         int needed = snprintf(
             NULL,
@@ -207249,6 +207307,12 @@ static int ptn_phar_validate_entry_create(PtnRuntime *runtime, const char *entry
             "BadMethodCallException",
             "Cannot create any files in magic \".phar\" directory"
         );
+        return 0;
+    }
+    if (archive != NULL &&
+        archive->format == PTN_PHAR_FORMAT_TAR &&
+        !ptn_phar_tar_entry_name_fits(entry_name)) {
+        ptn_phar_throw_tar_filename_too_long(runtime, archive, entry_name);
         return 0;
     }
     return 1;
@@ -209078,7 +209142,7 @@ static PtnValue ptn_phar_call_method(
         if (entry_name == NULL) {
             return ptn_null();
         }
-        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+        if (!ptn_phar_validate_entry_create(runtime, data->archive, entry_name)) {
             free(entry_name);
             return ptn_null();
         }
@@ -209192,7 +209256,7 @@ static PtnValue ptn_phar_call_method(
         if (entry_name == NULL) {
             return ptn_null();
         }
-        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+        if (!ptn_phar_validate_entry_create(runtime, data->archive, entry_name)) {
             free(entry_name);
             return ptn_null();
         }
@@ -209840,7 +209904,7 @@ static PtnValue ptn_phar_call_method(
         if (entry_name == NULL) {
             return ptn_null();
         }
-        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+        if (!ptn_phar_validate_entry_create(runtime, data->archive, entry_name)) {
             free(entry_name);
             return ptn_null();
         }

@@ -3709,6 +3709,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/tar/links2.phpt|\
         ext/phar/tests/tar/links3.phpt|\
         ext/phar/tests/tar/links4.phpt|\
+        ext/phar/tests/tar/bignames.phpt|\
         ext/phar/tests/tar/delete.phpt|\
         ext/phar/tests/tar/all.phpt|\
         ext/phar/tests/tar/bug71317-duplicate-filename.phpt|\

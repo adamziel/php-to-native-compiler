@@ -4005,6 +4005,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "ext/phar/tests/tar/all.phpt",
         "ext/phar/tests/tar/bug71317-duplicate-filename.phpt",
         "ext/phar/tests/tar/links4.phpt",
+        "ext/phar/tests/tar/bignames.phpt",
         "ext/phar/tests/phar_stub_write.phpt",
     ];
     for row in phar_tar_delete_and_unlink_archive_rows {

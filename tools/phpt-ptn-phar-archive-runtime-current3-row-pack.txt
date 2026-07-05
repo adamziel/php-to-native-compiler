@@ -1,0 +1,4 @@
+# PHAR archive-runtime current3 focused row pack.
+# Focus: remaining small archive-runtime rows after bug69441, tar_004, and
+# rename_dir moved to the implemented PHAR tar/zip residual set.
+ext/phar/tests/tar/bignames.phpt
