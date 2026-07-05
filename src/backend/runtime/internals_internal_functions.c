@@ -61168,7 +61168,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
                 filter->zlib_window,
                 filter->zlib_level,
-                filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE && !closing,
+                filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
                 &transformed,
                 &transformed_len
             );
