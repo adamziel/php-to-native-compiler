@@ -37,7 +37,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="status metadata">
   <thead><tr><th>field</th><th>value</th></tr></thead>
   <tbody>
-    <tr><td>last refresh</td><td>2026-07-05T16:36:01Z</td></tr>
+    <tr><td>last refresh</td><td>2026-07-05T16:40:10Z</td></tr>
     <tr><td>source commit</td><td><code>05d20d9325a9</code></td></tr>
     <tr><td>php-src revision</td><td><code>8c63ec400ce8e07c57a8d9499317b96a8beafb8b</code></td></tr>
     <tr><td>upstream PHPT corpus</td><td><code>php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)</code></td></tr>
@@ -54,22 +54,36 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     <tr><td>upstream tests</td><td class="num">21867</td></tr>
   </tbody>
 </table>
+<h2>Active Fresh Snapshot</h2>
+<table aria-label="active fresh snapshot">
+  <thead><tr><th>field</th><th>value</th></tr></thead>
+  <tbody>
+    <tr><td>source commit</td><td><code>05d20d9325a9</code></td></tr>
+    <tr><td>statused tests</td><td class="num">2</td></tr>
+    <tr><td>passed tests</td><td class="num">0</td></tr>
+    <tr><td>failed tests</td><td class="num">0</td></tr>
+    <tr><td>skipped tests</td><td class="num">2</td></tr>
+    <tr><td>warned tests</td><td class="num">0</td></tr>
+    <tr><td>unknown tests</td><td class="num">21865</td></tr>
+    <tr><td>run</td><td><code>/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260705T163025Z</code></td></tr>
+  </tbody>
+</table>
 <h2>Recent Progress</h2>
 <table aria-label="recent progress">
   <thead><tr><th>window</th><th class="num">newly passed tests</th></tr></thead>
   <tbody>
-    <tr><td>latest hour (2026-07-05T16:00Z)</td><td class="num">11</td></tr>
-    <tr><td>last 24 hours (2026-07-04T17:00Z - 2026-07-05T16:00Z)</td><td class="num">11</td></tr>
-    <tr><td>last 7 days (2026-06-28T17:00Z - 2026-07-05T16:00Z)</td><td class="num">11</td></tr>
+    <tr><td>latest hour (2026-07-05T16:00Z)</td><td class="num">20</td></tr>
+    <tr><td>last 24 hours (2026-07-04T17:00Z - 2026-07-05T16:00Z)</td><td class="num">252</td></tr>
+    <tr><td>last 7 days (2026-06-28T17:00Z - 2026-07-05T16:00Z)</td><td class="num">360</td></tr>
   </tbody>
 </table>
 <section class="chart-panel" aria-labelledby="passing-history-title">
   <h2 id="passing-history-title">7-Day Passing History</h2>
-  <p class="summary">1831 cumulative passed tests across 168 hourly points, ending 2026-07-05T16:00Z. Newly passed: 11 in the latest hour, 11 in the last 24 hours, 11 in the last 7 days.</p>
+  <p class="summary">1831 cumulative passed tests across 168 hourly points, ending 2026-07-05T16:00Z. Newly passed: 20 in the latest hour, 252 in the last 24 hours, 360 in the last 7 days.</p>
   <svg id="passing-history-chart" class="line-chart" data-history-points="168" data-corpus-total="21867" viewBox="0 0 720 152" role="img" aria-label="Cumulative passing tests by hour">
     <line class="chart-grid" x1="38" y1="14" x2="38" y2="126"></line>
     <line class="chart-grid" x1="38" y1="126" x2="694" y2="126"></line>
-    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,14.67 41.93,14.67 45.86,14.67 49.78,14.67 53.71,14.67 57.64,14.67 61.57,14.67 65.50,14.67 69.43,14.67 73.35,14.67 77.28,14.67 81.21,14.67 85.14,14.67 89.07,14.67 92.99,14.67 96.92,14.67 100.85,14.67 104.78,14.67 108.71,14.67 112.63,14.67 116.56,14.67 120.49,14.67 124.42,14.67 128.35,14.67 132.28,14.67 136.20,14.67 140.13,14.67 144.06,14.67 147.99,14.67 151.92,14.67 155.84,14.67 159.77,14.67 163.70,14.67 167.63,14.67 171.56,14.67 175.49,14.67 179.41,14.67 183.34,14.67 187.27,14.67 191.20,14.67 195.13,14.67 199.05,14.67 202.98,14.67 206.91,14.67 210.84,14.67 214.77,14.67 218.69,14.67 222.62,14.67 226.55,14.67 230.48,14.67 234.41,14.67 238.34,14.67 242.26,14.67 246.19,14.67 250.12,14.67 254.05,14.67 257.98,14.67 261.90,14.67 265.83,14.67 269.76,14.67 273.69,14.67 277.62,14.67 281.54,14.67 285.47,14.67 289.40,14.67 293.33,14.67 297.26,14.67 301.19,14.67 305.11,14.67 309.04,14.67 312.97,14.67 316.90,14.67 320.83,14.67 324.75,14.67 328.68,14.67 332.61,14.67 336.54,14.67 340.47,14.67 344.40,14.67 348.32,14.67 352.25,14.67 356.18,14.67 360.11,14.67 364.04,14.67 367.96,14.67 371.89,14.67 375.82,14.67 379.75,14.67 383.68,14.67 387.60,14.67 391.53,14.67 395.46,14.67 399.39,14.67 403.32,14.67 407.25,14.67 411.17,14.67 415.10,14.67 419.03,14.67 422.96,14.67 426.89,14.67 430.81,14.67 434.74,14.67 438.67,14.67 442.60,14.67 446.53,14.67 450.46,14.67 454.38,14.67 458.31,14.67 462.24,14.67 466.17,14.67 470.10,14.67 474.02,14.67 477.95,14.67 481.88,14.67 485.81,14.67 489.74,14.67 493.66,14.67 497.59,14.67 501.52,14.67 505.45,14.67 509.38,14.67 513.31,14.67 517.23,14.67 521.16,14.67 525.09,14.67 529.02,14.67 532.95,14.67 536.87,14.67 540.80,14.67 544.73,14.67 548.66,14.67 552.59,14.67 556.51,14.67 560.44,14.67 564.37,14.67 568.30,14.67 572.23,14.67 576.16,14.67 580.08,14.67 584.01,14.67 587.94,14.67 591.87,14.67 595.80,14.67 599.72,14.67 603.65,14.67 607.58,14.67 611.51,14.67 615.44,14.67 619.37,14.67 623.29,14.67 627.22,14.67 631.15,14.67 635.08,14.67 639.01,14.67 642.93,14.67 646.86,14.67 650.79,14.67 654.72,14.67 658.65,14.67 662.57,14.67 666.50,14.67 670.43,14.67 674.36,14.67 678.29,14.67 682.22,14.67 686.14,14.67 690.07,14.67 694.00,14.00"></polyline>
+    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,36.02 41.93,36.02 45.86,36.02 49.78,36.02 53.71,36.02 57.64,36.02 61.57,36.02 65.50,36.02 69.43,36.02 73.35,36.02 77.28,36.02 81.21,36.02 85.14,36.02 89.07,36.02 92.99,36.02 96.92,36.02 100.85,36.02 104.78,36.02 108.71,36.02 112.63,36.02 116.56,36.02 120.49,36.02 124.42,36.02 128.35,36.02 132.28,36.02 136.20,36.02 140.13,36.02 144.06,36.02 147.99,36.02 151.92,36.02 155.84,36.02 159.77,36.02 163.70,36.02 167.63,36.02 171.56,36.02 175.49,36.02 179.41,36.02 183.34,36.02 187.27,36.02 191.20,36.02 195.13,36.02 199.05,36.02 202.98,36.02 206.91,31.98 210.84,31.98 214.77,31.98 218.69,31.98 222.62,31.98 226.55,31.98 230.48,31.98 234.41,31.98 238.34,31.98 242.26,31.98 246.19,31.98 250.12,31.98 254.05,31.98 257.98,31.98 261.90,31.98 265.83,31.98 269.76,31.98 273.69,31.98 277.62,31.98 281.54,31.98 285.47,31.98 289.40,31.98 293.33,31.98 297.26,31.98 301.19,31.98 305.11,31.98 309.04,31.98 312.97,31.98 316.90,31.98 320.83,31.98 324.75,31.98 328.68,31.98 332.61,31.98 336.54,31.98 340.47,31.98 344.40,31.98 348.32,31.98 352.25,31.98 356.18,31.98 360.11,31.98 364.04,31.98 367.96,31.98 371.89,31.98 375.82,31.98 379.75,31.98 383.68,31.98 387.60,31.98 391.53,31.98 395.46,31.98 399.39,31.98 403.32,31.98 407.25,31.98 411.17,31.98 415.10,31.98 419.03,31.98 422.96,31.98 426.89,31.98 430.81,31.98 434.74,31.98 438.67,31.98 442.60,31.98 446.53,31.98 450.46,31.98 454.38,31.98 458.31,31.98 462.24,31.98 466.17,31.98 470.10,31.98 474.02,31.98 477.95,31.98 481.88,31.98 485.81,31.98 489.74,31.98 493.66,31.98 497.59,31.98 501.52,31.98 505.45,31.98 509.38,31.98 513.31,31.98 517.23,31.98 521.16,31.98 525.09,31.98 529.02,31.98 532.95,31.98 536.87,31.98 540.80,31.98 544.73,31.98 548.66,31.98 552.59,31.98 556.51,31.98 560.44,31.98 564.37,31.37 568.30,31.37 572.23,31.37 576.16,30.82 580.08,30.82 584.01,30.58 587.94,29.54 591.87,29.54 595.80,29.41 599.72,29.41 603.65,29.35 607.58,29.35 611.51,29.17 615.44,29.05 619.37,29.05 623.29,29.05 627.22,22.38 631.15,22.38 635.08,22.38 639.01,21.16 642.93,21.16 646.86,20.42 650.79,19.87 654.72,19.81 658.65,18.10 662.57,18.10 666.50,16.94 670.43,16.94 674.36,16.94 678.29,16.14 682.22,15.22 686.14,15.22 690.07,15.22 694.00,14.00"></polyline>
     <text class="chart-label" x="38" y="146">2026-06-28T17:00Z</text>
     <text class="chart-label" x="694" y="146" text-anchor="end">2026-07-05T16:00Z</text>
     <text class="chart-label" x="44" y="24">1831 passed</text>
@@ -79,181 +93,325 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table id="feature-table" class="sortable" aria-label="feature table">
   <thead><tr><th data-sort="text" aria-sort="none"><button type="button">feature</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">ported tests</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">passed tests</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">upstream tests</button></th></tr></thead>
   <tbody>
-    <tr><td><div class="feature-name">full PHPT corpus sharded raw loop</div><div class="progress" aria-label="full PHPT corpus sharded raw loop: 1831 passed, 21867 ported, 21867 upstream"><span class="progress-pass" style="width: 8.4%"></span><span class="progress-ported" style="left: 8.4%; width: 91.6%"></span></div></td><td class="num" data-value="21867">21867</td><td class="num" data-value="1831">1831</td><td class="num" data-value="21867">21867</td></tr>
+    <tr><td><div class="feature-name">full PHPT corpus sharded partial snapshot</div><div class="progress" aria-label="full PHPT corpus sharded partial snapshot: 1831 passed, 21867 ported, 21867 upstream"><span class="progress-pass" style="width: 8.4%"></span><span class="progress-ported" style="left: 8.4%; width: 91.6%"></span></div></td><td class="num" data-value="21867">21867</td><td class="num" data-value="1831">1831</td><td class="num" data-value="21867">21867</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-29T23:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-29T23:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T00:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T00:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-06-30T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-06-30T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-01T23:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-01T23:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T00:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T00:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-02T23:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-02T23:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T00:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T00:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-03T23:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-03T23:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T00:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T00:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T16:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T16:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T17:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T17:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T18:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T18:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T19:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T19:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T20:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T20:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T21:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T21:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T22:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T22:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-04T23:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-04T23:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T00:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T00:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T01:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T01:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T02:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T02:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T03:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T03:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T04:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T04:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T05:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T05:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T06:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T06:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T07:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T07:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T08:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T08:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T09:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T09:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T10:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T10:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T11:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T11:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T12:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T12:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T13:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T13:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T14:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T14:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
+    <tr><td><div class="feature-name">hourly history retained 2026-07-05T15:00Z</div><div class="progress" aria-label="hourly history retained 2026-07-05T15:00Z: 0 passed, 0 ported, 0 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td></tr>
   </tbody>
 </table>
 <h2>Last 7 Days</h2>
 <table aria-label="last 7 days">
   <thead><tr><th>hour (UTC)</th><th class="num">newly passed tests</th><th class="num">cumulative passed tests</th></tr></thead>
   <tbody>
-    <tr><td>2026-06-28T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-28T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-29T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-06-30T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-01T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-02T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-03T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T16:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T17:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T18:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T19:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T20:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T21:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T22:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-04T23:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T00:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T01:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T02:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T03:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T04:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T05:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T06:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T07:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T08:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T09:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T10:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T11:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T12:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T13:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T14:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T15:00Z</td><td class="num">0</td><td class="num">1820</td></tr>
-    <tr><td>2026-07-05T16:00Z</td><td class="num">11</td><td class="num">1831</td></tr>
+    <tr><td>2026-06-28T17:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T18:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T19:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T20:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T21:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T22:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-28T23:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T00:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T01:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T02:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T03:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T04:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T05:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T06:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T07:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T08:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T09:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T10:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T11:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T12:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T13:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T14:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T15:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T16:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T17:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T18:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T19:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T20:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T21:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T22:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-29T23:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T00:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T01:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T02:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T03:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T04:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T05:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T06:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T07:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T08:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T09:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T10:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T11:00Z</td><td class="num">0</td><td class="num">1471</td></tr>
+    <tr><td>2026-06-30T12:00Z</td><td class="num">66</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T13:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T14:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T15:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T16:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T17:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T18:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T19:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T20:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T21:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T22:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-06-30T23:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T00:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T01:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T02:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T03:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T04:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T05:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T06:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T07:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T08:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T09:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T10:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T11:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T12:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T13:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T14:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T15:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T16:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T17:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T18:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T19:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T20:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T21:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T22:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-01T23:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T00:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T01:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T02:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T03:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T04:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T05:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T06:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T07:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T08:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T09:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T10:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T11:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T12:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T13:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T14:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T15:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T16:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T17:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T18:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T19:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T20:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T21:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T22:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-02T23:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T00:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T01:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T02:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T03:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T04:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T05:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T06:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T07:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T08:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T09:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T10:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T11:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T12:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T13:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T14:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T15:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T16:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T17:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T18:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T19:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T20:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T21:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T22:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-03T23:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T00:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T01:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T02:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T03:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T04:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T05:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T06:00Z</td><td class="num">0</td><td class="num">1537</td></tr>
+    <tr><td>2026-07-04T07:00Z</td><td class="num">10</td><td class="num">1547</td></tr>
+    <tr><td>2026-07-04T08:00Z</td><td class="num">0</td><td class="num">1547</td></tr>
+    <tr><td>2026-07-04T09:00Z</td><td class="num">0</td><td class="num">1547</td></tr>
+    <tr><td>2026-07-04T10:00Z</td><td class="num">9</td><td class="num">1556</td></tr>
+    <tr><td>2026-07-04T11:00Z</td><td class="num">0</td><td class="num">1556</td></tr>
+    <tr><td>2026-07-04T12:00Z</td><td class="num">4</td><td class="num">1560</td></tr>
+    <tr><td>2026-07-04T13:00Z</td><td class="num">17</td><td class="num">1577</td></tr>
+    <tr><td>2026-07-04T14:00Z</td><td class="num">0</td><td class="num">1577</td></tr>
+    <tr><td>2026-07-04T15:00Z</td><td class="num">2</td><td class="num">1579</td></tr>
+    <tr><td>2026-07-04T16:00Z</td><td class="num">0</td><td class="num">1579</td></tr>
+    <tr><td>2026-07-04T17:00Z</td><td class="num">1</td><td class="num">1580</td></tr>
+    <tr><td>2026-07-04T18:00Z</td><td class="num">0</td><td class="num">1580</td></tr>
+    <tr><td>2026-07-04T19:00Z</td><td class="num">3</td><td class="num">1583</td></tr>
+    <tr><td>2026-07-04T20:00Z</td><td class="num">2</td><td class="num">1585</td></tr>
+    <tr><td>2026-07-04T21:00Z</td><td class="num">0</td><td class="num">1585</td></tr>
+    <tr><td>2026-07-04T22:00Z</td><td class="num">0</td><td class="num">1585</td></tr>
+    <tr><td>2026-07-04T23:00Z</td><td class="num">109</td><td class="num">1694</td></tr>
+    <tr><td>2026-07-05T00:00Z</td><td class="num">0</td><td class="num">1694</td></tr>
+    <tr><td>2026-07-05T01:00Z</td><td class="num">0</td><td class="num">1694</td></tr>
+    <tr><td>2026-07-05T02:00Z</td><td class="num">20</td><td class="num">1714</td></tr>
+    <tr><td>2026-07-05T03:00Z</td><td class="num">0</td><td class="num">1714</td></tr>
+    <tr><td>2026-07-05T04:00Z</td><td class="num">12</td><td class="num">1726</td></tr>
+    <tr><td>2026-07-05T05:00Z</td><td class="num">9</td><td class="num">1735</td></tr>
+    <tr><td>2026-07-05T06:00Z</td><td class="num">1</td><td class="num">1736</td></tr>
+    <tr><td>2026-07-05T07:00Z</td><td class="num">28</td><td class="num">1764</td></tr>
+    <tr><td>2026-07-05T08:00Z</td><td class="num">0</td><td class="num">1764</td></tr>
+    <tr><td>2026-07-05T09:00Z</td><td class="num">19</td><td class="num">1783</td></tr>
+    <tr><td>2026-07-05T10:00Z</td><td class="num">0</td><td class="num">1783</td></tr>
+    <tr><td>2026-07-05T11:00Z</td><td class="num">0</td><td class="num">1783</td></tr>
+    <tr><td>2026-07-05T12:00Z</td><td class="num">13</td><td class="num">1796</td></tr>
+    <tr><td>2026-07-05T13:00Z</td><td class="num">15</td><td class="num">1811</td></tr>
+    <tr><td>2026-07-05T14:00Z</td><td class="num">0</td><td class="num">1811</td></tr>
+    <tr><td>2026-07-05T15:00Z</td><td class="num">0</td><td class="num">1811</td></tr>
+    <tr><td>2026-07-05T16:00Z</td><td class="num">20</td><td class="num">1831</td></tr>
   </tbody>
 </table>
 <script>
