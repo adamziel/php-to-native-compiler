@@ -70594,6 +70594,84 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_tar_stub_map_phar_with_runtime_code_executes_to_native_binary() {
+    fn push_tar_entry(out: &mut Vec<u8>, name: &str, content: &[u8]) {
+        let mut header = [0_u8; 512];
+        header[..name.len()].copy_from_slice(name.as_bytes());
+        header[100..108].copy_from_slice(b"0000666\0");
+        header[124..136].copy_from_slice(format!("{:011o}\0", content.len()).as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[148..156].copy_from_slice(b"        ");
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let padding = (512 - (content.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0).take(padding));
+    }
+
+    let root = temp_dir("ptn-native-phar-tar-stub-map-code");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tar-stub-map-code.php");
+    let output = root.join("tar-stub-map-code-bin");
+    let archive = root.join("stub-code.phar.tar");
+
+    let mut tar = Vec::new();
+    push_tar_entry(
+        &mut tar,
+        ".phar/stub.php",
+        b"<?php\n\
+Phar::mapPhar();\n\
+echo \"stub\\n\";\n\
+include \"phar://\" . __FILE__ . \"/entry.php\";\n\
+?>",
+    );
+    push_tar_entry(
+        &mut tar,
+        "entry.php",
+        b"<?php\nvar_dump(__FILE__);\necho \"entry\\n\";\n",
+    );
+    tar.extend(std::iter::repeat(0).take(1024));
+    fs::write(&archive, tar).unwrap();
+
+    fs::write(
+        &input,
+        "<?php\n$archive = getenv('PTN_TEST_PHAR_TAR');\ninclude $archive;\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_TEST_PHAR_TAR", &archive)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let entry_uri = format!("phar://{}/entry.php", archive.display());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "stub\nstring({}) \"{}\"\nentry\n",
+            entry_uri.len(),
+            entry_uri
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_stub_is_map_only"));
+    assert!(c_source.contains("ptn_dynamic_execute_static_call_statement"));
+    assert!(c_source.contains("ptn_include_phar_php_entry"));
+}
+
+#[test]
 fn compile_dynamic_generated_phar_stub_include_maps_alias_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-generated-phar-stub");
     fs::create_dir_all(&root).unwrap();

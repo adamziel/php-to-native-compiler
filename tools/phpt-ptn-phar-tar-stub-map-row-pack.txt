@@ -1,0 +1,5 @@
+# PHAR tar stub/mapPhar archive-runtime verification row pack
+# Focus: tar .phar/stub.php execution with Phar::mapPhar() plus runtime code,
+# and tar phar:// directory rename access.
+ext/phar/tests/tar/tar_004.phpt
+ext/phar/tests/tar/rename_dir.phpt

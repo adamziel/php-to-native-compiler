@@ -3799,6 +3799,21 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    for row in [
+        "ext/phar/tests/tar/tar_004.phpt",
+        "ext/phar/tests/tar/rename_dir.phpt",
+    ] {
+        let phar_tar_stub_map_row = classify_at_relative_path(
+            "--TEST--\nphar tar stub map row\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\nphar.readonly=0\n--FILE--\n<?php\ninclude __DIR__ . '/files/tarmaker.php.inc';\n$fname = __DIR__ . '/archive.phar.tar';\ninclude $fname;\necho file_get_contents('phar://' . $fname . '/a/x');\n--EXPECT--\n",
+            row,
+        );
+        assert_eq!(
+            phar_tar_stub_map_row.trim_end(),
+            "runnable\timplemented PHAR tar/zip archive residual row pack",
+            "{row}"
+        );
+    }
+
     let phar_cache_list_recursive_iterator = classify_at_relative_path(
         "--TEST--\nphar cache-list recursive iterator\n--EXTENSIONS--\nphar\n--INI--\nphar.cache_list={PWD}/files/nophar.phar\n--FILE--\n<?php\n$p = 'phar://' . __DIR__ . '/files/nophar.phar';\nforeach (new RecursiveIteratorIterator(new Phar($p)) as $f) echo $f->getPathName(), \"\\n\";\n--EXPECT--\n",
         "ext/phar/tests/cached_manifest_1.phpt",

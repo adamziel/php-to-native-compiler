@@ -3616,6 +3616,8 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/open_for_write_newfile_c.phpt|\
         ext/phar/tests/tar/open_for_write_newfile_c.phpt|\
         ext/phar/tests/tar/tar_003.phpt|\
+        ext/phar/tests/tar/tar_004.phpt|\
+        ext/phar/tests/tar/rename_dir.phpt|\
         ext/phar/tests/zip/phar_buildfromiterator4.phpt|\
         ext/phar/tests/zip/phar_buildfromiterator6.phpt|\
         ext/phar/tests/zip/phar_buildfromiterator9.phpt|\

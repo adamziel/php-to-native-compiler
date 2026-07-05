@@ -210874,12 +210874,202 @@ static int ptn_phar_bytes_contain_php_open_tag(const unsigned char *data, size_t
     return 0;
 }
 
+static int ptn_phar_stub_match_ascii_word(const char *stub, size_t stub_len, size_t *cursor, const char *word) {
+    size_t word_len = strlen(word);
+    if (stub == NULL || cursor == NULL || *cursor > stub_len || word_len > stub_len - *cursor) {
+        return 0;
+    }
+    for (size_t i = 0; i < word_len; i++) {
+        if (tolower((unsigned char)stub[*cursor + i]) != tolower((unsigned char)word[i])) {
+            return 0;
+        }
+    }
+    *cursor += word_len;
+    return 1;
+}
+
+static void ptn_phar_stub_skip_trivia(const char *stub, size_t stub_len, size_t *cursor) {
+    while (stub != NULL && cursor != NULL && *cursor < stub_len) {
+        unsigned char ch = (unsigned char)stub[*cursor];
+        if (isspace(ch)) {
+            (*cursor)++;
+            continue;
+        }
+        if (stub[*cursor] == '#' ||
+            (stub[*cursor] == '/' && *cursor + 1 < stub_len && stub[*cursor + 1] == '/')) {
+            while (*cursor < stub_len && stub[*cursor] != '\n' && stub[*cursor] != '\r') {
+                (*cursor)++;
+            }
+            continue;
+        }
+        if (stub[*cursor] == '/' && *cursor + 1 < stub_len && stub[*cursor + 1] == '*') {
+            *cursor += 2;
+            while (*cursor + 1 < stub_len && !(stub[*cursor] == '*' && stub[*cursor + 1] == '/')) {
+                (*cursor)++;
+            }
+            if (*cursor + 1 < stub_len) {
+                *cursor += 2;
+            }
+            continue;
+        }
+        break;
+    }
+}
+
+static int ptn_phar_stub_consume_open_tag(const char *stub, size_t stub_len, size_t *cursor) {
+    if (stub == NULL || cursor == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i + 1 < stub_len; i++) {
+        if (stub[i] != '<' || stub[i + 1] != '?') {
+            continue;
+        }
+        *cursor = i + 2;
+        if (*cursor + 3 <= stub_len &&
+            tolower((unsigned char)stub[*cursor]) == 'p' &&
+            tolower((unsigned char)stub[*cursor + 1]) == 'h' &&
+            tolower((unsigned char)stub[*cursor + 2]) == 'p') {
+            *cursor += 3;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_phar_stub_consume_balanced_parens(const char *stub, size_t stub_len, size_t *cursor) {
+    if (stub == NULL || cursor == NULL || *cursor >= stub_len || stub[*cursor] != '(') {
+        return 0;
+    }
+    size_t depth = 1;
+    (*cursor)++;
+    char quote = '\0';
+    int escaped = 0;
+    while (*cursor < stub_len) {
+        char ch = stub[*cursor];
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = 0;
+            } else if (ch == '\\') {
+                escaped = 1;
+            } else if (ch == quote) {
+                quote = '\0';
+            }
+            (*cursor)++;
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            quote = ch;
+            (*cursor)++;
+            continue;
+        }
+        if (ch == '/' && *cursor + 1 < stub_len && stub[*cursor + 1] == '/') {
+            while (*cursor < stub_len && stub[*cursor] != '\n' && stub[*cursor] != '\r') {
+                (*cursor)++;
+            }
+            continue;
+        }
+        if (ch == '#') {
+            while (*cursor < stub_len && stub[*cursor] != '\n' && stub[*cursor] != '\r') {
+                (*cursor)++;
+            }
+            continue;
+        }
+        if (ch == '/' && *cursor + 1 < stub_len && stub[*cursor + 1] == '*') {
+            *cursor += 2;
+            while (*cursor + 1 < stub_len && !(stub[*cursor] == '*' && stub[*cursor + 1] == '/')) {
+                (*cursor)++;
+            }
+            if (*cursor + 1 < stub_len) {
+                *cursor += 2;
+            }
+            continue;
+        }
+        if (ch == '(') {
+            depth++;
+        } else if (ch == ')') {
+            depth--;
+            if (depth == 0) {
+                (*cursor)++;
+                return 1;
+            }
+        }
+        (*cursor)++;
+    }
+    return 0;
+}
+
+static int ptn_phar_stub_consume_map_phar_statement(const char *stub, size_t stub_len, size_t *cursor) {
+    if (!ptn_phar_stub_match_ascii_word(stub, stub_len, cursor, "Phar")) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (*cursor + 2 > stub_len || stub[*cursor] != ':' || stub[*cursor + 1] != ':') {
+        return 0;
+    }
+    *cursor += 2;
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (!ptn_phar_stub_match_ascii_word(stub, stub_len, cursor, "mapPhar")) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (!ptn_phar_stub_consume_balanced_parens(stub, stub_len, cursor)) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (*cursor >= stub_len || stub[*cursor] != ';') {
+        return 0;
+    }
+    (*cursor)++;
+    return 1;
+}
+
+static int ptn_phar_stub_consume_halt_statement(const char *stub, size_t stub_len, size_t *cursor) {
+    if (!ptn_phar_stub_match_ascii_word(stub, stub_len, cursor, "__HALT_COMPILER")) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (*cursor >= stub_len || stub[*cursor] != '(') {
+        return 0;
+    }
+    (*cursor)++;
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (*cursor >= stub_len || stub[*cursor] != ')') {
+        return 0;
+    }
+    (*cursor)++;
+    ptn_phar_stub_skip_trivia(stub, stub_len, cursor);
+    if (*cursor < stub_len && stub[*cursor] == ';') {
+        (*cursor)++;
+    }
+    return 1;
+}
+
 static int ptn_phar_stub_is_map_only(const char *stub, size_t stub_len) {
     if (stub == NULL || stub_len == 0) {
         return 0;
     }
-    return ptn_memmem_simple(stub, stub_len, "Phar::mapPhar", strlen("Phar::mapPhar")) != NULL &&
-        ptn_memmem_simple(stub, stub_len, "Phar::mungServer", strlen("Phar::mungServer")) == NULL;
+    size_t cursor = 0;
+    if (!ptn_phar_stub_consume_open_tag(stub, stub_len, &cursor)) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, &cursor);
+    if (!ptn_phar_stub_consume_map_phar_statement(stub, stub_len, &cursor)) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, &cursor);
+    if (cursor + 2 <= stub_len && stub[cursor] == '?' && stub[cursor + 1] == '>') {
+        cursor += 2;
+        ptn_phar_stub_skip_trivia(stub, stub_len, &cursor);
+    }
+    if (cursor < stub_len && !ptn_phar_stub_consume_halt_statement(stub, stub_len, &cursor)) {
+        return 0;
+    }
+    ptn_phar_stub_skip_trivia(stub, stub_len, &cursor);
+    if (cursor + 2 <= stub_len && stub[cursor] == '?' && stub[cursor + 1] == '>') {
+        cursor += 2;
+        ptn_phar_stub_skip_trivia(stub, stub_len, &cursor);
+    }
+    return cursor == stub_len;
 }
 
 static int ptn_include_phar_php_entry(
