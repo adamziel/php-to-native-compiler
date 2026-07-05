@@ -116,6 +116,7 @@ jobs:
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
         run: |
+          set +e
           python3 <<'PY'
           import datetime
           import os
@@ -194,6 +195,15 @@ jobs:
 
           sys.exit(0)
           PY
+          supervisor_exit=$?
+          if [[ "$supervisor_exit" != "0" ]]; then
+            mkdir -p "$PHPT_PROGRESS_DIR"
+            if [[ ! -f "$PHPT_PROGRESS_DIR/shard-exit-code.txt" ]]; then
+              printf '%s\n' "$supervisor_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
+            fi
+            echo "[full-phpt] supervisor exited with $supervisor_exit; preserving artifacts" >&2
+          fi
+          exit 0
 
       - name: Upload shard artifact
         if: ${{ always() }}
@@ -278,6 +288,7 @@ jobs:
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
         run: |
+          set +e
           python3 <<'PY'
           import datetime
           import os
@@ -356,6 +367,15 @@ jobs:
 
           sys.exit(0)
           PY
+          supervisor_exit=$?
+          if [[ "$supervisor_exit" != "0" ]]; then
+            mkdir -p "$PHPT_PROGRESS_DIR"
+            if [[ ! -f "$PHPT_PROGRESS_DIR/shard-exit-code.txt" ]]; then
+              printf '%s\n' "$supervisor_exit" > "$PHPT_PROGRESS_DIR/shard-exit-code.txt"
+            fi
+            echo "[full-phpt] supervisor exited with $supervisor_exit; preserving artifacts" >&2
+          fi
+          exit 0
 
       - name: Upload shard artifact
         if: ${{ always() }}
