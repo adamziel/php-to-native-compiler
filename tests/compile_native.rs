@@ -29786,6 +29786,12 @@ foreach ($cases as $label => $value) {\n\
     file_put_contents($path, $value);\n\
     echo $label, ':', file_get_contents($path), \"\\n\";\n\
 }\n\
+file_put_contents($path, 'previous');\n\
+var_dump(file_put_contents($path, new WithoutToString()));\n\
+var_dump(file_get_contents($path));\n\
+file_put_contents($path, 'previous');\n\
+var_dump(file_put_contents($path, new WithoutToString(), FILE_APPEND));\n\
+var_dump(file_get_contents($path));\n\
 @unlink($path);\n",
     )
     .unwrap();
@@ -29805,6 +29811,10 @@ foreach ($cases as $label => $value) {\n\
             "nested arrays:fooArrayArray\n",
             "instance of classWithToString:Class A object\n",
             "instance of classWithoutToString:\n",
+            "bool(false)\n",
+            "string(0) \"\"\n",
+            "bool(false)\n",
+            "string(8) \"previous\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

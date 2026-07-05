@@ -65748,6 +65748,44 @@ static PtnStringOperand ptn_file_put_contents_data_operand(
     return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
 }
 
+static int ptn_file_put_contents_can_preopen_plain_path(const char *path, PtnValue data) {
+    if (path == NULL || ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return 0;
+    }
+    data = ptn_value_deref(data);
+    if (data.type != PTN_RESOURCE) {
+        return 1;
+    }
+    return data.as.resource != NULL &&
+        strcmp(data.as.resource->type_name, "stream") == 0 &&
+        ptn_stream_resource_is_open(data.as.resource);
+}
+
+static PtnValue ptn_file_put_contents_write_plain_stream(
+    PtnRuntime *runtime,
+    FILE *stream,
+    const char *path,
+    PtnStringOperand data,
+    size_t line
+) {
+    size_t written = fwrite(data.data, 1, data.len, stream);
+    int failed = written != data.len || fclose(stream) != 0;
+    if (failed) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to write %zu bytes: %s", data.len, strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
+        return ptn_bool(0);
+    }
+
+    if (data.len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)data.len);
+}
+
 static int ptn_file_put_contents_validate_context_arg(
     PtnRuntime *runtime,
     PtnValue value,
@@ -65819,25 +65857,16 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    int data_ok = 0;
-    PtnStringOperand data = ptn_file_put_contents_data_operand(runtime, args[1], line, &data_ok);
-    if (!data_ok || runtime->exceptions->active_exception != NULL) {
-        free(path);
-        ptn_string_operand_free(data);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
-    }
     int64_t flags = 0;
     if (argc >= 3) {
         flags = ptn_internal_expect_integer_arg(runtime, "file_put_contents", 3, "flags", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
             free(path);
-            ptn_string_operand_free(data);
             return ptn_null();
         }
     }
     if (argc >= 4 && !ptn_file_put_contents_validate_context_arg(runtime, args[3], line)) {
         free(path);
-        ptn_string_operand_free(data);
         return ptn_null();
     }
     PtnResource *context = NULL;
@@ -65846,6 +65875,37 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         if (context_value.type == PTN_RESOURCE) {
             context = context_value.as.resource;
         }
+    }
+    FILE *plain_stream = NULL;
+    if (ptn_file_put_contents_can_preopen_plain_path(path, args[1])) {
+        plain_stream = fopen(path, (flags & PTN_FILE_APPEND) != 0 ? "ab" : "wb");
+        if (plain_stream == NULL) {
+            char detail[192];
+            int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
+            free(path);
+            return ptn_bool(0);
+        }
+    }
+
+    int data_ok = 0;
+    PtnStringOperand data = ptn_file_put_contents_data_operand(runtime, args[1], line, &data_ok);
+    if (!data_ok || runtime->exceptions->active_exception != NULL) {
+        if (plain_stream != NULL) {
+            fclose(plain_stream);
+        }
+        free(path);
+        ptn_string_operand_free(data);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+    if (plain_stream != NULL) {
+        PtnValue result = ptn_file_put_contents_write_plain_stream(runtime, plain_stream, path, data, line);
+        free(path);
+        ptn_string_operand_free(data);
+        return result;
     }
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(path, &zlib_path)) {
@@ -66029,24 +66089,7 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         return ptn_bool(0);
     }
 
-    size_t written = fwrite(data.data, 1, data.len, stream);
-    int failed = written != data.len || fclose(stream) != 0;
-    if (failed) {
-        char detail[192];
-        int needed = snprintf(detail, sizeof(detail), "Failed to write %zu bytes: %s", data.len, strerror(errno));
-        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
-        free(path);
-        ptn_string_operand_free(data);
-        return ptn_bool(0);
-    }
-
-    if (data.len > (size_t)INT64_MAX) {
-        ptn_abort_out_of_memory();
-    }
-    PtnValue result = ptn_int((int64_t)data.len);
+    PtnValue result = ptn_file_put_contents_write_plain_stream(runtime, stream, path, data, line);
     free(path);
     ptn_string_operand_free(data);
     return result;
