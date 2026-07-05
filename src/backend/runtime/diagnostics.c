@@ -3286,6 +3286,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->opcache_file_cache_entries = NULL;
+    runtime->opcache_file_cache_entries_len = 0;
+    runtime->opcache_file_cache_entries_capacity = 0;
     runtime->realpath_cache = NULL;
     runtime->realpath_cache_len = 0;
     runtime->realpath_cache_capacity = 0;
@@ -3337,6 +3340,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
     const char *configured_opcache_enable_cli = getenv("PTN_OPCACHE_ENABLE_CLI");
     const char *configured_opcache_fast_shutdown = getenv("PTN_OPCACHE_FAST_SHUTDOWN");
+    const char *configured_opcache_file_cache = getenv("PTN_OPCACHE_FILE_CACHE");
     const char *configured_opcache_file_cache_only = getenv("PTN_OPCACHE_FILE_CACHE_ONLY");
     const char *configured_opcache_file_update_protection =
         getenv("PTN_OPCACHE_FILE_UPDATE_PROTECTION");
@@ -3441,6 +3445,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_fast_shutdown = ptn_duplicate_string(
         configured_opcache_fast_shutdown == NULL ? "0" : configured_opcache_fast_shutdown
+    );
+    runtime->opcache_file_cache = ptn_duplicate_string(
+        configured_opcache_file_cache == NULL ? "" : configured_opcache_file_cache
     );
     runtime->opcache_file_cache_only = ptn_duplicate_string(
         configured_opcache_file_cache_only == NULL ? "0" : configured_opcache_file_cache_only

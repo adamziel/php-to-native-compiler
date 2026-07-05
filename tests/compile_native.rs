@@ -96998,6 +96998,47 @@ fn phpc_opcache_file_cache_writes_script_artifact() {
 }
 
 #[test]
+fn phpc_opcache_file_cache_cached_state_tracks_compile_and_invalidate() {
+    let root = temp_dir("ptn-phpc-opcache-file-cache-state");
+    fs::create_dir_all(&root).unwrap();
+    let cache_root = root.join("cache");
+    let input = root.join("opcache-file-cache-state.php");
+    let included = root.join("opcache-file-cache-state.inc.php");
+    fs::write(&included, "<?php return 42;").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$file = __DIR__ . '/opcache-file-cache-state.inc.php';\n\
+var_dump(opcache_is_script_cached_in_file_cache($file));\n\
+var_dump(opcache_compile_file($file));\n\
+var_dump(opcache_is_script_cached_in_file_cache($file));\n\
+opcache_invalidate($file, force: true);\n\
+var_dump(opcache_is_script_cached_in_file_cache($file));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg(format!("opcache.file_cache={}", cache_root.display()))
+        .arg("-d")
+        .arg("opcache.file_update_protection=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_preload_method_errors_use_preload_source() {
     let root = temp_dir("ptn-phpc-opcache-preload-method-source");
     fs::create_dir_all(&root).unwrap();

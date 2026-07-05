@@ -24621,6 +24621,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "opcache_get_status"
             | "opcache_invalidate"
             | "opcache_is_script_cached"
+            | "opcache_is_script_cached_in_file_cache"
             | "opcache_jit_blacklist"
             | "opcache_reset"
             | "output_add_rewrite_var"

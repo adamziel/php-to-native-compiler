@@ -271,6 +271,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->opcache_file_cache_entries = NULL;
+    runtime->opcache_file_cache_entries_len = 0;
+    runtime->opcache_file_cache_entries_capacity = 0;
     runtime->realpath_cache = NULL;
     runtime->realpath_cache_len = 0;
     runtime->realpath_cache_capacity = 0;
@@ -1154,6 +1157,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->included_files = NULL;
         runtime->included_files_len = 0;
         runtime->included_files_capacity = 0;
+        for (size_t i = 0; i < runtime->opcache_file_cache_entries_len; i++) {
+            free(runtime->opcache_file_cache_entries[i]);
+        }
+        free(runtime->opcache_file_cache_entries);
+        runtime->opcache_file_cache_entries = NULL;
+        runtime->opcache_file_cache_entries_len = 0;
+        runtime->opcache_file_cache_entries_capacity = 0;
         for (size_t i = 0; i < runtime->realpath_cache_len; i++) {
             free(runtime->realpath_cache[i].path);
             free(runtime->realpath_cache[i].resolved_path);
@@ -1220,6 +1230,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_enable_cli = NULL;
         free(runtime->opcache_fast_shutdown);
         runtime->opcache_fast_shutdown = NULL;
+        free(runtime->opcache_file_cache);
+        runtime->opcache_file_cache = NULL;
         free(runtime->opcache_file_cache_only);
         runtime->opcache_file_cache_only = NULL;
         free(runtime->opcache_file_update_protection);

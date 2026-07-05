@@ -52003,6 +52003,13 @@ impl ValueEmitter {
         out.push_str(" && ptn_opcache_path_exists(");
         out.push_str(&operand_temp);
         out.push_str("));\n");
+        out.push_str("    if (ptn_is_truthy(");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("        ptn_opcache_note_file_cache_operand(&runtime, ");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
         out.push_str("    if (runtime.in_preload && ptn_is_truthy(");
         out.push_str(&result_temp);
         out.push_str(") && ");

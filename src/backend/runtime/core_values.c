@@ -1981,6 +1981,9 @@ struct PtnRuntime {
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;
+    char **opcache_file_cache_entries;
+    size_t opcache_file_cache_entries_len;
+    size_t opcache_file_cache_entries_capacity;
     PtnRealpathCacheEntry *realpath_cache;
     size_t realpath_cache_len;
     size_t realpath_cache_capacity;
@@ -2018,6 +2021,7 @@ struct PtnRuntime {
     char *opcache_enable;
     char *opcache_enable_cli;
     char *opcache_fast_shutdown;
+    char *opcache_file_cache;
     char *opcache_file_cache_only;
     char *opcache_file_update_protection;
     char *opcache_interned_strings_buffer;
