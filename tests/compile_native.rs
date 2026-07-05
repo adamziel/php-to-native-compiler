@@ -71660,6 +71660,91 @@ var_dump(method_exists('Phar', 'mungServer'));
 }
 
 #[test]
+fn compile_phar_tar_hardlink_root_target_to_native_binary() {
+    fn push_tar_entry(
+        out: &mut Vec<u8>,
+        name: &str,
+        typeflag: u8,
+        link_target: Option<&str>,
+        content: &[u8],
+    ) {
+        assert!(name.len() <= 100);
+        if let Some(target) = link_target {
+            assert!(target.len() <= 100);
+        }
+
+        let mut header = [0_u8; 512];
+        header[..name.len()].copy_from_slice(name.as_bytes());
+        header[100..108].copy_from_slice(b"0000666\0");
+        header[124..136].copy_from_slice(format!("{:011o}\0", content.len()).as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[148..156].copy_from_slice(b"        ");
+        header[156] = typeflag;
+        if let Some(target) = link_target {
+            header[157..157 + target.len()].copy_from_slice(target.as_bytes());
+        }
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let padding = (512 - (content.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0).take(padding));
+    }
+
+    let root = temp_dir("ptn-native-phar-tar-hardlink-root-target");
+    fs::create_dir_all(&root).unwrap();
+    let tar_path = root.join("links.tar");
+    let mut tar = Vec::new();
+    push_tar_entry(&mut tar, "testit/", b'5', None, b"");
+    push_tar_entry(&mut tar, "testit/emptyfile", b'0', None, b"");
+    push_tar_entry(&mut tar, "testit/hard", b'0', None, b"hi\n");
+    push_tar_entry(&mut tar, "testit/file", b'1', Some("testit/hard"), b"");
+    push_tar_entry(&mut tar, "testit/link", b'2', Some("file"), b"");
+    tar.extend(std::iter::repeat(0).take(1024));
+    fs::write(&tar_path, tar).unwrap();
+
+    let input = root.join("phar-tar-hardlink-root-target.php");
+    let output = root.join("phar-tar-hardlink-root-target-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$p = new PharData(__DIR__ . '/links.tar');
+var_dump($p['testit/link']->getContent());
+var_dump($p['testit/hard']->getContent());
+var_dump($p['testit/file']->getContent());
+$p['testit/link'] = 'overwriting';
+var_dump($p['testit/link']->getContent());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"hi\n\"\n",
+            "string(3) \"hi\n\"\n",
+            "string(3) \"hi\n\"\n",
+            "string(11) \"overwriting\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_tar_normalized_target_name"));
+    assert!(c_source.contains("ptn_phar_tar_pending_links_resolve"));
+}
+
+#[test]
 fn compile_dynamic_phar_mung_server_empty_array_reports_call_location_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-phar-mung-server-empty-array");
     fs::create_dir_all(&root).unwrap();

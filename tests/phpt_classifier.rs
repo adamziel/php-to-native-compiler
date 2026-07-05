@@ -3631,6 +3631,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\timplemented PHAR tar/zip archive residual row pack"
     );
 
+    let phar_tar_links = classify_at_relative_path(
+        "--TEST--\nphar tar hard and symbolic links\n--EXTENSIONS--\nphar\n--INI--\nphar.require_hash=0\n--FILE--\n<?php\n$p = new PharData(__DIR__ . '/archive.tar');\nvar_dump($p['testit/link']->getContent());\nvar_dump($p['testit/file']->getContent());\n--EXPECT--\n",
+        "ext/phar/tests/tar/links.phpt",
+    );
+    assert_eq!(
+        phar_tar_links.trim_end(),
+        "runnable\timplemented PHAR tar/zip archive residual row pack"
+    );
+
     let phar_open_write_rows = [
         "ext/phar/tests/open_for_write_newfile_c.phpt",
         "ext/phar/tests/tar/open_for_write_newfile_c.phpt",

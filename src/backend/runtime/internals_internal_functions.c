@@ -205143,6 +205143,19 @@ static char *ptn_phar_tar_link_target_name(const char *link_name, const char *ta
     return resolved;
 }
 
+static char *ptn_phar_tar_normalized_target_name(const char *target) {
+    if (target == NULL) {
+        return ptn_duplicate_string("");
+    }
+    while (*target == '/' || *target == '\\') {
+        target++;
+    }
+    while (target[0] == '.' && (target[1] == '/' || target[1] == '\\')) {
+        target += 2;
+    }
+    return ptn_duplicate_string(target);
+}
+
 static void ptn_phar_tar_pending_links_append(
     PtnPharTarPendingLink **links,
     size_t *count,
@@ -205181,10 +205194,21 @@ static void ptn_phar_tar_pending_links_resolve(
     size_t count
 ) {
     for (size_t i = 0; i < count; i++) {
-        char *target_name = ptn_phar_tar_link_target_name(links[i].name, links[i].target);
+        char *target_name = links[i].typeflag == '1'
+            ? ptn_phar_tar_normalized_target_name(links[i].target)
+            : ptn_phar_tar_link_target_name(links[i].name, links[i].target);
         size_t target_index = 0;
-        if (ptn_phar_archive_find_entry_index(archive, target_name, &target_index) &&
-            !ptn_phar_archive_entry_is_dir(&archive->entries[target_index])) {
+        int target_found =
+            ptn_phar_archive_find_entry_index(archive, target_name, &target_index) &&
+            !ptn_phar_archive_entry_is_dir(&archive->entries[target_index]);
+        if (!target_found && links[i].typeflag == '1') {
+            free(target_name);
+            target_name = ptn_phar_tar_link_target_name(links[i].name, links[i].target);
+            target_found =
+                ptn_phar_archive_find_entry_index(archive, target_name, &target_index) &&
+                !ptn_phar_archive_entry_is_dir(&archive->entries[target_index]);
+        }
+        if (target_found) {
             PtnPharArchiveEntry *target = &archive->entries[target_index];
             ptn_phar_archive_add_parent_dirs(archive, links[i].name);
             ptn_phar_archive_set_entry_with_timestamp(

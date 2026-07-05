@@ -3385,6 +3385,7 @@ ptn_phpt_supported_phar_archive_residual_row() {
         ext/phar/tests/tar/rmdir.phpt|\
         ext/phar/tests/tar/tar_nohash.phpt|\
         ext/phar/tests/tar/phar_setdefaultstub.phpt|\
+        ext/phar/tests/tar/links.phpt|\
         ext/phar/tests/tar/links3.phpt|\
         ext/phar/tests/zip/phar_stub_error.phpt|\
         ext/phar/tests/tar/delete_in_phar_b.phpt)
