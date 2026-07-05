@@ -599,7 +599,11 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
         SKIP_SLOW_TESTS:ext/standard/tests/general_functions/usleep_basic.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/network/gethostbyname_basic001.phpt|\
         SKIP_SLOW_TESTS:ext/standard/tests/password/password_hash.phpt|\
-        SKIP_SLOW_TESTS:ext/standard/tests/password/password_removed_salt_option.phpt)
+        SKIP_SLOW_TESTS:ext/standard/tests/password/password_removed_salt_option.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/cp5022x_encoding.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/iso2022jp_2004_encoding.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/iso2022jp_encoding.phpt|\
+        SKIP_SLOW_TESTS:ext/mbstring/tests/other_encodings.phpt)
             return 0
             ;;
     esac
@@ -3489,6 +3493,17 @@ ptn_phpt_supported_soap_verified_skipif_row() {
     esac
 }
 
+ptn_phpt_supported_mbstring_verified_skipif_row() {
+    case "$1" in
+        ext/mbstring/tests/mb_send_mail06.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -3621,6 +3636,8 @@ ptn_phpt_classify_row() {
             modeled_skipif_reason="verified standard stream --SKIPIF-- row forced-runnable on PTN"
         elif ptn_phpt_supported_soap_verified_skipif_row "$rel"; then
             modeled_skipif_reason="verified SOAP --SKIPIF-- row forced-runnable on PTN"
+        elif ptn_phpt_supported_mbstring_verified_skipif_row "$rel"; then
+            modeled_skipif_reason="verified mbstring --SKIPIF-- row forced-runnable on PTN"
         else
             unmodeled_skipif=1
         fi

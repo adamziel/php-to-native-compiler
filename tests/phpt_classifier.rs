@@ -934,6 +934,54 @@ fn phpt_classifier_unlocks_verified_bounded_residual_skipif_rows() {
 }
 
 #[test]
+fn phpt_classifier_unlocks_verified_mbstring_slow_encoding_rows() {
+    let slow = "--TEST--\nverified mbstring slow encoding row\n--EXTENSIONS--\nmbstring\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    for path in [
+        "ext/mbstring/tests/cp5022x_encoding.phpt",
+        "ext/mbstring/tests/iso2022jp_2004_encoding.phpt",
+        "ext/mbstring/tests/iso2022jp_encoding.phpt",
+        "ext/mbstring/tests/other_encodings.phpt",
+    ] {
+        let classification = classify_at_relative_path_with_harness_programs(slow, path);
+        assert!(
+            classification.starts_with("runnable\t") && classification.contains("resource-limit"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let unverified = classify_at_relative_path_with_harness_programs(
+        slow,
+        "ext/mbstring/tests/unverified_encoding.phpt",
+    );
+    assert!(
+        unverified.starts_with("skipif-precondition\t")
+            && unverified.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
+        "{unverified:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_unlocks_verified_mbstring_mail_skipif_row() {
+    let mail = "--TEST--\nverified mbstring mail row\n--EXTENSIONS--\nmbstring\n--SKIPIF--\n<?php\nif (!function_exists('mb_send_mail') || !mb_language('Traditional Chinese')) die('skip mb_send_mail() not available');\nif (!@mb_internal_encoding('BIG5')) die('skip BIG5 encoding is not available on this platform');\n?>\n--INI--\nsendmail_path={MAIL:{PWD}/mail.eml}\nmail.add_x_header=off\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    let classification = classify_at_relative_path_with_harness_programs(
+        mail,
+        "ext/mbstring/tests/mb_send_mail06.phpt",
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("verified mbstring"),
+        "{classification:?}"
+    );
+
+    let adjacent = classify_at_relative_path_with_harness_programs(
+        mail,
+        "ext/mbstring/tests/mb_send_mail07.phpt",
+    );
+    assert!(adjacent.starts_with("harness-skipif\t"), "{adjacent:?}");
+}
+
+#[test]
 fn phpt_classifier_models_root_helper_skipif_preconditions() {
     let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs_and_env(
