@@ -27757,12 +27757,12 @@ fn class_constructor_method<'a>(
             methods
                 .iter()
                 .copied()
-                .find(|method| legacy_constructor_method_matches(method))
+                .find(legacy_constructor_method_matches)
         })
 }
 
 fn legacy_constructor_method_matches(method: &ClassMethodLookupEntry<'_>) -> bool {
-    if method.is_static || method.declaring_class.contains('\\') {
+    if method.is_static || method.declaring_class.contains('\\') || method.has_explicit_visibility {
         return false;
     }
     method.name.eq_ignore_ascii_case(method.declaring_class)

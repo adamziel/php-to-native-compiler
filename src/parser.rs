@@ -4229,6 +4229,7 @@ impl Parser<'_> {
         Ok(MethodDecl {
             name,
             visibility: modifiers.visibility,
+            has_explicit_visibility: modifiers.visibility_span.is_some(),
             trait_name: None,
             trait_method_name: None,
             attributes: attributes.clone(),
@@ -15536,6 +15537,7 @@ fn adapted_original_trait_method_for_class(
         if alias.alias.is_none() {
             if let Some(visibility) = alias.visibility {
                 imported.visibility = visibility;
+                imported.has_explicit_visibility = true;
             }
             if alias.is_final {
                 imported.is_final = true;
@@ -17183,6 +17185,7 @@ fn modeled_internal_method(
         method: MethodDecl {
             name: method_name.to_string(),
             visibility: PropertyVisibility::Public,
+            has_explicit_visibility: true,
             trait_name: None,
             trait_method_name: None,
             attributes: AttributeMetadata::default(),

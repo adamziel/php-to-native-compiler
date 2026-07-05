@@ -61456,7 +61456,9 @@ echo \"\\n\";\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_intl_message_find_matching_brace"));
     assert!(c_source.contains("ptn_internal_msgfmt_parse"));
-    assert!(c_source.contains("ptn_declared_class_is_same_or_descendant(source->class_name, \"MessageFormatter\")"));
+    assert!(c_source.contains(
+        "ptn_declared_class_is_same_or_descendant(source->class_name, \"MessageFormatter\")"
+    ));
 }
 
 #[test]
@@ -71343,7 +71345,8 @@ fn compile_phar_readfile_and_dotdot_entry_lookup_to_native_binary() {
     let input = root.join("readfile-dotdot.phar.php");
     let output = root.join("readfile-dotdot-bin");
 
-    let index = b"<?php readfile(\"dir/file1.txt\"); readfile(\"file1.txt\", true); include \"b/c.php\";";
+    let index =
+        b"<?php readfile(\"dir/file1.txt\"); readfile(\"file1.txt\", true); include \"b/c.php\";";
     let nested = b"<?php include \"../d\";";
     let dotdot_target = b"<?php echo \"in d\\n\";";
     let text = b"hi";
@@ -111683,8 +111686,16 @@ class OldStyleName {
     }
 }
 
+class Test {
+    public function test() {
+        echo \"case\\n\";
+    }
+}
+
 new OldStyleName();
+new Test();
 echo \"ok\\n\";
+(new Test())->test();
 ",
     )
     .unwrap();
@@ -111698,7 +111709,7 @@ echo \"ok\\n\";
         execution.status.code(),
         String::from_utf8_lossy(&execution.stderr)
     );
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\ncase\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

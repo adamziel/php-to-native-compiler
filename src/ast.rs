@@ -225,6 +225,7 @@ pub struct ClassConstantDecl {
 pub struct MethodDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub has_explicit_visibility: bool,
     pub trait_name: Option<String>,
     pub trait_method_name: Option<String>,
     pub attributes: AttributeMetadata,
