@@ -63973,6 +63973,57 @@ echo '/n:foo/n:bar=', count($xpath->query('/n:foo/n:bar')), "\n";
 }
 
 #[test]
+fn compile_dom_element_set_attribute_returns_null_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-element-set-attribute-returns-null");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-element-set-attribute-returns-null.php");
+    let output = root.join("dom-element-set-attribute-returns-null-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$root = $doc->appendChild($doc->createElement('root'));
+var_dump($root->setAttribute('id', 'a'));
+var_dump($root->getAttribute('id'));
+var_dump($root->setAttribute('id', 'b'));
+var_dump($root->getAttribute('id'));
+var_dump($root->setAttributeNS('urn:x', 'x:id', 'c'));
+var_dump($root->getAttributeNS('urn:x', 'id'));
+echo $root->setAttributeNS('urn:x', 'x:id', 'd') . "after\n";
+var_dump($root->getAttributeNS('urn:x', 'id'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "string(1) \"a\"\n",
+            "NULL\n",
+            "string(1) \"b\"\n",
+            "NULL\n",
+            "string(1) \"c\"\n",
+            "after\n",
+            "string(1) \"d\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_set_attribute_method"));
+}
+
+#[test]
 fn compile_dom_legacy_null_comment_and_direct_namespace_insertion_to_native_binary() {
     let root = temp_dir("ptn-native-dom-legacy-null-comment-direct-namespace");
     fs::create_dir_all(&root).unwrap();

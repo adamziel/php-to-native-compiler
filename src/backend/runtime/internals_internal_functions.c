@@ -185824,7 +185824,7 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
             ptn_string_operand_free(namespace_uri);
             ptn_string_operand_free(name);
             ptn_string_operand_free(value);
-            return ptn_xml_node_value_for_runtime(runtime, existing);
+            return ptn_null();
         }
     }
     PtnXmlNode *attr = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "", "");
@@ -185856,7 +185856,7 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(name);
     ptn_string_operand_free(value);
-    return ptn_xml_node_value_for_runtime(runtime, attr);
+    return ptn_null();
 }
 
 static PtnValue ptn_dom_set_attribute_node_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line, int ns) {
