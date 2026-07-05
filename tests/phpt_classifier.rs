@@ -281,6 +281,54 @@ fn phpt_classifier_supports_plain_zend_test_extension_rows() {
 }
 
 #[test]
+fn phpt_classifier_splits_current_unavailable_extension_rows() {
+    let cases = [
+        (
+            "ext/standard/tests/array/array_sum_variation9.phpt",
+            "--TEST--\ngmp array sum\n--EXTENSIONS--\ngmp\n--FILE--\n<?php\n$input = [gmp_init(25), gmp_init(6)];\nvar_dump(array_sum($input));\n--EXPECT--\n",
+            "unsupported-gmp-extension\trequires GMP extension objects/classes/functions not modeled by the PTN runtime; modeled extensions: ",
+        ),
+        (
+            "Zend/tests/temporary_cleaning/temporary_cleaning_014.phpt",
+            "--TEST--\ngmp temporary cleaning\n--EXTENSIONS--\ngmp\n--FILE--\n<?php\nnew GMP;\n--EXPECT--\n",
+            "unsupported-gmp-extension\trequires GMP extension objects/classes/functions not modeled by the PTN runtime; modeled extensions: ",
+        ),
+        (
+            "ext/standard/tests/array/array_sum_objects_operation_no_cast_FFI.phpt",
+            "--TEST--\nffi array sum\n--EXTENSIONS--\nffi\n--FILE--\n<?php\n$x = FFI::cdef()->new(\"int[2]\");\nvar_dump(array_sum([$x, 1]));\n--EXPECTF--\n",
+            "unsupported-ffi-extension\trequires FFI CData/native-memory extension API not modeled by the PTN runtime; modeled extensions: ",
+        ),
+        (
+            "ext/xsl/tests/XSLTProcessor_callables.phpt",
+            "--TEST--\nxsl callables\n--EXTENSIONS--\nxsl\n--FILE--\n<?php\n$proc = new XSLTProcessor();\n$proc->registerPHPFunctions();\n--EXPECT--\n",
+            "unsupported-xsl-extension\trequires XSLTProcessor/libxslt integration and PHP callback bridge not modeled by the PTN runtime; modeled extensions: ",
+        ),
+        (
+            "ext/ftp/tests/gh10521.phpt",
+            "--TEST--\nftp client\n--EXTENSIONS--\nftp\npcntl\n--FILE--\n<?php\nftp_connect('127.0.0.1');\n--EXPECT--\n",
+            "unsupported-ftp-extension\trequires FTP extension client API not modeled by the PTN runtime; modeled extensions: ",
+        ),
+    ];
+
+    for (row, source, expected_prefix) in cases {
+        let classification = classify_at_relative_path(source, row);
+        assert!(
+            classification.starts_with(expected_prefix),
+            "{row}: {classification:?}"
+        );
+    }
+
+    let unknown_extension = classify(
+        "--TEST--\nunknown extension fallback\n--EXTENSIONS--\nimagick\n--FILE--\n<?php\n--EXPECT--\n",
+    );
+    assert!(
+        unknown_extension
+            .starts_with("unsupported-extension\trequires unavailable PTN extension imagick;"),
+        "{unknown_extension:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_supports_modeled_do_operation_no_cast_row() {
     let classification = classify_at_relative_path(
         "--TEST--\nDoOperationNoCast modeled helper\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\n$a = new DoOperationNoCast(25);\n$b = new DoOperationNoCast(6);\nvar_dump($a + $b);\n--EXPECT--\n",

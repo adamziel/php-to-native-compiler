@@ -1644,6 +1644,37 @@ ptn_phpt_first_unsupported_extension() {
     return 1
 }
 
+ptn_phpt_unavailable_extension_classification() {
+    local extension=$1
+    local extension_lc
+    extension_lc=$(ptn_phpt_lower "$extension")
+    local supported
+    supported=$(ptn_phpt_supported_extensions)
+
+    case "$extension_lc" in
+        gmp)
+            printf 'unsupported-gmp-extension\trequires GMP extension objects/classes/functions not modeled by the PTN runtime; modeled extensions: %s\n' \
+                "$supported"
+            ;;
+        ffi)
+            printf 'unsupported-ffi-extension\trequires FFI CData/native-memory extension API not modeled by the PTN runtime; modeled extensions: %s\n' \
+                "$supported"
+            ;;
+        xsl)
+            printf 'unsupported-xsl-extension\trequires XSLTProcessor/libxslt integration and PHP callback bridge not modeled by the PTN runtime; modeled extensions: %s\n' \
+                "$supported"
+            ;;
+        ftp)
+            printf 'unsupported-ftp-extension\trequires FTP extension client API not modeled by the PTN runtime; modeled extensions: %s\n' \
+                "$supported"
+            ;;
+        *)
+            printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
+                "$extension" "$supported"
+            ;;
+    esac
+}
+
 ptn_phpt_requires_zend_test_native_helper() {
     local row=$1
     local path=$2
@@ -4038,15 +4069,13 @@ ptn_phpt_classify_row() {
     sections=$(ptn_phpt_sections_csv "$path")
 
     if value=$(ptn_phpt_first_unsupported_path_extension "$rel"); then
-        printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
-            "$value" "$(ptn_phpt_supported_extensions)"
+        ptn_phpt_unavailable_extension_classification "$value"
         return 0
     fi
 
     if ptn_phpt_csv_contains_ci "EXTENSIONS" "$sections" || ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
         if value=$(ptn_phpt_first_unsupported_extension "$rel" "$path"); then
-            printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
-                "$value" "$(ptn_phpt_supported_extensions)"
+            ptn_phpt_unavailable_extension_classification "$value"
             return 0
         fi
     fi

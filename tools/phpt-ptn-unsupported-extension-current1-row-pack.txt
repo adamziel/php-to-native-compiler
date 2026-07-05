@@ -1,0 +1,10 @@
+# Unsupported-extension dashboard split row pack, 2026-07-05.
+# Source: .runtime/phpt-dashboard-current/exclusions.tsv current unsupported-extension rows.
+ext/standard/tests/array/array_product_variation6.phpt
+ext/standard/tests/array/array_sum_objects_operation_no_cast_FFI.phpt
+ext/standard/tests/array/array_sum_variation9.phpt
+Zend/tests/temporary_cleaning/temporary_cleaning_014.phpt
+ext/xsl/tests/XSLTProcessor_callables.phpt
+ext/xsl/tests/XSLTProcessor_callables_errors.phpt
+ext/xsl/tests/XSLTProcessor_namespace_mapper_lifetime.phpt
+ext/ftp/tests/gh10521.phpt
