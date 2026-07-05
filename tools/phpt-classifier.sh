@@ -2813,11 +2813,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/clone\/clone_with_00[3-5][.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/clone\/clone_with_012[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(direct_hook_call|explicit_set_value_parameter|get(_type_check)?|isset|object_in_hook|parameter_attributes|set|unset)[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/property_hooks\/get_by_ref_(backed|implemented_by_plain|implemented_by_val|virtual)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/get_by_ref_(auto|backed|implemented_by_plain|implemented_by_val|virtual)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/interface_get_(by_ref_(backed|plain|virtual)|value_as_ref)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(backed_implicit_(get|set)|bug005|default_on_hooks|explicit_(iter|set_value_parameter_type)|field_(assign|guard)|find_property_usage|foreach_002)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(bug006|final|gh(15456|15644|16185|16725|17234|18000|18268|20270)|gh19044-[1-6]|inheritance|invalid_abstract|override_(add_(get|set|get_contravariant|set_covariant)|attribute_(fail|plain|virtual)|default_value)|protected_to_public|set_value_parameter_type_variance_00[12357]|traits(_conflict)?|type_compatibility(_invalid(_2)?)?)[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/property_hooks\/parent_(get(_ci)?|set_plain_zpp|superfluous_args|syntax)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/parent_(get(_ci)?|get_plain_untyped_uninitialized|in_different_(hook|property)|set_plain_zpp|superfluous_args|syntax)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(magic_interaction|unserialize)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/override_(attribute_backed|by_plain_prop)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/lazy_objects\/(unset_hook|isset_hooked_may_not_initialize)[.]phpt$/ ||

@@ -1,0 +1,12 @@
+# Reflection/property-hook residual rows from the 2026-07-05 dashboard.
+# These exercise already-modeled hook accessors and parent-hook fallback checks.
+# Not included here: read_sibling_backing_value.phpt,
+# backed_delegated_read_write.phpt, and virtual_read_write.phpt. Those rows are
+# gated on zend_test_zend_call_stack_get() and stack-recursion preconditions, so
+# they belong to the skipif/precondition lane rather than this metadata lane.
+# Verify with:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-reflection-property-hook-current1-row-pack.txt
+Zend/tests/property_hooks/get_by_ref_auto.phpt
+Zend/tests/property_hooks/parent_get_plain_untyped_uninitialized.phpt
+Zend/tests/property_hooks/parent_in_different_hook.phpt
+Zend/tests/property_hooks/parent_in_different_property.phpt

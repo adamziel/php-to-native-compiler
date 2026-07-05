@@ -2409,6 +2409,10 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nby-ref get hook\n--FILE--\n<?php\nclass Test { private $_prop; public $prop { &get => $this->_prop; } }\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/property_hooks/get_by_ref_auto.phpt",
+            "--TEST--\nby-value hooked property indirect write\n--FILE--\n<?php\nclass Test { public $byVal { get { return []; } } }\n$test = new Test; $test->byVal[] = 42;\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/get_by_ref_implemented_by_val.phpt",
             "--TEST--\nby-ref get contract\n--FILE--\n<?php\ninterface I { public $prop { &get; } } class A implements I { public $prop { get => $this->prop; } }\n--EXPECTF--\n",
         ),
@@ -2469,8 +2473,20 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nparent hook get\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => parent::$x::get(); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
         ),
         (
+            "Zend/tests/property_hooks/parent_get_plain_untyped_uninitialized.phpt",
+            "--TEST--\nparent hook plain property fallback\n--FILE--\n<?php\nclass P { public $prop; }\nclass C extends P { public $prop { get => parent::$prop::get(); } }\nvar_dump((new C())->prop);\n--EXPECT--\nNULL\n",
+        ),
+        (
             "Zend/tests/property_hooks/parent_get_ci.phpt",
             "--TEST--\nparent hook get case-insensitive\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => PARENT::$x::GET(); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_in_different_hook.phpt",
+            "--TEST--\nparent hook wrong hook context\n--FILE--\n<?php\nclass A { public $foo { set { parent::$foo::get(); } } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_in_different_property.phpt",
+            "--TEST--\nparent hook wrong property context\n--FILE--\n<?php\nclass A { public $foo { get { return parent::$bar::get(); } } }\n--EXPECTF--\n",
         ),
         (
             "Zend/tests/property_hooks/parent_set_plain_zpp.phpt",

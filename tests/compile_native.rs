@@ -110776,6 +110776,75 @@ var_dump($bag);
 }
 
 #[test]
+fn compile_property_hook_dashboard_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-dashboard-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-dashboard-residuals.php");
+    let output = root.join("property-hook-dashboard-residuals-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public $byVal { get { return []; } }
+}
+
+$test = new Test;
+try {
+    $test->byVal[] = 42;
+} catch (\\Error $e) {
+    echo get_class($e) . ': ' . $e->getMessage() . \"\\n\";
+}
+var_dump($test->byVal);
+
+try {
+    $test->byVal =& $ref;
+} catch (Error $e) {
+    echo get_class($e) . ': ' . $e->getMessage() . \"\\n\";
+}
+
+class P {
+    public $prop;
+}
+
+class C extends P {
+    public $prop {
+        get => parent::$prop::get();
+    }
+}
+
+$c = new C();
+var_dump($c->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Indirect modification of Test::$byVal is not allowed\n",
+            "array(0) {\n",
+            "}\n",
+            "Error: Cannot assign by reference to overloaded object\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_indirect_write"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+}
+
+#[test]
 fn compile_property_hook_debug_materialization_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-debug-materialization");
     fs::create_dir_all(&root).unwrap();
