@@ -459,6 +459,57 @@ ptn_phpt_eval_int_condition() {
     esac
 }
 
+ptn_phpt_compare_numeric_versions() {
+    local actual=$1
+    local expected=$2
+
+    [[ "$actual" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+    [[ "$expected" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+
+    local old_ifs=$IFS
+    local -a actual_parts=()
+    local -a expected_parts=()
+    IFS=.
+    read -r -a actual_parts <<< "$actual"
+    read -r -a expected_parts <<< "$expected"
+    IFS=$old_ifs
+
+    local count=${#actual_parts[@]}
+    if [[ "${#expected_parts[@]}" -gt "$count" ]]; then
+        count=${#expected_parts[@]}
+    fi
+
+    local i
+    local actual_part
+    local expected_part
+    for ((i = 0; i < count; i++)); do
+        actual_part=${actual_parts[$i]:-0}
+        expected_part=${expected_parts[$i]:-0}
+        actual_part=$((10#$actual_part))
+        expected_part=$((10#$expected_part))
+        if [[ "$actual_part" -lt "$expected_part" ]]; then
+            printf -- '-1\n'
+            return 0
+        fi
+        if [[ "$actual_part" -gt "$expected_part" ]]; then
+            printf '1\n'
+            return 0
+        fi
+    done
+
+    printf '0\n'
+}
+
+ptn_phpt_eval_version_compare_zero_condition() {
+    local actual=$1
+    local op=$2
+    local expected=$3
+    local comparison
+
+    comparison=$(ptn_phpt_compare_numeric_versions "$actual" "$expected") || return 1
+    ptn_phpt_eval_int_condition "$comparison" "$op" 0
+}
+
 ptn_phpt_php_int_max() {
     if [[ "$(ptn_phpt_php_int_size)" -ge 8 ]]; then
         printf '9223372036854775807\n'
@@ -556,6 +607,77 @@ ptn_phpt_default_runnable_resource_limit_skipif() {
     return 1
 }
 
+ptn_phpt_supported_intl_icu_version_skipif_row() {
+    case "$1" in
+        ext/intl/tests/msgfmt_format_simple_types_numeric_strings_icu72-1.phpt|\
+        ext/intl/tests/locale_filter_matches_icu70.phpt|\
+        ext/intl/tests/locale_get_display_language2.phpt|\
+        ext/intl/tests/locale_lookup_variant3.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+ptn_phpt_supported_spoofchecker_class_skipif_row() {
+    case "$1" in
+        ext/intl/tests/spoofchecker_003.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+ptn_phpt_supported_sqlite3_version_skipif_row() {
+    case "$1" in
+        ext/sqlite3/tests/sqlite3_rename_column.phpt)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+ptn_phpt_intl_icu_version() {
+    if [[ -n "${PTN_PHPT_INTL_ICU_VERSION:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_INTL_ICU_VERSION"
+        return 0
+    fi
+
+    local repo_root
+    local value
+    repo_root=$(ptn_phpt_repo_root)
+    value=$(sed -nE 's/^#define[[:space:]]+PTN_INTL_ICU_VERSION[[:space:]]+"([^"]+)".*/\1/p' \
+        "$repo_root/src/backend/runtime/core_values.c" 2>/dev/null | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    printf '0\n'
+}
+
+ptn_phpt_sqlite3_version_number() {
+    if [[ -n "${PTN_PHPT_SQLITE3_VERSION_NUMBER:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_SQLITE3_VERSION_NUMBER"
+        return 0
+    fi
+
+    local repo_root
+    local value
+    repo_root=$(ptn_phpt_repo_root)
+    value=$(sed -nE 's/.*ptn_array_string_key\("versionNumber"\)[^0-9]+ptn_int\(([0-9]+)\).*/\1/p' \
+        "$repo_root/src/backend/runtime/internals_internal_functions.c" 2>/dev/null | head -n 1)
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    printf '0\n'
+}
+
 ptn_phpt_supported_recursive_fiber_resource_limit_row() {
     case "$1" in
         Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt|\
@@ -566,6 +688,32 @@ ptn_phpt_supported_recursive_fiber_resource_limit_row() {
             return 1
             ;;
     esac
+}
+
+ptn_phpt_normalized_class_name() {
+    local value
+    value=$(ptn_phpt_trim "$1")
+    value=${value#\\}
+    ptn_phpt_lower "$value"
+}
+
+ptn_phpt_modeled_class_exists() {
+    local class_name
+    class_name=$(ptn_phpt_normalized_class_name "$1")
+    [[ -n "$class_name" ]] || return 1
+
+    if [[ -v PTN_PHPT_AVAILABLE_CLASSES ]]; then
+        ptn_phpt_csv_contains_ci "$class_name" "$PTN_PHPT_AVAILABLE_CLASSES"
+        return $?
+    fi
+
+    case "$class_name" in
+        spoofchecker)
+            return 0
+            ;;
+    esac
+
+    return 1
 }
 
 ptn_phpt_php_constant_defined() {
@@ -673,7 +821,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|function_exists|class_exists|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|INTL_ICU_VERSION|SQLite3|version|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
@@ -693,6 +841,9 @@ ptn_phpt_modeled_skipif_precondition() {
     local setlocale_count
     local defined_count
     local function_exists_count
+    local class_exists_count
+    local intl_icu_version_compare_count
+    local sqlite3_version_count
     local in_array_count
     local stream_get_filters_count
     local include_count
@@ -708,6 +859,9 @@ ptn_phpt_modeled_skipif_precondition() {
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
     defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
     function_exists_count=$(ptn_phpt_count_matches 'function_exists[[:space:]]*\(' "$code_without_strings")
+    class_exists_count=$(ptn_phpt_count_matches 'class_exists[[:space:]]*\(' "$code_without_strings")
+    intl_icu_version_compare_count=$(ptn_phpt_count_matches 'version_compare[[:space:]]*\([[:space:]]*INTL_ICU_VERSION' "$code_without_strings")
+    sqlite3_version_count=$(ptn_phpt_count_matches 'SQLite3::version[[:space:]]*\(' "$code_without_strings")
     in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
     stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
@@ -826,6 +980,52 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("PHP_INT_MAX")
     fi
     [[ "$php_int_max_count" -eq "$parsed_int_max_count" ]] || return 1
+
+    local intl_icu_condition_lines
+    local parsed_intl_icu_count=0
+    intl_icu_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "version_compare[[:space:]]*\\([[:space:]]*INTL_ICU_VERSION[[:space:]]*,[[:space:]]*['\"][0-9]+([.][0-9]+)*['\"][[:space:]]*\\)[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*0" \
+        || true)
+    if [[ -n "$intl_icu_condition_lines" ]]; then
+        ptn_phpt_supported_intl_icu_version_skipif_row "$rel" || return 1
+        local intl_icu_version
+        intl_icu_version=$(ptn_phpt_intl_icu_version)
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*0/\\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E "s/.*['\"]([0-9]+([.][0-9]+)*)['\"].*/\\1/")
+            parsed_intl_icu_count=$((parsed_intl_icu_count + 1))
+            if ptn_phpt_eval_version_compare_zero_condition "$intl_icu_version" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- INTL_ICU_VERSION guard skips when version_compare(INTL_ICU_VERSION, %s) %s 0; modeled INTL_ICU_VERSION=%s\n' \
+                    "$expected" "$op" "$intl_icu_version"
+                return 0
+            fi
+        done <<< "$intl_icu_condition_lines"
+        modeled_families+=("INTL_ICU_VERSION")
+    fi
+    [[ "$intl_icu_version_compare_count" -eq "$parsed_intl_icu_count" ]] || return 1
+
+    local sqlite3_version_condition_lines
+    local parsed_sqlite3_version_count=0
+    sqlite3_version_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "SQLite3::version[[:space:]]*\\([[:space:]]*\\)[[:space:]]*\\[[[:space:]]*['\"]versionNumber['\"][[:space:]]*\\][[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*[0-9]+" \
+        || true)
+    if [[ -n "$sqlite3_version_condition_lines" ]]; then
+        ptn_phpt_supported_sqlite3_version_skipif_row "$rel" || return 1
+        local sqlite3_version_number
+        sqlite3_version_number=$(ptn_phpt_sqlite3_version_number)
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E "s/.*[[:space:]](===|!==|==|!=|<=|>=|<|>)[[:space:]]*[0-9]+/\\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E 's/.*[[:space:]](===|!==|==|!=|<=|>=|<|>)[[:space:]]*([0-9]+)/\2/')
+            parsed_sqlite3_version_count=$((parsed_sqlite3_version_count + 1))
+            if ptn_phpt_eval_int_condition "$sqlite3_version_number" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- SQLite3::version()["versionNumber"] guard skips when versionNumber %s %s; modeled versionNumber=%s\n' \
+                    "$op" "$expected" "$sqlite3_version_number"
+                return 0
+            fi
+        done <<< "$sqlite3_version_condition_lines"
+        modeled_families+=("SQLite3-version")
+    fi
+    [[ "$sqlite3_version_count" -eq "$parsed_sqlite3_version_count" ]] || return 1
 
     local string_condition_lines
     local parsed_os_family_count=0
@@ -1007,6 +1207,34 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$function_exists_count" -eq "$parsed_function_exists_count" ]] || return 1
 
+    local class_exists_condition_lines
+    local parsed_class_exists_count=0
+    class_exists_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "!?[[:space:]]*class_exists[[:space:]]*\\([[:space:]]*['\"][^'\"]+['\"][[:space:]]*\\)" \
+        || true)
+    if [[ -n "$class_exists_condition_lines" ]]; then
+        ptn_phpt_supported_spoofchecker_class_skipif_row "$rel" || return 1
+        while IFS= read -r condition; do
+            local class_name
+            class_name=$(printf '%s\n' "$condition" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            class_name=$(ptn_phpt_normalized_class_name "$class_name")
+            [[ "$class_name" == "spoofchecker" ]] || return 1
+            parsed_class_exists_count=$((parsed_class_exists_count + 1))
+
+            if printf '%s\n' "$condition" | grep -Eq '^[[:space:]]*!'; then
+                if ! ptn_phpt_modeled_class_exists "$class_name"; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- class availability guard requires %s; modeled PTN classes leave it unavailable\n' "$class_name"
+                    return 0
+                fi
+            elif ptn_phpt_modeled_class_exists "$class_name"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- class availability guard skips when %s is available in modeled PTN classes\n' "$class_name"
+                return 0
+            fi
+        done <<< "$class_exists_condition_lines"
+        modeled_families+=("class-exists")
+    fi
+    [[ "$class_exists_count" -eq "$parsed_class_exists_count" ]] || return 1
+
     local parsed_stream_filter_count=0
     if [[ "$stream_get_filters_count" -gt 0 || "$in_array_count" -gt 0 ]]; then
         [[ "$stream_get_filters_count" -eq 1 && "$in_array_count" -eq 1 ]] || return 1
@@ -1074,7 +1302,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_stream_filter_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_intl_icu_count + parsed_sqlite3_version_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_function_exists_count + parsed_class_exists_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1

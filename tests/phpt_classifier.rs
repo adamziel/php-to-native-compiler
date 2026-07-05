@@ -25,6 +25,14 @@ fn classify_at_relative_path_with_harness_programs(body: &str, relative_path: &s
     classify_at_relative_path_with_options(body, relative_path, true)
 }
 
+fn classify_at_relative_path_with_harness_programs_and_env(
+    body: &str,
+    relative_path: &str,
+    env: &[(&str, &str)],
+) -> String {
+    classify_at_relative_path_with_options_and_files_and_env(body, relative_path, true, &[], env)
+}
+
 fn classify_at_relative_path_with_files(
     body: &str,
     relative_path: &str,
@@ -46,6 +54,22 @@ fn classify_at_relative_path_with_options_and_files(
     relative_path: &str,
     harness_programs: bool,
     extra_files: &[(&str, &str)],
+) -> String {
+    classify_at_relative_path_with_options_and_files_and_env(
+        body,
+        relative_path,
+        harness_programs,
+        extra_files,
+        &[],
+    )
+}
+
+fn classify_at_relative_path_with_options_and_files_and_env(
+    body: &str,
+    relative_path: &str,
+    harness_programs: bool,
+    extra_files: &[(&str, &str)],
+    env: &[(&str, &str)],
 ) -> String {
     let root = temp_dir("ptn-phpt-classifier-path");
     let phpt = root.join(relative_path);
@@ -69,6 +93,9 @@ fn classify_at_relative_path_with_options_and_files(
         "PTN_PHPT_PHP_ZTS",
         "PTN_PHPT_EFFECTIVE_UID",
         "PTN_PHPT_DEFINED_CONSTANTS",
+        "PTN_PHPT_AVAILABLE_CLASSES",
+        "PTN_PHPT_INTL_ICU_VERSION",
+        "PTN_PHPT_SQLITE3_VERSION_NUMBER",
         "PTN_PHPT_RUN_SLOW_TESTS",
         "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
@@ -88,6 +115,9 @@ fn classify_at_relative_path_with_options_and_files(
     }
     if harness_programs {
         command.env("PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS", "1");
+    }
+    for (key, value) in env {
+        command.env(key, value);
     }
     let output = command
         .arg("-c")
@@ -172,6 +202,9 @@ fn classify_with_options(
         "PTN_PHPT_PHP_ZTS",
         "PTN_PHPT_EFFECTIVE_UID",
         "PTN_PHPT_DEFINED_CONSTANTS",
+        "PTN_PHPT_AVAILABLE_CLASSES",
+        "PTN_PHPT_INTL_ICU_VERSION",
+        "PTN_PHPT_SQLITE3_VERSION_NUMBER",
         "PTN_PHPT_RUN_SLOW_TESTS",
         "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
@@ -539,6 +572,113 @@ fn phpt_classifier_models_static_skipif_preconditions() {
     assert!(
         classification.starts_with("skipif-precondition\t")
             && classification.contains("locale availability guard"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_unlocks_verified_intl_and_sqlite_static_skipif_rows() {
+    for (path, minimum) in [
+        (
+            "ext/intl/tests/msgfmt_format_simple_types_numeric_strings_icu72-1.phpt",
+            "72.1",
+        ),
+        ("ext/intl/tests/locale_filter_matches_icu70.phpt", "70.1"),
+        ("ext/intl/tests/locale_get_display_language2.phpt", "68.1"),
+        ("ext/intl/tests/locale_lookup_variant3.phpt", "67.1"),
+    ] {
+        let intl_min = format!(
+            "--TEST--\nintl icu version\n--SKIPIF--\n<?php if (version_compare(INTL_ICU_VERSION, '{minimum}') < 0) die('skip for ICU >= {minimum}'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n"
+        );
+        let classification = classify_at_relative_path_with_harness_programs_and_env(
+            &intl_min,
+            path,
+            &[("PTN_PHPT_INTL_ICU_VERSION", "73.2")],
+        );
+        assert!(
+            classification.starts_with("runnable\t") && classification.contains("INTL_ICU_VERSION"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let intl_min = "--TEST--\nintl icu version\n--SKIPIF--\n<?php if (version_compare(INTL_ICU_VERSION, '72.1') < 0) die('skip for ICU >= 72.1'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        intl_min,
+        "ext/intl/tests/msgfmt_format_simple_types_numeric_strings_icu72-1.phpt",
+        &[("PTN_PHPT_INTL_ICU_VERSION", "71.1")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("INTL_ICU_VERSION guard"),
+        "{classification:?}"
+    );
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        intl_min,
+        "ext/intl/tests/unverified_icu_version.phpt",
+        &[("PTN_PHPT_INTL_ICU_VERSION", "73.2")],
+    );
+    assert!(
+        classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+
+    let spoofchecker = "--TEST--\nspoofchecker\n--SKIPIF--\n<?php if(!class_exists(\"Spoofchecker\")) print 'skip'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        spoofchecker,
+        "ext/intl/tests/spoofchecker_003.phpt",
+        &[("PTN_PHPT_AVAILABLE_CLASSES", "Spoofchecker")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("class-exists"),
+        "{classification:?}"
+    );
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        spoofchecker,
+        "ext/intl/tests/spoofchecker_003.phpt",
+        &[("PTN_PHPT_AVAILABLE_CLASSES", "")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("class availability guard"),
+        "{classification:?}"
+    );
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        spoofchecker,
+        "ext/intl/tests/spoofchecker_006.phpt",
+        &[("PTN_PHPT_AVAILABLE_CLASSES", "Spoofchecker")],
+    );
+    assert!(
+        classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+
+    let sqlite = "--TEST--\nsqlite version\n--SKIPIF--\n<?php\nif (SQLite3::version()['versionNumber'] < 3025000) {\n    die(\"skip: sqlite3 library version < 3.25: no support for rename column\");\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        sqlite,
+        "ext/sqlite3/tests/sqlite3_rename_column.phpt",
+        &[("PTN_PHPT_SQLITE3_VERSION_NUMBER", "3045000")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("SQLite3-version"),
+        "{classification:?}"
+    );
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        sqlite,
+        "ext/sqlite3/tests/sqlite3_rename_column.phpt",
+        &[("PTN_PHPT_SQLITE3_VERSION_NUMBER", "3024000")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("SQLite3::version"),
+        "{classification:?}"
+    );
+    let classification = classify_at_relative_path_with_harness_programs_and_env(
+        sqlite,
+        "ext/sqlite3/tests/sqlite3_defensive.phpt",
+        &[("PTN_PHPT_SQLITE3_VERSION_NUMBER", "3045000")],
+    );
+    assert!(
+        classification.starts_with("harness-skipif\t"),
         "{classification:?}"
     );
 }
