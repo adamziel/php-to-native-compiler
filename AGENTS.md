@@ -19,8 +19,9 @@ Rules:
   instead of streaming large outputs into the interactive session.
 - Do not use broad process dumps while PHPT corpus jobs are running. In
   particular, never run `pgrep -af run-tests.php`, `ps -ef | grep run-tests`,
-  or equivalent commands that can print full PHPT argument lists; those lists
-  are large enough to destabilize the interactive Codex session. Use
+  `ps -eo ... cmd`, or equivalent commands that can print full PHPT argument
+  lists; those lists are large enough to destabilize the interactive Codex
+  session. Use
   `tools/phpt-safe-status.sh`, targeted tmux status checks, `status.tsv`, and
   bounded log tails instead.
 - Use stable Rust unless a documented reason says otherwise.

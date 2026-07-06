@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -338,28 +337,29 @@ def current_row_statuses(summaries: list[Summary]) -> dict[str, RowStatus]:
 
 
 def active_runs() -> list[str]:
-    try:
-        completed = subprocess.run(
-            ["ps", "-eo", "pid,ppid,stat,etime,cmd"],
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError:
+    root = Path(os.environ.get("PTN_DETACHED_CHECK_ROOT", ".runtime/detached-checks"))
+    if not root.is_dir():
         return []
-    lines = []
-    for line in completed.stdout.splitlines():
-        if "run-bounded-phpt.sh" in line or "run-tests.php" in line:
-            if "phpt-dashboard.py" not in line:
-                compact = line.strip()
-                manifest = re.search(r"tools/(phpt-[^ ]+)", compact)
-                if manifest:
-                    compact = f"{compact[:80]} ... tools/{manifest.group(1)}"
-                elif len(compact) > 180:
-                    compact = compact[:177] + "..."
-                lines.append(compact)
-    return lines
+
+    runs: list[tuple[float, str]] = []
+    for status_path in root.glob("*/status.tsv"):
+        values: dict[str, str] = {}
+        try:
+            for line in status_path.read_text(encoding="utf-8").splitlines():
+                key, sep, value = line.partition("\t")
+                if sep:
+                    values[key] = value
+        except OSError:
+            continue
+        if values.get("state") != "running":
+            continue
+        try:
+            mtime = status_path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        started = values.get("started_at_utc", "")
+        runs.append((mtime, f"{status_path.parent.name}\tstarted={started}"))
+    return [line for _, line in sorted(runs, reverse=True)]
 
 
 def write_tsv(path: Path, header: list[str], rows: Iterable[Iterable[object]]) -> None:
