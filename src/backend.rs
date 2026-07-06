@@ -29083,13 +29083,13 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        return;\n");
     out.push_str("    }\n");
     out.push_str("    if (!capture_handler_exception) {\n");
-    out.push_str("        ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+    out.push_str("        ptn_emit_runtime_deprecation(runtime, message, line);\n");
     out.push_str("        return;\n");
     out.push_str("    }\n");
     out.push_str("    PtnTryFrame ptn_callable_deprecation_frame;\n");
     out.push_str("    ptn_try_frame_push(runtime, &ptn_callable_deprecation_frame);\n");
     out.push_str("    if (setjmp(ptn_callable_deprecation_frame.jump) == 0) {\n");
-    out.push_str("        ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+    out.push_str("        ptn_emit_runtime_deprecation(runtime, message, line);\n");
     out.push_str("    }\n");
     out.push_str("    ptn_try_frame_pop(runtime, &ptn_callable_deprecation_frame);\n");
     out.push_str("}\n");
@@ -32504,8 +32504,10 @@ fn emit_class_declaration_validation(
     emit_class_declaration_fatals(out, class, classes, functions, source_path);
     if class_needs_serializable_deprecation(class, classes) {
         let message = format!("{}{}", class.name, SERIALIZABLE_DEPRECATION_SUFFIX);
-        out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
         out.push_str(&c_string(&message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
         out.push_str("\", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");

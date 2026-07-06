@@ -283593,7 +283593,7 @@ static void ptn_eval_emit_serializable_deprecation(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "%s%s", class_name, suffix);
-    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    ptn_emit_runtime_deprecation(runtime, message, line);
     free(message);
 }
 

@@ -13437,16 +13437,21 @@ $class = new class extends DateTime {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     assert!(
-        stderr.contains(
+        stdout.contains(
             "Fatal error: Uncaught Exception: Return type of DateTime@anonymous::getTimezone() should either be compatible with DateTime::getTimezone(): DateTimeZone|false"
         ),
-        "{stderr}"
+        "{stdout}"
     );
-    assert!(stderr.contains("Stack trace:"), "{stderr}");
-    assert!(stderr.contains("(8192, 'Return type of ...'"), "{stderr}");
+    assert!(stdout.contains("Stack trace:"), "{stdout}");
+    assert!(stdout.contains("(8192, 'Return type of ...'"), "{stdout}");
+    assert!(
+        stdout.contains("anonymous-datetime-tentative-return-handler.php(7): {closure:"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("#0 [internal function]:"), "{stdout}");
 }
 
 #[test]

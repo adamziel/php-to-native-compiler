@@ -1991,7 +1991,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         message,
         path,
         line,
-        1
+        path == NULL
     );
 }
 
