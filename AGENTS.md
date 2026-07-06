@@ -22,6 +22,10 @@ Rules:
   source to roughly a screen or two. Prefer exact files and paths over discovery
   commands. Avoid commands that can print hundreds of paths, argv values,
   failures, diffs, or log lines.
+- For exploratory text search, prefer `tools/safe-rg.sh PATTERN [PATH...]`.
+  It rejects broad workspace roots and truncates output by default. If raw `rg`
+  is necessary, use exact files or narrow directories plus a source-side limit
+  such as `-m 20`, `--max-filesize`, or a small `head` in the pipeline.
 - Do not use broad process dumps while PHPT corpus jobs are running. In
   particular, never run `pgrep -af run-tests.php`, `ps -ef | grep run-tests`,
   `ps -eo ... cmd`, or equivalent commands that can print full PHPT argument
