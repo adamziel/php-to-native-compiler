@@ -31134,7 +31134,7 @@ fn emit_callable_dispatch(
         out.push_str("                    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
         out.push_str("                    return ptn_null();\n");
         out.push_str("                }\n");
-        out.push_str("                ptn_emit_fatal_error_at(runtime, \"Method name must be a string\", runtime->source_path, line);\n");
+        out.push_str("                ptn_throw_exception_at(runtime, \"Error\", \"Method name must be a string\", runtime->source_path, line);\n");
         out.push_str("                return ptn_null();\n");
         out.push_str("            }\n");
         out.push_str("        }\n");
@@ -35580,16 +35580,55 @@ fn emit_instruction_sequence_with_generator_yield_abort_target(
             out.push_str("    }\n");
         }
         out.push_str("    ptn_runtime_resume_finally_return_suppressed_exception(&runtime);\n");
-        emit_instruction(
-            out,
-            values,
-            instruction,
-            control_targets,
-            finally_stack,
-            source_path,
-            return_target,
-            label_scope,
-        );
+        if let Some(saved_exception_temp) = &suspend_exceptional_finally_exception {
+            let frame_temp = values.next_temp();
+            out.push_str("    PtnTryFrame ");
+            out.push_str(&frame_temp);
+            out.push_str(";\n");
+            out.push_str("    ptn_try_frame_push(&runtime, &");
+            out.push_str(&frame_temp);
+            out.push_str(");\n");
+            out.push_str("    if (setjmp(");
+            out.push_str(&frame_temp);
+            out.push_str(".jump) == 0) {\n");
+            emit_instruction(
+                out,
+                values,
+                instruction,
+                control_targets,
+                finally_stack,
+                source_path,
+                return_target,
+                label_scope,
+            );
+            out.push_str("        ptn_try_frame_pop(&runtime, &");
+            out.push_str(&frame_temp);
+            out.push_str(");\n");
+            out.push_str("    } else {\n");
+            out.push_str("        ptn_try_frame_pop(&runtime, &");
+            out.push_str(&frame_temp);
+            out.push_str(");\n");
+            out.push_str("        if (runtime.exceptions->active_exception != NULL && ");
+            out.push_str(saved_exception_temp);
+            out.push_str(" != NULL) {\n");
+            out.push_str("            ptn_exception_chain_previous_if_missing(runtime.exceptions->active_exception, ");
+            out.push_str(saved_exception_temp);
+            out.push_str(");\n");
+            out.push_str("        }\n");
+            out.push_str("        ptn_rethrow_exception(&runtime);\n");
+            out.push_str("    }\n");
+        } else {
+            emit_instruction(
+                out,
+                values,
+                instruction,
+                control_targets,
+                finally_stack,
+                source_path,
+                return_target,
+                label_scope,
+            );
+        }
         if let Some(saved_exception_temp) = &suspend_exceptional_finally_exception {
             out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
             out.push_str(saved_exception_temp);
@@ -66132,7 +66171,7 @@ impl ValueEmitter {
         out.push_str(".type != PTN_STRING) {\n");
         emit_value_cleanup(out, "        ", &name_temp);
         emit_method_receiver_cleanup(out, "        ", &receiver_temp);
-        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"Method name must be a string\", runtime.source_path, ");
+        out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"Method name must be a string\", runtime.source_path, ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
         out.push_str("    }\n");

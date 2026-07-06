@@ -6606,6 +6606,8 @@ fn parser_accepts_ternary_expressions() {
 
 #[test]
 fn parser_rejects_unparenthesized_nested_ternaries() {
+    parser::parse("<?php\n\n1 ?: 2 ?: 3;").unwrap();
+
     let full = parser::parse("<?php\n\n1 ? 2 : 3 ? 4 : 5;").unwrap_err();
     assert_eq!(
         full.message,
@@ -46109,14 +46111,16 @@ fn compile_dynamic_method_call_rejects_non_string_names_before_magic_call() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "Fatal error: Method name must be a string in {} on line 1\n",
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(
+        stdout.contains(&format!(
+            "Fatal error: Uncaught Error: Method name must be a string in {}:1",
             input.display()
-        )
+        )),
+        "{stdout}"
     );
+    assert!(stdout.contains("Stack trace:\n#0 {main}"), "{stdout}");
 }
 
 #[test]
@@ -46135,14 +46139,52 @@ fn compile_dynamic_static_method_call_rejects_non_string_names_before_magic_call
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "Fatal error: Method name must be a string in {} on line 1\n",
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(
+        stdout.contains(&format!(
+            "Fatal error: Uncaught Error: Method name must be a string in {}:1",
             input.display()
-        )
+        )),
+        "{stdout}"
     );
+    assert!(stdout.contains("Stack trace:\n#0 {main}"), "{stdout}");
+}
+
+#[test]
+fn compile_dynamic_method_name_error_is_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-method-name-catchable-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-method-name-catchable-error.php");
+    let output = root.join("dynamic-method-name-catchable-error-bin");
+    fs::write(
+        &input,
+        "<?php
+class DynMethodCatchable {
+    public function __call($name, $args) { echo \"bad instance\\n\"; }
+    public static function __callStatic($name, $args) { echo \"bad static\\n\"; }
+}
+$object = new DynMethodCatchable();
+foreach ([fn() => $object->{null}(), fn() => DynMethodCatchable::{null}()] as $call) {
+    try {
+        $call();
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Method name must be a string\nMethod name must be a string\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -100286,6 +100328,47 @@ try {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2\n1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_finally_call_throw_chains_suspended_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-call-throw-previous-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-call-throw-previous-chain.php");
+    let output = root.join("finally-call-throw-previous-chain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function throw_exception($message) {
+    throw new Exception($message);
+}
+
+try {
+    try {
+        throw_exception("try");
+    } catch (Exception $e) {
+        throw_exception("catch");
+    } finally {
+        throw_exception("finally");
+    }
+} catch (Exception $e) {
+    do {
+        echo $e->getMessage(), "\n";
+    } while ($e = $e->getPrevious());
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "finally\ncatch\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

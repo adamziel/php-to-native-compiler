@@ -8227,12 +8227,16 @@ impl Parser<'_> {
             self.expect_colon()?;
             (Some(Box::new(value)), false)
         };
-        let if_false = self.parse_assignment_expr_without_ternary(0)?;
+        let mut if_false = self.parse_assignment_expr_without_ternary(0)?;
         if matches!(self.peek().kind, TokenKind::Question) {
-            return Err(Diagnostic::new(
-                nested_ternary_message(first_is_short, self.peek_next_is_colon()),
-                Some(question.span),
-            ));
+            if first_is_short && self.peek_next_is_colon() {
+                if_false = self.parse_ternary_tail_from_condition(if_false)?;
+            } else {
+                return Err(Diagnostic::new(
+                    nested_ternary_message(first_is_short, self.peek_next_is_colon()),
+                    Some(question.span),
+                ));
+            }
         }
 
         let span = combine_spans(condition.span(), if_false.span());

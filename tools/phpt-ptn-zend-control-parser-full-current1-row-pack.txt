@@ -1,0 +1,5 @@
+Zend/tests/magic_methods/call_static_004.phpt
+Zend/tests/nullsafe_operator/026.phpt
+Zend/tests/objects/objects_025.phpt
+Zend/tests/ternary_associativity.phpt
+Zend/tests/try/catch_finally_004.phpt
