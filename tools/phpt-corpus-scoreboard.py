@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -148,6 +149,27 @@ def read_key_value_tsv(path: Path) -> dict[str, str]:
         if len(parts) == 2:
             values[parts[0]] = parts[1]
     return values
+
+
+def current_repo_head(path: Path) -> str:
+    repo = path if path.is_dir() else path.parent
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    return result.stdout.strip()
+
+
+def commit_matches_head(commit: str, head: str) -> bool:
+    if not commit or not head:
+        return True
+    return commit == head or commit.startswith(head) or head.startswith(commit)
 
 
 def normalize_row(row: str) -> str:
@@ -302,6 +324,14 @@ def report_from_active_run(
         warned=status_counts["WARN"],
     )
 
+    notes = [
+        "partial live view; do not compare as a completed corpus result",
+        f"unknown rows: {max(selected - len(statuses), 0)}",
+    ]
+    repo_head = current_repo_head(Path.cwd())
+    if repo_head and commit and not commit_matches_head(commit, repo_head):
+        notes.append(f"stale vs current HEAD {repo_head}; do not use as current failure scheduler")
+
     return SourceReport(
         name=f"{run_dir.parent.parent.name}-active",
         freshness="live-active-run-partial",
@@ -313,10 +343,7 @@ def report_from_active_run(
         counts=counts,
         top_exclusion_categories=[],
         top_failing_path_clusters=failures.most_common(top),
-        notes=[
-            "partial live view; do not compare as a completed corpus result",
-            f"unknown rows: {max(selected - len(statuses), 0)}",
-        ],
+        notes=notes,
     )
 
 
@@ -564,8 +591,14 @@ def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
     notes: list[str] = []
     if status_path is None:
         notes.append("no partial-statuses TSV found for failing path clusters")
+    repo_head = current_repo_head(Path.cwd())
+    if repo_head and commit and not commit_matches_head(commit, repo_head):
+        notes.append(f"stale vs current HEAD {repo_head}; do not use as current failure scheduler")
     if latest_values.get("active_source_commit"):
         notes.append(f"active source commit: {latest_values['active_source_commit']}")
+        active_commit = latest_values["active_source_commit"]
+        if repo_head and not commit_matches_head(active_commit, repo_head):
+            notes.append(f"active run stale vs current HEAD {repo_head}")
     if latest_values.get("active_tests"):
         notes.append(f"active run observed tests: {latest_values['active_tests']}")
 
