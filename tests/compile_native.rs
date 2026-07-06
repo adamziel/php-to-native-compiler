@@ -96900,6 +96900,35 @@ try {
 }
 
 #[test]
+fn compile_uncaught_exception_trace_prints_required_file_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-uncaught-exception-trace-require-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-include-strict.php");
+    let include = root.join("strict.inc");
+    let output = root.join("weak-include-strict-bin");
+    fs::write(
+        &include,
+        "<?php\ndeclare(strict_types=1);\nfunction takes_int(int $x) {}\ntakes_int(1.0);\n",
+    )
+    .unwrap();
+    fs::write(&input, "<?php\nrequire 'strict.inc';\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(combined.contains(&format!("#0 {}(4): takes_int(1.0)", include.display())));
+    assert!(combined.contains(&format!("#1 {}(2): require('", input.display())));
+    assert!(!combined.contains("require()"));
+}
+
+#[test]
 fn compile_debug_backtrace_metadata_options_to_native_binary() {
     let root = temp_dir("ptn-native-debug-backtrace-metadata-options");
     fs::create_dir_all(&root).unwrap();

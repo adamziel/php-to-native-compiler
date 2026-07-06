@@ -2784,9 +2784,6 @@ static int ptn_exception_append_trace_frame(
             (const char *)function_value.as.string.data,
             function_value.as.string.len
         );
-        if (ptn_trace_function_omits_printed_args(function_name)) {
-            omit_args = 1;
-        }
         ptn_exception_append_display_function(buffer, function_name);
         free(function_name);
     } else if (function_slot != NULL) {
