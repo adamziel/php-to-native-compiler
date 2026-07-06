@@ -277115,6 +277115,30 @@ static int ptn_recursive_iterator_iterator_end_iteration(
     );
 }
 
+static int ptn_recursive_iterator_iterator_close_children_for_rewind(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || data->frame_count <= 1) {
+        return 1;
+    }
+    ptn_recursive_iterator_iterator_clear_current(data);
+    while (runtime->exceptions->active_exception == NULL && data->frame_count > 1) {
+        data->frame_count--;
+        ptn_recursive_iterator_iterator_clear_frame(&data->frames[data->frame_count]);
+        if (!ptn_recursive_iterator_iterator_call_owner_hook(
+                runtime,
+                data,
+                "endChildren",
+                line
+            )) {
+            return 0;
+        }
+    }
+    return runtime->exceptions->active_exception == NULL;
+}
+
 static PtnValue ptn_recursive_iterator_iterator_default_call_has_children(
     PtnRuntime *runtime,
     PtnRecursiveIteratorIteratorData *data,
@@ -281881,6 +281905,10 @@ static void ptn_recursive_iterator_iterator_rewind_data(
         }
         data->initialized = 1;
         ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
+        return;
+    }
+    if (data->initialized &&
+        !ptn_recursive_iterator_iterator_close_children_for_rewind(runtime, data, line)) {
         return;
     }
     ptn_recursive_iterator_iterator_clear_traversal(data);
