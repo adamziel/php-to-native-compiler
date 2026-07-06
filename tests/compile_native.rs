@@ -49603,6 +49603,43 @@ unset($array[0][0]);
 }
 
 #[test]
+fn compile_getimagesize_info_ref_publishes_null_before_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-getimagesize-info-ref-before-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getimagesize-info-ref-before-destructor.php");
+    let output = root.join("getimagesize-info-ref-before-destructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    function __destruct() {
+        global $box;
+        $box->value = null;
+    }
+}
+
+$box = [new Test];
+try {
+    getimagesize('dummy', $box);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Attempt to assign property \"value\" on null\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_static_property_destructors_precede_function_static_destructors_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-function-static-destructor-order");
     fs::create_dir_all(&root).unwrap();

@@ -179677,6 +179677,26 @@ static PtnValue ptn_internal_getimagesize(PtnRuntime *runtime, size_t argc, cons
         return ptn_null();
     }
 
+    PtnReference *info_reference = argc >= 2 && args[1].type == PTN_REFERENCE ? args[1].as.reference : NULL;
+    if (info_reference != NULL) {
+        if (!ptn_reference_assign_publish_first(runtime, info_reference, ptn_null())) {
+            free(path);
+            return ptn_null();
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            return ptn_null();
+        }
+        if (!ptn_reference_assign_publish_first(runtime, info_reference, ptn_array_from_literal_entries(0, NULL))) {
+            free(path);
+            return ptn_null();
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            return ptn_null();
+        }
+    }
+
     unsigned char *data = NULL;
     size_t data_len = 0;
     int read_result = ptn_read_file_bytes(path, &data, &data_len);
@@ -179723,8 +179743,8 @@ static PtnValue ptn_internal_getimagesize(PtnRuntime *runtime, size_t argc, cons
 
     PtnValue info = ptn_array_from_literal_entries(0, NULL);
     PtnValue result = ptn_getimagesize_from_bytes(data, data_len, info);
-    if (argc >= 2 && args[1].type == PTN_REFERENCE) {
-        ptn_reference_assign(runtime, args[1].as.reference, ptn_value_clone(info));
+    if (info_reference != NULL) {
+        ptn_reference_assign_publish_first(runtime, info_reference, ptn_value_clone(info));
     }
     ptn_value_destroy(&info);
     free(path);
