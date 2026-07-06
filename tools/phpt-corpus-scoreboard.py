@@ -15,6 +15,10 @@ from typing import Iterable
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 FAIL_RE = re.compile(r"\b(FAIL|BORK|WARN)\b.*\[(.+?\.phpt)\]")
+STATUS_RE = re.compile(
+    r"^(PASS|FAIL|SKIP|XFAIL|BORK|WARN|LEAK|XLEAK|REDIRECT)\s+.*?(?:\[(.+?\.phpt)\])?\s*$"
+)
+TEST_RE = re.compile(r"^TEST\s+\d+/\d+\s+\[(.+?\.phpt)\]")
 KEY_VALUE_RE = re.compile(r"([A-Za-z0-9_-]+)=([^ ]+)")
 SHARD_RE = re.compile(r"(?:^|[/_-])shard[-_/]?(\d+)(?:\D|$)")
 SUMMARY_STAMP_RE = re.compile(r"summary-(\d{8}T\d{6}Z-\d+)\.txt$")
@@ -202,6 +206,118 @@ def failing_clusters_from_status_tsv(path: Path) -> Counter[str]:
         if status in {"FAIL", "BORK", "WARN"}:
             clusters[row_subsystem(row)] += 1
     return clusters
+
+
+def statuses_from_run_log(path: Path) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    if not path.is_file():
+        return statuses
+
+    current = ""
+    for raw_line in path.read_text(errors="replace").splitlines():
+        for part in raw_line.replace("\r", "\n").split("\n"):
+            line = ANSI_RE.sub("", part).strip()
+            test_match = TEST_RE.search(line)
+            if test_match:
+                current = normalize_row(test_match.group(1))
+                continue
+
+            status_match = STATUS_RE.search(line)
+            if status_match:
+                status = status_match.group(1)
+                row = normalize_row(status_match.group(2) or current)
+                if row:
+                    statuses[row] = status
+                if row == current:
+                    current = ""
+                continue
+
+            if (
+                current
+                and (
+                    "Allowed memory size" in line
+                    or "died unexpectedly" in line
+                    or "Fatal error" in line
+                    or line.startswith("ERROR:")
+                )
+            ):
+                statuses[current] = "FAIL"
+                current = ""
+    return statuses
+
+
+def active_run_statuses(run_dir: Path) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    if not run_dir.is_dir():
+        return statuses
+
+    candidates: list[Path] = []
+    candidates.extend(sorted((run_dir / "shards").glob("shard-*/run.log")))
+    candidates.extend(sorted((run_dir / "shards").glob("shard-*/batches/batch-*")))
+    candidates.sort(key=lambda item: (item.stat().st_mtime, str(item)))
+    for path in candidates:
+        if path.is_file():
+            statuses.update(statuses_from_run_log(path))
+    return statuses
+
+
+def report_from_active_run(
+    run_dir: Path,
+    latest_values: dict[str, str],
+    summary_values: dict[str, str],
+    top: int,
+) -> SourceReport | None:
+    if not run_dir.is_dir():
+        return None
+
+    statuses = active_run_statuses(run_dir)
+    if not statuses:
+        return None
+
+    status_counts = Counter(statuses.values())
+    failures: Counter[str] = Counter()
+    for row, status in statuses.items():
+        if status in {"FAIL", "BORK", "WARN", "LEAK", "XLEAK"}:
+            failures[row_subsystem(row)] += 1
+
+    selected = int(latest_values.get("selected") or summary_values.get("corpus") or 0)
+    commit = (
+        latest_values.get("active_source_commit")
+        or latest_values.get("source_commit")
+        or summary_values.get("source_commit", "")
+    )
+    counts = Counts(
+        selected=selected,
+        runnable=selected,
+        excluded=0,
+        executed=len(statuses),
+        passed=status_counts["PASS"],
+        failed=(
+            status_counts["FAIL"]
+            + status_counts["BORK"]
+            + status_counts["LEAK"]
+            + status_counts["XLEAK"]
+        ),
+        skipped=status_counts["SKIP"] + status_counts["XFAIL"],
+        warned=status_counts["WARN"],
+    )
+
+    return SourceReport(
+        name=f"{run_dir.parent.parent.name}-active",
+        freshness="live-active-run-partial",
+        commit=commit,
+        corpus_revision=summary_values.get("php_src_revision", ""),
+        classifier_mode="active run logs; incomplete until all shards finish",
+        source_path=str(run_dir),
+        run_path=str(run_dir),
+        counts=counts,
+        top_exclusion_categories=[],
+        top_failing_path_clusters=failures.most_common(top),
+        notes=[
+            "partial live view; do not compare as a completed corpus result",
+            f"unknown rows: {max(selected - len(statuses), 0)}",
+        ],
+    )
 
 
 def resolve_artifact_sibling(summary_path: Path, recorded_path: str) -> Path:
@@ -394,7 +510,7 @@ def rolling_summary_values(path: Path) -> dict[str, str]:
     return values
 
 
-def report_from_rolling(path: Path, top: int) -> SourceReport:
+def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
     source_path = path
     latest_values: dict[str, str] = {}
     summary_path: Path | None = None
@@ -453,7 +569,8 @@ def report_from_rolling(path: Path, top: int) -> SourceReport:
     if latest_values.get("active_tests"):
         notes.append(f"active run observed tests: {latest_values['active_tests']}")
 
-    return SourceReport(
+    reports = [
+        SourceReport(
         name=path.name or str(path),
         freshness="rolling-dashboard",
         commit=commit,
@@ -465,7 +582,17 @@ def report_from_rolling(path: Path, top: int) -> SourceReport:
         top_exclusion_categories=[],
         top_failing_path_clusters=failures.most_common(top),
         notes=notes,
-    )
+        )
+    ]
+
+    active_run_value = latest_values.get("active_run", "")
+    if active_run_value:
+        active_report = report_from_active_run(
+            Path(active_run_value), latest_values, summary_values, top
+        )
+        if active_report is not None:
+            reports.append(active_report)
+    return reports
 
 
 def detect_source_kind(path: Path) -> str:
@@ -563,7 +690,7 @@ def main() -> int:
         if kind == "fresh":
             reports.append(report_from_fresh(path, args.top))
         elif kind == "rolling":
-            reports.append(report_from_rolling(path, args.top))
+            reports.extend(reports_from_rolling(path, args.top))
         else:
             raise AssertionError(kind)
 
