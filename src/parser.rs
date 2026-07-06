@@ -25474,6 +25474,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "STREAM_BUFFER_NONE"
             | "STREAM_BUFFER_LINE"
             | "STREAM_BUFFER_FULL"
+            | "STREAM_URL_STAT_LINK"
+            | "STREAM_URL_STAT_QUIET"
             | "STREAM_NOTIFY_RESOLVE"
             | "STREAM_NOTIFY_CONNECT"
             | "STREAM_NOTIFY_AUTH_REQUIRED"

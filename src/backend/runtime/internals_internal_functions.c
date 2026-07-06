@@ -63632,9 +63632,59 @@ static int ptn_existing_file_or_current_source_snapshot(PtnRuntime *runtime, con
         ptn_current_source_snapshot_matches(runtime, path);
 }
 
+static int ptn_user_stream_url_stat_exists(
+    PtnRuntime *runtime,
+    PtnUserStreamWrapper *wrapper,
+    const char *path,
+    size_t line
+) {
+    if (wrapper == NULL) {
+        return 0;
+    }
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
+        return -1;
+    }
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        return 0;
+    }
+    if (!ptn_user_stream_assign_context(runtime, object, ptn_default_stream_context_ensure(), line)) {
+        ptn_value_destroy(&object);
+        return 0;
+    }
+    if (!ptn_object_has_declared_method(runtime, object, "url_stat")) {
+        ptn_value_destroy(&object);
+        return -1;
+    }
+
+    PtnValue stat_args[2] = {
+        ptn_string(path == NULL ? "" : path),
+        ptn_int(PTN_STREAM_URL_STAT_QUIET)
+    };
+    PtnValue result = runtime->method_dispatch(runtime, object, "url_stat", 2, stat_args, line);
+    ptn_value_destroy(&stat_args[0]);
+    ptn_value_destroy(&stat_args[1]);
+    ptn_value_destroy(&object);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    int exists = ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    return exists ? 1 : 0;
+}
+
 static int ptn_existing_include_path_candidate(PtnRuntime *runtime, const char *path) {
-    return ptn_existing_file_or_current_source_snapshot(runtime, path) ||
-        ptn_user_stream_wrapper_find_path(path) != NULL;
+    if (ptn_existing_file_or_current_source_snapshot(runtime, path)) {
+        return 1;
+    }
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+    int stat_exists = ptn_user_stream_url_stat_exists(runtime, wrapper, path, 0);
+    return stat_exists < 0 ? 1 : stat_exists;
 }
 
 static const char *ptn_include_path_segment_end(const char *segment, char separator) {
@@ -152532,6 +152582,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
     ptn_get_defined_constants_add_int(table, "STREAM_IS_URL", PTN_STREAM_IS_URL);
+    ptn_get_defined_constants_add_int(table, "STREAM_URL_STAT_LINK", PTN_STREAM_URL_STAT_LINK);
+    ptn_get_defined_constants_add_int(table, "STREAM_URL_STAT_QUIET", PTN_STREAM_URL_STAT_QUIET);
     ptn_get_defined_constants_add_int(table, "STREAM_REPORT_ERRORS", PTN_STREAM_REPORT_ERRORS);
     ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_RESOLVE", PTN_STREAM_NOTIFY_RESOLVE);
     ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_CONNECT", PTN_STREAM_NOTIFY_CONNECT);
@@ -153187,6 +153239,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
         "STREAM_IS_URL",
+        "STREAM_URL_STAT_LINK",
+        "STREAM_URL_STAT_QUIET",
         "STREAM_REPORT_ERRORS",
         "STREAM_NOTIFY_RESOLVE",
         "STREAM_NOTIFY_CONNECT",
@@ -290525,6 +290579,8 @@ static PTN_UNUSED int ptn_dynamic_include_php_file_resolved(
     unsigned char *filtered_data = NULL;
     size_t filtered_len = 0;
     char *filter_detail = NULL;
+    int filter_attempted = code == NULL && path != NULL &&
+        ptn_php_filter_ascii_case_starts_with(path, "php://filter/");
     int filter_read = code == NULL
         ? ptn_try_read_php_filter_url_bytes(
             runtime,
@@ -290554,6 +290610,9 @@ static PTN_UNUSED int ptn_dynamic_include_php_file_resolved(
     } else if (code == NULL) {
         free(filtered_data);
         if (!ptn_dynamic_read_file(path, &code, &code_len)) {
+            if (filter_attempted && suppress_open_stream_warning_out != NULL) {
+                *suppress_open_stream_warning_out = 1;
+            }
             return 0;
         }
     } else {

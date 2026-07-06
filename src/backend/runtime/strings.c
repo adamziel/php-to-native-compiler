@@ -3550,6 +3550,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_DNS_ANY);
         return 1;
     }
+    if (strcmp(name, "STREAM_URL_STAT_LINK") == 0) {
+        *out = ptn_int(PTN_STREAM_URL_STAT_LINK);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_URL_STAT_QUIET") == 0) {
+        *out = ptn_int(PTN_STREAM_URL_STAT_QUIET);
+        return 1;
+    }
     if (strcmp(name, "STREAM_IS_URL") == 0) {
         *out = ptn_int(PTN_STREAM_IS_URL);
         return 1;

@@ -102627,6 +102627,59 @@ try {
 }
 
 #[test]
+fn compile_include_path_user_stream_url_stat_is_quiet_to_native_binary() {
+    let root = temp_dir("ptn-native-include-path-url-stat-quiet");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("include-path-url-stat-quiet-bin");
+    fs::write(
+        &input,
+        "<?php
+class StreamWrapper {
+    public $context;
+
+    public function url_stat($path, $flags) {
+        $path = str_replace('test://', 'file://', $path);
+        if ($flags & STREAM_URL_STAT_QUIET) {
+            return @stat($path);
+        }
+        return stat($path);
+    }
+}
+
+stream_wrapper_register('test', StreamWrapper::class);
+set_include_path('test://foo:test://bar');
+require_once 'doesnt_exist.php';
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Warning: require_once(doesnt_exist.php): Failed to open stream: No such file or directory"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught Error: Failed opening required 'doesnt_exist.php' (include_path='test://foo:test://bar')"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("stream_open"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_url_stat_exists"));
+    assert!(c_source.contains("PTN_STREAM_URL_STAT_QUIET"));
+}
+
+#[test]
 fn compile_missing_require_once_warning_handler_can_throw_to_native_binary() {
     let root = temp_dir("ptn-native-missing-require-once-warning-handler");
     fs::create_dir_all(&root).unwrap();
@@ -127501,6 +127554,10 @@ include 'php://filter/read=sample.filter/resource=' . __FILE__;
     );
     assert!(
         stdout.contains("Failed opening 'php://filter/read=sample.filter/resource="),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: include(php://filter/read=sample.filter/resource="),
         "{stdout}"
     );
     assert!(!stdout.contains("Invalid callback"), "{stdout}");
