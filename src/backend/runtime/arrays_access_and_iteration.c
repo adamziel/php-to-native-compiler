@@ -14428,6 +14428,85 @@ static PTN_UNUSED int ptn_generator_yield_argument_path(
     return 0;
 }
 
+static PTN_UNUSED int ptn_generator_yield_path_is_binary_expr(PtnValue path_value) {
+    PtnValue resolved = ptn_value_deref(path_value);
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL || resolved.as.array->len == 0) {
+        return 0;
+    }
+    PtnValue marker = ptn_value_deref(resolved.as.array->entries[0].value);
+    return marker.type == PTN_STRING &&
+        marker.as.string.len == strlen("__ptn_binary_yield_expr") &&
+        memcmp(marker.as.string.data, "__ptn_binary_yield_expr", marker.as.string.len) == 0;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_replay_binary_yield_expr(
+    PtnRuntime *runtime,
+    PtnArray *descriptor,
+    PtnValue sent_value,
+    size_t fallback_line
+) {
+    if (descriptor == NULL || descriptor->len < 5) {
+        return ptn_value_share(sent_value);
+    }
+    PtnValue op_value = ptn_value_deref(descriptor->entries[1].value);
+    PtnValue yield_on_left_value = ptn_value_deref(descriptor->entries[2].value);
+    PtnValue other_value = ptn_value_deref(descriptor->entries[3].value);
+    PtnValue line_value = ptn_value_deref(descriptor->entries[4].value);
+    if (op_value.type != PTN_INT || yield_on_left_value.type != PTN_INT) {
+        return ptn_value_share(sent_value);
+    }
+    size_t line = fallback_line;
+    if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
+        line = (size_t)line_value.as.integer;
+    }
+    PtnValue sent = ptn_value_clone_deref(sent_value);
+    PtnValue other = ptn_value_clone_deref(other_value);
+    PtnValue left = yield_on_left_value.as.integer ? sent : other;
+    PtnValue right = yield_on_left_value.as.integer ? other : sent;
+    PtnValue result;
+    switch (op_value.as.integer) {
+        case 0:
+            result = ptn_add(runtime, left, right, line);
+            break;
+        case 1:
+            result = ptn_subtract(runtime, left, right, line);
+            break;
+        case 2:
+            result = ptn_multiply(runtime, left, right, line);
+            break;
+        case 3:
+            result = ptn_power(runtime, left, right, line);
+            break;
+        case 4:
+            result = ptn_divide(runtime, left, right, line);
+            break;
+        case 5:
+            result = ptn_modulo(runtime, left, right, line);
+            break;
+        case 6:
+            result = ptn_bitwise_and(runtime, left, right, line);
+            break;
+        case 7:
+            result = ptn_bitwise_xor(runtime, left, right, line);
+            break;
+        case 8:
+            result = ptn_bitwise_or(runtime, left, right, line);
+            break;
+        case 9:
+            result = ptn_shift_left(runtime, left, right, line);
+            break;
+        case 10:
+            result = ptn_shift_right(runtime, left, right, line);
+            break;
+        default:
+            result = ptn_value_share(sent_value);
+            break;
+    }
+    ptn_value_destroy(&sent);
+    ptn_value_destroy(&other);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_sent_argument_value(
     PtnRuntime *runtime,
     PtnArray *yield_indexes,
@@ -14441,6 +14520,14 @@ static PTN_UNUSED PtnValue ptn_generator_sent_argument_value(
         return ptn_null();
     }
     PtnValue resolved_path = ptn_value_deref(path_value);
+    if (ptn_generator_yield_path_is_binary_expr(resolved_path)) {
+        return ptn_generator_replay_binary_yield_expr(
+            runtime,
+            resolved_path.as.array,
+            sent_value,
+            line
+        );
+    }
     if (resolved_path.type != PTN_ARRAY || resolved_path.as.array == NULL) {
         return ptn_value_share(sent_value);
     }

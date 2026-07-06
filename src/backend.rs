@@ -44586,6 +44586,15 @@ enum GeneratorSendArgumentSource {
     DirectYieldExpr,
     AssignedDirect,
     AssignedPath(Vec<ValueExpr>),
+    BinaryExpr(GeneratorSendBinaryExpr),
+}
+
+#[derive(Clone)]
+struct GeneratorSendBinaryExpr {
+    op: BinaryOp,
+    yield_on_left: bool,
+    other: Box<ValueExpr>,
+    line: usize,
 }
 
 #[derive(Clone)]
@@ -44631,6 +44640,88 @@ fn nested_direct_yield_internal_call(
     }
     let yield_indexes = direct_yield_argument_indexes(arguments)?;
     Some((name, arguments, yield_indexes))
+}
+
+fn generator_replay_binary_op_code(op: BinaryOp) -> Option<i64> {
+    match op {
+        BinaryOp::Add => Some(0),
+        BinaryOp::Subtract => Some(1),
+        BinaryOp::Multiply => Some(2),
+        BinaryOp::Power => Some(3),
+        BinaryOp::Divide => Some(4),
+        BinaryOp::Modulo => Some(5),
+        BinaryOp::BitwiseAnd => Some(6),
+        BinaryOp::BitwiseXor => Some(7),
+        BinaryOp::BitwiseOr => Some(8),
+        BinaryOp::ShiftLeft => Some(9),
+        BinaryOp::ShiftRight => Some(10),
+        BinaryOp::Concat
+        | BinaryOp::Coalesce
+        | BinaryOp::Equal
+        | BinaryOp::NotEqual
+        | BinaryOp::Spaceship
+        | BinaryOp::Identical
+        | BinaryOp::NotIdentical
+        | BinaryOp::Less
+        | BinaryOp::LessEqual
+        | BinaryOp::Greater
+        | BinaryOp::GreaterEqual
+        | BinaryOp::And
+        | BinaryOp::Xor
+        | BinaryOp::Or => None,
+    }
+}
+
+fn value_expr_is_direct_yield(value: &ValueExpr) -> bool {
+    matches!(value, ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. })
+}
+
+fn value_expr_is_generator_send_replay_static(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => true,
+        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+            value_expr_is_generator_send_replay_static(expr)
+        }
+        _ => false,
+    }
+}
+
+fn binary_yield_send_argument_source(argument: &ValueExpr) -> Option<GeneratorSendArgumentSource> {
+    let ValueExpr::Binary {
+        op,
+        left,
+        right,
+        line,
+    } = argument
+    else {
+        return None;
+    };
+    generator_replay_binary_op_code(*op)?;
+    if value_expr_is_direct_yield(left) && value_expr_is_generator_send_replay_static(right) {
+        return Some(GeneratorSendArgumentSource::BinaryExpr(
+            GeneratorSendBinaryExpr {
+                op: *op,
+                yield_on_left: true,
+                other: right.clone(),
+                line: *line,
+            },
+        ));
+    }
+    if value_expr_is_direct_yield(right) && value_expr_is_generator_send_replay_static(left) {
+        return Some(GeneratorSendArgumentSource::BinaryExpr(
+            GeneratorSendBinaryExpr {
+                op: *op,
+                yield_on_left: false,
+                other: left.clone(),
+                line: *line,
+            },
+        ));
+    }
+    None
 }
 
 fn generator_resume_method_name(name: &str) -> bool {
@@ -47601,6 +47692,9 @@ impl ValueEmitter {
                         index,
                         source: GeneratorSendArgumentSource::DirectYieldExpr,
                     });
+                }
+                if let Some(source) = binary_yield_send_argument_source(argument) {
+                    return Some(GeneratorSendArgument { index, source });
                 }
                 let ValueExpr::Load { name, .. } = argument else {
                     return None;
@@ -63687,6 +63781,18 @@ impl ValueEmitter {
                 Some(GeneratorSendArgumentSource::AssignedPath(path)) => {
                     temps.push(self.emit_generator_yield_path_array(out, path));
                 }
+                Some(GeneratorSendArgumentSource::BinaryExpr(binary)) => {
+                    if let ValueExpr::Binary { left, right, .. } = argument {
+                        let yield_expr = if binary.yield_on_left { left } else { right };
+                        let yield_temp = self.emit_materialized_value(out, yield_expr);
+                        emit_value_cleanup(out, "    ", &yield_temp);
+                    }
+                    let temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_null();\n");
+                    temps.push(temp);
+                }
                 _ => temps.push(self.emit_call_argument(out, name, argument_index, argument)),
             }
         }
@@ -63801,6 +63907,43 @@ impl ValueEmitter {
         path_temp
     }
 
+    fn emit_generator_yield_binary_expr_path(
+        &mut self,
+        out: &mut String,
+        binary: &GeneratorSendBinaryExpr,
+    ) -> String {
+        let other_temp = self.emit_materialized_value(out, &binary.other);
+        let entries_temp = self.next_temp();
+        out.push_str("    PtnArrayLiteralEntry ");
+        out.push_str(&entries_temp);
+        out.push_str("[] = { ");
+        out.push_str("{ 1, ptn_int(0), ptn_string(\"__ptn_binary_yield_expr\") }, ");
+        out.push_str("{ 1, ptn_int(1), ptn_int(");
+        out.push_str(
+            &generator_replay_binary_op_code(binary.op)
+                .expect("binary replay source is restricted to replayable operators")
+                .to_string(),
+        );
+        out.push_str(") }, ");
+        out.push_str("{ 1, ptn_int(2), ptn_int(");
+        out.push_str(if binary.yield_on_left { "1" } else { "0" });
+        out.push_str(") }, ");
+        out.push_str("{ 1, ptn_int(3), ");
+        out.push_str(&other_temp);
+        out.push_str(" }, ");
+        out.push_str("{ 1, ptn_int(4), ptn_int(");
+        out.push_str(&binary.line.to_string());
+        out.push_str(") } };\n");
+        let path_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&path_temp);
+        out.push_str(" = ptn_array_from_literal_entries(5, ");
+        out.push_str(&entries_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &other_temp);
+        path_temp
+    }
+
     fn emit_yield_paths_array(
         &mut self,
         out: &mut String,
@@ -63812,6 +63955,9 @@ impl ValueEmitter {
             match &source.source {
                 GeneratorSendArgumentSource::AssignedPath(path) => {
                     path_temps.push(self.emit_generator_yield_path_array(out, path));
+                }
+                GeneratorSendArgumentSource::BinaryExpr(binary) => {
+                    path_temps.push(self.emit_generator_yield_binary_expr_path(out, binary));
                 }
                 GeneratorSendArgumentSource::DirectYieldExpr
                 | GeneratorSendArgumentSource::AssignedDirect => {
