@@ -17,6 +17,11 @@ Rules:
 - Run broad or long PHPT/cargo verification only through
   `tools/run-detached-check.sh`; poll `status.tsv` and small bounded log tails
   instead of streaming large outputs into the interactive session.
+- Treat interactive output volume as a session stability risk. Before running
+  any diagnostic command, make sure the command itself bounds output at the
+  source to roughly a screen or two. Prefer exact files and paths over discovery
+  commands. Avoid commands that can print hundreds of paths, argv values,
+  failures, diffs, or log lines.
 - Do not use broad process dumps while PHPT corpus jobs are running. In
   particular, never run `pgrep -af run-tests.php`, `ps -ef | grep run-tests`,
   `ps -eo ... cmd`, or equivalent commands that can print full PHPT argument
@@ -30,6 +35,11 @@ Rules:
   output that destabilizes the interactive session. Search from the specific
   repo/lane first, and only expand by naming a small set of directories with
   source-side output limits.
+- Do not list manifest-heavy directories interactively. In this repo, `tools/`,
+  `.runtime/`, detached-check roots, PHPT corpora, lane roots, and dashboard
+  state directories can contain hundreds or thousands of entries. Use targeted
+  paths, `find ... -maxdepth ... | head`, or purpose-built summary scripts
+  instead of bare `ls`, recursive `find`, recursive `du`, or broad globs.
 - Do not enumerate full PHPT dashboard shard trees in the interactive session.
   In particular, avoid `find .../ptn-full-phpt-dashboard-loop/runs/.../shards`,
   recursive `ls`, broad `rg` over shard logs, or `cat`/`tail` glob output from
@@ -37,4 +47,12 @@ Rules:
   `tools/phpt-active-failure-summary.py`; inspect an individual shard log only
   when you already know its exact path, with bounded output such as
   `tail -n 120` or `rg -m 40`.
+- Do not capture whole tmux panes or large logs. Use `tmux capture-pane` only
+  with explicit small ranges, and use `tail -n 120` or less unless there is a
+  concrete reason to inspect more. Never `cat` run logs, corpus logs, generated
+  reports, or PHPT outputs.
+- Do not print full diffs, full test reports, or full generated files into the
+  session. Use `git diff --stat`, `git diff --check`, focused path diffs, or
+  bounded snippets. If a full artifact is needed, write it to a file and report
+  the path plus a short summary.
 - Use stable Rust unless a documented reason says otherwise.
