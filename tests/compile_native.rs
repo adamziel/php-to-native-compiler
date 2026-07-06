@@ -3733,6 +3733,74 @@ foreach ($it as $value) {
 }
 
 #[test]
+fn compile_recursive_iterator_iterator_array_object_iterator_class_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-array-object-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-array-object-class.php");
+    let output = root.join("recursive-iterator-iterator-array-object-class-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$ar = [1, [2, [3]], 4];
+
+foreach (new RecursiveIteratorIterator(new ArrayObject($ar, 0, "RecursiveArrayIterator")) as $value) {
+    echo "ctor:$value\n";
+}
+
+$it = new ArrayObject($ar);
+echo $it->getIteratorClass(), "\n";
+
+try {
+    foreach (new RecursiveIteratorIterator($it) as $value) {
+        echo "bad:$value\n";
+    }
+} catch (InvalidArgumentException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$it->setIteratorClass("RecursiveArrayIterator");
+echo $it->getIteratorClass(), "\n";
+
+foreach (new RecursiveIteratorIterator($it) as $value) {
+    echo "manual:$value\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ctor:1\n",
+            "ctor:2\n",
+            "ctor:3\n",
+            "ctor:4\n",
+            "ArrayIterator\n",
+            "An instance of RecursiveIterator or IteratorAggregate creating it is required\n",
+            "RecursiveArrayIterator\n",
+            "manual:1\n",
+            "manual:2\n",
+            "manual:3\n",
+            "manual:4\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_resolve_inner"));
+}
+
+#[test]
 fn compile_datetime_timezone_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-semantics");
     fs::create_dir_all(&root).unwrap();

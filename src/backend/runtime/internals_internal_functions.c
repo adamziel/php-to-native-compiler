@@ -276852,22 +276852,12 @@ static PtnValue ptn_recursive_iterator_iterator_resolve_inner(
         if (ptn_value_object_implements_interface(iterator, "RecursiveIterator")) {
             return iterator;
         }
-        PtnValue resolved = ptn_value_deref(candidate);
-        const char *class_name = resolved.type == PTN_OBJECT
-            ? resolved.as.object->class_name
-            : "IteratorAggregate";
-        char message[256];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "%s::getIterator() must return an object that implements Traversable",
-            class_name
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
         ptn_value_destroy(&iterator);
-        ptn_throw_exception(runtime, "LogicException", message);
+        ptn_throw_exception(
+            runtime,
+            "InvalidArgumentException",
+            "An instance of RecursiveIterator or IteratorAggregate creating it is required"
+        );
         return ptn_null();
     }
     ptn_throw_exception(
