@@ -4817,6 +4817,18 @@ static PTN_UNUSED PtnStringOperand ptn_object_exception_message(
     if (message_value.type == PTN_STRING) {
         message_len = message_value.as.string.len;
         message = ptn_duplicate_string_len((const char *)message_value.as.string.data, message_len);
+    } else if (message_value.type == PTN_OBJECT) {
+        PtnStringOperand object_message =
+            ptn_value_to_string_operand_with_runtime(runtime, message_value, line);
+        if (ptn_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(object_message);
+            ptn_value_destroy(&lookup.value);
+            char *empty = ptn_duplicate_string("");
+            return (PtnStringOperand) { empty, empty, 0 };
+        }
+        message_len = object_message.len;
+        message = ptn_duplicate_string_len(object_message.data, object_message.len);
+        ptn_string_operand_free(object_message);
     } else {
         message = ptn_value_to_string(message_value);
         message_len = strlen(message);
@@ -5036,6 +5048,10 @@ static PTN_UNUSED PtnValue ptn_throw_value(
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, resolved.as.object)) {
         PtnStringOperand message = ptn_object_exception_message(runtime, resolved, line);
+        if (ptn_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(message);
+            return ptn_null();
+        }
         int64_t code = ptn_throwable_int_property(runtime, resolved, "code", 0, line);
         int64_t severity = ptn_throwable_int_property(runtime, resolved, "severity", PTN_E_ERROR, line);
         PtnValue previous = ptn_throwable_previous_value(runtime, resolved, line);

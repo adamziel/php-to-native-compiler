@@ -2297,6 +2297,11 @@ static PTN_UNUSED PtnStringOperand ptn_runtime_global_constant_key_len(const cha
 static PTN_UNUSED char *ptn_runtime_global_constant_key(const char *name);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);

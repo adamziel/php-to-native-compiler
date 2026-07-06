@@ -96764,6 +96764,38 @@ var_dump(class_exists('Exception'));\n",
 }
 
 #[test]
+fn compile_throwable_object_message_uses_to_string_to_native_binary() {
+    let root = temp_dir("ptn-native-throwable-object-message");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("throwable-object-message.php");
+    let output = root.join("throwable-object-message-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Message {\n\
+    public function __toString(): string { return 'Foobar'; }\n\
+}\n\
+class MyException extends Exception {\n\
+    public $message;\n\
+    public function __construct() { $this->message = new Message(); }\n\
+}\n\
+try {\n\
+    throw new MyException();\n\
+} catch (MyException $caught) {\n\
+    echo $caught->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Foobar\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_string_and_trace_formatting_to_native_binary() {
     let root = temp_dir("ptn-native-exception-string-trace-formatting");
     fs::create_dir_all(&root).unwrap();
