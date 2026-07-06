@@ -26542,6 +26542,7 @@ function leaf() {
 function root_gen() {
     yield "start" => 0;
     yield from ["a" => 10, 20];
+    yield from new ArrayIterator([30, 40]);
     $delegated = yield from leaf();
     yield "delegated" => $delegated;
     yield 99;
@@ -26591,12 +26592,13 @@ var_dump(method_exists($gen, "valid"));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nCannot get return value of a generator that hasn't returned\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nCannot get return value of a generator that hasn't returned\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_generator_yield_from"));
+    assert!(c_source.contains("ptn_generator_traversable_delegate_iterator"));
     assert!(c_source.contains("ptn_generator_get_return"));
     assert!(c_source.contains("ptn_generator_key"));
     assert!(c_source.contains("ptn_generator_next"));

@@ -11456,6 +11456,13 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     const char *path,
     size_t line
 );
+static PTN_UNUSED PtnArrayIterator ptn_generator_traversable_delegate_iterator(
+    PtnRuntime *runtime,
+    PtnValue source,
+    const char *path,
+    size_t line,
+    int rewind
+);
 static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iterator);
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator);
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator);
@@ -11552,30 +11559,54 @@ static PTN_UNUSED int ptn_generator_has_send_call_at_position(PtnGenerator *gene
     return 0;
 }
 
-static PTN_UNUSED void ptn_generator_skip_exhausted_delegates(PtnGenerator *generator) {
+static PTN_UNUSED int ptn_generator_skip_exhausted_delegates(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
     while (
         generator != NULL &&
         generator->values != NULL &&
         generator->position < generator->values->len
     ) {
-        if (ptn_generator_traversable_delegate_source_value(generator, generator->position) != NULL) {
-            return;
+        PtnValue *traversable_source =
+            ptn_generator_traversable_delegate_source_value(generator, generator->position);
+        if (traversable_source != NULL) {
+            PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
+            PtnArrayIterator iterator = ptn_generator_traversable_delegate_iterator(
+                runtime,
+                ptn_value_deref(source_receiver),
+                runtime != NULL ? runtime->source_path : NULL,
+                line,
+                0
+            );
+            int source_still_valid = iterator.valid;
+            ptn_array_iterator_destroy(&iterator);
+            ptn_value_destroy(&source_receiver);
+            if (source_still_valid) {
+                return 1;
+            }
+            generator->position++;
+            continue;
         }
         PtnGenerator *source = ptn_generator_delegate_source(generator, generator->position);
+        if (source != NULL && !ptn_generator_ensure_initialized(runtime, source, line)) {
+            return 0;
+        }
         if (
             source != NULL &&
             generator->has_pending_exception &&
             generator->pending_exception_position == generator->position &&
             ptn_generator_has_current_or_last_yield(source)
         ) {
-            return;
+            return 1;
         }
         if (
             source != NULL &&
             !source->completed &&
             ptn_generator_has_send_call_at_position(source, source->position)
         ) {
-            return;
+            return 1;
         }
         if (
             source == NULL ||
@@ -11583,10 +11614,11 @@ static PTN_UNUSED void ptn_generator_skip_exhausted_delegates(PtnGenerator *gene
             source->has_pending_exception ||
             ptn_generator_position_valid(source)
         ) {
-            return;
+            return 1;
         }
         generator->position++;
     }
+    return 1;
 }
 
 static PTN_UNUSED int ptn_generator_last_yield_index(PtnGenerator *generator, size_t *index) {
@@ -11749,6 +11781,9 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     }
 
     if (!ptn_generator_validate_yield_from_delegate(runtime, generator, source_generator, line)) {
+        return ptn_null();
+    }
+    if (!ptn_generator_ensure_initialized(runtime, source_generator, line)) {
         return ptn_null();
     }
     PtnGenerator *existing = ptn_generator_delegate_source(generator, generator->position);
@@ -12860,7 +12895,10 @@ static PTN_UNUSED int ptn_generator_try_throw_catch(
         }
         ptn_generator_release_consumed_reference(generator, position);
         generator->position++;
-        ptn_generator_skip_exhausted_delegates(generator);
+        if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+            *result_out = ptn_null();
+            return 1;
+        }
         *result_out = ptn_generator_current(runtime, receiver, line);
         return 1;
     }
@@ -13074,12 +13112,12 @@ static PTN_UNUSED PtnValue ptn_generator_current_at_position(
         ptn_generator_traversable_delegate_source_value(generator, position);
     if (traversable_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
-        PtnArrayIterator iterator = ptn_array_iterator_from_value(
+        PtnArrayIterator iterator = ptn_generator_traversable_delegate_iterator(
             runtime,
             ptn_value_deref(source_receiver),
-            NULL,
             runtime != NULL ? runtime->source_path : NULL,
-            line
+            line,
+            0
         );
         ptn_generator_promote_traversable_delegate_iterator(
             runtime,
@@ -13147,12 +13185,12 @@ static PTN_UNUSED PtnValue ptn_generator_key_at_position(
         ptn_generator_traversable_delegate_source_value(generator, position);
     if (traversable_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
-        PtnArrayIterator iterator = ptn_array_iterator_from_value(
+        PtnArrayIterator iterator = ptn_generator_traversable_delegate_iterator(
             runtime,
             ptn_value_deref(source_receiver),
-            NULL,
             runtime != NULL ? runtime->source_path : NULL,
-            line
+            line,
+            0
         );
         ptn_generator_promote_traversable_delegate_iterator(
             runtime,
@@ -13191,7 +13229,9 @@ static PTN_UNUSED PtnValue ptn_generator_current_or_last(
     }
     if (generator != NULL) {
         if (!generator->started) {
-            ptn_generator_skip_exhausted_delegates(generator);
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                return ptn_null();
+            }
         }
         generator->started = 1;
     }
@@ -13246,7 +13286,9 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
     }
     if (generator != NULL) {
         if (!generator->started) {
-            ptn_generator_skip_exhausted_delegates(generator);
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                return ptn_null();
+            }
         }
         generator->started = 1;
     }
@@ -13313,6 +13355,14 @@ static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtim
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (generator != NULL && generator->has_lazy_invocation) {
+        ptn_throw_exception(
+            runtime,
+            "Exception",
+            "Cannot get return value of a generator that hasn't returned"
+        );
+        return ptn_null();
+    }
     if (
         generator != NULL &&
         generator->completed &&
@@ -13331,14 +13381,15 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
 }
 
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
         return ptn_null();
     }
     if (generator != NULL) {
         if (!generator->started) {
-            ptn_generator_skip_exhausted_delegates(generator);
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                return ptn_null();
+            }
         }
         generator->started = 1;
     }
@@ -13439,12 +13490,12 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             ptn_generator_traversable_delegate_source_value(generator, generator->position);
         if (traversable_source != NULL) {
             PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
-            PtnArrayIterator iterator = ptn_array_iterator_from_value(
+            PtnArrayIterator iterator = ptn_generator_traversable_delegate_iterator(
                 runtime,
                 ptn_value_deref(source_receiver),
-                NULL,
                 runtime != NULL ? runtime->source_path : NULL,
-                line
+                line,
+                0
             );
             ptn_generator_promote_traversable_delegate_iterator(
                 runtime,
@@ -13483,7 +13534,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             ptn_generator_flush_output_chunk(runtime, generator, generator->position);
             ptn_generator_release_consumed_reference(generator, generator->position);
             generator->position++;
-            ptn_generator_skip_exhausted_delegates(generator);
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                return ptn_null();
+            }
             if (!ptn_generator_position_valid(generator)) {
                 ptn_generator_flush_pending_output(runtime, generator);
             }
@@ -13508,7 +13561,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         ptn_generator_apply_resume_return_value(runtime, generator, ptn_null());
         ptn_generator_release_consumed_reference(generator, generator->position);
         generator->position++;
-        ptn_generator_skip_exhausted_delegates(generator);
+        if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+            return ptn_null();
+        }
         if (ptn_generator_position_valid(generator)) {
             ptn_generator_flush_output_chunk(runtime, generator, generator->position);
         } else {
@@ -14247,14 +14302,15 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGe
 }
 
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
         return ptn_bool(0);
     }
     if (generator != NULL) {
         if (!generator->started) {
-            ptn_generator_skip_exhausted_delegates(generator);
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                return ptn_bool(0);
+            }
         }
         generator->started = 1;
     }
@@ -15887,7 +15943,13 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
     iterator.generator = generator;
     iterator.runtime = runtime;
     generator->started = 1;
-    ptn_generator_skip_exhausted_delegates(generator);
+    if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+        iterator.array = NULL;
+        iterator.object = NULL;
+        iterator.generator = NULL;
+        iterator.runtime = NULL;
+        return iterator;
+    }
     iterator.index = generator->position;
     iterator.valid = iterator.array != NULL &&
         generator->keys != NULL &&
@@ -15933,7 +15995,8 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
     PtnRuntime *runtime,
     PtnValue iterator_value,
     const char *access_scope,
-    size_t line
+    size_t line,
+    int rewind
 ) {
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     iterator.runtime = runtime;
@@ -15963,7 +16026,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
             "RecursiveIteratorIterator"
         );
 #endif
-    if (ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
+    if (rewind && ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
         PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
         ptn_value_destroy(&rewind);
     }
@@ -15972,7 +16035,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
         if (!ptn_internal_recursive_iterator_iterator_foreach_rewind(
             runtime,
             iterator.iterator_object,
-            ptn_object_declares_iterator_method(runtime, iterator.iterator_object.as.object, "rewind"),
+            rewind && ptn_object_declares_iterator_method(runtime, iterator.iterator_object.as.object, "rewind"),
             line
         ) && runtime != NULL && runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL) {
@@ -16264,7 +16327,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         ptn_object_has_iterator_method(runtime, value.as.object, "current") &&
         ptn_object_has_iterator_method(runtime, value.as.object, "next")
     ) {
-        return ptn_array_iterator_from_protocol_iterator(runtime, value, access_scope, line);
+        return ptn_array_iterator_from_protocol_iterator(runtime, value, access_scope, line, 1);
     }
 
     return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope, line);
@@ -16430,6 +16493,32 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     return ptn_array_iterator_from_array_snapshot(value.as.array);
 }
 
+static PTN_UNUSED int ptn_value_is_protocol_iterator(
+    PtnRuntime *runtime,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_object_implements_builtin_interface(value.as.object, "Iterator") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "valid") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "current") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "next");
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_generator_traversable_delegate_iterator(
+    PtnRuntime *runtime,
+    PtnValue source,
+    const char *path,
+    size_t line,
+    int rewind
+) {
+    PtnValue resolved = ptn_value_deref(source);
+    if (ptn_value_is_protocol_iterator(runtime, resolved)) {
+        return ptn_array_iterator_from_protocol_iterator(runtime, resolved, NULL, line, rewind);
+    }
+    return ptn_array_iterator_from_value(runtime, resolved, NULL, path, line);
+}
+
 static PTN_UNUSED void ptn_array_iterator_destroy_with_runtime_scope_at(
     PtnArrayIterator *iterator,
     PtnRuntime *runtime,
@@ -16475,10 +16564,29 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         runtime->current_generator != NULL &&
         !has_user_try_frame &&
         resolved.type == PTN_OBJECT &&
-        ptn_value_is_unpack_traversable(resolved) &&
-        ptn_generator_append_delegate_entry(runtime, runtime->current_generator, resolved, line)
+        ptn_value_is_unpack_traversable(resolved)
     ) {
-        return ptn_null();
+        if (ptn_value_is_protocol_iterator(runtime, resolved)) {
+            PtnArrayIterator iterator = ptn_generator_traversable_delegate_iterator(
+                runtime,
+                resolved,
+                runtime->source_path,
+                line,
+                1
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_array_iterator_destroy(&iterator);
+                return ptn_null();
+            }
+            int delegate_valid = iterator.valid;
+            ptn_array_iterator_destroy(&iterator);
+            if (!delegate_valid) {
+                return ptn_null();
+            }
+        }
+        if (ptn_generator_append_delegate_entry(runtime, runtime->current_generator, resolved, line)) {
+            return ptn_null();
+        }
     }
 
     PtnArrayIterator iterator = ptn_array_iterator_empty();
@@ -16703,6 +16811,26 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
             ptn_value_destroy(&source_receiver);
             return key;
         }
+        PtnValue *traversable_source =
+            ptn_generator_traversable_delegate_source_value(iterator->generator, iterator->index);
+        if (traversable_source != NULL) {
+            PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
+            PtnArrayIterator delegate_iterator = ptn_generator_traversable_delegate_iterator(
+                iterator->runtime,
+                ptn_value_deref(source_receiver),
+                iterator->runtime != NULL ? iterator->runtime->source_path : NULL,
+                iterator->line,
+                0
+            );
+            PtnValue key = delegate_iterator.valid
+                ? ptn_array_iterator_current_key(&delegate_iterator)
+                : ptn_null();
+            PtnValue result = ptn_value_clone_deref(key);
+            ptn_value_destroy(&key);
+            ptn_array_iterator_destroy(&delegate_iterator);
+            ptn_value_destroy(&source_receiver);
+            return result;
+        }
     }
     if (
         iterator->generator != NULL &&
@@ -16753,6 +16881,26 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
             PtnValue current = ptn_generator_current(iterator->runtime, source_receiver, iterator->line);
             ptn_value_destroy(&source_receiver);
             return current;
+        }
+        PtnValue *traversable_source =
+            ptn_generator_traversable_delegate_source_value(iterator->generator, iterator->index);
+        if (traversable_source != NULL) {
+            PtnValue source_receiver = ptn_value_clone_deref(*traversable_source);
+            PtnArrayIterator delegate_iterator = ptn_generator_traversable_delegate_iterator(
+                iterator->runtime,
+                ptn_value_deref(source_receiver),
+                iterator->runtime != NULL ? iterator->runtime->source_path : NULL,
+                iterator->line,
+                0
+            );
+            PtnValue current = delegate_iterator.valid
+                ? ptn_array_iterator_current_value(&delegate_iterator)
+                : ptn_null();
+            PtnValue result = ptn_value_clone_deref(current);
+            ptn_value_destroy(&current);
+            ptn_array_iterator_destroy(&delegate_iterator);
+            ptn_value_destroy(&source_receiver);
+            return result;
         }
     }
     if (iterator->generator != NULL) {

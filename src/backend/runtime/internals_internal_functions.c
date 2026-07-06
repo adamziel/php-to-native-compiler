@@ -278124,15 +278124,18 @@ static void ptn_reflection_generator_append_trace(
     PtnValue result,
     PtnGenerator *generator,
     int include_file_line,
-    int64_t *index
+    int64_t *index,
+    size_t line
 ) {
     if (generator == NULL || index == NULL) {
         return;
     }
-    ptn_generator_skip_exhausted_delegates(generator);
+    if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+        return;
+    }
     PtnGenerator *delegate = ptn_generator_delegate_source(generator, generator->position);
     if (delegate != NULL) {
-        ptn_reflection_generator_append_trace(runtime, result, delegate, 1, index);
+        ptn_reflection_generator_append_trace(runtime, result, delegate, 1, index, line);
     }
     if (*index == INT64_MAX) {
         ptn_abort_out_of_memory();
@@ -278142,7 +278145,6 @@ static void ptn_reflection_generator_append_trace(
         ptn_array_int_key((*index)++),
         ptn_reflection_generator_trace_frame(generator, include_file_line)
     );
-    (void)runtime;
 }
 
 static int ptn_reflection_generator_is_closed(PtnGenerator *generator) {
@@ -278164,28 +278166,44 @@ static int ptn_reflection_generator_require_open(PtnRuntime *runtime, PtnGenerat
     return 0;
 }
 
-static PtnGenerator *ptn_reflection_generator_current_execution(PtnGenerator *generator) {
+static PtnGenerator *ptn_reflection_generator_current_execution(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
     if (generator == NULL) {
         return NULL;
     }
-    ptn_generator_skip_exhausted_delegates(generator);
+    if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+        return NULL;
+    }
     PtnGenerator *delegate = ptn_generator_delegate_source(generator, generator->position);
     if (delegate != NULL) {
-        PtnGenerator *nested = ptn_reflection_generator_current_execution(delegate);
+        PtnGenerator *nested = ptn_reflection_generator_current_execution(runtime, delegate, line);
         return nested == NULL ? delegate : nested;
     }
     return generator;
 }
 
-static PtnValue ptn_reflection_generator_current_execution_value(PtnValue generator_value) {
+static PtnValue ptn_reflection_generator_current_execution_value(
+    PtnRuntime *runtime,
+    PtnValue generator_value,
+    size_t line
+) {
     PtnGenerator *generator = ptn_generator_from_value(generator_value);
     if (generator == NULL) {
         return ptn_null();
     }
-    ptn_generator_skip_exhausted_delegates(generator);
+    if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+        return ptn_null();
+    }
     PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
     if (delegate_source != NULL) {
-        PtnValue nested = ptn_reflection_generator_current_execution_value(*delegate_source);
+        PtnValue nested = ptn_reflection_generator_current_execution_value(
+            runtime,
+            *delegate_source,
+            line
+        );
         if (ptn_generator_from_value(nested) != NULL) {
             return nested;
         }
@@ -278296,7 +278314,7 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
         ) {
             return ptn_null();
         }
-        PtnGenerator *executing = ptn_reflection_generator_current_execution(generator);
+        PtnGenerator *executing = ptn_reflection_generator_current_execution(runtime, generator, line);
         size_t source_line = ptn_reflection_generator_executing_line(executing);
         if (source_line > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
@@ -278311,7 +278329,7 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
         ) {
             return ptn_null();
         }
-        PtnGenerator *executing = ptn_reflection_generator_current_execution(generator);
+        PtnGenerator *executing = ptn_reflection_generator_current_execution(runtime, generator, line);
         return ptn_owned_string(ptn_duplicate_string(
             executing != NULL && executing->source_file != NULL
                 ? executing->source_file
@@ -278326,7 +278344,7 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
         ) {
             return ptn_null();
         }
-        return ptn_reflection_generator_current_execution_value(data->generator);
+        return ptn_reflection_generator_current_execution_value(runtime, data->generator, line);
     }
     if (ptn_ascii_case_equal(name, "getFunction")) {
         ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
@@ -278355,7 +278373,8 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
             result,
             generator,
             0,
-            &index
+            &index,
+            line
         );
         return result;
     }
