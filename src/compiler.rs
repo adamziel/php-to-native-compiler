@@ -18,8 +18,9 @@ use crate::ir::{
 };
 use crate::lexer::{decode_php_source_bytes, decode_php_source_bytes_with_encoding};
 use crate::parser::{
-    parse_for_include_collection, parse_include_with_runtime_class_aliases_and_symbols,
-    parse_with_runtime_class_aliases_and_symbols,
+    parse_for_include_collection_with_multibyte,
+    parse_include_with_runtime_class_aliases_and_symbols_with_multibyte,
+    parse_with_runtime_class_aliases_and_symbols_with_multibyte,
 };
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
@@ -139,7 +140,11 @@ fn compile_file_inner_with_source_options(
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
     let source = decode_compiler_source_bytes(&source_bytes, source_options)?;
-    let include_program = parse_for_include_collection(&source, &HashMap::new())?;
+    let include_program = parse_for_include_collection_with_multibyte(
+        &source,
+        &HashMap::new(),
+        source_options.zend_multibyte,
+    )?;
     let source_file = input.to_string_lossy().into_owned();
     let source_dir = input
         .parent()
@@ -154,11 +159,12 @@ fn compile_file_inner_with_source_options(
     includes.collect_program(&include_program, &source_file, &source_dir)?;
     includes.finalize_sources()?;
     let (included_classes, included_traits) = includes.validation_symbols(None);
-    let program = parse_with_runtime_class_aliases_and_symbols(
+    let program = parse_with_runtime_class_aliases_and_symbols_with_multibyte(
         &source,
         &includes.runtime_class_aliases,
         &included_classes,
         &included_traits,
+        source_options.zend_multibyte,
     )?;
     let include_sources = includes.sources;
     let include_resolutions = includes.resolutions;
@@ -1616,21 +1622,24 @@ impl IncludeCollector {
         };
         apply_include_source_transform(&mut source_bytes, resolved.transform.as_ref());
         let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
-        let (program, parse_error) =
-            match parse_for_include_collection(&source, &self.runtime_class_aliases) {
-                Ok(program) => (program, None),
-                Err(error) if error.kind == DiagnosticKind::ParseError => {
-                    let line = error.span.map(|span| span.line).unwrap_or(1);
-                    (
-                        empty_include_program(),
-                        Some(IncludeParseError {
-                            message: error.message,
-                            line,
-                        }),
-                    )
-                }
-                Err(error) => return Err(error),
-            };
+        let (program, parse_error) = match parse_for_include_collection_with_multibyte(
+            &source,
+            &self.runtime_class_aliases,
+            self.source_options.zend_multibyte,
+        ) {
+            Ok(program) => (program, None),
+            Err(error) if error.kind == DiagnosticKind::ParseError => {
+                let line = error.span.map(|span| span.line).unwrap_or(1);
+                (
+                    empty_include_program(),
+                    Some(IncludeParseError {
+                        message: error.message,
+                        line,
+                    }),
+                )
+            }
+            Err(error) => return Err(error),
+        };
 
         let index = self.sources.len();
         self.by_source.insert(key, index);
@@ -1704,12 +1713,14 @@ impl IncludeCollector {
             let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
             self.sources[index].source_bytes = source_bytes;
-            self.sources[index].program = parse_include_with_runtime_class_aliases_and_symbols(
-                &source,
-                &self.runtime_class_aliases,
-                &included_classes,
-                &included_traits,
-            )?;
+            self.sources[index].program =
+                parse_include_with_runtime_class_aliases_and_symbols_with_multibyte(
+                    &source,
+                    &self.runtime_class_aliases,
+                    &included_classes,
+                    &included_traits,
+                    self.source_options.zend_multibyte,
+                )?;
         }
         Ok(())
     }

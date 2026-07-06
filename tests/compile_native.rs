@@ -135,6 +135,28 @@ fn parser_accepts_declare_encoding_string_literal() {
 }
 
 #[test]
+fn parser_accepts_declare_encoding_scalar_literals_and_rejects_constants() {
+    let error =
+        parser::parse("<?php declare(encoding = 1); declare(encoding = M_PI);").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Encoding must be a literal");
+    assert_eq!(error.span.unwrap().line, 1);
+    assert_eq!(error.notices.len(), 1);
+    assert_eq!(error.notices[0].message, "Unsupported encoding [1]");
+}
+
+#[test]
+fn parser_rejects_late_declare_encoding_directives() {
+    let error = parser::parse("<?php echo 'before'; function f() { declare(encoding='UTF-8'); }")
+        .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "Encoding declaration pragma must be the very first statement in the script"
+    );
+}
+
+#[test]
 fn parser_reports_non_literal_declare_ticks_as_fatal() {
     let error = parser::parse("<?php declare(ticks=UNKNOWN_CONST);").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
@@ -101039,6 +101061,38 @@ fn phpc_zend_script_encoding_pass_emits_startup_warning() {
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_declare_encoding_warns_when_zend_multibyte_is_disabled() {
+    let root = temp_dir("ptn-phpc-declare-encoding-zend-multibyte-disabled");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declare-encoding-disabled.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+function f() { declare(encoding='UTF-8'); }\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains(
+        "Warning: declare(encoding=...) ignored because Zend multibyte feature is turned off by settings"
+    ));
+    assert!(stderr.contains(
+        "Fatal error: Encoding declaration pragma must be the very first statement in the script"
+    ));
 }
 
 #[test]

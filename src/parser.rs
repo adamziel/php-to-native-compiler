@@ -66,42 +66,64 @@ pub fn parse(source: &str) -> Result<Program> {
     parse_with_runtime_class_aliases(source, &HashMap::new())
 }
 
-pub(crate) fn parse_for_include_collection(
+pub(crate) fn parse_for_include_collection_with_multibyte(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
+    zend_multibyte: bool,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], false, false, false)
+    parse_with_options(
+        source,
+        runtime_class_aliases,
+        &[],
+        &[],
+        false,
+        false,
+        false,
+        zend_multibyte,
+    )
 }
 
 pub(crate) fn parse_with_runtime_class_aliases(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], true, true, false)
-}
-
-pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
-    source: &str,
-    runtime_class_aliases: &HashMap<String, String>,
-    external_classes: &[ClassDecl],
-    external_traits: &[TraitDecl],
-) -> Result<Program> {
     parse_with_options(
         source,
         runtime_class_aliases,
-        external_classes,
-        external_traits,
+        &[],
+        &[],
         true,
         true,
+        false,
         false,
     )
 }
 
-pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols(
+pub(crate) fn parse_with_runtime_class_aliases_and_symbols_with_multibyte(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
+    zend_multibyte: bool,
+) -> Result<Program> {
+    parse_with_options(
+        source,
+        runtime_class_aliases,
+        external_classes,
+        external_traits,
+        true,
+        true,
+        false,
+        zend_multibyte,
+    )
+}
+
+pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols_with_multibyte(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+    external_classes: &[ClassDecl],
+    external_traits: &[TraitDecl],
+    zend_multibyte: bool,
 ) -> Result<Program> {
     parse_with_options(
         source,
@@ -111,6 +133,7 @@ pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols(
         true,
         false,
         false,
+        zend_multibyte,
     )
 }
 
@@ -122,6 +145,7 @@ fn parse_with_options(
     validate_method_signatures: bool,
     validate_function_names: bool,
     force_top_level_declarations_conditional: bool,
+    zend_multibyte: bool,
 ) -> Result<Program> {
     let lexed = lex_with_warnings(source)?;
     let tokens = lexed.tokens;
@@ -170,6 +194,7 @@ fn parse_with_options(
         strict_types: false,
         ticks: false,
         strict_types_declare_allowed: true,
+        zend_multibyte,
         compiler_halt_offset,
         compile_warnings: lexed.compile_warnings,
         validate_method_signatures,
@@ -249,6 +274,7 @@ struct Parser<'a> {
     strict_types: bool,
     ticks: bool,
     strict_types_declare_allowed: bool,
+    zend_multibyte: bool,
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
@@ -5744,6 +5770,17 @@ impl Parser<'_> {
                     let enabled = value != 0;
                     declared_ticks = Some(enabled);
                     self.ticks = enabled;
+                } else if name.eq_ignore_ascii_case("encoding") {
+                    self.parse_declare_encoding_literal_value(name_token.span)?;
+                    if !self.strict_types_declare_allowed
+                        || self.function_depth > 0
+                        || self.method_depth > 0
+                    {
+                        return Err(Diagnostic::new(
+                            "Encoding declaration pragma must be the very first statement in the script",
+                            Some(start_span),
+                        ));
+                    }
                 } else {
                     self.parse_declare_literal_value(&name, name_token.span)?;
                 }
@@ -5788,12 +5825,58 @@ impl Parser<'_> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Int(_) | TokenKind::True | TokenKind::False => Ok(()),
-            TokenKind::String(_) if directive_name.eq_ignore_ascii_case("encoding") => Ok(()),
             _ if directive_name.eq_ignore_ascii_case("ticks") => Err(Diagnostic::new(
                 "declare(ticks) value must be a literal",
                 Some(directive_span),
             )),
             _ => Err(syntax_error_unexpected(&token, Some("literal"))),
+        }
+    }
+
+    fn parse_declare_encoding_literal_value(&mut self, directive_span: SourceSpan) -> Result<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(_) => {
+                if !self.zend_multibyte {
+                    self.compile_warnings.push(CompileWarning {
+                        message: "declare(encoding=...) ignored because Zend multibyte feature is turned off by settings".to_string(),
+                        span: token.span,
+                        kind: CompileWarningKind::Warning,
+                    });
+                }
+                Ok(())
+            }
+            TokenKind::Int(value) => {
+                self.compile_warnings.push(CompileWarning {
+                    message: format!("Unsupported encoding [{value}]"),
+                    span: token.span,
+                    kind: CompileWarningKind::Warning,
+                });
+                Ok(())
+            }
+            TokenKind::Float(value) => {
+                self.compile_warnings.push(CompileWarning {
+                    message: format!(
+                        "Unsupported encoding [{}]",
+                        declare_encoding_float_display(value)
+                    ),
+                    span: token.span,
+                    kind: CompileWarningKind::Warning,
+                });
+                Ok(())
+            }
+            TokenKind::True | TokenKind::False => {
+                self.compile_warnings.push(CompileWarning {
+                    message: "Unsupported encoding [1]".to_string(),
+                    span: token.span,
+                    kind: CompileWarningKind::Warning,
+                });
+                Ok(())
+            }
+            _ => Err(Diagnostic::new(
+                "Encoding must be a literal",
+                Some(directive_span),
+            )),
         }
     }
 
@@ -6796,6 +6879,7 @@ impl Parser<'_> {
             false,
             true,
             true,
+            self.zend_multibyte,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -6947,6 +7031,7 @@ impl Parser<'_> {
             false,
             true,
             true,
+            self.zend_multibyte,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -6999,6 +7084,7 @@ impl Parser<'_> {
             false,
             true,
             true,
+            self.zend_multibyte,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -9495,6 +9581,7 @@ impl Parser<'_> {
             strict_types: self.strict_types,
             ticks: self.ticks,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
+            zend_multibyte: self.zend_multibyte,
             compiler_halt_offset: None,
             compile_warnings: Vec::new(),
             validate_method_signatures: false,
@@ -18251,6 +18338,17 @@ fn parameter_default_float_display(value: f64) -> String {
     } else {
         display
     }
+}
+
+fn declare_encoding_float_display(value: f64) -> String {
+    if value.abs() >= 1.0e14 || (value != 0.0 && value.abs() < 1.0e-4) {
+        let display = format!("{value:.13E}");
+        return display
+            .replace("E-", "E-")
+            .replace("E", "E+")
+            .replace("E+-", "E-");
+    }
+    parameter_default_float_display(value)
 }
 
 fn parameter_default_string_display(value: &str) -> String {
