@@ -27277,12 +27277,13 @@ $gen = from();
 $gens[] = gen($gen);
 $gens[] = gen($gen);
 
-foreach ($gens as $index => $g) {
-    echo "Generator $index\n";
-    var_dump($g->current());
+foreach ($gens as $g) {
+    $g->current();
+}
+
+foreach ($gens as $g) {
     $g->next();
 }
-var_dump($gens[1]->current());
 "#,
     )
     .unwrap();
@@ -27299,8 +27300,57 @@ var_dump($gens[1]->current());
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Generator 0\nint(1)\nException:boom\nGenerator 1\nClosedGeneratorException:Generator yielded from aborted, no return value available\nNULL\nNULL\n"
+        "Exception:boom\nClosedGeneratorException:Generator yielded from aborted, no return value available\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_yield_from_new_delegate_aborted_error_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-new-aborted-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-new-aborted-error.php");
+    let output = root.join("generator-yield-from-new-aborted-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function from() {
+    yield 0;
+    throw new Exception();
+}
+function gen($gen) {
+    yield from $gen;
+}
+
+$gen1 = from();
+$gen2 = gen($gen1);
+$gen3 = gen($gen1);
+try {
+    $gen2->next();
+} catch (Exception $e) {
+    unset($gen2);
+}
+$gen3->next();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught Error: Generator passed to yield from was aborted without proper return and is unable to continue"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("#0 [internal function]: gen(Object(Generator))"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Generator->next()"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

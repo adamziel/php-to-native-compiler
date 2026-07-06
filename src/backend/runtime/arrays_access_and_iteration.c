@@ -11843,6 +11843,10 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
         return ptn_null();
     }
     if (ptn_generator_aborted_without_return(source_generator)) {
+        if (existing != source_generator) {
+            ptn_generator_throw_aborted_yield_from_error(runtime, line);
+            return ptn_null();
+        }
         PtnValue result = ptn_null();
         const char *resume_method_name =
             runtime != NULL && runtime->generator_resume_method_name != NULL
@@ -13328,6 +13332,19 @@ static PTN_UNUSED PtnValue ptn_generator_closed_delegate_exception(
     ));
 }
 
+static PTN_UNUSED void ptn_generator_throw_aborted_yield_from_error(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Generator passed to yield from was aborted without proper return and is unable to continue",
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_generator_rewrite_closed_delegate_exception_trace(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -13817,6 +13834,22 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
     PtnValue delegate_resume_value = ptn_null();
     int has_delegate_resume_value = 0;
     if (ptn_generator_position_valid(generator)) {
+        if (
+            generator != NULL &&
+            generator->has_pending_exception &&
+            generator->pending_exception_position == generator->position
+        ) {
+            if (ptn_generator_throw_pending_exception_at_position(
+                    runtime,
+                    generator,
+                    generator->position,
+                    line,
+                    "next",
+                    1
+            )) {
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
+            }
+        }
         PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
         if (delegate_source != NULL) {
             PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
@@ -13870,6 +13903,23 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             int caught_delegate_exception = 0;
             PtnTryFrame delegate_frame;
             int delegate_frame_active = 0;
+            if (ptn_generator_aborted_without_return(source_generator)) {
+                PtnValue closed_result = ptn_null();
+                if (ptn_generator_throw_closed_delegate_into_parent(
+                        runtime,
+                        generator,
+                        line,
+                        "next",
+                        &closed_result
+                )) {
+                    ptn_value_destroy(&source_receiver);
+                    return ptn_generator_restore_resume_method_and_return(
+                        runtime,
+                        previous_resume_method,
+                        closed_result
+                    );
+                }
+            }
             if (runtime != NULL && runtime->exceptions != NULL) {
                 ptn_try_frame_push(runtime, &delegate_frame);
                 delegate_frame_active = 1;
