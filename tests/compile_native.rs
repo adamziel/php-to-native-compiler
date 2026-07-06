@@ -26957,6 +26957,42 @@ var_dump($generator->valid());
 }
 
 #[test]
+fn compile_generator_send_into_yield_array_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-send-yield-array-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-send-yield-array-argument.php");
+    let output = root.join("generator-send-yield-array-argument-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    var_dump([yield "k" => "ab"]);
+}
+
+$generator = gen();
+for ($generator->rewind(), $i = 1; $generator->valid(); $generator->send($i), $i++) {
+    echo "{$generator->key()} => {$generator->current()}\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "k => ab\narray(1) {\n  [0]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("__ptn_array_yield_value_expr"));
+    assert!(c_source.contains("ptn_generator_register_send_call"));
+}
+
+#[test]
 fn compile_generator_send_into_list_yield_assignment_to_native_binary() {
     let root = temp_dir("ptn-native-generator-send-list-yield-assignment");
     fs::create_dir_all(&root).unwrap();

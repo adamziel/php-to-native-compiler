@@ -14439,6 +14439,17 @@ static PTN_UNUSED int ptn_generator_yield_path_is_binary_expr(PtnValue path_valu
         memcmp(marker.as.string.data, "__ptn_binary_yield_expr", marker.as.string.len) == 0;
 }
 
+static PTN_UNUSED int ptn_generator_yield_path_is_array_value_expr(PtnValue path_value) {
+    PtnValue resolved = ptn_value_deref(path_value);
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL || resolved.as.array->len == 0) {
+        return 0;
+    }
+    PtnValue marker = ptn_value_deref(resolved.as.array->entries[0].value);
+    return marker.type == PTN_STRING &&
+        marker.as.string.len == strlen("__ptn_array_yield_value_expr") &&
+        memcmp(marker.as.string.data, "__ptn_array_yield_value_expr", marker.as.string.len) == 0;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_replay_binary_yield_expr(
     PtnRuntime *runtime,
     PtnArray *descriptor,
@@ -14507,6 +14518,28 @@ static PTN_UNUSED PtnValue ptn_generator_replay_binary_yield_expr(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_generator_replay_array_value_yield_expr(
+    PtnRuntime *runtime,
+    PtnArray *descriptor,
+    PtnValue sent_value,
+    size_t fallback_line
+) {
+    size_t line = fallback_line;
+    if (descriptor != NULL && descriptor->len >= 2) {
+        PtnValue line_value = ptn_value_deref(descriptor->entries[1].value);
+        if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
+            line = (size_t)line_value.as.integer;
+        }
+    }
+    PtnValue value = ptn_value_clone_deref(sent_value);
+    PtnArrayLiteralEntry entries[] = {
+        { 0, ptn_null(), value }
+    };
+    PtnValue result = ptn_array_from_literal_entries_at(runtime, line, 1, entries);
+    ptn_value_destroy(&value);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_sent_argument_value(
     PtnRuntime *runtime,
     PtnArray *yield_indexes,
@@ -14522,6 +14555,14 @@ static PTN_UNUSED PtnValue ptn_generator_sent_argument_value(
     PtnValue resolved_path = ptn_value_deref(path_value);
     if (ptn_generator_yield_path_is_binary_expr(resolved_path)) {
         return ptn_generator_replay_binary_yield_expr(
+            runtime,
+            resolved_path.as.array,
+            sent_value,
+            line
+        );
+    }
+    if (ptn_generator_yield_path_is_array_value_expr(resolved_path)) {
+        return ptn_generator_replay_array_value_yield_expr(
             runtime,
             resolved_path.as.array,
             sent_value,

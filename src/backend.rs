@@ -44587,6 +44587,7 @@ enum GeneratorSendArgumentSource {
     AssignedDirect,
     AssignedPath(Vec<ValueExpr>),
     BinaryExpr(GeneratorSendBinaryExpr),
+    ArrayValueExpr(usize),
 }
 
 #[derive(Clone)]
@@ -44720,6 +44721,27 @@ fn binary_yield_send_argument_source(argument: &ValueExpr) -> Option<GeneratorSe
                 line: *line,
             },
         ));
+    }
+    None
+}
+
+fn array_value_yield_send_argument_source(
+    argument: &ValueExpr,
+) -> Option<GeneratorSendArgumentSource> {
+    let ValueExpr::Array(elements) = argument else {
+        return None;
+    };
+    let [element] = elements.as_slice() else {
+        return None;
+    };
+    if element.key.is_some() {
+        return None;
+    }
+    let IrArrayElementValue::Value(value) = &element.value else {
+        return None;
+    };
+    if value_expr_is_direct_yield(value) {
+        return Some(GeneratorSendArgumentSource::ArrayValueExpr(element.line));
     }
     None
 }
@@ -47694,6 +47716,9 @@ impl ValueEmitter {
                     });
                 }
                 if let Some(source) = binary_yield_send_argument_source(argument) {
+                    return Some(GeneratorSendArgument { index, source });
+                }
+                if let Some(source) = array_value_yield_send_argument_source(argument) {
                     return Some(GeneratorSendArgument { index, source });
                 }
                 let ValueExpr::Load { name, .. } = argument else {
@@ -63793,6 +63818,21 @@ impl ValueEmitter {
                     out.push_str(" = ptn_null();\n");
                     temps.push(temp);
                 }
+                Some(GeneratorSendArgumentSource::ArrayValueExpr(_)) => {
+                    if let ValueExpr::Array(elements) = argument {
+                        if let Some(element) = elements.first() {
+                            if let IrArrayElementValue::Value(value) = &element.value {
+                                let yield_temp = self.emit_materialized_value(out, value);
+                                emit_value_cleanup(out, "    ", &yield_temp);
+                            }
+                        }
+                    }
+                    let temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_null();\n");
+                    temps.push(temp);
+                }
                 _ => temps.push(self.emit_call_argument(out, name, argument_index, argument)),
             }
         }
@@ -63944,6 +63984,28 @@ impl ValueEmitter {
         path_temp
     }
 
+    fn emit_generator_yield_array_value_expr_path(
+        &mut self,
+        out: &mut String,
+        line: usize,
+    ) -> String {
+        let entries_temp = self.next_temp();
+        out.push_str("    PtnArrayLiteralEntry ");
+        out.push_str(&entries_temp);
+        out.push_str("[] = { ");
+        out.push_str("{ 1, ptn_int(0), ptn_string(\"__ptn_array_yield_value_expr\") }, ");
+        out.push_str("{ 1, ptn_int(1), ptn_int(");
+        out.push_str(&line.to_string());
+        out.push_str(") } };\n");
+        let path_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&path_temp);
+        out.push_str(" = ptn_array_from_literal_entries(2, ");
+        out.push_str(&entries_temp);
+        out.push_str(");\n");
+        path_temp
+    }
+
     fn emit_yield_paths_array(
         &mut self,
         out: &mut String,
@@ -63958,6 +64020,9 @@ impl ValueEmitter {
                 }
                 GeneratorSendArgumentSource::BinaryExpr(binary) => {
                     path_temps.push(self.emit_generator_yield_binary_expr_path(out, binary));
+                }
+                GeneratorSendArgumentSource::ArrayValueExpr(line) => {
+                    path_temps.push(self.emit_generator_yield_array_value_expr_path(out, *line));
                 }
                 GeneratorSendArgumentSource::DirectYieldExpr
                 | GeneratorSendArgumentSource::AssignedDirect => {
