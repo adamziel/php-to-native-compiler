@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-06T07:40:17Z |
+| last refresh | 2026-07-06T07:50:16Z |
 | source commit | `66e8df03ac14` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,12 +22,12 @@
 | field | value |
 | --- | --- |
 | source commit | `f1d06fab7ea5` |
-| statused tests | 12915 |
-| passed tests | 10195 |
-| failed tests | 1767 |
-| skipped tests | 950 |
+| statused tests | 13257 |
+| passed tests | 10389 |
+| failed tests | 1898 |
+| skipped tests | 967 |
 | warned tests | 3 |
-| unknown tests | 8952 |
+| unknown tests | 8610 |
 | run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260706T065041Z` |
 
 ## Recent Progress
