@@ -13564,6 +13564,8 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
     if (generator != NULL) {
         generator->started = 1;
     }
+    PtnValue delegate_resume_value = ptn_null();
+    int has_delegate_resume_value = 0;
     if (ptn_generator_position_valid(generator)) {
         PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
         if (delegate_source != NULL) {
@@ -13591,8 +13593,22 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             PtnValue advanced = ptn_generator_next(runtime, source_receiver, line);
             ptn_value_destroy(&advanced);
             int source_still_valid = ptn_generator_position_valid(source_generator);
+            if (
+                !source_still_valid &&
+                source_generator != NULL &&
+                source_generator->completed
+            ) {
+                delegate_resume_value =
+                    ptn_generator_get_collected_return(runtime, source_receiver, line);
+                has_delegate_resume_value = 1;
+            }
             ptn_value_destroy(&source_receiver);
             if (source_still_valid) {
+                ptn_value_destroy(&delegate_resume_value);
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
+            }
+            if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&delegate_resume_value);
                 return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
         }
@@ -13663,12 +13679,17 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         )) {
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
+        PtnValue resume_value = has_delegate_resume_value
+            ? delegate_resume_value
+            : ptn_null();
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        if (!ptn_generator_replay_send_calls(runtime, generator, ptn_null(), line)) {
+        if (!ptn_generator_replay_send_calls(runtime, generator, resume_value, line)) {
+            ptn_value_destroy(&delegate_resume_value);
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
 #endif
-        ptn_generator_apply_resume_return_value(runtime, generator, ptn_null());
+        ptn_generator_apply_resume_return_value(runtime, generator, resume_value);
+        ptn_value_destroy(&delegate_resume_value);
         ptn_generator_release_consumed_reference(generator, generator->position);
         generator->position++;
         if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {

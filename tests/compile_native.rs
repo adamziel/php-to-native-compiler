@@ -27047,6 +27047,58 @@ var_dump(method_exists($gen, "valid"));
 }
 
 #[test]
+fn compile_generator_yield_from_shared_delegate_return_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-shared-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-shared-return.php");
+    let output = root.join("generator-yield-from-shared-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen($a = 0) {
+    yield 1 + $a;
+    if ($a < 1) {
+        var_dump(yield from gen($a + 1));
+    }
+    yield 3 + $a;
+    return 5 + $a;
+}
+
+function bar($gen) {
+    var_dump(yield from $gen);
+}
+
+$gen = gen();
+$gens[] = bar($gen);
+$gens[] = bar($gen);
+
+do {
+    foreach ($gens as $g) {
+        var_dump($g->current());
+        $g->next();
+    }
+} while ($gens[0]->valid());
+var_dump($gens[1]->valid());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(4)\nint(6)\nint(3)\nint(5)\nint(3)\nint(5)\nNULL\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("delegate_resume_value"));
+    assert!(c_source.contains("ptn_generator_replay_send_calls"));
+}
+
+#[test]
 fn compile_generator_get_return_auto_primes_return_only_generator_to_native_binary() {
     let root = temp_dir("ptn-native-generator-get-return-auto-prime");
     fs::create_dir_all(&root).unwrap();
