@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report authoritative PHPT corpus scoreboards without mixing data sources."""
+"""Report the active PHPT partial-run scoreboard without mixing data sources."""
 
 from __future__ import annotations
 
@@ -67,8 +67,8 @@ class ShardSummary:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Summarize fresh CI full-corpus artifacts and local rolling PHPT "
-            "dashboard state as separate scoreboards."
+            "Summarize the active local PHPT partial run used for scheduling. "
+            "Fresh artifact and rolling aggregate views are opt-in."
         )
     )
     parser.add_argument(
@@ -90,6 +90,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=[],
         help="Rolling dashboard state dir, latest.tsv, or partial summary/status file.",
+    )
+    parser.add_argument(
+        "--include-rolling-summary",
+        action="store_true",
+        help="Also print the rolling aggregate. Default is active partial run only.",
     )
     parser.add_argument(
         "--top",
@@ -537,7 +542,9 @@ def rolling_summary_values(path: Path) -> dict[str, str]:
     return values
 
 
-def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
+def reports_from_rolling(
+    path: Path, top: int, include_rolling_summary: bool = False
+) -> list[SourceReport]:
     source_path = path
     latest_values: dict[str, str] = {}
     summary_path: Path | None = None
@@ -602,8 +609,7 @@ def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
     if latest_values.get("active_tests"):
         notes.append(f"active run observed tests: {latest_values['active_tests']}")
 
-    reports = [
-        SourceReport(
+    rolling_report = SourceReport(
         name=path.name or str(path),
         freshness="rolling-dashboard",
         commit=commit,
@@ -615,8 +621,9 @@ def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
         top_exclusion_categories=[],
         top_failing_path_clusters=failures.most_common(top),
         notes=notes,
-        )
-    ]
+    )
+
+    reports: list[SourceReport] = []
 
     active_run_value = latest_values.get("active_run", "")
     if active_run_value:
@@ -625,6 +632,8 @@ def reports_from_rolling(path: Path, top: int) -> list[SourceReport]:
         )
         if active_report is not None:
             reports.append(active_report)
+    if include_rolling_summary or not reports:
+        reports.insert(0, rolling_report)
     return reports
 
 
@@ -652,9 +661,9 @@ def render_list(rows: list[tuple[str, int]]) -> str:
 
 def render_markdown(reports: list[SourceReport]) -> str:
     lines = [
-        "# PHPT Corpus Scoreboard",
+        "# PHPT Active Partial Scoreboard",
         "",
-        "| Source | Fresh/Rolling | Commit | Classifier mode | Selected | Runnable | Excluded | Executed | Pass | Fail | Skip | Warn | Source path |",
+        "| Source | State | Commit | Classifier mode | Selected | Runnable | Excluded | Executed | Pass | Fail | Skip | Warn | Source path |",
         "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for report in reports:
@@ -673,7 +682,7 @@ def render_markdown(reports: list[SourceReport]) -> str:
             [
                 f"## {report.name}",
                 "",
-                f"- fresh-vs-rolling: {report.freshness}",
+                f"- state: {report.freshness}",
                 f"- commit: `{report.commit}`",
                 f"- php-src revision: `{report.corpus_revision or 'unknown'}`",
                 f"- classifier mode: {report.classifier_mode}",
@@ -723,7 +732,9 @@ def main() -> int:
         if kind == "fresh":
             reports.append(report_from_fresh(path, args.top))
         elif kind == "rolling":
-            reports.extend(reports_from_rolling(path, args.top))
+            reports.extend(
+                reports_from_rolling(path, args.top, args.include_rolling_summary)
+            )
         else:
             raise AssertionError(kind)
 

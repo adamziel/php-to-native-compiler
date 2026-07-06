@@ -38,21 +38,13 @@ else
 fi
 
 latest_dashboard="/home/claude/.local/state/ptn-full-phpt-dashboard-loop/latest.tsv"
-printf '\nfull_corpus_dashboard\n'
+printf '\nactive_partial_dashboard_snapshot\n'
 if [ -f "$latest_dashboard" ]; then
   awk -F '\t' '
     $1 == "refreshed_at_utc" ||
-    $1 == "source_commit" ||
-    $1 == "selected" ||
-    $1 == "runnable" ||
-    $1 == "excluded" ||
-    $1 == "tests" ||
-    $1 == "passed" ||
-    $1 == "failed" ||
-    $1 == "skipped" ||
-    $1 == "warned" ||
     $1 == "complete" ||
     $1 == "active_source_commit" ||
+    $1 == "active_run" ||
     $1 == "active_tests" ||
     $1 == "active_passed" ||
     $1 == "active_failed" ||
