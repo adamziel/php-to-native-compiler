@@ -216074,7 +216074,10 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
         ptn_fiber_trace_frame_array(&suspend_frame, PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT)
     );
     for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
-        if (frame == data->active_method_frame || frame->function_name == NULL) {
+        if (frame == data->active_method_frame) {
+            break;
+        }
+        if (frame->function_name == NULL) {
             continue;
         }
         if (frame->file != NULL && frame->line != 0 && data->executing_file == NULL) {
@@ -216305,12 +216308,17 @@ static PtnValue ptn_fiber_start(
     size_t line
 ) {
     if (data->started) {
-        ptn_throw_exception_at(
+        ptn_throw_exception_owned_message_at_with_trace_frame(
             runtime,
             "FiberError",
-            "Cannot start a fiber that has already been started",
+            ptn_duplicate_string("Cannot start a fiber that has already been started"),
             runtime->source_path,
-            line
+            line,
+            "Fiber->start",
+            runtime->source_path,
+            line,
+            argc,
+            args
         );
         return ptn_null();
     }
@@ -216724,7 +216732,7 @@ static PtnTraceFrame *ptn_reflection_fiber_live_file_frame(
          frame = frame->previous) {
 #if !defined(_WIN32)
         if (frame == data->active_method_frame) {
-            continue;
+            break;
         }
 #endif
         if (frame->file != NULL && frame->line != 0) {
@@ -216770,7 +216778,10 @@ static PtnValue ptn_reflection_fiber_live_trace(
         );
         for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
 #if !defined(_WIN32)
-            if (frame == data->active_method_frame || frame->function_name == NULL) {
+            if (frame == data->active_method_frame) {
+                break;
+            }
+            if (frame->function_name == NULL) {
                 continue;
             }
 #else
@@ -216836,7 +216847,10 @@ static PtnValue ptn_reflection_fiber_live_trace(
 
     for (; frame != NULL; frame = frame->previous) {
 #if !defined(_WIN32)
-        if (frame == data->active_method_frame || frame->function_name == NULL) {
+        if (frame == data->active_method_frame) {
+            break;
+        }
+        if (frame->function_name == NULL) {
             continue;
         }
 #else

@@ -3118,6 +3118,20 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     }
     size_t index = 0;
     PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+#if !defined(_WIN32)
+    PtnTraceFrame *fiber_method_frame = NULL;
+    PtnTraceFrame *fiber_caller_trace_frame = NULL;
+    if (
+        runtime != NULL &&
+        runtime->current_generator == NULL &&
+        runtime->current_fiber != NULL &&
+        runtime->current_fiber->native_data != NULL
+    ) {
+        PtnFiberData *fiber_data = (PtnFiberData *)runtime->current_fiber->native_data;
+        fiber_method_frame = fiber_data->active_method_frame;
+        fiber_caller_trace_frame = fiber_data->caller_trace_frame;
+    }
+#endif
     while (frame != NULL) {
         if (
             frame->previous != NULL &&
@@ -3134,6 +3148,12 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
             ptn_abort_out_of_memory();
         }
         ptn_exception_trace_append_frame(trace, frame, &index);
+#if !defined(_WIN32)
+        if (frame == fiber_method_frame && fiber_caller_trace_frame != NULL) {
+            frame = fiber_caller_trace_frame;
+            continue;
+        }
+#endif
         frame = frame->previous;
     }
     return trace;
