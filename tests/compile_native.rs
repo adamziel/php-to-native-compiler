@@ -38422,6 +38422,7 @@ stream_wrapper_register('partialwrite', PartialWriteWrapper::class);
 $fp = fopen('optwrap://x', 'r');
 var_dump(stream_set_blocking($fp, false));
 var_dump(stream_set_write_buffer($fp, 4096));
+var_dump(set_file_buffer($fp, 2048));
 var_dump(stream_set_timeout($fp, 10, 11));
 file_put_contents('partialwrite://file.txt', 'foobarbaz');
 "#,
@@ -38438,6 +38439,8 @@ file_put_contents('partialwrite://file.txt', 'foobarbaz');
             "1:0:NULL\n",
             "bool(true)\n",
             "3:2:int(4096)\n",
+            "int(0)\n",
+            "3:2:int(2048)\n",
             "int(0)\n",
             "4:10:int(11)\n",
             "bool(true)\n",

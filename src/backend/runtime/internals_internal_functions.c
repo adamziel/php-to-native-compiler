@@ -237810,6 +237810,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "socket_set_option", 4, 4, ptn_internal_socket_set_option },
         { "socket_strerror", 1, 1, ptn_internal_socket_strerror },
         { "socket_write", 2, 3, ptn_internal_socket_write },
+        { "set_file_buffer", 2, 2, ptn_internal_stream_set_write_buffer },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "spl_autoload", 1, 2, ptn_internal_spl_autoload },
