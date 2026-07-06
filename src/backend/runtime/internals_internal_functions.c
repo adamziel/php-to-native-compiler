@@ -201352,6 +201352,30 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    if (argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL) {
+        double timeout_seconds = ptn_internal_expect_float_arg(
+            runtime,
+            "stream_socket_client",
+            4,
+            "timeout",
+            args[3],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(address);
+            return ptn_null();
+        }
+        if (!isfinite(timeout_seconds)) {
+            ptn_string_operand_free(address);
+            ptn_throw_exception(runtime, "ValueError", "stream_socket_client(): Argument #4 ($timeout) must be a finite value");
+            return ptn_null();
+        }
+        if (timeout_seconds < 0.0) {
+            ptn_string_operand_free(address);
+            ptn_throw_exception(runtime, "ValueError", "stream_socket_client(): Argument #4 ($timeout) must be greater than or equal to 0");
+            return ptn_null();
+        }
+    }
     const char *tcp_prefix = "tcp://";
     size_t tcp_prefix_len = strlen(tcp_prefix);
     if (address.len >= tcp_prefix_len && memcmp(address.data, tcp_prefix, tcp_prefix_len) == 0) {
@@ -201680,6 +201704,10 @@ static PtnValue ptn_internal_stream_socket_accept(PtnRuntime *runtime, size_t ar
             line
         );
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!isfinite(timeout_seconds)) {
+            ptn_throw_exception(runtime, "ValueError", "stream_socket_accept(): Argument #2 ($timeout) must be a finite value");
             return ptn_null();
         }
         if (timeout_seconds < 0.0) {

@@ -36752,6 +36752,64 @@ string(27) \"Failed to parse address \"[\"\"\n"
 }
 
 #[test]
+fn compile_stream_socket_rejects_non_finite_timeouts_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-non-finite-timeouts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-non-finite-timeouts.php");
+    let output = root.join("stream-socket-non-finite-timeouts-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$socket = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
+foreach ([NAN, -NAN, INF, -INF] as $value) {
+    try {
+        stream_socket_accept($socket, $value);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+fclose($socket);
+
+foreach ([NAN, -NAN, INF, -INF] as $value) {
+    try {
+        stream_socket_client("tcp://127.0.0.1:1", timeout: $value);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stream_socket_accept(): Argument #2 ($timeout) must be a finite value\n\
+stream_socket_accept(): Argument #2 ($timeout) must be a finite value\n\
+stream_socket_accept(): Argument #2 ($timeout) must be a finite value\n\
+stream_socket_accept(): Argument #2 ($timeout) must be a finite value\n\
+stream_socket_client(): Argument #4 ($timeout) must be a finite value\n\
+stream_socket_client(): Argument #4 ($timeout) must be a finite value\n\
+stream_socket_client(): Argument #4 ($timeout) must be a finite value\n\
+stream_socket_client(): Argument #4 ($timeout) must be a finite value\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_socket_accept"));
+    assert!(c_source.contains("ptn_internal_stream_socket_client"));
+}
+
+#[test]
 fn compile_fdatasync_file_and_non_file_streams_to_native_binary() {
     let root = temp_dir("ptn-native-fdatasync-streams");
     fs::create_dir_all(&root).unwrap();

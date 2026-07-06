@@ -33857,6 +33857,7 @@ fn emit_instruction(
                     arguments,
                     argument_names,
                     argument_unpacks,
+                    &[],
                     *allow_global_fallback,
                     *line,
                     true,
@@ -40641,6 +40642,11 @@ struct InternalParameterSpec {
     default: Option<InternalParameterDefault>,
 }
 
+struct BoundInternalArguments {
+    arguments: Vec<ValueExpr>,
+    defaulted: Vec<bool>,
+}
+
 fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParameterSpec]> {
     static CLONE_PARAMETERS: [InternalParameterSpec; 2] = [
         InternalParameterSpec {
@@ -40806,6 +40812,32 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         InternalParameterSpec {
             name: "eol",
             default: Some(InternalParameterDefault::String("\n")),
+        },
+    ];
+    static STREAM_SOCKET_CLIENT_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "address",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "error_code",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "error_message",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "timeout",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(4)),
+        },
+        InternalParameterSpec {
+            name: "context",
+            default: Some(InternalParameterDefault::Null),
         },
     ];
     static STR_GETCSV_PARAMETERS: [InternalParameterSpec; 4] = [
@@ -42308,6 +42340,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&FGETCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fputcsv") {
         Some(&FPUTCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("stream_socket_client") {
+        Some(&STREAM_SOCKET_CLIENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("str_getcsv") {
         Some(&STR_GETCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("xmlwriter_flush")
@@ -42928,7 +42962,7 @@ fn bind_named_internal_call_arguments(
     name: &str,
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
-) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+) -> Option<std::result::Result<BoundInternalArguments, NamedArgumentBindingError>> {
     bind_named_internal_arguments(
         internal_named_call_parameters(name)?,
         arguments,
@@ -42940,7 +42974,7 @@ fn bind_named_internal_method_call_arguments(
     name: &str,
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
-) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+) -> Option<std::result::Result<BoundInternalArguments, NamedArgumentBindingError>> {
     static SOAP_FAULT_CONSTRUCT_PARAMETERS: [InternalParameterSpec; 6] = [
         InternalParameterSpec {
             name: "code",
@@ -42990,7 +43024,7 @@ fn bind_named_internal_arguments(
     parameters: &[InternalParameterSpec],
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
-) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+) -> Option<std::result::Result<BoundInternalArguments, NamedArgumentBindingError>> {
     let mut slots = vec![None; parameters.len()];
     for (argument_index, (argument, argument_name)) in
         arguments.iter().zip(argument_names.iter()).enumerate()
@@ -43021,19 +43055,28 @@ fn bind_named_internal_arguments(
     }
 
     let Some(last_slot) = slots.iter().rposition(Option::is_some) else {
-        return Some(Ok(Vec::new()));
+        return Some(Ok(BoundInternalArguments {
+            arguments: Vec::new(),
+            defaulted: Vec::new(),
+        }));
     };
     let mut normalized = Vec::with_capacity(last_slot + 1);
+    let mut defaulted = Vec::with_capacity(last_slot + 1);
     for index in 0..=last_slot {
         if let Some(argument) = &slots[index] {
             normalized.push(argument.clone());
+            defaulted.push(false);
         } else if let Some(default) = parameters[index].default {
             normalized.push(internal_parameter_default_expr(default));
+            defaulted.push(true);
         } else {
             return None;
         }
     }
-    Some(Ok(normalized))
+    Some(Ok(BoundInternalArguments {
+        arguments: normalized,
+        defaulted,
+    }))
 }
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
@@ -46407,6 +46450,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                &[],
                 *allow_global_fallback,
                 *line,
                 true,
@@ -52858,6 +52902,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                &[],
                 *allow_global_fallback,
                 *line,
                 false,
@@ -60686,6 +60731,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                &[],
                 *allow_global_fallback,
                 *line,
                 false,
@@ -62740,6 +62786,7 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
+        defaulted_arguments: &[bool],
         allow_global_fallback: bool,
         line: usize,
         discarded: bool,
@@ -63229,14 +63276,15 @@ impl ValueEmitter {
                     bind_named_internal_call_arguments(name, arguments, argument_names)
                 {
                     return match binding {
-                        Ok(normalized_arguments) => {
-                            let normalized_argument_names = vec![None; normalized_arguments.len()];
+                        Ok(binding) => {
+                            let normalized_argument_names = vec![None; binding.arguments.len()];
                             self.emit_internal_call(
                                 out,
                                 name,
-                                &normalized_arguments,
+                                &binding.arguments,
                                 &normalized_argument_names,
-                                &vec![false; normalized_arguments.len()],
+                                &vec![false; binding.arguments.len()],
+                                &binding.defaulted,
                                 allow_global_fallback,
                                 line,
                                 discarded,
@@ -63364,6 +63412,10 @@ impl ValueEmitter {
             None
         };
         for (argument_index, argument) in arguments.iter().enumerate() {
+            let is_defaulted_argument = defaulted_arguments
+                .get(argument_index)
+                .copied()
+                .unwrap_or(false);
             let by_ref_parameter = direct_user
                 .as_ref()
                 .and_then(|direct_user| {
@@ -63374,7 +63426,9 @@ impl ValueEmitter {
                         by_ref_parameter_for_argument(parameters, argument_index)
                     })
                 });
-            let temp = if let Some(parameter) = by_ref_parameter {
+            let temp = if is_defaulted_argument {
+                self.emit_call_argument(out, name, argument_index, argument)
+            } else if let Some(parameter) = by_ref_parameter {
                 let parameter_name = if parameter.is_variadic {
                     ""
                 } else {
@@ -65868,15 +65922,15 @@ impl ValueEmitter {
                 bind_named_internal_method_call_arguments(name, arguments, argument_names)
             {
                 return match binding {
-                    Ok(normalized_arguments) => {
-                        let normalized_argument_names = vec![None; normalized_arguments.len()];
+                    Ok(binding) => {
+                        let normalized_argument_names = vec![None; binding.arguments.len()];
                         self.emit_method_call(
                             out,
                             receiver,
                             name,
-                            &normalized_arguments,
+                            &binding.arguments,
                             &normalized_argument_names,
-                            &vec![false; normalized_arguments.len()],
+                            &vec![false; binding.arguments.len()],
                             line,
                             discarded,
                         )
@@ -66121,15 +66175,15 @@ impl ValueEmitter {
                 bind_named_internal_method_call_arguments(name, arguments, argument_names)
             {
                 return match binding {
-                    Ok(normalized_arguments) => {
-                        let normalized_argument_names = vec![None; normalized_arguments.len()];
+                    Ok(binding) => {
+                        let normalized_argument_names = vec![None; binding.arguments.len()];
                         self.emit_nullsafe_chain_method_call(
                             out,
                             receiver,
                             name,
-                            &normalized_arguments,
+                            &binding.arguments,
                             &normalized_argument_names,
-                            &vec![false; normalized_arguments.len()],
+                            &vec![false; binding.arguments.len()],
                             line,
                             discarded,
                         )
@@ -66340,15 +66394,15 @@ impl ValueEmitter {
                 bind_named_internal_method_call_arguments(name, arguments, argument_names)
             {
                 return match binding {
-                    Ok(normalized_arguments) => {
-                        let normalized_argument_names = vec![None; normalized_arguments.len()];
+                    Ok(binding) => {
+                        let normalized_argument_names = vec![None; binding.arguments.len()];
                         self.emit_nullsafe_method_call(
                             out,
                             receiver,
                             name,
-                            &normalized_arguments,
+                            &binding.arguments,
                             &normalized_argument_names,
-                            &vec![false; normalized_arguments.len()],
+                            &vec![false; binding.arguments.len()],
                             line,
                             discarded,
                         )
