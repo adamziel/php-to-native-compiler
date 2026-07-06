@@ -5748,6 +5748,72 @@ fn parser_accepts_precedence_aware_binary_expressions() {
 }
 
 #[test]
+fn parser_preserves_yield_precedence_for_unary_and_binary_operators() {
+    let program =
+        parser::parse("<?php function gen() { yield +1; yield -1; yield * -1; }").unwrap();
+    let function = &program.functions[0];
+
+    let Statement::Expression {
+        expression: Expr::Yield { value, .. },
+        ..
+    } = &function.body[0]
+    else {
+        panic!("expected first yield expression");
+    };
+    assert!(matches!(
+        value.as_deref(),
+        Some(Expr::Unary {
+            op: UnaryOp::Positive,
+            ..
+        })
+    ));
+
+    let Statement::Expression {
+        expression: Expr::Yield { value, .. },
+        ..
+    } = &function.body[1]
+    else {
+        panic!("expected second yield expression");
+    };
+    assert!(matches!(
+        value.as_deref(),
+        Some(Expr::Unary {
+            op: UnaryOp::Negate,
+            ..
+        })
+    ));
+
+    let Statement::Expression {
+        expression:
+            Expr::Binary {
+                op: BinaryOp::Multiply,
+                left,
+                right,
+                ..
+            },
+        ..
+    } = &function.body[2]
+    else {
+        panic!("expected multiplication around bare yield");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Yield {
+            key: None,
+            value: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::Negate,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_power_as_right_associative_above_unary() {
     let program = parser::parse("<?php echo -3 ** 2, 2 ** 3 ** 2;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {

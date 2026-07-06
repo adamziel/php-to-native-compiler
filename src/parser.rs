@@ -9571,11 +9571,7 @@ impl Parser<'_> {
                 | TokenKind::Comma
                 | TokenKind::Colon
         ) {
-            return Ok(Expr::Yield {
-                key: None,
-                value: None,
-                span: start_span,
-            });
+            return Ok(Self::bare_yield_expr(start_span));
         }
         if self.peek_is_identifier("from") {
             if self.return_by_ref_stack.last().copied().unwrap_or(false) {
@@ -9593,10 +9589,14 @@ impl Parser<'_> {
             });
         }
 
-        let first = self.parse_expr()?;
+        if !self.peek_starts_expression() {
+            return Ok(Self::bare_yield_expr(start_span));
+        }
+
+        let first = self.parse_assignment_expr_without_keyword_boolean()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
-            let value = self.parse_expr()?;
+            let value = self.parse_assignment_expr_without_keyword_boolean()?;
             if self.return_by_ref_stack.last().copied().unwrap_or(false)
                 && expr_is_nullsafe_chain(&value)
             {
@@ -9620,6 +9620,14 @@ impl Parser<'_> {
             value: Some(Box::new(first)),
             span,
         })
+    }
+
+    fn bare_yield_expr(start_span: SourceSpan) -> Expr {
+        Expr::Yield {
+            key: None,
+            value: None,
+            span: start_span,
+        }
     }
 
     fn parse_arrow_function_expr(
