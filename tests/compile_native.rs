@@ -92934,6 +92934,41 @@ foreach ([0] as $input) {\n\
 }
 
 #[test]
+fn compile_uncaught_exception_trace_honors_exception_ignore_args_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-ignore-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-ignore-args.php");
+    let output = root.join("exception-ignore-args-bin");
+    fs::write(
+        &input,
+        "<?php
+$function = function(string $user, string $pass) {
+    throw new Exception();
+};
+
+ini_set('zend.exception_ignore_args', 1);
+$function('secrets', 'arewrong');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    let output = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(output.contains("{closure:"));
+    assert!(output.contains("}()"));
+    assert!(!output.contains("'secrets'"));
+    assert!(!output.contains("'arewrong'"));
+}
+
+#[test]
 fn compile_uncaught_array_merge_type_error_in_foreach_reports_captured_trace_to_native_binary() {
     let root = temp_dir("ptn-native-array-merge-foreach-uncaught-type-error");
     fs::create_dir_all(&root).unwrap();

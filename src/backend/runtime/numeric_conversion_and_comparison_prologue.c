@@ -2754,6 +2754,7 @@ static int ptn_exception_append_trace_frame(
     PtnValue class_value = class_slot == NULL ? ptn_null() : ptn_value_deref(*class_slot);
     PtnValue type_value = type_slot == NULL ? ptn_null() : ptn_value_deref(*type_slot);
     PtnValue function_value = function_slot == NULL ? ptn_null() : ptn_value_deref(*function_slot);
+    int omit_args = ptn_runtime_exception_ignore_args(runtime);
     if (class_slot != NULL) {
         if (class_value.type == PTN_STRING) {
             ptn_string_buffer_append_len(
@@ -2783,6 +2784,9 @@ static int ptn_exception_append_trace_frame(
             (const char *)function_value.as.string.data,
             function_value.as.string.len
         );
+        if (ptn_trace_function_omits_printed_args(function_name)) {
+            omit_args = 1;
+        }
         ptn_exception_append_display_function(buffer, function_name);
         free(function_name);
     } else if (function_slot != NULL) {
@@ -2792,7 +2796,7 @@ static int ptn_exception_append_trace_frame(
     ptn_string_buffer_append_char(buffer, '(');
     PtnValue *args_slot = ptn_trace_array_string_slot(frame, "args");
     PtnValue args_value = args_slot == NULL ? ptn_null() : ptn_value_deref(*args_slot);
-    if (args_value.type == PTN_ARRAY && args_value.as.array != NULL) {
+    if (!omit_args && args_value.type == PTN_ARRAY && args_value.as.array != NULL) {
         for (size_t i = 0; i < args_value.as.array->len; i++) {
             if (i != 0) {
                 ptn_string_buffer_append(buffer, ", ");
@@ -2804,7 +2808,7 @@ static int ptn_exception_append_trace_frame(
             }
             ptn_trace_append_arg(buffer, entry->value, max_string_len);
         }
-    } else if (args_slot != NULL) {
+    } else if (!omit_args && args_slot != NULL) {
         ptn_exception_trace_warning(runtime, "args element is not an array", line);
     }
     ptn_string_buffer_append_char(buffer, ')');
