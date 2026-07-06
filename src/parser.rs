@@ -2326,7 +2326,7 @@ impl Parser<'_> {
                 if !matches!(self.peek().kind, TokenKind::Semicolon) {
                     alias = Some(self.parse_trait_adaptation_method_name()?);
                 }
-                let semicolon = self.expect_semicolon()?;
+                let semicolon = self.expect_trait_adaptation_terminator()?;
                 adaptations.push(TraitAdaptation::Alias(TraitAliasAdaptation {
                     method,
                     alias,
@@ -2348,7 +2348,7 @@ impl Parser<'_> {
                     }
                     self.advance();
                 }
-                let semicolon = self.expect_semicolon()?;
+                let semicolon = self.expect_trait_adaptation_terminator()?;
                 adaptations.push(TraitAdaptation::Precedence(TraitPrecedenceAdaptation {
                     method,
                     instead_of,
@@ -2422,11 +2422,36 @@ impl Parser<'_> {
     }
 
     fn parse_trait_adaptation_method_name(&mut self) -> Result<String> {
-        let token = self.advance();
+        let token = self.advance().clone();
+        if matches!(token.kind, TokenKind::OpenTag)
+            && matches!(
+                self.tokens.get(self.index).map(|token| &token.kind),
+                Some(TokenKind::Echo)
+            )
+        {
+            self.advance();
+            let text = self
+                .source
+                .get(token.span.byte_start..token.span.byte_end)
+                .unwrap_or("<?=");
+            return Err(Diagnostic::parse_error(
+                format!("Cannot use \"{text}\" as an identifier"),
+                Some(token.span),
+            ));
+        }
         if let Some(name) = method_name_from_token(&token.kind) {
             return Ok(name);
         }
         Err(Diagnostic::new("expected method name", Some(token.span)))
+    }
+
+    fn expect_trait_adaptation_terminator(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Semicolon | TokenKind::CloseTag) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected semicolon", Some(token.span)))
+        }
     }
 
     fn previous_span(&self) -> SourceSpan {

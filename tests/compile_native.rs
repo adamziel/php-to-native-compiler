@@ -7278,6 +7278,30 @@ fn parser_accepts_short_echo_tags_between_inline_html() {
 }
 
 #[test]
+fn phpc_rejects_short_echo_tag_as_trait_alias_identifier() {
+    let root = temp_dir("ptn-short-echo-as-trait-alias-identifier");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("short-echo-as-identifier.php");
+    fs::write(
+        &input,
+        "<?php\ntrait T {\n    public function x() {}\n}\nclass C {\n    use T {\n        x as y?><?= as my_echo;\n    }\n}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: Cannot use \"<?=\" as an identifier in {} on line 7\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_inline_html_between_php_blocks_to_native_binary() {
     let root = temp_dir("ptn-native-inline-html-between-blocks");
     fs::create_dir_all(&root).unwrap();
