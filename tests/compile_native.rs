@@ -3777,6 +3777,46 @@ try {
 }
 
 #[test]
+fn compile_fiber_error_cannot_be_manually_instantiated_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-error-reserved-construction");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-error-reserved-construction.php");
+    let output = root.join("fiber-error-reserved-construction-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$class = 'FiberError';
+foreach ([
+    fn() => new FiberError,
+    fn() => new $class,
+    fn() => (new ReflectionClass('FiberError'))->newInstance(),
+] as $create) {
+    try {
+        $create();
+    } catch (Error $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "The \"FiberError\" class is reserved for internal use and cannot be manually instantiated\n",
+            "The \"FiberError\" class is reserved for internal use and cannot be manually instantiated\n",
+            "The \"FiberError\" class is reserved for internal use and cannot be manually instantiated\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_stack_size_ini_set_warning_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-stack-size-ini-warning");
     fs::create_dir_all(&root).unwrap();

@@ -55608,6 +55608,12 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         out.push_str("#endif\n");
+        out.push_str("    } else if (ptn_ascii_case_equal(");
+        out.push_str(class_name_expr);
+        out.push_str(", \"FiberError\")) {\n");
+        out.push_str("        ptn_throw_exception_owned_message_at(&runtime, \"Error\", ptn_duplicate_string(\"The \\\"FiberError\\\" class is reserved for internal use and cannot be manually instantiated\"), runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    } else {\n");
         out.push_str("        ");
         out.push_str(result_temp);
@@ -55633,6 +55639,22 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        if class_name.eq_ignore_ascii_case("FiberError") {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    ptn_throw_exception_owned_message_at(&runtime, \"Error\", ptn_duplicate_string(\"The \\\"FiberError\\\" class is reserved for internal use and cannot be manually instantiated\"), runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            for argument in arguments {
+                let argument_temp = self.emit_materialized_value(out, argument);
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
+            return;
+        }
         if declare_result && class_name.eq_ignore_ascii_case("Fiber") {
             out.push_str("    PtnValue ");
             out.push_str(result_temp);

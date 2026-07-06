@@ -244769,6 +244769,23 @@ static PtnValue ptn_reflection_class_instantiate(
         );
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(class_name, "FiberError")) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(
+                "The \"FiberError\" class is reserved for internal use and cannot be manually instantiated"
+            ),
+            runtime->source_path,
+            line,
+            trace_function_name,
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        return ptn_null();
+    }
     if (ptn_declared_class_exists(class_name)) {
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
