@@ -36810,6 +36810,52 @@ stream_socket_client(): Argument #4 ($timeout) must be a finite value\n"
 }
 
 #[test]
+fn compile_nonblocking_socket_fwrite_would_block_to_native_binary() {
+    let root = temp_dir("ptn-native-nonblocking-socket-fwrite");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nonblocking-socket-fwrite.php");
+    let output = root.join("nonblocking-socket-fwrite-bin");
+    fs::write(
+        &input,
+        r#"<?php
+[$sock1, $sock2] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+$str = str_repeat('a', 1000000);
+stream_set_blocking($sock1, false);
+var_dump(fwrite($sock1, $str));
+var_dump(fwrite($sock1, $str));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("int("))
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Notice:"), "{stdout}");
+    assert!(!stdout.contains("bool(false)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_resource_uri_is_socket_like"));
+    assert!(c_source.contains("php://fd/socketpair/"));
+}
+
+#[test]
 fn compile_fdatasync_file_and_non_file_streams_to_native_binary() {
     let root = temp_dir("ptn-native-fdatasync-streams");
     fs::create_dir_all(&root).unwrap();

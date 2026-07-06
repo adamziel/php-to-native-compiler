@@ -5086,6 +5086,9 @@ static PTN_UNUSED void ptn_memory_stream_note_size(PtnResource *resource, PtnMem
     }
 }
 
+static PTN_UNUSED int ptn_stream_errno_would_block(int error);
+static PTN_UNUSED int ptn_stream_resource_uri_is_socket_like(PtnResource *resource);
+
 static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const void *data, size_t len) {
     if (resource == NULL) {
         return 0;
@@ -5113,6 +5116,42 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
             return (size_t)written;
         }
 #endif
+        if (ptn_stream_resource_uri_is_socket_like(resource)) {
+#if defined(_WIN32)
+            size_t written = fwrite(data, 1, len, resource->stream);
+            if (written > 0) {
+                resource->stream_timed_out = 0;
+                resource->stream_eof = 0;
+                resource->stream_error = 0;
+            }
+            return written;
+#else
+            int descriptor = fileno(resource->stream);
+            if (descriptor < 0) {
+                errno = EBADF;
+                resource->stream_error = 1;
+                return 0;
+            }
+            ssize_t written;
+            do {
+                written = write(descriptor, data, len);
+            } while (written < 0 && errno == EINTR);
+            if (written >= 0) {
+                resource->stream_timed_out = 0;
+                resource->stream_eof = 0;
+                resource->stream_error = 0;
+                return (size_t)written;
+            }
+            if (ptn_stream_errno_would_block(errno)) {
+                resource->stream_timed_out = 1;
+                resource->stream_error = 0;
+                return 0;
+            }
+            resource->stream_timed_out = 0;
+            resource->stream_error = 1;
+            return 0;
+#endif
+        }
         size_t written = fwrite(data, 1, len, resource->stream);
         if (written > 0) {
             (void)fflush(resource->stream);
@@ -5230,7 +5269,8 @@ static PTN_UNUSED int ptn_stream_resource_uri_is_socket_like(PtnResource *resour
         ptn_stream_uri_has_ascii_case_prefix(uri, "tlsv1.3://") ||
         ptn_stream_uri_has_ascii_case_prefix(uri, "sslv3://") ||
         ptn_stream_uri_has_ascii_case_prefix(uri, "unix://") ||
-        ptn_stream_uri_has_ascii_case_prefix(uri, "udg://");
+        ptn_stream_uri_has_ascii_case_prefix(uri, "udg://") ||
+        ptn_stream_uri_has_ascii_case_prefix(uri, "php://fd/socketpair/");
 }
 
 static PTN_UNUSED size_t ptn_stream_read_socket_bytes(PtnResource *resource, void *buffer, size_t len) {
