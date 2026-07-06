@@ -27766,6 +27766,66 @@ var_dump($generator->throw(new RuntimeException("Test")));
 }
 
 #[test]
+fn compile_generator_throw_enters_yield_from_delegate_catches_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-yield-from-catches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-yield-from-catches.php");
+    let output = root.join("generator-throw-yield-from-catches-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function from($off) {
+    try {
+        yield $off + 1;
+    } catch (Exception $e) {
+        echo "catch in from ", $e->getMessage(), "\n";
+    }
+    yield $off + 2;
+}
+
+function gen() {
+    try {
+        yield 0;
+    } catch (Exception $e) {
+        echo "catch in gen ", $e->getMessage(), "\n";
+    }
+    try {
+        yield from from(0);
+    } catch (Exception $e) {
+        echo "catch in gen ", $e->getMessage(), "\n";
+    }
+    yield from from(2);
+}
+
+$i = 0;
+try {
+    for ($gen = gen(); $gen->valid(); $gen->throw(new Exception((string) $i++))) {
+        var_dump($gen->current());
+    }
+} catch (Exception $e) {
+    echo "catch in main ", $e->getMessage(), "\n";
+}
+var_dump($gen->valid());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\ncatch in gen 0\nint(1)\ncatch in from 1\nint(2)\ncatch in gen 2\nint(3)\ncatch in from 3\nint(4)\ncatch in main 4\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_try_throw_delegated"));
+    assert!(c_source.contains("ptn_generator_yield_from"));
+}
+
+#[test]
 fn compile_generator_throw_type_error_trace_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-type-error-trace");
     fs::create_dir_all(&root).unwrap();

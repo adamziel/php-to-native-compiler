@@ -13001,6 +13001,88 @@ static PTN_UNUSED PtnValue ptn_generator_throw_uncaught(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_generator_try_throw_delegated(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnGenerator *generator,
+    PtnValue thrown,
+    size_t line,
+    PtnValue *result_out
+) {
+    if (
+        result_out == NULL ||
+        generator == NULL ||
+        !ptn_generator_position_valid(generator)
+    ) {
+        return 0;
+    }
+
+    PtnValue *delegate_source =
+        ptn_generator_delegate_source_value(generator, generator->position);
+    if (delegate_source == NULL) {
+        return 0;
+    }
+
+    PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+    PtnGenerator *source_generator = ptn_generator_from_value(source_receiver);
+    if (source_generator == NULL) {
+        ptn_value_destroy(&source_receiver);
+        return 0;
+    }
+
+    PtnValue source_result = ptn_null();
+    if (ptn_generator_try_throw_delegated(
+            runtime,
+            source_receiver,
+            source_generator,
+            thrown,
+            line,
+            &source_result
+        )) {
+        ptn_value_destroy(&source_result);
+        if (!ptn_generator_position_valid(source_generator)) {
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                *result_out = ptn_null();
+                ptn_value_destroy(&source_receiver);
+                return 1;
+            }
+        }
+        *result_out = ptn_generator_current(runtime, receiver, line);
+        ptn_value_destroy(&source_receiver);
+        return 1;
+    }
+
+    if (ptn_generator_try_throw_catch(
+            runtime,
+            source_receiver,
+            source_generator,
+            thrown,
+            line,
+            &source_result
+        )) {
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            *result_out = source_result;
+            ptn_value_destroy(&source_receiver);
+            return 1;
+        }
+        ptn_value_destroy(&source_result);
+        if (!ptn_generator_position_valid(source_generator)) {
+            if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
+                *result_out = ptn_null();
+                ptn_value_destroy(&source_receiver);
+                return 1;
+            }
+        }
+        *result_out = ptn_generator_current(runtime, receiver, line);
+        ptn_value_destroy(&source_receiver);
+        return 1;
+    }
+
+    ptn_generator_close_for_throw(runtime, source_generator);
+    ptn_value_destroy(&source_receiver);
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -13058,6 +13140,18 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
     PtnValue thrown = ptn_value_clone_deref(resolved_exception);
     if (generator != NULL) {
         generator->started = 1;
+    }
+    PtnValue delegated_result = ptn_null();
+    if (ptn_generator_try_throw_delegated(
+            runtime,
+            receiver,
+            generator,
+            thrown,
+            line,
+            &delegated_result
+        )) {
+        ptn_value_destroy(&thrown);
+        return delegated_result;
     }
     PtnValue caught_result = ptn_null();
     if (ptn_generator_try_throw_catch(runtime, receiver, generator, thrown, line, &caught_result)) {

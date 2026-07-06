@@ -61183,6 +61183,19 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &source_temp);
+        if !self.generator_throw_catch_stack.is_empty() {
+            let registrations: Vec<_> = self
+                .generator_throw_catch_stack
+                .iter()
+                .rev()
+                .flat_map(|registrations| registrations.iter().cloned())
+                .collect();
+            for registration in registrations {
+                out.push_str("    ptn_generator_register_throw_catch(&runtime, ");
+                out.push_str(&registration.handler_id.to_string());
+                out.push_str(");\n");
+            }
+        }
         result_temp
     }
 
