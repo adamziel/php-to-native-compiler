@@ -70561,6 +70561,60 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
         );
         return ptn_null();
     }
+    if (strncmp(path, "glob://", 7) == 0) {
+#if defined(_WIN32)
+        ptn_emit_file_warning(runtime, "scandir", path, "directory scanning is unsupported on this platform", line);
+        free(path);
+        return ptn_bool(0);
+#else
+        const char *pattern = path + 7;
+        glob_t matches;
+        memset(&matches, 0, sizeof(matches));
+        int status = glob(pattern, 0, NULL, &matches);
+        if (status != 0 && status != GLOB_NOMATCH) {
+            globfree(&matches);
+            int saved_errno = errno;
+            ptn_emit_directory_open_warning(runtime, "scandir", path, strerror(saved_errno), line);
+            char detail[192];
+            int written = snprintf(detail, sizeof(detail), "(errno %d): %s", saved_errno, strerror(saved_errno));
+            if (written < 0 || (size_t)written >= sizeof(detail)) {
+                free(path);
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_function_warning(runtime, "scandir", detail, line);
+            free(path);
+            return ptn_bool(0);
+        }
+
+        char **names = NULL;
+        size_t len = 0;
+        size_t capacity = 0;
+        for (size_t i = 0; i < matches.gl_pathc; i++) {
+            const char *match_path = matches.gl_pathv[i];
+            if (!ptn_open_basedir_check_local_path(runtime, "scandir", match_path, line)) {
+                globfree(&matches);
+                ptn_scandir_names_free(names, len);
+                int saved_errno = errno;
+                ptn_emit_directory_open_warning(runtime, "scandir", path, strerror(saved_errno), line);
+                char detail[192];
+                int written = snprintf(detail, sizeof(detail), "(errno %d): %s", saved_errno, strerror(saved_errno));
+                if (written < 0 || (size_t)written >= sizeof(detail)) {
+                    free(path);
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_function_warning(runtime, "scandir", detail, line);
+                free(path);
+                return ptn_bool(0);
+            }
+            const char *name = strrchr(match_path, '/');
+            name = name == NULL ? match_path : name + 1;
+            ptn_scandir_names_append(&names, &len, &capacity, name, strlen(name));
+        }
+        globfree(&matches);
+        free(path);
+        return ptn_scandir_names_to_array(names, len, sorting_order);
+#endif
+    }
     if (!ptn_open_basedir_check_local_path(runtime, "scandir", path, line)) {
         int saved_errno = errno;
         ptn_emit_directory_open_warning(runtime, "scandir", path, strerror(saved_errno), line);

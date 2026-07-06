@@ -124231,6 +124231,38 @@ scandir(): Argument #1 ($directory) must not be empty\n\
 }
 
 #[test]
+fn compile_scandir_glob_wrapper_uses_current_directory_to_native_binary() {
+    let root = temp_dir("ptn-native-scandir-glob-wrapper-cwd");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scandir-glob-wrapper-cwd.php");
+    let output = root.join("scandir-glob-wrapper-cwd-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dir = __DIR__ . '/gh17067';\n\
+mkdir($dir);\n\
+file_put_contents($dir . '/foo', '');\n\
+chdir($dir);\n\
+var_dump(scandir('glob://*'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  string(3) \"foo\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("\"glob://\""));
+    assert!(c_source.contains("ptn_internal_scandir"));
+}
+
+#[test]
 fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
     let root = temp_dir("ptn-native-include-path-zlib-streams");
     fs::create_dir_all(&root).unwrap();
