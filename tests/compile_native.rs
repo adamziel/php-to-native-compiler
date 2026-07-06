@@ -87758,6 +87758,51 @@ St::e2();
 }
 
 #[test]
+fn compile_call_user_func_relative_callable_deprecation_handler_chains_type_error_to_native_binary()
+{
+    let root = temp_dir("ptn-native-call-user-func-relative-handler-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-relative-handler-chain.php");
+    let output = root.join("call-user-func-relative-handler-chain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function () {
+    throw new Exception;
+});
+class bar {
+    public static function __callstatic($fusion, $b) {}
+    public function test() {
+        call_user_func('self::y');
+    }
+}
+(new bar)->test();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(
+        stdout.contains("Fatal error: Uncaught Exception in "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "\nNext TypeError: call_user_func(): Argument #1 ($callback) must be a valid callback"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("valid callback, (null) in "), "{stdout}");
+    assert!(stdout.contains("bar->test()"), "{stdout}");
+}
+
+#[test]
 fn compile_call_user_func_self_array_magic_call_deprecation_once_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-self-array-magic-once");
     fs::create_dir_all(&root).unwrap();

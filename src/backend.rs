@@ -28884,7 +28884,7 @@ fn emit_magic_debug_info_dispatch(out: &mut String, classes: &[ClassDecl]) {
 
 fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
-        "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line);\n",
+        "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line, int capture_handler_exception);\n",
     );
     out.push_str(
         "\nstatic int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out) {\n",
@@ -28915,7 +28915,25 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload) {\n",
+        "\nstatic void ptn_emit_callable_deprecation(PtnRuntime *runtime, const char *message, size_t line, int capture_handler_exception) {\n",
+    );
+    out.push_str("    if (runtime == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!capture_handler_exception) {\n");
+    out.push_str("        ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnTryFrame ptn_callable_deprecation_frame;\n");
+    out.push_str("    ptn_try_frame_push(runtime, &ptn_callable_deprecation_frame);\n");
+    out.push_str("    if (setjmp(ptn_callable_deprecation_frame.jump) == 0) {\n");
+    out.push_str("        ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_try_frame_pop(runtime, &ptn_callable_deprecation_frame);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload, int capture_callable_deprecation_exception) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     out.push_str(
@@ -28968,7 +28986,12 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {\n");
     out.push_str("                    ptn_abort_out_of_memory();\n");
     out.push_str("                }\n");
-    out.push_str("                ptn_emit_deprecation(&runtime->diagnostics, deprecation, runtime->call_site_line);\n");
+    out.push_str("                ptn_emit_callable_deprecation(runtime, deprecation, runtime->call_site_line, capture_callable_deprecation_exception);\n");
+    out.push_str("                if (capture_callable_deprecation_exception && runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                    *separator = ':';\n");
+    out.push_str("                    free(name);\n");
+    out.push_str("                    return 0;\n");
+    out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str(
         "            valid = ptn_declared_class_static_method_is_callable(resolved_class_name, separator + 2, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, separator + 2));\n",
@@ -29065,7 +29088,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
     out.push_str("        }\n");
     out.push_str("        if (runtime != NULL && !valid && ptn_scoped_object_callable_class_compatible && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
-    out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line);\n");
+    out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line, capture_callable_deprecation_exception);\n");
     out.push_str("        }\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
@@ -29105,7 +29128,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                    if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {\n");
     out.push_str("                        ptn_abort_out_of_memory();\n");
     out.push_str("                    }\n");
-    out.push_str("                    ptn_emit_deprecation(&runtime->diagnostics, deprecation, runtime->call_site_line);\n");
+    out.push_str("                    ptn_emit_callable_deprecation(runtime, deprecation, runtime->call_site_line, capture_callable_deprecation_exception);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        } else if (ptn_ascii_case_equal(class_name, \"parent\")) {\n");
@@ -29116,7 +29139,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            if (parent != NULL) {\n");
     out.push_str("                resolved_class_name = parent;\n");
     out.push_str("                if (runtime != NULL) {\n");
-    out.push_str("                    ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", runtime->call_site_line);\n");
+    out.push_str("                    ptn_emit_callable_deprecation(runtime, \"Use of \\\"parent\\\" in callables is deprecated\", runtime->call_site_line, capture_callable_deprecation_exception);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        } else {\n");
@@ -29223,7 +29246,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
         "\nstatic int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only) {\n",
     );
-    out.push_str("    return ptn_callable_is_valid_ex(runtime, callable, syntax_only, 1);\n");
+    out.push_str("    return ptn_callable_is_valid_ex(runtime, callable, syntax_only, 1, 0);\n");
     out.push_str("}\n");
 }
 
@@ -30696,7 +30719,7 @@ fn emit_callable_dispatch(
         out.push_str("}\n");
 
         out.push_str(
-            "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line) {\n",
+            "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line, int capture_handler_exception) {\n",
         );
         out.push_str("    int needed = snprintf(NULL, 0, \"Callables of the form [\\\"%s\\\", \\\"%s\\\"] are deprecated\", scope_name, method_name);\n");
         out.push_str("    if (needed < 0) {\n");
@@ -30707,7 +30730,7 @@ fn emit_callable_dispatch(
         out.push_str("        ptn_abort_out_of_memory();\n");
         out.push_str("    }\n");
         out.push_str("    snprintf(message, (size_t)needed + 1, \"Callables of the form [\\\"%s\\\", \\\"%s\\\"] are deprecated\", scope_name, method_name);\n");
-        out.push_str("    ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+        out.push_str("    ptn_emit_callable_deprecation(runtime, message, line, capture_handler_exception);\n");
         out.push_str("    free(message);\n");
         out.push_str("}\n");
     }
@@ -30959,7 +30982,7 @@ fn emit_callable_dispatch(
         out.push_str("                    }\n");
         out.push_str("                    *separator = ':';\n");
         out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
-        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line, 0);\n");
         out.push_str("                    }\n");
         out.push_str("                    if (target_class_name != NULL) {\n");
         out.push_str("                        char *ptn_scoped_invalid_reason = ptn_inaccessible_declared_method_callback_reason(runtime, target_class_name, target_method_name);\n");
@@ -31018,7 +31041,7 @@ fn emit_callable_dispatch(
         out.push_str("                char *separator = strstr(method_name, \"::\");\n");
         out.push_str("                if (separator != NULL) {\n");
         out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
-        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, scope_name, method_name, line);\n");
+        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, scope_name, method_name, line, 0);\n");
         out.push_str("                    }\n");
         out.push_str("                    *separator = '\\0';\n");
         out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, scope_name);\n");
@@ -61817,7 +61840,7 @@ impl ValueEmitter {
         out.push_str(" = ptn_null();\n");
         out.push_str("    PtnValue ");
         out.push_str(&checked_callback_temp);
-        out.push_str(" = ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
+        out.push_str(" = ptn_internal_expect_callback_arg_autoload_chaining_deprecation(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
         out.push_str(&callable_temp);
         out.push_str("));\n");
         out.push_str("    int ");

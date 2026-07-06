@@ -7247,7 +7247,13 @@ static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
-static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
+static int ptn_callable_is_valid_ex(
+    PtnRuntime *runtime,
+    PtnValue callable,
+    int syntax_only,
+    int autoload,
+    int capture_callable_deprecation_exception
+);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
@@ -7883,15 +7889,13 @@ static char *ptn_invalid_callback_reason(PtnRuntime *runtime, PtnValue callback)
     return reason;
 }
 
-static char *ptn_invalid_callback_message(
-    PtnRuntime *runtime,
+static char *ptn_invalid_callback_message_from_reason(
     const char *function_name,
     size_t position,
     const char *parameter_name,
-    PtnValue callback,
+    const char *reason,
     int accepts_null
 ) {
-    char *reason = ptn_invalid_callback_reason(runtime, callback);
     const char *callback_requirement = accepts_null
         ? "must be a valid callback or null"
         : "must be a valid callback";
@@ -7945,6 +7949,25 @@ static char *ptn_invalid_callback_message(
             reason
         );
     }
+    return message;
+}
+
+static char *ptn_invalid_callback_message(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback,
+    int accepts_null
+) {
+    char *reason = ptn_invalid_callback_reason(runtime, callback);
+    char *message = ptn_invalid_callback_message_from_reason(
+        function_name,
+        position,
+        parameter_name,
+        reason,
+        accepts_null
+    );
     free(reason);
     return message;
 }
@@ -7956,20 +7979,47 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     const char *parameter_name,
     PtnValue callback,
     int autoload,
-    int accepts_null
+    int accepts_null,
+    int capture_callable_deprecation_exception
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
-    if (ptn_callable_is_valid_ex(runtime, checked, 0, autoload)) {
+    if (ptn_callable_is_valid_ex(
+        runtime,
+        checked,
+        0,
+        autoload,
+        capture_callable_deprecation_exception
+    )) {
+        if (
+            capture_callable_deprecation_exception &&
+            runtime != NULL &&
+            runtime->exceptions->active_exception != NULL
+        ) {
+            ptn_value_destroy(&checked);
+            ptn_value_destroy(&callback);
+            ptn_rethrow_exception(runtime);
+        }
         return checked;
     }
-    char *message = ptn_invalid_callback_message(
-        runtime,
-        function_name,
-        position,
-        parameter_name,
-        checked,
-        accepts_null
-    );
+    char *message =
+        capture_callable_deprecation_exception &&
+        runtime != NULL &&
+        runtime->exceptions->active_exception != NULL
+            ? ptn_invalid_callback_message_from_reason(
+                function_name,
+                position,
+                parameter_name,
+                "(null)",
+                accepts_null
+            )
+            : ptn_invalid_callback_message(
+                runtime,
+                function_name,
+                position,
+                parameter_name,
+                checked,
+                accepts_null
+            );
     ptn_value_destroy(&checked);
     ptn_value_destroy(&callback);
     ptn_throw_exception_owned_message(runtime, "TypeError", message);
@@ -7990,6 +8040,7 @@ static PtnValue ptn_internal_expect_callback_arg(
         parameter_name,
         callback,
         0,
+        0,
         0
     );
 }
@@ -8008,7 +8059,27 @@ static PtnValue ptn_internal_expect_callback_arg_autoload(
         parameter_name,
         callback,
         1,
+        0,
         0
+    );
+}
+
+static PtnValue ptn_internal_expect_callback_arg_autoload_chaining_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg_impl(
+        runtime,
+        function_name,
+        position,
+        parameter_name,
+        callback,
+        1,
+        0,
+        1
     );
 }
 
@@ -8080,7 +8151,8 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
         parameter_name,
         callback,
         0,
-        1
+        1,
+        0
     );
 }
 
@@ -157174,7 +157246,7 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();
     }
-    PtnValue callback = ptn_internal_expect_callback_arg_autoload(runtime, "call_user_func", 1, "callback", args[callback_index]);
+    PtnValue callback = ptn_internal_expect_callback_arg_autoload_chaining_deprecation(runtime, "call_user_func", 1, "callback", args[callback_index]);
     if (runtime->exceptions->active_exception != NULL) {
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();
@@ -157280,7 +157352,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
     PtnArray *arguments = ptn_internal_expect_array_arg(runtime, "call_user_func_array", 2, "args", args[arguments_index]);
     size_t previous_call_site_line = runtime->call_site_line;
     runtime->call_site_line = line;
-    PtnValue callback = ptn_internal_expect_callback_arg_autoload(runtime, "call_user_func_array", 1, "callback", args[callback_index]);
+    PtnValue callback = ptn_internal_expect_callback_arg_autoload_chaining_deprecation(runtime, "call_user_func_array", 1, "callback", args[callback_index]);
     if (runtime->exceptions->active_exception != NULL) {
         runtime->call_site_line = previous_call_site_line;
         return ptn_null();
@@ -196728,7 +196800,8 @@ static PtnValue ptn_internal_libxml_set_external_entity_loader(PtnRuntime *runti
         "resolver_function",
         args[0],
         0,
-        1
+        1,
+        0
     );
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
@@ -235507,7 +235580,13 @@ static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnValue ptn_user_function_names(PtnRuntime *runtime);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
-static int ptn_callable_is_valid_ex(PtnRuntime *runtime, PtnValue callable, int syntax_only, int autoload);
+static int ptn_callable_is_valid_ex(
+    PtnRuntime *runtime,
+    PtnValue callable,
+    int syntax_only,
+    int autoload,
+    int capture_callable_deprecation_exception
+);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
