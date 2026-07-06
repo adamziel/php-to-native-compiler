@@ -27351,7 +27351,7 @@ var_dump($gen->getReturn());
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(42)\nint(42)\nint(24)\nint(42)\n"
+        "int(42)\nCannot get return value of a generator that hasn't returned\nint(24)\nint(42)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -27617,6 +27617,65 @@ var_dump($leaf->valid(), $left->valid(), $right->valid());
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_generator_yield_from"));
+}
+
+#[test]
+fn compile_generator_yield_from_rewind_and_shared_close_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-rewind-shared-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-rewind-shared-close.php");
+    let output = root.join("generator-yield-from-rewind-shared-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function source() {
+    yield 42;
+}
+function wrapper($gen) {
+    yield from $gen;
+}
+$gen = source();
+var_dump(wrapper($gen)->current());
+var_dump(wrapper($gen)->current());
+
+$generator = (function () {
+    yield from [1, 2, 3];
+})();
+$generator->next();
+$generator->next();
+try {
+    $generator->rewind();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $generator->current(), "\n";
+
+$generator2 = (function () {
+    yield from [];
+    yield 4;
+})();
+$generator2->current();
+$generator2->rewind();
+echo $generator2->current(), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\nint(42)\nCannot rewind a generator that was already run\n3\n4\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

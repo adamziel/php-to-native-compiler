@@ -12846,7 +12846,13 @@ static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerat
     generator->force_closing = 1;
     size_t index = generator->position;
     PtnGenerator *source = ptn_generator_delegate_source(generator, index);
-    if (source != NULL) {
+    if (
+        source != NULL &&
+        (
+            source->object == NULL ||
+            source->object->refcount <= 1
+        )
+    ) {
         ptn_generator_force_close(runtime, source);
     }
     if (
@@ -13712,6 +13718,9 @@ static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtim
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
+        return ptn_null();
+    }
     if (
         generator != NULL &&
         generator->completed &&
@@ -14850,6 +14859,14 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
         return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (generator != NULL) {
+        if (
+            generator->started &&
+            generator->position > 0 &&
+            ptn_generator_position_valid(generator)
+        ) {
+            ptn_throw_exception(runtime, "Exception", "Cannot rewind a generator that was already run");
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
+        }
         if (
             generator->started &&
             !ptn_generator_position_valid(generator) &&
