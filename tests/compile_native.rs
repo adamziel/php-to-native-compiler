@@ -3667,6 +3667,72 @@ echo "current:", $it->current(), "\n";
 }
 
 #[test]
+fn compile_recursive_iterator_iterator_begin_iteration_repeats_after_exhaustion_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-begin-after-exhaustion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-begin-after-exhaustion.php");
+    let output = root.join("recursive-iterator-iterator-begin-after-exhaustion-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LoggingRecursiveIteratorIterator extends RecursiveIteratorIterator {
+    function beginIteration(): void {
+        echo "begin\n";
+    }
+
+    function endIteration(): void {
+        echo "end\n";
+    }
+}
+
+$it = new LoggingRecursiveIteratorIterator(
+    new ArrayObject([1, [2]], 0, "RecursiveArrayIterator")
+);
+
+foreach ($it as $value) {
+    echo "value:$value\n";
+}
+
+echo "again\n";
+
+foreach ($it as $value) {
+    echo "value:$value\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "begin\n",
+            "value:1\n",
+            "value:2\n",
+            "end\n",
+            "again\n",
+            "begin\n",
+            "value:1\n",
+            "value:2\n",
+            "end\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_recursive_iterator_iterator_foreach_rewind"));
+}
+
+#[test]
 fn compile_datetime_timezone_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-semantics");
     fs::create_dir_all(&root).unwrap();

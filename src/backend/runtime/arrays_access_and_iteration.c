@@ -16018,15 +16018,32 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
             return ptn_array_iterator_empty();
         }
     }
-#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     int is_recursive_iterator_iterator =
         iterator.iterator_object.type == PTN_OBJECT &&
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         ptn_declared_class_is_same_or_descendant(
             iterator.iterator_object.as.object->class_name,
             "RecursiveIteratorIterator"
-        );
+        )
+#else
+        0
 #endif
-    if (rewind && ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
+        ;
+    int declares_recursive_iterator_iterator_rewind =
+        is_recursive_iterator_iterator &&
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        ptn_object_declares_iterator_method(
+            runtime,
+            iterator.iterator_object.as.object,
+            "rewind"
+        )
+#else
+        0
+#endif
+        ;
+    if (rewind &&
+        ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind") &&
+        (!is_recursive_iterator_iterator || declares_recursive_iterator_iterator_rewind)) {
         PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
         ptn_value_destroy(&rewind);
     }
@@ -16035,7 +16052,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
         if (!ptn_internal_recursive_iterator_iterator_foreach_rewind(
             runtime,
             iterator.iterator_object,
-            rewind && ptn_object_declares_iterator_method(runtime, iterator.iterator_object.as.object, "rewind"),
+            rewind && declares_recursive_iterator_iterator_rewind,
             line
         ) && runtime != NULL && runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL) {

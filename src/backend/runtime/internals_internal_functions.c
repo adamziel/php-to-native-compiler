@@ -281933,7 +281933,7 @@ static PTN_UNUSED int ptn_internal_recursive_iterator_iterator_foreach_rewind(
     if (data == NULL) {
         return 0;
     }
-    if (data->initialized) {
+    if (data->initialized && (data->valid || data->frame_count > 0)) {
         return runtime->exceptions->active_exception == NULL;
     }
     int repeat_after_rewind = repeat_current_once && !data->initialized;
