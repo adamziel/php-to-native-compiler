@@ -1,0 +1,11 @@
+# ptn-array-reference-full-current1: array/reference/COW and recursive array comparison rows.
+Zend/tests/recursive_array_comparison.phpt
+Zend/tests/bug69756.phpt
+Zend/tests/array_append_COW.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/list/list_reference_001.phpt
+Zend/tests/foreach/foreach_reference.phpt
+ext/standard/tests/array/array_map_variation2.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt
+ext/standard/tests/array/array_shift_variation8.phpt

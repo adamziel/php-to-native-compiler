@@ -79644,6 +79644,43 @@ try {\n\
 }
 
 #[test]
+fn compile_deep_array_comparison_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-deep-array-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("deep-array-comparison.php");
+    let output = root.join("deep-array-comparison-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$left = 1;\n\
+$right = 1;\n\
+for ($i = 0; $i < 4500; $i++) {\n\
+    $left = [$left];\n\
+    $right = [$right];\n\
+}\n\
+try {\n\
+    $left == $right;\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Nesting level too deep - recursive dependency?\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_compare_equal(&runtime"));
+    assert!(c_source.contains("Nesting level too deep - recursive dependency?"));
+}
+
+#[test]
 fn compile_less_equal_greater_equal_edges_to_native_binary() {
     let root = temp_dir("ptn-native-comparison-equality-bounds");
     fs::create_dir_all(&root).unwrap();

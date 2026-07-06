@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
     PtnComparisonArrayStackSide left;
     PtnComparisonArrayStackSide right;
+    size_t depth;
 } PtnComparisonArrayStack;
 
 static void ptn_comparison_array_stack_side_init(PtnComparisonArrayStackSide *side) {
@@ -69,6 +70,7 @@ static void ptn_comparison_array_stack_side_init(PtnComparisonArrayStackSide *si
 static void ptn_comparison_array_stack_init(PtnComparisonArrayStack *stack) {
     ptn_comparison_array_stack_side_init(&stack->left);
     ptn_comparison_array_stack_side_init(&stack->right);
+    stack->depth = 0;
 }
 
 static void ptn_comparison_array_stack_side_free(PtnComparisonArrayStackSide *side) {
@@ -135,6 +137,10 @@ static int ptn_compare_arrays_enter(
     PtnComparisonArrayStack *stack,
     int *right_pushed
 ) {
+    if (stack->depth >= 4096) {
+        ptn_compare_throw_recursive_dependency(runtime, line);
+        return 0;
+    }
     if (
         ptn_comparison_array_stack_side_contains(&stack->left, left) ||
         ptn_comparison_array_stack_side_contains(&stack->right, right)
@@ -148,10 +154,14 @@ static int ptn_compare_arrays_enter(
         ptn_comparison_array_stack_side_push(&stack->right, right);
         *right_pushed = 1;
     }
+    stack->depth++;
     return 1;
 }
 
 static void ptn_compare_arrays_leave(PtnComparisonArrayStack *stack, int right_pushed) {
+    if (stack->depth > 0) {
+        stack->depth--;
+    }
     if (right_pushed) {
         ptn_comparison_array_stack_side_pop(&stack->right);
     }
