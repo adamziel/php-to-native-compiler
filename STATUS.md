@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-06T17:50:12Z |
+| last refresh | 2026-07-06T18:00:13Z |
 | source commit | `66e8df03ac14` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,28 +22,27 @@
 | field | value |
 | --- | --- |
 | source commit | `aa8a77177b51` |
-| statused tests | 2978 |
-| passed tests | 2873 |
-| failed tests | 67 |
-| skipped tests | 37 |
+| statused tests | 3356 |
+| passed tests | 3222 |
+| failed tests | 92 |
+| skipped tests | 41 |
 | warned tests | 1 |
-| unknown tests | 18889 |
+| unknown tests | 18511 |
 | run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260706T164147Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-06T17:00Z) | 0 |
-| last 24 hours (2026-07-05T18:00Z - 2026-07-06T17:00Z) | 8 |
-| last 7 days (2026-06-29T18:00Z - 2026-07-06T17:00Z) | 376 |
+| latest hour (2026-07-06T18:00Z) | 0 |
+| last 24 hours (2026-07-05T19:00Z - 2026-07-06T18:00Z) | 1 |
+| last 7 days (2026-06-29T19:00Z - 2026-07-06T18:00Z) | 376 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 1814 | 21867 |
-| hourly history retained 2026-06-29T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T19:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T20:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-29T21:00Z | 0 | 0 | 0 |
@@ -208,12 +207,12 @@
 | hourly history retained 2026-07-06T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-06T15:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-06T16:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-06T17:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-29T18:00Z | 0 | 1438 |
 | 2026-06-29T19:00Z | 0 | 1438 |
 | 2026-06-29T20:00Z | 0 | 1438 |
 | 2026-06-29T21:00Z | 0 | 1438 |
@@ -381,3 +380,4 @@
 | 2026-07-06T15:00Z | 0 | 1814 |
 | 2026-07-06T16:00Z | 0 | 1814 |
 | 2026-07-06T17:00Z | 0 | 1814 |
+| 2026-07-06T18:00Z | 0 | 1814 |
