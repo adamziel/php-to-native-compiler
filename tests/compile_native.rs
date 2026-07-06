@@ -19554,6 +19554,70 @@ echo \"---\\n\";
 }
 
 #[test]
+fn compile_gc_repeated_destructor_reruns_do_not_reuse_freed_components_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-repeated-destructor-reruns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-repeated-destructor-reruns.php");
+    let output = root.join("gc-repeated-destructor-reruns-bin");
+    fs::write(
+        &input,
+        "<?php
+class CycleWithDestructor {
+    private $destructorFx;
+    private $cycleRef;
+
+    public function __construct($destructorFx) {
+        $this->destructorFx = $destructorFx;
+        $this->cycleRef = new stdClass();
+        $this->cycleRef->x = $this;
+    }
+
+    public function __destruct() {
+        ($this->destructorFx)();
+    }
+}
+
+$isSecondGcRerun = false;
+$createFx = static function () use (&$createFx, &$isSecondGcRerun): void {
+    $destructorFx = static function () use (&$createFx, &$isSecondGcRerun): void {
+        if (!gc_status()['running']) {
+            echo \"gc shutdown\\n\";
+            return;
+        }
+
+        echo \"gc\" . ($isSecondGcRerun ? ' rerun' : '') . \"\\n\";
+        $isSecondGcRerun = !$isSecondGcRerun;
+        $createFx();
+    };
+
+    new CycleWithDestructor($destructorFx);
+};
+
+$createFx();
+gc_collect_cycles();
+gc_collect_cycles();
+gc_collect_cycles();
+echo \"---\\n\";
+gc_collect_cycles();
+gc_collect_cycles();
+gc_collect_cycles();
+echo \"---\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "gc\ngc rerun\ngc\ngc rerun\ngc\ngc rerun\n---\ngc\ngc rerun\ngc\ngc rerun\ngc\ngc rerun\n---\ngc shutdown\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_destructor_exceptions_chain_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-exception-chain");
     fs::create_dir_all(&root).unwrap();

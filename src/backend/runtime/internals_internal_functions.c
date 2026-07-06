@@ -133799,9 +133799,6 @@ static void ptn_gc_run_unreachable_object_destructor(
     size_t *destructed_objects_len,
     size_t *destructed_objects_capacity
 ) {
-    (void)destructed_objects;
-    (void)destructed_objects_len;
-    (void)destructed_objects_capacity;
     (void)epoch;
     if (object == NULL) {
         return;
@@ -133824,8 +133821,12 @@ static void ptn_gc_run_unreachable_object_destructor(
         }
         ptn_runtime_remove_live_object_at(root, i);
         object->defer_object_id_release_once = 1;
-        object->refcount = 1;
-        ptn_object_release(object);
+        ptn_gc_collected_object_push(
+            destructed_objects,
+            destructed_objects_len,
+            destructed_objects_capacity,
+            object
+        );
         return;
     }
     ptn_object_release(object);
@@ -133909,11 +133910,21 @@ static size_t ptn_runtime_collect_unreachable_objects(
         counted_destructor_epoch
     );
 
+    ptn_gc_object_components_release(&destructor_components);
+
     for (size_t i = 0; i < destructed_objects_len; i++) {
         PtnObject *object = destructed_objects[i];
+        if (object == NULL || object->refcount == 0) {
+            continue;
+        }
+        if (object->gc_mark_epoch == epoch || ptn_object_has_pending_declared_destructor(object)) {
+            ptn_runtime_register_object(root, object);
+            ptn_object_release(object);
+            continue;
+        }
+        object->refcount = 1;
         ptn_object_release(object);
     }
-    ptn_gc_object_components_release(&destructor_components);
 
     size_t counted_object_epoch = ptn_runtime_next_gc_mark_epoch(root);
     if (counted_object_epoch_out != NULL) {
