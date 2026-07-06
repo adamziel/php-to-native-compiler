@@ -127056,6 +127056,45 @@ class C extends DateTime {
 }
 
 #[test]
+fn compile_splobjectstorage_tentative_return_warning_before_unresolved_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-splobjectstorage-tentative-return-unresolved");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("splobjectstorage-tentative-return-unresolved.php");
+    let output = root.join("splobjectstorage-tentative-return-unresolved-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test extends SplObjectStorage {
+    function valid() {}
+    function current(): Unknown {}
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Deprecated: Return type of Test::valid() should either be compatible with SplObjectStorage::valid(): bool, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice in {} on line 3\n",
+            input.display()
+        )
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Could not check compatibility between Test::current(): Unknown and SplObjectStorage::current(): object, because class Unknown is not available"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SplObjectStorage::valid(): bool"));
+    assert!(c_source.contains("SplObjectStorage::current(): object"));
+}
+
+#[test]
 fn compile_zend_residual_eval_callback_and_static_property_reads_to_native_binary() {
     let root = temp_dir("ptn-native-zend-residual-eval-callback-static-property");
     fs::create_dir_all(&root).unwrap();

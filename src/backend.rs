@@ -24544,6 +24544,7 @@ fn emit_class_method_signature_compatibility_validation(
         functions,
         class_index,
         source_path,
+        &mut type_temp_counter,
     );
 }
 
@@ -24718,6 +24719,20 @@ fn tentative_internal_return_method(
                 return_type: TypeHint::Int,
             })
         }
+        ("splobjectstorage", "current") => Some(TentativeInternalReturnMethod {
+            class_name: "SplObjectStorage",
+            method_name: "current",
+            signature: "current(): object",
+            is_static: false,
+            return_type: TypeHint::Object,
+        }),
+        ("splobjectstorage", "valid") => Some(TentativeInternalReturnMethod {
+            class_name: "SplObjectStorage",
+            method_name: "valid",
+            signature: "valid(): bool",
+            is_static: false,
+            return_type: TypeHint::Bool,
+        }),
         _ => None,
     }
 }
@@ -24781,6 +24796,7 @@ fn emit_tentative_internal_return_signature_deprecations(
     functions: &[FunctionDecl],
     class_index: usize,
     _source_path: &str,
+    type_temp_counter: &mut usize,
 ) {
     let bypass_deprecation_handler =
         class_has_tentative_internal_return_signature_fatal(class, classes, functions);
@@ -24789,7 +24805,7 @@ fn emit_tentative_internal_return_signature_deprecations(
     } else {
         class.name.as_str()
     };
-    for method in &class.methods {
+    for (method_index, method) in class.methods.iter().enumerate() {
         if method.visibility == PropertyVisibility::Private {
             continue;
         }
@@ -24838,6 +24854,25 @@ fn emit_tentative_internal_return_signature_deprecations(
                 classes,
             )
         }) {
+            if let Some(return_type) = &function.return_type {
+                for unavailable_name in runtime_object_compatibility_class_names(
+                    return_type,
+                    &tentative_method.return_type,
+                    classes,
+                ) {
+                    emit_tentative_internal_return_signature_unresolved_fatal_after_autoload(
+                        out,
+                        class_diagnostic_name,
+                        method,
+                        function,
+                        &tentative_method,
+                        &unavailable_name,
+                        class_index,
+                        method_index,
+                        type_temp_counter,
+                    );
+                }
+            }
             continue;
         }
         let message = format!(
@@ -24868,6 +24903,47 @@ fn emit_tentative_internal_return_signature_deprecations(
         out.push_str(&method.line.to_string());
         out.push_str(");\n");
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_tentative_internal_return_signature_unresolved_fatal_after_autoload(
+    out: &mut String,
+    class_diagnostic_name: &str,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    tentative_method: &TentativeInternalReturnMethod,
+    unavailable_name: &str,
+    class_index: usize,
+    method_index: usize,
+    type_temp_counter: &mut usize,
+) {
+    let resolved_temp = emit_runtime_signature_type_autoload(
+        out,
+        unavailable_name,
+        method.line,
+        class_index,
+        method_index,
+        type_temp_counter,
+    );
+    out.push_str("        if (!");
+    out.push_str(&runtime_type_name_available_condition(&resolved_temp));
+    out.push_str(") {\n");
+    let message = format!(
+        "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+        class_diagnostic_name,
+        runtime_method_signature_display(method, function),
+        tentative_method.class_name,
+        tentative_method.signature,
+        unavailable_name
+    );
+    emit_runtime_signature_fatal(
+        out,
+        &message,
+        &method.source_file,
+        method.line,
+        "            ",
+    );
+    out.push_str("        }\n");
 }
 
 fn class_has_runtime_method_signature_static_incompatibility(
