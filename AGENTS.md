@@ -30,4 +30,11 @@ Rules:
   output that destabilizes the interactive session. Search from the specific
   repo/lane first, and only expand by naming a small set of directories with
   source-side output limits.
+- Do not enumerate full PHPT dashboard shard trees in the interactive session.
+  In particular, avoid `find .../ptn-full-phpt-dashboard-loop/runs/.../shards`,
+  recursive `ls`, broad `rg` over shard logs, or `cat`/`tail` glob output from
+  those directories. Use `tools/phpt-safe-status.sh` and
+  `tools/phpt-active-failure-summary.py`; inspect an individual shard log only
+  when you already know its exact path, with bounded output such as
+  `tail -n 120` or `rg -m 40`.
 - Use stable Rust unless a documented reason says otherwise.
