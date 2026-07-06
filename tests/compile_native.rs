@@ -51943,6 +51943,50 @@ var_dump($types[1]->allowsNull());
 }
 
 #[test]
+fn compile_internal_zend_test_tmp_method_arg_info_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-tmp-method-arg-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-tmp-method-arg-info.php");
+    let output = root.join("internal-zend-test-tmp-method-arg-info-bin");
+    fs::write(
+        &input,
+        "<?php
+$o = new _ZendTestClass();
+$o->testTmpMethodWithArgInfo(null);
+
+echo new ReflectionFunction($o->testTmpMethodWithArgInfo(...));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Closure [ <internal> public method testTmpMethodWithArgInfo ] {\n",
+            "\n",
+            "  - Parameters [2] {\n",
+            "    Parameter #0 [ <optional> Foo|Bar|null $tmpMethodParamName = null ]\n",
+            "    Parameter #1 [ <optional> string $tmpMethodParamWithStringDefaultValue = \"tmpMethodParamWithStringDefaultValue\" ]\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("_ZendTestClass::testTmpMethodWithArgInfo"));
+}
+
+#[test]
 fn compile_failed_internal_typed_property_assignment_releases_receiver_guard_to_native_binary() {
     let root = temp_dir("ptn-native-internal-typed-property-receiver-guard");
     fs::create_dir_all(&root).unwrap();

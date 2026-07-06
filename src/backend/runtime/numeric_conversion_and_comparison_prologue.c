@@ -10534,6 +10534,15 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && (ptn_ascii_case_equal(receiver.as.object->class_name, "_ZendTestClass") ||
+            ptn_ascii_case_equal(receiver.as.object->class_name, "_ZendTestChildClass") ||
+            ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "_ZendTestClass"))
+        && ptn_ascii_case_equal(name, "testTmpMethodWithArgInfo")
+    ) {
+        return ptn_internal_zend_test_tmp_method_with_arg_info(runtime, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "PDO")
         && ptn_internal_class_method_exists("PDO", name)
     ) {

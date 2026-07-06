@@ -3248,6 +3248,12 @@ static PTN_UNUSED PtnValue ptn_attribute_metadata_call_method(
     const PtnValue *args,
     size_t line
 );
+static PtnValue ptn_internal_zend_test_tmp_method_with_arg_info(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_pdo_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

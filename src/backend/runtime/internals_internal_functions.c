@@ -235899,6 +235899,7 @@ static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_metadata_stub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zend_test_tmp_method_with_arg_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -236910,6 +236911,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_walk", 2, 3, ptn_internal_array_walk },
         { "array_walk_recursive", 2, 3, ptn_internal_array_walk_recursive },
         { "ArrayObject::__construct", 0, 3, ptn_internal_method_metadata_stub },
+        { "_ZendTestClass::testTmpMethodWithArgInfo", 0, 2, ptn_internal_zend_test_tmp_method_with_arg_info },
         { "_ZendTestClass::variadicTest", 0, PTN_VARIADIC_ARGS, ptn_internal_method_metadata_stub },
         { "arsort", 1, 2, ptn_internal_arsort },
         { "asin", 1, 1, ptn_internal_asin },
@@ -238489,6 +238491,10 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     static const PtnParameterMetadata PTN_INTERNAL_ZEND_TEST_VARIADIC_TEST_PARAMETERS[] = {
         { "elements", NULL, "Iterator|string", 0, 0, 0, 1, 1, NULL, NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_ZEND_TEST_TMP_METHOD_WITH_ARG_INFO_PARAMETERS[] = {
+        { "tmpMethodParamName", NULL, "Foo|Bar|null", 1, 1, 0, 0, 1, "null", NULL, NULL },
+        { "tmpMethodParamWithStringDefaultValue", "string", "string", 0, 1, 0, 0, 1, "\"tmpMethodParamWithStringDefaultValue\"", NULL, NULL },
+    };
     static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
         { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
         { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
@@ -238657,6 +238663,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "_ZendTestClass",
             "static",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "_ZendTestClass::testTmpMethodWithArgInfo")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ZEND_TEST_TMP_METHOD_WITH_ARG_INFO_PARAMETERS) /
+                sizeof(PTN_INTERNAL_ZEND_TEST_TMP_METHOD_WITH_ARG_INFO_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_ZEND_TEST_TMP_METHOD_WITH_ARG_INFO_PARAMETERS,
+            0,
+            NULL,
+            NULL,
             0,
             0
         );
@@ -242714,7 +242736,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if ((ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
         ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
         ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass")) &&
-        ptn_ascii_case_equal(method_name, "variadicTest")) {
+        (ptn_ascii_case_equal(method_name, "variadicTest") ||
+            ptn_ascii_case_equal(method_name, "testTmpMethodWithArgInfo"))) {
         return 1;
     }
     if (ptn_internal_class_name_is_sqlite3(class_name)) {
@@ -247309,7 +247332,8 @@ static const char *ptn_reflection_method_internal_declaring_class(
     if ((ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
         ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
         ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass")) &&
-        ptn_ascii_case_equal(method_name, "variadicTest")) {
+        (ptn_ascii_case_equal(method_name, "variadicTest") ||
+            ptn_ascii_case_equal(method_name, "testTmpMethodWithArgInfo"))) {
         return "_ZendTestClass";
     }
     return class_name;
@@ -260446,7 +260470,20 @@ static PtnValue ptn_reflection_function_to_string(
         ? reflected_closure_value.as.closure
         : NULL;
 
-    if (metadata.is_internal) {
+    if (
+        metadata.is_internal &&
+        reflected_closure != NULL &&
+        reflected_closure->origin_method_name != NULL &&
+        (reflected_closure->origin_kind == PTN_CLOSURE_ORIGIN_METHOD ||
+            reflected_closure->origin_kind == PTN_CLOSURE_ORIGIN_STATIC_METHOD)
+    ) {
+        ptn_string_buffer_append_format(
+            &buffer,
+            "Closure [ <internal> %spublic method %s ] {\n",
+            reflected_closure->origin_kind == PTN_CLOSURE_ORIGIN_STATIC_METHOD ? "static " : "",
+            reflected_closure->origin_method_name
+        );
+    } else if (metadata.is_internal) {
         const char *extension_name = ptn_reflection_function_extension_name(metadata);
         ptn_string_buffer_append_format(
             &buffer,
@@ -282853,6 +282890,31 @@ static PtnValue ptn_internal_method_metadata_stub(
     (void)args;
     (void)line;
     ptn_throw_exception(runtime, "Error", "Internal method metadata stub cannot be invoked directly");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_test_tmp_method_with_arg_info(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "_ZendTestClass::testTmpMethodWithArgInfo() expects at most 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
     return ptn_null();
 }
 
