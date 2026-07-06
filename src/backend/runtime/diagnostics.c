@@ -1937,8 +1937,10 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
         ptn_rethrow_exception(runtime);
         return 1;
     }
-    (void)suppress_user_call_frame_location;
     handler_diagnostics->error_handler_call_depth++;
+    runtime->suppress_user_call_frame_location = suppress_user_call_frame_location
+        ? 1
+        : saved_suppress_user_call_frame_location;
     result = ptn_call_callable(runtime, saved_handler, 4, call_args, line, 0);
     handler_diagnostics->error_handler_call_depth--;
     ptn_try_frame_pop(runtime, &handler_frame);
@@ -1989,7 +1991,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         message,
         path,
         line,
-        0
+        1
     );
 }
 
@@ -2604,7 +2606,7 @@ static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
 }
 
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
-    ptn_emit_warning_with_handler_frame(diagnostics, message, line, 0);
+    ptn_emit_warning_with_handler_frame(diagnostics, message, line, 1);
 }
 
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {

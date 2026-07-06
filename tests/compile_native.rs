@@ -36810,6 +36810,60 @@ stream_socket_client(): Argument #4 ($timeout) must be a finite value\n"
 }
 
 #[test]
+fn compile_stream_socket_client_error_handler_trace_sees_default_error_refs_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-socket-client-error-handler-refs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-socket-client-error-handler-refs.php");
+    let output = root.join("stream-socket-client-error-handler-refs-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function (int $errno, string $errstr): never {
+    throw new Exception($errstr);
+});
+
+try {
+    stream_socket_client(
+        'tcp://9999.9999.9999.9999:9999',
+        $error_code,
+        $error_message,
+        0.2,
+        STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT
+    );
+} catch (Exception $e) {
+    echo $e->getTraceAsString(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("#0 [internal function]: {closure:"),
+        "stdout:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("stream_socket_client('tcp://9999.9999...', 0, '', 0.2, 5)"),
+        "stdout:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("stream_socket_client('tcp://9999.9999...', NULL, NULL, 0.2, 5)"),
+        "stdout:\n{}",
+        stdout
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_socket_client_assign_reference"));
+}
+
+#[test]
 fn compile_nonblocking_socket_fwrite_would_block_to_native_binary() {
     let root = temp_dir("ptn-native-nonblocking-socket-fwrite");
     fs::create_dir_all(&root).unwrap();

@@ -199524,6 +199524,8 @@ static PtnValue ptn_stream_socket_client_open_tcp(
             free(display);
             ptn_abort_out_of_memory();
         }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
         ptn_emit_warning(&runtime->diagnostics, warning, line);
         free(warning);
         free(display);
@@ -199565,6 +199567,8 @@ static PtnValue ptn_stream_socket_client_open_tcp(
             free(address_c);
             ptn_abort_out_of_memory();
         }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
         ptn_emit_warning(&runtime->diagnostics, warning, line);
         ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
         ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(parse_message));
@@ -199594,6 +199598,8 @@ static PtnValue ptn_stream_socket_client_open_tcp(
             free(service);
             ptn_abort_out_of_memory();
         }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
         ptn_emit_warning(&runtime->diagnostics, warning, line);
         ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(gai));
         ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(gai_strerror(gai))));
@@ -199636,6 +199642,8 @@ static PtnValue ptn_stream_socket_client_open_tcp(
             free(service);
             ptn_abort_out_of_memory();
         }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
         ptn_emit_warning(&runtime->diagnostics, warning, line);
         ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(error_code));
         ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(message)));
@@ -199648,6 +199656,8 @@ static PtnValue ptn_stream_socket_client_open_tcp(
     if (stream == NULL) {
         int saved_errno = errno;
         close(descriptor);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
         ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to open socket stream", line);
         ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(saved_errno));
         ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(strerror(saved_errno))));
