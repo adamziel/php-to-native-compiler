@@ -39228,6 +39228,54 @@ array(0) {\n\
 }
 
 #[test]
+fn compile_pfsockopen_rejects_unsafe_timeouts_to_native_binary() {
+    let root = temp_dir("ptn-native-pfsockopen-timeout-range");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pfsockopen-timeout-range.php");
+    let output = root.join("pfsockopen-timeout-range-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$code = null;
+$err = null;
+foreach ([(PHP_INT_MAX / 100000) + 1, (PHP_INT_MIN / 100000) - 1, NAN, INF] as $timeout) {
+    try {
+        pfsockopen('udp://127.0.0.1', '63844', $code, $err, $timeout);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+var_dump(is_resource(pfsockopen('udp://127.0.0.1', '63844', $code, $err, -1)));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("pfsockopen(): Argument #6 must be -1 or between 0 and ")
+            .count(),
+        4
+    );
+    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_validate_pfsockopen_timeout"));
+    assert!(c_source.contains("ptn_internal_pfsockopen"));
+}
+
+#[test]
 fn compile_stream_process_zlib_residuals_to_native_binary() {
     let root = temp_dir("ptn-native-stream-process-zlib-residuals");
     fs::create_dir_all(&root).unwrap();

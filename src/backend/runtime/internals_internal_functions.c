@@ -201098,6 +201098,40 @@ static void ptn_persistent_socket_store(const char *key, PtnResource *resource) 
     ptn_persistent_socket_count++;
 }
 
+static int ptn_validate_pfsockopen_timeout(PtnRuntime *runtime, PtnValue timeout_arg, size_t line) {
+    double timeout_seconds = ptn_internal_expect_float_arg(
+        runtime,
+        "pfsockopen",
+        6,
+        "timeout",
+        timeout_arg,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+
+    const long long max_timeout_seconds = LLONG_MAX / 100000LL;
+    if (timeout_seconds != -1.0 &&
+        (!isfinite(timeout_seconds) || timeout_seconds < 0.0 ||
+            timeout_seconds > (double)max_timeout_seconds)) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "pfsockopen(): Argument #6 must be -1 or between 0 and %lld",
+            max_timeout_seconds
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+
+    return 1;
+}
+
 static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "pfsockopen", 1, "hostname", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -201107,6 +201141,11 @@ static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const 
         ? ptn_internal_expect_integer_arg(runtime, "pfsockopen", 2, "port", args[1], line)
         : -1;
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    if (argc >= 5 && ptn_value_deref(args[4]).type != PTN_NULL &&
+        !ptn_validate_pfsockopen_timeout(runtime, args[4], line)) {
         ptn_string_operand_free(hostname);
         return ptn_null();
     }
@@ -201217,6 +201256,7 @@ static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const 
     }
     PtnResource *resource = ptn_resource_new_stream(stream, key, "r+");
     resource->persistent = 1;
+    resource->type_name = "persistent stream";
     ptn_persistent_socket_store(key, resource);
     ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_int(0));
     ptn_stream_socket_client_assign_reference(runtime, argc >= 4 ? args[3] : ptn_null(), ptn_string(""));
