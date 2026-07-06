@@ -7407,7 +7407,7 @@ static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const cha
 static const char *ptn_runtime_unserialize_callback_func(PtnRuntime *runtime);
 static int ptn_runtime_current_unserialize_max_depth(PtnRuntime *runtime);
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal);
-static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent);
+static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnRuntime *runtime, PtnValue target, PtnValue parent);
 static PTN_UNUSED PtnValue ptn_array_object_new_uninitialized(PtnRuntime *runtime);
 static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnArray *ptn_internal_expect_array_arg(
@@ -86175,7 +86175,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
         }
         PtnValue replacement = ptn_intl_date_formatter_new(runtime, "IntlDateFormatter::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -86732,7 +86732,7 @@ static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(PtnRuntime *runtime, Pt
             line
         );
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -88820,7 +88820,7 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_message_formatter_new(runtime, "MessageFormatter", "MessageFormatter::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -89425,7 +89425,7 @@ static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_call_method(
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_date_pattern_generator_new(runtime, "IntlDatePatternGenerator", argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -89511,7 +89511,7 @@ static PTN_UNUSED PtnValue ptn_intl_list_formatter_call_method(PtnRuntime *runti
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_list_formatter_new(runtime, "IntlListFormatter", argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -96632,7 +96632,7 @@ static PTN_UNUSED PtnValue ptn_intl_resourcebundle_call_method(
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_resourcebundle_new(runtime, "ResourceBundle", argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -97314,7 +97314,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_collator_new(runtime, "Collator", "Collator::__construct", 1, argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -98190,7 +98190,7 @@ static PTN_UNUSED PtnValue ptn_intl_uconverter_call_method(
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_uconverter_new(runtime, "UConverter", argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -209495,7 +209495,7 @@ static PtnValue ptn_phar_call_method(
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -214573,7 +214573,7 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 return method;
             }
             PtnValue object = ptn_object_new_shell(runtime, class_name);
-            ptn_adopt_internal_parent_object_state(object, method);
+            ptn_adopt_internal_parent_object_state(runtime, object, method);
             ptn_value_destroy(&method);
             return object;
         }
@@ -248225,7 +248225,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -253751,7 +253751,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -254557,7 +254557,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             }
             if (ptn_declared_class_is_same_or_descendant(class_name, "ArrayObject")) {
                 PtnValue parent = ptn_array_object_new_uninitialized(runtime);
-                ptn_adopt_internal_parent_object_state(instance, parent);
+                ptn_adopt_internal_parent_object_state(runtime, instance, parent);
                 ptn_value_destroy(&parent);
             }
             return instance;
@@ -261959,7 +261959,7 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_call_method(
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -262179,7 +262179,7 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_call_method(
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
-            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, replacement);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -264547,7 +264547,7 @@ static int ptn_spl_offset_key_from_value_without_key_diagnostics(
     );
 }
 
-static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent) {
+static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnRuntime *runtime, PtnValue target, PtnValue parent) {
     target = ptn_value_deref(target);
     parent = ptn_value_deref(parent);
     if (target.type != PTN_OBJECT || parent.type != PTN_OBJECT) {
@@ -264561,7 +264561,7 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
              ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateTimeImmutable"))) {
             PtnDateTimeData *data = (PtnDateTimeData *)parent.as.object->native_data;
             ptn_datetime_replace_native_data(
-                NULL,
+                runtime,
                 target,
                 data->timestamp,
                 data->microsecond,
@@ -264574,7 +264574,7 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
         if (ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateTimeZone") &&
             ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateTimeZone")) {
             PtnDateTimeZoneData *data = (PtnDateTimeZoneData *)parent.as.object->native_data;
-            ptn_datetime_zone_replace_native_data(NULL, target, data->name, data->type, 0);
+            ptn_datetime_zone_replace_native_data(runtime, target, data->name, data->type, 0);
             return;
         }
         if (ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateInterval") &&
@@ -264591,7 +264591,7 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
             }
             target.as.object->native_data = data;
             target.as.object->native_data_free = ptn_date_interval_data_free;
-            ptn_date_interval_sync_properties(NULL, target, 0);
+            ptn_date_interval_sync_properties(runtime, target, 0);
             return;
         }
     }

@@ -6991,7 +6991,7 @@ fn emit_declared_class_new_instance_without_constructor(
                 out.push_str("\", 0, NULL, line);\n");
                 out.push_str("        if (caller_runtime->exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
                 out.push_str(
-                    "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                    "            ptn_adopt_internal_parent_object_state(caller_runtime, result, parent);\n",
                 );
                 out.push_str("        }\n");
                 out.push_str("        ptn_value_destroy(&parent);\n");
@@ -7067,7 +7067,7 @@ fn emit_declared_class_new_instance_without_constructor(
                     out.push_str("\", 0, NULL, line);\n");
                     out.push_str("        if (runtime.exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
                     out.push_str(
-                        "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                        "            ptn_adopt_internal_parent_object_state(&runtime, result, parent);\n",
                     );
                     out.push_str("        }\n");
                     out.push_str("        ptn_value_destroy(&parent);\n");
@@ -7157,7 +7157,7 @@ fn emit_declared_class_new_instance_without_constructor(
                 out.push_str("\", argc, args, line);\n");
                 out.push_str("        if (runtime->exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
                 out.push_str(
-                    "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                    "            ptn_adopt_internal_parent_object_state(runtime, result, parent);\n",
                 );
                 out.push_str("        }\n");
                 out.push_str("        ptn_value_destroy(&parent);\n");
@@ -24719,6 +24719,16 @@ fn tentative_internal_return_method(
                 return_type: TypeHint::Int,
             })
         }
+        ("datetime", "modify") => Some(TentativeInternalReturnMethod {
+            class_name: "DateTime",
+            method_name: "modify",
+            signature: "modify(string $modifier): DateTime|false",
+            is_static: false,
+            return_type: TypeHint::Union(vec![
+                TypeHint::Class("DateTime".to_string()),
+                TypeHint::False,
+            ]),
+        }),
         ("splobjectstorage", "current") => Some(TentativeInternalReturnMethod {
             class_name: "SplObjectStorage",
             method_name: "current",
@@ -30489,7 +30499,7 @@ fn emit_method_dispatch(
     out.push_str("        resolved_receiver.as.object->class_name = ptn_original_class_name;\n");
     out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
     out.push_str("        if (runtime->exceptions->active_exception == NULL && ptn_ascii_case_equal(method_name, \"__construct\") && ptn_internal_parent_result.type == PTN_OBJECT) {\n");
-    out.push_str("            ptn_adopt_internal_parent_object_state(resolved_receiver, ptn_internal_parent_result);\n");
+    out.push_str("            ptn_adopt_internal_parent_object_state(runtime, resolved_receiver, ptn_internal_parent_result);\n");
     out.push_str("            ptn_value_destroy(&ptn_internal_parent_result);\n");
     out.push_str("            *result_out = ptn_null();\n");
     out.push_str("            return 1;\n");
@@ -55569,7 +55579,7 @@ impl ValueEmitter {
         out.push_str(&parent_temp);
         out.push_str(".type == PTN_OBJECT) {\n");
         out.push_str("        ");
-        out.push_str("ptn_adopt_internal_parent_object_state(");
+        out.push_str("ptn_adopt_internal_parent_object_state(&runtime, ");
         out.push_str(result_temp);
         out.push_str(", ");
         out.push_str(&parent_temp);

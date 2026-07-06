@@ -127095,6 +127095,46 @@ class Test extends SplObjectStorage {
 }
 
 #[test]
+fn compile_datetime_modify_return_type_will_change_suppresses_tentative_return_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-modify-return-type-will-change");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-modify-return-type-will-change.php");
+    let output = root.join("datetime-modify-return-type-will-change-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyDateTime extends DateTime
+{
+    #[ReturnTypeWillChange]
+    public function modify(string $modifier) {
+        return false;
+    }
+}
+
+$date = new MyDateTime("2021-01-01 00:00:00");
+var_dump($date->modify("+1 sec"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zend_residual_eval_callback_and_static_property_reads_to_native_binary() {
     let root = temp_dir("ptn-native-zend-residual-eval-callback-static-property");
     fs::create_dir_all(&root).unwrap();
