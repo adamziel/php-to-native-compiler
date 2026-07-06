@@ -2986,6 +2986,13 @@ function keep_recursive($value, $key, $inner) {
     return $value === 1 || $value === 4;
 }
 
+class LoudArrayIterator extends ArrayIterator {
+    public function current(): mixed {
+        echo "inner-current\n";
+        return parent::current();
+    }
+}
+
 $wrapped = new IteratorIterator(gen());
 var_dump(iterator_to_array($wrapped, false));
 var_dump(iterator_to_array(["x" => 3, 4], true));
@@ -2995,6 +3002,19 @@ $base = new ArrayIterator(["zero", "one", "two"]);
 $base->next();
 foreach (new NoRewindIterator($base) as $key => $value) {
     echo "nr:$key=$value\n";
+}
+
+$verbose = new NoRewindIterator(new LoudArrayIterator([0, 1, 2, 3]));
+$seen = 0;
+foreach ($verbose as $value) {
+    echo "loud:$value\n";
+    if ($seen++ >= 2) {
+        break;
+    }
+}
+foreach ($verbose as $value) {
+    echo "again:$value\n";
+    break;
 }
 
 $nested = [[1], [2]];
@@ -3038,6 +3058,13 @@ var_dump(iterator_to_array(new RecursiveIteratorIterator($filter), false));
             "int(3)\n",
             "nr:1=one\n",
             "nr:2=two\n",
+            "inner-current\n",
+            "loud:0\n",
+            "inner-current\n",
+            "loud:1\n",
+            "inner-current\n",
+            "loud:2\n",
+            "again:2\n",
             "rai:1\n",
             "rai:2\n",
             "cb:1/0\n",
