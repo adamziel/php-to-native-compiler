@@ -96739,6 +96739,11 @@ try {\n\
 } catch (Error $caught) {\n\
     echo $caught->getMessage(), \"\\n\";\n\
 }\n\
+try {\n\
+    throw new stdClass();\n\
+} catch (Error $caught) {\n\
+    echo $caught->getMessage(), \"\\n\";\n\
+}\n\
 var_dump(class_exists('Exception'));\n",
     )
     .unwrap();
@@ -96749,7 +96754,7 @@ var_dump(class_exists('Exception'));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Exception:boom:same\nValueError:missing\nok\narrow\nCan only throw objects\nbool(true)\n"
+        "Exception:boom:same\nValueError:missing\nok\narrow\nCan only throw objects\nCannot throw objects that do not implement Throwable\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -97256,6 +97261,56 @@ throw new MyErrorException(new stdClass);
         "{stderr}"
     );
     assert!(stderr.contains("  thrown in "), "{stderr}");
+}
+
+#[test]
+fn compile_errorexception_subclass_reconstruct_uses_inherited_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-errorexception-subclass-reconstruct");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("errorexception-subclass-reconstruct.php");
+    let output = root.join("errorexception-subclass-reconstruct-bin");
+    fs::write(
+        &input,
+        "<?php
+class MyErrorException extends ErrorException {}
+
+$e = new MyErrorException('foo', 1, E_NOTICE, 'file1', 1, new Exception());
+$e->__construct('bar', 2, E_WARNING, 'file2', 2, null);
+
+var_dump($e->getMessage());
+var_dump($e->getCode());
+var_dump($e->getSeverity());
+var_dump($e->getFile());
+var_dump($e->getLine());
+var_dump($e->getPrevious());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"bar\"\n",
+            "int(2)\n",
+            "int(2)\n",
+            "string(5) \"file2\"\n",
+            "int(2)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_exception_reconstruct"));
 }
 
 #[test]

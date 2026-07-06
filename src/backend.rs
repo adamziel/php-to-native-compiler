@@ -6624,9 +6624,33 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    ptn_value_destroy(&assigned);\n");
     out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"code\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, code, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"file\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : \"\")), line);\n");
+    out.push_str("    PtnValue file = ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : \"\"));\n");
+    out.push_str(
+        "    if (ptn_exception_name_equal(declaring_class, \"ErrorException\") && argc >= 4) {\n",
+    );
+    out.push_str("        PtnValue file_arg = ptn_value_deref(args[3]);\n");
+    out.push_str("        if (file_arg.type == PTN_STRING) {\n");
+    out.push_str("            ptn_value_destroy(&file);\n");
+    out.push_str("            file = ptn_owned_string_len(ptn_duplicate_string_len((const char *)file_arg.as.string.data, file_arg.as.string.len), file_arg.as.string.len);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"file\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, file, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"line\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, ptn_int((int64_t)line), line);\n");
+    out.push_str("    ptn_value_destroy(&file);\n");
+    out.push_str("    int64_t exception_line = (int64_t)line;\n");
+    out.push_str(
+        "    if (ptn_exception_name_equal(declaring_class, \"ErrorException\") && argc >= 5) {\n",
+    );
+    out.push_str("        PtnValue line_arg = ptn_value_deref(args[4]);\n");
+    out.push_str("        if (line_arg.type == PTN_INT) {\n");
+    out.push_str("            exception_line = line_arg.as.integer;\n");
+    out.push_str("        } else if (line_arg.type == PTN_BOOL) {\n");
+    out.push_str("            exception_line = line_arg.as.boolean ? 1 : 0;\n");
+    out.push_str("        } else if (line_arg.type == PTN_FLOAT) {\n");
+    out.push_str("            exception_line = (int64_t)line_arg.as.floating;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"line\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, ptn_int(exception_line), line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
     out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"previous\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, previous, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");

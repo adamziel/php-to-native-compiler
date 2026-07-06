@@ -4490,6 +4490,28 @@ static PTN_UNUSED void ptn_exception_set_soap_fault_properties(
     ptn_exception_set_soap_fault_property(exception, "_name", argc >= 5 ? args[4] : ptn_null());
 }
 
+static PTN_UNUSED int64_t ptn_exception_constructor_int_arg(
+    size_t argc,
+    const PtnValue *args,
+    size_t index,
+    int64_t fallback
+) {
+    if (argc <= index) {
+        return fallback;
+    }
+    PtnValue value = ptn_value_deref(args[index]);
+    if (value.type == PTN_INT) {
+        return value.as.integer;
+    }
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? 1 : 0;
+    }
+    if (value.type == PTN_FLOAT) {
+        return (int64_t)value.as.floating;
+    }
+    return fallback;
+}
+
 static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -4583,6 +4605,186 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     ptn_exception_set_soap_fault_code(exception, argc, args);
     ptn_exception_set_soap_fault_headerfault(exception, argc, args);
     ptn_exception_set_soap_fault_properties(exception, argc, args);
+    return ptn_null();
+}
+
+static PTN_UNUSED int ptn_declared_exception_write_constructor_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue written = ptn_object_write_property(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        value,
+        line
+    );
+    ptn_value_destroy(&written);
+    return !ptn_runtime_has_active_exception(runtime);
+}
+
+static PTN_UNUSED PtnValue ptn_declared_exception_reconstruct(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+
+    const char *declaring_class =
+        ptn_exception_constructor_declaring_class(runtime, receiver.as.object->class_name);
+    const char *base_class = ptn_declared_class_is_same_or_descendant(
+        receiver.as.object->class_name,
+        "Error"
+    ) ? "Error" : "Exception";
+    size_t max_args = ptn_exception_constructor_max_args(declaring_class);
+    if (argc > max_args) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s constructor expects at most %zu arguments",
+            declaring_class,
+            max_args
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    if (!ptn_exception_validate_soap_fault_code(runtime, declaring_class, argc, args, line)) {
+        return ptn_null();
+    }
+
+    PtnStringOperand message = ptn_exception_constructor_message(
+        runtime,
+        declaring_class,
+        argc,
+        args,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(message.owned);
+        return ptn_null();
+    }
+
+    PtnValue message_value = ptn_owned_string_len(message.owned, message.len);
+    int ok = ptn_declared_exception_write_constructor_property(
+        runtime,
+        receiver,
+        "message",
+        base_class,
+        message_value,
+        line
+    );
+    ptn_value_destroy(&message_value);
+    if (!ok) {
+        return ptn_null();
+    }
+
+    PtnValue code = ptn_int(ptn_exception_constructor_int_arg(argc, args, 1, 0));
+    ok = ptn_declared_exception_write_constructor_property(
+        runtime,
+        receiver,
+        "code",
+        base_class,
+        code,
+        line
+    );
+    ptn_value_destroy(&code);
+    if (!ok) {
+        return ptn_null();
+    }
+
+    if (ptn_exception_name_equal(declaring_class, "ErrorException")) {
+        PtnValue severity = ptn_int(
+            ptn_exception_constructor_int_arg(argc, args, 2, PTN_E_ERROR)
+        );
+        ok = ptn_declared_exception_write_constructor_property(
+            runtime,
+            receiver,
+            "severity",
+            "ErrorException",
+            severity,
+            line
+        );
+        ptn_value_destroy(&severity);
+        if (!ok) {
+            return ptn_null();
+        }
+
+        PtnValue file = ptn_owned_string(
+            ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : "")
+        );
+        if (argc >= 4) {
+            PtnValue file_arg = ptn_value_deref(args[3]);
+            if (file_arg.type == PTN_STRING) {
+                ptn_value_destroy(&file);
+                file = ptn_owned_string_len(
+                    ptn_duplicate_string_len(
+                        (const char *)file_arg.as.string.data,
+                        file_arg.as.string.len
+                    ),
+                    file_arg.as.string.len
+                );
+            }
+        }
+        ok = ptn_declared_exception_write_constructor_property(
+            runtime,
+            receiver,
+            "file",
+            base_class,
+            file,
+            line
+        );
+        ptn_value_destroy(&file);
+        if (!ok) {
+            return ptn_null();
+        }
+
+        PtnValue constructor_line = ptn_int(
+            ptn_exception_constructor_int_arg(argc, args, 4, (int64_t)line)
+        );
+        ok = ptn_declared_exception_write_constructor_property(
+            runtime,
+            receiver,
+            "line",
+            base_class,
+            constructor_line,
+            line
+        );
+        ptn_value_destroy(&constructor_line);
+        if (!ok) {
+            return ptn_null();
+        }
+    }
+
+    size_t previous_index = ptn_exception_name_equal(declaring_class, "ErrorException") ? 5 : 2;
+    PtnValue previous = argc > previous_index ? ptn_value_clone_deref(args[previous_index]) : ptn_null();
+    ok = ptn_declared_exception_write_constructor_property(
+        runtime,
+        receiver,
+        "previous",
+        base_class,
+        previous,
+        line
+    );
+    ptn_value_destroy(&previous);
+    if (!ok) {
+        return ptn_null();
+    }
+
     return ptn_null();
 }
 
@@ -4901,6 +5103,10 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
         ptn_runtime_shutdown_before_exit(runtime);
         exit(255);
+        return ptn_null();
+    }
+    if (resolved.type == PTN_OBJECT || resolved.type == PTN_CLOSURE) {
+        ptn_throw_exception_at(runtime, "Error", "Cannot throw objects that do not implement Throwable", path, line);
         return ptn_null();
     }
     if (resolved.type != PTN_EXCEPTION) {
@@ -9972,6 +10178,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         (receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, receiver.as.object));
     if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "__construct")) {
         return ptn_exception_reconstruct(runtime, receiver, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT &&
+        ptn_object_is_declared_throwable(runtime, receiver.as.object) &&
+        ptn_exception_name_equal(name, "__construct")
+    ) {
+        return ptn_declared_exception_reconstruct(runtime, receiver, argc, args, line);
     }
     int is_stream_exception_receiver = receiver.type == PTN_EXCEPTION &&
         ptn_exception_type_matches_name(receiver.as.exception->class_name, "StreamException");
