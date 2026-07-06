@@ -279670,9 +279670,20 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_value_destroy(&child_storage);
             return ptn_null();
         }
+        const char *child_class_name = resolved_receiver.type == PTN_OBJECT
+            ? resolved_receiver.as.object->class_name
+            : "RecursiveArrayIterator";
+        if (runtime->called_class_name_override != NULL &&
+            !ptn_internal_class_exists_name(runtime->called_class_name_override) &&
+            ptn_declared_class_is_same_or_descendant(
+                runtime->called_class_name_override,
+                "RecursiveArrayIterator"
+            )) {
+            child_class_name = runtime->called_class_name_override;
+        }
         PtnValue child = ptn_array_iterator_new_from_storage(
             runtime,
-            "RecursiveArrayIterator",
+            child_class_name,
             child_storage,
             data->flags,
             line

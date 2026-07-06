@@ -3484,6 +3484,86 @@ try {
 }
 
 #[test]
+fn compile_recursive_array_iterator_get_children_preserves_subclass_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-array-iterator-children-subclass");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-array-iterator-children-subclass.php");
+    let output = root.join("recursive-array-iterator-children-subclass-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LoggingRecursiveArrayIterator extends RecursiveArrayIterator {
+    function getChildren(): ?RecursiveArrayIterator {
+        echo __METHOD__, "\n";
+        return parent::getChildren();
+    }
+
+    function valid(): bool {
+        if (!parent::valid()) {
+            echo __METHOD__, "=false\n";
+            return false;
+        }
+        return true;
+    }
+}
+
+class LoggingRecursiveIteratorIterator extends RecursiveIteratorIterator {
+    function beginChildren(): void {
+        echo "begin:", $this->getDepth(), "\n";
+    }
+
+    function endChildren(): void {
+        echo "end:", $this->getDepth(), "\n";
+    }
+}
+
+$it = new LoggingRecursiveIteratorIterator(new LoggingRecursiveArrayIterator([
+    "root",
+    ["leaf", ["deep"]],
+]));
+
+foreach ($it as $value) {
+    echo "value:$value\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "value:root\n",
+            "LoggingRecursiveArrayIterator::getChildren\n",
+            "begin:1\n",
+            "value:leaf\n",
+            "LoggingRecursiveArrayIterator::getChildren\n",
+            "begin:2\n",
+            "value:deep\n",
+            "LoggingRecursiveArrayIterator::valid=false\n",
+            "end:2\n",
+            "LoggingRecursiveArrayIterator::valid=false\n",
+            "end:1\n",
+            "LoggingRecursiveArrayIterator::valid=false\n",
+            "LoggingRecursiveArrayIterator::valid=false\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_new_from_storage"));
+}
+
+#[test]
 fn compile_datetime_timezone_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-semantics");
     fs::create_dir_all(&root).unwrap();
