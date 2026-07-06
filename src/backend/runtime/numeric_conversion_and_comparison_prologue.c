@@ -254,6 +254,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
     runtime->replaying_generator_send_call = 0;
+    runtime->generator_resume_method_name =
+        caller_runtime->generator_resume_method_name;
     runtime->owns_finally_return_suppressed_exception = 0;
     runtime->defer_unreferenced_destructors_for_catch = 0;
     runtime->deferred_yield_from_iterator_object = ptn_null();
@@ -3106,7 +3108,9 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
         ptn_array_set_entry(
             method_frame.as.array,
             ptn_array_string_key("function"),
-            ptn_string("rewind")
+            ptn_string(runtime->generator_resume_method_name == NULL
+                ? "rewind"
+                : runtime->generator_resume_method_name)
         );
         ptn_array_set_entry(
             method_frame.as.array,
@@ -3114,6 +3118,15 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
             ptn_array_from_literal_entries(0, NULL)
         );
         ptn_array_set_entry(trace.as.array, ptn_array_int_key(1), method_frame);
+        size_t index = 2;
+        PtnTraceFrame *frame = runtime->trace_frame == NULL ? NULL : runtime->trace_frame->previous;
+        while (frame != NULL) {
+            if (index > (size_t)INT64_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_exception_trace_append_frame(trace, frame, &index);
+            frame = frame->previous;
+        }
         return trace;
     }
     size_t index = 0;

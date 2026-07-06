@@ -2034,6 +2034,7 @@ struct PtnRuntime {
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
     int replaying_generator_send_call;
+    const char *generator_resume_method_name;
     int owns_finally_return_suppressed_exception;
     int defer_unreferenced_destructors_for_catch;
     PtnValue deferred_yield_from_iterator_object;

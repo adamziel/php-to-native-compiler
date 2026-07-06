@@ -11480,6 +11480,56 @@ static PtnValue ptn_internal_debug_zval_dump(PtnRuntime *runtime, size_t argc, c
     return ptn_null();
 }
 
+static int ptn_debug_trace_runtime_has_active_generator(PtnRuntime *trace_runtime) {
+    return trace_runtime != NULL &&
+        trace_runtime->current_generator != NULL &&
+        !trace_runtime->generator_aborted_after_yield;
+}
+
+static int ptn_debug_print_append_captured_generator_trace(
+    PtnRuntime *runtime,
+    PtnStringBuffer *buffer,
+    size_t *index,
+    PtnRuntime *trace_runtime,
+    int64_t limit,
+    size_t line
+) {
+    if (!ptn_debug_trace_runtime_has_active_generator(trace_runtime)) {
+        return 0;
+    }
+    PtnValue trace = ptn_exception_capture_trace(trace_runtime);
+    PtnValue resolved_trace = ptn_value_deref(trace);
+    if (resolved_trace.type != PTN_ARRAY || resolved_trace.as.array == NULL) {
+        ptn_value_destroy(&trace);
+        return 0;
+    }
+    for (size_t i = 0; i < resolved_trace.as.array->len; i++) {
+        if (
+            *index != 0 &&
+            buffer->len > 0 &&
+            buffer->data[buffer->len - 1] != '\n'
+        ) {
+            ptn_string_buffer_append_char(buffer, '\n');
+        }
+        if (ptn_exception_append_trace_frame(
+            runtime,
+            buffer,
+            *index,
+            resolved_trace.as.array->entries[i].value,
+            ptn_runtime_exception_string_param_max_len(runtime),
+            line
+        )) {
+            break;
+        }
+        (*index)++;
+        if (limit > 0 && *index >= (size_t)limit) {
+            break;
+        }
+    }
+    ptn_value_destroy(&trace);
+    return 1;
+}
+
 static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t options = argc >= 1
         ? ptn_internal_expect_integer_arg(runtime, "debug_print_backtrace", 1, "options", args[0], line)
@@ -11496,6 +11546,14 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     size_t index = 0;
+    if (ptn_debug_print_append_captured_generator_trace(runtime, &buffer, &index, runtime, limit, line)) {
+        if (buffer.len != 0) {
+            ptn_string_buffer_append_char(&buffer, '\n');
+        }
+        ptn_output_write(runtime, buffer.data, buffer.len);
+        free(buffer.data);
+        return ptn_null();
+    }
     PtnTraceFrame *frame = runtime == NULL ? NULL : runtime->trace_frame;
     if (
         frame != NULL &&
@@ -11507,6 +11565,16 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
     for (; frame != NULL; frame = frame->previous) {
         if (frame->function_name == NULL) {
             continue;
+        }
+        if (ptn_debug_print_append_captured_generator_trace(
+            runtime,
+            &buffer,
+            &index,
+            frame->runtime,
+            limit,
+            line
+        )) {
+            break;
         }
         const char *file = frame->file;
         size_t frame_line = frame->line;

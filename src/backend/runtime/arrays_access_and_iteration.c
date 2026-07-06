@@ -11806,6 +11806,28 @@ static PTN_UNUSED int ptn_generator_position_valid(PtnGenerator *generator) {
         generator->position < generator->keys->len;
 }
 
+static PTN_UNUSED const char *ptn_generator_push_resume_method(
+    PtnRuntime *runtime,
+    const char *method_name
+) {
+    const char *previous = runtime == NULL ? NULL : runtime->generator_resume_method_name;
+    if (runtime != NULL && runtime->generator_resume_method_name == NULL) {
+        runtime->generator_resume_method_name = method_name;
+    }
+    return previous;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_restore_resume_method_and_return(
+    PtnRuntime *runtime,
+    const char *previous,
+    PtnValue value
+) {
+    if (runtime != NULL) {
+        runtime->generator_resume_method_name = previous;
+    }
+    return value;
+}
+
 static PTN_UNUSED int ptn_generator_has_current_or_last_yield(PtnGenerator *generator) {
     if (ptn_generator_position_valid(generator)) {
         return 1;
@@ -13436,12 +13458,14 @@ static PTN_UNUSED PtnValue ptn_call_declared_method(
 #endif
 
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    const char *previous_resume_method =
+        ptn_generator_push_resume_method(runtime, "next");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (generator != NULL) {
         generator->started = 1;
@@ -13468,14 +13492,14 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                     0
                 );
                 ptn_value_destroy(&source_receiver);
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
             PtnValue advanced = ptn_generator_next(runtime, source_receiver, line);
             ptn_value_destroy(&advanced);
             int source_still_valid = ptn_generator_position_valid(source_generator);
             ptn_value_destroy(&source_receiver);
             if (source_still_valid) {
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
         }
         PtnValue *traversable_source =
@@ -13527,12 +13551,12 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             ptn_generator_release_consumed_reference(generator, generator->position);
             generator->position++;
             if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
             if (!ptn_generator_position_valid(generator)) {
                 ptn_generator_flush_pending_output(runtime, generator);
             }
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
         ptn_generator_flush_output_chunk(runtime, generator, generator->position);
         if (ptn_generator_throw_pending_exception_at_position(
@@ -13543,18 +13567,18 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 "next",
                 0
         )) {
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_generator_replay_send_calls(runtime, generator, ptn_null(), line)) {
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
 #endif
         ptn_generator_apply_resume_return_value(runtime, generator, ptn_null());
         ptn_generator_release_consumed_reference(generator, generator->position);
         generator->position++;
         if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
         if (ptn_generator_position_valid(generator)) {
             ptn_generator_flush_output_chunk(runtime, generator, generator->position);
@@ -13571,11 +13595,11 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 "rewind",
                 1
             );
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
         ptn_generator_flush_pending_output(runtime, generator);
     }
-    return ptn_null();
+    return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
 }
 
 static PTN_UNUSED PtnValue ptn_generator_array_entry_value(PtnArray *array, size_t index) {
@@ -14185,19 +14209,21 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
 }
 
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line) {
+    const char *previous_resume_method =
+        ptn_generator_push_resume_method(runtime, "send");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (generator != NULL) {
         generator->started = 1;
     }
     if (!ptn_generator_position_valid(generator)) {
         ptn_generator_flush_pending_output(runtime, generator);
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
 
     PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
@@ -14208,39 +14234,47 @@ static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue rece
         int source_still_valid = ptn_generator_position_valid(source_generator);
         ptn_value_destroy(&source_receiver);
         if (source_still_valid) {
-            return result;
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, result);
         }
         ptn_value_destroy(&result);
     }
 
     if (ptn_generator_bind_sent_yield_from(runtime, generator, sent_value, line)) {
         if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
-        return ptn_generator_current(runtime, receiver, line);
+        return ptn_generator_restore_resume_method_and_return(
+            runtime,
+            previous_resume_method,
+            ptn_generator_current(runtime, receiver, line)
+        );
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (!ptn_generator_replay_send_calls(runtime, generator, sent_value, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
 #endif
 
     ptn_generator_apply_resume_return_value(runtime, generator, sent_value);
     PtnValue advanced = ptn_generator_next(runtime, receiver, line);
     ptn_value_destroy(&advanced);
-    return ptn_generator_current(runtime, receiver, line);
+    return ptn_generator_restore_resume_method_and_return(
+        runtime,
+        previous_resume_method,
+        ptn_generator_current(runtime, receiver, line)
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)runtime;
-    (void)line;
+    const char *previous_resume_method =
+        ptn_generator_push_resume_method(runtime, "rewind");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (generator != NULL) {
         if (
@@ -14250,7 +14284,7 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
             !generator->pending_exception_on_rewind
         ) {
             ptn_throw_exception(runtime, "Exception", "Cannot traverse an already closed generator");
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
         generator->started = 1;
         generator->position = 0;
@@ -14273,11 +14307,11 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
                     "rewind",
                     1
                 )) {
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
         }
     }
-    return ptn_null();
+    return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
 }
 
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value) {
