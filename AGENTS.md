@@ -24,4 +24,10 @@ Rules:
   session. Use
   `tools/phpt-safe-status.sh`, targeted tmux status checks, `status.tsv`, and
   bounded log tails instead.
+- Do not run recursive searches from `/home/claude` or other broad workspace
+  roots. Broad `rg`/`find` commands can traverse active lanes, logs, vendored
+  caches, generated artifacts, and cloned corpora, producing multi-megabyte
+  output that destabilizes the interactive session. Search from the specific
+  repo/lane first, and only expand by naming a small set of directories with
+  source-side output limits.
 - Use stable Rust unless a documented reason says otherwise.
