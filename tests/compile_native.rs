@@ -53558,6 +53558,50 @@ function invalid_target() {}
 }
 
 #[test]
+fn compile_zend_test_attribute_new_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-attribute-new-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-attribute-new-instance.php");
+    let output = root.join("zend-test-attribute-new-instance-bin");
+    fs::write(
+        &input,
+        "<?php
+class AttrTest
+{
+    public function __construct(
+        #[ZendTestParameterAttribute('foo')]
+        #[ZendTestPropertyAttribute('bar')]
+        public $param
+    ) {}
+}
+
+$ref = new ReflectionClass(AttrTest::class);
+$paramAttrs = $ref->getConstructor()->getParameters()[0]->getAttributes();
+$propAttrs = $ref->getProperty('param')->getAttributes();
+var_dump(class_exists(ZendTestParameterAttribute::class));
+var_dump(count($paramAttrs));
+var_dump($paramAttrs[0]->getName());
+var_dump($paramAttrs[0]->newInstance()->parameter);
+var_dump(count($propAttrs));
+var_dump($propAttrs[0]->getName());
+var_dump($propAttrs[0]->newInstance()->parameter);
+var_dump((new ZendTestAttributeWithArguments('baz'))->arg);
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(1)\nstring(26) \"ZendTestParameterAttribute\"\nstring(3) \"foo\"\nint(1)\nstring(25) \"ZendTestPropertyAttribute\"\nstring(3) \"bar\"\nstring(3) \"baz\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_constant_namespace_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-constant-namespace-metadata");
     fs::create_dir_all(&root).unwrap();

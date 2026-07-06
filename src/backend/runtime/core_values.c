@@ -3021,6 +3021,12 @@ static PTN_UNUSED PtnValue ptn_attribute_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED int ptn_zend_test_attribute_class_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ZendTestAttribute") ||
+        ptn_ascii_case_equal(class_name, "ZendTestAttributeWithArguments") ||
+        ptn_ascii_case_equal(class_name, "ZendTestParameterAttribute") ||
+        ptn_ascii_case_equal(class_name, "ZendTestPropertyAttribute");
+}
 static PTN_UNUSED PtnValue ptn_allow_dynamic_properties_new(
     PtnRuntime *runtime,
     size_t argc,

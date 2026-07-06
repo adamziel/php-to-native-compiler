@@ -240234,6 +240234,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DoOperationNoCast")
         || ptn_ascii_case_equal(class_name, "_ZendTestClass")
         || ptn_ascii_case_equal(class_name, "_ZendTestChildClass")
+        || ptn_zend_test_attribute_class_name(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
         || ptn_internal_class_name_is_array_iterator(class_name)
         || ptn_internal_class_name_is_empty_iterator(class_name)
@@ -245624,6 +245625,18 @@ static int ptn_internal_attribute_class_flags(const char *class_name, int *found
     if (ptn_internal_class_name_is_attribute(class_name)) {
         return 1;
     }
+    if (ptn_ascii_case_equal(class_name, "ZendTestAttribute")) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestAttributeWithArguments")) {
+        return 2;
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestParameterAttribute")) {
+        return 32;
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestPropertyAttribute")) {
+        return 8;
+    }
     if (ptn_internal_class_name_is_allow_dynamic_properties(class_name)) {
         return 1;
     }
@@ -245903,7 +245916,11 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             ptn_declared_class_new_instance(runtime, data->name, ctor_argc, ctor_args, constructor_line);
         if (runtime->exceptions->active_exception == NULL && ptn_value_deref(instance).type == PTN_NULL) {
             ptn_value_destroy(&instance);
-            instance = ptn_new_object(runtime, data->name, ctor_argc, ctor_args, constructor_line);
+            if (ptn_zend_test_attribute_class_name(data->name)) {
+                instance = ptn_zend_test_attribute_new(runtime, data->name, ctor_argc, ctor_args, constructor_line);
+            } else {
+                instance = ptn_new_object(runtime, data->name, ctor_argc, ctor_args, constructor_line);
+            }
         }
         runtime->next_call_arg_names = saved_next_call_arg_names;
         runtime->source_path = saved_source_path;

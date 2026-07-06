@@ -335,7 +335,10 @@ def report_from_active_run(
     ]
     repo_head = current_repo_head(Path.cwd())
     if repo_head and commit and not commit_matches_head(commit, repo_head):
-        notes.append(f"stale vs current HEAD {repo_head}; do not use as current failure scheduler")
+        notes.append(
+            f"stale vs current HEAD {repo_head}; use as scheduling input, "
+            "then verify suspected fixes before counting them retired"
+        )
 
     return SourceReport(
         name=f"{run_dir.parent.parent.name}-active",
@@ -600,7 +603,10 @@ def reports_from_rolling(
         notes.append("no partial-statuses TSV found for failing path clusters")
     repo_head = current_repo_head(Path.cwd())
     if repo_head and commit and not commit_matches_head(commit, repo_head):
-        notes.append(f"stale vs current HEAD {repo_head}; do not use as current failure scheduler")
+        notes.append(
+            f"stale vs current HEAD {repo_head}; use as scheduling input, "
+            "then verify suspected fixes before counting them retired"
+        )
     if latest_values.get("active_source_commit"):
         notes.append(f"active source commit: {latest_values['active_source_commit']}")
         active_commit = latest_values["active_source_commit"]

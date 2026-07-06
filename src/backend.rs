@@ -38,6 +38,10 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "NumericCastableNoOperations",
     "DimensionHandlersNoArrayAccess",
     "ZendTestIntEnum",
+    "ZendTestAttribute",
+    "ZendTestAttributeWithArguments",
+    "ZendTestParameterAttribute",
+    "ZendTestPropertyAttribute",
     "php_user_filter",
     "CurlHandle",
     "CurlMultiHandle",
@@ -12938,6 +12942,10 @@ fn emit_class_metadata_helpers(
         "NumericCastableNoOperations",
         "DimensionHandlersNoArrayAccess",
         "ZendTestIntEnum",
+        "ZendTestAttribute",
+        "ZendTestAttributeWithArguments",
+        "ZendTestParameterAttribute",
+        "ZendTestPropertyAttribute",
         "DatePeriod",
         "BcMath\\Number",
         "Generator",
@@ -13845,6 +13853,10 @@ fn emit_class_metadata_helpers(
         "NumericCastableNoOperations",
         "DimensionHandlersNoArrayAccess",
         "ZendTestIntEnum",
+        "ZendTestAttribute",
+        "ZendTestAttributeWithArguments",
+        "ZendTestParameterAttribute",
+        "ZendTestPropertyAttribute",
         "BcMath\\Number",
         "Generator",
         "Fiber",
@@ -17715,6 +17727,16 @@ fn builtin_attribute_flag_value(name: &str) -> Option<i64> {
     }
 }
 
+fn modeled_internal_attribute_target_flags(name: &str) -> Option<i32> {
+    match name.to_ascii_lowercase().as_str() {
+        "zendtestattribute" => Some(1),
+        "zendtestattributewitharguments" => Some(2),
+        "zendtestparameterattribute" => Some(32),
+        "zendtestpropertyattribute" => Some(8),
+        _ => None,
+    }
+}
+
 fn attribute_flag_expr_value(
     value: &ValueExpr,
     current_class: &ClassDecl,
@@ -18277,6 +18299,11 @@ fn emit_declared_attribute_result_for_class_like(
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("        int64_t index = 0;\n");
     for (attribute_index, instance) in metadata.instances.iter().enumerate() {
+        if modeled_internal_attribute_target_flags(&instance.name)
+            .is_some_and(|flags| flags & target == 0)
+        {
+            continue;
+        }
         let repeated = metadata
             .instances
             .iter()
@@ -28096,6 +28123,10 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "numericcastablenooperations" => Some("NumericCastableNoOperations"),
                 "dimensionhandlersnoarrayaccess" => Some("DimensionHandlersNoArrayAccess"),
                 "zendtestintenum" => Some("ZendTestIntEnum"),
+                "zendtestattribute" => Some("ZendTestAttribute"),
+                "zendtestattributewitharguments" => Some("ZendTestAttributeWithArguments"),
+                "zendtestparameterattribute" => Some("ZendTestParameterAttribute"),
+                "zendtestpropertyattribute" => Some("ZendTestPropertyAttribute"),
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "fiber" => Some("Fiber"),

@@ -1045,6 +1045,45 @@ static PTN_UNUSED PtnValue ptn_zend_test_class_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_zend_test_attribute_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects at most 1 argument, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue object = ptn_object_new_shell_at(runtime, class_name, line);
+    if (ptn_ascii_case_equal(class_name, "ZendTestAttributeWithArguments") ||
+        ptn_ascii_case_equal(class_name, "ZendTestParameterAttribute") ||
+        ptn_ascii_case_equal(class_name, "ZendTestPropertyAttribute")) {
+        const char *property_name = ptn_ascii_case_equal(class_name, "ZendTestAttributeWithArguments")
+            ? "arg"
+            : "parameter";
+        PtnValue property_value = argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key(property_name),
+            property_value
+        );
+    }
+    return object;
+}
 static PtnValue ptn_zend_test_do_operation_no_cast_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1602,6 +1641,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_return_type_will_change(lookup_class_name)) {
         return ptn_return_type_will_change_new(runtime, argc, args, line);
+    }
+    if (ptn_zend_test_attribute_class_name(lookup_class_name)) {
+        return ptn_zend_test_attribute_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_pdo(lookup_class_name)) {
         return ptn_pdo_new(runtime, lookup_class_name, argc, args, line);
