@@ -27032,7 +27032,7 @@ var_dump(method_exists($gen, "valid"));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nCannot get return value of a generator that hasn't returned\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nstring(11) \"root-return\"\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -27044,6 +27044,58 @@ var_dump(method_exists($gen, "valid"));
     assert!(c_source.contains("ptn_generator_next"));
     assert!(c_source.contains("ptn_generator_rewind"));
     assert!(c_source.contains("ptn_generator_valid"));
+}
+
+#[test]
+fn compile_generator_get_return_auto_primes_return_only_generator_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-get-return-auto-prime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-get-return-auto-prime.php");
+    let output = root.join("generator-get-return-auto-prime-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen1() {
+    return 42;
+    yield 24;
+}
+
+$gen = gen1();
+var_dump($gen->getReturn());
+
+function gen2() {
+    yield 24;
+    return 42;
+}
+
+$gen = gen2();
+try {
+    var_dump($gen->getReturn());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($gen->current());
+$gen->next();
+var_dump($gen->getReturn());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\nint(42)\nint(24)\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

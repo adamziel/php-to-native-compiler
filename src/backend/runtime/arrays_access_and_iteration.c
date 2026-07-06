@@ -13355,14 +13355,6 @@ static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtim
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
-    if (generator != NULL && generator->has_lazy_invocation) {
-        ptn_throw_exception(
-            runtime,
-            "Exception",
-            "Cannot get return value of a generator that hasn't returned"
-        );
-        return ptn_null();
-    }
     if (
         generator != NULL &&
         generator->completed &&
