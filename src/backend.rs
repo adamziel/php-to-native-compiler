@@ -1245,6 +1245,7 @@ fn opcache_script_after_optimizer_dump(
                 argument_names,
                 argument_unpacks,
                 line,
+                ..
             } => {
                 if let Some((callable, array, line)) = optimized_array_map_call_parts_from_call(
                     name,
@@ -1782,6 +1783,7 @@ fn optimized_array_map_call_parts(value: &ValueExpr) -> Option<(&ValueExpr, &Val
         argument_names,
         argument_unpacks,
         line,
+        ..
     } = value
     else {
         return None;
@@ -6706,7 +6708,13 @@ fn emit_user_function_prototypes(
             "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
         out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_function_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+        out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_function_named(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_function_named_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);\n",
         );
         out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);\n",
@@ -12725,6 +12733,43 @@ fn emit_user_function_dispatch(
         out.push_str(
             "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
         );
+        out.push_str("    }\n");
+        out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    } else {
+        out.push_str("    int ptn_undefined_needed = snprintf(NULL, 0, \"Call to undefined function %s()\", lookup_name);\n");
+        out.push_str("    if (ptn_undefined_needed < 0) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str(
+            "    char *ptn_undefined_message = malloc((size_t)ptn_undefined_needed + 1);\n",
+        );
+        out.push_str("    if (ptn_undefined_message == NULL) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str("    snprintf(ptn_undefined_message, (size_t)ptn_undefined_needed + 1, \"Call to undefined function %s()\", lookup_name);\n");
+        out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"Error\", ptn_undefined_message, runtime->source_path, line);\n");
+        out.push_str("    return ptn_null();\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_function_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    int found = 0;\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_user_function(runtime, lookup_name, argc, args, line, &found);\n",
+    );
+    out.push_str("    if (found) {\n");
+    out.push_str("        return result;\n");
+    out.push_str("    }\n");
+    if full_internal_dispatch {
+        out.push_str("    PtnValue ptn_dynamic_function_result;\n");
+        out.push_str("    if (ptn_runtime_call_dynamic_function(runtime, lookup_name, argc, args, line, &ptn_dynamic_function_result)) {\n");
+        out.push_str("        return ptn_dynamic_function_result;\n");
+        out.push_str("    }\n");
+        out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
+        out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
         out.push_str("    }\n");
         out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     } else {
@@ -33796,6 +33841,7 @@ fn emit_instruction(
             arguments,
             argument_names,
             argument_unpacks,
+            allow_global_fallback,
             line,
         } => {
             let result_temp = if name.eq_ignore_ascii_case("array_splice")
@@ -33811,6 +33857,7 @@ fn emit_instruction(
                     arguments,
                     argument_names,
                     argument_unpacks,
+                    *allow_global_fallback,
                     *line,
                     true,
                 )
@@ -46164,6 +46211,7 @@ impl ValueEmitter {
             arguments,
             argument_names,
             argument_unpacks,
+            allow_global_fallback,
             line,
         } = value
         {
@@ -46180,6 +46228,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *allow_global_fallback,
                 *line,
                 true,
             );
@@ -52622,6 +52671,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                allow_global_fallback,
                 line,
             } => self.emit_internal_call(
                 out,
@@ -52629,6 +52679,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *allow_global_fallback,
                 *line,
                 false,
             ),
@@ -60448,6 +60499,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                allow_global_fallback,
                 line,
             } => Some(self.emit_internal_call(
                 out,
@@ -60455,6 +60507,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *allow_global_fallback,
                 *line,
                 false,
             )),
@@ -62495,6 +62548,7 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
+        allow_global_fallback: bool,
         line: usize,
         discarded: bool,
     ) -> String {
@@ -62957,7 +63011,11 @@ impl ValueEmitter {
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_function_named(&runtime, \"");
+            if allow_global_fallback {
+                out.push_str(" = ptn_call_function_named(&runtime, \"");
+            } else {
+                out.push_str(" = ptn_call_function_named_strict(&runtime, \"");
+            }
             out.push_str(&c_string(&resolved_name));
             out.push_str("\", ");
             out.push_str(&args_temp);
@@ -62987,6 +63045,7 @@ impl ValueEmitter {
                                 &normalized_arguments,
                                 &normalized_argument_names,
                                 &vec![false; normalized_arguments.len()],
+                                allow_global_fallback,
                                 line,
                                 discarded,
                             )
@@ -63024,7 +63083,11 @@ impl ValueEmitter {
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_function_named(&runtime, \"");
+            if allow_global_fallback {
+                out.push_str(" = ptn_call_function_named(&runtime, \"");
+            } else {
+                out.push_str(" = ptn_call_function_named_strict(&runtime, \"");
+            }
             out.push_str(&c_string(&resolved_name));
             out.push_str("\", ");
             out.push_str(&args_temp);
@@ -63081,7 +63144,11 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
-                out.push_str("ptn_call_function(&runtime, \"");
+                if allow_global_fallback {
+                    out.push_str("ptn_call_function(&runtime, \"");
+                } else {
+                    out.push_str("ptn_call_function_strict(&runtime, \"");
+                }
                 out.push_str(&c_string(&resolved_name));
                 out.push_str("\", 0, NULL, ");
                 out.push_str(&line.to_string());
@@ -63242,7 +63309,11 @@ impl ValueEmitter {
             out.push_str("        ");
             out.push_str(&result_temp);
             out.push_str(" = ");
-            out.push_str("ptn_call_function(&runtime, \"");
+            if allow_global_fallback {
+                out.push_str("ptn_call_function(&runtime, \"");
+            } else {
+                out.push_str("ptn_call_function_strict(&runtime, \"");
+            }
             out.push_str(&c_string(&resolved_name));
             out.push_str("\", ");
             out.push_str(&arguments.len().to_string());

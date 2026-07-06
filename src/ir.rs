@@ -511,6 +511,7 @@ pub enum Instruction {
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        allow_global_fallback: bool,
         line: usize,
     },
     Return {
@@ -697,6 +698,7 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        allow_global_fallback: bool,
         line: usize,
     },
     FirstClassCallable {
@@ -2501,6 +2503,7 @@ impl<'a> LoweringContext<'a> {
                     arguments,
                     argument_names,
                     argument_unpacks,
+                    allow_global_fallback,
                     span,
                 } => {
                     if name.eq_ignore_ascii_case("opcache_compile_file")
@@ -2521,6 +2524,7 @@ impl<'a> LoweringContext<'a> {
                             arguments,
                             argument_names,
                             argument_unpacks: argument_unpacks.clone(),
+                            allow_global_fallback: *allow_global_fallback,
                             line: span.line,
                         });
                     }
@@ -5051,6 +5055,7 @@ impl<'a> LoweringContext<'a> {
                 arguments: vec![ValueExpr::String(command.clone())],
                 argument_names: vec![None],
                 argument_unpacks: vec![false],
+                allow_global_fallback: true,
                 line: span.line,
             },
             Expr::Int(value, _) => ValueExpr::Int(*value),
@@ -5152,6 +5157,7 @@ impl<'a> LoweringContext<'a> {
                 argument_unpacks,
                 call_line: _,
                 span,
+                ..
             } if name.eq_ignore_ascii_case("opcache_compile_file")
                 && arguments.len() == 1
                 && argument_names.iter().all(Option::is_none)
@@ -5185,6 +5191,7 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                allow_global_fallback,
                 call_line,
                 span: _,
             } => {
@@ -5195,6 +5202,7 @@ impl<'a> LoweringContext<'a> {
                     arguments,
                     argument_names,
                     argument_unpacks: argument_unpacks.clone(),
+                    allow_global_fallback: *allow_global_fallback,
                     line: *call_line,
                 }
             }

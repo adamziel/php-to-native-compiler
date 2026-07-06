@@ -7234,7 +7234,9 @@ static char *ptn_url_decode_bytes(
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_function_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_function_named(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);
+static PTN_UNUSED PtnValue ptn_call_function_named_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line);
@@ -8671,6 +8673,62 @@ static PTN_UNUSED PtnValue ptn_call_function_named(
     }
     runtime->next_call_arg_names = call_arg_names;
     PtnValue result = ptn_call_function(runtime, name, call_argc, call_args, line);
+    runtime->next_call_arg_names = previous_arg_names;
+    if (normalized_active) {
+        ptn_normalized_call_arguments_destroy(&normalized);
+    }
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_call_function_named_strict(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    const char *const *arg_names,
+    size_t line
+) {
+    if (!ptn_call_arg_names_have_named(argc, arg_names)) {
+        return ptn_call_function_strict(runtime, name, argc, args, line);
+    }
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    if (ptn_ascii_case_equal(lookup_name, "call_user_func") ||
+        ptn_ascii_case_equal(lookup_name, "call_user_func_array") ||
+        ptn_ascii_case_equal(lookup_name, "forward_static_call") ||
+        ptn_ascii_case_equal(lookup_name, "forward_static_call_array")) {
+        const char *const *previous_arg_names = runtime->next_call_arg_names;
+        runtime->next_call_arg_names = arg_names;
+        PtnValue result = ptn_call_function_strict(runtime, name, argc, args, line);
+        runtime->next_call_arg_names = previous_arg_names;
+        return result;
+    }
+    PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);
+    PtnNormalizedCallArguments normalized;
+    int normalized_active = ptn_normalize_named_call_arguments(
+        runtime,
+        metadata,
+        argc,
+        args,
+        arg_names,
+        line,
+        &normalized
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_normalized_call_arguments_destroy(&normalized);
+        return ptn_null();
+    }
+
+    const char *const *previous_arg_names = runtime->next_call_arg_names;
+    const PtnValue *call_args = args;
+    const char *const *call_arg_names = arg_names;
+    size_t call_argc = argc;
+    if (normalized_active) {
+        call_args = normalized.values;
+        call_arg_names = (const char *const *)normalized.names;
+        call_argc = normalized.len;
+    }
+    runtime->next_call_arg_names = call_arg_names;
+    PtnValue result = ptn_call_function_strict(runtime, name, call_argc, call_args, line);
     runtime->next_call_arg_names = previous_arg_names;
     if (normalized_active) {
         ptn_normalized_call_arguments_destroy(&normalized);

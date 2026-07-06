@@ -1432,10 +1432,14 @@ impl Parser<'_> {
         ))
     }
 
-    fn parse_resolved_function_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
+    fn parse_resolved_function_call(
+        &mut self,
+        expected: &str,
+    ) -> Result<(String, SourceSpan, bool)> {
         let parsed = self.parse_name(expected)?;
         let span = parsed.span;
-        Ok((self.resolve_function_name(&parsed), span))
+        let (name, allow_global_fallback) = self.resolve_function_call_name(&parsed);
+        Ok((name, span, allow_global_fallback))
     }
 
     fn parse_name(&mut self, expected: &str) -> Result<ParsedName> {
@@ -1547,31 +1551,38 @@ impl Parser<'_> {
     }
 
     fn resolve_function_name(&self, parsed: &ParsedName) -> String {
-        let resolved = match parsed.resolution {
-            NameResolution::FullyQualified => parsed.name.clone(),
-            NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
+        self.resolve_function_call_name(parsed).0
+    }
+
+    fn resolve_function_call_name(&self, parsed: &ParsedName) -> (String, bool) {
+        match parsed.resolution {
+            NameResolution::FullyQualified => (parsed.name.clone(), false),
+            NameResolution::NamespaceRelative => {
+                (self.qualify_current_namespace(&parsed.name), false)
+            }
             NameResolution::Unqualified => {
                 let alias_key = parsed.name.to_ascii_lowercase();
                 let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.function_aliases.get(&alias_key) {
-                    target.clone()
+                    (target.clone(), false)
                 } else if namespaced != parsed.name
                     && self
                         .declared_functions
                         .contains(&namespaced.to_ascii_lowercase())
                 {
-                    namespaced
+                    (namespaced, false)
                 } else if is_modeled_internal_function_name(&alias_key) {
-                    alias_key
+                    (alias_key, true)
                 } else {
-                    namespaced
+                    let allow_global_fallback = namespaced != parsed.name;
+                    (namespaced, allow_global_fallback)
                 }
             }
-            NameResolution::Qualified => {
-                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
-            }
-        };
-        resolved
+            NameResolution::Qualified => (
+                self.resolve_aliasable_name(&parsed.name, &self.class_aliases),
+                false,
+            ),
+        }
     }
 
     fn resolve_constant_name(&self, parsed: &ParsedName) -> String {
@@ -6650,7 +6661,8 @@ impl Parser<'_> {
 
     fn parse_call_statement(&mut self) -> Result<Statement> {
         let start_index = self.index;
-        let (name, span) = self.parse_resolved_function_name("expected function name")?;
+        let (name, span, allow_global_fallback) =
+            self.parse_resolved_function_call("expected function name")?;
         if self.peek_is_first_class_callable_arguments() {
             self.index = start_index;
             return self.parse_expression_statement();
@@ -6690,6 +6702,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            allow_global_fallback,
             span,
         })
     }
@@ -8475,6 +8488,7 @@ impl Parser<'_> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                allow_global_fallback: true,
                 call_line: token.span.line,
                 span: combine_spans(token.span, right_span),
             });
@@ -9168,6 +9182,7 @@ impl Parser<'_> {
                             arguments,
                             argument_names,
                             argument_unpacks,
+                            allow_global_fallback: true,
                             call_line: token.span.line,
                             span: combine_spans(token.span, right_span),
                         });
@@ -9224,7 +9239,8 @@ impl Parser<'_> {
                     }
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
-                    let resolved_name = self.resolve_function_name(&parsed_name);
+                    let (resolved_name, allow_global_fallback) =
+                        self.resolve_function_call_name(&parsed_name);
                     validate_mutating_array_internal_call(
                         &resolved_name,
                         &arguments,
@@ -9235,6 +9251,7 @@ impl Parser<'_> {
                         arguments,
                         argument_names,
                         argument_unpacks,
+                        allow_global_fallback,
                         call_line: parsed_name.span.line,
                         span: combine_spans(parsed_name.span, right_span),
                     });
@@ -9304,7 +9321,8 @@ impl Parser<'_> {
                 _ => {
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
-                    let resolved_name = self.resolve_function_name(&parsed_name);
+                    let (resolved_name, allow_global_fallback) =
+                        self.resolve_function_call_name(&parsed_name);
                     if unqualified && lowercase == "eval" {
                         if let Some(expr) = self.literal_eval_return_expr(
                             &arguments,
@@ -9324,6 +9342,7 @@ impl Parser<'_> {
                         arguments,
                         argument_names,
                         argument_unpacks,
+                        allow_global_fallback,
                         call_line: parsed_name.span.line,
                         span: combine_spans(parsed_name.span, right_span),
                     })
@@ -9846,6 +9865,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            allow_global_fallback: true,
             call_line: member.span.line,
             span: combine_spans(class_span, right_span),
         })

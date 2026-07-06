@@ -546,6 +546,7 @@ pub enum Statement {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        allow_global_fallback: bool,
         span: SourceSpan,
     },
     Echo {
@@ -1017,6 +1018,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        allow_global_fallback: bool,
         call_line: usize,
         span: SourceSpan,
     },

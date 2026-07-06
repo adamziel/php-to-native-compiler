@@ -2277,6 +2277,7 @@ static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue rec
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_function_strict(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 #endif
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED PtnStringOperand ptn_runtime_global_constant_key_len(const char *name, size_t name_len);

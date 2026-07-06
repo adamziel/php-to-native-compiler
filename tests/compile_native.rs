@@ -124911,6 +124911,61 @@ echo strlen("hello"), "\n";
 }
 
 #[test]
+fn compile_namespace_unqualified_function_call_falls_back_to_global_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-function-global-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-function-global-fallback.php");
+    let output = root.join("namespace-function-global-fallback-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace App;
+
+echo strlen("hello"), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_imported_missing_function_call_does_not_fallback_to_global_to_native_binary() {
+    let root = temp_dir("ptn-native-imported-function-no-global-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("imported-function-no-global-fallback.php");
+    let output = root.join("imported-function-no-global-fallback-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace App;
+
+use function Foo\Bar\strlen;
+
+echo strlen("hello"), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("Fatal error: Uncaught Error: Call to undefined function Foo\\Bar\\strlen()"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_absolute_dynamic_string_callables_to_native_binary() {
     let root = temp_dir("ptn-native-absolute-dynamic-string-callables");
     fs::create_dir_all(&root).unwrap();
