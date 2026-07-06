@@ -241243,8 +241243,12 @@ static int ptn_parent_iterator_method_exists(const char *method_name) {
 static int ptn_recursive_iterator_iterator_method_exists(const char *method_name) {
     return ptn_iterator_iterator_method_exists(method_name)
         || ptn_spl_file_info_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "beginChildren")
+        || ptn_ascii_case_equal(method_name, "beginIteration")
         || ptn_ascii_case_equal(method_name, "callGetChildren")
         || ptn_ascii_case_equal(method_name, "callHasChildren")
+        || ptn_ascii_case_equal(method_name, "endChildren")
+        || ptn_ascii_case_equal(method_name, "endIteration")
         || ptn_ascii_case_equal(method_name, "getDepth")
         || ptn_ascii_case_equal(method_name, "getMaxDepth")
         || ptn_ascii_case_equal(method_name, "getSubPath")
@@ -243776,9 +243780,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
         static const char *const names[] = {
+            "beginChildren",
+            "beginIteration",
             "callGetChildren",
             "callHasChildren",
             "current",
+            "endChildren",
+            "endIteration",
             "getDepth",
             "getInnerIterator",
             "getMaxDepth",
@@ -259065,6 +259073,7 @@ typedef struct {
     size_t end_children_frame_count;
     int suppress_end_children_rewind;
     int repeat_current_once;
+    int iteration_active;
     int valid;
     int mode;
     int64_t flags;
@@ -259931,7 +259940,16 @@ static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
     ) {
         data->owner = receiver.as.object;
         free(data->owner_class_name);
-        data->owner_class_name = ptn_duplicate_string(receiver.as.object->class_name);
+        const char *owner_class_name = receiver.as.object->class_name;
+        if (runtime->called_class_name_override != NULL &&
+            !ptn_internal_class_exists_name(runtime->called_class_name_override) &&
+            ptn_declared_class_is_same_or_descendant(
+                runtime->called_class_name_override,
+                "RecursiveIteratorIterator"
+            )) {
+            owner_class_name = runtime->called_class_name_override;
+        }
+        data->owner_class_name = ptn_duplicate_string(owner_class_name);
     }
     return data;
 }
@@ -276916,6 +276934,14 @@ static int ptn_recursive_iterator_iterator_push_frame(
     PtnValue iterator,
     size_t line
 ) {
+    if (!ptn_value_object_implements_interface(iterator, "RecursiveIterator")) {
+        ptn_throw_exception(
+            runtime,
+            "UnexpectedValueException",
+            "Objects returned by RecursiveIterator::getChildren() must implement RecursiveIterator"
+        );
+        return 0;
+    }
     if (data->frame_count >= 65) {
         ptn_throw_exception(runtime, "Exception", "RecursiveIteratorIterator recursion limit exceeded");
         return 0;
@@ -277055,6 +277081,40 @@ static PtnValue ptn_recursive_iterator_iterator_call_owner_hook_value(
     return result;
 }
 
+static int ptn_recursive_iterator_iterator_begin_iteration(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || data->iteration_active) {
+        return 1;
+    }
+    data->iteration_active = 1;
+    return ptn_recursive_iterator_iterator_call_owner_hook(
+        runtime,
+        data,
+        "beginIteration",
+        line
+    );
+}
+
+static int ptn_recursive_iterator_iterator_end_iteration(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || !data->iteration_active) {
+        return 1;
+    }
+    data->iteration_active = 0;
+    return ptn_recursive_iterator_iterator_call_owner_hook(
+        runtime,
+        data,
+        "endIteration",
+        line
+    );
+}
+
 static PtnValue ptn_recursive_iterator_iterator_default_call_has_children(
     PtnRuntime *runtime,
     PtnRecursiveIteratorIteratorData *data,
@@ -277122,6 +277182,10 @@ static PtnValue ptn_recursive_iterator_iterator_call_get_children_for_traversal(
     }
 
     int called = 0;
+    if (!ptn_recursive_iterator_iterator_set_current_from_frame(runtime, data, line)) {
+        ptn_try_frame_pop(runtime, &frame);
+        return value;
+    }
     value = ptn_recursive_iterator_iterator_call_owner_hook_value(
         runtime,
         data,
@@ -277160,6 +277224,7 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
     ptn_recursive_iterator_iterator_clear_current(data);
     while (runtime->exceptions->active_exception == NULL) {
         if (data->frame_count == 0) {
+            ptn_recursive_iterator_iterator_end_iteration(runtime, data, line);
             return;
         }
         PtnRecursiveIteratorIteratorFrame *frame = &data->frames[data->frame_count - 1];
@@ -277383,6 +277448,7 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     data->end_children_frame_count = 0;
     data->suppress_end_children_rewind = 0;
     data->repeat_current_once = 0;
+    data->iteration_active = 0;
     data->valid = 0;
     data->mode = mode;
     data->flags = flags;
@@ -281811,6 +281877,9 @@ static void ptn_recursive_iterator_iterator_rewind_data(
     if (!ptn_recursive_iterator_iterator_push_frame(runtime, data, data->inner, line)) {
         return;
     }
+    if (!ptn_recursive_iterator_iterator_begin_iteration(runtime, data, line)) {
+        return;
+    }
     ptn_recursive_iterator_iterator_advance_to_next(runtime, data, line);
 }
 
@@ -281909,7 +281978,16 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
             if (new_data != NULL) {
                 new_data->owner = resolved_receiver.as.object;
                 free(new_data->owner_class_name);
-                new_data->owner_class_name = ptn_duplicate_string(resolved_receiver.as.object->class_name);
+                const char *owner_class_name = resolved_receiver.as.object->class_name;
+                if (runtime->called_class_name_override != NULL &&
+                    !ptn_internal_class_exists_name(runtime->called_class_name_override) &&
+                    ptn_declared_class_is_same_or_descendant(
+                        runtime->called_class_name_override,
+                        "RecursiveIteratorIterator"
+                    )) {
+                    owner_class_name = runtime->called_class_name_override;
+                }
+                new_data->owner_class_name = ptn_duplicate_string(owner_class_name);
             }
         }
         ptn_value_destroy(&replacement);
@@ -282029,6 +282107,13 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
         }
         data->has_max_depth = max_depth >= 0;
         data->max_depth = max_depth;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "beginChildren") ||
+        ptn_ascii_case_equal(name, "beginIteration") ||
+        ptn_ascii_case_equal(name, "endChildren") ||
+        ptn_ascii_case_equal(name, "endIteration")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "rewind")) {

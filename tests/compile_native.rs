@@ -3388,6 +3388,102 @@ try {
 }
 
 #[test]
+fn compile_recursive_iterator_iterator_child_hook_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-child-hook-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-child-hook-surface.php");
+    let output = root.join("recursive-iterator-iterator-child-hook-surface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ChildIterator extends RecursiveArrayIterator {}
+
+class LoggingRecursiveIteratorIterator extends RecursiveIteratorIterator {
+    function __construct($it) {
+        parent::__construct($it);
+    }
+
+    function rewind(): void {
+        echo "rewind\n";
+        parent::rewind();
+    }
+
+    function callHasChildren(): bool {
+        $has = parent::callHasChildren();
+        echo "has:", $this->getDepth(), ":", ($has ? "yes" : "no"), "\n";
+        return $has;
+    }
+
+    function callGetChildren(): ?ChildIterator {
+        echo "child:", $this->key(), ":", count($this->current()), "\n";
+        if ($this->key() === "bad") {
+            return null;
+        }
+        return new ChildIterator($this->current());
+    }
+
+    function beginChildren(): void {
+        echo "begin:", $this->getDepth(), "\n";
+        parent::beginChildren();
+    }
+
+    function endChildren(): void {
+        echo "end:", $this->getDepth(), "\n";
+        parent::endChildren();
+    }
+}
+
+$it = new LoggingRecursiveIteratorIterator(new ChildIterator([
+    "a",
+    "kids" => ["b"],
+    "bad" => ["c"],
+]));
+
+try {
+    foreach ($it as $key => $value) {
+        echo "value:$key=$value\n";
+    }
+} catch (UnexpectedValueException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "rewind\n",
+            "has:0:no\n",
+            "value:0=a\n",
+            "has:0:yes\n",
+            "child:kids:1\n",
+            "begin:1\n",
+            "has:1:no\n",
+            "value:0=b\n",
+            "end:1\n",
+            "has:0:yes\n",
+            "child:bad:1\n",
+            "Objects returned by RecursiveIterator::getChildren() must implement RecursiveIterator\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_recursive_iterator_iterator_call_get_children_for_traversal"));
+}
+
+#[test]
 fn compile_datetime_timezone_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-semantics");
     fs::create_dir_all(&root).unwrap();
