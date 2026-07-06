@@ -27099,6 +27099,59 @@ var_dump($gens[1]->valid());
 }
 
 #[test]
+fn compile_generator_yield_from_shared_delegate_abort_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-shared-abort");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-shared-abort.php");
+    let output = root.join("generator-yield-from-shared-abort-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function from() {
+    yield 1;
+    throw new Exception("boom");
+}
+
+function gen($gen) {
+    try {
+        var_dump(yield from $gen);
+    } catch (Exception $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+
+$gen = from();
+$gens[] = gen($gen);
+$gens[] = gen($gen);
+
+foreach ($gens as $index => $g) {
+    echo "Generator $index\n";
+    var_dump($g->current());
+    $g->next();
+}
+var_dump($gens[1]->current());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Generator 0\nint(1)\nException:boom\nGenerator 1\nClosedGeneratorException:Generator yielded from aborted, no return value available\nNULL\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_get_return_auto_primes_return_only_generator_to_native_binary() {
     let root = temp_dir("ptn-native-generator-get-return-auto-prime");
     fs::create_dir_all(&root).unwrap();

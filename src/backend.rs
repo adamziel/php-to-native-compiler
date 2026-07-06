@@ -35939,9 +35939,186 @@ fn instruction_contains_top_level_generator_statement_yield(instruction: &Instru
     )
 }
 
+fn value_contains_generator_yield_anywhere(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. } => true,
+        ValueExpr::LegacyDollarBraceExpressionVariable { name, .. }
+        | ValueExpr::DynamicVariable { name, .. }
+        | ValueExpr::ArrayAccess { array: name, .. }
+        | ValueExpr::ArrayAppendAccess { array: name, .. }
+        | ValueExpr::Empty { target: name }
+        | ValueExpr::Print { expression: name }
+        | ValueExpr::Include { path: name, .. }
+        | ValueExpr::OpcacheCompileFile { path: name, .. }
+        | ValueExpr::Throw { value: name, .. }
+        | ValueExpr::FirstClassCallable { callable: name, .. }
+        | ValueExpr::DynamicClassNameFetch { receiver: name, .. }
+        | ValueExpr::Unary { expr: name, .. }
+        | ValueExpr::Cast { expr: name, .. }
+        | ValueExpr::PipeValue { expr: name, .. } => value_contains_generator_yield_anywhere(name),
+        ValueExpr::Exit { value, .. } => value
+            .as_deref()
+            .is_some_and(value_contains_generator_yield_anywhere),
+        ValueExpr::Assign { value, .. } => value_contains_generator_yield_anywhere(value),
+        ValueExpr::AssignRef { source, .. } => value_contains_generator_yield_anywhere(source),
+        ValueExpr::Array(elements) => elements.iter().any(|element| {
+            element
+                .key
+                .as_ref()
+                .is_some_and(value_contains_generator_yield_anywhere)
+                || match &element.value {
+                    IrArrayElementValue::Value(value) => {
+                        value_contains_generator_yield_anywhere(value)
+                    }
+                    IrArrayElementValue::Reference(_) => false,
+                    IrArrayElementValue::Unpack { value, .. } => {
+                        value_contains_generator_yield_anywhere(value)
+                    }
+                }
+        }),
+        ValueExpr::Isset { targets } => targets.iter().any(value_contains_generator_yield_anywhere),
+        ValueExpr::InternalCall { arguments, .. }
+        | ValueExpr::NewObject { arguments, .. }
+        | ValueExpr::ParentPropertyHookCall { arguments, .. } => arguments
+            .iter()
+            .any(value_contains_generator_yield_anywhere),
+        ValueExpr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            value_contains_generator_yield_anywhere(callee)
+                || arguments
+                    .iter()
+                    .any(value_contains_generator_yield_anywhere)
+        }
+        ValueExpr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            value_contains_generator_yield_anywhere(receiver)
+                || arguments
+                    .iter()
+                    .any(value_contains_generator_yield_anywhere)
+        }
+        ValueExpr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            value_contains_generator_yield_anywhere(receiver)
+                || value_contains_generator_yield_anywhere(name)
+                || arguments
+                    .iter()
+                    .any(value_contains_generator_yield_anywhere)
+        }
+        ValueExpr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            value_contains_generator_yield_anywhere(class_name)
+                || arguments
+                    .iter()
+                    .any(value_contains_generator_yield_anywhere)
+        }
+        ValueExpr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            value_contains_generator_yield_anywhere(expr)
+                || with_properties
+                    .as_deref()
+                    .is_some_and(value_contains_generator_yield_anywhere)
+        }
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. }
+        | ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
+            value_contains_generator_yield_anywhere(receiver)
+        }
+        ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
+            value_contains_generator_yield_anywhere(receiver)
+                || value_contains_generator_yield_anywhere(name)
+        }
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => {
+            value_contains_generator_yield_anywhere(name)
+        }
+        ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_deref()
+                .is_some_and(value_contains_generator_yield_anywhere)
+                || value_contains_generator_yield_anywhere(name)
+        }
+        ValueExpr::InstanceOf { expr, target, .. } => {
+            value_contains_generator_yield_anywhere(expr)
+                || matches!(
+                    target,
+                    InstanceOfTarget::Expr(target) if value_contains_generator_yield_anywhere(target)
+                )
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            value_contains_generator_yield_anywhere(left)
+                || value_contains_generator_yield_anywhere(right)
+        }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            value_contains_generator_yield_anywhere(condition)
+                || if_true
+                    .as_deref()
+                    .is_some_and(value_contains_generator_yield_anywhere)
+                || value_contains_generator_yield_anywhere(if_false)
+        }
+        ValueExpr::Match { subject, arms, .. } => {
+            value_contains_generator_yield_anywhere(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions
+                        .iter()
+                        .any(value_contains_generator_yield_anywhere)
+                        || value_contains_generator_yield_anywhere(&arm.value)
+                })
+        }
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Closure { .. }
+        | ValueExpr::Load { .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { .. }
+        | ValueExpr::IncDec { .. }
+        | ValueExpr::Constant { .. }
+        | ValueExpr::MagicConstant { .. }
+        | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::ClassConstantFetch { .. } => false,
+    }
+}
+
+fn instruction_contains_generator_yield_anywhere(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::Expression(value)
+        | Instruction::Echo { value, .. }
+        | Instruction::DefineConstant { value, .. }
+        | Instruction::Throw { value, .. } => value_contains_generator_yield_anywhere(value),
+        Instruction::Store { value, .. }
+        | Instruction::StoreArrayDim { value, .. }
+        | Instruction::BindStatic {
+            value: Some(value), ..
+        } => value_contains_generator_yield_anywhere(value),
+        Instruction::InternalCall { arguments, .. } => arguments
+            .iter()
+            .any(value_contains_generator_yield_anywhere),
+        _ => instruction_contains_top_level_generator_statement_yield(instruction),
+    }
+}
+
 fn generator_throw_catch_try_body_collects_safely(body: &[Instruction]) -> bool {
     body.iter()
-        .rposition(instruction_contains_top_level_generator_statement_yield)
+        .rposition(instruction_contains_generator_yield_anywhere)
         .is_some_and(|yield_index| {
             !body[yield_index + 1..]
                 .iter()
@@ -35957,7 +36134,9 @@ fn generator_throw_catch_registrations_for_try(
     finally_body: &[Instruction],
 ) -> Option<Vec<GeneratorThrowCatchRegistration>> {
     if finally_body.is_empty()
-        && instructions_contain_generator_statement_yield(body)
+        && body
+            .iter()
+            .any(instruction_contains_generator_yield_anywhere)
         && generator_throw_catch_try_body_collects_safely(body)
         && !catches.is_empty()
         && catches.iter().all(generator_throw_catch_body_supported)

@@ -3519,6 +3519,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "DateMalformedStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedPeriodStringException") ||
+            ptn_exception_name_equal(class_name, "ClosedGeneratorException") ||
             ptn_exception_name_equal(class_name, "LogicException") ||
             ptn_exception_name_equal(class_name, "BadFunctionCallException") ||
             ptn_exception_name_equal(class_name, "BadMethodCallException") ||
