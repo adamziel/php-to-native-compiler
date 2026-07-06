@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-06T01:50:13Z |
+| last refresh | 2026-07-06T02:00:11Z |
 | source commit | `66e8df03ac14` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,21 +22,21 @@
 | field | value |
 | --- | --- |
 | source commit | `f1d06fab7ea5` |
-| statused tests | 216 |
-| passed tests | 216 |
-| failed tests | 0 |
-| skipped tests | 0 |
+| statused tests | 713 |
+| passed tests | 709 |
+| failed tests | 2 |
+| skipped tests | 2 |
 | warned tests | 0 |
-| unknown tests | 21651 |
+| unknown tests | 21154 |
 | run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260706T014333Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-06T01:00Z) | 0 |
-| last 24 hours (2026-07-05T02:00Z - 2026-07-06T01:00Z) | 153 |
-| last 7 days (2026-06-29T02:00Z - 2026-07-06T01:00Z) | 376 |
+| latest hour (2026-07-06T02:00Z) | 0 |
+| last 24 hours (2026-07-05T03:00Z - 2026-07-06T02:00Z) | 133 |
+| last 7 days (2026-06-29T03:00Z - 2026-07-06T02:00Z) | 376 |
 
 ## Feature Table
 
@@ -196,12 +196,12 @@
 | hourly history retained 2026-07-05T22:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-05T23:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-06T00:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-06T01:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-29T02:00Z | 0 | 1438 |
 | 2026-06-29T03:00Z | 0 | 1438 |
 | 2026-06-29T04:00Z | 0 | 1438 |
 | 2026-06-29T05:00Z | 0 | 1438 |
@@ -369,3 +369,4 @@
 | 2026-07-05T23:00Z | 0 | 1814 |
 | 2026-07-06T00:00Z | 0 | 1814 |
 | 2026-07-06T01:00Z | 0 | 1814 |
+| 2026-07-06T02:00Z | 0 | 1814 |
