@@ -24722,6 +24722,24 @@ fn emit_class_method_signature_compatibility_validation(
             continue;
         };
 
+        if let Some(unavailable_name) = runtime_variance_type_declared_later_for_pair(
+            function,
+            parent_function,
+            class_index,
+            classes,
+        ) {
+            let message = format!(
+                "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+                class.name,
+                runtime_method_signature_display(method, function),
+                parent_class.name,
+                runtime_method_signature_display(parent_method, parent_function),
+                unavailable_name
+            );
+            emit_runtime_signature_fatal(out, &message, source_path, method.line, "        ");
+            continue;
+        }
+
         emit_runtime_parameter_signature_compatibility_validation(
             out,
             class,
@@ -32508,119 +32526,6 @@ fn emit_declare_trait_dependency_check(
     out.push_str("        }\n");
 }
 
-struct RuntimeVarianceTypeAvailabilityCheck {
-    type_name: String,
-    message: String,
-    line: usize,
-    unavailable_at_declaration: bool,
-}
-
-fn emit_runtime_variance_type_availability_check(
-    out: &mut String,
-    check: RuntimeVarianceTypeAvailabilityCheck,
-    source_path: &str,
-) {
-    if check.unavailable_at_declaration {
-        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
-        out.push_str(&c_string(&check.message));
-        out.push_str("\", \"");
-        out.push_str(&c_string(source_path));
-        out.push_str("\", ");
-        out.push_str(&check.line.to_string());
-        out.push_str(");\n");
-        return;
-    }
-    out.push_str("        if (!ptn_declared_runtime_variance_type_available(&runtime, \"");
-    out.push_str(&c_string(&check.type_name));
-    out.push_str("\", ");
-    out.push_str(&check.line.to_string());
-    out.push_str(")) {\n");
-    out.push_str("            ptn_emit_fatal_error_at(&runtime, \"");
-    out.push_str(&c_string(&check.message));
-    out.push_str("\", \"");
-    out.push_str(&c_string(source_path));
-    out.push_str("\", ");
-    out.push_str(&check.line.to_string());
-    out.push_str(");\n");
-    out.push_str("        }\n");
-}
-
-fn method_runtime_signature_display(
-    method: &crate::ir::MethodDecl,
-    function: &FunctionDecl,
-) -> String {
-    let mut signature = String::new();
-    if function.return_by_ref {
-        signature.push('&');
-    }
-    signature.push_str(&method.name);
-    signature.push('(');
-    let required_parameter_count = runtime_signature_required_parameter_count(&function.parameters);
-    for (index, parameter) in function.parameters.iter().enumerate() {
-        if index > 0 {
-            signature.push_str(", ");
-        }
-        signature.push_str(&parameter_runtime_signature_display(
-            parameter,
-            index >= required_parameter_count,
-            function.class_name.as_deref(),
-        ));
-    }
-    signature.push(')');
-    if let Some(return_type) = &function.return_type {
-        signature.push_str(": ");
-        signature.push_str(&type_hint_label(return_type));
-    }
-    signature
-}
-
-fn class_method_runtime_signature_display(
-    class_name: &str,
-    method: &crate::ir::MethodDecl,
-    function: &FunctionDecl,
-) -> String {
-    let method_display = method_runtime_signature_display(method, function);
-    if function.return_by_ref {
-        format!(
-            "&{}::{}",
-            class_name,
-            method_display.trim_start_matches('&')
-        )
-    } else {
-        format!("{class_name}::{method_display}")
-    }
-}
-
-fn parameter_runtime_signature_display(
-    parameter: &FunctionParameter,
-    show_default: bool,
-    scope_class_name: Option<&str>,
-) -> String {
-    let mut display = String::new();
-    if let Some(type_hint) = &parameter.type_hint {
-        display.push_str(&type_hint_label(type_hint));
-        display.push(' ');
-    }
-    if parameter.by_ref {
-        display.push('&');
-    }
-    if parameter.is_variadic {
-        display.push_str("...");
-    }
-    display.push('$');
-    display.push_str(&parameter.name);
-    if show_default {
-        if let Some(default_value) = &parameter.default_value {
-            display.push_str(" = ");
-            display.push_str(&runtime_parameter_default_display(
-                default_value,
-                scope_class_name,
-            ));
-        }
-    }
-    display
-}
-
 fn collect_runtime_variance_type_names(
     type_hint: &TypeHint,
     seen: &mut HashSet<String>,
@@ -32648,117 +32553,69 @@ fn collect_runtime_variance_type_names(
     }
 }
 
-fn collect_runtime_variance_type_name_map(
-    type_hint: &TypeHint,
-    names: &mut HashMap<String, String>,
-) {
-    let mut seen = names.keys().cloned().collect::<HashSet<_>>();
-    let mut ordered = Vec::new();
-    collect_runtime_variance_type_names(type_hint, &mut seen, &mut ordered);
-    for name in ordered {
-        names.entry(name.to_ascii_lowercase()).or_insert(name);
-    }
-}
-
-fn runtime_variance_type_is_mixed(type_hint: Option<&TypeHint>) -> bool {
-    matches!(type_hint, Some(TypeHint::Mixed))
-}
-
-fn runtime_variance_type_names_for_pair(
+fn runtime_variance_type_declared_later_for_pair(
     function: &FunctionDecl,
     parent_function: &FunctionDecl,
-    _classes: &[ClassDecl],
-) -> Vec<String> {
-    let mut child_names = HashMap::new();
-    let mut parent_names = HashMap::new();
+    class_index: usize,
+    classes: &[ClassDecl],
+) -> Option<String> {
     let parameter_count = function
         .parameters
         .len()
         .max(parent_function.parameters.len());
     for index in 0..parameter_count {
-        let child_type = function
+        if let Some(name) = function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref());
-        let parent_type = parent_function
+            .and_then(|parameter| parameter.type_hint.as_ref())
+            .and_then(|type_hint| {
+                runtime_variance_type_declared_later(type_hint, class_index, classes)
+            })
+        {
+            return Some(name);
+        }
+        if let Some(name) = parent_function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref());
-        if let Some(type_hint) = child_type {
-            collect_runtime_variance_type_name_map(type_hint, &mut child_names);
-        }
-        if !runtime_variance_type_is_mixed(child_type) {
-            if let Some(type_hint) = parent_type {
-                collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
-            }
+            .and_then(|parameter| parameter.type_hint.as_ref())
+            .and_then(|type_hint| {
+                runtime_variance_type_declared_later(type_hint, class_index, classes)
+            })
+        {
+            return Some(name);
         }
     }
-    if let Some(type_hint) = &function.return_type {
-        if !runtime_variance_type_is_mixed(parent_function.return_type.as_ref()) {
-            collect_runtime_variance_type_name_map(type_hint, &mut child_names);
-        }
+    if let Some(name) = function
+        .return_type
+        .as_ref()
+        .and_then(|type_hint| runtime_variance_type_declared_later(type_hint, class_index, classes))
+    {
+        return Some(name);
     }
-    if let Some(type_hint) = &parent_function.return_type {
-        if !runtime_variance_type_is_mixed(function.return_type.as_ref()) {
-            collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
-        }
-    }
-    let mut names = Vec::new();
-    for (key, name) in &child_names {
-        if !parent_names.contains_key(key) {
-            names.push(name.clone());
-        }
-    }
-    for (key, name) in parent_names {
-        if !child_names.contains_key(&key) {
-            names.push(name);
-        }
-    }
-    names.sort_by_key(|name| name.to_ascii_lowercase());
-    names
+    parent_function
+        .return_type
+        .as_ref()
+        .and_then(|type_hint| runtime_variance_type_declared_later(type_hint, class_index, classes))
 }
 
-fn append_runtime_variance_type_checks_for_pair(
-    checks: &mut Vec<RuntimeVarianceTypeAvailabilityCheck>,
-    emitted: &mut HashSet<String>,
+fn runtime_variance_type_declared_later(
+    type_hint: &TypeHint,
     class_index: usize,
-    class_name: &str,
-    method: &crate::ir::MethodDecl,
-    function: &FunctionDecl,
-    parent_class_name: &str,
-    parent_method: &crate::ir::MethodDecl,
-    parent_function: &FunctionDecl,
     classes: &[ClassDecl],
-) {
-    let type_names = runtime_variance_type_names_for_pair(function, parent_function, classes);
-    if type_names.is_empty() {
-        return;
-    }
-    let method_display = class_method_runtime_signature_display(class_name, method, function);
-    let parent_method_display =
-        class_method_runtime_signature_display(parent_class_name, parent_method, parent_function);
-    for type_name in type_names {
-        let key = format!(
-            "{}\0{}\0{}",
-            method.line,
-            method_display,
-            type_name.to_ascii_lowercase()
-        );
-        if !emitted.insert(key) {
-            continue;
+) -> Option<String> {
+    match type_hint {
+        TypeHint::Class(name)
+            if runtime_variance_type_declared_later_in_same_source(name, class_index, classes) =>
+        {
+            Some(name.trim_start_matches('\\').to_string())
         }
-        checks.push(RuntimeVarianceTypeAvailabilityCheck {
-            message: format!(
-                "Could not check compatibility between {method_display} and {parent_method_display}, because class {type_name} is not available"
-            ),
-            unavailable_at_declaration: runtime_variance_type_declared_later_in_same_source(
-                &type_name,
-                class_index,
-                classes,
-            ),
-            type_name,
-            line: method.line,
-        });
+        TypeHint::Nullable(inner) => {
+            runtime_variance_type_declared_later(inner, class_index, classes)
+        }
+        TypeHint::Union(types) | TypeHint::Intersection(types) => types
+            .iter()
+            .find_map(|member| runtime_variance_type_declared_later(member, class_index, classes)),
+        _ => None,
     }
 }
 
@@ -32780,68 +32637,6 @@ fn runtime_variance_type_declared_later_in_same_source(
                 && candidate.initially_declared
                 && candidate.name.eq_ignore_ascii_case(lookup_name)
         })
-}
-
-fn class_runtime_variance_type_checks(
-    class: &ClassDecl,
-    classes: &[ClassDecl],
-    functions: &[FunctionDecl],
-    class_index: usize,
-) -> Vec<RuntimeVarianceTypeAvailabilityCheck> {
-    let mut checks = Vec::new();
-    let mut emitted = HashSet::new();
-    for method in &class.methods {
-        if method.visibility == PropertyVisibility::Private {
-            continue;
-        }
-        let function = &functions[method.function_index];
-        if let Some((parent_class, parent_method)) =
-            find_runtime_visible_parent_method(class, &method.name, classes)
-        {
-            if runtime_method_requires_parent_signature_compatibility(method, parent_method) {
-                let parent_function = &functions[parent_method.function_index];
-                append_runtime_variance_type_checks_for_pair(
-                    &mut checks,
-                    &mut emitted,
-                    class_index,
-                    &class.name,
-                    method,
-                    function,
-                    &parent_class.name,
-                    parent_method,
-                    parent_function,
-                    classes,
-                );
-            }
-        }
-        for interface_name in class_transitive_interfaces(class, classes) {
-            let Some(interface) = class_by_name(classes, interface_name) else {
-                continue;
-            };
-            if !interface.is_interface {
-                continue;
-            }
-            for parent_method in interface.methods.iter().filter(|candidate| {
-                candidate.visibility == PropertyVisibility::Public
-                    && candidate.name.eq_ignore_ascii_case(&method.name)
-            }) {
-                let parent_function = &functions[parent_method.function_index];
-                append_runtime_variance_type_checks_for_pair(
-                    &mut checks,
-                    &mut emitted,
-                    class_index,
-                    &class.name,
-                    method,
-                    function,
-                    &interface.name,
-                    parent_method,
-                    parent_function,
-                    classes,
-                );
-            }
-        }
-    }
-    checks
 }
 
 fn emit_class_declaration_validation(
@@ -32950,9 +32745,6 @@ fn emit_class_declaration_validation(
             source_path,
             trait_use.line,
         );
-    }
-    for check in class_runtime_variance_type_checks(class, classes, functions, class_index) {
-        emit_runtime_variance_type_availability_check(out, check, source_path);
     }
     emit_class_method_signature_compatibility_validation(
         out,
@@ -35537,6 +35329,7 @@ fn emit_try(
     }
     if let Some(catch_active_temp) = &catch_active_temp {
         if catches.iter().any(|catch| catch.variable.is_none()) {
+            out.push_str("                int ptn_catch_defer_cleanup = 0;\n");
             out.push_str("                if (");
             let mut first_type = true;
             for catch in catches.iter().filter(|catch| catch.variable.is_none()) {
@@ -35554,34 +35347,39 @@ fn emit_try(
             out.push_str("                    ");
             out.push_str(catch_active_temp);
             out.push_str(" = 1;\n");
+            out.push_str("                    ptn_catch_defer_cleanup = 1;\n");
             out.push_str("                }\n");
-            out.push_str("                PtnException *ptn_catch_cleanup_exception = runtime.exceptions->active_exception;\n");
-            out.push_str("                if (ptn_catch_cleanup_exception != NULL) {\n");
+            out.push_str("                if (!ptn_catch_defer_cleanup) {\n");
+            out.push_str("                    PtnException *ptn_catch_cleanup_exception = runtime.exceptions->active_exception;\n");
+            out.push_str("                    if (ptn_catch_cleanup_exception != NULL) {\n");
             out.push_str(
-                "                    ptn_exception_retain(ptn_catch_cleanup_exception);\n",
+                "                        ptn_exception_retain(ptn_catch_cleanup_exception);\n",
             );
-            out.push_str("                }\n");
-            out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
-            out.push_str("                if (ptn_catch_cleanup_exception != NULL) {\n");
-            out.push_str("                    if (runtime.exceptions->active_exception != ptn_catch_cleanup_exception) {\n");
+            out.push_str("                    }\n");
+            out.push_str("                    ptn_runtime_clear_temporary_roots(&runtime);\n");
+            out.push_str("                    if (ptn_catch_cleanup_exception != NULL) {\n");
+            out.push_str("                        if (runtime.exceptions->active_exception != ptn_catch_cleanup_exception) {\n");
             out.push_str(
-                "                        if (runtime.exceptions->active_exception != NULL) {\n",
+                "                            if (runtime.exceptions->active_exception != NULL) {\n",
             );
-            out.push_str("                            PtnValue ptn_catch_cleanup_previous = ptn_value_deref(runtime.exceptions->active_exception->previous);\n");
-            out.push_str("                            if (ptn_catch_cleanup_previous.type == PTN_EXCEPTION && ptn_catch_cleanup_previous.as.exception == ptn_catch_cleanup_exception) {\n");
-            out.push_str("                                ptn_value_destroy(&runtime.exceptions->active_exception->previous);\n");
-            out.push_str("                                runtime.exceptions->active_exception->previous = ptn_null();\n");
+            out.push_str("                                PtnValue ptn_catch_cleanup_previous = ptn_value_deref(runtime.exceptions->active_exception->previous);\n");
+            out.push_str("                                if (ptn_catch_cleanup_previous.type == PTN_EXCEPTION && ptn_catch_cleanup_previous.as.exception == ptn_catch_cleanup_exception) {\n");
+            out.push_str("                                    ptn_value_destroy(&runtime.exceptions->active_exception->previous);\n");
+            out.push_str("                                    runtime.exceptions->active_exception->previous = ptn_null();\n");
+            out.push_str("                                }\n");
             out.push_str("                            }\n");
-            out.push_str("                        }\n");
-            out.push_str("                        ");
+            out.push_str("                            ");
             out.push_str(
                 catch_cleanup_failed_temp
                     .as_ref()
                     .expect("catch cleanup failure temp exists"),
             );
             out.push_str(" = 1;\n");
+            out.push_str("                        }\n");
+            out.push_str(
+                "                        ptn_exception_free(ptn_catch_cleanup_exception);\n",
+            );
             out.push_str("                    }\n");
-            out.push_str("                    ptn_exception_free(ptn_catch_cleanup_exception);\n");
             out.push_str("                }\n");
             out.push_str("                ");
             out.push_str(catch_active_temp);
@@ -35703,6 +35501,24 @@ fn emit_try(
             out.push_str("                }\n");
         } else {
             out.push_str("                ptn_clear_exception(&runtime);\n");
+            out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
+            out.push_str("                    ");
+            out.push_str(&caught_temp);
+            out.push_str(" = 0;\n");
+            if let Some(catch_active_temp) = &catch_active_temp {
+                out.push_str("                    ");
+                out.push_str(catch_active_temp);
+                out.push_str(" = 0;\n");
+            }
+            out.push_str("                    goto ");
+            out.push_str(
+                catch_binding_failed_label
+                    .as_ref()
+                    .expect("catch binding failure label exists"),
+            );
+            out.push_str(";\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
             out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
             out.push_str("                    ");
             out.push_str(&caught_temp);

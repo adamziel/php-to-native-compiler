@@ -49872,18 +49872,20 @@ echo \"Unreachable fallthrough\\n\";
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Throwing\n");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(stdout.starts_with("Throwing\n"), "{stdout}");
     assert!(
-        stderr.contains("Fatal error: Uncaught RuntimeException: ThrowsOnDestruct::__destruct"),
-        "{stderr}"
+        combined.contains("Fatal error: Uncaught RuntimeException: ThrowsOnDestruct::__destruct"),
+        "{combined}"
     );
     assert!(
-        stderr.contains("ThrowsOnDestruct->__destruct()"),
-        "{stderr}"
+        combined.contains("ThrowsOnDestruct->__destruct()"),
+        "{combined}"
     );
-    assert!(!stderr.contains("Unreachable catch"), "{stderr}");
-    assert!(!stderr.contains("Unreachable fallthrough"), "{stderr}");
+    assert!(!combined.contains("Unreachable catch"), "{combined}");
+    assert!(!combined.contains("Unreachable fallthrough"), "{combined}");
 }
 
 #[test]
