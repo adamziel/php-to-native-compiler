@@ -159789,6 +159789,7 @@ typedef struct {
 } PtnDateTimeZoneData;
 
 typedef struct PtnDomTokenListData PtnDomTokenListData;
+typedef struct PtnWeakMapData PtnWeakMapData;
 
 typedef struct {
     int64_t years;
@@ -159809,6 +159810,7 @@ typedef struct {
 typedef struct {
     PtnValue values;
     PtnValue live_dom_token_list;
+    PtnValue live_weak_map;
     size_t index;
     uint64_t live_dom_token_list_seen_version;
     char *live_dom_token_list_current_token;
@@ -160113,6 +160115,7 @@ static void ptn_internal_iterator_data_free(void *data) {
     }
     ptn_value_destroy(&iterator->values);
     ptn_value_destroy(&iterator->live_dom_token_list);
+    ptn_value_destroy(&iterator->live_weak_map);
     free(iterator->live_dom_token_list_current_token);
     free(iterator);
 }
@@ -166707,6 +166710,9 @@ static int ptn_dom_token_list_mutation_resume_same_index(PtnDomTokenListData *da
 static int ptn_dom_token_list_index_of_cstr(PtnDomTokenListData *data, const char *token, size_t *index_out);
 static size_t ptn_dom_token_list_length(PtnDomTokenListData *data);
 static PtnValue ptn_dom_token_list_item_value(PtnDomTokenListData *data, size_t index);
+static size_t ptn_weak_map_iterator_entry_count(PtnWeakMapData *map);
+static PtnValue ptn_weak_map_iterator_current_value(PtnWeakMapData *map, size_t index);
+static PtnValue ptn_weak_map_iterator_key_value(PtnWeakMapData *map, size_t index);
 
 static PtnArray *ptn_internal_iterator_values(PtnInternalIteratorData *data) {
     PtnValue values = data == NULL ? ptn_null() : ptn_value_deref(data->values);
@@ -166721,10 +166727,29 @@ static PtnDomTokenListData *ptn_internal_iterator_live_dom_token_list(PtnInterna
     return value.type == PTN_OBJECT ? ptn_dom_token_list_data(value) : NULL;
 }
 
+static PtnWeakMapData *ptn_internal_iterator_live_weak_map(PtnInternalIteratorData *data) {
+    if (data == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(data->live_weak_map);
+    if (
+        value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        ptn_internal_class_name_is_weak_map(value.as.object->class_name)
+    ) {
+        return (PtnWeakMapData *)value.as.object->native_data;
+    }
+    return NULL;
+}
+
 static size_t ptn_internal_iterator_entry_count(PtnInternalIteratorData *data) {
     PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
     if (token_list != NULL) {
         return ptn_dom_token_list_length(token_list);
+    }
+    PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
+    if (weak_map != NULL) {
+        return ptn_weak_map_iterator_entry_count(weak_map);
     }
     PtnArray *array = ptn_internal_iterator_values(data);
     return array == NULL ? 0 : array->len;
@@ -166747,6 +166772,10 @@ static PtnValue ptn_internal_iterator_current_value(PtnRuntime *runtime, PtnInte
             data->live_dom_token_list_has_current = 1;
         }
         return current;
+    }
+    PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
+    if (weak_map != NULL) {
+        return ptn_weak_map_iterator_current_value(weak_map, data->index);
     }
     PtnArray *array = ptn_internal_iterator_values(data);
     if (array == NULL || data->index >= array->len) {
@@ -166782,6 +166811,7 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
         ? ptn_value_clone_deref(resolved_values)
         : ptn_array_from_literal_entries(0, NULL);
     data->live_dom_token_list = ptn_null();
+    data->live_weak_map = ptn_null();
     data->index = 0;
     data->live_dom_token_list_seen_version = 0;
     data->live_dom_token_list_current_token = NULL;
@@ -166813,8 +166843,31 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     }
     data->values = ptn_null();
     data->live_dom_token_list = ptn_value_clone_deref(token_list);
+    data->live_weak_map = ptn_null();
     data->index = 0;
     data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(ptn_dom_token_list_data(token_list));
+    data->live_dom_token_list_current_token = NULL;
+    data->live_dom_token_list_has_current = 0;
+    data->clone_datetime_current = 0;
+    data->rewind_forbidden = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_internal_iterator_data_free;
+    return object;
+}
+
+static PtnValue ptn_internal_iterator_from_weak_map(PtnRuntime *runtime, PtnValue weak_map, size_t line) {
+    (void)line;
+    PtnInternalIteratorData *data = malloc(sizeof(PtnInternalIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->values = ptn_null();
+    data->live_dom_token_list = ptn_null();
+    data->live_weak_map = ptn_value_clone_deref(weak_map);
+    data->index = 0;
+    data->live_dom_token_list_seen_version = 0;
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
@@ -166872,7 +166925,9 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     PtnArray *array = ptn_internal_iterator_values(data);
     size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
-        if (data->rewind_forbidden && ptn_internal_iterator_live_dom_token_list(data) == NULL) {
+        if (data->rewind_forbidden &&
+            ptn_internal_iterator_live_dom_token_list(data) == NULL &&
+            ptn_internal_iterator_live_weak_map(data) == NULL) {
             ptn_throw_exception_at(
                 runtime,
                 "Error",
@@ -166899,6 +166954,10 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     if (ptn_ascii_case_equal(name, "key")) {
         if (ptn_internal_iterator_live_dom_token_list(data) != NULL) {
             return ptn_int((int64_t)data->index);
+        }
+        PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
+        if (weak_map != NULL) {
+            return ptn_weak_map_iterator_key_value(weak_map, data->index);
         }
         if (data->index >= count) {
             return ptn_null();
@@ -166930,6 +166989,12 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
             data->live_dom_token_list_has_current = 0;
             free(data->live_dom_token_list_current_token);
             data->live_dom_token_list_current_token = NULL;
+            return ptn_null();
+        }
+        if (ptn_internal_iterator_live_weak_map(data) != NULL) {
+            if (data->index < count) {
+                data->index++;
+            }
             return ptn_null();
         }
         if (data->index < count) {
@@ -218521,7 +218586,7 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
     return ptn_null();
 }
 
-typedef struct PtnWeakMapData {
+struct PtnWeakMapData {
     PtnRuntime *runtime;
     PtnObject **objects;
     PtnResource **resources;
@@ -218531,7 +218596,7 @@ typedef struct PtnWeakMapData {
     size_t len;
     size_t capacity;
     size_t index;
-} PtnWeakMapData;
+};
 
 static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object) {
     if (
@@ -218901,6 +218966,36 @@ static PtnValue ptn_weak_map_key_value(PtnObject *object, PtnResource *resource)
     PtnValue value = ptn_object(object);
     value.owned = 0;
     return value;
+}
+
+static size_t ptn_weak_map_iterator_entry_count(PtnWeakMapData *map) {
+    if (map == NULL) {
+        return 0;
+    }
+    ptn_weak_map_prune(map);
+    return map->len;
+}
+
+static PtnValue ptn_weak_map_iterator_key_value(PtnWeakMapData *map, size_t index) {
+    if (map == NULL) {
+        return ptn_null();
+    }
+    ptn_weak_map_prune(map);
+    if (index >= map->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone(ptn_weak_map_key_value(map->objects[index], map->resources[index]));
+}
+
+static PtnValue ptn_weak_map_iterator_current_value(PtnWeakMapData *map, size_t index) {
+    if (map == NULL) {
+        return ptn_null();
+    }
+    ptn_weak_map_prune(map);
+    if (index >= map->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(map->values[index]);
 }
 
 static PtnValue ptn_weak_map_entry_reference(PtnWeakMapData *map, size_t index, int visible_reference) {
@@ -243376,6 +243471,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "offsetGet")
             || ptn_ascii_case_equal(method_name, "offsetSet")
             || ptn_ascii_case_equal(method_name, "offsetUnset")
+            || ptn_ascii_case_equal(method_name, "getIterator")
             || ptn_ascii_case_equal(method_name, "rewind")
             || ptn_ascii_case_equal(method_name, "valid")
             || ptn_ascii_case_equal(method_name, "key")
@@ -244763,6 +244859,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "offsetGet",
             "offsetSet",
             "offsetUnset",
+            "getIterator",
             "rewind",
             "valid",
             "key",
@@ -280791,6 +280888,9 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
     ptn_reflection_check_no_arguments(runtime, "WeakMap", name, argc);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getIterator")) {
+        return ptn_internal_iterator_from_weak_map(runtime, receiver, line);
     }
     if (ptn_ascii_case_equal(name, "rewind")) {
         ptn_weak_map_prune(map);

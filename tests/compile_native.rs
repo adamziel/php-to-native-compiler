@@ -19639,6 +19639,69 @@ var_dump(count($map), count($clone));
 }
 
 #[test]
+fn compile_weak_map_get_iterator_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-get-iterator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-get-iterator.php");
+    let output = root.join("weak-map-get-iterator-bin");
+    fs::write(
+        &input,
+        "<?php
+$empty = new WeakMap;
+$emptyIt = $empty->getIterator();
+var_dump($emptyIt->key(), $emptyIt->current(), $emptyIt->valid());
+
+$a = (object)['name' => 'a'];
+$map = new WeakMap;
+$map[$a] = 1;
+$it = $map->getIterator();
+echo get_class($it), \"\\n\";
+var_dump($it === $map);
+echo $it->key()->name, \"\\n\";
+var_dump($it->current(), $it->valid());
+
+$b = (object)['name' => 'b'];
+$map[$b] = 2;
+$it->next();
+echo $it->key()->name, \"\\n\";
+var_dump($it->current(), $it->valid());
+
+unset($a, $b);
+gc_collect_cycles();
+$it->rewind();
+var_dump($it->valid(), $it->key(), $it->current(), count($map));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "bool(false)\n",
+            "InternalIterator\n",
+            "bool(false)\n",
+            "a\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "b\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "NULL\n",
+            "NULL\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_weak_map_self_cycle_gc_to_native_binary() {
     let root = temp_dir("ptn-native-weak-map-self-cycle-gc");
     fs::create_dir_all(&root).unwrap();
