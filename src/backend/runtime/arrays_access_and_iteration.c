@@ -13324,6 +13324,8 @@ static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerat
     }
     generator->force_closing = 1;
     size_t index = generator->position;
+    size_t yield_line = ptn_generator_yield_line_at(generator, index);
+    ptn_generator_flush_output_chunk(runtime, generator, index, yield_line);
     PtnGenerator *source = ptn_generator_delegate_source(generator, index);
     if (
         source != NULL &&
@@ -13339,11 +13341,10 @@ static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerat
         ptn_generator_traversable_delegate_source_value(generator, index) == NULL &&
         !ptn_generator_has_send_call_at_position(generator, index)
     ) {
-        size_t yield_line = ptn_generator_yield_line_at(generator, index);
         PtnValue current = ptn_generator_current_at_position(runtime, generator, index, yield_line, 0);
         ptn_value_destroy(&current);
     } else {
-        ptn_generator_flush_output_chunk(runtime, generator, index, ptn_generator_yield_line_at(generator, index));
+        ptn_generator_flush_output_chunk(runtime, generator, index, yield_line);
     }
     ptn_generator_release_consumed_reference(generator, index);
     index++;
