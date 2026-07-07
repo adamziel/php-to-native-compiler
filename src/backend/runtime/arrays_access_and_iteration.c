@@ -11381,9 +11381,6 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
     const char *path = generator != NULL && generator->source_file != NULL
         ? generator->source_file
         : (runtime != NULL ? runtime->source_path : NULL);
-    size_t frame_line = runtime != NULL && runtime->call_site_line != 0
-        ? runtime->call_site_line
-        : line;
     ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "Error",
@@ -11391,8 +11388,8 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
         path,
         line,
         generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
-        runtime != NULL && runtime->source_path != NULL ? runtime->source_path : path,
-        frame_line,
+        NULL,
+        0,
         0,
         NULL
     );
@@ -12963,9 +12960,6 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
     const char *path = generator != NULL && generator->source_file != NULL
         ? generator->source_file
         : (runtime != NULL ? runtime->source_path : NULL);
-    size_t frame_line = runtime != NULL && runtime->call_site_line != 0
-        ? runtime->call_site_line
-        : line;
     ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "Error",
@@ -12973,8 +12967,8 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
         path,
         line,
         generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
-        runtime != NULL && runtime->source_path != NULL ? runtime->source_path : path,
-        frame_line,
+        NULL,
+        0,
         0,
         NULL
     );

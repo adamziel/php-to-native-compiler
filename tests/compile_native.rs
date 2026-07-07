@@ -28750,6 +28750,51 @@ $generator->throw(new RuntimeException("throw"));
 }
 
 #[test]
+fn compile_force_closed_generator_yield_trace_is_internal_to_native_binary() {
+    let root = temp_dir("ptn-native-force-closed-generator-yield-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("force-closed-generator-yield-trace.php");
+    let output = root.join("force-closed-generator-yield-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    try {
+        echo "before yield\n";
+        yield;
+    } finally {
+        echo "before yield in finally\n";
+        yield;
+    }
+}
+
+$generator = gen();
+$generator->rewind();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("before yield\nbefore yield in finally\n\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught Error: Cannot yield from finally in a force-closed generator in "
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#0 [internal function]: gen()"), "{stdout}");
+    assert!(stdout.contains("#1 {main}"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();
