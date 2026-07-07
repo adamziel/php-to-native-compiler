@@ -237692,6 +237692,20 @@ static PtnValue ptn_internal_zend_test_gh18756(PtnRuntime *runtime, size_t argc,
     return ptn_null();
 }
 
+static PtnValue ptn_internal_zend_weakmap_attach(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    if (!ptn_zend_test_is_object_like(args[0])) {
+        ptn_zend_test_throw_arg_type_error(runtime, "zend_weakmap_attach", 1, "object", "object", args[0]);
+        return ptn_null();
+    }
+    if (!ptn_zend_test_is_object_like(args[1])) {
+        ptn_zend_test_throw_arg_type_error(runtime, "zend_weakmap_attach", 2, "value", "object", args[1]);
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_zend_test_nodiscard(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -239371,6 +239385,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
+        { "zend_weakmap_attach", 2, 2, ptn_internal_zend_weakmap_attach },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
         { "zend_get_unit_enum", 0, 0, ptn_internal_zend_get_unit_enum },
         { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
@@ -239436,6 +239451,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_weakmap_attach") ||
         ptn_ascii_case_equal(name, "zend_get_unit_enum") ||
         ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||
         ptn_ascii_case_equal(name, "zend_test_void_return") ||
