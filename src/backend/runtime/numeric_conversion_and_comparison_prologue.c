@@ -6356,6 +6356,111 @@ static PTN_UNUSED const char *ptn_zend_test_int_enum_case_name(const char *case_
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_zend_test_unit_enum_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "Foo",
+        "Bar",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED const char *ptn_zend_test_string_enum_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "Foo",
+        "Bar",
+        "Baz",
+        "FortyTwo",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_zend_test_unit_enum_class_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ZendTestUnitEnum") ||
+        ptn_ascii_case_equal(class_name, "ZendTestEnumWithInterface");
+}
+
+static PTN_UNUSED int ptn_zend_test_string_enum_class_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ZendTestStringEnum");
+}
+
+static PTN_UNUSED int ptn_zend_test_int_enum_class_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ZendTestIntEnum");
+}
+
+static PTN_UNUSED int ptn_zend_test_enum_class_name(const char *class_name) {
+    return ptn_zend_test_unit_enum_class_name(class_name) ||
+        ptn_zend_test_string_enum_class_name(class_name) ||
+        ptn_zend_test_int_enum_class_name(class_name);
+}
+
+static PTN_UNUSED const char *ptn_zend_test_enum_case_name(
+    const char *class_name,
+    const char *case_name
+) {
+    if (ptn_zend_test_unit_enum_class_name(class_name)) {
+        return ptn_zend_test_unit_enum_case_name(case_name);
+    }
+    if (ptn_zend_test_string_enum_class_name(class_name)) {
+        return ptn_zend_test_string_enum_case_name(case_name);
+    }
+    if (ptn_zend_test_int_enum_class_name(class_name)) {
+        return ptn_zend_test_int_enum_case_name(case_name);
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_zend_test_string_enum_backing_value(
+    const char *case_name,
+    PtnValue *out
+) {
+    if (strcmp(case_name, "Foo") == 0) {
+        *out = ptn_string("Test1");
+        return 1;
+    }
+    if (strcmp(case_name, "Bar") == 0) {
+        *out = ptn_string("Test2");
+        return 1;
+    }
+    if (strcmp(case_name, "Baz") == 0) {
+        *out = ptn_string("Test2\\a");
+        return 1;
+    }
+    if (strcmp(case_name, "FortyTwo") == 0) {
+        *out = ptn_string("42");
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_zend_test_int_enum_backing_value(
+    const char *case_name,
+    PtnValue *out
+) {
+    if (strcmp(case_name, "Foo") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(case_name, "Bar") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(case_name, "Baz") == 0) {
+        *out = ptn_int(-1);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED const char *ptn_random_interval_boundary_case_name(const char *case_name) {
     static const char *const names[] = {
         "ClosedOpen",
@@ -7602,6 +7707,81 @@ static PTN_UNUSED PtnValue ptn_builtin_enum_case_singleton(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_builtin_enum_case_singleton_with_backing(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name,
+    PtnPropertyTypeKind backing_type_kind,
+    const char *backing_type_text,
+    PtnValue backing_value
+) {
+    if (runtime == NULL) {
+        return ptn_enum_case_with_backing(
+            runtime,
+            class_name,
+            case_name,
+            1,
+            backing_type_kind,
+            backing_type_text,
+            backing_value
+        );
+    }
+    char *key = ptn_class_constant_key(class_name, case_name);
+    PtnValue existing;
+    if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &existing)) {
+        free(key);
+        return ptn_value_clone_deref(existing);
+    }
+    PtnValue created = ptn_enum_case_with_backing(
+        runtime,
+        class_name,
+        case_name,
+        1,
+        backing_type_kind,
+        backing_type_text,
+        backing_value
+    );
+    PtnValue result = ptn_value_clone(created);
+    ptn_symbols_set(ptn_runtime_class_constant_table(runtime), key, created);
+    ptn_value_destroy(&created);
+    free(key);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_zend_test_enum_case(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name
+) {
+    if (ptn_zend_test_string_enum_class_name(class_name)) {
+        PtnValue backing_value;
+        if (ptn_zend_test_string_enum_backing_value(case_name, &backing_value)) {
+            return ptn_builtin_enum_case_singleton_with_backing(
+                runtime,
+                class_name,
+                case_name,
+                PTN_PROPERTY_TYPE_STRING,
+                "string",
+                backing_value
+            );
+        }
+    }
+    if (ptn_zend_test_int_enum_class_name(class_name)) {
+        PtnValue backing_value;
+        if (ptn_zend_test_int_enum_backing_value(case_name, &backing_value)) {
+            return ptn_builtin_enum_case_singleton_with_backing(
+                runtime,
+                class_name,
+                case_name,
+                PTN_PROPERTY_TYPE_INT,
+                "int",
+                backing_value
+            );
+        }
+    }
+    return ptn_builtin_enum_case_singleton(runtime, class_name, case_name);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -8511,7 +8691,25 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         ? ptn_zend_test_int_enum_case_name(constant)
         : NULL;
     if (zend_test_int_case != NULL) {
-        return ptn_builtin_enum_case_singleton(runtime, "ZendTestIntEnum", zend_test_int_case);
+        return ptn_zend_test_enum_case(runtime, "ZendTestIntEnum", zend_test_int_case);
+    }
+    const char *zend_test_unit_case = ptn_ascii_case_equal(resolved_class_name, "ZendTestUnitEnum")
+        ? ptn_zend_test_unit_enum_case_name(constant)
+        : NULL;
+    if (zend_test_unit_case != NULL) {
+        return ptn_zend_test_enum_case(runtime, "ZendTestUnitEnum", zend_test_unit_case);
+    }
+    const char *zend_test_string_case = ptn_ascii_case_equal(resolved_class_name, "ZendTestStringEnum")
+        ? ptn_zend_test_string_enum_case_name(constant)
+        : NULL;
+    if (zend_test_string_case != NULL) {
+        return ptn_zend_test_enum_case(runtime, "ZendTestStringEnum", zend_test_string_case);
+    }
+    const char *zend_test_interface_case = ptn_ascii_case_equal(resolved_class_name, "ZendTestEnumWithInterface")
+        ? ptn_zend_test_unit_enum_case_name(constant)
+        : NULL;
+    if (zend_test_interface_case != NULL) {
+        return ptn_zend_test_enum_case(runtime, "ZendTestEnumWithInterface", zend_test_interface_case);
     }
     const char *random_interval_boundary_case = ptn_ascii_case_equal(resolved_class_name, "Random\\IntervalBoundary")
         ? ptn_random_interval_boundary_case_name(constant)

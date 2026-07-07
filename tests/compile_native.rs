@@ -52354,6 +52354,78 @@ var_dump($types[1]->allowsNull());
 }
 
 #[test]
+fn compile_internal_zend_test_enums_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-enums");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-enums.php");
+    let output = root.join("internal-zend-test-enums-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(enum_exists(ZendTestUnitEnum::class));
+var_dump(enum_exists(ZendTestStringEnum::class));
+var_dump(enum_exists(ZendTestIntEnum::class));
+var_dump(ZendTestUnitEnum::Foo === zend_get_unit_enum());
+
+foreach (ZendTestUnitEnum::cases() as $case) {
+    echo $case->name, \"\\n\";
+}
+foreach (ZendTestStringEnum::cases() as $case) {
+    echo $case->name, ':', $case->value, \"\\n\";
+}
+foreach (ZendTestIntEnum::cases() as $case) {
+    echo $case->name, ':', $case->value, \"\\n\";
+}
+
+var_dump(ZendTestStringEnum::from('Test1') === ZendTestStringEnum::Foo);
+var_dump(ZendTestStringEnum::tryFrom('missing'));
+var_dump(ZendTestIntEnum::from(3) === ZendTestIntEnum::Bar);
+var_dump(ZendTestIntEnum::tryFrom(2));
+var_dump(ZendTestEnumWithInterface::Foo instanceof _ZendTestInterface);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Foo\n",
+            "Bar\n",
+            "Foo:Test1\n",
+            "Bar:Test2\n",
+            "Baz:Test2\\a\n",
+            "FortyTwo:42\n",
+            "Foo:1\n",
+            "Bar:3\n",
+            "Baz:-1\n",
+            "bool(true)\n",
+            "NULL\n",
+            "bool(true)\n",
+            "NULL\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_enum_static_call_method"));
+    assert!(c_source.contains("ptn_internal_zend_get_unit_enum"));
+}
+
+#[test]
 fn compile_internal_zend_test_tmp_method_arg_info_to_native_binary() {
     let root = temp_dir("ptn-native-internal-zend-test-tmp-method-arg-info");
     fs::create_dir_all(&root).unwrap();

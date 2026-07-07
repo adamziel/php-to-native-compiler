@@ -37,7 +37,10 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "FloatCastableNoOperations",
     "NumericCastableNoOperations",
     "DimensionHandlersNoArrayAccess",
+    "ZendTestUnitEnum",
+    "ZendTestStringEnum",
     "ZendTestIntEnum",
+    "ZendTestEnumWithInterface",
     "ZendTestAttribute",
     "ZendTestAttributeWithArguments",
     "ZendTestParameterAttribute",
@@ -113,7 +116,10 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "ZendTestUnitEnum",
+    "ZendTestStringEnum",
     "ZendTestIntEnum",
+    "ZendTestEnumWithInterface",
     "Random\\IntervalBoundary",
     "StreamErrorCode",
     "StreamErrorMode",
@@ -6123,8 +6129,17 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\") ||\n");
-        out.push_str("            ptn_ascii_case_equal(interface_name, \"BackedEnum\");\n");
+        if *class_name == "ZendTestEnumWithInterface" {
+            out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\") ||\n");
+            out.push_str(
+                "            ptn_ascii_case_equal(interface_name, \"_ZendTestInterface\");\n",
+            );
+        } else if *class_name == "ZendTestUnitEnum" {
+            out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\");\n");
+        } else {
+            out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\") ||\n");
+            out.push_str("            ptn_ascii_case_equal(interface_name, \"BackedEnum\");\n");
+        }
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -12972,7 +12987,10 @@ fn emit_class_metadata_helpers(
         "FloatCastableNoOperations",
         "NumericCastableNoOperations",
         "DimensionHandlersNoArrayAccess",
+        "ZendTestUnitEnum",
+        "ZendTestStringEnum",
         "ZendTestIntEnum",
+        "ZendTestEnumWithInterface",
         "ZendTestAttribute",
         "ZendTestAttributeWithArguments",
         "ZendTestParameterAttribute",
@@ -13629,6 +13647,7 @@ fn emit_class_metadata_helpers(
         "Throwable",
         "UnitEnum",
         "BackedEnum",
+        "_ZendTestInterface",
         "DateTimeInterface",
         "Countable",
         "Serializable",
@@ -13674,6 +13693,7 @@ fn emit_class_metadata_helpers(
         "Throwable",
         "UnitEnum",
         "BackedEnum",
+        "_ZendTestInterface",
         "DateTimeInterface",
         "Countable",
         "Serializable",
@@ -13883,7 +13903,10 @@ fn emit_class_metadata_helpers(
         "FloatCastableNoOperations",
         "NumericCastableNoOperations",
         "DimensionHandlersNoArrayAccess",
+        "ZendTestUnitEnum",
+        "ZendTestStringEnum",
         "ZendTestIntEnum",
+        "ZendTestEnumWithInterface",
         "ZendTestAttribute",
         "ZendTestAttributeWithArguments",
         "ZendTestParameterAttribute",
@@ -28153,7 +28176,10 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "floatcastablenooperations" => Some("FloatCastableNoOperations"),
                 "numericcastablenooperations" => Some("NumericCastableNoOperations"),
                 "dimensionhandlersnoarrayaccess" => Some("DimensionHandlersNoArrayAccess"),
+                "zendtestunitenum" => Some("ZendTestUnitEnum"),
+                "zendteststringenum" => Some("ZendTestStringEnum"),
                 "zendtestintenum" => Some("ZendTestIntEnum"),
+                "zendtestenumwithinterface" => Some("ZendTestEnumWithInterface"),
                 "zendtestattribute" => Some("ZendTestAttribute"),
                 "zendtestattributewitharguments" => Some("ZendTestAttributeWithArguments"),
                 "zendtestparameterattribute" => Some("ZendTestParameterAttribute"),

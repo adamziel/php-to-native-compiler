@@ -5720,6 +5720,275 @@ static PTN_UNUSED PtnValue ptn_direct_preg_match_word_boundary_variable_matches(
 }
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
+static int ptn_zend_test_enum_string_equals(PtnValue value, const char *literal) {
+    value = ptn_value_deref(value);
+    size_t literal_len = strlen(literal);
+    return value.type == PTN_STRING &&
+        value.as.string.len == literal_len &&
+        memcmp(value.as.string.data, literal, literal_len) == 0;
+}
+
+static void ptn_zend_test_enum_throw_arg_count_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t expected,
+    size_t given
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s::%s() expects exactly %zu argument%s, %zu given",
+        class_name,
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        given
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s::%s() expects exactly %zu argument%s, %zu given",
+        class_name,
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        given
+    );
+    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
+}
+
+static void ptn_zend_test_enum_throw_type_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *expected,
+    PtnValue value
+) {
+    const char *given = ptn_offset_container_type_name(ptn_value_deref(value));
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s::%s(): Argument #1 ($value) must be of type %s, %s given",
+        class_name,
+        method_name,
+        expected,
+        given
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s::%s(): Argument #1 ($value) must be of type %s, %s given",
+        class_name,
+        method_name,
+        expected,
+        given
+    );
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
+static void ptn_zend_test_enum_throw_value_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue value
+) {
+    char *text = ptn_value_to_string(ptn_value_deref(value));
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s is not a valid backing value for enum %s",
+        text,
+        class_name
+    );
+    if (needed < 0) {
+        free(text);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(text);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s is not a valid backing value for enum %s",
+        text,
+        class_name
+    );
+    free(text);
+    ptn_throw_exception_owned_message(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_zend_test_enum_cases(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc
+) {
+    if (argc != 0) {
+        ptn_zend_test_enum_throw_arg_count_error(runtime, class_name, "cases", 0, argc);
+        return ptn_null();
+    }
+    const char *unit_names[] = { "Foo", "Bar" };
+    const char *string_names[] = { "Foo", "Bar", "Baz", "FortyTwo" };
+    const char *int_names[] = { "Foo", "Bar", "Baz" };
+    const char *const *names = unit_names;
+    size_t count = sizeof(unit_names) / sizeof(unit_names[0]);
+    if (ptn_zend_test_string_enum_class_name(class_name)) {
+        names = string_names;
+        count = sizeof(string_names) / sizeof(string_names[0]);
+    } else if (ptn_zend_test_int_enum_class_name(class_name)) {
+        names = int_names;
+        count = sizeof(int_names) / sizeof(int_names[0]);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < count; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_zend_test_enum_case(runtime, class_name, names[i])
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_zend_test_int_enum_from(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc != 1) {
+        ptn_zend_test_enum_throw_arg_count_error(runtime, class_name, method_name, 1, argc);
+        return ptn_null();
+    }
+    int is_try_from = ptn_ascii_case_equal(method_name, "tryFrom");
+    PtnValue value = ptn_value_deref(args[0]);
+    int64_t backing_value = 0;
+    int valid_type = 0;
+    if (value.type == PTN_INT) {
+        backing_value = value.as.integer;
+        valid_type = 1;
+    } else if (runtime != NULL && !runtime->strict_types && value.type == PTN_STRING) {
+        if (ptn_zend_test_enum_string_equals(value, "1")) {
+            backing_value = 1;
+            valid_type = 1;
+        } else if (ptn_zend_test_enum_string_equals(value, "3")) {
+            backing_value = 3;
+            valid_type = 1;
+        } else if (ptn_zend_test_enum_string_equals(value, "-1")) {
+            backing_value = -1;
+            valid_type = 1;
+        } else {
+            valid_type = 1;
+            backing_value = INT64_MIN;
+        }
+    }
+    if (!valid_type) {
+        ptn_zend_test_enum_throw_type_error(runtime, class_name, method_name, "int", value);
+        return ptn_null();
+    }
+    if (backing_value == 1) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Foo");
+    }
+    if (backing_value == 3) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Bar");
+    }
+    if (backing_value == -1) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Baz");
+    }
+    if (is_try_from) {
+        return ptn_null();
+    }
+    ptn_zend_test_enum_throw_value_error(runtime, class_name, value);
+    return ptn_null();
+}
+
+static PtnValue ptn_zend_test_string_enum_from(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc != 1) {
+        ptn_zend_test_enum_throw_arg_count_error(runtime, class_name, method_name, 1, argc);
+        return ptn_null();
+    }
+    int is_try_from = ptn_ascii_case_equal(method_name, "tryFrom");
+    PtnValue value = ptn_value_deref(args[0]);
+    char int_buffer[64];
+    const unsigned char *data = NULL;
+    size_t len = 0;
+    if (value.type == PTN_STRING) {
+        data = value.as.string.data;
+        len = value.as.string.len;
+    } else if (runtime != NULL && !runtime->strict_types && value.type == PTN_INT) {
+        int written = snprintf(int_buffer, sizeof(int_buffer), "%lld", (long long)value.as.integer);
+        if (written < 0 || (size_t)written >= sizeof(int_buffer)) {
+            ptn_abort_out_of_memory();
+        }
+        data = (const unsigned char *)int_buffer;
+        len = (size_t)written;
+    } else {
+        ptn_zend_test_enum_throw_type_error(runtime, class_name, method_name, "string", value);
+        return ptn_null();
+    }
+    if (len == 5 && memcmp(data, "Test1", 5) == 0) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Foo");
+    }
+    if (len == 5 && memcmp(data, "Test2", 5) == 0) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Bar");
+    }
+    if (len == 7 && memcmp(data, "Test2\\a", 7) == 0) {
+        return ptn_zend_test_enum_case(runtime, class_name, "Baz");
+    }
+    if (len == 2 && memcmp(data, "42", 2) == 0) {
+        return ptn_zend_test_enum_case(runtime, class_name, "FortyTwo");
+    }
+    if (is_try_from) {
+        return ptn_null();
+    }
+    ptn_zend_test_enum_throw_value_error(runtime, class_name, value);
+    return ptn_null();
+}
+
+static PtnValue ptn_zend_test_enum_static_call_method(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *name,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (ptn_ascii_case_equal(name, "cases")) {
+        return ptn_zend_test_enum_cases(runtime, class_name, argc);
+    }
+    if (ptn_zend_test_int_enum_class_name(class_name) &&
+        (ptn_ascii_case_equal(name, "from") || ptn_ascii_case_equal(name, "tryFrom"))) {
+        return ptn_zend_test_int_enum_from(runtime, class_name, name, argc, args);
+    }
+    if (ptn_zend_test_string_enum_class_name(class_name) &&
+        (ptn_ascii_case_equal(name, "from") || ptn_ascii_case_equal(name, "tryFrom"))) {
+        return ptn_zend_test_string_enum_from(runtime, class_name, name, argc, args);
+    }
+    return ptn_null();
+}
+
 /* PTN_COMPACT_INTERNAL_HELPERS_START */
 
 static PTN_UNUSED const char *ptn_direct_array_arg_type_name(PtnValue value) {
@@ -7029,6 +7298,7 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump(
     }
     return ptn_null();
 }
+
 /* PTN_COMPACT_INTERNAL_HELPERS_END */
 
 static int ptn_parse_size_t_digits(const char *start, size_t len, size_t *result) {
@@ -15335,6 +15605,9 @@ static int ptn_unserialize_builtin_enum_case_exists(
     }
     if (ptn_ascii_case_equal(class_name, "StreamErrorMode")) {
         return ptn_stream_error_mode_case_name(case_name) != NULL;
+    }
+    if (ptn_zend_test_enum_class_name(class_name)) {
+        return ptn_zend_test_enum_case_name(class_name, case_name) != NULL;
     }
     if (ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\UrlHostType")) {
         return ptn_uri_url_host_type_case_name(case_name) != NULL;
@@ -214834,6 +215107,14 @@ static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntim
 static const char *ptn_pdo_driver_from_dsn(const char *dsn);
 static const char *ptn_pdo_driver_class_name(const char *driver);
 static PTN_UNUSED PtnValue ptn_pdo_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED int ptn_internal_class_name_is_zend_test_enum(const char *class_name);
+static PtnValue ptn_zend_test_enum_static_call_method(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *name,
+    size_t argc,
+    const PtnValue *args
+);
 
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
@@ -215117,6 +215398,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             }
             return result;
         }
+    }
+    if (ptn_internal_class_name_is_zend_test_enum(class_name)) {
+        return ptn_zend_test_enum_static_call_method(runtime, class_name, name, argc, args);
     }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         if (ptn_ascii_case_equal(name, "__set_state")) {
@@ -236600,6 +236884,16 @@ static PtnValue ptn_internal_zend_test_nullable_array_return(PtnRuntime *runtime
     return ptn_null();
 }
 
+static PtnValue ptn_internal_zend_get_unit_enum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "zend_get_unit_enum() expects exactly 0 arguments");
+        return ptn_null();
+    }
+    return ptn_zend_test_enum_case(runtime, "ZendTestUnitEnum", "Foo");
+}
+
 static PtnValue ptn_internal_zend_test_void_return(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -238285,6 +238579,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
+        { "zend_get_unit_enum", 0, 0, ptn_internal_zend_get_unit_enum },
         { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
         { "zend_test_void_return", 0, 0, ptn_internal_zend_test_void_return },
         { "zend_test_zend_ini_parse_quantity", 1, 1, ptn_internal_zend_test_zend_ini_parse_quantity },
@@ -238348,6 +238643,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_get_unit_enum") ||
         ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||
         ptn_ascii_case_equal(name, "zend_test_void_return") ||
         ptn_ascii_case_equal(name, "zend_test_zend_ini_parse_quantity") ||
@@ -240127,6 +240423,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_stream_error_mode(const char *c
     return ptn_ascii_case_equal(class_name, "StreamErrorMode");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_zend_test_enum(const char *class_name) {
+    return ptn_zend_test_enum_class_name(class_name);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_stream_error_surface(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "StreamError")
         || ptn_ascii_case_equal(class_name, "StreamException")
@@ -240400,6 +240700,7 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "Throwable")
         || ptn_ascii_case_equal(name, "UnitEnum")
         || ptn_ascii_case_equal(name, "BackedEnum")
+        || ptn_ascii_case_equal(name, "_ZendTestInterface")
         || ptn_ascii_case_equal(name, "DateTimeInterface")
         || ptn_ascii_case_equal(name, "Random\\Engine")
         || ptn_ascii_case_equal(name, "DOMParentNode")
@@ -240485,6 +240786,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_curl_multi_handle(class_name)
         || ptn_internal_class_name_is_curl_share_handle(class_name)
         || ptn_internal_class_name_is_curl_file(class_name)
+        || ptn_internal_class_name_is_zend_test_enum(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_random_interval_boundary(class_name)
         || ptn_internal_class_name_is_stream_error_surface(class_name)
@@ -243132,6 +243434,14 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_stream_error_mode(class_name)) {
         return ptn_ascii_case_equal(method_name, "cases");
+    }
+    if (ptn_internal_class_name_is_zend_test_enum(class_name)) {
+        if (ptn_zend_test_unit_enum_class_name(class_name)) {
+            return ptn_ascii_case_equal(method_name, "cases");
+        }
+        return ptn_ascii_case_equal(method_name, "cases") ||
+            ptn_ascii_case_equal(method_name, "from") ||
+            ptn_ascii_case_equal(method_name, "tryFrom");
     }
     if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) ||
         ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
