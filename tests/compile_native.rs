@@ -6949,6 +6949,53 @@ Invalid UTF-8 codepoint escape sequence: Codepoint too large on line 2\n"
 }
 
 #[test]
+fn compile_dynamic_include_allows_decimal_exponent_zero_digits_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-decimal-exponent-zero");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("generated.inc");
+    let output = root.join("dynamic-include-decimal-exponent-zero-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/generated.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+$container = NULL;
+$value = @$container[NULL];
+echo "first\n";
+PHP);
+include $path;
+file_put_contents($path, <<<'PHP'
+<?php
+$container = NULL;
+$value = @$container[1.8446744073709552E+19];
+echo "second\n";
+PHP);
+include $path;
+"#,
+    )
+    .unwrap();
+    fs::write(&include, "").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "first\nsecond\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_relative_dir_dynamic_include_uses_existing_cwd_path_to_native_binary() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

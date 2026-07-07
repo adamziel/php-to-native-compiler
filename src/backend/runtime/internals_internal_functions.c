@@ -291800,6 +291800,19 @@ static char *ptn_dynamic_php_source_parse_error_message(
             continue;
         }
         if (code[pos] == '0') {
+            int in_numeric_literal =
+                (pos > 0 &&
+                 (isdigit((unsigned char)code[pos - 1]) ||
+                  code[pos - 1] == '.' ||
+                  code[pos - 1] == 'e' ||
+                  code[pos - 1] == 'E')) ||
+                (pos > 1 &&
+                 (code[pos - 1] == '+' || code[pos - 1] == '-') &&
+                 (code[pos - 2] == 'e' || code[pos - 2] == 'E'));
+            if (in_numeric_literal) {
+                pos++;
+                continue;
+            }
             size_t digit = pos + 1;
             while (digit < len && (isdigit((unsigned char)code[digit]) || code[digit] == '_')) {
                 if (code[digit] == '8' || code[digit] == '9') {
