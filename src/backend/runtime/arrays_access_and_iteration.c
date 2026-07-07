@@ -11012,6 +11012,11 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     PtnRuntime *runtime,
     PtnGenerator *generator
 );
+static PTN_UNUSED void ptn_generator_flush_pending_output_at(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+);
 
 static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
 
@@ -11564,6 +11569,14 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     PtnRuntime *runtime,
     PtnGenerator *generator
 ) {
+    ptn_generator_flush_pending_output_at(runtime, generator, 0);
+}
+
+static PTN_UNUSED void ptn_generator_flush_pending_output_at(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
     if (
         generator == NULL ||
         generator->pending_output.data == NULL ||
@@ -11574,6 +11587,20 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     PtnGenerator *saved_current_generator = runtime == NULL ? NULL : runtime->current_generator;
     if (runtime != NULL && saved_current_generator == generator) {
         runtime->current_generator = NULL;
+    }
+    if (ptn_generator_flush_debug_backtrace_marker(
+            runtime,
+            generator,
+            generator->pending_output.data,
+            generator->pending_output.len,
+            line
+    )) {
+        if (runtime != NULL && saved_current_generator == generator) {
+            runtime->current_generator = saved_current_generator;
+        }
+        generator->pending_output.len = 0;
+        generator->pending_output.data[0] = '\0';
+        return;
     }
     ptn_output_write(runtime, generator->pending_output.data, generator->pending_output.len);
     if (runtime != NULL && saved_current_generator == generator) {
@@ -12444,21 +12471,33 @@ static PTN_UNUSED int ptn_generator_flush_debug_backtrace_marker(
     ptn_string_buffer_init(&buffer);
     size_t index = 0;
     PtnGenerator *parent = runtime == NULL ? NULL : runtime->generator_resume_parent;
-    size_t generator_line = debug_line;
-    if (parent != NULL && parent != generator) {
-        size_t parent_yield_line = ptn_generator_yield_line_at(
+    int has_parent = parent != NULL && parent != generator;
+    size_t parent_yield_line = 0;
+    if (has_parent) {
+        parent_yield_line = ptn_generator_yield_line_at(
             parent,
             runtime->generator_resume_parent_position
         );
-        if (parent_yield_line != 0) {
-            generator_line = parent_yield_line;
-        }
+    }
+    const char *method = runtime != NULL && runtime->generator_resume_method_name != NULL
+        ? runtime->generator_resume_method_name
+        : "next";
+    size_t resume_line = line != 0 ? line : debug_line;
+    int explicit_resume = resume_line != 0 && resume_line != debug_line;
+    size_t generator_display_line = debug_line;
+    if (
+        has_parent &&
+        generator != NULL &&
+        generator->position > 0 &&
+        parent_yield_line != 0
+    ) {
+        generator_display_line = parent_yield_line;
     }
 
     PtnValue frame = ptn_generator_trace_function_frame(
         generator,
-        generator != NULL ? generator->source_file : NULL,
-        generator_line
+        explicit_resume && !has_parent ? NULL : (generator != NULL ? generator->source_file : NULL),
+        explicit_resume && !has_parent ? 0 : generator_display_line
     );
     ptn_exception_append_trace_frame(
         runtime,
@@ -12473,8 +12512,12 @@ static PTN_UNUSED int ptn_generator_flush_debug_backtrace_marker(
     if (buffer.len != 0) {
         ptn_string_buffer_append_char(&buffer, '\n');
     }
-    if (parent != NULL && parent != generator) {
-        frame = ptn_generator_trace_function_frame(parent, NULL, 0);
+    if (has_parent) {
+        frame = ptn_generator_trace_function_frame(
+            parent,
+            explicit_resume ? NULL : parent->source_file,
+            explicit_resume ? 0 : parent_yield_line
+        );
         ptn_exception_append_trace_frame(
             runtime,
             &buffer,
@@ -12489,23 +12532,21 @@ static PTN_UNUSED int ptn_generator_flush_debug_backtrace_marker(
         }
     }
 
-    const char *method = runtime != NULL && runtime->generator_resume_method_name != NULL
-        ? runtime->generator_resume_method_name
-        : "next";
-    size_t resume_line = line != 0 ? line : debug_line;
-    frame = ptn_generator_trace_resume_frame(runtime, method, resume_line);
-    ptn_exception_append_trace_frame(
-        runtime,
-        &buffer,
-        index++,
-        frame,
-        ptn_runtime_exception_string_param_max_len(runtime),
-        line
-    );
-    ptn_value_destroy(&frame);
+    if (explicit_resume) {
+        frame = ptn_generator_trace_resume_frame(runtime, method, resume_line);
+        ptn_exception_append_trace_frame(
+            runtime,
+            &buffer,
+            index++,
+            frame,
+            ptn_runtime_exception_string_param_max_len(runtime),
+            line
+        );
+        ptn_value_destroy(&frame);
 
-    if (buffer.len != 0) {
-        ptn_string_buffer_append_char(&buffer, '\n');
+        if (buffer.len != 0) {
+            ptn_string_buffer_append_char(&buffer, '\n');
+        }
     }
     ptn_output_write(runtime, buffer.data, buffer.len);
     free(buffer.data);
@@ -13959,11 +14000,23 @@ static PTN_UNUSED PtnValue ptn_generator_current_at_position(
     }
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+        PtnGenerator *previous_resume_parent =
+            runtime == NULL ? NULL : runtime->generator_resume_parent;
+        size_t previous_resume_parent_position =
+            runtime == NULL ? 0 : runtime->generator_resume_parent_position;
+        if (runtime != NULL) {
+            runtime->generator_resume_parent = generator;
+            runtime->generator_resume_parent_position = position;
+        }
         ptn_generator_push_delegated_resume(runtime);
         PtnValue current = use_delegate_last_value
             ? ptn_generator_current_or_last(runtime, source_receiver, line)
             : ptn_generator_current(runtime, source_receiver, line);
         ptn_generator_pop_delegated_resume(runtime);
+        if (runtime != NULL) {
+            runtime->generator_resume_parent = previous_resume_parent;
+            runtime->generator_resume_parent_position = previous_resume_parent_position;
+        }
         if (
             source_generator != NULL &&
             !source_generator->direct_resume_started &&
@@ -14058,11 +14111,23 @@ static PTN_UNUSED PtnValue ptn_generator_key_at_position(
     }
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+        PtnGenerator *previous_resume_parent =
+            runtime == NULL ? NULL : runtime->generator_resume_parent;
+        size_t previous_resume_parent_position =
+            runtime == NULL ? 0 : runtime->generator_resume_parent_position;
+        if (runtime != NULL) {
+            runtime->generator_resume_parent = generator;
+            runtime->generator_resume_parent_position = position;
+        }
         ptn_generator_push_delegated_resume(runtime);
         PtnValue key = use_delegate_last_value
             ? ptn_generator_key_or_last(runtime, source_receiver, line)
             : ptn_generator_key(runtime, source_receiver, line);
         ptn_generator_pop_delegated_resume(runtime);
+        if (runtime != NULL) {
+            runtime->generator_resume_parent = previous_resume_parent;
+            runtime->generator_resume_parent_position = previous_resume_parent_position;
+        }
         if (
             source_generator != NULL &&
             !source_generator->direct_resume_started &&
@@ -14736,7 +14801,7 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
             }
             if (!ptn_generator_position_valid(generator)) {
-                ptn_generator_flush_pending_output(runtime, generator);
+                ptn_generator_flush_pending_output_at(runtime, generator, line);
             }
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
@@ -14774,7 +14839,7 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         if (ptn_generator_position_valid(generator)) {
             ptn_generator_flush_output_chunk(runtime, generator, generator->position, line);
         } else {
-            ptn_generator_flush_pending_output(runtime, generator);
+            ptn_generator_flush_pending_output_at(runtime, generator, line);
         }
     } else if (generator != NULL) {
         if (generator->has_pending_exception) {
@@ -14788,7 +14853,7 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             );
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
-        ptn_generator_flush_pending_output(runtime, generator);
+        ptn_generator_flush_pending_output_at(runtime, generator, line);
     }
     return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
 }
@@ -18180,7 +18245,19 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
             ptn_generator_delegate_source_value(iterator->generator, iterator->index);
         if (delegate_source != NULL) {
             PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+            PtnGenerator *previous_resume_parent =
+                iterator->runtime == NULL ? NULL : iterator->runtime->generator_resume_parent;
+            size_t previous_resume_parent_position =
+                iterator->runtime == NULL ? 0 : iterator->runtime->generator_resume_parent_position;
+            if (iterator->runtime != NULL) {
+                iterator->runtime->generator_resume_parent = iterator->generator;
+                iterator->runtime->generator_resume_parent_position = iterator->index;
+            }
             PtnValue key = ptn_generator_key(iterator->runtime, source_receiver, iterator->line);
+            if (iterator->runtime != NULL) {
+                iterator->runtime->generator_resume_parent = previous_resume_parent;
+                iterator->runtime->generator_resume_parent_position = previous_resume_parent_position;
+            }
             ptn_value_destroy(&source_receiver);
             return key;
         }
@@ -18251,7 +18328,19 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
             ptn_generator_delegate_source_value(iterator->generator, iterator->index);
         if (delegate_source != NULL) {
             PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+            PtnGenerator *previous_resume_parent =
+                iterator->runtime == NULL ? NULL : iterator->runtime->generator_resume_parent;
+            size_t previous_resume_parent_position =
+                iterator->runtime == NULL ? 0 : iterator->runtime->generator_resume_parent_position;
+            if (iterator->runtime != NULL) {
+                iterator->runtime->generator_resume_parent = iterator->generator;
+                iterator->runtime->generator_resume_parent_position = iterator->index;
+            }
             PtnValue current = ptn_generator_current(iterator->runtime, source_receiver, iterator->line);
+            if (iterator->runtime != NULL) {
+                iterator->runtime->generator_resume_parent = previous_resume_parent;
+                iterator->runtime->generator_resume_parent_position = previous_resume_parent_position;
+            }
             ptn_value_destroy(&source_receiver);
             return current;
         }
