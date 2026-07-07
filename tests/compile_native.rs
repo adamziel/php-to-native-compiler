@@ -39423,6 +39423,83 @@ file_put_contents('partialwrite://file.txt', 'foobarbaz');
 }
 
 #[test]
+fn compile_user_stream_wrapper_reentrant_close_during_callbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-reentrant-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-reentrant-close.php");
+    let output = root.join("user-stream-wrapper-reentrant-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Bomb {
+    public $context;
+    public function stream_open($path, $mode, $options, &$opened_path): bool { return true; }
+    public function stream_write(string $data): int { global $readStream; fclose($readStream); return 0; }
+    public function stream_read(int $count): false|string|null { global $readStream; fclose($readStream); return ""; }
+    public function stream_eof(): bool { global $readStream; fclose($readStream); return false; }
+    public function stream_seek(int $offset, int $whence): bool { global $readStream; fclose($readStream); return false; }
+    public function stream_cast(int $as) { global $readStream; fclose($readStream); return false; }
+    public function stream_flush(): bool { global $readStream; fclose($readStream); return false; }
+}
+stream_register_wrapper('bomb', Bomb::class);
+$readStream = fopen('bomb://1', 'r');
+fread($readStream, 1);
+fwrite($readStream, "x", 1);
+fseek($readStream, 0, SEEK_SET);
+$streams = [$readStream];
+$empty = [];
+try {
+    stream_select($streams, $streams, $empty, 0);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+fflush($readStream);
+try {
+    fclose($readStream);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches(
+                "fclose(): cannot close the provided stream, as it must not be manually closed"
+            )
+            .count(),
+        6,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("stream_select(): Cannot represent a stream of type user-space as a select()able descriptor")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("No stream arrays were passed\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("fclose(): Argument #1 ($stream) must be an open stream resource\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_begin_callback"));
+    assert!(c_source.contains("stream_flush"));
+}
+
+#[test]
 fn compile_stream_wrapper_unregister_restore_state_to_native_binary() {
     let root = temp_dir("ptn-native-stream-wrapper-unregister-restore-state");
     fs::create_dir_all(&root).unwrap();

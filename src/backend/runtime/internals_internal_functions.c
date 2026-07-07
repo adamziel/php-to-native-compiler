@@ -57594,6 +57594,22 @@ static PtnUserStreamResourceData *ptn_user_stream_resource_data(PtnResource *res
     return (PtnUserStreamResourceData *)resource->close_hook_data;
 }
 
+static int ptn_user_stream_begin_callback(PtnResource *resource) {
+    if (ptn_user_stream_resource_data(resource) == NULL) {
+        return 0;
+    }
+    int previous = resource->manual_close_forbidden;
+    resource->manual_close_forbidden = 1;
+    return previous;
+}
+
+static void ptn_user_stream_end_callback(PtnResource *resource, int previous) {
+    if (ptn_user_stream_resource_data(resource) == NULL) {
+        return;
+    }
+    resource->manual_close_forbidden = previous;
+}
+
 static PtnRuntime *ptn_user_stream_callback_runtime(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     return root == NULL ? runtime : root;
@@ -57769,6 +57785,12 @@ static void ptn_stream_report_resource_error(
     int replace_last,
     size_t line
 );
+static int ptn_user_stream_eof(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    size_t line,
+    int *handled
+);
 
 static size_t ptn_user_stream_read_bytes(
     PtnRuntime *runtime,
@@ -57800,6 +57822,7 @@ static size_t ptn_user_stream_read_bytes(
         requested = (size_t)INT64_MAX;
     }
     PtnValue read_arg = ptn_int((int64_t)requested);
+    int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
     PtnValue read_result = data->runtime->method_dispatch(
         data->runtime,
         data->wrapper_object,
@@ -57808,6 +57831,7 @@ static size_t ptn_user_stream_read_bytes(
         &read_arg,
         line
     );
+    ptn_user_stream_end_callback(resource, manual_close_forbidden);
     ptn_value_destroy(&read_arg);
     if (data->runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&read_result);
@@ -57868,6 +57892,8 @@ static size_t ptn_user_stream_read_bytes(
     }
     if (byte_len == 0 && resource->memory_stream != NULL) {
         resource->memory_stream->eof = 1;
+        int eof_handled = 0;
+        (void)ptn_user_stream_eof(runtime, resource, line, &eof_handled);
     }
     ptn_string_operand_free(bytes);
     ptn_value_destroy(&read_result);
@@ -57894,6 +57920,7 @@ static int ptn_user_stream_eof(
         !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_eof")) {
         return ptn_stream_eof(resource);
     }
+    int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
     PtnValue eof_result = data->runtime->method_dispatch(
         data->runtime,
         data->wrapper_object,
@@ -57902,6 +57929,7 @@ static int ptn_user_stream_eof(
         NULL,
         line
     );
+    ptn_user_stream_end_callback(resource, manual_close_forbidden);
     if (data->runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&eof_result);
         return 1;
@@ -57942,6 +57970,7 @@ static size_t ptn_user_stream_write_bytes(
             ptn_duplicate_string_len(data_bytes + total, chunk_len),
             chunk_len
         );
+        int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
         PtnValue result = data->runtime->method_dispatch(
             data->runtime,
             data->wrapper_object,
@@ -57950,6 +57979,7 @@ static size_t ptn_user_stream_write_bytes(
             &chunk,
             line
         );
+        ptn_user_stream_end_callback(resource, manual_close_forbidden);
         ptn_value_destroy(&chunk);
         if (data->runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&result);
@@ -59878,7 +59908,12 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     if (!ptn_stream_resource_is_open(value.as.resource)) {
-        return ptn_bool(0);
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "fclose(): Argument #1 ($stream) must be an open stream resource"
+        );
+        return ptn_null();
     }
     if (ptn_resource_manual_close_forbidden(value.as.resource)) {
         ptn_emit_warning(
@@ -63114,6 +63149,7 @@ static int ptn_user_stream_seek_resource(
         ptn_int(callback_offset),
         ptn_int(callback_whence)
     };
+    int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
     PtnValue seek_result = user_stream->runtime->method_dispatch(
         user_stream->runtime,
         user_stream->wrapper_object,
@@ -63122,6 +63158,7 @@ static int ptn_user_stream_seek_resource(
         seek_args,
         line
     );
+    ptn_user_stream_end_callback(resource, manual_close_forbidden);
     ptn_value_destroy(&seek_args[0]);
     ptn_value_destroy(&seek_args[1]);
     if (user_stream->runtime->exceptions->active_exception != NULL) {
@@ -63139,6 +63176,7 @@ static int ptn_user_stream_seek_resource(
         }
         ptn_user_stream_set_logical_position(resource, (size_t)callback_offset);
     } else if (ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_tell")) {
+        manual_close_forbidden = ptn_user_stream_begin_callback(resource);
         PtnValue tell_result = user_stream->runtime->method_dispatch(
             user_stream->runtime,
             user_stream->wrapper_object,
@@ -63147,6 +63185,7 @@ static int ptn_user_stream_seek_resource(
             NULL,
             line
         );
+        ptn_user_stream_end_callback(resource, manual_close_forbidden);
         if (user_stream->runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&tell_result);
             return -1;
@@ -63198,6 +63237,32 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fflush", args[0], line);
     if (resource == NULL) {
         return ptn_null();
+    }
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
+    if (user_stream != NULL &&
+        user_stream->runtime != NULL &&
+        user_stream->runtime->method_dispatch != NULL &&
+        ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_flush")) {
+        PtnRuntime *callback_runtime = user_stream->runtime;
+        PtnValue wrapper_object = user_stream->wrapper_object;
+        PtnValue flush_result = callback_runtime->method_dispatch(
+            callback_runtime,
+            wrapper_object,
+            "stream_flush",
+            0,
+            NULL,
+            line
+        );
+        if (callback_runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&flush_result);
+            return ptn_null();
+        }
+        int ok = ptn_is_truthy(flush_result);
+        ptn_value_destroy(&flush_result);
+        if (!ok && ptn_stream_resource_is_open(resource)) {
+            ptn_resource_close(resource);
+        }
+        return ptn_bool(ok);
     }
     if (ptn_stream_flush(resource) == 0) {
         return ptn_bool(1);
@@ -203063,7 +203128,8 @@ static PtnResource *ptn_stream_select_cast_resource(
     const char *function_name,
     PtnResource *resource,
     size_t line,
-    size_t depth
+    size_t depth,
+    int *deferred_user_stream_not_representable_count
 ) {
     PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
     if (user_stream == NULL) {
@@ -203104,6 +203170,7 @@ static PtnResource *ptn_stream_select_cast_resource(
     }
 
     PtnValue cast_arg = ptn_int(3);
+    int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
     PtnValue cast_result = user_stream->runtime->method_dispatch(
         user_stream->runtime,
         user_stream->wrapper_object,
@@ -203112,6 +203179,7 @@ static PtnResource *ptn_stream_select_cast_resource(
         &cast_arg,
         line
     );
+    ptn_user_stream_end_callback(resource, manual_close_forbidden);
     ptn_value_destroy(&cast_arg);
     if (user_stream->runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&cast_result);
@@ -203121,7 +203189,11 @@ static PtnResource *ptn_stream_select_cast_resource(
     PtnValue resolved = ptn_value_deref(cast_result);
     if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
         ptn_value_destroy(&cast_result);
-        ptn_stream_select_report_user_stream_not_representable(runtime, function_name, resource, line, 1);
+        if (deferred_user_stream_not_representable_count != NULL) {
+            (*deferred_user_stream_not_representable_count)++;
+        } else {
+            ptn_stream_select_report_user_stream_not_representable(runtime, function_name, resource, line, 1);
+        }
         return NULL;
     }
     if (resolved.type != PTN_RESOURCE || resolved.as.resource == NULL) {
@@ -203189,7 +203261,14 @@ static PtnResource *ptn_stream_select_cast_resource(
         return NULL;
     }
     if (ptn_user_stream_resource_data(cast_resource) != NULL) {
-        PtnResource *nested = ptn_stream_select_cast_resource(runtime, function_name, cast_resource, line, depth + 1);
+        PtnResource *nested = ptn_stream_select_cast_resource(
+            runtime,
+            function_name,
+            cast_resource,
+            line,
+            depth + 1,
+            deferred_user_stream_not_representable_count
+        );
         ptn_value_destroy(&cast_result);
         if (nested == NULL && runtime->exceptions->active_exception == NULL) {
             ptn_stream_select_report_user_stream_not_representable(runtime, function_name, resource, line, 0);
@@ -203209,6 +203288,7 @@ static int ptn_stream_select_add_array(
     int *max_fd,
     int read_interest,
     int *preselected,
+    int *deferred_user_stream_not_representable_count,
     size_t line
 ) {
     if (array == NULL) {
@@ -203233,7 +203313,14 @@ static int ptn_stream_select_add_array(
         PtnResource *select_resource = value.as.resource;
         int release_select_resource = 0;
         if (ptn_user_stream_resource_data(value.as.resource) != NULL) {
-            select_resource = ptn_stream_select_cast_resource(runtime, function_name, value.as.resource, line, 0);
+            select_resource = ptn_stream_select_cast_resource(
+                runtime,
+                function_name,
+                value.as.resource,
+                line,
+                0,
+                deferred_user_stream_not_representable_count
+            );
             if (runtime->exceptions->active_exception != NULL) {
                 return 0;
             }
@@ -203347,10 +203434,18 @@ static PtnValue ptn_internal_stream_select(PtnRuntime *runtime, size_t argc, con
     FD_ZERO(&except_set);
     int max_fd = -1;
     int preselected = 0;
-    if (!ptn_stream_select_add_array(runtime, "stream_select", read_array, &read_set, &max_fd, 1, &preselected, line) ||
-        !ptn_stream_select_add_array(runtime, "stream_select", write_array, &write_set, &max_fd, 0, &preselected, line) ||
-        !ptn_stream_select_add_array(runtime, "stream_select", except_array, &except_set, &max_fd, 0, &preselected, line)) {
+    int deferred_user_stream_not_representable_count = 0;
+    if (!ptn_stream_select_add_array(runtime, "stream_select", read_array, &read_set, &max_fd, 1, &preselected, &deferred_user_stream_not_representable_count, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", write_array, &write_set, &max_fd, 0, &preselected, &deferred_user_stream_not_representable_count, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", except_array, &except_set, &max_fd, 0, &preselected, &deferred_user_stream_not_representable_count, line)) {
         return ptn_bool(0);
+    }
+    for (int i = 0; i < deferred_user_stream_not_representable_count; i++) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "stream_select(): Cannot represent a stream of type user-space as a select()able descriptor",
+            line
+        );
     }
     if (max_fd < 0 && preselected == 0) {
         ptn_throw_exception(runtime, "ValueError", "No stream arrays were passed");
