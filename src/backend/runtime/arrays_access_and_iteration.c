@@ -12244,6 +12244,7 @@ static PTN_UNUSED int ptn_generator_aborted_without_return(PtnGenerator *generat
         generator->started &&
         !generator->completed &&
         !generator->has_pending_exception &&
+        !ptn_generator_has_send_call_at_position(generator, generator->position) &&
         !ptn_generator_position_valid(generator);
 }
 
@@ -12255,6 +12256,16 @@ static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtim
         generator == NULL ||
         generator->values == NULL
     ) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(
+            runtime->exceptions->active_exception->class_name,
+            "__PTN_FiberExit"
+    )) {
+        ptn_generator_end_activation(generator);
+        runtime->generator_aborted_after_yield = 0;
+        runtime->generator_aborted_rethrow_on_rewind = 0;
+        runtime->generator_chained_exception_during_unwind = 0;
         return 0;
     }
     if (ptn_ascii_case_equal(
