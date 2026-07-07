@@ -1356,6 +1356,8 @@ struct PtnGenerator {
     int64_t next_auto_key;
     int completed;
     int started;
+    int direct_resume_started;
+    int borrowed_yield_from_current;
     int executing;
     int force_closing;
     int yields_by_ref;
@@ -2041,6 +2043,7 @@ struct PtnRuntime {
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
     int replaying_generator_send_call;
+    int generator_delegate_resume_depth;
     const char *generator_resume_method_name;
     int owns_finally_return_suppressed_exception;
     int defer_unreferenced_destructors_for_catch;

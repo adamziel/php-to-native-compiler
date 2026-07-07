@@ -11253,6 +11253,8 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->next_auto_key = 0;
     generator->completed = 0;
     generator->started = 0;
+    generator->direct_resume_started = 0;
+    generator->borrowed_yield_from_current = 0;
     generator->executing = 0;
     generator->force_closing = 0;
     generator->yields_by_ref = yields_by_ref ? 1 : 0;
@@ -11443,6 +11445,29 @@ static PTN_UNUSED int ptn_generator_guard_not_executing(
         line
     );
     return 0;
+}
+
+static PTN_UNUSED int ptn_generator_resume_is_delegated(PtnRuntime *runtime) {
+    return runtime != NULL && runtime->generator_delegate_resume_depth > 0;
+}
+
+static PTN_UNUSED void ptn_generator_note_direct_resume(PtnRuntime *runtime, PtnGenerator *generator) {
+    if (generator != NULL && !ptn_generator_resume_is_delegated(runtime)) {
+        generator->direct_resume_started = 1;
+        generator->borrowed_yield_from_current = 0;
+    }
+}
+
+static PTN_UNUSED void ptn_generator_push_delegated_resume(PtnRuntime *runtime) {
+    if (runtime != NULL) {
+        runtime->generator_delegate_resume_depth++;
+    }
+}
+
+static PTN_UNUSED void ptn_generator_pop_delegated_resume(PtnRuntime *runtime) {
+    if (runtime != NULL && runtime->generator_delegate_resume_depth > 0) {
+        runtime->generator_delegate_resume_depth--;
+    }
 }
 
 static PTN_UNUSED PtnValue ptn_generator_resume_receiver(
@@ -13780,9 +13805,19 @@ static PTN_UNUSED PtnValue ptn_generator_current_at_position(
     }
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+        ptn_generator_push_delegated_resume(runtime);
         PtnValue current = use_delegate_last_value
             ? ptn_generator_current_or_last(runtime, source_receiver, line)
             : ptn_generator_current(runtime, source_receiver, line);
+        ptn_generator_pop_delegated_resume(runtime);
+        if (
+            source_generator != NULL &&
+            !source_generator->direct_resume_started &&
+            ptn_generator_position_valid(source_generator) &&
+            ptn_generator_delegate_source_value(source_generator, source_generator->position) != NULL
+        ) {
+            source_generator->borrowed_yield_from_current = 1;
+        }
         ptn_value_destroy(&source_receiver);
         return current;
     }
@@ -13869,9 +13904,19 @@ static PTN_UNUSED PtnValue ptn_generator_key_at_position(
     }
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+        ptn_generator_push_delegated_resume(runtime);
         PtnValue key = use_delegate_last_value
             ? ptn_generator_key_or_last(runtime, source_receiver, line)
             : ptn_generator_key(runtime, source_receiver, line);
+        ptn_generator_pop_delegated_resume(runtime);
+        if (
+            source_generator != NULL &&
+            !source_generator->direct_resume_started &&
+            ptn_generator_position_valid(source_generator) &&
+            ptn_generator_delegate_source_value(source_generator, source_generator->position) != NULL
+        ) {
+            source_generator->borrowed_yield_from_current = 1;
+        }
         ptn_value_destroy(&source_receiver);
         return key;
     }
@@ -13928,6 +13973,7 @@ static PTN_UNUSED PtnValue ptn_generator_current_or_last(
             }
         }
         generator->started = 1;
+        ptn_generator_note_direct_resume(runtime, generator);
     }
     if (ptn_generator_position_valid(generator)) {
         return ptn_generator_current(runtime, receiver, line);
@@ -13985,6 +14031,7 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
             }
         }
         generator->started = 1;
+        ptn_generator_note_direct_resume(runtime, generator);
     }
     if (!ptn_generator_position_valid(generator)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -14136,6 +14183,7 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
     const char *previous_resume_method =
         ptn_generator_push_resume_method(runtime, "next");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    int direct_resume = !ptn_generator_resume_is_delegated(runtime);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
         return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
@@ -14166,6 +14214,24 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         }
         PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
         if (delegate_source != NULL) {
+            if (
+                direct_resume &&
+                generator != NULL &&
+                !generator->direct_resume_started &&
+                generator->borrowed_yield_from_current
+            ) {
+                generator->direct_resume_started = 1;
+                generator->borrowed_yield_from_current = 0;
+                return ptn_generator_restore_resume_method_and_return(
+                    runtime,
+                    previous_resume_method,
+                    ptn_null()
+                );
+            }
+            if (direct_resume && generator != NULL) {
+                generator->direct_resume_started = 1;
+                generator->borrowed_yield_from_current = 0;
+            }
             PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
             PtnGenerator *source_generator = ptn_generator_from_value(source_receiver);
             size_t last_index = 0;
@@ -14242,7 +14308,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 delegate_frame_active = 1;
             }
             if (!delegate_frame_active || setjmp(delegate_frame.jump) == 0) {
+                ptn_generator_push_delegated_resume(runtime);
                 PtnValue advanced = ptn_generator_next(runtime, source_receiver, line);
+                ptn_generator_pop_delegated_resume(runtime);
                 ptn_value_destroy(&advanced);
                 if (delegate_frame_active) {
                     ptn_try_frame_pop(runtime, &delegate_frame);
@@ -14272,6 +14340,7 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                     caught_delegate_exception = 1;
                 }
             } else {
+                ptn_generator_pop_delegated_resume(runtime);
                 ptn_try_frame_pop(runtime, &delegate_frame);
                 delegate_frame_active = 0;
                 if (runtime->exceptions->active_exception != NULL) {
@@ -14515,6 +14584,10 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         PtnValue resume_value = has_delegate_resume_value
             ? delegate_resume_value
             : ptn_null();
+        if (direct_resume && generator != NULL) {
+            generator->direct_resume_started = 1;
+            generator->borrowed_yield_from_current = 0;
+        }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_generator_replay_send_calls(runtime, generator, resume_value, line)) {
             ptn_value_destroy(&delegate_resume_value);
@@ -15370,6 +15443,7 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
             ptn_throw_exception(runtime, "Exception", "Cannot traverse an already closed generator");
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
+        ptn_generator_note_direct_resume(runtime, generator);
         generator->started = 1;
         generator->position = 0;
         if (generator->delegate_sources != NULL) {
@@ -15423,6 +15497,7 @@ static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue rec
             }
         }
         generator->started = 1;
+        ptn_generator_note_direct_resume(runtime, generator);
     }
     int valid = ptn_generator_position_valid(generator);
     if (!valid) {

@@ -27412,7 +27412,7 @@ var_dump(method_exists($gen, "valid"));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nstring(11) \"root-return\"\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nCannot get return value of a generator that hasn't returned\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nint(0)\nint(30)\nint(1)\nint(40)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nCannot traverse an already closed generator\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -27967,6 +27967,48 @@ var_dump($leaf->valid(), $left->valid(), $right->valid());
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_generator_yield_from"));
+}
+
+#[test]
+fn compile_generator_backtrace_multi_yield_from_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-backtrace-multi-yield-from");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-backtrace-multi-yield-from.php");
+    let output = root.join("generator-backtrace-multi-yield-from-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield 1;
+    debug_print_backtrace();
+    yield 2;
+}
+
+function from($gen) {
+    yield from $gen;
+}
+
+$gen1 = gen();
+$gen2 = from($gen1);
+$gen3 = from($gen2);
+var_dump($gen3->current());
+$gen2->next();
+var_dump($gen2->current());
+$gen2->next();
+var_dump($gen2->current());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("int(1)\nint(1)\n"), "{stdout}");
+    assert!(stdout.ends_with("int(2)\n"), "{stdout}");
+    assert!(!stdout.ends_with("NULL\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
