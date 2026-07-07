@@ -199975,12 +199975,12 @@ static int ptn_stream_socket_address_is_unix_like(
     return 0;
 }
 
-static int ptn_stream_socket_address_parse_tcp(
+static int ptn_stream_socket_address_parse_inet(
     PtnStringOperand address,
+    const char *prefix,
     char **host_out,
     char **service_out
 ) {
-    const char *prefix = "tcp://";
     size_t prefix_len = strlen(prefix);
     *host_out = NULL;
     *service_out = NULL;
@@ -200033,6 +200033,22 @@ static int ptn_stream_socket_address_parse_tcp(
     *host_out = ptn_duplicate_string_len(host, host_len);
     *service_out = ptn_duplicate_string_len(service, service_len);
     return 1;
+}
+
+static int ptn_stream_socket_address_parse_tcp(
+    PtnStringOperand address,
+    char **host_out,
+    char **service_out
+) {
+    return ptn_stream_socket_address_parse_inet(address, "tcp://", host_out, service_out);
+}
+
+static int ptn_stream_socket_address_parse_udp(
+    PtnStringOperand address,
+    char **host_out,
+    char **service_out
+) {
+    return ptn_stream_socket_address_parse_inet(address, "udp://", host_out, service_out);
 }
 
 static char *ptn_stream_socket_address_display_alloc(PtnStringOperand address) {
@@ -200264,6 +200280,148 @@ static PtnValue ptn_stream_socket_client_open_tcp(
 #endif
 }
 
+static PtnValue ptn_stream_socket_client_open_udp(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand address,
+    PtnValue error_code_arg,
+    PtnValue error_message_arg,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)address;
+    (void)function_name;
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string("UDP sockets are not supported on this platform"));
+    return ptn_bool(0);
+#else
+    char *host = NULL;
+    char *service = NULL;
+    if (!ptn_stream_socket_address_parse_udp(address, &host, &service)) {
+        char *address_c = ptn_duplicate_string_len(address.data, address.len);
+        char warning[256];
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %s (Failed to parse address \"%s\")",
+            function_name,
+            address_c,
+            address_c
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(address_c);
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string("failed to parse address"));
+        free(address_c);
+        return ptn_bool(0);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_family = AF_UNSPEC;
+    struct addrinfo *addresses = NULL;
+    int gai = getaddrinfo(host, service, &hints, &addresses);
+    if (gai != 0) {
+        char warning[256];
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %.*s (%s)",
+            function_name,
+            (int)address.len,
+            address.data,
+            gai_strerror(gai)
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(gai));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(gai_strerror(gai))));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    int descriptor = -1;
+    int error_code = 0;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        descriptor = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        if (descriptor < 0) {
+            error_code = errno;
+            continue;
+        }
+        if (connect(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0) {
+            error_code = 0;
+            break;
+        }
+        error_code = errno;
+        close(descriptor);
+        descriptor = -1;
+    }
+    freeaddrinfo(addresses);
+    if (descriptor < 0) {
+        char warning[256];
+        const char *message = error_code == 0 ? "connection failed" : strerror(error_code);
+        int warning_written = snprintf(
+            warning,
+            sizeof(warning),
+            "%s(): Unable to connect to %.*s (%s)",
+            function_name,
+            (int)address.len,
+            address.data,
+            message
+        );
+        if (warning_written < 0 || (size_t)warning_written >= sizeof(warning)) {
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(error_code));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(message)));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fdopen(descriptor, "r+");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(descriptor);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to open socket stream", line);
+        ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(saved_errno));
+        ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(ptn_duplicate_string(strerror(saved_errno))));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    free(uri);
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(""));
+    free(host);
+    free(service);
+    return result;
+#endif
+}
+
 static PtnValue ptn_stream_socket_server_open_tcp(
     PtnRuntime *runtime,
     PtnStringOperand address,
@@ -200388,6 +200546,127 @@ static PtnValue ptn_stream_socket_server_open_tcp(
     PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
     resource->stream_socket_tcp_nodelay = tcp_nodelay;
     PtnValue result = ptn_resource(resource);
+    free(uri);
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
+    free(host);
+    free(service);
+    return result;
+#endif
+}
+
+static PtnValue ptn_stream_socket_server_open_udp(
+    PtnRuntime *runtime,
+    PtnStringOperand address,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)address;
+    ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): UDP sockets are not supported on this platform", line);
+    ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "not supported on this platform");
+    return ptn_bool(0);
+#else
+    char *host = NULL;
+    char *service = NULL;
+    if (!ptn_stream_socket_address_parse_udp(address, &host, &service)) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): failed to parse udp socket address", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "failed to parse address");
+        return ptn_bool(0);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_flags = AI_PASSIVE;
+    struct addrinfo *addresses = NULL;
+    int gai = getaddrinfo(host, service, &hints, &addresses);
+    if (gai != 0) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): unable to resolve udp socket address", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, gai, gai_strerror(gai));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    int descriptor = -1;
+    int error_code = 0;
+    for (struct addrinfo *candidate = addresses; candidate != NULL; candidate = candidate->ai_next) {
+        descriptor = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        if (descriptor < 0) {
+            error_code = errno;
+            continue;
+        }
+        int reuse = 1;
+        (void)setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        if (bind(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0) {
+            error_code = 0;
+            break;
+        }
+        error_code = errno;
+        close(descriptor);
+        descriptor = -1;
+    }
+    freeaddrinfo(addresses);
+    if (descriptor < 0) {
+        const char *message = error_code == 0 ? "bind failed" : strerror(error_code);
+        char *display = ptn_stream_socket_address_display_alloc(address);
+        int warning_needed = snprintf(
+            NULL,
+            0,
+            "stream_socket_server(): Unable to connect to %s (%s)",
+            display,
+            message
+        );
+        if (warning_needed < 0) {
+            free(display);
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        char *warning = malloc((size_t)warning_needed + 1);
+        if (warning == NULL) {
+            free(display);
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        int warning_written = snprintf(
+            warning,
+            (size_t)warning_needed + 1,
+            "stream_socket_server(): Unable to connect to %s (%s)",
+            display,
+            message
+        );
+        if (warning_written < 0 || warning_written != warning_needed) {
+            free(warning);
+            free(display);
+            free(host);
+            free(service);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        free(warning);
+        free(display);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, error_code, message);
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fdopen(descriptor, "r+");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(descriptor);
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_server(): unable to open socket stream", line);
+        ptn_stream_socket_server_assign_error(runtime, argc, args, saved_errno, strerror(saved_errno));
+        free(host);
+        free(service);
+        return ptn_bool(0);
+    }
+    char *uri = ptn_duplicate_string_len(address.data, address.len);
+    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
     free(uri);
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
     free(host);
@@ -201922,11 +202201,17 @@ static char *ptn_fsockopen_tcp_address(PtnStringOperand hostname, int64_t port) 
     const char *prefix = "tcp://";
     size_t prefix_len = strlen(prefix);
     int has_tcp_prefix = hostname.len >= prefix_len && memcmp(hostname.data, prefix, prefix_len) == 0;
-    if (has_tcp_prefix) {
+    const char *udp_prefix = "udp://";
+    size_t udp_prefix_len = strlen(udp_prefix);
+    int has_udp_prefix = hostname.len >= udp_prefix_len && memcmp(hostname.data, udp_prefix, udp_prefix_len) == 0;
+    if (has_tcp_prefix || has_udp_prefix) {
         PtnStringOperand borrowed = hostname;
         char *parsed_host = NULL;
         char *parsed_service = NULL;
-        if (ptn_stream_socket_address_parse_tcp(borrowed, &parsed_host, &parsed_service)) {
+        int parsed = has_udp_prefix
+            ? ptn_stream_socket_address_parse_udp(borrowed, &parsed_host, &parsed_service)
+            : ptn_stream_socket_address_parse_tcp(borrowed, &parsed_host, &parsed_service);
+        if (parsed) {
             free(parsed_host);
             free(parsed_service);
             return ptn_duplicate_string_len(hostname.data, hostname.len);
@@ -202024,14 +202309,26 @@ static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const P
         .owned = NULL,
         .len = strlen(address),
     };
-    PtnValue result = ptn_stream_socket_client_open_tcp(
-        runtime,
-        "fsockopen",
-        address_operand,
-        argc >= 3 ? args[2] : ptn_null(),
-        argc >= 4 ? args[3] : ptn_null(),
-        line
-    );
+    const char *udp_prefix = "udp://";
+    size_t udp_prefix_len = strlen(udp_prefix);
+    PtnValue result = address_operand.len >= udp_prefix_len &&
+            memcmp(address_operand.data, udp_prefix, udp_prefix_len) == 0
+        ? ptn_stream_socket_client_open_udp(
+            runtime,
+            "fsockopen",
+            address_operand,
+            argc >= 3 ? args[2] : ptn_null(),
+            argc >= 4 ? args[3] : ptn_null(),
+            line
+        )
+        : ptn_stream_socket_client_open_tcp(
+            runtime,
+            "fsockopen",
+            address_operand,
+            argc >= 3 ? args[2] : ptn_null(),
+            argc >= 4 ? args[3] : ptn_null(),
+            line
+        );
     free(address);
     return result;
 }
@@ -202071,6 +202368,20 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
     size_t tcp_prefix_len = strlen(tcp_prefix);
     if (address.len >= tcp_prefix_len && memcmp(address.data, tcp_prefix, tcp_prefix_len) == 0) {
         PtnValue result = ptn_stream_socket_client_open_tcp(
+            runtime,
+            "stream_socket_client",
+            address,
+            argc >= 2 ? args[1] : ptn_null(),
+            argc >= 3 ? args[2] : ptn_null(),
+            line
+        );
+        ptn_string_operand_free(address);
+        return result;
+    }
+    const char *udp_prefix = "udp://";
+    size_t udp_prefix_len = strlen(udp_prefix);
+    if (address.len >= udp_prefix_len && memcmp(address.data, udp_prefix, udp_prefix_len) == 0) {
+        PtnValue result = ptn_stream_socket_client_open_udp(
             runtime,
             "stream_socket_client",
             address,
@@ -202699,6 +203010,13 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
     size_t tcp_prefix_len = strlen(tcp_prefix);
     if (address.len >= tcp_prefix_len && memcmp(address.data, tcp_prefix, tcp_prefix_len) == 0) {
         PtnValue result = ptn_stream_socket_server_open_tcp(runtime, address, argc, args, line);
+        ptn_string_operand_free(address);
+        return result;
+    }
+    const char *udp_prefix = "udp://";
+    size_t udp_prefix_len = strlen(udp_prefix);
+    if (address.len >= udp_prefix_len && memcmp(address.data, udp_prefix, udp_prefix_len) == 0) {
+        PtnValue result = ptn_stream_socket_server_open_udp(runtime, address, argc, args, line);
         ptn_string_operand_free(address);
         return result;
     }

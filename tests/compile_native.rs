@@ -40439,6 +40439,61 @@ done\n"
 }
 
 #[test]
+fn compile_udp_fsockopen_and_stream_socket_server_to_native_binary() {
+    let root = temp_dir("ptn-native-udp-fsockopen-stream-socket-server");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("udp-fsockopen-stream-socket-server.php");
+    let output = root.join("udp-fsockopen-stream-socket-server-bin");
+    let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    drop(socket);
+    let php = r#"<?php
+$port = __PORT__;
+$server = stream_socket_server("udp://127.0.0.1:$port", $errno, $errstr, STREAM_SERVER_BIND);
+var_dump(is_resource($server), $errno, $errstr);
+
+$client = fsockopen("udp://127.0.0.1", $port, $errno, $errstr);
+var_dump(is_resource($client), $errno, $errstr);
+fwrite($client, "0123456789");
+var_dump(fread($server, 10));
+fclose($client);
+
+$client = fsockopen("udp://127.0.0.1:$port", null, $errno, $errstr);
+var_dump(is_resource($client), $errno, $errstr);
+fwrite($client, "abcdefghij");
+var_dump(fread($server, 10));
+fclose($client);
+fclose($server);
+"#
+    .replace("__PORT__", &port.to_string());
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+int(0)\n\
+string(0) \"\"\n\
+bool(true)\n\
+int(0)\n\
+string(0) \"\"\n\
+string(10) \"0123456789\"\n\
+bool(true)\n\
+int(0)\n\
+string(0) \"\"\n\
+string(10) \"abcdefghij\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_socket_client_open_udp"));
+    assert!(c_source.contains("ptn_stream_socket_server_open_udp"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();
