@@ -50018,6 +50018,26 @@ fn phpc_dynamic_class_constant_literal_receiver_uses_runtime_class_name_error() 
 }
 
 #[test]
+fn phpc_rejects_yield_in_script_scope() {
+    let root = temp_dir("ptn-phpc-yield-in-script-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("yield-in-script-scope.php");
+    fs::write(&input, "<?php\nyield \"Test\";\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains(
+            "Fatal error: The \"yield\" expression can only be used inside a function in "
+        ),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();

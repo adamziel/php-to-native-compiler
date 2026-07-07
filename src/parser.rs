@@ -670,6 +670,7 @@ impl Parser<'_> {
         validate_void_returns(&functions)?;
         validate_never_returns(&functions)?;
         validate_typed_returns_have_values(&functions)?;
+        validate_script_yields_are_inside_functions(&statements)?;
         validate_script_static_local_declarations(&statements)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
@@ -23354,6 +23355,175 @@ fn validate_generator_return_type(
         ));
     }
     Ok(())
+}
+
+fn validate_script_yields_are_inside_functions(statements: &[Statement]) -> Result<()> {
+    if let Some(span) = script_scope_yield_span_in_statements(statements) {
+        return Err(Diagnostic::new(
+            "The \"yield\" expression can only be used inside a function",
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn script_scope_yield_span_in_statements(statements: &[Statement]) -> Option<SourceSpan> {
+    statements.iter().find_map(script_scope_yield_span)
+}
+
+fn script_scope_yield_span(statement: &Statement) -> Option<SourceSpan> {
+    match statement {
+        Statement::Assign { value, span, .. } => expr_contains_yield(value).then_some(*span),
+        Statement::AssignRef { source, span, .. } => expr_contains_yield(source).then_some(*span),
+        Statement::ArrayAssign {
+            target,
+            value,
+            span,
+            ..
+        } => (target.dimensions.iter().flatten().any(expr_contains_yield)
+            || expr_contains_yield(value))
+        .then_some(*span),
+        Statement::ArrayAssignRef {
+            target,
+            source,
+            span,
+            ..
+        } => (target.dimensions.iter().flatten().any(expr_contains_yield)
+            || expr_contains_yield(source))
+        .then_some(*span),
+        Statement::Increment { target, span, .. } => {
+            inc_dec_target_contains_yield(target).then_some(*span)
+        }
+        Statement::Unset { targets, span } => targets
+            .iter()
+            .any(unset_target_contains_yield)
+            .then_some(*span),
+        Statement::Static { declarations, span } => declarations
+            .iter()
+            .any(|declaration| declaration.value.as_ref().is_some_and(expr_contains_yield))
+            .then_some(*span),
+        Statement::Call {
+            arguments, span, ..
+        }
+        | Statement::Echo {
+            expressions: arguments,
+            span,
+        } => arguments.iter().any(expr_contains_yield).then_some(*span),
+        Statement::Print { expression, span } | Statement::Expression { expression, span } => {
+            expr_contains_yield(expression).then_some(*span)
+        }
+        Statement::Const { declarations, span } => declarations
+            .iter()
+            .any(|declaration| expr_contains_yield(&declaration.value))
+            .then_some(*span),
+        Statement::Block { statements, .. } => script_scope_yield_span_in_statements(statements),
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            span,
+        } => {
+            if expr_contains_yield(condition) {
+                Some(*span)
+            } else {
+                script_scope_yield_span_in_statements(then_body)
+                    .or_else(|| script_scope_yield_span_in_statements(else_body))
+            }
+        }
+        Statement::While {
+            condition,
+            body,
+            span,
+        } => {
+            if expr_contains_yield(condition) {
+                Some(*span)
+            } else {
+                script_scope_yield_span_in_statements(body)
+            }
+        }
+        Statement::DoWhile {
+            body,
+            condition,
+            span,
+        } => script_scope_yield_span_in_statements(body)
+            .or_else(|| expr_contains_yield(condition).then_some(*span)),
+        Statement::For {
+            initializers,
+            conditions,
+            updates,
+            body,
+            span,
+        } => script_scope_yield_span_in_statements(initializers)
+            .or_else(|| conditions.iter().any(expr_contains_yield).then_some(*span))
+            .or_else(|| script_scope_yield_span_in_statements(updates))
+            .or_else(|| script_scope_yield_span_in_statements(body)),
+        Statement::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            span,
+            ..
+        } => {
+            if expr_contains_yield(iterable)
+                || key.as_ref().is_some_and(assignment_target_contains_yield)
+                || assignment_target_contains_yield(value)
+            {
+                Some(*span)
+            } else {
+                script_scope_yield_span_in_statements(body)
+            }
+        }
+        Statement::Switch {
+            expression,
+            cases,
+            span,
+        } => {
+            if expr_contains_yield(expression) {
+                return Some(*span);
+            }
+            cases.iter().find_map(|case| {
+                case.condition
+                    .as_ref()
+                    .filter(|condition| expr_contains_yield(condition))
+                    .map(|_| case.span)
+                    .or_else(|| script_scope_yield_span_in_statements(&case.body))
+            })
+        }
+        Statement::Return {
+            value: Some(value),
+            span,
+        }
+        | Statement::Exit {
+            value: Some(value),
+            span,
+        }
+        | Statement::Throw { value, span } => expr_contains_yield(value).then_some(*span),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => script_scope_yield_span_in_statements(body)
+            .or_else(|| {
+                catches
+                    .iter()
+                    .find_map(|catch| script_scope_yield_span_in_statements(&catch.body))
+            })
+            .or_else(|| script_scope_yield_span_in_statements(finally_body)),
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Global { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Return { value: None, .. }
+        | Statement::Exit { value: None, .. }
+        | Statement::Label { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => None,
+    }
 }
 
 fn type_hint_accepts_generator_return(type_hint: &TypeHint) -> bool {
