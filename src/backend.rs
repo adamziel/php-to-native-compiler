@@ -45,6 +45,12 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "ZendTestAttributeWithArguments",
     "ZendTestParameterAttribute",
     "ZendTestPropertyAttribute",
+    "ZendTestNS\\Bar",
+    "ZendTestNS\\Foo",
+    "ZendTestNS\\NotUnlikelyCompileError",
+    "ZendTestNS\\UnlikelyCompileError",
+    "ZendTestNS2\\Foo",
+    "ZendTestNS2\\ZendSubNS\\Foo",
     "php_user_filter",
     "CurlHandle",
     "CurlMultiHandle",
@@ -28184,6 +28190,14 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "zendtestattributewitharguments" => Some("ZendTestAttributeWithArguments"),
                 "zendtestparameterattribute" => Some("ZendTestParameterAttribute"),
                 "zendtestpropertyattribute" => Some("ZendTestPropertyAttribute"),
+                "zendtestns\\bar" => Some("ZendTestNS\\Bar"),
+                "zendtestns\\foo" => Some("ZendTestNS\\Foo"),
+                "zendtestns\\notunlikelycompileerror" => {
+                    Some("ZendTestNS\\NotUnlikelyCompileError")
+                }
+                "zendtestns\\unlikelycompileerror" => Some("ZendTestNS\\UnlikelyCompileError"),
+                "zendtestns2\\foo" => Some("ZendTestNS2\\Foo"),
+                "zendtestns2\\zendsubns\\foo" => Some("ZendTestNS2\\ZendSubNS\\Foo"),
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "fiber" => Some("Fiber"),

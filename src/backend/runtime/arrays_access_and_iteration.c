@@ -1045,6 +1045,14 @@ static PTN_UNUSED PtnValue ptn_zend_test_class_new(
     const PtnValue *args,
     size_t line
 );
+static int ptn_zend_test_gen_stub_class_name(const char *class_name);
+static PTN_UNUSED PtnValue ptn_zend_test_gen_stub_class_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_zend_test_attribute_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1701,6 +1709,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_ascii_case_equal(lookup_class_name, "_ZendTestClass") ||
         ptn_ascii_case_equal(lookup_class_name, "_ZendTestChildClass")) {
         return ptn_zend_test_class_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_zend_test_gen_stub_class_name(lookup_class_name)) {
+        return ptn_zend_test_gen_stub_class_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||
@@ -10616,6 +10627,150 @@ static PTN_UNUSED void ptn_zend_test_class_define_static_properties(PtnRuntime *
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static int ptn_zend_test_gen_stub_class_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ZendTestNS\\Bar") ||
+        ptn_ascii_case_equal(class_name, "ZendTestNS\\Foo") ||
+        ptn_ascii_case_equal(class_name, "ZendTestNS\\NotUnlikelyCompileError") ||
+        ptn_ascii_case_equal(class_name, "ZendTestNS\\UnlikelyCompileError") ||
+        ptn_ascii_case_equal(class_name, "ZendTestNS2\\Foo") ||
+        ptn_ascii_case_equal(class_name, "ZendTestNS2\\ZendSubNS\\Foo");
+}
+
+static void ptn_zend_test_ns2_foo_initialize_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "foo",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_CLASS,
+        "ZendTestNS2\\ZendSubNS\\Foo",
+        "ZendTestNS2\\ZendSubNS\\Foo",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "intersectionProp",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "ZendTestNS2\\ZendSubNS\\Foo&ZendTestNS\\Bar",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "unionProp",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_TEXT,
+        NULL,
+        "ZendTestNS2\\ZendSubNS\\Foo|ZendTestNS\\Bar",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "fooAlias",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_CLASS,
+        "ZendTestNS\\Foo",
+        "ZendTestNS\\Foo",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "unlProp",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_CLASS,
+        "ZendTestNS\\UnlikelyCompileError",
+        "ZendTestNS\\UnlikelyCompileError",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "notUnlProp",
+        "ZendTestNS2\\Foo",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_CLASS,
+        "ZendTestNS\\NotUnlikelyCompileError",
+        "ZendTestNS\\NotUnlikelyCompileError",
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PTN_UNUSED PtnValue ptn_zend_test_gen_stub_class_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[160];
+        snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 0 arguments",
+            class_name
+        );
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell_at(runtime, class_name, line);
+    if (ptn_ascii_case_equal(class_name, "ZendTestNS2\\Foo")) {
+        ptn_zend_test_ns2_foo_initialize_properties(runtime, object, line);
+    }
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_zend_test_class_new(
     PtnRuntime *runtime,
     const char *class_name,

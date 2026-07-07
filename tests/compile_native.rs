@@ -52466,6 +52466,67 @@ var_dump(Worker::countIt());
 }
 
 #[test]
+fn compile_zend_test_namespaced_gen_stub_classes_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-namespaced-gen-stubs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-namespaced-gen-stubs.php");
+    let output = root.join("zend-test-namespaced-gen-stubs-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$foo = new \ZendTestNS2\Foo();
+var_dump(class_exists(\ZendTestNS2\Foo::class));
+var_dump(class_exists(\ZendTestNS2\ZendSubNS\Foo::class));
+var_dump(class_exists(\ZendTestNS\UnlikelyCompileError::class));
+$foo->foo = new \ZendTestNS2\ZendSubNS\Foo();
+var_dump($foo->foo instanceof \ZendTestNS2\ZendSubNS\Foo);
+try {
+    $foo->foo = new stdClass();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(new \ZendTestNS\UnlikelyCompileError());
+var_dump(new \ZendTestNS\NotUnlikelyCompileError());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("bool(true)\nbool(true)\nbool(true)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Cannot assign stdClass to property ZendTestNS2\\Foo::$foo of type ZendTestNS2\\ZendSubNS\\Foo\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(ZendTestNS\\UnlikelyCompileError)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(ZendTestNS\\NotUnlikelyCompileError)#"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_gen_stub_class_new"));
+    assert!(c_source.contains("ZendTestNS2\\\\Foo"));
+}
+
+#[test]
 fn compile_internal_zend_test_trait_use_to_native_binary() {
     let root = temp_dir("ptn-native-internal-zend-test-trait-use");
     fs::create_dir_all(&root).unwrap();
