@@ -33602,6 +33602,12 @@ $short = date_parse('03-03');
 echo $short['error_count'], ' ', $short['zone'], "\n";
 $empty = date_parse('');
 echo $empty['error_count'], ' ', $empty['errors'][0], "\n";
+try {
+    new DateTime('9999-11-33', new DateTimeZone('UTC'));
+} catch (Exception $e) {
+    var_dump($e->getMessage());
+}
+var_dump(error_get_last());
 
 date_default_timezone_set('America/Mendoza');
 $t = mktime(17, 17, 17, 1, 8327, 1970);
@@ -33652,6 +33658,8 @@ echo str_replace(chr(0), '!', serialize(new I)), "\n";
             "1 The parsed date was invalid\n",
             "2 -10800\n",
             "1 Empty string\n",
+            "string(80) \"Failed to parse time string (9999-11-33) at position 9 (3): Unexpected character\"\n",
+            "NULL\n",
             "1992-10-18 17:17:17 -02 1\n",
             "1992-10-25 00:00:00 -02 1\n",
             "O:1:\"I\":7:{s:4:\"date\";s:26:\"2020-01-02 03:04:05.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";s:7:\"!I!var1\";i:1;s:7:\"!I!var2\";i:2;s:7:\"!*!var3\";i:3;s:7:\"!*!var4\";i:4;}\n",

@@ -162911,6 +162911,55 @@ static int ptn_datetime_parse_timestamp_literal(const char *input, time_t *times
     return 1;
 }
 
+static int ptn_datetime_invalid_iso_date_position(const char *input, size_t *position_out, char *unexpected_out) {
+    if (input == NULL) {
+        return 0;
+    }
+    const char *date_start = input;
+    while (isspace((unsigned char)*date_start)) {
+        date_start++;
+    }
+    if (strlen(date_start) < 10) {
+        return 0;
+    }
+    const char *cursor = date_start;
+    long long year = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!isdigit((unsigned char)cursor[i])) {
+            return 0;
+        }
+        year = year * 10 + (cursor[i] - '0');
+    }
+    if (cursor[4] != '-' ||
+        !isdigit((unsigned char)cursor[5]) ||
+        !isdigit((unsigned char)cursor[6]) ||
+        cursor[7] != '-' ||
+        !isdigit((unsigned char)cursor[8]) ||
+        !isdigit((unsigned char)cursor[9])) {
+        return 0;
+    }
+    int month = (cursor[5] - '0') * 10 + (cursor[6] - '0');
+    int day = (cursor[8] - '0') * 10 + (cursor[9] - '0');
+    const char *tail = cursor + 10;
+    while (isspace((unsigned char)*tail)) {
+        tail++;
+    }
+    if (*tail != '\0') {
+        return 0;
+    }
+    if (month < 1 || month > 12) {
+        *position_out = (size_t)((cursor + 6) - input);
+        *unexpected_out = cursor[6];
+        return 1;
+    }
+    if (day < 1 || day > ptn_date_days_in_month_i64(year, month)) {
+        *position_out = (size_t)((cursor + 9) - input);
+        *unexpected_out = cursor[9];
+        return 1;
+    }
+    return 0;
+}
+
 static char *ptn_datetime_parse_failure_message(const char *input) {
     const char *cursor = input == NULL ? "" : input;
     const char *last_word = NULL;
@@ -162932,6 +162981,9 @@ static char *ptn_datetime_parse_failure_message(const char *input) {
     const char *reason = input == NULL || input[0] == '\0'
         ? "Empty string"
         : "Unexpected character";
+    if (ptn_datetime_invalid_iso_date_position(input, &position, &unexpected)) {
+        reason = "Unexpected character";
+    }
     if (last_word != NULL && input != NULL) {
         size_t word_len = strcspn(last_word, " \t\r\n");
         char *word = ptn_duplicate_string_len(last_word, word_len);
