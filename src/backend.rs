@@ -32486,6 +32486,10 @@ fn collect_runtime_variance_type_name_map(
     }
 }
 
+fn runtime_variance_type_is_mixed(type_hint: Option<&TypeHint>) -> bool {
+    matches!(type_hint, Some(TypeHint::Mixed))
+}
+
 fn runtime_variance_type_names_for_pair(
     function: &FunctionDecl,
     parent_function: &FunctionDecl,
@@ -32498,26 +32502,32 @@ fn runtime_variance_type_names_for_pair(
         .len()
         .max(parent_function.parameters.len());
     for index in 0..parameter_count {
-        if let Some(type_hint) = function
+        let child_type = function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref())
-        {
+            .and_then(|parameter| parameter.type_hint.as_ref());
+        let parent_type = parent_function
+            .parameters
+            .get(index)
+            .and_then(|parameter| parameter.type_hint.as_ref());
+        if let Some(type_hint) = child_type {
             collect_runtime_variance_type_name_map(type_hint, &mut child_names);
         }
-        if let Some(type_hint) = parent_function
-            .parameters
-            .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref())
-        {
-            collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
+        if !runtime_variance_type_is_mixed(child_type) {
+            if let Some(type_hint) = parent_type {
+                collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
+            }
         }
     }
     if let Some(type_hint) = &function.return_type {
-        collect_runtime_variance_type_name_map(type_hint, &mut child_names);
+        if !runtime_variance_type_is_mixed(parent_function.return_type.as_ref()) {
+            collect_runtime_variance_type_name_map(type_hint, &mut child_names);
+        }
     }
     if let Some(type_hint) = &parent_function.return_type {
-        collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
+        if !runtime_variance_type_is_mixed(function.return_type.as_ref()) {
+            collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
+        }
     }
     let mut names = Vec::new();
     for (key, name) in &child_names {
