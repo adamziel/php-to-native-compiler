@@ -387,6 +387,26 @@ fn phpt_classifier_excludes_zend_test_native_helper_rows() {
 }
 
 #[test]
+fn phpt_classifier_supports_modeled_zend_test_consumed_args_rows() {
+    for row in [
+        "ext/zend_test/tests/consumed_args_basic.phpt",
+        "ext/zend_test/tests/consumed_args_ref_arg.phpt",
+        "ext/zend_test/tests/consumed_args_ref_param_and_ref_arg.phpt",
+        "ext/zend_test/tests/consumed_args_ref_required.phpt",
+    ] {
+        let classification = classify_at_relative_path(
+            "--TEST--\nconsumed args\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\nzend_test_call_with_consumed_args(static fn($v) => $v, [1], 1);\n--EXPECT--\n",
+            row,
+        );
+
+        assert_eq!(
+            classification, "runnable\tselected for PTN semantic measurement\n",
+            "{row}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_excludes_precise_zend_test_helper_residual_rows() {
     let rows = [
         (

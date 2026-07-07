@@ -236702,6 +236702,151 @@ static PtnValue ptn_internal_zend_test_zend_ini_parse_uquantity(PtnRuntime *runt
     return ptn_int(quantity);
 }
 
+static int ptn_internal_callable_argument_requires_reference(PtnRuntime *runtime, PtnValue callback, size_t index) {
+    (void)runtime;
+    PtnValue resolved = ptn_value_deref(callback);
+    if (resolved.type == PTN_CLOSURE) {
+        if (resolved.as.closure->has_wrapped_callable) {
+            return ptn_internal_callable_argument_requires_reference(
+                runtime,
+                resolved.as.closure->wrapped_callable,
+                index
+            );
+        }
+        PtnFunctionMetadata metadata = resolved.as.closure->metadata;
+        if (ptn_function_metadata_parameter_by_ref(metadata, index)) {
+            return 1;
+        }
+        return metadata.is_variadic &&
+            metadata.parameter_count > 0 &&
+            index + 1 >= metadata.parameter_count &&
+            ptn_function_metadata_parameter_by_ref(metadata, metadata.parameter_count - 1);
+    }
+    if (resolved.type == PTN_STRING) {
+        char *callable_name = ptn_value_to_string(resolved);
+        const char *lookup_name = ptn_symbol_name_without_leading_slash(callable_name);
+        PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);
+        int requires_reference = 0;
+        if (ptn_function_metadata_parameter_by_ref(metadata, index)) {
+            requires_reference = 1;
+        } else if (
+            metadata.is_variadic &&
+            metadata.parameter_count > 0 &&
+            index + 1 >= metadata.parameter_count &&
+            ptn_function_metadata_parameter_by_ref(metadata, metadata.parameter_count - 1)
+        ) {
+            requires_reference = 1;
+        }
+        free(callable_name);
+        return requires_reference;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_zend_test_call_with_consumed_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "zend_test_call_with_consumed_args",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnArray *arguments = ptn_internal_expect_array_arg(
+        runtime,
+        "zend_test_call_with_consumed_args",
+        2,
+        "args",
+        args[1]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    int64_t consume_limit = ptn_internal_expect_integer_arg(
+        runtime,
+        "zend_test_call_with_consumed_args",
+        3,
+        "consumed_args",
+        args[2],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    if (consume_limit < 0) {
+        consume_limit = 0;
+    }
+
+    PtnValue *callback_args = NULL;
+    unsigned char *consumed_argument_refs = NULL;
+    if (arguments->len != 0) {
+        callback_args = malloc(arguments->len * sizeof(PtnValue));
+        if (callback_args == NULL) {
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        consumed_argument_refs = calloc(arguments->len, sizeof(unsigned char));
+        if (consumed_argument_refs == NULL) {
+            free(callback_args);
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+    }
+    int64_t consumed_args = 0;
+    int by_ref_parameter_mismatch = 0;
+    for (size_t i = 0; i < arguments->len; i++) {
+        PtnArrayEntry *entry = &arguments->entries[i];
+        PtnValue argument_value = ptn_value_clone(entry->value);
+        if (!entry->by_ref_argument_eligible) {
+            int requires_reference =
+                ptn_internal_callable_argument_requires_reference(runtime, callback, i);
+            argument_value = ptn_value_disable_by_ref_argument_source(argument_value);
+            if (requires_reference) {
+                by_ref_parameter_mismatch = 1;
+            } else if ((int64_t)i < consume_limit) {
+                consumed_args++;
+                consumed_argument_refs[i] = 1;
+                ptn_value_debug_hide_ref(argument_value);
+            }
+        }
+        callback_args[i] = argument_value;
+    }
+
+    PtnValue retval = ptn_internal_call_callback(
+        runtime,
+        callback,
+        arguments->len,
+        callback_args,
+        line
+    );
+    for (size_t i = 0; i < arguments->len; i++) {
+        if (consumed_argument_refs != NULL && consumed_argument_refs[i]) {
+            ptn_value_debug_unhide_ref(callback_args[i]);
+        }
+        ptn_value_destroy(&callback_args[i]);
+    }
+    free(consumed_argument_refs);
+    free(callback_args);
+    ptn_value_destroy(&callback);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&retval);
+        return ptn_null();
+    }
+    if (by_ref_parameter_mismatch) {
+        consumed_args = 0;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("consumed_args"), ptn_int(consumed_args));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("retval"), retval);
+    return result;
+}
+
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue source = ptn_value_deref(args[0]);
@@ -238136,6 +238281,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_string_or_object_or_null", 1, 1, ptn_internal_zend_string_or_object_or_null },
         { "zend_string_or_stdclass", 1, 1, ptn_internal_zend_string_or_stdclass },
         { "zend_string_or_stdclass_or_null", 1, 1, ptn_internal_zend_string_or_stdclass_or_null },
+        { "zend_test_call_with_consumed_args", 3, 3, ptn_internal_zend_test_call_with_consumed_args },
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
@@ -238198,6 +238344,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_string_or_object_or_null") ||
         ptn_ascii_case_equal(name, "zend_string_or_stdclass") ||
         ptn_ascii_case_equal(name, "zend_string_or_stdclass_or_null") ||
+        ptn_ascii_case_equal(name, "zend_test_call_with_consumed_args") ||
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||

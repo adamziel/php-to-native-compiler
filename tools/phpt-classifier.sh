@@ -1742,6 +1742,7 @@ ptn_phpt_requires_zend_test_native_helper() {
 
     [[ "$row" == ext/zend_test/tests/* ]] || return 1
     [[ "$row" == "ext/zend_test/tests/do_operation_not_cast.phpt" ]] && return 1
+    ptn_phpt_supported_zend_test_consumed_args_row "$row" && return 1
     ptn_phpt_supported_zend_test_class_metadata_row "$row" && return 1
 
     if LC_ALL=C grep -Eq "$helper_pattern" "$path"; then
@@ -1765,6 +1766,20 @@ ptn_phpt_requires_zend_test_native_helper() {
     )
 
     return 1
+}
+
+ptn_phpt_supported_zend_test_consumed_args_row() {
+    case "$1" in
+        ext/zend_test/tests/consumed_args_basic.phpt|\
+        ext/zend_test/tests/consumed_args_ref_arg.phpt|\
+        ext/zend_test/tests/consumed_args_ref_param_and_ref_arg.phpt|\
+        ext/zend_test/tests/consumed_args_ref_required.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 ptn_phpt_supported_zend_test_class_metadata_row() {
