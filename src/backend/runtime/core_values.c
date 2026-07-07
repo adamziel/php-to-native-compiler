@@ -1543,6 +1543,7 @@ struct PtnException {
     size_t message_len;
     char *uncaught_text;
     size_t uncaught_text_len;
+    int uncaught_emitted;
     int64_t code;
     const char *path;
     size_t line;

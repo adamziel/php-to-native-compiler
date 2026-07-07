@@ -91363,6 +91363,42 @@ var_dump($readonly);
 }
 
 #[test]
+fn compile_uncaught_typed_property_fatal_is_emitted_once_to_native_binary() {
+    let root = temp_dir("ptn-native-uncaught-typed-property-fatal-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uncaught-typed-property-fatal-once.php");
+    let output = root.join("uncaught-typed-property-fatal-once-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public int $i;
+}
+
+$box = new Box();
+var_dump($box->i);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("Fatal error: Uncaught Error: Typed property Box::$i must not be accessed before initialization").count(),
+        1,
+        "{stdout}"
+    );
+    assert!(stdout.contains("Stack trace:\n#0 {main}\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("uncaught_emitted"));
+}
+
+#[test]
 fn compile_typed_property_reference_overflow_and_union_sources_to_native_binary() {
     let root = temp_dir("ptn-native-typed-property-reference-overflow-union");
     fs::create_dir_all(&root).unwrap();

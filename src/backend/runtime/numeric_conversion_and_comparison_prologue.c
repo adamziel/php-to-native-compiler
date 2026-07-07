@@ -3205,6 +3205,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->message_len = message_len;
     exception->uncaught_text = NULL;
     exception->uncaught_text_len = 0;
+    exception->uncaught_emitted = 0;
     exception->code = code;
     exception->path = path;
     exception->line = line;
@@ -3712,6 +3713,17 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     const char *label
 ) {
     fflush(stdout);
+    if (
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        runtime->exceptions->active_exception != exception
+    ) {
+        exception = runtime->exceptions->active_exception;
+    }
+    if (exception != NULL && exception->uncaught_emitted) {
+        return;
+    }
     if (ptn_exception_handlers_try_uncaught(runtime, exception)) {
         return;
     }
@@ -3723,9 +3735,13 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     ) {
         exception = runtime->exceptions->active_exception;
     }
+    if (exception != NULL && exception->uncaught_emitted) {
+        return;
+    }
     if (!runtime->diagnostics.display_errors) {
         return;
     }
+    exception->uncaught_emitted = 1;
     if (exception->previous.type == PTN_EXCEPTION) {
         int first = 1;
         ptn_emit_uncaught_exception_chain_entry(runtime, exception, &first, label);
