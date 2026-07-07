@@ -129,6 +129,16 @@ static PTN_UNUSED void ptn_runtime_unregister_closure(PtnRuntime *runtime, PtnCl
 static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnValue value);
 static PTN_UNUSED void ptn_runtime_push_owned_temporary_root(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_push_trace_frame(
+    PtnRuntime *runtime,
+    PtnTraceFrame *frame,
+    const char *function_name,
+    const char *file,
+    size_t line,
+    size_t argc,
+    const PtnValue *args
+);
+static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTraceFrame *frame);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
@@ -1453,6 +1463,23 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         return;
     }
 
+    PtnTraceFrame cleanup_trace_frame;
+    int cleanup_trace_frame_active = 0;
+    if (root->trace_frame == NULL && object->cleanup_trace_function_name != NULL) {
+        ptn_runtime_push_trace_frame(
+            root,
+            &cleanup_trace_frame,
+            object->cleanup_trace_function_name,
+            object->cleanup_trace_source_file != NULL
+                ? object->cleanup_trace_source_file
+                : root->source_path,
+            object->cleanup_trace_source_line,
+            0,
+            NULL
+        );
+        cleanup_trace_frame_active = 1;
+    }
+
     object->destructor_called = 1;
     const char *previous_scope = root->current_class_name;
     int previous_shutdown_phase = root->destructor_shutdown_phase;
@@ -1511,6 +1538,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
             root->gc_destructor_depth = previous_gc_destructor_depth;
             root->gc_destructor_fiber_current_requested =
                 previous_gc_destructor_fiber_current_requested;
+            if (cleanup_trace_frame_active) {
+                ptn_runtime_pop_trace_frame(root, &cleanup_trace_frame);
+            }
             ptn_value_destroy(&result);
             return;
         }
@@ -1526,6 +1556,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     root->gc_destructor_depth = previous_gc_destructor_depth;
     root->gc_destructor_fiber_current_requested =
         previous_gc_destructor_fiber_current_requested;
+    if (cleanup_trace_frame_active) {
+        ptn_runtime_pop_trace_frame(root, &cleanup_trace_frame);
+    }
     if (saved_active_exception != NULL && !preserve_active_exception) {
         if (root->exceptions->active_exception == NULL) {
             root->exceptions->active_exception = saved_active_exception;
@@ -2602,6 +2635,26 @@ static PTN_UNUSED PtnValue ptn_object_new_shell_at(
     object->var_dump_property_count_initialized = 0;
     object->last_var_dump_property_count = 0;
     object->active_property_value_unsets = 0;
+    object->cleanup_trace_function_name = NULL;
+    object->cleanup_trace_source_file = NULL;
+    object->cleanup_trace_source_line = 0;
+    PtnGenerator *cleanup_parent = runtime == NULL ? NULL : runtime->generator_cleanup_parent;
+    int has_declared_destructor =
+        root != NULL &&
+        root->declared_method_exists != NULL &&
+        root->declared_method_exists(class_name, "__destruct");
+    if (cleanup_parent != NULL && has_declared_destructor) {
+        const char *cleanup_function_name = cleanup_parent->function_name;
+        const char *cleanup_source_file = cleanup_parent->source_file;
+        size_t cleanup_source_line = cleanup_parent->source_line;
+        if (cleanup_function_name != NULL) {
+            object->cleanup_trace_function_name = ptn_duplicate_string(cleanup_function_name);
+            object->cleanup_trace_source_file = cleanup_source_file == NULL
+                ? NULL
+                : ptn_duplicate_string(cleanup_source_file);
+            object->cleanup_trace_source_line = cleanup_source_line;
+        }
+    }
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);
@@ -4391,6 +4444,8 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     ptn_object_forget_property_reference_sources(object);
     ptn_value_destroy(&object->lazy_initializer);
     ptn_value_destroy(&object->lazy_proxy_instance);
+    free(object->cleanup_trace_function_name);
+    free(object->cleanup_trace_source_file);
     free(object->class_name);
     free(object->enum_case_name);
     ptn_object_property_metadata_free_list(

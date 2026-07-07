@@ -1411,6 +1411,9 @@ struct PtnObject {
     int var_dump_property_count_initialized;
     size_t last_var_dump_property_count;
     size_t active_property_value_unsets;
+    char *cleanup_trace_function_name;
+    char *cleanup_trace_source_file;
+    size_t cleanup_trace_source_line;
     PtnValue lazy_initializer;
     PtnValue lazy_proxy_instance;
 };
@@ -2026,6 +2029,7 @@ struct PtnRuntime {
     int destructor_shutdown_phase;
     PtnGenerator *current_generator;
     PtnGenerator *activating_generator;
+    PtnGenerator *generator_cleanup_parent;
     const char *pending_generator_assignment_name;
     PtnGenerator *pending_yield_from_generator;
     size_t pending_yield_from_line;

@@ -10881,8 +10881,8 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
         return;
     }
     ptn_generator_end_activation(generator);
+    PtnRuntime *runtime = generator->object == NULL ? NULL : generator->object->lifecycle_runtime;
     if (generator->started) {
-        PtnRuntime *runtime = generator->object == NULL ? NULL : generator->object->lifecycle_runtime;
         ptn_generator_flush_pending_output(runtime, generator);
     }
     if (generator->values != NULL) {
@@ -11843,7 +11843,16 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     if (!ptn_generator_validate_yield_from_delegate(runtime, generator, source_generator, line)) {
         return ptn_null();
     }
-    if (!ptn_generator_ensure_initialized(runtime, source_generator, line)) {
+    PtnGenerator *previous_cleanup_parent =
+        runtime == NULL ? NULL : runtime->generator_cleanup_parent;
+    if (runtime != NULL) {
+        runtime->generator_cleanup_parent = generator;
+    }
+    int source_initialized = ptn_generator_ensure_initialized(runtime, source_generator, line);
+    if (runtime != NULL) {
+        runtime->generator_cleanup_parent = previous_cleanup_parent;
+    }
+    if (!source_initialized) {
         return ptn_null();
     }
     PtnGenerator *existing = ptn_generator_delegate_source(generator, generator->position);

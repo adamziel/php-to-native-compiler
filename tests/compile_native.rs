@@ -28064,6 +28064,47 @@ echo "done\n";
 }
 
 #[test]
+fn compile_generator_yield_from_cleanup_destructor_backtrace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-cleanup-destructor-backtrace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-cleanup-destructor-backtrace.php");
+    let output = root.join("generator-yield-from-cleanup-destructor-backtrace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public function __destruct() {
+        debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    }
+}
+
+function bar() {
+    yield from foo();
+}
+
+function foo() {
+    $foo = new Foo();
+    yield;
+}
+
+$gen = bar();
+foreach ($gen as $dummy);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Foo->__destruct()"));
+    assert!(stdout.contains("bar()"));
+    assert!(!stdout.contains("foo()"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_throw_closes_current_chain_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-close");
     fs::create_dir_all(&root).unwrap();

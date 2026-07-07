@@ -239,6 +239,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
     runtime->activating_generator = NULL;
+    runtime->generator_cleanup_parent =
+        caller_runtime->generator_cleanup_parent;
     runtime->pending_generator_assignment_name =
         caller_runtime->pending_generator_assignment_name;
     runtime->pending_yield_from_generator =
