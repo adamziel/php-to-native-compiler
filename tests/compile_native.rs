@@ -29034,6 +29034,43 @@ $generator->rewind();
 }
 
 #[test]
+fn compile_generator_try_finally_plain_yield_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-try-finally-plain-yield-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-try-finally-plain-yield-foreach.php");
+    let output = root.join("generator-try-finally-plain-yield-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo() {
+    try {
+        echo "1";
+        yield "2";
+        echo "3";
+    } finally {
+        echo "4";
+        yield "5";
+        echo "6";
+    }
+    echo "7";
+}
+
+foreach (foo() as $x) {
+    echo $x;
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(0));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1234567");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();

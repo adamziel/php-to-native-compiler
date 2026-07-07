@@ -33480,9 +33480,23 @@ fn emit_instruction(
             out.push_str(";\n");
             emit_value_cleanup(out, "    ", &emitted_value);
             if let Some(target) = generator_yield_abort_target {
+                let guard_plain_yield_abort_for_implicit_foreach =
+                    matches!(value, ValueExpr::Yield { .. });
+                if guard_plain_yield_abort_for_implicit_foreach {
+                    out.push_str("    if (!runtime.implicit_generator_foreach_rewind) {\n");
+                }
+                let abort_indent = if guard_plain_yield_abort_for_implicit_foreach {
+                    "        "
+                } else {
+                    "    "
+                };
+                out.push_str(abort_indent);
                 out.push_str("    if (runtime.generator_chained_exception_during_unwind) {\n");
+                out.push_str(abort_indent);
                 out.push_str("        runtime.generator_aborted_rethrow_on_rewind = 1;\n");
+                out.push_str(abort_indent);
                 out.push_str("    }\n");
+                out.push_str(abort_indent);
                 out.push_str("    runtime.generator_aborted_after_yield = 1;\n");
                 let context_indices = return_cleanup_context_indices(finally_stack);
                 emit_jump_through_finally_contexts_with_line(
@@ -33492,6 +33506,9 @@ fn emit_instruction(
                     &target,
                     value_expr_runtime_line(value),
                 );
+                if guard_plain_yield_abort_for_implicit_foreach {
+                    out.push_str("    }\n");
+                }
             }
         }
         Instruction::Echo { value, line } => {
