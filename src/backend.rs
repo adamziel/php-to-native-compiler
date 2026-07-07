@@ -32338,6 +32338,7 @@ struct RuntimeVarianceTypeAvailabilityCheck {
     type_name: String,
     message: String,
     line: usize,
+    unavailable_at_declaration: bool,
 }
 
 fn emit_runtime_variance_type_availability_check(
@@ -32345,6 +32346,16 @@ fn emit_runtime_variance_type_availability_check(
     check: RuntimeVarianceTypeAvailabilityCheck,
     source_path: &str,
 ) {
+    if check.unavailable_at_declaration {
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(&check.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&check.line.to_string());
+        out.push_str(");\n");
+        return;
+    }
     out.push_str("        if (!ptn_declared_runtime_variance_type_available(&runtime, \"");
     out.push_str(&c_string(&check.type_name));
     out.push_str("\", ");
@@ -32526,6 +32537,7 @@ fn runtime_variance_type_names_for_pair(
 fn append_runtime_variance_type_checks_for_pair(
     checks: &mut Vec<RuntimeVarianceTypeAvailabilityCheck>,
     emitted: &mut HashSet<String>,
+    class_index: usize,
     class_name: &str,
     method: &crate::ir::MethodDecl,
     function: &FunctionDecl,
@@ -32555,16 +32567,42 @@ fn append_runtime_variance_type_checks_for_pair(
             message: format!(
                 "Could not check compatibility between {method_display} and {parent_method_display}, because class {type_name} is not available"
             ),
+            unavailable_at_declaration: runtime_variance_type_declared_later_in_same_source(
+                &type_name,
+                class_index,
+                classes,
+            ),
             type_name,
             line: method.line,
         });
     }
 }
 
-fn class_runtime_interface_variance_type_checks(
+fn runtime_variance_type_declared_later_in_same_source(
+    type_name: &str,
+    class_index: usize,
+    classes: &[ClassDecl],
+) -> bool {
+    let Some(class) = classes.get(class_index) else {
+        return false;
+    };
+    let lookup_name = type_name.trim_start_matches('\\');
+    classes
+        .iter()
+        .enumerate()
+        .any(|(candidate_index, candidate)| {
+            candidate_index > class_index
+                && candidate.source_file == class.source_file
+                && candidate.initially_declared
+                && candidate.name.eq_ignore_ascii_case(lookup_name)
+        })
+}
+
+fn class_runtime_variance_type_checks(
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    class_index: usize,
 ) -> Vec<RuntimeVarianceTypeAvailabilityCheck> {
     let mut checks = Vec::new();
     let mut emitted = HashSet::new();
@@ -32573,6 +32611,25 @@ fn class_runtime_interface_variance_type_checks(
             continue;
         }
         let function = &functions[method.function_index];
+        if let Some((parent_class, parent_method)) =
+            find_runtime_visible_parent_method(class, &method.name, classes)
+        {
+            if runtime_method_requires_parent_signature_compatibility(method, parent_method) {
+                let parent_function = &functions[parent_method.function_index];
+                append_runtime_variance_type_checks_for_pair(
+                    &mut checks,
+                    &mut emitted,
+                    class_index,
+                    &class.name,
+                    method,
+                    function,
+                    &parent_class.name,
+                    parent_method,
+                    parent_function,
+                    classes,
+                );
+            }
+        }
         for interface_name in class_transitive_interfaces(class, classes) {
             let Some(interface) = class_by_name(classes, interface_name) else {
                 continue;
@@ -32588,6 +32645,7 @@ fn class_runtime_interface_variance_type_checks(
                 append_runtime_variance_type_checks_for_pair(
                     &mut checks,
                     &mut emitted,
+                    class_index,
                     &class.name,
                     method,
                     function,
@@ -32709,7 +32767,7 @@ fn emit_class_declaration_validation(
             trait_use.line,
         );
     }
-    for check in class_runtime_interface_variance_type_checks(class, classes, functions) {
+    for check in class_runtime_variance_type_checks(class, classes, functions, class_index) {
         emit_runtime_variance_type_availability_check(out, check, source_path);
     }
     emit_class_method_signature_compatibility_validation(
