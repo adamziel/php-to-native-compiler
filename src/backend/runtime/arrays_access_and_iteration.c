@@ -11133,6 +11133,14 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     }
     free(generator->function_name);
     free(generator->source_file);
+    if (generator->activation_object_id != 0) {
+        ptn_runtime_release_object_id(
+            generator->activation_object_id_runtime,
+            generator->activation_object_id
+        );
+        generator->activation_object_id_runtime = NULL;
+        generator->activation_object_id = 0;
+    }
     ptn_generator_clear_lazy_invocation(generator);
     free(generator);
 }
@@ -11275,6 +11283,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     object.as.object->native_data = generator;
     object.as.object->native_data_free = ptn_generator_data_free;
     generator->object = object.as.object;
+    generator->activation_object_id_runtime = object.as.object->lifecycle_runtime;
+    generator->activation_object_id =
+        ptn_runtime_alloc_object_id(generator->activation_object_id_runtime);
     const char *function_name = runtime == NULL || runtime->current_function_name == NULL
         ? "{unknown}"
         : runtime->current_function_name;
