@@ -33468,7 +33468,7 @@ fn emit_instruction(
         }
         Instruction::Expression(value) => {
             let generator_yield_abort_target = if values.current_function_is_generator
-                && matches!(value, ValueExpr::YieldFrom { .. })
+                && matches!(value, ValueExpr::Yield { .. } | ValueExpr::YieldFrom { .. })
             {
                 values.generator_yield_abort_target.clone()
             } else {
