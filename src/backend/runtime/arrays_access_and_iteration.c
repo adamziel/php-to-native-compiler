@@ -11574,6 +11574,11 @@ static PTN_UNUSED void ptn_generator_discard_pending_output(PtnGenerator *genera
     generator->pending_output.data[0] = '\0';
 }
 
+static PTN_UNUSED int ptn_generator_force_close_uses_internal_trace_frame(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL && root->shutdown_in_progress;
+}
+
 static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -11584,6 +11589,7 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
     const char *path = generator != NULL && generator->source_file != NULL
         ? generator->source_file
         : (runtime != NULL ? runtime->source_path : NULL);
+    int internal_trace_frame = ptn_generator_force_close_uses_internal_trace_frame(runtime);
     ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "Error",
@@ -11591,8 +11597,8 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
         path,
         line,
         generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
-        NULL,
-        0,
+        internal_trace_frame ? NULL : path,
+        internal_trace_frame ? 0 : line,
         0,
         NULL
     );
@@ -13256,6 +13262,7 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
     const char *path = generator != NULL && generator->source_file != NULL
         ? generator->source_file
         : (runtime != NULL ? runtime->source_path : NULL);
+    int internal_trace_frame = ptn_generator_force_close_uses_internal_trace_frame(runtime);
     ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "Error",
@@ -13263,8 +13270,8 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
         path,
         line,
         generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
-        NULL,
-        0,
+        internal_trace_frame ? NULL : path,
+        internal_trace_frame ? 0 : line,
         0,
         NULL
     );
