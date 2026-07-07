@@ -3961,6 +3961,62 @@ static PTN_UNUSED void ptn_emit_inheritance_variance_uncaught_exception(
     fputc('\n', stderr);
 }
 
+static PTN_UNUSED void ptn_emit_inheritance_autoload_uncaught_exception(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    const char *class_name,
+    const char *autoload_class_name,
+    const char *source_path,
+    size_t line
+) {
+    fflush(stdout);
+    if (exception == NULL) {
+        return;
+    }
+    if (ptn_exception_handlers_try_uncaught(runtime, exception)) {
+        return;
+    }
+    if (
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        runtime->exceptions->active_exception != exception
+    ) {
+        exception = runtime->exceptions->active_exception;
+    }
+    if (!runtime->diagnostics.display_errors) {
+        return;
+    }
+    const char *display_path = exception->path != NULL ? exception->path : source_path;
+    size_t display_line = exception->line != 0 ? exception->line : line;
+    fputc('\n', stderr);
+    fprintf(
+        stderr,
+        "Fatal error: During inheritance of %s, while autoloading %s: Uncaught %s",
+        class_name,
+        autoload_class_name,
+        exception->class_name
+    );
+    if (exception->message_len != 0) {
+        fputs(": ", stderr);
+        fwrite(exception->message, 1, exception->message_len, stderr);
+    }
+    fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+    fputs("Stack trace:\n", stderr);
+    PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
+    fwrite(trace.data, 1, trace.len, stderr);
+    if (
+        trace.len >= 6 &&
+        memcmp(trace.data + trace.len - 6, "{main}", 6) == 0 &&
+        source_path != NULL &&
+        line != 0
+    ) {
+        fprintf(stderr, " in %s on line %zu", source_path, line);
+    }
+    free(trace.owned);
+    fputc('\n', stderr);
+}
+
 static PTN_UNUSED void ptn_throw_exception_at(
     PtnRuntime *runtime,
     const char *class_name,

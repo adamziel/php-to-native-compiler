@@ -17773,6 +17773,9 @@ fn validate_method_signature_pair_named(
             if let Some(unavailable_name) =
                 unresolved_compatibility_class(return_type, parent_return_type, classes)
             {
+                if unresolved_class_can_affect_subtype_check(return_type, parent_return_type) {
+                    return Ok(());
+                }
                 return Err(method_signature_unresolved_compatibility_error_named(
                     class,
                     method,

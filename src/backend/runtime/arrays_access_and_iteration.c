@@ -917,13 +917,15 @@ static PTN_UNUSED void ptn_runtime_autoload_class_with_call_frame(
     PtnRuntime *runtime,
     const char *class_name,
     size_t line,
-    int suppress_user_call_frame_location
+    int suppress_user_call_frame_location,
+    int rethrow_caught_exception
 ) {
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     (void)runtime;
     (void)class_name;
     (void)line;
     (void)suppress_user_call_frame_location;
+    (void)rethrow_caught_exception;
 #else
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL ||
@@ -978,7 +980,9 @@ static PTN_UNUSED void ptn_runtime_autoload_class_with_call_frame(
         runtime->current_called_class_name = saved_current_called_class_name;
         ptn_value_destroy(&active_callback);
         ptn_runtime_pop_autoloading_class(root);
-        ptn_rethrow_exception(runtime);
+        if (rethrow_caught_exception) {
+            ptn_rethrow_exception(runtime);
+        }
     }
 #endif
 }
@@ -988,7 +992,15 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
     const char *class_name,
     size_t line
 ) {
-    ptn_runtime_autoload_class_with_call_frame(runtime, class_name, line, 1);
+    ptn_runtime_autoload_class_with_call_frame(runtime, class_name, line, 1, 1);
+}
+
+static PTN_UNUSED void ptn_runtime_autoload_class_defer_exception(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    ptn_runtime_autoload_class_with_call_frame(runtime, class_name, line, 0, 0);
 }
 
 static int ptn_class_name_autoload_char_is_valid(unsigned char ch) {

@@ -25065,6 +25065,8 @@ fn emit_tentative_internal_return_signature_unresolved_fatal_after_autoload(
         method.line,
         class_index,
         method_index,
+        class_diagnostic_name,
+        "runtime.source_path",
         type_temp_counter,
     );
     out.push_str("        if (!");
@@ -25489,6 +25491,8 @@ fn emit_runtime_parameter_pair_signature_compatibility_validation(
                             method.line,
                             class_index,
                             method_index,
+                            &class.name,
+                            "runtime.source_path",
                             type_temp_counter,
                         );
                         let resolved_target = format!(
@@ -25602,6 +25606,8 @@ fn emit_runtime_return_signature_compatibility_validation(
                     method.line,
                     class_index,
                     method_index,
+                    &class.name,
+                    "runtime.source_path",
                     type_temp_counter,
                 );
             }
@@ -25639,6 +25645,8 @@ fn emit_runtime_return_signature_compatibility_validation(
                 method.line,
                 class_index,
                 method_index,
+                &class.name,
+                "runtime.source_path",
                 type_temp_counter,
             );
             let resolved_target = format!(
@@ -25796,6 +25804,8 @@ fn emit_runtime_method_signature_unresolved_fatal_after_autoload(
         method.line,
         class_index,
         method_index,
+        &class.name,
+        "runtime.source_path",
         type_temp_counter,
     );
     out.push_str("        if (!");
@@ -25822,6 +25832,8 @@ fn emit_runtime_signature_type_autoload(
     line: usize,
     class_index: usize,
     method_index: usize,
+    inheritance_class_name: &str,
+    source_path_expr: &str,
     type_temp_counter: &mut usize,
 ) -> String {
     let resolved_temp = format!(
@@ -25849,13 +25861,23 @@ fn emit_runtime_signature_type_autoload(
     out.push_str(" && ptn_class_name_should_autoload(");
     out.push_str(&resolved_temp);
     out.push_str(")) {\n");
-    out.push_str("            ptn_runtime_autoload_class(&runtime, ");
+    out.push_str("            ptn_runtime_autoload_class_defer_exception(&runtime, ");
     out.push_str(&resolved_temp);
     out.push_str(", ");
     out.push_str(&line.to_string());
     out.push_str(");\n");
     out.push_str("            if (runtime.exceptions->active_exception != NULL) {\n");
-    out.push_str("                ptn_rethrow_exception(&runtime);\n");
+    out.push_str("                ptn_emit_inheritance_autoload_uncaught_exception(&runtime, runtime.exceptions->active_exception, \"");
+    out.push_str(&c_string(inheritance_class_name));
+    out.push_str("\", ");
+    out.push_str(&resolved_temp);
+    out.push_str(", ");
+    out.push_str(source_path_expr);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str("                ptn_runtime_shutdown_before_exit(&runtime);\n");
+    out.push_str("                exit(255);\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
     resolved_temp
@@ -32017,7 +32039,7 @@ fn emit_declaration_dependency_autoload(
     out.push_str(resolved_name_temp);
     out.push_str(", ");
     out.push_str(&line.to_string());
-    out.push_str(", 0");
+    out.push_str(", 0, 1");
     out.push_str(");\n");
     out.push_str(indent);
     out.push_str("    ptn_try_frame_pop(&runtime, &");
