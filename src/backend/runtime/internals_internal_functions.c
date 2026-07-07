@@ -11871,6 +11871,26 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    if (
+        runtime != NULL &&
+        runtime->current_generator != NULL &&
+        runtime->current_generator->executing &&
+        !runtime->current_generator->completed
+    ) {
+        char marker[128];
+        int written = snprintf(
+            marker,
+            sizeof(marker),
+            "\036PTN_DEBUG_PRINT_BACKTRACE\t%" PRId64 "\t%" PRId64 "\t%zu\n",
+            options,
+            limit,
+            line
+        );
+        if (written > 0 && (size_t)written < sizeof(marker)) {
+            ptn_output_write(runtime, marker, (size_t)written);
+            return ptn_null();
+        }
+    }
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     size_t index = 0;

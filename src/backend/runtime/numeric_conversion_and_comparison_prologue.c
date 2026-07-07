@@ -258,6 +258,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->replaying_generator_send_call = 0;
     runtime->generator_delegate_resume_depth =
         caller_runtime->generator_delegate_resume_depth;
+    runtime->generator_resume_parent = caller_runtime->generator_resume_parent;
+    runtime->generator_resume_parent_position =
+        caller_runtime->generator_resume_parent_position;
     runtime->generator_resume_method_name =
         caller_runtime->generator_resume_method_name;
     runtime->owns_finally_return_suppressed_exception = 0;

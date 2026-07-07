@@ -3325,6 +3325,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->generator_chained_exception_during_unwind = 0;
     runtime->replaying_generator_send_call = 0;
     runtime->generator_delegate_resume_depth = 0;
+    runtime->generator_resume_parent = NULL;
+    runtime->generator_resume_parent_position = 0;
     runtime->generator_resume_method_name = NULL;
     runtime->owns_finally_return_suppressed_exception = 0;
     runtime->defer_unreferenced_destructors_for_catch = 0;

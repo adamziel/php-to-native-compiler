@@ -28005,7 +28005,20 @@ var_dump($gen2->current());
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
+    let path = input.display().to_string();
     assert!(stdout.starts_with("int(1)\nint(1)\n"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("#0 {path}(9): gen()\n")),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("#1 [internal function]: from(Object(Generator))\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("#2 {path}(18): Generator->next()\n")),
+        "{stdout}"
+    );
     assert!(stdout.ends_with("int(2)\n"), "{stdout}");
     assert!(!stdout.ends_with("NULL\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

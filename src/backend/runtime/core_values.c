@@ -2044,6 +2044,8 @@ struct PtnRuntime {
     int generator_chained_exception_during_unwind;
     int replaying_generator_send_call;
     int generator_delegate_resume_depth;
+    PtnGenerator *generator_resume_parent;
+    size_t generator_resume_parent_position;
     const char *generator_resume_method_name;
     int owns_finally_return_suppressed_exception;
     int defer_unreferenced_destructors_for_catch;
