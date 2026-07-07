@@ -29339,7 +29339,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
 
     out.push_str("\nstatic int ptn_function_name_is_construct_only(const char *name) {\n");
     out.push_str("    const char *lookup = ptn_symbol_name_without_leading_slash(name);\n");
-    out.push_str("    return ptn_ascii_case_equal(lookup, \"eval\") || ptn_ascii_case_equal(lookup, \"exit\") || ptn_ascii_case_equal(lookup, \"die\");\n");
+    out.push_str("    return ptn_ascii_case_equal(lookup, \"eval\");\n");
     out.push_str("}\n");
 
     out.push_str(

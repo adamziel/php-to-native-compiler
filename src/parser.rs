@@ -8658,11 +8658,22 @@ impl Parser<'_> {
     }
 
     fn parse_exit_expr(&mut self) -> Result<Expr> {
-        let start_span = self.expect_exit()?;
+        let token = self.advance().clone();
+        if !matches!(&token.kind, TokenKind::Identifier(name) if is_exit_construct_name(name)) {
+            return Err(Diagnostic::new("expected exit", Some(token.span)));
+        }
+        let start_span = token.span;
         let mut span = start_span;
         let value = if self.peek_ends_exit_expr_without_value() {
             None
         } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+            if self.peek_is_first_class_callable_arguments() {
+                let right_span = self.parse_first_class_callable_arguments()?;
+                return Ok(Expr::FirstClassCallable {
+                    callable: Box::new(Expr::String("exit".to_string(), start_span)),
+                    span: combine_spans(start_span, right_span),
+                });
+            }
             self.expect_left_paren()?;
             if matches!(self.peek().kind, TokenKind::RightParen) {
                 let right_span = self.expect_right_paren()?;

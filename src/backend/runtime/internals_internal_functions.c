@@ -238344,6 +238344,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "defined", 1, 1, ptn_internal_defined },
         { "deg2rad", 1, 1, ptn_internal_deg2rad },
         { "die", 0, 1, ptn_internal_die },
+        { "exit", 0, 1, ptn_internal_exit },
         { "dir", 1, 2, ptn_internal_dir },
         { "dirname", 1, 2, ptn_internal_dirname },
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
