@@ -27246,6 +27246,55 @@ var_dump($generator->valid());
 }
 
 #[test]
+fn compile_generator_interrupted_new_without_constructor_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-interrupted-new-no-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-interrupted-new-no-constructor.php");
+    let output = root.join("generator-interrupted-new-no-constructor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class C {
+    function __destruct() {
+        echo __METHOD__, "\n";
+    }
+}
+
+class D {
+    function __destruct() {
+        echo __METHOD__, "\n";
+    }
+}
+
+$gen = function ($c) use (&$gen) {
+    new D($gen, yield);
+};
+
+$gen = $gen(new C());
+
+foreach ($gen as $value) {
+    break;
+}
+
+$gen = null;
+gc_collect_cycles();
+echo "==DONE==\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "C::__destruct\n==DONE==\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_fresh_send_exit_flushes_pending_output_to_native_binary() {
     let root = temp_dir("ptn-native-generator-fresh-send-exit");
     fs::create_dir_all(&root).unwrap();

@@ -55786,6 +55786,26 @@ impl ValueEmitter {
             property_default_class_constant_reads(declared_class, &instantiation_classes);
         let guards_object_initialization =
             initializes_class_constants || !property_class_constant_reads.is_empty();
+        let declared_class_has_constructor =
+            class_constructor_method(declared_class, &self.classes).is_some();
+        if !declared_class_has_constructor
+            && self.current_function_is_generator
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+            && direct_yield_argument_indexes(arguments).is_some()
+        {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            for argument in arguments {
+                let argument_temp = self.emit_materialized_value(out, argument);
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
+            return;
+        }
         if guards_object_initialization {
             out.push_str("    ");
             if declare_result {
@@ -55843,8 +55863,6 @@ impl ValueEmitter {
             line,
             declare_result && !guards_object_initialization,
         );
-        let declared_class_has_constructor =
-            class_constructor_method(declared_class, &self.classes).is_some();
         if declared_class_has_constructor {
             if let Some(parent_class_name) =
                 inherited_modeled_internal_class_name(declared_class, &self.classes)
