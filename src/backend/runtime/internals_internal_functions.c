@@ -237623,6 +237623,14 @@ static PtnValue ptn_internal_zend_test_void_return(PtnRuntime *runtime, size_t a
     return ptn_null();
 }
 
+static PtnValue ptn_internal_zend_test_gh18756(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_zend_test_nodiscard(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -239301,6 +239309,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_call_with_consumed_args", 3, 3, ptn_internal_zend_test_call_with_consumed_args },
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
+        { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
         { "zend_get_unit_enum", 0, 0, ptn_internal_zend_get_unit_enum },
         { "zend_test_nullable_array_return", 0, 0, ptn_internal_zend_test_nullable_array_return },
