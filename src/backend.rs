@@ -5904,6 +5904,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (class_name == NULL || interface_name == NULL) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(interface_name, \"Stringable\") && ptn_declared_class_is_same_or_descendant(class_name, \"_ZendTestClass\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
     out.push_str("    }\n");
