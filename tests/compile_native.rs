@@ -36579,6 +36579,82 @@ SILENT mode AUTO: has error\n"
 }
 
 #[test]
+fn compile_stream_error_handler_and_invalid_enum_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-error-handler-invalid-enum");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-error-handler-invalid-enum.php");
+    let output = root.join("stream-error-handler-invalid-enum-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    $context = stream_context_create([
+        'stream' => [
+            'error_mode' => 'invalid',
+        ],
+    ]);
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (TypeError $e) {
+    echo "Caught TypeError for error_mode\n";
+}
+
+try {
+    $context = stream_context_create([
+        'stream' => [
+            'error_store' => 123,
+        ],
+    ]);
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (TypeError $e) {
+    echo "Caught TypeError for error_store\n";
+}
+
+$handlerCalled = false;
+$context = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Silent,
+        'error_handler' => function(array $errors) use (&$handlerCalled) {
+            $handlerCalled = true;
+            foreach ($errors as $error) {
+                echo $error->wrapperName, ':', $error->code->name, ':', $error->message, ':', $error->param, ':', ($error->terminating ? 'yes' : 'no'), "\n";
+            }
+        },
+    ],
+]);
+fopen('php://nonexistent', 'r', false, $context);
+var_dump($handlerCalled);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Warning: fopen(php://nonexistent): Failed to open stream: operation failed")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Caught TypeError for error_mode\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Caught TypeError for error_store\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("PHP:OpenFailed:Failed to open stream: operation failed:php://nonexistent:yes\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_filter_resource_preserves_user_stream_context_to_native_binary() {
     let root = temp_dir("ptn-native-php-filter-resource-context");
     fs::create_dir_all(&root).unwrap();

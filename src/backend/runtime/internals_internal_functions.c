@@ -58443,6 +58443,44 @@ static int ptn_stream_error_store_keeps(PtnStreamErrorStore store, int terminati
         (store == PTN_STREAM_ERROR_STORE_TERMINATING && terminating);
 }
 
+static void ptn_stream_context_call_error_handler(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating,
+    size_t line
+) {
+    if (runtime == NULL || context == NULL) {
+        return;
+    }
+    PtnValue *handler = ptn_stream_context_option(context, "stream", "error_handler");
+    if (handler == NULL) {
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(*handler);
+    if (!ptn_callable_is_valid(runtime, resolved, 0)) {
+        return;
+    }
+    PtnValue callback_args[1] = {
+        ptn_stream_error_array_value(
+            runtime,
+            message,
+            wrapper_name,
+            code_name,
+            param,
+            severity,
+            terminating
+        )
+    };
+    PtnValue result = ptn_call_callable(runtime, resolved, 1, callback_args, line, 0);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&callback_args[0]);
+}
+
 static PtnValue ptn_stream_open_failure_result(
     PtnRuntime *runtime,
     PtnResource *context,
@@ -58453,18 +58491,60 @@ static PtnValue ptn_stream_open_failure_result(
     int terminating,
     size_t line
 ) {
+    PtnValue *error_mode_option = ptn_stream_context_option(context, "stream", "error_mode");
+    if (error_mode_option != NULL &&
+        ptn_stream_context_enum_case_name(*error_mode_option, "StreamErrorMode") == NULL) {
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "stream context option 'error_mode' must be of type StreamErrorMode",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_bool(0);
+    }
     int error_mode = ptn_stream_context_error_mode(runtime, context, line);
     if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        return ptn_bool(0);
+    }
+    PtnValue *error_store_option = ptn_stream_context_option(context, "stream", "error_store");
+    if (error_store_option != NULL &&
+        ptn_stream_context_enum_case_name(*error_store_option, "StreamErrorStore") == NULL) {
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "stream context option 'error_store' must be of type StreamErrorStore",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
         return ptn_bool(0);
     }
     PtnStreamErrorStore store = ptn_stream_context_error_store(runtime, context, error_mode, line);
     if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
         return ptn_bool(0);
     }
     if (ptn_stream_error_store_keeps(store, terminating)) {
         ptn_stream_store_single_error(detail, wrapper_name, code_name, path, PTN_E_WARNING, terminating);
     } else {
         ptn_stream_clear_last_errors();
+    }
+    ptn_stream_context_call_error_handler(
+        runtime,
+        context,
+        detail,
+        wrapper_name,
+        code_name,
+        path,
+        PTN_E_WARNING,
+        terminating,
+        line
+    );
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
         ptn_throw_stream_exception_at(
