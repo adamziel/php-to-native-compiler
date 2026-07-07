@@ -7244,7 +7244,7 @@ fn emit_user_functions(
         out.push_str(
             "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {\n",
         );
-        if (function.class_name.is_none() && !function.is_anonymous) || function.is_static {
+        if function.class_name.is_none() && !function.is_anonymous {
             out.push_str("    (void)receiver;\n");
         }
         out.push_str("    (void)line;\n");
@@ -7276,9 +7276,16 @@ fn emit_user_functions(
             out.push_str("    runtime.current_class_name = ");
             out.push_str(&c_optional_string(function.class_name.as_deref()));
             out.push_str(";\n");
-            out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
-            out.push_str(&c_optional_string(function.class_name.as_deref()));
-            out.push_str(";\n");
+            if function.is_static {
+                out.push_str("    PtnValue ptn_static_receiver = ptn_value_deref(receiver);\n");
+                out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : (ptn_static_receiver.type == PTN_STRING ? (const char *)ptn_static_receiver.as.string.data : ");
+                out.push_str(&c_optional_string(function.class_name.as_deref()));
+                out.push_str(");\n");
+            } else {
+                out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
+                out.push_str(&c_optional_string(function.class_name.as_deref()));
+                out.push_str(";\n");
+            }
         }
         out.push_str("    runtime.call_site_line = line;\n");
         out.push_str("    int ptn_call_frame_has_location = !runtime.suppress_user_call_frame_location && runtime.call_site_line != 0;\n");

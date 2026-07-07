@@ -26841,6 +26841,49 @@ var_dump($g->current());
 }
 
 #[test]
+fn compile_static_generator_preserves_called_class_to_native_binary() {
+    let root = temp_dir("ptn-native-static-generator-called-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-generator-called-class.php");
+    let output = root.join("static-generator-called-class-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public static function gen() {
+        var_dump(get_class());
+        var_dump(get_called_class());
+        yield 1;
+    }
+}
+
+class ExtendedTest extends Test {
+}
+
+foreach (ExtendedTest::gen() as $value) {
+    var_dump($value);
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: Calling get_class() without arguments is deprecated in "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("string(4) \"Test\"\nstring(12) \"ExtendedTest\"\nint(1)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_body_is_lazy_until_observed_to_native_binary() {
     let root = temp_dir("ptn-native-generator-lazy-body");
     fs::create_dir_all(&root).unwrap();
