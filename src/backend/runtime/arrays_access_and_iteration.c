@@ -15579,6 +15579,7 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
     const char *previous_resume_method =
         ptn_generator_push_resume_method(runtime, "rewind");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
+    int was_started = generator != NULL && generator->started;
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
         return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
@@ -15595,7 +15596,7 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
         if (
-            generator->started &&
+            was_started &&
             !ptn_generator_position_valid(generator) &&
             !generator->has_pending_exception &&
             !generator->pending_exception_on_rewind
