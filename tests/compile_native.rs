@@ -27520,6 +27520,71 @@ $gen->next();
 }
 
 #[test]
+fn compile_generator_nested_iteratoraggregate_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-nested-iteratoraggregate-exception-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-nested-iteratoraggregate-exception-trace.php");
+    let output = root.join("generator-nested-iteratoraggregate-exception-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate
+{
+    public function getIterator(): Generator
+    {
+        yield 'foo';
+        throw new Exception();
+    }
+}
+
+function f() {
+    try {
+        var_dump(new stdClass, yield from new It());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+function g() {
+    try {
+        var_dump(new stdClass, yield from f());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+$gen = g();
+var_dump($gen->current());
+$gen->next();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let path = input.display().to_string();
+    assert!(stdout.starts_with("string(3) \"foo\"\nstring(1) \"f\"\nstring(1) \"g\"\n\n"));
+    assert!(
+        stdout.contains(&format!("#0 {path}(")) && stdout.contains("): It->getIterator()"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("#1 {path}(")) && stdout.contains("): f()"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#2 [internal function]: g()"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("#3 {path}(")) && stdout.contains("): Generator->next()"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("[internal function]: f()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_pending_exception_chains_shutdown_destructor_throw_to_native_binary() {
     let root = temp_dir("ptn-native-generator-pending-exception-shutdown-destructor");
     fs::create_dir_all(&root).unwrap();

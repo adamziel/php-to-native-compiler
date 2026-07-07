@@ -11558,8 +11558,9 @@ static PTN_UNUSED int ptn_generator_promote_traversable_delegate_iterator(
 
     PtnArrayEntry *entry = &generator->delegate_sources->entries[position];
     PtnValue replacement = ptn_value_borrow(ptn_object(iterator->generator->object));
-    ptn_value_destroy_with_runtime_scope_at(runtime, &entry->value, line);
+    PtnValue old_value = entry->value;
     entry->value = ptn_value_clone_deref(replacement);
+    ptn_value_destroy_with_runtime_scope_at(runtime, &old_value, line);
     return 1;
 }
 
@@ -12254,22 +12255,39 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace_with_parent
     if (resume_parent != NULL && resume_parent != generator) {
         PtnValue existing = ptn_value_deref(exception->trace);
         size_t yielded_from_line = ptn_generator_yield_line_at(resume_parent, resume_parent_position);
+        size_t child_yielded_from_line = ptn_generator_yield_line_at(generator, position);
         if (existing.type == PTN_ARRAY && existing.as.array != NULL && existing.as.array->len > 0) {
-            PtnValue first_frame = ptn_generator_trace_function_frame(
-                generator,
-                runtime != NULL ? runtime->source_path : NULL,
-                yielded_from_line != 0 ? yielded_from_line : line
-            );
-            ptn_generator_trace_append(trace, &index, first_frame);
-            for (size_t i = 1; i < existing.as.array->len; i++) {
+            for (size_t i = 0; i < existing.as.array->len; i++) {
                 PtnValue copied_frame = ptn_value_clone_deref(existing.as.array->entries[i].value);
                 if (ptn_generator_trace_frame_is_generator_resume(copied_frame)) {
+                    ptn_value_destroy(&copied_frame);
+                    continue;
+                }
+                if (
+                    ptn_generator_trace_frame_matches_generator(copied_frame, generator) &&
+                    ptn_value_deref(copied_frame).type == PTN_ARRAY &&
+                    ptn_trace_array_string_slot(ptn_value_deref(copied_frame), "file") == NULL
+                ) {
                     ptn_value_destroy(&copied_frame);
                     continue;
                 }
                 if (ptn_generator_trace_frame_matches_generator(copied_frame, resume_parent)) {
                     ptn_value_destroy(&copied_frame);
                     continue;
+                }
+                if (i == 0) {
+                    ptn_generator_trace_normalize_get_iterator_frame(copied_frame);
+                    if (
+                        child_yielded_from_line != 0 &&
+                        ptn_value_deref(copied_frame).type == PTN_ARRAY &&
+                        ptn_trace_array_string_slot(ptn_value_deref(copied_frame), "file") == NULL
+                    ) {
+                        ptn_generator_trace_set_file_line(
+                            copied_frame,
+                            runtime != NULL ? runtime->source_path : NULL,
+                            child_yielded_from_line
+                        );
+                    }
                 }
                 ptn_generator_trace_append(trace, &index, copied_frame);
             }
@@ -16608,6 +16626,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
     iterator.object = object;
     iterator.generator = generator;
     iterator.runtime = runtime;
+    ptn_object_retain(object);
     generator->started = 1;
     if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
         iterator.array = NULL;
