@@ -18,7 +18,7 @@ use crate::ast::{
 };
 use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
-    lex, lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
+    lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
     StringPart as TokenStringPart, Token, TokenKind,
 };
 
@@ -9491,7 +9491,7 @@ impl Parser<'_> {
         }
     }
 
-    fn lower_string_part(&self, part: TokenStringPart, span: SourceSpan) -> Result<StringPart> {
+    fn lower_string_part(&mut self, part: TokenStringPart, span: SourceSpan) -> Result<StringPart> {
         match part {
             TokenStringPart::Literal(value) => Ok(StringPart::Literal(value)),
             TokenStringPart::Variable(name) => Ok(StringPart::Variable(name)),
@@ -9534,9 +9534,10 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_interpolation_expr_fragment(&self, expr: &str, span: SourceSpan) -> Result<Expr> {
+    fn parse_interpolation_expr_fragment(&mut self, expr: &str, span: SourceSpan) -> Result<Expr> {
         let source = format!("<?php {expr};");
-        let tokens = lex(&source)?;
+        let lexed = lex_with_warnings(&source)?;
+        let tokens = lexed.tokens;
         let mut parser = Parser {
             source: &source,
             tokens,
@@ -9584,7 +9585,7 @@ impl Parser<'_> {
             strict_types_declare_allowed: self.strict_types_declare_allowed,
             zend_multibyte: self.zend_multibyte,
             compiler_halt_offset: None,
-            compile_warnings: Vec::new(),
+            compile_warnings: lexed.compile_warnings,
             validate_method_signatures: false,
             validate_function_names: true,
             force_top_level_declarations_conditional: false,
@@ -9603,6 +9604,11 @@ impl Parser<'_> {
             }
             diagnostic
         })?;
+        self.compile_warnings
+            .extend(parser.compile_warnings.into_iter().map(|mut warning| {
+                warning.span = span;
+                warning
+            }));
         rebase_expr_top_span(&mut parsed, span);
         Ok(parsed)
     }

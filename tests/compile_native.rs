@@ -5701,6 +5701,28 @@ fn parser_reports_literal_eval_parse_errors() {
 }
 
 #[test]
+fn lexer_reports_unterminated_quoted_heredoc_label_as_parse_error() {
+    let error = parser::parse("<?php\n$var = <<<\"MYLABEL\ntest\nMYLABEL;\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "unterminated heredoc label");
+}
+
+#[test]
+fn parser_preserves_compile_warnings_from_heredoc_interpolation_expressions() {
+    let program = parser::parse("<?php\n<<<TEST\n\\400\n${\"\\400\"}\nTEST;\n").unwrap();
+    let octal_warnings = program
+        .compile_warnings
+        .iter()
+        .filter(|warning| {
+            warning.kind == CompileWarningKind::Warning
+                && warning.message == "Octal escape sequence overflow \\400 is greater than \\377"
+        })
+        .count();
+
+    assert_eq!(octal_warnings, 2);
+}
+
+#[test]
 fn parser_rejects_flexible_heredoc_body_with_less_indent_than_closing_label() {
     let error = parser::parse(concat!("<?php\n", "<<<X\n", "%0$a\n", " X;\n")).unwrap_err();
 

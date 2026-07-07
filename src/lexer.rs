@@ -920,7 +920,10 @@ impl<'a> Lexer<'a> {
                     label.push(ch);
                     self.bump_char();
                 }
-                Err(Diagnostic::new("unterminated heredoc label", Some(start)))
+                Err(Diagnostic::parse_error(
+                    "unterminated heredoc label",
+                    Some(start),
+                ))
             }
             Some(ch) if is_ident_start(ch) => {
                 let mut label = String::new();
