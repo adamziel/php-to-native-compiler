@@ -73783,6 +73783,103 @@ static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, con
     return ptn_owned_string(input);
 }
 
+static PtnValue ptn_internal_gethostbynamel(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "gethostbynamel", 1, "hostname", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    char *input = ptn_duplicate_string_len(hostname.data, hostname.len);
+    ptn_string_operand_free(hostname);
+#if !defined(_WIN32)
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *result = NULL;
+    if (getaddrinfo(input, NULL, &hints, &result) != 0 || result == NULL) {
+        if (result != NULL) {
+            freeaddrinfo(result);
+        }
+        free(input);
+        return ptn_bool(0);
+    }
+    PtnValue addresses = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    for (struct addrinfo *entry = result; entry != NULL; entry = entry->ai_next) {
+        char address[64];
+        if (getnameinfo(entry->ai_addr, entry->ai_addrlen, address, sizeof(address), NULL, 0, NI_NUMERICHOST) == 0) {
+            ptn_array_set_entry(
+                addresses.as.array,
+                ptn_array_int_key(index++),
+                ptn_owned_string(ptn_duplicate_string(address))
+            );
+        }
+    }
+    freeaddrinfo(result);
+    free(input);
+    if (index == 0) {
+        ptn_value_destroy(&addresses);
+        return ptn_bool(0);
+    }
+    return addresses;
+#else
+    free(input);
+    return ptn_bool(0);
+#endif
+}
+
+static PtnValue ptn_internal_gethostbyaddr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "gethostbyaddr", 1, "ip", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(address);
+        return ptn_null();
+    }
+    char *input = ptn_duplicate_string_len(address.data, address.len);
+    ptn_string_operand_free(address);
+#if !defined(_WIN32)
+    struct sockaddr_storage storage;
+    memset(&storage, 0, sizeof(storage));
+    socklen_t storage_len = 0;
+    struct sockaddr_in *addr4 = (struct sockaddr_in *)&storage;
+    if (inet_pton(AF_INET, input, &addr4->sin_addr) == 1) {
+        addr4->sin_family = AF_INET;
+        storage_len = sizeof(*addr4);
+    } else {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)&storage;
+        if (inet_pton(AF_INET6, input, &addr6->sin6_addr) == 1) {
+            addr6->sin6_family = AF_INET6;
+            storage_len = sizeof(*addr6);
+        }
+    }
+    if (storage_len == 0) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "gethostbyaddr(): Address is not a valid IPv4 or IPv6 address",
+            line
+        );
+        free(input);
+        return ptn_bool(0);
+    }
+    char host[NI_MAXHOST];
+    if (getnameinfo((struct sockaddr *)&storage, storage_len, host, sizeof(host), NULL, 0, NI_NAMEREQD) == 0) {
+        free(input);
+        return ptn_owned_string(ptn_duplicate_string(host));
+    }
+    return ptn_owned_string(input);
+#else
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "gethostbyaddr(): Address is not a valid IPv4 or IPv6 address",
+        line
+    );
+    free(input);
+    return ptn_bool(0);
+#endif
+}
+
 #define PTN_DNS_QUERY_CLASS_IN 1
 #define PTN_DNS_QUERY_A 1
 #define PTN_DNS_QUERY_NS 2
@@ -237712,7 +237809,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "get_resources", 0, 1, ptn_internal_get_resources },
+        { "gethostbyaddr", 1, 1, ptn_internal_gethostbyaddr },
         { "gethostbyname", 1, 1, ptn_internal_gethostbyname },
+        { "gethostbynamel", 1, 1, ptn_internal_gethostbynamel },
         { "gethostname", 0, 0, ptn_internal_gethostname },
         { "getprotobyname", 1, 1, ptn_internal_getprotobyname },
         { "getprotobynumber", 1, 1, ptn_internal_getprotobynumber },

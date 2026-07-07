@@ -61294,10 +61294,15 @@ fn compile_local_system_identity_internals_to_native_binary() {
         "<?php\n\
 var_dump(function_exists(\"gethostname\"), function_exists(\"GET_CURRENT_USER\"));\n\
 var_dump(function_exists(\"gethostbyname\"), function_exists(\"GETHOSTBYNAME\"));\n\
+var_dump(function_exists(\"gethostbyaddr\"), function_exists(\"GETHOSTBYADDR\"));\n\
+var_dump(function_exists(\"gethostbynamel\"), function_exists(\"GETHOSTBYNAMEL\"));\n\
 $host = gethostname();\n\
 $user = get_current_user();\n\
+$reverse = gethostbyaddr('127.0.0.1');\n\
+$addresses = gethostbynamel('localhost');\n\
 var_dump(is_string($host), $host === false || strlen($host) >= 0);\n\
-var_dump(is_string($user), strlen($user) >= 0);\n",
+var_dump(is_string($user), strlen($user) >= 0);\n\
+var_dump(is_array($addresses), count($addresses) > 0);\n",
     )
     .unwrap();
 
@@ -61314,8 +61319,43 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 bool(true)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gethostbyaddr_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-gethostbyaddr-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gethostbyaddr-validation.php");
+    let output = root.join("gethostbyaddr-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$host = gethostbyaddr('127.0.0.1');\n\
+var_dump(is_string($host), strlen($host) > 0);\n\
+var_dump(gethostbyaddr('invalid'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: gethostbyaddr(): Address is not a valid IPv4 or IPv6 address"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
