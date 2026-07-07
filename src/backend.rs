@@ -7029,6 +7029,7 @@ fn emit_declared_class_new_instance_without_constructor(
             || declared_class.is_abstract
             || !class_constant_lookup_chain(declared_class, classes).is_empty()
             || !class_property_initialization_chain(declared_class, classes).is_empty()
+            || inherited_modeled_internal_class_name(declared_class, classes).is_some()
             || class_extends_builtin_throwable(declared_class, classes)
         {
             continue;
@@ -14946,6 +14947,9 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if let Some(parent_class_name) = inherited_modeled_internal_class_name(class, classes) {
+            emit_modeled_internal_property_exists(out, "        ", parent_class_name);
+        }
         if class_uses_internal_zend_test_trait(class) {
             out.push_str("        if (strcmp(property_name, \"testProp\") == 0 || strcmp(property_name, \"classUnionProp\") == 0) {\n");
             out.push_str("            return 1;\n");
@@ -15020,6 +15024,9 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if let Some(parent_class_name) = inherited_modeled_internal_class_name(class, classes) {
+            emit_modeled_internal_property_metadata(out, "        ", parent_class_name);
+        }
         if class_uses_internal_zend_test_trait(class) {
             for property_name in ["testProp", "classUnionProp"] {
                 out.push_str("        if (strcmp(property_name, \"");
@@ -22046,6 +22053,9 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if let Some(parent_class_name) = inherited_modeled_internal_class_name(class, classes) {
+            emit_modeled_internal_reflection_property_metadata(out, "        ", parent_class_name);
+        }
         if class_uses_internal_zend_test_trait(class) {
             for (property_name, has_default) in [("testProp", "1"), ("classUnionProp", "0")] {
                 out.push_str("        if (strcmp(property_name, \"");
@@ -28329,16 +28339,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
     if class_name == "DimensionHandlersNoArrayAccess" {
-        for (property_name, default_expr) in [
-            ("read", "ptn_bool(0)"),
-            ("write", "ptn_bool(0)"),
-            ("has", "ptn_bool(0)"),
-            ("unset", "ptn_bool(0)"),
-            ("readType", "ptn_null()"),
-            ("hasOffset", "ptn_bool(0)"),
-            ("checkEmpty", "ptn_null()"),
-            ("offset", "ptn_null()"),
-        ] {
+        for (property_name, default_expr, _) in modeled_internal_public_properties(class_name) {
             out.push_str(indent);
             out.push_str("ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
             out.push_str(property_name);
@@ -28375,6 +28376,108 @@ fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: 
         out.push_str("ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
         out.push_str(property_name);
         out.push_str("\"), ptn_null());\n");
+    }
+}
+
+fn modeled_internal_public_properties(
+    class_name: &str,
+) -> &'static [(&'static str, &'static str, bool)] {
+    if class_name == "DimensionHandlersNoArrayAccess" {
+        &[
+            ("read", "ptn_bool(0)", true),
+            ("write", "ptn_bool(0)", true),
+            ("has", "ptn_bool(0)", true),
+            ("unset", "ptn_bool(0)", true),
+            ("readType", "ptn_null()", false),
+            ("hasOffset", "ptn_bool(0)", true),
+            ("checkEmpty", "ptn_null()", false),
+            ("offset", "ptn_null()", false),
+        ]
+    } else {
+        &[]
+    }
+}
+
+fn emit_modeled_internal_property_exists(out: &mut String, indent: &str, class_name: &str) {
+    for (property_name, _, _) in modeled_internal_public_properties(class_name) {
+        out.push_str(indent);
+        out.push_str("if (strcmp(property_name, \"");
+        out.push_str(property_name);
+        out.push_str("\") == 0) {\n");
+        out.push_str(indent);
+        out.push_str("    return 1;\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+    }
+}
+
+fn emit_modeled_internal_property_metadata(out: &mut String, indent: &str, class_name: &str) {
+    for (property_name, _, _) in modeled_internal_public_properties(class_name) {
+        out.push_str(indent);
+        out.push_str("if (strcmp(property_name, \"");
+        out.push_str(property_name);
+        out.push_str("\") == 0) {\n");
+        out.push_str(indent);
+        out.push_str("    if (declaring_class_out != NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        *declaring_class_out = \"");
+        out.push_str(class_name);
+        out.push_str("\";\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    if (visibility_out != NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        *visibility_out = PTN_PROPERTY_PUBLIC;\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    if (set_visibility_out != NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        *set_visibility_out = PTN_PROPERTY_PUBLIC;\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    if (is_static_out != NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        *is_static_out = 0;\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    return 1;\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+    }
+}
+
+fn emit_modeled_internal_reflection_property_metadata(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+) {
+    for (property_name, _, has_default) in modeled_internal_public_properties(class_name) {
+        out.push_str(indent);
+        out.push_str("if (strcmp(property_name, \"");
+        out.push_str(property_name);
+        out.push_str("\") == 0) {\n");
+        out.push_str(indent);
+        out.push_str("    *declaring_class = \"");
+        out.push_str(class_name);
+        out.push_str("\";\n");
+        out.push_str(indent);
+        out.push_str("    *is_static = 0;\n");
+        out.push_str(indent);
+        out.push_str("    *visibility = PTN_PROPERTY_PUBLIC;\n");
+        out.push_str(indent);
+        out.push_str("    *has_default = ");
+        out.push_str(if *has_default { "1" } else { "0" });
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("    *modifiers = 1;\n");
+        out.push_str(indent);
+        out.push_str("    return 1;\n");
+        out.push_str(indent);
+        out.push_str("}\n");
     }
 }
 
@@ -55318,6 +55421,13 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str(", \"_ZendTestClass\", ");
             out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        if inherited_modeled_internal_class_name(declared_class, &self.classes)
+            .is_some_and(|name| name.eq_ignore_ascii_case("DimensionHandlersNoArrayAccess"))
+        {
+            out.push_str("    ptn_zend_test_dimension_handlers_initialize_properties(");
+            out.push_str(result_temp);
             out.push_str(");\n");
         }
         if class_uses_internal_zend_test_trait(declared_class) {

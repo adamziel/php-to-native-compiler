@@ -1266,9 +1266,7 @@ static PtnValue ptn_zend_test_castable_no_operations_new(
 
 static int ptn_zend_test_dimension_handlers_is(PtnValue value) {
     value = ptn_value_deref(value);
-    return value.type == PTN_OBJECT &&
-        value.as.object != NULL &&
-        ptn_ascii_case_equal(value.as.object->class_name, "DimensionHandlersNoArrayAccess");
+    return ptn_object_is_internal_or_descendant(value, "DimensionHandlersNoArrayAccess");
 }
 
 static void ptn_zend_test_dimension_handlers_register_property(
