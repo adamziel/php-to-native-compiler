@@ -11632,6 +11632,15 @@ static PTN_UNUSED int ptn_generator_skip_exhausted_delegates(
                 0
             );
             int source_still_valid = iterator.valid;
+            if (source_still_valid) {
+                ptn_generator_promote_traversable_delegate_iterator(
+                    runtime,
+                    generator,
+                    generator->position,
+                    &iterator,
+                    line
+                );
+            }
             ptn_array_iterator_destroy(&iterator);
             ptn_value_destroy(&source_receiver);
             if (source_still_valid) {
@@ -12263,6 +12272,27 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace_with_parent
                     ptn_value_destroy(&copied_frame);
                     continue;
                 }
+                if (i == 0) {
+                    ptn_generator_trace_normalize_get_iterator_frame(copied_frame);
+                    size_t get_iterator_line =
+                        ptn_generator_trace_frame_matches_generator(copied_frame, generator)
+                            ? yielded_from_line
+                            : child_yielded_from_line;
+                    if (get_iterator_line == 0) {
+                        get_iterator_line = yielded_from_line;
+                    }
+                    if (
+                        get_iterator_line != 0 &&
+                        ptn_value_deref(copied_frame).type == PTN_ARRAY &&
+                        ptn_trace_array_string_slot(ptn_value_deref(copied_frame), "file") == NULL
+                    ) {
+                        ptn_generator_trace_set_file_line(
+                            copied_frame,
+                            runtime != NULL ? runtime->source_path : NULL,
+                            get_iterator_line
+                        );
+                    }
+                }
                 if (
                     ptn_generator_trace_frame_matches_generator(copied_frame, generator) &&
                     ptn_value_deref(copied_frame).type == PTN_ARRAY &&
@@ -12274,20 +12304,6 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace_with_parent
                 if (ptn_generator_trace_frame_matches_generator(copied_frame, resume_parent)) {
                     ptn_value_destroy(&copied_frame);
                     continue;
-                }
-                if (i == 0) {
-                    ptn_generator_trace_normalize_get_iterator_frame(copied_frame);
-                    if (
-                        child_yielded_from_line != 0 &&
-                        ptn_value_deref(copied_frame).type == PTN_ARRAY &&
-                        ptn_trace_array_string_slot(ptn_value_deref(copied_frame), "file") == NULL
-                    ) {
-                        ptn_generator_trace_set_file_line(
-                            copied_frame,
-                            runtime != NULL ? runtime->source_path : NULL,
-                            child_yielded_from_line
-                        );
-                    }
                 }
                 ptn_generator_trace_append(trace, &index, copied_frame);
             }
@@ -13876,7 +13892,10 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             if (
                 source_generator != NULL &&
                 ptn_generator_pending_exception_after_last_yield(source_generator, &last_index) &&
-                source_generator->position == last_index
+                (
+                    source_generator->position == last_index ||
+                    !ptn_generator_position_valid(source_generator)
+                )
             ) {
                 PtnValue pending_exception = ptn_null();
                 if (ptn_generator_take_pending_exception_at_position_with_parent(
@@ -13948,6 +13967,29 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 if (delegate_frame_active) {
                     ptn_try_frame_pop(runtime, &delegate_frame);
                     delegate_frame_active = 0;
+                }
+                if (
+                    runtime != NULL &&
+                    runtime->exceptions != NULL &&
+                    runtime->exceptions->active_exception != NULL
+                ) {
+                    ptn_generator_rewrite_pending_exception_trace_with_parent(
+                        runtime,
+                        source_generator,
+                        generator,
+                        generator->position,
+                        runtime->exceptions->active_exception,
+                        source_generator != NULL ? source_generator->position : 0,
+                        line,
+                        "next",
+                        0
+                    );
+                    delegate_exception = ptn_value_clone_deref(
+                        ptn_exception_borrow(runtime->exceptions->active_exception)
+                    );
+                    ptn_exception_free(runtime->exceptions->active_exception);
+                    runtime->exceptions->active_exception = NULL;
+                    caught_delegate_exception = 1;
                 }
             } else {
                 ptn_try_frame_pop(runtime, &delegate_frame);
@@ -14056,7 +14098,111 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                         0
                     );
                 }
-                ptn_array_iterator_advance(&iterator);
+                PtnValue delegate_exception = ptn_null();
+                int caught_delegate_exception = 0;
+                PtnTryFrame delegate_frame;
+                int delegate_frame_active = 0;
+                if (runtime != NULL && runtime->exceptions != NULL) {
+                    ptn_try_frame_push(runtime, &delegate_frame);
+                    delegate_frame_active = 1;
+                }
+                if (!delegate_frame_active || setjmp(delegate_frame.jump) == 0) {
+                    ptn_array_iterator_advance(&iterator);
+                    if (delegate_frame_active) {
+                        ptn_try_frame_pop(runtime, &delegate_frame);
+                        delegate_frame_active = 0;
+                    }
+                    if (
+                        runtime != NULL &&
+                        runtime->exceptions != NULL &&
+                        runtime->exceptions->active_exception != NULL
+                    ) {
+                        ptn_generator_rewrite_pending_exception_trace_with_parent(
+                            runtime,
+                            iterator_generator,
+                            generator,
+                            generator->position,
+                            runtime->exceptions->active_exception,
+                            iterator_generator != NULL ? iterator_generator->position : 0,
+                            line,
+                            "next",
+                            0
+                        );
+                        delegate_exception = ptn_value_clone_deref(
+                            ptn_exception_borrow(runtime->exceptions->active_exception)
+                        );
+                        ptn_exception_free(runtime->exceptions->active_exception);
+                        runtime->exceptions->active_exception = NULL;
+                        caught_delegate_exception = 1;
+                    }
+                } else {
+                    ptn_try_frame_pop(runtime, &delegate_frame);
+                    delegate_frame_active = 0;
+                    if (runtime->exceptions->active_exception != NULL) {
+                        ptn_generator_rewrite_pending_exception_trace_with_parent(
+                            runtime,
+                            iterator_generator,
+                            generator,
+                            generator->position,
+                            runtime->exceptions->active_exception,
+                            iterator_generator != NULL ? iterator_generator->position : 0,
+                            line,
+                            "next",
+                            0
+                        );
+                        delegate_exception = ptn_value_clone_deref(
+                            ptn_exception_borrow(runtime->exceptions->active_exception)
+                        );
+                        ptn_exception_free(runtime->exceptions->active_exception);
+                        runtime->exceptions->active_exception = NULL;
+                        caught_delegate_exception = 1;
+                    }
+                }
+                if (caught_delegate_exception) {
+                    PtnValue caught_result = ptn_null();
+                    if (ptn_generator_try_throw_catch(
+                            runtime,
+                            receiver,
+                            generator,
+                            delegate_exception,
+                            line,
+                            &caught_result
+                    )) {
+                        ptn_value_destroy(&delegate_exception);
+                        ptn_array_iterator_destroy(&iterator);
+                        ptn_value_destroy(&source_receiver);
+                        return ptn_generator_restore_resume_method_and_return(
+                            runtime,
+                            previous_resume_method,
+                            caught_result
+                        );
+                    }
+                    ptn_array_iterator_destroy(&iterator);
+                    ptn_value_destroy(&source_receiver);
+                    ptn_generator_throw_pending_exception_value(
+                        runtime,
+                        delegate_exception,
+                        runtime != NULL ? runtime->source_path : NULL,
+                        iterator_generator != NULL ? iterator_generator->source_line : line
+                    );
+                    return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
+                }
+                if (
+                    iterator_generator != NULL &&
+                    ptn_generator_pending_exception_after_last_yield(iterator_generator, &last_index) &&
+                    !ptn_generator_position_valid(iterator_generator)
+                ) {
+                    ptn_generator_throw_pending_exception_at_position_with_parent(
+                        runtime,
+                        iterator_generator,
+                        generator,
+                        generator->position,
+                        last_index,
+                        line,
+                        "next",
+                        0
+                    );
+                }
             }
             int source_still_valid = iterator.valid;
             ptn_array_iterator_destroy(&iterator);
@@ -17959,7 +18105,7 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         iterator->valid = ptn_generator_position_valid(iterator->generator);
         if (iterator->valid) {
             ptn_array_iterator_remember_current_key(iterator);
-        } else {
+        } else if (!iterator->generator->has_pending_exception) {
             ptn_generator_flush_pending_output(iterator->runtime, iterator->generator);
         }
         return;

@@ -27572,6 +27572,10 @@ $gen->next();
         "{stdout}"
     );
     assert!(
+        stdout.contains(&format!("#0 {path}(13): It->getIterator()")),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains(&format!("#1 {path}(")) && stdout.contains("): f()"),
         "{stdout}"
     );
@@ -27628,6 +27632,10 @@ gc_collect_cycles();
         "{stdout}"
     );
     assert!(stdout.contains("It->getIterator()"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("{}(15): It->getIterator()", input.display())),
+        "{stdout}"
+    );
     assert!(stdout.contains(": f()"), "{stdout}");
     assert!(stdout.contains("Generator->next()"), "{stdout}");
     assert!(
