@@ -28705,6 +28705,51 @@ var_dump($weak->get());
 }
 
 #[test]
+fn compile_generator_throw_handler_rethrow_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-handler-rethrow-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-handler-rethrow-trace.php");
+    let output = root.join("generator-throw-handler-rethrow-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    echo "before yield\n";
+    try {
+        yield;
+    } catch (RuntimeException $e) {
+        echo "caught\n";
+        throw new LogicException("new throw");
+    }
+}
+
+$generator = gen();
+$generator->throw(new RuntimeException("throw"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("before yield\ncaught\n\n"), "{stdout}");
+    assert!(
+        stdout.contains("Fatal error: Uncaught LogicException: new throw in "),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#0 [internal function]: gen()"), "{stdout}");
+    assert!(
+        stdout.contains(": Generator->throw(Object(RuntimeException))"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("#2 {main}"), "{stdout}");
+    assert!(!stdout.contains("NULL\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();

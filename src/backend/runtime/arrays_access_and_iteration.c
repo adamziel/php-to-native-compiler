@@ -12629,6 +12629,58 @@ static PTN_UNUSED void ptn_generator_rewrite_throw_unwind_exception_trace(
     exception->trace = trace;
 }
 
+static PTN_UNUSED void ptn_generator_rewrite_throw_catch_exception_trace(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    PtnException *exception,
+    PtnValue thrown,
+    size_t line
+) {
+    if (exception == NULL) {
+        return;
+    }
+
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    ptn_generator_trace_append(
+        trace,
+        &index,
+        ptn_generator_trace_function_frame(generator, NULL, 0)
+    );
+
+    PtnValue resume_frame = ptn_generator_trace_resume_frame(runtime, "throw", line);
+    PtnValue resume_args = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        resume_args.as.array,
+        ptn_array_int_key(0),
+        ptn_value_clone_deref(thrown)
+    );
+    ptn_array_set_entry(
+        resume_frame.as.array,
+        ptn_array_string_key("args"),
+        resume_args
+    );
+    ptn_generator_trace_append(
+        trace,
+        &index,
+        resume_frame
+    );
+
+    PtnValue existing = ptn_value_deref(exception->trace);
+    if (existing.type == PTN_ARRAY && existing.as.array != NULL) {
+        for (size_t i = 0; i < existing.as.array->len; i++) {
+            ptn_generator_trace_append(
+                trace,
+                &index,
+                ptn_value_clone_deref(existing.as.array->entries[i].value)
+            );
+        }
+    }
+
+    ptn_value_destroy(&exception->trace);
+    exception->trace = trace;
+}
+
 static PTN_UNUSED void ptn_generator_throw_pending_exception_value(
     PtnRuntime *runtime,
     PtnValue pending,
@@ -13132,15 +13184,29 @@ static PTN_UNUSED int ptn_generator_try_throw_catch(
             flushed_output = 1;
         }
         int handled = 0;
-        PtnValue handler_result = root->generator_throw_catch_dispatch(
-            runtime,
-            (size_t)handler_id_value.as.integer,
-            thrown,
-            line,
-            &handled
-        );
+        PtnValue handler_result = ptn_null();
+        PtnTryFrame catch_frame;
+        ptn_try_frame_push(runtime, &catch_frame);
+        if (setjmp(catch_frame.jump) == 0) {
+            handler_result = root->generator_throw_catch_dispatch(
+                runtime,
+                (size_t)handler_id_value.as.integer,
+                thrown,
+                line,
+                &handled
+            );
+        }
+        ptn_try_frame_pop(runtime, &catch_frame);
         ptn_value_destroy(&handler_result);
         if (runtime->exceptions->active_exception != NULL) {
+            ptn_generator_rewrite_throw_catch_exception_trace(
+                runtime,
+                generator,
+                runtime->exceptions->active_exception,
+                thrown,
+                line
+            );
+            ptn_rethrow_exception(runtime);
             *result_out = ptn_null();
             return 1;
         }
