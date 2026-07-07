@@ -22398,6 +22398,47 @@ var_dump($stack->top() instanceof stdClass);
 }
 
 #[test]
+fn compile_unserialize_spl_dllist_legacy_custom_payload_preserves_object_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-spl-dllist-legacy-custom-payload-object-ids");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-spl-dllist-legacy-custom-payload-object-ids.php");
+    let output = root.join("unserialize-spl-dllist-legacy-custom-payload-object-ids-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(0);
+$payload = 'O:8:"stdClass":2:{i:5;C:8:"SplStack":29:{i:4;:r:1;:O:8:"stdClass":0:{}}i:0;O:13:"RegexIterator":1:{i:5;C:8:"SplStack":29:{i:4;:r:1;:O:8:"stdClass":0:{}}}}';
+$root = unserialize($payload);
+$first_stack = $root->{5};
+$first_child = $first_stack->top();
+$iterator = $root->{0};
+$second_stack = $iterator->{5};
+$second_child = $second_stack->top();
+foreach ([$root, $first_stack, $first_child, $iterator, $second_stack, $second_child] as $object) {
+    echo spl_object_id($object), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\n2\n3\n4\n5\n6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_exception_trace_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-exception-trace-type-error");
     fs::create_dir_all(&root).unwrap();

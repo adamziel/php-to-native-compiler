@@ -18474,6 +18474,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 handled_custom_payload = 1;
             }
             if (runtime != NULL &&
+                !handled_custom_payload &&
                 result.value.type == PTN_OBJECT &&
                 !ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class") &&
                 ptn_unserialize_has_internal_custom_payload_method(result.value)) {
