@@ -62158,6 +62158,30 @@ static void ptn_stream_filtered_read_pending_append(PtnResource *resource, const
     resource->filtered_read_buffer_offset = 0;
 }
 
+static void ptn_stream_filtered_read_pending_prepend(PtnResource *resource, const char *data, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    ptn_stream_filtered_read_pending_compact(resource);
+    size_t current = ptn_stream_filtered_read_pending_available(resource);
+    if (len > SIZE_MAX - current - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc(len + current + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(buffer, data, len);
+    if (current != 0) {
+        memcpy(buffer + len, resource->filtered_read_buffer, current);
+    }
+    buffer[len + current] = '\0';
+    free(resource->filtered_read_buffer);
+    resource->filtered_read_buffer = buffer;
+    resource->filtered_read_buffer_len = len + current;
+    resource->filtered_read_buffer_offset = 0;
+}
+
 static void ptn_stream_flush_write_filters(
     PtnRuntime *runtime,
     const char *function_name,
@@ -65092,6 +65116,8 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    int short_read_without_eof = 0;
+    int found_delimiter = 0;
     while (length == 0 || buffer.len < (size_t)length) {
         int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
@@ -65112,6 +65138,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
                 }
                 return ptn_bool(0);
             }
+            short_read_without_eof = !ptn_stream_eof(resource);
             break;
         }
         ptn_string_buffer_append_char(&buffer, (char)(unsigned char)byte);
@@ -65120,8 +65147,22 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
             if (buffer.data != NULL) {
                 buffer.data[buffer.len] = '\0';
             }
+            found_delimiter = 1;
             break;
         }
+    }
+    if (
+        short_read_without_eof &&
+        !found_delimiter &&
+        delimiter.len != 0 &&
+        (length == 0 || buffer.len < (size_t)length)
+    ) {
+        ptn_stream_filtered_read_pending_prepend(resource, buffer.data, buffer.len);
+        free(buffer.data);
+        if (argc >= 3) {
+            ptn_string_operand_free(delimiter);
+        }
+        return ptn_bool(0);
     }
     if (argc >= 3) {
         ptn_string_operand_free(delimiter);
