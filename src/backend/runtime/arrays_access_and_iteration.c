@@ -12112,6 +12112,16 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     if (!ptn_generator_validate_yield_from_delegate(runtime, generator, source_generator, line)) {
         return ptn_null();
     }
+    PtnGenerator *existing = ptn_generator_delegate_source(generator, generator->position);
+    if (
+        existing != source_generator &&
+        source_generator->has_lazy_invocation &&
+        generator->lazy_handler != NULL &&
+        source_generator->lazy_handler == generator->lazy_handler
+    ) {
+        ptn_generator_append_delegate_entry(runtime, generator, resolved, line);
+        return ptn_null();
+    }
     PtnGenerator *previous_cleanup_parent =
         runtime == NULL ? NULL : runtime->generator_cleanup_parent;
     if (runtime != NULL) {
@@ -12124,7 +12134,6 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     if (!source_initialized) {
         return ptn_null();
     }
-    PtnGenerator *existing = ptn_generator_delegate_source(generator, generator->position);
     if (existing != source_generator &&
         !ptn_generator_append_delegate_entry(runtime, generator, resolved, line)
     ) {
