@@ -34790,7 +34790,7 @@ fn emit_exit_instruction(
     let Some(value) = value else {
         out.push_str("    ptn_output_buffer_flush_all(&runtime);\n");
         out.push_str("    fflush(stdout);\n");
-        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    ptn_runtime_shutdown_before_exit(&runtime);\n");
         out.push_str("    exit(0);\n");
         return;
     };
@@ -34864,7 +34864,7 @@ fn emit_exit_instruction(
     out.push_str(") {\n");
     out.push_str("        ptn_output_buffer_flush_all(&runtime);\n");
     out.push_str("        fflush(stdout);\n");
-    out.push_str("        ptn_runtime_free(&runtime);\n");
+    out.push_str("        ptn_runtime_shutdown_before_exit(&runtime);\n");
     out.push_str("        exit(");
     out.push_str(&status_temp);
     out.push_str(");\n");
@@ -53626,7 +53626,7 @@ impl ValueEmitter {
         let Some(value) = value else {
             out.push_str("    ptn_output_buffer_flush_all(&runtime);\n");
             out.push_str("    fflush(stdout);\n");
-            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    ptn_runtime_shutdown_before_exit(&runtime);\n");
             out.push_str("    exit(0);\n");
             return result_temp;
         };
@@ -53700,7 +53700,7 @@ impl ValueEmitter {
         out.push_str(") {\n");
         out.push_str("        ptn_output_buffer_flush_all(&runtime);\n");
         out.push_str("        fflush(stdout);\n");
-        out.push_str("        ptn_runtime_free(&runtime);\n");
+        out.push_str("        ptn_runtime_shutdown_before_exit(&runtime);\n");
         out.push_str("        exit(");
         out.push_str(&status_temp);
         out.push_str(");\n");

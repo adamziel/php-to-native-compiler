@@ -27033,6 +27033,44 @@ foreach (gen(new stdClass()) as $value) {
 }
 
 #[test]
+fn compile_generator_foreach_exception_force_closes_before_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-foreach-exception-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-foreach-exception-finally.php");
+    let output = root.join("generator-foreach-exception-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    try {
+        yield 1;
+        yield 2;
+    } finally {
+        echo "finally\n";
+    }
+}
+
+foreach (gen() as $value) {
+    echo $value, "\n";
+    throw new Exception();
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("1\nfinally\n\nFatal error: Uncaught Exception in "),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_send_into_yield_argument_to_native_binary() {
     let root = temp_dir("ptn-native-generator-send-yield-argument");
     fs::create_dir_all(&root).unwrap();
@@ -27069,6 +27107,42 @@ var_dump($generator->valid());
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_generator_register_send_call"));
+    assert!(c_source.contains("ptn_generator_send"));
+}
+
+#[test]
+fn compile_generator_fresh_send_exit_flushes_pending_output_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-fresh-send-exit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-fresh-send-exit.php");
+    let output = root.join("generator-fresh-send-exit-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$generator = (function () {
+    yield 42;
+    try {
+        echo "Try\n";
+        exit("Exit\n");
+    } finally {
+        echo "Finally\n";
+    }
+})();
+
+$generator->send("x");
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(0));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Try\nExit\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_shutdown_before_exit(&runtime);"));
     assert!(c_source.contains("ptn_generator_send"));
 }
 

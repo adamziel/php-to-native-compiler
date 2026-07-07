@@ -10848,6 +10848,8 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     PtnGenerator *generator
 );
 
+static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
+
 static PTN_UNUSED void ptn_generator_clear_lazy_invocation(PtnGenerator *generator) {
     if (generator == NULL) {
         return;
@@ -10883,7 +10885,7 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     ptn_generator_end_activation(generator);
     PtnRuntime *runtime = generator->object == NULL ? NULL : generator->object->lifecycle_runtime;
     if (generator->started) {
-        ptn_generator_flush_pending_output(runtime, generator);
+        ptn_generator_force_close(runtime, generator);
     }
     if (generator->values != NULL) {
         ptn_array_free(generator->values);
@@ -11241,6 +11243,7 @@ static PTN_UNUSED int ptn_generator_ensure_initialized(
         ptn_generator_clear_lazy_invocation(generator);
         return 1;
     }
+    generator->started = 1;
     generator->lazy_activating = 1;
     PtnGenerator *previous_activation_target =
         runtime == NULL ? NULL : runtime->activating_generator;
@@ -18321,6 +18324,9 @@ static PTN_UNUSED void ptn_array_iterator_destroy_with_runtime_scope_at(
         iterator->array = NULL;
     }
     if (iterator->object != NULL) {
+        if (iterator->generator != NULL && ptn_runtime_has_active_exception(runtime)) {
+            ptn_generator_force_close(runtime, iterator->generator);
+        }
         PtnValue object = ptn_object(iterator->object);
         ptn_value_destroy_with_runtime_scope_at(runtime, &object, line);
         iterator->object = NULL;
