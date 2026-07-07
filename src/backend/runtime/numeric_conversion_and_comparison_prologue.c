@@ -3642,6 +3642,13 @@ static const char *ptn_uncaught_exception_display_class_name(PtnException *excep
     return exception == NULL ? "Exception" : exception->class_name;
 }
 
+static const char *ptn_uncaught_exception_thrown_path(PtnException *exception, const char *fallback) {
+    if (exception != NULL && exception->path != NULL && exception->path[0] == '\0') {
+        return "Unknown";
+    }
+    return fallback;
+}
+
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -3723,7 +3730,8 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         int first = 1;
         ptn_emit_uncaught_exception_chain_entry(runtime, exception, &first, label);
         const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
-        ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, exception->line);
+        const char *thrown_path = ptn_uncaught_exception_thrown_path(exception, display_path);
+        ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", thrown_path, exception->line);
         ptn_uncaught_exception_output_flush(runtime);
         return;
     }
@@ -3779,7 +3787,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
             ptn_uncaught_exception_output_printf(
                 runtime,
                 "  thrown in <b>%s</b> on line <b>%zu</b><br />\n",
-                display_path,
+                ptn_uncaught_exception_thrown_path(exception, display_path),
                 display_line
             );
             ptn_uncaught_exception_output_flush(runtime);
@@ -3812,7 +3820,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         ptn_uncaught_exception_output_printf(
             runtime,
             "\n  thrown in <b>%s</b> on line <b>%zu</b><br />\n",
-            display_path,
+            ptn_uncaught_exception_thrown_path(exception, display_path),
             display_line
         );
         ptn_uncaught_exception_output_flush(runtime);
@@ -3824,7 +3832,12 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         ptn_uncaught_exception_output_printf(runtime, "%s: Uncaught ", label);
         ptn_uncaught_exception_output_write(runtime, exception->uncaught_text, exception->uncaught_text_len);
         ptn_uncaught_exception_output_cstr(runtime, "\n");
-        ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, display_line);
+        ptn_uncaught_exception_output_printf(
+            runtime,
+            "  thrown in %s on line %zu\n",
+            ptn_uncaught_exception_thrown_path(exception, display_path),
+            display_line
+        );
         ptn_uncaught_exception_output_flush(runtime);
         return;
     }
@@ -3856,7 +3869,12 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     ptn_uncaught_exception_output_write(runtime, trace.data, trace.len);
     free(trace.owned);
     ptn_uncaught_exception_output_cstr(runtime, "\n");
-    ptn_uncaught_exception_output_printf(runtime, "  thrown in %s on line %zu\n", display_path, display_line);
+    ptn_uncaught_exception_output_printf(
+        runtime,
+        "  thrown in %s on line %zu\n",
+        ptn_uncaught_exception_thrown_path(exception, display_path),
+        display_line
+    );
     ptn_uncaught_exception_output_flush(runtime);
 }
 

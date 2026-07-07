@@ -97710,6 +97710,43 @@ try {\n\
 }
 
 #[test]
+fn compile_uncaught_exception_empty_file_trailer_uses_unknown_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-empty-file-trailer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-empty-file-trailer.php");
+    let output = root.join("exception-empty-file-trailer-bin");
+    fs::write(
+        &input,
+        "<?php
+class EmptyFileException extends Exception {
+    public function __construct() {
+        $this->file = '';
+        $this->line = 0;
+    }
+}
+
+throw new EmptyFileException;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let text = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        text.contains("Fatal error: Uncaught EmptyFileException in :0"),
+        "{text}"
+    );
+    assert!(text.contains("  thrown in Unknown on line 0"), "{text}");
+}
+
+#[test]
 fn compile_errorexception_subclass_constructor_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-errorexception-subclass-constructor-type-error");
     fs::create_dir_all(&root).unwrap();
