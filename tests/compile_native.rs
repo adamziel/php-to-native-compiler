@@ -28304,6 +28304,46 @@ do {
 }
 
 #[test]
+fn compile_generator_yield_from_deep_recursion_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-deep-recursion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-deep-recursion.php");
+    let output = root.join("generator-yield-from-deep-recursion-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function from($i) {
+    yield $i;
+}
+
+function gen($i = 0) {
+    if ($i < 50000) {
+        yield from gen(++$i);
+    } else {
+        yield $i;
+        yield from from(++$i);
+    }
+}
+
+foreach (gen() as $v) {
+    var_dump($v);
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(50000)\nint(50001)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_force_close_rejects_yield_from_in_finally_to_native_binary() {
     let root = temp_dir("ptn-native-generator-force-close-yield-from-finally");
     fs::create_dir_all(&root).unwrap();
