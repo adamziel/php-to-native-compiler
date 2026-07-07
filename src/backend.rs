@@ -12630,6 +12630,17 @@ fn emit_user_function_dispatch(
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        if (ptn_ascii_case_equal(ptn_static_magic_method, \"__construct\")) {\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            if (runtime->has_current_receiver) {\n");
+    out.push_str("                PtnValue ptn_static_magic_current_receiver = ptn_value_deref(runtime->current_receiver);\n");
+    out.push_str("                if (ptn_static_magic_current_receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, ptn_static_magic_current_receiver.as.object) && (ptn_ascii_case_equal(ptn_static_magic_resolved_class, \"Exception\") || ptn_ascii_case_equal(ptn_static_magic_resolved_class, \"Error\"))) {\n");
+    out.push_str("                    PtnValue ptn_static_magic_ctor_result = ptn_call_method(runtime, ptn_static_magic_current_receiver, ptn_static_magic_method, argc, args, line);\n");
+    out.push_str("                    free(ptn_static_magic_name);\n");
+    out.push_str("                    *found = 1;\n");
+    out.push_str("                    return ptn_static_magic_ctor_result;\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("#endif\n");
     out.push_str("            free(ptn_static_magic_name);\n");
     out.push_str("            *found = 1;\n");
     out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Cannot call constructor\", runtime->source_path, line);\n");
@@ -30547,6 +30558,12 @@ fn emit_method_dispatch(
             out.push_str("        }\n");
         }
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__construct\")) {\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("            if (resolved_receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, resolved_receiver.as.object) && (ptn_ascii_case_equal(target_class_name, \"Exception\") || ptn_ascii_case_equal(target_class_name, \"Error\"))) {\n");
+        out.push_str("                *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+        out.push_str("                return 1;\n");
+        out.push_str("            }\n");
+        out.push_str("#endif\n");
         out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Cannot call constructor\", runtime->source_path, line);\n");
         out.push_str("            *result_out = ptn_null();\n");
         out.push_str("            return 1;\n");

@@ -3225,6 +3225,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
         : ptn_null();
     exception->soap_fault_code = NULL;
     exception->soap_fault_headerfault = ptn_null();
+    exception->thrown_value = ptn_null();
     return exception;
 }
 
@@ -5042,6 +5043,9 @@ static PTN_UNUSED PtnValue ptn_throwable_trace_value(PtnRuntime *runtime, PtnVal
     if (receiver.type == PTN_EXCEPTION) {
         return ptn_value_clone(receiver.as.exception->trace);
     }
+    if (receiver.type == PTN_OBJECT && receiver.as.object->exception_trace.type != PTN_NULL) {
+        return ptn_value_clone(receiver.as.object->exception_trace);
+    }
     (void)runtime;
     (void)line;
     return ptn_array_from_literal_entries(0, NULL);
@@ -5192,6 +5196,10 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
         );
+        runtime->exceptions->active_exception->thrown_value = ptn_value_clone_deref(resolved);
+        ptn_value_destroy(&resolved.as.object->exception_trace);
+        resolved.as.object->exception_trace =
+            ptn_value_clone(runtime->exceptions->active_exception->trace);
         if (has_uncaught_text) {
             runtime->exceptions->active_exception->uncaught_text_len = uncaught_text.len;
             if (uncaught_text.owned != NULL) {
@@ -10181,7 +10189,9 @@ static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *typ
     if (type_name[0] == '\\') {
         type_name++;
     }
-    return ptn_declared_class_is_same_or_descendant(class_name, type_name);
+    return ptn_declared_class_is_same_or_descendant(class_name, type_name) ||
+        ptn_declared_class_implements_interface(class_name, type_name) ||
+        ptn_builtin_class_implements_interface(class_name, type_name);
 }
 
 static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
@@ -10220,6 +10230,9 @@ static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const
     ptn_try_frame_push(runtime, &frame);
     if (setjmp(frame.jump) == 0) {
         PtnValue caught_value = ptn_exception_borrow(caught_exception);
+        if (caught_exception->thrown_value.type != PTN_NULL) {
+            caught_value = caught_exception->thrown_value;
+        }
         PtnValue result = ptn_runtime_write_variable_result_at(runtime, name, caught_value, line);
         ptn_value_destroy(&result);
         ptn_try_frame_pop(runtime, &frame);

@@ -2657,6 +2657,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell_at(
     }
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
+    object->exception_trace = ptn_null();
     ptn_runtime_register_object(root, object);
     ptn_runtime_register_array(root, object->properties);
     return ptn_object(object);
@@ -4445,6 +4446,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     ptn_object_forget_property_reference_sources(object);
     ptn_value_destroy(&object->lazy_initializer);
     ptn_value_destroy(&object->lazy_proxy_instance);
+    ptn_value_destroy(&object->exception_trace);
     free(object->cleanup_trace_function_name);
     free(object->cleanup_trace_source_file);
     free(object->class_name);

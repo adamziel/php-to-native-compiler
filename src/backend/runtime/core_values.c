@@ -1418,6 +1418,7 @@ struct PtnObject {
     size_t cleanup_trace_source_line;
     PtnValue lazy_initializer;
     PtnValue lazy_proxy_instance;
+    PtnValue exception_trace;
 };
 
 typedef struct {
@@ -1557,6 +1558,7 @@ struct PtnException {
     PtnValue errors;
     char *soap_fault_code;
     PtnValue soap_fault_headerfault;
+    PtnValue thrown_value;
 };
 
 typedef void (*PtnResourceCloseHook)(PtnResource *resource, void *data);
