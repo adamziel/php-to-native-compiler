@@ -27956,6 +27956,50 @@ try {
 }
 
 #[test]
+fn compile_generator_force_close_rejects_yield_in_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-yield-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-yield-finally.php");
+    let output = root.join("generator-force-close-yield-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    try {
+        echo "before yield\n";
+        yield;
+        echo "after yield\n";
+    } finally {
+        echo "before yield in finally\n";
+        yield;
+        echo "after yield in finally\n";
+    }
+}
+
+try {
+    $gen = gen();
+    $gen->rewind();
+    unset($gen);
+} catch (Error $e) {
+    echo $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "before yield\nbefore yield in finally\nError: Cannot yield from finally in a force-closed generator in "
+    ));
+    assert!(stdout.contains(": gen()\n#1 {main}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_iteratoraggregate_suspends_on_next_in_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-generator-iteratoraggregate-fiber-next");
     fs::create_dir_all(&root).unwrap();

@@ -11356,6 +11356,45 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     generator->pending_output.data[0] = '\0';
 }
 
+static PTN_UNUSED void ptn_generator_discard_pending_output(PtnGenerator *generator) {
+    if (
+        generator == NULL ||
+        generator->pending_output.data == NULL ||
+        generator->pending_output.len == 0
+    ) {
+        return;
+    }
+    generator->pending_output.len = 0;
+    generator->pending_output.data[0] = '\0';
+}
+
+static PTN_UNUSED void ptn_generator_throw_force_closed_yield(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
+    ptn_generator_discard_pending_output(generator);
+    char *message = ptn_duplicate_string("Cannot yield from finally in a force-closed generator");
+    const char *path = generator != NULL && generator->source_file != NULL
+        ? generator->source_file
+        : (runtime != NULL ? runtime->source_path : NULL);
+    size_t frame_line = runtime != NULL && runtime->call_site_line != 0
+        ? runtime->call_site_line
+        : line;
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "Error",
+        message,
+        path,
+        line,
+        generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
+        runtime != NULL && runtime->source_path != NULL ? runtime->source_path : path,
+        frame_line,
+        0,
+        NULL
+    );
+}
+
 static PTN_UNUSED void ptn_generator_flush_pending_output_before_value_drop(
     PtnRuntime *runtime,
     PtnValue value
@@ -11407,6 +11446,11 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
         generator->force_close_yield_from_entries == NULL ||
         generator->output_chunks == NULL
     ) {
+        return ptn_null();
+    }
+    if (generator->force_closing) {
+        ptn_generator_flush_pending_output(runtime, generator);
+        ptn_generator_throw_force_closed_yield(runtime, generator, line);
         return ptn_null();
     }
 
@@ -11469,7 +11513,11 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     ptn_array_set_entry(generator->reference_notice_lines, notice_key, reference_notice_line);
     ptn_array_set_entry(generator->yield_lines, line_key, ptn_int((int64_t)line));
     ptn_array_set_entry(generator->delegate_sources, delegate_key, ptn_null());
-    ptn_array_set_entry(generator->force_close_yield_from_entries, force_close_key, ptn_int(0));
+    ptn_array_set_entry(
+        generator->force_close_yield_from_entries,
+        force_close_key,
+        ptn_int(runtime != NULL && runtime->generator_aborted_after_yield ? 2 : 0)
+    );
     ptn_array_set_entry(generator->output_chunks, output_key, ptn_generator_take_pending_output(generator));
     return ptn_value_clone_deref(value);
 }
@@ -12828,7 +12876,7 @@ static PTN_UNUSED void ptn_generator_release_consumed_reference(PtnGenerator *ge
     entry->value = replacement;
 }
 
-static PTN_UNUSED int ptn_generator_force_close_yield_from_entry(
+static PTN_UNUSED int ptn_generator_force_close_entry_kind(
     PtnGenerator *generator,
     size_t index
 ) {
@@ -12840,7 +12888,7 @@ static PTN_UNUSED int ptn_generator_force_close_yield_from_entry(
         return 0;
     }
     PtnValue value = ptn_value_deref(generator->force_close_yield_from_entries->entries[index].value);
-    return value.type == PTN_INT && value.as.integer != 0;
+    return value.type == PTN_INT ? (int)value.as.integer : 0;
 }
 
 static PTN_UNUSED PtnValue ptn_generator_current_at_position(
@@ -12916,14 +12964,19 @@ static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerat
     ptn_generator_release_consumed_reference(generator, index);
     index++;
     for (; index < generator->values->len; index++) {
-        if (!ptn_generator_force_close_yield_from_entry(generator, index)) {
+        int force_close_entry_kind = ptn_generator_force_close_entry_kind(generator, index);
+        if (force_close_entry_kind == 0) {
             continue;
         }
         size_t yield_line = ptn_generator_yield_line_at(generator, index);
         ptn_generator_flush_output_chunk(runtime, generator, index);
         generator->position = index;
         generator->force_closing = 0;
-        ptn_generator_throw_force_closed_yield_from(runtime, generator, yield_line);
+        if (force_close_entry_kind == 1) {
+            ptn_generator_throw_force_closed_yield_from(runtime, generator, yield_line);
+            return;
+        }
+        ptn_generator_throw_force_closed_yield(runtime, generator, yield_line);
         return;
     }
     generator->position = generator->values->len;
