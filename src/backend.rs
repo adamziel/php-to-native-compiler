@@ -34897,6 +34897,21 @@ fn emit_try(
     return_target: Option<&str>,
     label_scope: Option<&LabelScope<'_>>,
 ) {
+    if catches.is_empty() && finally_body.is_empty() {
+        emit_instruction_sequence_with_generator_yield_abort_target(
+            out,
+            values,
+            body,
+            control_targets,
+            finally_stack,
+            source_path,
+            return_target,
+            label_scope,
+            values.generator_yield_abort_target.clone().as_deref(),
+        );
+        return;
+    }
+
     let frame_temp = values.next_temp();
     let caught_temp = values.next_temp();
     let saved_trace_temp = values.next_temp();
