@@ -28665,6 +28665,46 @@ var_dump($next->getReturn());
 }
 
 #[test]
+fn compile_generator_foreach_releases_closure_owner_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-foreach-releases-closure-owner");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-foreach-releases-closure-owner.php");
+    let output = root.join("generator-foreach-releases-closure-owner-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$factory = function() {
+    yield 1;
+    yield 2;
+};
+
+$weak = WeakReference::create($factory);
+$generator = $factory();
+unset($factory);
+
+foreach ($generator as $value) {
+    echo $value, "\n";
+}
+
+var_dump($weak->get() === null);
+unset($generator);
+var_dump($weak->get());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\n2\nbool(false)\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();

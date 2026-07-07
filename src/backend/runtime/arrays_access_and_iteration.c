@@ -16837,7 +16837,6 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
     iterator.object = object;
     iterator.generator = generator;
     iterator.runtime = runtime;
-    ptn_object_retain(object);
     generator->started = 1;
     if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
         iterator.array = NULL;
