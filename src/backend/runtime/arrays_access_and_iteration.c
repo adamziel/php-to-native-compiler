@@ -1514,7 +1514,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_internal_class_exists_name(lookup_class_name) &&
             ptn_class_name_should_autoload(lookup_class_name)) {
-            ptn_runtime_autoload_class(runtime, lookup_class_name, line);
+            ptn_runtime_autoload_class_with_call_frame(runtime, lookup_class_name, line, 0, 1);
             lookup_class_name = ptn_runtime_resolve_class_alias(
                 runtime,
                 ptn_symbol_name_without_leading_slash(class_name)
@@ -1522,7 +1522,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         }
 #else
         if (ptn_class_name_should_autoload(lookup_class_name)) {
-            ptn_runtime_autoload_class(runtime, lookup_class_name, line);
+            ptn_runtime_autoload_class_with_call_frame(runtime, lookup_class_name, line, 0, 1);
             lookup_class_name = ptn_runtime_resolve_class_alias(
                 runtime,
                 ptn_symbol_name_without_leading_slash(class_name)
