@@ -216494,6 +216494,93 @@ static int ptn_fiber_is_close_unwind_exception(PtnException *exception) {
         ptn_ascii_case_equal(exception->class_name, "__PTN_FiberExit");
 }
 
+static void ptn_fiber_clear_active_close_unwind_exception(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL
+    ) {
+        return;
+    }
+    if (ptn_fiber_is_close_unwind_exception(runtime->exceptions->active_exception)) {
+        PtnException *exception = runtime->exceptions->active_exception;
+        runtime->exceptions->active_exception = NULL;
+        ptn_exception_free(exception);
+    }
+    if (ptn_fiber_is_close_unwind_exception(
+        runtime->exceptions->finally_return_suppressed_exception
+    )) {
+        ptn_runtime_release_finally_return_suppressed_exception(runtime);
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root == runtime || root->exceptions == runtime->exceptions) {
+        return;
+    }
+    if (ptn_fiber_is_close_unwind_exception(root->exceptions->active_exception)) {
+        PtnException *exception = root->exceptions->active_exception;
+        root->exceptions->active_exception = NULL;
+        ptn_exception_free(exception);
+    }
+    if (ptn_fiber_is_close_unwind_exception(
+        root->exceptions->finally_return_suppressed_exception
+    )) {
+        ptn_runtime_release_finally_return_suppressed_exception(root);
+    }
+}
+
+static void ptn_fiber_prune_close_unwind_previous(PtnException *exception) {
+    if (exception == NULL) {
+        return;
+    }
+    PtnValue previous = ptn_value_deref(exception->previous);
+    if (
+        previous.type == PTN_EXCEPTION &&
+        ptn_fiber_is_close_unwind_exception(previous.as.exception)
+    ) {
+        ptn_value_destroy(&exception->previous);
+        exception->previous = ptn_null();
+    }
+}
+
+static void ptn_fiber_throw_force_closed_suspend_exception(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_fiber_clear_active_close_unwind_exception(runtime);
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "Fiber::suspend",
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        argc,
+        args
+    );
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "FiberError",
+        ptn_duplicate_string("Cannot suspend in a force-closed fiber"),
+        strlen("Cannot suspend in a force-closed fiber"),
+        0,
+        ptn_null(),
+        PTN_E_ERROR,
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    ptn_fiber_prune_close_unwind_previous(exception);
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static int ptn_fiber_call_callback_capturing_exception(
     PtnRuntime *runtime,
     PtnFiberData *data,
@@ -216752,6 +216839,9 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
         runtime->exceptions->active_exception = NULL;
         data->threw = 0;
     }
+    if (runtime->exceptions != NULL) {
+        ptn_fiber_prune_close_unwind_previous(runtime->exceptions->active_exception);
+    }
     if (saved_active_exception != NULL) {
         if (runtime->exceptions->active_exception == NULL) {
             runtime->exceptions->active_exception = saved_active_exception;
@@ -216868,18 +216958,7 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
     }
     PtnFiberData *data = (PtnFiberData *)fiber->native_data;
     if (data->close_requested) {
-        ptn_throw_exception_owned_message_at_with_trace_frame(
-            runtime,
-            "FiberError",
-            ptn_duplicate_string("Cannot suspend in a force-closed fiber"),
-            runtime == NULL ? NULL : runtime->source_path,
-            line,
-            "Fiber::suspend",
-            runtime == NULL ? NULL : runtime->source_path,
-            line,
-            argc,
-            args
-        );
+        ptn_fiber_throw_force_closed_suspend_exception(runtime, argc, args, line);
         return ptn_null();
     }
     ptn_fiber_clear_suspension(data);

@@ -4416,6 +4416,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object == NULL) {
         return;
     }
+    PtnRuntime *lifecycle_runtime = object->lifecycle_runtime;
     if (object->refcount == 0) {
         return;
     }
@@ -4462,6 +4463,14 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
     }
     free(object);
+    if (
+        lifecycle_runtime != NULL &&
+        lifecycle_runtime->exceptions != NULL &&
+        lifecycle_runtime->exceptions->active_exception != NULL &&
+        lifecycle_runtime->exceptions->try_frame != NULL
+    ) {
+        longjmp(lifecycle_runtime->exceptions->try_frame->jump, 1);
+    }
 }
 
 static PTN_UNUSED void ptn_array_debug_hide_ref(PtnArray *array) {

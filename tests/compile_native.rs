@@ -4521,6 +4521,94 @@ var_dump($fiber->isTerminated());
 }
 
 #[test]
+fn compile_fiber_force_close_suspend_reports_fiber_error_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-force-close-suspend-error");
+    fs::create_dir_all(&root).unwrap();
+
+    let caught_input = root.join("fiber-force-close-suspend-caught.php");
+    let caught_output = root.join("fiber-force-close-suspend-caught-bin");
+    fs::write(
+        &caught_input,
+        r#"<?php
+try {
+    (function (): void {
+        $fiber = new Fiber(function (): void {
+            try {
+                Fiber::suspend();
+            } finally {
+                Fiber::suspend();
+            }
+        });
+        $fiber->start();
+    })();
+} catch (FiberError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(
+        &caught_input,
+        &caught_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let caught = Command::new(&caught_output).output().unwrap();
+    assert!(
+        caught.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        caught.status.code(),
+        String::from_utf8_lossy(&caught.stdout),
+        String::from_utf8_lossy(&caught.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(caught.stdout).unwrap(),
+        "Cannot suspend in a force-closed fiber\ndone\n"
+    );
+    assert_eq!(String::from_utf8(caught.stderr).unwrap(), "");
+
+    let fatal_input = root.join("fiber-force-close-suspend-fatal.php");
+    let fatal_output = root.join("fiber-force-close-suspend-fatal-bin");
+    fs::write(
+        &fatal_input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    try {
+        Fiber::suspend();
+    } finally {
+        Fiber::suspend();
+    }
+});
+$fiber->start();
+unset($fiber);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&fatal_input, &fatal_output, CompileOptions { emit_c: true }).unwrap();
+    let fatal = Command::new(&fatal_output).output().unwrap();
+    assert!(
+        !fatal.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&fatal.stdout),
+        String::from_utf8_lossy(&fatal.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(fatal.stdout).unwrap(),
+        String::from_utf8(fatal.stderr).unwrap()
+    );
+    assert!(
+        combined
+            .contains("Fatal error: Uncaught FiberError: Cannot suspend in a force-closed fiber"),
+        "{combined}"
+    );
+    assert!(!combined.contains("__PTN_FiberExit"), "{combined}");
+}
+
+#[test]
 fn compile_fiber_debug_backtrace_includes_start_frame_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-debug-backtrace");
     fs::create_dir_all(&root).unwrap();
