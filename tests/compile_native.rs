@@ -28630,6 +28630,71 @@ echo "done\n";
 }
 
 #[test]
+fn compile_generator_yield_from_fiber_cycle_close_reaches_inline_output_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-fiber-cycle-close-inline");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-fiber-cycle-close-inline.php");
+    let output = root.join("generator-yield-from-fiber-cycle-close-inline-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Canary {
+    public function __construct(public mixed $value) {}
+    public function __destruct() {
+        var_dump(__METHOD__);
+    }
+}
+
+function g() {
+    yield 'foo';
+    Fiber::suspend();
+}
+
+function f($canary) {
+    var_dump(yield from g());
+}
+
+$canary = new Canary(null);
+$iterable = f($canary);
+$fiber = new Fiber(function () use ($iterable, $canary) {
+    var_dump($canary, $iterable->current());
+    $f = $iterable->next(...);
+    $f();
+    var_dump("not executed");
+});
+$canary->value = $fiber;
+$fiber->start();
+$iterable->current();
+$fiber = $iterable = $canary = null;
+gc_collect_cycles();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Canary)#"), "{stdout}");
+    assert!(stdout.contains("string(3) \"foo\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(18) \"Canary::__destruct\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("==DONE==\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_cleanup_destructor_backtrace_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-cleanup-destructor-backtrace");
     fs::create_dir_all(&root).unwrap();

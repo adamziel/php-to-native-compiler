@@ -7556,6 +7556,7 @@ static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *ru
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
+static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_archive(const char *class_name);
@@ -134649,6 +134650,31 @@ static int ptn_gc_collected_object_contains(PtnObject **objects, size_t len, Ptn
     return 0;
 }
 
+static void ptn_gc_close_unreachable_suspended_fibers(PtnRuntime *root, size_t epoch) {
+    if (root == NULL || epoch == 0) {
+        return;
+    }
+    size_t initial_live_objects_len = root->live_objects_len;
+    for (size_t i = 0; i < initial_live_objects_len; i++) {
+        if (i >= root->live_objects_len) {
+            break;
+        }
+        PtnObject *object = root->live_objects[i];
+        if (
+            object == NULL ||
+            object->refcount == 0 ||
+            object->gc_mark_epoch == epoch ||
+            !ptn_internal_class_name_is_fiber(object->class_name) ||
+            object->native_data == NULL
+        ) {
+            continue;
+        }
+        ptn_object_retain(object);
+        ptn_runtime_close_suspended_fiber_object(object);
+        ptn_object_release(object);
+    }
+}
+
 static size_t ptn_gc_destructed_object_count(PtnObject *object) {
     if (
         object == NULL ||
@@ -134731,6 +134757,8 @@ static size_t ptn_runtime_collect_unreachable_objects(
     }
 
     size_t epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    ptn_gc_close_unreachable_suspended_fibers(root, epoch);
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
     size_t collected = 0;
     PtnGcObjectComponents destructor_components = {0};
     size_t destructor_component_epoch =
