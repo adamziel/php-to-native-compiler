@@ -73971,6 +73971,69 @@ var_dump($sf->headerfault);
 }
 
 #[test]
+fn compile_zip_archive_open_and_close_string_to_native_binary() {
+    let root = temp_dir("ptn-native-zip-archive-open-close-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zip-archive-open-close-string.php");
+    let output = root.join("zip-archive-open-close-string-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$zip = new ZipArchive();
+$zip->openString();
+$zip->addFromString('test1', '1');
+$zip->addFromString('dir/test2', '2');
+$contents = $zip->closeString();
+echo gettype($contents), "\n";
+
+$zip = new ZipArchive();
+var_dump($zip->openString($contents, ZipArchive::RDONLY));
+var_dump($zip->getFromName('test1'));
+var_dump($zip->getFromName('dir/test2'));
+var_dump($zip->addFromString('blocked', 'x'));
+var_dump($zip->close());
+
+$zip = new ZipArchive();
+var_dump($zip->openString($contents, ZipArchive::EXCL));
+echo $zip->getStatusString(), "\n";
+
+$zip = new ZipArchive();
+$zip->openString('...');
+echo $zip->getStatusString(), "\n";
+try {
+    $zip->closeString();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string\n\
+bool(true)\n\
+string(1) \"1\"\n\
+string(1) \"2\"\n\
+bool(false)\n\
+bool(true)\n\
+int(10)\n\
+File already exists\n\
+Not a zip archive\n\
+Invalid or uninitialized Zip object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zip_archive_open_string"));
+    assert!(c_source.contains("ptn_zip_archive_close_string"));
+}
+
+#[test]
 fn compile_ziparchive_shutdown_destructor_polls_cancel_callback_to_native_binary() {
     let root = temp_dir("ptn-native-ziparchive-shutdown-cancel-callback");
     fs::create_dir_all(&root).unwrap();
