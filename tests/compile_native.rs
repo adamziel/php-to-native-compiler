@@ -80487,6 +80487,71 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap_fault_response_typemap_from_xml_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-fault-response-typemap-from-xml");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-fault-response-typemap-from-xml.php");
+    let output = root.join("soap-fault-response-typemap-from-xml-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function soap_string_from_xml($xml) {
+    echo "soap_string_from_xml\n";
+    return 2.3;
+}
+
+class TestSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = 0, ?string $uriParserClass = null): ?string {
+        return '<?xml version="1.0" encoding="UTF-8"?>
+            <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+            <SOAP-ENV:Body>
+            <SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>not present</faultstring>
+            </SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>';
+    }
+}
+
+try {
+    $client = new TestSoapClient(null, [
+        'uri' => 'test://',
+        'location' => 'test://',
+        'typemap' => [[
+            'type_ns' => 'http://www.w3.org/2001/XMLSchema',
+            'type_name' => 'string',
+            'from_xml' => 'soap_string_from_xml',
+        ]],
+    ]);
+    $client->Mist("");
+} catch (SoapFault $e) {
+    var_dump($e->faultstring);
+    var_dump($e->faultcode);
+}
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("soap_string_from_xml\n"), "{stdout}");
+    assert!(stdout.contains("string(3) \"2.3\""), "{stdout}");
+    assert!(stdout.contains("string(15) \"SOAP-ENV:Server\""), "{stdout}");
+    assert!(stdout.ends_with("Done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_decode_typemap_options_arg"));
+    assert!(c_source.contains("ptn_soap_throw_fault_response"));
+}
+
+#[test]
 fn compile_soap_non_wsdl_iso_8859_1_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-non-wsdl-iso-8859-1-response");
     fs::create_dir_all(&root).unwrap();

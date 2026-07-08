@@ -231640,17 +231640,17 @@ static PtnValue ptn_soap_node_outer_xml_with_namespaces(
     return ptn_xml_serialized_value(runtime, clone, 0, line);
 }
 
-static int ptn_soap_decode_typemap_arg(
+static int ptn_soap_decode_typemap_options_arg(
     PtnRuntime *runtime,
-    PtnSoapServerData *data,
+    PtnValue options,
     PtnXmlNode *node,
     const PtnSoapXmlType *type,
     size_t line,
     PtnValue *value_out
 ) {
     PtnValue typemap;
-    if (data == NULL || type == NULL || type->local_name == NULL ||
-        !ptn_soap_options_entry(data->options, "typemap", &typemap)) {
+    if (type == NULL || type->local_name == NULL ||
+        !ptn_soap_options_entry(options, "typemap", &typemap)) {
         return 0;
     }
     typemap = ptn_value_deref(typemap);
@@ -231715,6 +231715,19 @@ static int ptn_soap_decode_typemap_arg(
         return 1;
     }
     return 0;
+}
+
+static int ptn_soap_decode_typemap_arg(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *node,
+    const PtnSoapXmlType *type,
+    size_t line,
+    PtnValue *value_out
+) {
+    return data == NULL
+        ? 0
+        : ptn_soap_decode_typemap_options_arg(runtime, data->options, node, type, line, value_out);
 }
 
 static PtnValue ptn_soap_decode_default_arg(
@@ -239022,6 +239035,89 @@ static int ptn_soap_client_has_user_do_request(PtnValue receiver) {
         ptn_declared_class_method_exists(receiver_class_name, "__doRequest");
 }
 
+static PtnValue ptn_soap_fault_child_value(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    PtnXmlNode *fault_node,
+    const char *child_name,
+    const char *type_name,
+    int apply_typemap,
+    size_t line
+) {
+    PtnXmlNode *child = ptn_soap_first_element_child_named(fault_node, child_name);
+    if (child == NULL) {
+        return ptn_string("");
+    }
+    PtnSoapXmlType type;
+    ptn_soap_xml_type_from_node(child, &type);
+    if (type_name != NULL) {
+        ptn_soap_xml_type_set_local(&type, type_name);
+    }
+    if (type_name != NULL && (type.namespace_uri == NULL || type.namespace_uri[0] == '\0')) {
+        free(type.namespace_uri);
+        type.namespace_uri = ptn_duplicate_string("http://www.w3.org/2001/XMLSchema");
+    }
+    PtnValue decoded = ptn_null();
+    if (apply_typemap &&
+        data != NULL &&
+        ptn_soap_decode_typemap_options_arg(runtime, data->options, child, &type, line, &decoded)) {
+        ptn_soap_xml_type_free(&type);
+        return decoded;
+    }
+    size_t len = 0;
+    char *text = ptn_xml_text_content_dup(child, &len);
+    decoded = ptn_owned_string_len(text, len);
+    ptn_soap_xml_type_free(&type);
+    return decoded;
+}
+
+static PtnValue ptn_soap_throw_fault_response(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    PtnXmlNode *fault_node,
+    size_t line
+) {
+    PtnValue code = ptn_soap_fault_child_value(
+        runtime,
+        data,
+        fault_node,
+        "faultcode",
+        "string",
+        0,
+        line
+    );
+    PtnValue message = ptn_soap_fault_child_value(
+        runtime,
+        data,
+        fault_node,
+        "faultstring",
+        "string",
+        1,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&code);
+        ptn_value_destroy(&message);
+        return ptn_null();
+    }
+    PtnValue args[2] = {
+        ptn_value_share(code),
+        ptn_value_share(message)
+    };
+    PtnValue fault = ptn_new_object(runtime, "SoapFault", 2, args, line);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    ptn_value_destroy(&code);
+    ptn_value_destroy(&message);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&fault);
+        return ptn_null();
+    }
+    PtnValue thrown = ptn_throw_value(runtime, fault, runtime->source_path, line);
+    ptn_value_destroy(&fault);
+    return thrown;
+}
+
 static PtnValue ptn_soap_decode_response_xml(
     PtnRuntime *runtime,
     PtnSoapClientData *data,
@@ -239068,7 +239164,7 @@ static PtnValue ptn_soap_decode_response_xml(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(ptn_xml_local_name(response_node->name), "Fault")) {
-        return ptn_null();
+        return ptn_soap_throw_fault_response(runtime, data, response_node, line);
     }
     char *expected_element_name = use_wsdl && data != NULL
         ? ptn_soap_wsdl_output_part_element_local_dup(data, operation_name)
