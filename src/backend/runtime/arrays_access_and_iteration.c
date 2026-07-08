@@ -1720,6 +1720,26 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_ascii_case_equal(lookup_class_name, "_ZendTestChildClass")) {
         return ptn_zend_test_class_new(runtime, lookup_class_name, argc, args, line);
     }
+    if (ptn_ascii_case_equal(lookup_class_name, "ZendTestClassWithMethodWithParameterAttribute") ||
+        ptn_ascii_case_equal(lookup_class_name, "ZendTestChildClassWithMethodWithParameterAttribute") ||
+        ptn_ascii_case_equal(lookup_class_name, "ZendTestClassWithPropertyAttribute")) {
+        if (argc != 0) {
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Class %s does not have a constructor, so you cannot pass any constructor arguments",
+                lookup_class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        (void)args;
+        return ptn_object_new_shell_at(runtime, lookup_class_name, line);
+    }
     if (ptn_zend_test_gen_stub_class_name(lookup_class_name)) {
         return ptn_zend_test_gen_stub_class_new(runtime, lookup_class_name, argc, args, line);
     }

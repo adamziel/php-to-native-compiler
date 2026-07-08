@@ -239311,6 +239311,9 @@ static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_metadata_stub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zend_test_attribute_with_named_argument(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zend_test_parameter_with_attribute(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zend_test_parameter_attribute_method(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zend_test_tmp_method_with_arg_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zend_trigger_bailout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -240510,6 +240513,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ArrayObject::__construct", 0, 3, ptn_internal_method_metadata_stub },
         { "_ZendTestClass::testTmpMethodWithArgInfo", 0, 2, ptn_internal_zend_test_tmp_method_with_arg_info },
         { "_ZendTestClass::variadicTest", 0, PTN_VARIADIC_ARGS, ptn_internal_method_metadata_stub },
+        { "ZendTestClassWithMethodWithParameterAttribute::no_override", 1, 1, ptn_internal_zend_test_parameter_attribute_method },
+        { "ZendTestClassWithMethodWithParameterAttribute::override", 1, 1, ptn_internal_zend_test_parameter_attribute_method },
+        { "ZendTestChildClassWithMethodWithParameterAttribute::no_override", 1, 1, ptn_internal_zend_test_parameter_attribute_method },
+        { "ZendTestChildClassWithMethodWithParameterAttribute::override", 1, 1, ptn_internal_zend_test_parameter_attribute_method },
         { "arsort", 1, 2, ptn_internal_arsort },
         { "asin", 1, 1, ptn_internal_asin },
         { "asinh", 1, 1, ptn_internal_asinh },
@@ -241727,9 +241734,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_string_or_stdclass", 1, 1, ptn_internal_zend_string_or_stdclass },
         { "zend_string_or_stdclass_or_null", 1, 1, ptn_internal_zend_string_or_stdclass_or_null },
         { "zend_test_call_with_consumed_args", 3, 3, ptn_internal_zend_test_call_with_consumed_args },
+        { "zend_test_attribute_with_named_argument", 0, 0, ptn_internal_zend_test_attribute_with_named_argument },
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
+        { "zend_test_parameter_with_attribute", 1, 1, ptn_internal_zend_test_parameter_with_attribute },
         { "zend_trigger_bailout", 0, 0, ptn_internal_zend_trigger_bailout },
         { "zend_weakmap_attach", 2, 2, ptn_internal_zend_weakmap_attach },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
@@ -241797,9 +241806,11 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_string_or_stdclass") ||
         ptn_ascii_case_equal(name, "zend_string_or_stdclass_or_null") ||
         ptn_ascii_case_equal(name, "zend_test_call_with_consumed_args") ||
+        ptn_ascii_case_equal(name, "zend_test_attribute_with_named_argument") ||
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_test_parameter_with_attribute") ||
         ptn_ascii_case_equal(name, "zend_trigger_bailout") ||
         ptn_ascii_case_equal(name, "zend_weakmap_attach") ||
         ptn_ascii_case_equal(name, "zend_get_unit_enum") ||
@@ -242122,6 +242133,9 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "tmpMethodParamName", NULL, "Foo|Bar|null", 1, 1, 0, 0, 1, "null", NULL, NULL },
         { "tmpMethodParamWithStringDefaultValue", "string", "string", 0, 1, 0, 0, 1, "\"tmpMethodParamWithStringDefaultValue\"", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS[] = {
+        { "parameter", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    };
     static const PtnParameterMetadata PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[] = {
         { "locale", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
         { "displayLocale", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
@@ -242308,6 +242322,27 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             NULL,
             0,
             0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "zend_test_parameter_with_attribute") ||
+        ptn_ascii_case_equal(function->name, "ZendTestClassWithMethodWithParameterAttribute::no_override") ||
+        ptn_ascii_case_equal(function->name, "ZendTestClassWithMethodWithParameterAttribute::override") ||
+        ptn_ascii_case_equal(function->name, "ZendTestChildClassWithMethodWithParameterAttribute::no_override") ||
+        ptn_ascii_case_equal(function->name, "ZendTestChildClassWithMethodWithParameterAttribute::override")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS[0]),
+            sizeof(PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS[0]),
+            0,
+            PTN_INTERNAL_ZEND_TEST_PARAMETER_ATTRIBUTE_PARAMETERS,
+            0,
+            "int",
+            "int",
+            0,
+            1
         );
     }
     if (ptn_ascii_case_equal(function->name, "locale_get_display_language") ||
@@ -243888,6 +243923,9 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DoOperationNoCast")
         || ptn_ascii_case_equal(class_name, "_ZendTestClass")
         || ptn_ascii_case_equal(class_name, "_ZendTestChildClass")
+        || ptn_ascii_case_equal(class_name, "ZendTestClassWithMethodWithParameterAttribute")
+        || ptn_ascii_case_equal(class_name, "ZendTestChildClassWithMethodWithParameterAttribute")
+        || ptn_ascii_case_equal(class_name, "ZendTestClassWithPropertyAttribute")
         || ptn_ascii_case_equal(class_name, "ZendTestNS\\Bar")
         || ptn_ascii_case_equal(class_name, "ZendTestNS\\Foo")
         || ptn_ascii_case_equal(class_name, "ZendTestNS\\NotUnlikelyCompileError")
@@ -246379,6 +246417,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         (ptn_ascii_case_equal(method_name, "variadicTest") ||
             ptn_ascii_case_equal(method_name, "testTmpMethodWithArgInfo"))) {
         return 1;
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestClassWithMethodWithParameterAttribute") ||
+        ptn_ascii_case_equal(class_name, "ZendTestChildClassWithMethodWithParameterAttribute") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "ZendTestClassWithMethodWithParameterAttribute")) {
+        return ptn_ascii_case_equal(method_name, "no_override") ||
+            ptn_ascii_case_equal(method_name, "override");
     }
     if (ptn_internal_class_name_is_sqlite3(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -250986,6 +251030,20 @@ static const char *ptn_reflection_method_internal_declaring_class(
             ptn_ascii_case_equal(method_name, "testTmpMethodWithArgInfo"))) {
         return "_ZendTestClass";
     }
+    if (ptn_ascii_case_equal(class_name, "ZendTestChildClassWithMethodWithParameterAttribute") &&
+        ptn_ascii_case_equal(method_name, "no_override")) {
+        return "ZendTestClassWithMethodWithParameterAttribute";
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestChildClassWithMethodWithParameterAttribute") &&
+        ptn_ascii_case_equal(method_name, "override")) {
+        return "ZendTestChildClassWithMethodWithParameterAttribute";
+    }
+    if ((ptn_ascii_case_equal(class_name, "ZendTestClassWithMethodWithParameterAttribute") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "ZendTestClassWithMethodWithParameterAttribute")) &&
+        (ptn_ascii_case_equal(method_name, "no_override") ||
+            ptn_ascii_case_equal(method_name, "override"))) {
+        return "ZendTestClassWithMethodWithParameterAttribute";
+    }
     return class_name;
 }
 
@@ -252058,6 +252116,29 @@ static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     const PtnValue *args,
     size_t line
 );
+static PtnValue ptn_zend_test_internal_function_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PtnValue ptn_zend_test_internal_parameter_reflection_attributes(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata,
+    size_t index,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PtnValue ptn_zend_test_internal_property_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 
 static PtnValue ptn_reflection_method_metadata_attributes(
     PtnRuntime *runtime,
@@ -253084,6 +253165,7 @@ static PtnValue ptn_builtin_exception_reflection_property_default(
 static int ptn_zend_test_class_reflection_property_applies(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "_ZendTestClass") ||
         ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
+        ptn_ascii_case_equal(class_name, "ZendTestClassWithPropertyAttribute") ||
         ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass");
 }
 
@@ -253126,6 +253208,17 @@ static int ptn_zend_test_reflection_property_metadata(
             *is_static = 0;
             *visibility = PTN_PROPERTY_PUBLIC;
             *has_default = strcmp(property_name, "testProp") == 0;
+            *modifiers = 1;
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal(class_name, "ZendTestClassWithPropertyAttribute")) {
+        if (strcmp(property_name, "attributed") == 0) {
+            *declaring_class = "ZendTestClassWithPropertyAttribute";
+            *is_static = 0;
+            *visibility = PTN_PROPERTY_PUBLIC;
+            *has_default = 1;
             *modifiers = 1;
             return 1;
         }
@@ -254984,7 +255077,14 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 line
             );
         }
-        return ptn_reflection_empty_attributes(runtime, "ReflectionProperty", "getAttributes", argc, args, line);
+        return ptn_zend_test_internal_property_reflection_attributes(
+            runtime,
+            attribute_class_name,
+            data->name,
+            argc,
+            args,
+            line
+        );
     }
     if (ptn_ascii_case_equal(name, "getHook")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
@@ -256292,6 +256392,175 @@ static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     return runtime->exceptions->active_exception != NULL
         ? ptn_null()
         : ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_zend_test_single_reflection_attribute(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *attribute_name,
+    const char *argument_name,
+    const char *argument_value,
+    int target,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_reflection_attributes_check_at_most_arguments(runtime, function_name, "getAttributes", argc, 2);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char filter_function_name[128];
+    int written = snprintf(filter_function_name, sizeof(filter_function_name), "%s::getAttributes", function_name);
+    if (written < 0 || (size_t)written >= sizeof(filter_function_name)) {
+        ptn_abort_out_of_memory();
+    }
+    if (!ptn_reflection_attributes_name_filter_allows(
+            runtime,
+            filter_function_name,
+            attribute_name,
+            argc,
+            args,
+            line
+        )) {
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_array_from_literal_entries(0, NULL);
+    }
+
+    PtnValue arguments = ptn_array_from_literal_entries(0, NULL);
+    PtnValue constructor_arguments = ptn_array_from_literal_entries(0, NULL);
+    if (argument_value != NULL) {
+        PtnArrayKey key = argument_name == NULL
+            ? ptn_array_int_key(0)
+            : ptn_array_string_key(argument_name);
+        PtnArrayKey ctor_key = argument_name == NULL
+            ? ptn_array_int_key(0)
+            : ptn_array_string_key(argument_name);
+        ptn_array_set_entry(
+            arguments.as.array,
+            key,
+            ptn_owned_string(ptn_duplicate_string(argument_value))
+        );
+        ptn_array_set_entry(
+            constructor_arguments.as.array,
+            ctor_key,
+            ptn_owned_string(ptn_duplicate_string(argument_value))
+        );
+    }
+    PtnValue attribute = ptn_reflection_attribute_object_from_name(
+        runtime,
+        attribute_name,
+        arguments,
+        ptn_null(),
+        constructor_arguments,
+        target,
+        0,
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        runtime != NULL ? runtime->strict_types : 0
+    );
+    ptn_value_destroy(&constructor_arguments);
+    ptn_value_destroy(&arguments);
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), attribute);
+    return result;
+}
+
+static PtnValue ptn_zend_test_internal_function_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(function_name, "zend_test_attribute_with_named_argument")) {
+        return ptn_zend_test_single_reflection_attribute(
+            runtime,
+            "ReflectionFunction",
+            "ZendTestAttributeWithArguments",
+            "arg",
+            "foo",
+            2,
+            argc,
+            args,
+            line
+        );
+    }
+    return ptn_reflection_empty_attributes(runtime, "ReflectionFunction", "getAttributes", argc, args, line);
+}
+
+static const char *ptn_zend_test_internal_parameter_attribute_value(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    if (!metadata.found || metadata.name == NULL || index != 0) {
+        return NULL;
+    }
+    if (ptn_ascii_case_equal(metadata.name, "zend_test_parameter_with_attribute")) {
+        return "value1";
+    }
+    if (ptn_ascii_case_equal(metadata.name, "ZendTestClassWithMethodWithParameterAttribute::no_override") ||
+        ptn_ascii_case_equal(metadata.name, "ZendTestChildClassWithMethodWithParameterAttribute::no_override")) {
+        return "value2";
+    }
+    if (ptn_ascii_case_equal(metadata.name, "ZendTestClassWithMethodWithParameterAttribute::override")) {
+        return "value3";
+    }
+    if (ptn_ascii_case_equal(metadata.name, "ZendTestChildClassWithMethodWithParameterAttribute::override")) {
+        return "value4";
+    }
+    return NULL;
+}
+
+static PtnValue ptn_zend_test_internal_parameter_reflection_attributes(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata,
+    size_t index,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    const char *value = ptn_zend_test_internal_parameter_attribute_value(metadata, index);
+    if (value == NULL) {
+        return ptn_reflection_empty_attributes(runtime, "ReflectionParameter", "getAttributes", argc, args, line);
+    }
+    return ptn_zend_test_single_reflection_attribute(
+        runtime,
+        "ReflectionParameter",
+        "ZendTestParameterAttribute",
+        NULL,
+        value,
+        32,
+        argc,
+        args,
+        line
+    );
+}
+
+static PtnValue ptn_zend_test_internal_property_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(class_name, "ZendTestClassWithPropertyAttribute") &&
+        strcmp(property_name, "attributed") == 0) {
+        return ptn_zend_test_single_reflection_attribute(
+            runtime,
+            "ReflectionProperty",
+            "ZendTestAttribute",
+            NULL,
+            NULL,
+            8,
+            argc,
+            args,
+            line
+        );
+    }
+    return ptn_reflection_empty_attributes(runtime, "ReflectionProperty", "getAttributes", argc, args, line);
 }
 
 static PtnValue ptn_reflection_class_get_attributes(
@@ -282107,6 +282376,15 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         if (data->has_closure_function_index) {
             return ptn_declared_closure_reflection_attributes(runtime, data->closure_function_index, data->closure_scope_class_name, argc, args, line);
         }
+        if (metadata.is_internal && metadata.name != NULL) {
+            return ptn_zend_test_internal_function_reflection_attributes(
+                runtime,
+                metadata.name,
+                argc,
+                args,
+                line
+            );
+        }
         return ptn_reflection_empty_attributes(runtime, "ReflectionFunction", "getAttributes", argc, args, line);
     }
     ptn_reflection_check_no_arguments(runtime, "ReflectionFunction", name, argc);
@@ -282882,6 +283160,16 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
                 data->closure_function_index,
                 index,
                 data->closure_scope_class_name,
+                argc,
+                args,
+                line
+            );
+        }
+        if (metadata.is_internal) {
+            return ptn_zend_test_internal_parameter_reflection_attributes(
+                runtime,
+                metadata,
+                index,
                 argc,
                 args,
                 line
@@ -286734,6 +287022,45 @@ static PtnValue ptn_internal_method_metadata_stub(
     (void)args;
     (void)line;
     ptn_throw_exception(runtime, "Error", "Internal method metadata stub cannot be invoked directly");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_test_attribute_with_named_argument(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_test_parameter_with_attribute(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(1);
+}
+
+static PtnValue ptn_internal_zend_test_parameter_attribute_method(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
     return ptn_null();
 }
 

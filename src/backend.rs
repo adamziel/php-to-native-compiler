@@ -45,6 +45,9 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "ZendTestAttributeWithArguments",
     "ZendTestParameterAttribute",
     "ZendTestPropertyAttribute",
+    "ZendTestClassWithMethodWithParameterAttribute",
+    "ZendTestChildClassWithMethodWithParameterAttribute",
+    "ZendTestClassWithPropertyAttribute",
     "ZendTestNS\\Bar",
     "ZendTestNS\\Foo",
     "ZendTestNS\\NotUnlikelyCompileError",
@@ -13052,6 +13055,9 @@ fn emit_class_metadata_helpers(
         "ZendTestAttributeWithArguments",
         "ZendTestParameterAttribute",
         "ZendTestPropertyAttribute",
+        "ZendTestClassWithMethodWithParameterAttribute",
+        "ZendTestChildClassWithMethodWithParameterAttribute",
+        "ZendTestClassWithPropertyAttribute",
         "DatePeriod",
         "BcMath\\Number",
         "Generator",
@@ -13968,6 +13974,9 @@ fn emit_class_metadata_helpers(
         "ZendTestAttributeWithArguments",
         "ZendTestParameterAttribute",
         "ZendTestPropertyAttribute",
+        "ZendTestClassWithMethodWithParameterAttribute",
+        "ZendTestChildClassWithMethodWithParameterAttribute",
+        "ZendTestClassWithPropertyAttribute",
         "BcMath\\Number",
         "Generator",
         "Fiber",
@@ -14678,6 +14687,10 @@ fn emit_class_metadata_helpers(
         ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
         ("ReflectionObject", "ReflectionClass"),
         ("_ZendTestChildClass", "_ZendTestClass"),
+        (
+            "ZendTestChildClassWithMethodWithParameterAttribute",
+            "ZendTestClassWithMethodWithParameterAttribute",
+        ),
         ("PharFileInfo", "SplFileInfo"),
         ("SimpleXMLIterator", "SimpleXMLElement"),
         ("SplFileObject", "SplFileInfo"),
@@ -28429,6 +28442,13 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "zendtestattributewitharguments" => Some("ZendTestAttributeWithArguments"),
                 "zendtestparameterattribute" => Some("ZendTestParameterAttribute"),
                 "zendtestpropertyattribute" => Some("ZendTestPropertyAttribute"),
+                "zendtestclasswithmethodwithparameterattribute" => {
+                    Some("ZendTestClassWithMethodWithParameterAttribute")
+                }
+                "zendtestchildclasswithmethodwithparameterattribute" => {
+                    Some("ZendTestChildClassWithMethodWithParameterAttribute")
+                }
+                "zendtestclasswithpropertyattribute" => Some("ZendTestClassWithPropertyAttribute"),
                 "zendtestns\\bar" => Some("ZendTestNS\\Bar"),
                 "zendtestns\\foo" => Some("ZendTestNS\\Foo"),
                 "zendtestns\\notunlikelycompileerror" => {
@@ -30329,6 +30349,23 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("#endif\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if ((ptn_ascii_case_equal(class_name, \"ZendTestClassWithMethodWithParameterAttribute\") || ptn_ascii_case_equal(class_name, \"ZendTestChildClassWithMethodWithParameterAttribute\") || ptn_declared_class_is_same_or_descendant(class_name, \"ZendTestClassWithMethodWithParameterAttribute\")) && (ptn_ascii_case_equal(method_name, \"no_override\") || ptn_ascii_case_equal(method_name, \"override\"))) {\n");
+    out.push_str("        if (argc != 1) {\n");
+    out.push_str("            const char *ptn_zend_test_declaring_class = ptn_ascii_case_equal(class_name, \"ZendTestChildClassWithMethodWithParameterAttribute\") && ptn_ascii_case_equal(method_name, \"override\") ? \"ZendTestChildClassWithMethodWithParameterAttribute\" : \"ZendTestClassWithMethodWithParameterAttribute\";\n");
+    out.push_str("            char ptn_zend_test_argc_message[256];\n");
+    out.push_str("            int ptn_zend_test_argc_written = snprintf(ptn_zend_test_argc_message, sizeof(ptn_zend_test_argc_message), \"%s::%s() expects exactly 1 argument, %zu given\", ptn_zend_test_declaring_class, method_name, argc);\n");
+    out.push_str("            if (ptn_zend_test_argc_written < 0 || (size_t)ptn_zend_test_argc_written >= sizeof(ptn_zend_test_argc_message)) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            ptn_throw_exception_at(runtime, \"ArgumentCountError\", ptn_zend_test_argc_message, runtime->source_path, line);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("        (void)args;\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"no_override\")) {\n");
+    out.push_str("            return ptn_int(2);\n");
+    out.push_str("        }\n");
+    out.push_str("        return ptn_ascii_case_equal(class_name, \"ZendTestChildClassWithMethodWithParameterAttribute\") ? ptn_int(4) : ptn_int(3);\n");
+    out.push_str("    }\n");
     out.push_str("    if ((ptn_ascii_case_equal(class_name, \"SplObjectStorage\") || ptn_declared_class_is_same_or_descendant(class_name, \"SplObjectStorage\")) && ptn_ascii_case_equal(method_name, \"unserialize\")) {\n");
     out.push_str("        PtnValue ptn_spl_object_storage_unserialize_result = ptn_null();\n");
     out.push_str("        PtnTryFrame ptn_spl_object_storage_unserialize_frame;\n");

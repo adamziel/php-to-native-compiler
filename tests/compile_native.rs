@@ -435,8 +435,9 @@ fn direct_var_dump_internal_first_class_callable_metadata() {
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     let stdout = String::from_utf8(execution.stdout).unwrap();
@@ -474,8 +475,9 @@ var_dump(function ($someThing) {});
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     let stdout = String::from_utf8(execution.stdout).unwrap();
@@ -514,8 +516,9 @@ fn direct_internal_helper_with_full_dispatch_compiles_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "aa:3\n");
@@ -1383,8 +1386,9 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(
@@ -3434,8 +3438,9 @@ var_dump($recursive->getMaxDepth());
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(
@@ -56928,6 +56933,129 @@ var_dump((new ZendTestAttributeWithArguments('baz'))->arg);
         "bool(true)\nint(1)\nstring(26) \"ZendTestParameterAttribute\"\nstring(3) \"foo\"\nint(1)\nstring(25) \"ZendTestPropertyAttribute\"\nstring(3) \"bar\"\nstring(3) \"baz\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zend_test_internal_attribute_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-internal-attribute-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-internal-attribute-metadata.php");
+    let output = root.join("zend-test-internal-attribute-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+$functionAttribute = (new ReflectionFunction('zend_test_attribute_with_named_argument'))->getAttributes()[0];
+$functionArgs = $functionAttribute->getArguments();
+echo $functionAttribute->getName(), \"\n\";
+echo count($functionArgs), \"\n\";
+echo $functionArgs['arg'], \"\n\";
+echo $functionAttribute->newInstance()->arg, \"\n\";
+
+function dumpParameterAttribute(ReflectionParameter $parameter): void {
+    $attribute = $parameter->getAttributes()[0];
+    $args = $attribute->getArguments();
+    echo $attribute->getName(), ':', $args[0], ':', $attribute->newInstance()->parameter, \"\n\";
+}
+
+dumpParameterAttribute((new ReflectionFunction('zend_test_parameter_with_attribute'))->getParameters()[0]);
+dumpParameterAttribute((new ReflectionMethod('ZendTestClassWithMethodWithParameterAttribute', 'no_override'))->getParameters()[0]);
+dumpParameterAttribute((new ReflectionMethod('ZendTestClassWithMethodWithParameterAttribute', 'override'))->getParameters()[0]);
+dumpParameterAttribute((new ReflectionMethod('ZendTestChildClassWithMethodWithParameterAttribute', 'no_override'))->getParameters()[0]);
+dumpParameterAttribute((new ReflectionMethod('ZendTestChildClassWithMethodWithParameterAttribute', 'override'))->getParameters()[0]);
+
+class ChildClassWithNoAttribute extends ZendTestClassWithMethodWithParameterAttribute {
+    public function override(string $parameter): int { return 5; }
+}
+dumpParameterAttribute((new ReflectionMethod('ChildClassWithNoAttribute', 'no_override'))->getParameters()[0]);
+echo count((new ReflectionMethod('ChildClassWithNoAttribute', 'override'))->getParameters()[0]->getAttributes()), \"\n\";
+
+class ChildClassWithSameAttribute extends ZendTestClassWithMethodWithParameterAttribute {
+    public function override(#[ZendTestParameterAttribute('value5')] string $parameter): int { return 6; }
+}
+dumpParameterAttribute((new ReflectionMethod('ChildClassWithSameAttribute', 'no_override'))->getParameters()[0]);
+dumpParameterAttribute((new ReflectionMethod('ChildClassWithSameAttribute', 'override'))->getParameters()[0]);
+
+#[Attribute(Attribute::TARGET_PARAMETER)]
+class SomeAttribute {
+    public function __construct(public string $someParam) {}
+}
+class ChildClassWithDifferentAttribute extends ZendTestClassWithMethodWithParameterAttribute {
+    public function override(#[SomeAttribute('value6')] string $parameter): int { return 7; }
+}
+dumpParameterAttribute((new ReflectionMethod('ChildClassWithDifferentAttribute', 'no_override'))->getParameters()[0]);
+$someAttribute = (new ReflectionMethod('ChildClassWithDifferentAttribute', 'override'))->getParameters()[0]->getAttributes()[0];
+echo $someAttribute->getName(), ':', $someAttribute->getArguments()[0], ':', $someAttribute->newInstance()->someParam, \"\n\";
+
+$propertyAttribute = (new ReflectionProperty(ZendTestClassWithPropertyAttribute::class, 'attributed'))->getAttributes(ZendTestAttribute::class)[0];
+echo $propertyAttribute->getName(), \"\n\";
+
+echo zend_test_parameter_with_attribute('foo'), \"\n\";
+$parent = new ZendTestClassWithMethodWithParameterAttribute();
+echo $parent->no_override('foo'), \"\n\";
+echo $parent->override('foo'), \"\n\";
+$child = new ZendTestChildClassWithMethodWithParameterAttribute();
+echo $child->no_override('foo'), \"\n\";
+echo $child->override('foo'), \"\n\";
+$noAttribute = new ChildClassWithNoAttribute();
+echo $noAttribute->no_override('foo'), \"\n\";
+echo $noAttribute->override('foo'), \"\n\";
+$sameAttribute = new ChildClassWithSameAttribute();
+echo $sameAttribute->no_override('foo'), \"\n\";
+echo $sameAttribute->override('foo'), \"\n\";
+$differentAttribute = new ChildClassWithDifferentAttribute();
+echo $differentAttribute->no_override('foo'), \"\n\";
+echo $differentAttribute->override('foo'), \"\n\";
+?>",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ZendTestAttributeWithArguments\n",
+            "1\n",
+            "foo\n",
+            "foo\n",
+            "ZendTestParameterAttribute:value1:value1\n",
+            "ZendTestParameterAttribute:value2:value2\n",
+            "ZendTestParameterAttribute:value3:value3\n",
+            "ZendTestParameterAttribute:value2:value2\n",
+            "ZendTestParameterAttribute:value4:value4\n",
+            "ZendTestParameterAttribute:value2:value2\n",
+            "0\n",
+            "ZendTestParameterAttribute:value2:value2\n",
+            "ZendTestParameterAttribute:value5:value5\n",
+            "ZendTestParameterAttribute:value2:value2\n",
+            "SomeAttribute:value6:value6\n",
+            "ZendTestAttribute\n",
+            "1\n",
+            "2\n",
+            "3\n",
+            "2\n",
+            "4\n",
+            "2\n",
+            "5\n",
+            "2\n",
+            "6\n",
+            "2\n",
+            "7\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("zend_test_attribute_with_named_argument"));
+    assert!(c_source.contains("ZendTestClassWithMethodWithParameterAttribute"));
 }
 
 #[test]
