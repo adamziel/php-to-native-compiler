@@ -1448,7 +1448,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     char *combined = NULL;
     size_t rewritten_len = len;
     const char *output_data = data;
-    int rewrite_vars_enabled = 0;
+    int rewrite_vars_enabled = ptn_output_rewrite_vars_enabled(runtime);
     int trans_sid_enabled = ptn_session_trans_sid_output_enabled(runtime);
     if (rewrite_vars_enabled || trans_sid_enabled) {
         PtnRuntime *rewrite_root = root == NULL ? runtime : root;
@@ -1486,13 +1486,18 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
+        if (rewrite_vars_enabled && ptn_output_rewrite_vars_before_trans_sid(runtime)) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, 1, &rewritten_len);
+            output_data = rewrite_vars_rewritten;
+        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
         }
-        if (rewrite_vars_enabled) {
+        if (rewrite_vars_enabled && !ptn_output_rewrite_vars_before_trans_sid(runtime)) {
             rewrite_vars_rewritten =
                 ptn_output_rewrite_vars_output(runtime, output_data, rewritten_len, 1, &rewritten_len);
             output_data = rewrite_vars_rewritten;
@@ -1742,18 +1747,30 @@ static void ptn_output_write_trans_sid_buffer_segment(
         }
         output_data = rewrite_input;
         rewritten_len = rewrite_len;
+        int rewrite_vars_before_trans_sid = ptn_output_rewrite_vars_before_trans_sid(runtime);
+        int rewrite_actionless_forms = !(
+            segment != NULL &&
+            segment->session_active &&
+            (segment->trans_sid_hosts == NULL || segment->trans_sid_hosts[0] == '\0')
+        );
+        if (rewrite_vars_enabled && rewrite_vars_before_trans_sid) {
+            rewrite_vars_rewritten =
+                ptn_output_rewrite_vars_output(
+                    runtime,
+                    output_data,
+                    rewritten_len,
+                    rewrite_actionless_forms,
+                    &rewritten_len
+                );
+            output_data = rewrite_vars_rewritten;
+        }
         if (trans_sid_enabled) {
             PtnSessionTransSidRewriteState state = ptn_session_trans_sid_current_state(runtime);
             trans_sid_rewritten =
                 ptn_session_rewrite_trans_sid_output(runtime, &state, output_data, rewritten_len, &rewritten_len);
             output_data = trans_sid_rewritten;
         }
-        if (rewrite_vars_enabled) {
-            int rewrite_actionless_forms = !(
-                segment != NULL &&
-                segment->session_active &&
-                (segment->trans_sid_hosts == NULL || segment->trans_sid_hosts[0] == '\0')
-            );
+        if (rewrite_vars_enabled && !rewrite_vars_before_trans_sid) {
             rewrite_vars_rewritten =
                 ptn_output_rewrite_vars_output(
                     runtime,
@@ -9504,6 +9521,9 @@ static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line, 
 
     PtnOutputBuffer buffer;
     if (!ptn_output_buffer_pop(runtime, &buffer)) {
+        if (ptn_output_rewrite_vars_enabled(runtime)) {
+            return 1;
+        }
         PtnRuntime *root = ptn_runtime_root(runtime);
         ptn_emit_notice_with_handler_frame(
             &runtime->diagnostics,
@@ -158890,6 +158910,9 @@ static PtnValue ptn_internal_ob_flush(PtnRuntime *runtime, size_t argc, const Pt
     (void)argc;
     (void)args;
     if (ptn_output_buffer_top(runtime) == NULL) {
+        if (ptn_output_rewrite_vars_enabled(runtime)) {
+            return ptn_bool(1);
+        }
         PtnRuntime *root = ptn_runtime_root(runtime);
         ptn_emit_notice_with_handler_frame(
             &runtime->diagnostics,

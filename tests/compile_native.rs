@@ -23741,6 +23741,34 @@ echo '<form method=\"get\">go</form>', \"\\n\";\n\
 }
 
 #[test]
+fn compile_output_add_rewrite_var_rewrites_direct_output_to_native_binary() {
+    let root = temp_dir("ptn-native-output-add-rewrite-var-direct");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-add-rewrite-var-direct.php");
+    let output = root.join("output-add-rewrite-var-direct-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+output_add_rewrite_var('a', 'b');\n\
+echo \"<a href='a?q=1'>asd</a>\";\n\
+ob_flush();\n\
+ob_end_clean();\n\
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "<a href='a?q=1&a=b'>asd</a>"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_output_rewrite_vars_and_trans_sid_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-output-rewrite-vars-trans-sid-buffer");
     fs::create_dir_all(&root).unwrap();
@@ -23791,12 +23819,12 @@ echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
         concat!(
             "<a href=\"?PHPSESSID=testid\"></a>\n",
             "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
-            "<a href=\"?PHPSESSID=testid&%3Cname%3E=%3Cvalue%3E\"></a>\n",
+            "<a href=\"?%3Cname%3E=%3Cvalue%3E&PHPSESSID=testid\"></a>\n",
             "<a href=\"//url-rewriter.test/foo.php?%3Cname%3E=%3Cvalue%3E\"></a>\n",
-            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" /><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
-            "<a href=\"?PHPSESSID=testid\"></a>\n",
-            "<a href=\"//url-rewriter.test/foo.php\"></a>\n",
-            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" />x</form>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" /><input type=\"hidden\" name=\"&lt;name&gt;\" value=\"&lt;value&gt;\" />x</form>\n",
+            "<a href=\"?%3Cname2%3E=%3Cvalue2%3E&PHPSESSID=testid\"></a>\n",
+            "<a href=\"//url-rewriter.test/foo.php?%3Cname2%3E=%3Cvalue2%3E\"></a>\n",
+            "<form action=\"\" method=\"get\"><input type=\"hidden\" name=\"PHPSESSID\" value=\"testid\" /><input type=\"hidden\" name=\"&lt;name2&gt;\" value=\"&lt;value2&gt;\" />x</form>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
