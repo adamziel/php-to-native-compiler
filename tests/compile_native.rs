@@ -39550,7 +39550,7 @@ create\n\
 bool(true)\n\
 int(3)\n\
 close\n\
-ABCABC\n"
+ABC\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

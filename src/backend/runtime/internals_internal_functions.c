@@ -61570,10 +61570,17 @@ static PtnStreamBucketBrigade *ptn_stream_bucket_brigade_arg(
 
 static PtnValue ptn_stream_bucket_object(PtnRuntime *runtime, const char *data, size_t len) {
     PtnValue bucket = ptn_object_new_shell(runtime, "StreamBucket");
+    int *bucket_moved = calloc(1, sizeof(int));
+    if (bucket_moved == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnResource *bucket_resource = ptn_resource_new_named("userfilter.bucket");
+    bucket_resource->close_hook_data = bucket_moved;
+    bucket_resource->close_hook_data_free = free;
     ptn_array_set_entry(
         bucket.as.object->properties,
         ptn_array_string_key("bucket"),
-        ptn_resource(ptn_resource_new_named("userfilter.bucket"))
+        ptn_resource(bucket_resource)
     );
     ptn_array_set_entry(
         bucket.as.object->properties,
@@ -61594,6 +61601,33 @@ static PtnValue ptn_stream_bucket_object(PtnRuntime *runtime, const char *data, 
         ptn_int((int64_t)len)
     );
     return bucket;
+}
+
+static int *ptn_stream_bucket_moved_flag(PtnRuntime *runtime, PtnValue bucket_value, size_t line) {
+    bucket_value = ptn_value_deref(bucket_value);
+    if (bucket_value.type != PTN_OBJECT || bucket_value.as.object == NULL) {
+        return NULL;
+    }
+    PtnValue bucket_resource_value = ptn_object_read_property(
+        runtime,
+        bucket_value,
+        "bucket",
+        bucket_value.as.object->class_name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&bucket_resource_value);
+        return NULL;
+    }
+    bucket_resource_value = ptn_value_deref(bucket_resource_value);
+    int *moved = NULL;
+    if (bucket_resource_value.type == PTN_RESOURCE &&
+        bucket_resource_value.as.resource != NULL &&
+        strcmp(bucket_resource_value.as.resource->type_name, "userfilter.bucket") == 0) {
+        moved = (int *)bucket_resource_value.as.resource->close_hook_data;
+    }
+    ptn_value_destroy(&bucket_resource_value);
+    return moved;
 }
 
 static PtnValue ptn_internal_stream_bucket_make_writeable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -61687,6 +61721,15 @@ static PtnValue ptn_internal_stream_bucket_add(
     if (!ptn_stream_bucket_data_operand(runtime, function_name, args[1], line, &data)) {
         return ptn_null();
     }
+    int *bucket_moved = ptn_stream_bucket_moved_flag(runtime, args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
+    if (bucket_moved != NULL && *bucket_moved) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
     if (prepend) {
         size_t previous_len = brigade->output.len;
         ptn_string_buffer_append_len(&brigade->output, data.data, data.len);
@@ -61698,6 +61741,9 @@ static PtnValue ptn_internal_stream_bucket_add(
         ptn_string_buffer_append_len(&brigade->output, data.data, data.len);
     }
     brigade->output_bucket_count++;
+    if (bucket_moved != NULL) {
+        *bucket_moved = 1;
+    }
     ptn_string_operand_free(data);
     return ptn_null();
 }
