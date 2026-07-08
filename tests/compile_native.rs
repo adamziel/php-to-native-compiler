@@ -27332,6 +27332,46 @@ var_dump($a);
 }
 
 #[test]
+fn compile_eval_missing_semicolon_parse_error_does_not_poison_generator_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-parse-error-generator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-parse-error-generator.php");
+    let output = root.join("eval-parse-error-generator-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield 1;
+}
+
+try {
+    eval('abc');
+} catch (ParseError $e) {
+    echo "caught\n";
+}
+
+$values = gen();
+$values->next();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "caught\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("syntax error, unexpected end of file, expecting \\\";\\\""));
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();

@@ -295182,6 +295182,9 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
                 break;
         }
     }
+    if (previous_can_end_expression) {
+        return ptn_duplicate_string("syntax error, unexpected end of file, expecting \";\"");
+    }
     return NULL;
 }
 
