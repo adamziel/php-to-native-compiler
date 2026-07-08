@@ -81630,7 +81630,7 @@ var_dump($pass_captured, $pass_return, $pass_status);\n\
 var_dump(shell_exec(\"printf 'shell\\nout\\n'\"));\n\
 var_dump(escapeshellarg(\"a'b\"), escapeshellarg(\"\"));\n\
 $id = uniqid('pfx_', true);\n\
-var_dump(str_starts_with($id, 'pfx_'), strlen($id) > strlen('pfx_'));\n\
+var_dump(str_starts_with($id, 'pfx_'), strlen($id), $id[17], strlen(substr($id, 18)));\n\
 var_dump(function_exists('system'), function_exists('EXEC'), function_exists('passthru'), function_exists('SHELL_EXEC'), function_exists('escapeshellarg'), function_exists('UNIQID'));\n",
     )
     .unwrap();
@@ -81669,7 +81669,9 @@ var_dump(function_exists('system'), function_exists('EXEC'), function_exists('pa
             "string(8) \"'a'\\''b'\"\n",
             "string(2) \"''\"\n",
             "bool(true)\n",
-            "bool(true)\n",
+            "int(27)\n",
+            "string(1) \".\"\n",
+            "int(9)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",

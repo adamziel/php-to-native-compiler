@@ -157231,8 +157231,8 @@ static PtnValue ptn_internal_uniqid(PtnRuntime *runtime, size_t argc, const PtnV
         int entropy_written = snprintf(
             entropy,
             sizeof(entropy),
-            ".%010llu",
-            (unsigned long long)(ptn_uniqid_counter % 10000000000ull)
+            ".%09llu",
+            (unsigned long long)(ptn_uniqid_counter % 1000000000ull)
         );
         if (entropy_written < 0 || (size_t)entropy_written >= sizeof(entropy)) {
             ptn_abort_out_of_memory();
