@@ -158245,6 +158245,18 @@ static int ptn_iterator_to_array_key(
     return ptn_array_offset_key_from_value(runtime, key, line, 0, key_out);
 }
 
+static int ptn_iterator_to_array_prefers_fresh_iterator(PtnValue source) {
+    source = ptn_value_deref(source);
+    if (source.type != PTN_OBJECT || source.as.object == NULL || source.as.object->class_name == NULL) {
+        return 0;
+    }
+    const char *class_name = source.as.object->class_name;
+    return ptn_declared_class_is_same_or_descendant(class_name, "DOMNodeList") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\NodeList") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOMNamedNodeMap") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\NamedNodeMap");
+}
+
 static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue source = ptn_value_deref(args[0]);
     int preserve_keys = argc < 2 || ptn_is_truthy(args[1]);
@@ -158264,9 +158276,24 @@ static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc,
     }
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue iterator_source_holder = ptn_null();
+    PtnValue iterator_source = source;
+    if (
+        runtime != NULL &&
+        runtime->method_dispatch != NULL &&
+        ptn_iterator_to_array_prefers_fresh_iterator(source)
+    ) {
+        iterator_source_holder = runtime->method_dispatch(runtime, source, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            ptn_value_destroy(&iterator_source_holder);
+            return ptn_null();
+        }
+        iterator_source = ptn_value_deref(iterator_source_holder);
+    }
     PtnArrayIterator iterator = ptn_array_iterator_from_value(
         runtime,
-        source,
+        iterator_source,
         NULL,
         runtime != NULL ? runtime->source_path : NULL,
         line
@@ -158293,6 +158320,7 @@ static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc,
         ptn_array_iterator_advance(&iterator);
     }
     ptn_array_iterator_destroy(&iterator);
+    ptn_value_destroy(&iterator_source_holder);
     return runtime != NULL && runtime->exceptions->active_exception != NULL ? ptn_null() : result;
 }
 

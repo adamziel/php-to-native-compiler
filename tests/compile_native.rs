@@ -70947,6 +70947,53 @@ echo "Count: " . iterator_count($it) . "\n";
 }
 
 #[test]
+fn compile_dom_nodelist_iterator_to_array_reuses_collection_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-nodelist-iterator-to-array-reuse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-nodelist-iterator-to-array-reuse.php");
+    let output = root.join("dom-nodelist-iterator-to-array-reuse-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<XML
+<root>
+  <node>val1</node>
+  <node>val2</node>
+</root>
+XML;
+
+$doc = new DOMDocument();
+$doc->loadXML($xml);
+$items = (new DOMXPath($doc))->query('//node');
+
+foreach (iterator_to_array($items, false) as $key => $node) {
+    echo $key, ':', get_class($node), "\n";
+}
+foreach (iterator_to_array($items, true) as $key => $node) {
+    echo $key, ':', get_class($node), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0:DOMElement\n1:DOMElement\n0:DOMElement\n1:DOMElement\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dom_document_loadxml_normalizes_libxml_tree_flags_to_native_binary() {
     let root = temp_dir("ptn-native-dom-loadxml-normalized-libxml-flags");
     fs::create_dir_all(&root).unwrap();
