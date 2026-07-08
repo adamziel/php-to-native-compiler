@@ -40269,6 +40269,54 @@ var_dump(fstat($stream));\n",
 }
 
 #[test]
+fn compile_user_stream_wrapper_include_dispatches_magic_option_and_stat_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-include-magic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-include-magic.php");
+    let output = root.join("user-stream-wrapper-include-magic-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Loader {
+    public $context;
+    public function stream_open() {
+        return true;
+    }
+    public function stream_read() {
+        echo "stream_read\n";
+        throw new Exception("Message");
+    }
+    public function __call($method, $args) {
+        echo "$method\n";
+    }
+}
+
+stream_wrapper_register('abc', Loader::class);
+try {
+    require 'abc://';
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stream_set_option\nstream_stat\nstream_read\nMessage\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_has_declared_or_call_method"));
+    assert!(c_source.contains("ptn_user_stream_dispatch_set_option"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_filesystem_operations_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-filesystem-ops");
     fs::create_dir_all(&root).unwrap();

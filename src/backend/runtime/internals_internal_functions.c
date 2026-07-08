@@ -58017,6 +58017,19 @@ static int ptn_object_has_declared_method(PtnRuntime *runtime, PtnValue object, 
     return runtime->declared_method_metadata(object.as.object->class_name, method_name).found;
 }
 
+static int ptn_object_has_declared_or_call_method(PtnRuntime *runtime, PtnValue object, const char *method_name) {
+    object = ptn_value_deref(object);
+    if (runtime == NULL ||
+        runtime->declared_method_metadata == NULL ||
+        object.type != PTN_OBJECT ||
+        object.as.object == NULL ||
+        object.as.object->class_name == NULL) {
+        return 0;
+    }
+    return runtime->declared_method_metadata(object.as.object->class_name, method_name).found ||
+        ptn_declared_class_has_call_magic(object.as.object->class_name);
+}
+
 static PtnResource *ptn_default_stream_context_ensure(void);
 
 static int ptn_user_stream_assign_context(
@@ -58405,7 +58418,7 @@ static size_t ptn_user_stream_read_bytes(
     }
     if (data->runtime == NULL ||
         data->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_read")) {
+        !ptn_object_has_declared_or_call_method(data->runtime, data->wrapper_object, "stream_read")) {
         return copied;
     }
 
@@ -58510,7 +58523,7 @@ static int ptn_user_stream_eof(
     }
     if (data->runtime == NULL ||
         data->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_eof")) {
+        !ptn_object_has_declared_or_call_method(data->runtime, data->wrapper_object, "stream_eof")) {
         return ptn_stream_eof(resource);
     }
     int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
@@ -58551,7 +58564,7 @@ static size_t ptn_user_stream_write_bytes(
     }
     if (data->runtime == NULL ||
         data->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_write")) {
+        !ptn_object_has_declared_or_call_method(data->runtime, data->wrapper_object, "stream_write")) {
         return 0;
     }
     size_t total = 0;
@@ -70957,7 +70970,7 @@ static PtnValue ptn_internal_fstat(PtnRuntime *runtime, size_t argc, const PtnVa
     if (user_stream != NULL && !user_stream->is_directory) {
         if (user_stream->runtime == NULL ||
             user_stream->runtime->method_dispatch == NULL ||
-            !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_stat")) {
+            !ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_stat")) {
             return ptn_bool(0);
         }
         PtnValue stat_result = user_stream->runtime->method_dispatch(
@@ -204431,7 +204444,7 @@ static int ptn_user_stream_dispatch_set_option(
     }
     if (user_stream->runtime == NULL ||
         user_stream->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
+        !ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
         PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
         const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
             ? wrapper_object.as.object->class_name
@@ -293277,10 +293290,52 @@ static int ptn_try_read_user_stream_wrapper_bytes(
         ptn_value_destroy(&stream_value);
         return -1;
     }
+    PtnResource *stream = resolved_stream.as.resource;
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(stream);
+    int include_style_read = function_name != NULL &&
+        (ptn_ascii_case_equal(function_name, "include") || ptn_ascii_case_equal(function_name, "require"));
+    if (include_style_read &&
+        user_stream != NULL &&
+        user_stream->runtime != NULL &&
+        user_stream->runtime->method_dispatch != NULL &&
+        ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
+        PtnValue option_result = ptn_null();
+        (void)ptn_user_stream_dispatch_set_option(
+            runtime,
+            stream,
+            function_name,
+            2,
+            0,
+            0,
+            8192,
+            line,
+            &option_result
+        );
+        ptn_value_destroy(&option_result);
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&stream_value);
+            return -1;
+        }
+    }
+    if (user_stream != NULL &&
+        user_stream->runtime != NULL &&
+        user_stream->runtime->method_dispatch != NULL &&
+        ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_stat")) {
+        PtnValue stat_result = ptn_internal_fstat(runtime, 1, &stream_value, line);
+        ptn_value_destroy(&stat_result);
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&stream_value);
+            return -1;
+        }
+    }
     PtnValue contents = ptn_stream_read_remaining(
         runtime,
         function_name == NULL ? "include" : function_name,
-        resolved_stream.as.resource,
+        stream,
         -1,
         line
     );
