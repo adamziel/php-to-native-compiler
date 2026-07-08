@@ -68727,8 +68727,7 @@ static int ptn_data_url_parse_parameter(PtnDataUrlInfo *info, const char *segmen
     }
     size_t name_len = (size_t)(equals - segment);
     size_t value_len = segment_len - name_len - 1;
-    if (!ptn_data_url_valid_token(segment, name_len) ||
-        !ptn_data_url_valid_token(equals + 1, value_len)) {
+    if (!ptn_data_url_valid_token(segment, name_len) || value_len == 0) {
         return 0;
     }
     return ptn_data_url_append_parameter(info, segment, name_len, equals + 1, value_len);
@@ -68914,6 +68913,9 @@ static PtnValue ptn_data_url_stream_metadata(PtnResource *resource) {
         );
     }
     for (size_t i = 0; i < info.parameter_count; i++) {
+        if (ptn_ascii_case_equal(info.parameters[i].name, "mediatype")) {
+            continue;
+        }
         ptn_stream_meta_set(
             result.as.array,
             info.parameters[i].name,

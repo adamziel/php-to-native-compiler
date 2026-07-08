@@ -38021,6 +38021,9 @@ var_dump(
 );
 var_dump(@file_get_contents("data://;charset=UTF-8,Hello"));
 var_dump(file_get_contents("data://,a,b"));
+$spoof = fopen("data:text/plain;z=y;uri=eviluri;mediatype=wut?;mediatype2=hello,somedata", "r");
+$spoof_meta = stream_get_meta_data($spoof);
+var_dump($spoof_meta["mediatype"], $spoof_meta["z"], $spoof_meta["uri"], $spoof_meta["mediatype2"], $spoof_meta["base64"]);
 
 $fd = fopen("php://fd/1", "rkkk");
 fwrite($fd, "fd-out\n");
@@ -38040,8 +38043,7 @@ var_dump($client, $errno, $errstr);
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "fd-out\n\
-string(2) \"he\"\n\
+        "string(2) \"he\"\n\
 string(1) \"l\"\n\
 string(10) \"text/plain\"\n\
 string(3) \"bar\"\n\
@@ -38052,6 +38054,12 @@ bool(true)\n\
 string(41) \"data://text/plain;foo=bar;base64,aGVsbG8=\"\n\
 bool(false)\n\
 string(3) \"a,b\"\n\
+string(10) \"text/plain\"\n\
+string(1) \"y\"\n\
+string(72) \"data:text/plain;z=y;uri=eviluri;mediatype=wut?;mediatype2=hello,somedata\"\n\
+string(5) \"hello\"\n\
+bool(false)\n\
+fd-out\n\
 bool(false)\n\
 int(0)\n\
 string(27) \"Failed to parse address \"[\"\"\n"
