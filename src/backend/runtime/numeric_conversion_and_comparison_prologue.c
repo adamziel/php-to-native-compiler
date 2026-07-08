@@ -8486,8 +8486,15 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     } else {
         int preserve_lexical_constant_expression_class =
             runtime != NULL &&
-            runtime->current_class_constant_initializing_constant_name != NULL &&
             message_class_name != NULL &&
+            (
+                runtime->current_class_constant_initializing_constant_name != NULL ||
+                (
+                    runtime->trace_frame != NULL &&
+                    runtime->trace_frame->function_name != NULL &&
+                    strcmp(runtime->trace_frame->function_name, "[constant expression]") == 0
+                )
+            ) &&
             (
                 ptn_ascii_case_equal(message_class_name, "self") ||
                 ptn_ascii_case_equal(message_class_name, "static") ||
@@ -8958,6 +8965,26 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope_suppress_d
         class_name,
         constant,
         NULL,
+        access_scope,
+        1,
+        line,
+        0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope_message_class_suppress_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *message_class_name,
+    const char *access_scope,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        message_class_name,
         access_scope,
         1,
         line,

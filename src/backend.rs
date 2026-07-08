@@ -22742,11 +22742,27 @@ fn emit_reflection_class_constant_default_validation(
         out.push_str("        if (runtime->exceptions->active_exception == NULL) {\n");
         out.push_str("            PtnValue ptn_reflection_class_constant_read_");
         out.push_str(&read_index.to_string());
-        out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(runtime, \"");
-        out.push_str(&c_string(&read.class_name));
-        out.push_str("\", \"");
-        out.push_str(&c_string(&read.constant_name));
-        out.push_str("\", ");
+        if let Some(message_class_name) = &read.message_class_name {
+            out.push_str(" = ptn_runtime_read_class_constant_with_scope_message_class_suppress_deprecation(runtime, \"");
+            out.push_str(&c_string(&read.class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&read.constant_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(message_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&read.access_scope));
+            out.push_str("\", ");
+        } else {
+            out.push_str(
+                " = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(runtime, \"",
+            );
+            out.push_str(&c_string(&read.class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&read.constant_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&read.access_scope));
+            out.push_str("\", ");
+        }
         out.push_str(&read.line.to_string());
         out.push_str(");\n");
         out.push_str("            ptn_value_destroy(&ptn_reflection_class_constant_read_");
@@ -27816,6 +27832,8 @@ fn class_property_initialization_chain(
 struct PropertyDefaultClassConstantRead {
     class_name: String,
     constant_name: String,
+    message_class_name: Option<String>,
+    access_scope: String,
     line: usize,
 }
 
@@ -27847,7 +27865,7 @@ fn collect_property_default_class_constant_reads(
     classes: &[ClassDecl],
     declaring_class_name: &str,
     reads: &mut Vec<PropertyDefaultClassConstantRead>,
-    seen: &mut HashSet<(String, String, usize)>,
+    seen: &mut HashSet<(String, String, String, String, usize)>,
 ) {
     match value {
         ValueExpr::ClassConstantFetch {
@@ -27863,10 +27881,21 @@ fn collect_property_default_class_constant_reads(
                 declaring_class_name,
                 classes,
             ) {
-                if seen.insert((resolved_class_name.to_string(), name.clone(), *line)) {
+                let message_class_name =
+                    property_default_class_constant_message_class_name(class_name);
+                let seen_key = (
+                    resolved_class_name.to_string(),
+                    name.clone(),
+                    message_class_name.clone().unwrap_or_default(),
+                    declaring_class_name.to_string(),
+                    *line,
+                );
+                if seen.insert(seen_key) {
                     reads.push(PropertyDefaultClassConstantRead {
                         class_name: resolved_class_name.to_string(),
                         constant_name: name.clone(),
+                        message_class_name,
+                        access_scope: declaring_class_name.to_string(),
                         line: *line,
                     });
                 }
@@ -27983,6 +28012,17 @@ fn collect_property_default_class_constant_reads(
             }
         }
         _ => {}
+    }
+}
+
+fn property_default_class_constant_message_class_name(class_name: &str) -> Option<String> {
+    if class_name.eq_ignore_ascii_case("self")
+        || class_name.eq_ignore_ascii_case("static")
+        || class_name.eq_ignore_ascii_case("parent")
+    {
+        Some(class_name.to_string())
+    } else {
+        None
     }
 }
 
@@ -55671,11 +55711,25 @@ impl ValueEmitter {
             out.push_str(", 0, NULL);\n");
             out.push_str("        PtnValue ");
             out.push_str(&temp);
-            out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(&runtime, \"");
-            out.push_str(&c_string(&read.class_name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&read.constant_name));
-            out.push_str("\", ");
+            if let Some(message_class_name) = &read.message_class_name {
+                out.push_str(" = ptn_runtime_read_class_constant_with_scope_message_class_suppress_deprecation(&runtime, \"");
+                out.push_str(&c_string(&read.class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.constant_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(message_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.access_scope));
+                out.push_str("\", ");
+            } else {
+                out.push_str(" = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(&runtime, \"");
+                out.push_str(&c_string(&read.class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.constant_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&read.access_scope));
+                out.push_str("\", ");
+            }
             out.push_str(&read.line.to_string());
             out.push_str(");\n");
             out.push_str("        ptn_runtime_pop_trace_frame(&runtime, &");

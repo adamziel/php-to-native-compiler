@@ -58527,6 +58527,41 @@ foreach ([fn() => Foo::A, fn() => Child::A, fn() => Foo::regular()] as $read) {
 }
 
 #[test]
+fn compile_property_default_preserves_relative_constant_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-property-default-relative-diagnostic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-default-relative-diagnostic.php");
+    let output = root.join("property-default-relative-diagnostic-bin");
+    fs::write(
+        &input,
+        "<?php
+class PropertyDefaultBox {
+    public $value = self::MISSING;
+}
+
+new PropertyDefaultBox();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Undefined constant self::MISSING"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[constant expression]()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source
+        .contains("ptn_runtime_read_class_constant_with_scope_message_class_suppress_deprecation"));
+}
+
+#[test]
 fn compile_included_class_constant_initializer_error_uses_declaring_source_path_to_native_binary() {
     let root = temp_dir("ptn-native-include-class-constant-error-source");
     fs::create_dir_all(&root).unwrap();
