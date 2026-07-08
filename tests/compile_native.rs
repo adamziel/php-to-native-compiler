@@ -52685,6 +52685,44 @@ var_dump(in_array(\"FunctionListClass::methodEntry\", $defined[\"user\"]));
 }
 
 #[test]
+fn compile_get_defined_functions_exclude_disabled_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-get-defined-functions-exclude-disabled-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-defined-functions-exclude-disabled-deprecation.php");
+    let output = root.join("get-defined-functions-exclude-disabled-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php
+$functions = get_defined_functions();
+var_dump(in_array('dl', $functions['internal']));
+$functions = get_defined_functions(false);
+var_dump(in_array('dl', $functions['internal']));
+$functions = get_defined_functions(true);
+var_dump(in_array('dl', $functions['internal']));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_DISABLE_FUNCTIONS", "dl")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("bool(false)\n").count(), 3, "{stdout}");
+    assert_eq!(
+        stdout
+            .matches("Deprecated: get_defined_functions(): The $exclude_disabled parameter has no effect since PHP 8.0 in ")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_class_alias_metadata_lists_and_validation_to_native_binary() {
     let root = temp_dir("ptn-native-class-alias-metadata-lists");
     fs::create_dir_all(&root).unwrap();

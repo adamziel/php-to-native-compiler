@@ -239921,9 +239921,14 @@ static const char *ptn_internal_function_extension_name(const char *name) {
 }
 
 static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)args;
-    (void)line;
+    if (argc > 0) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "get_defined_functions(): The $exclude_disabled parameter has no effect since PHP 8.0",
+            line
+        );
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names());
     ptn_array_set_entry(result.as.array, ptn_array_string_key("user"), ptn_user_function_names(runtime));
