@@ -61730,6 +61730,16 @@ static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
     ptn_string_buffer_init(&output);
     size_t line_len = filter->filter_line_position;
     for (size_t i = 0; i < len; i++) {
+        if (ptn_stream_filter_line_break_at(filter, data, len, i)) {
+            ptn_string_buffer_append_len(
+                &output,
+                filter->filter_line_break,
+                filter->filter_line_break_len
+            );
+            line_len = 0;
+            i += filter->filter_line_break_len - 1;
+            continue;
+        }
         unsigned char byte = (unsigned char)data[i];
         int trailing_whitespace = ptn_stream_qp_whitespace_is_trailing(filter, data, len, i);
         if (ptn_stream_qp_should_escape(byte, trailing_whitespace)) {
