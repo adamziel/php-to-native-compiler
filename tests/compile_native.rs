@@ -38458,6 +38458,61 @@ try {
 }
 
 #[test]
+fn compile_stream_persistent_socket_edge_cases_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-persistent-socket-edge-cases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-persistent-socket-edge-cases.php");
+    let output = root.join("stream-persistent-socket-edge-cases-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sock = pfsockopen('udp://127.0.0.1', '63844');
+var_dump((int)$sock);
+@fwrite($sock, "1");
+$sock2 = pfsockopen('udp://127.0.0.1', '63844');
+var_dump((int)$sock2);
+@fwrite($sock2, "2");
+fclose($sock2);
+try {
+    fwrite($sock, "3");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$client = stream_socket_client('abc', $errno, $errstr, 0, STREAM_CLIENT_PERSISTENT);
+var_dump($client, $errno, $errstr);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines.len(), 6, "stdout:\n{stdout}");
+    assert!(lines[0].starts_with("int("), "stdout:\n{stdout}");
+    assert!(lines[1].starts_with("int("), "stdout:\n{stdout}");
+    assert_eq!(
+        lines[2],
+        "fwrite(): Argument #1 ($stream) must be an open stream resource"
+    );
+    assert_eq!(lines[3], "bool(false)");
+    assert_eq!(lines[4], "int(0)");
+    assert_eq!(lines[5], "string(0) \"\"");
+    assert!(
+        !stdout.contains("\n\nfwrite():"),
+        "stream write diagnostics should not inject a blank line:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_pfsockopen"));
+    assert!(c_source.contains("ptn_internal_stream_socket_client"));
+}
+
+#[test]
 fn compile_nonblocking_socket_fwrite_would_block_to_native_binary() {
     let root = temp_dir("ptn-native-nonblocking-socket-fwrite");
     fs::create_dir_all(&root).unwrap();

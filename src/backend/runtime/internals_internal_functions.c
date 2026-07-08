@@ -63780,7 +63780,6 @@ static void ptn_emit_stream_write_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    fputc('\n', stdout);
     ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
@@ -203820,6 +203819,18 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
         free(parse_message);
         ptn_string_operand_free(address);
         ptn_abort_out_of_memory();
+    }
+    int64_t flags = argc >= 5 ? ptn_value_to_integer(args[4]) : 0;
+    if ((flags & PTN_STREAM_CLIENT_PERSISTENT) != 0) {
+        if (argc >= 2) {
+            ptn_stream_socket_client_assign_reference(runtime, args[1], ptn_int(0));
+        }
+        if (argc >= 3) {
+            ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_string(""));
+        }
+        free(parse_message);
+        ptn_string_operand_free(address);
+        return ptn_bool(0);
     }
     int warning_needed = snprintf(
         NULL,
