@@ -101874,6 +101874,75 @@ var_dump($all['error_append_string']['builtin_default_value']);\n",
 }
 
 #[test]
+fn phpc_ini_get_all_reports_extension_filters_and_precision_defaults() {
+    let root = temp_dir("ptn-phpc-ini-get-all-extension-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-get-all-extension-filters.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get_all(''));\n\
+var_dump(ini_get_all('nosuchextension'));\n\
+var_dump(ini_get_all('reflection'));\n\
+var_dump(ini_get_all('pcre', false));\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n\
+ini_set('precision', '3');\n\
+$all = ini_get_all(null, true);\n\
+var_dump($all['precision']['global_value']);\n\
+var_dump($all['precision']['local_value']);\n\
+var_dump($all['precision']['builtin_default_value']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("precision=8")
+        .arg("-d")
+        .arg("pcre.jit=1")
+        .arg("-d")
+        .arg("pcre.backtrack_limit=1000000")
+        .arg("-d")
+        .arg("pcre.recursion_limit=100000")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: ini_get_all(): Extension \"\" cannot be found"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: ini_get_all(): Extension \"nosuchextension\" cannot be found"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\narray(0) {\n}\narray(3) {\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"pcre.backtrack_limit\"]=>\n  string(7) \"1000000\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"pcre.jit\"]=>\n  string(1) \"1\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"pcre.recursion_limit\"]=>\n  string(6) \"100000\""),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with(
+        "string(1) \"8\"\nstring(1) \"8\"\nstring(2) \"14\"\nstring(1) \"8\"\nstring(1) \"3\"\nstring(2) \"14\"\n"
+    ), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_inline_run_tests_extension_probes_use_cli_fast_path() {
     let extension_dir = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .arg("-d")

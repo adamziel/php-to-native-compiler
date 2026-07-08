@@ -147289,6 +147289,27 @@ static int ptn_runtime_current_serialize_precision(PtnRuntime *runtime) {
     return ptn_runtime_config_root(runtime)->serialize_precision;
 }
 
+static int ptn_runtime_ini_global_precision_initialized = 0;
+static int ptn_runtime_ini_global_precision = PTN_DEFAULT_PRECISION;
+static int ptn_runtime_ini_global_serialize_precision_initialized = 0;
+static int ptn_runtime_ini_global_serialize_precision = PTN_DEFAULT_SERIALIZE_PRECISION;
+
+static int ptn_runtime_global_precision(PtnRuntime *runtime) {
+    if (!ptn_runtime_ini_global_precision_initialized) {
+        ptn_runtime_ini_global_precision = ptn_runtime_current_precision(runtime);
+        ptn_runtime_ini_global_precision_initialized = 1;
+    }
+    return ptn_runtime_ini_global_precision;
+}
+
+static int ptn_runtime_global_serialize_precision(PtnRuntime *runtime) {
+    if (!ptn_runtime_ini_global_serialize_precision_initialized) {
+        ptn_runtime_ini_global_serialize_precision = ptn_runtime_current_serialize_precision(runtime);
+        ptn_runtime_ini_global_serialize_precision_initialized = 1;
+    }
+    return ptn_runtime_ini_global_serialize_precision;
+}
+
 static int ptn_runtime_current_unserialize_max_depth(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     return root == NULL ? PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH : root->unserialize_max_depth;
@@ -149152,6 +149173,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
+        (void)ptn_runtime_global_precision(runtime);
         PtnValue previous = ptn_ini_int_string(ptn_runtime_current_precision(runtime));
         if (!ptn_runtime_set_precision(runtime, args[1])) {
             ptn_value_destroy(&previous);
@@ -149162,6 +149184,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        (void)ptn_runtime_global_serialize_precision(runtime);
         PtnValue previous = ptn_ini_int_string(ptn_runtime_current_serialize_precision(runtime));
         if (!ptn_runtime_set_serialize_precision(runtime, args[1])) {
             ptn_value_destroy(&previous);
@@ -150042,8 +150065,8 @@ static void ptn_ini_get_all_set_directive(
     PtnValue directive = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(directive.as.array, ptn_array_string_key("global_value"), global_value);
     ptn_array_set_entry(directive.as.array, ptn_array_string_key("local_value"), local_value);
-    ptn_array_set_entry(directive.as.array, ptn_array_string_key("access"), ptn_int(7));
     ptn_array_set_entry(directive.as.array, ptn_array_string_key("builtin_default_value"), builtin_default_value);
+    ptn_array_set_entry(directive.as.array, ptn_array_string_key("access"), ptn_int(7));
     ptn_array_set_entry(result.as.array, ptn_array_string_key(name), directive);
 }
 
@@ -150070,32 +150093,163 @@ static void ptn_ini_get_all_add_url_rewriter_hosts(PtnRuntime *runtime, PtnValue
     );
 }
 
+static void ptn_ini_get_all_add_precision(PtnRuntime *runtime, PtnValue result, int details) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    int global = root == NULL ? PTN_DEFAULT_PRECISION : ptn_runtime_global_precision(runtime);
+    int local = root == NULL ? PTN_DEFAULT_PRECISION : root->precision;
+    ptn_ini_get_all_set_directive(
+        result,
+        "precision",
+        ptn_ini_int_string(global),
+        ptn_ini_int_string(local),
+        ptn_ini_int_string(PTN_DEFAULT_PRECISION),
+        details
+    );
+}
+
+static void ptn_ini_get_all_add_serialize_precision(PtnRuntime *runtime, PtnValue result, int details) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    int global = root == NULL ? PTN_DEFAULT_SERIALIZE_PRECISION : ptn_runtime_global_serialize_precision(runtime);
+    int local = root == NULL ? PTN_DEFAULT_SERIALIZE_PRECISION : root->serialize_precision;
+    ptn_ini_get_all_set_directive(
+        result,
+        "serialize_precision",
+        ptn_ini_int_string(global),
+        ptn_ini_int_string(local),
+        ptn_ini_int_string(PTN_DEFAULT_SERIALIZE_PRECISION),
+        details
+    );
+}
+
+static void ptn_ini_get_all_add_pcre_directive(
+    PtnRuntime *runtime,
+    PtnValue result,
+    const char *name,
+    const char *value,
+    const char *builtin_default_value,
+    int details
+) {
+    (void)runtime;
+    ptn_ini_get_all_set_directive(
+        result,
+        name,
+        ptn_owned_string(ptn_duplicate_string(value)),
+        ptn_owned_string(ptn_duplicate_string(value)),
+        ptn_string(builtin_default_value),
+        details
+    );
+}
+
+static void ptn_ini_get_all_add_pcre(PtnRuntime *runtime, PtnValue result, int details) {
+    ptn_ini_get_all_add_pcre_directive(
+        runtime,
+        result,
+        "pcre.backtrack_limit",
+        ptn_runtime_pcre_backtrack_limit(runtime),
+        "1000000",
+        details
+    );
+    ptn_ini_get_all_add_pcre_directive(
+        runtime,
+        result,
+        "pcre.jit",
+        ptn_runtime_pcre_jit(runtime),
+        "1",
+        details
+    );
+    ptn_ini_get_all_add_pcre_directive(
+        runtime,
+        result,
+        "pcre.recursion_limit",
+        ptn_runtime_pcre_recursion_limit(runtime),
+        "100000",
+        details
+    );
+}
+
+static PtnValue ptn_ini_get_all_unknown_extension(PtnRuntime *runtime, PtnStringOperand extension_name, size_t line) {
+    char *extension = ptn_duplicate_string_len(extension_name.data, extension_name.len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "ini_get_all(): Extension \"%s\" cannot be found",
+        extension
+    );
+    if (needed < 0) {
+        free(extension);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(extension);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "ini_get_all(): Extension \"%s\" cannot be found",
+        extension
+    );
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+    free(extension);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_ini_get_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    int include_standard = 1;
+    enum {
+        PTN_INI_GET_ALL_EVERYTHING,
+        PTN_INI_GET_ALL_CORE,
+        PTN_INI_GET_ALL_STANDARD,
+        PTN_INI_GET_ALL_PCRE,
+        PTN_INI_GET_ALL_EMPTY
+    } extension = PTN_INI_GET_ALL_EVERYTHING;
     if (argc >= 1) {
-        PtnValue extension = ptn_value_deref(args[0]);
-        if (extension.type != PTN_NULL) {
+        PtnValue extension_value = ptn_value_deref(args[0]);
+        if (extension_value.type != PTN_NULL) {
             PtnStringOperand extension_name =
                 ptn_internal_expect_string_arg(runtime, "ini_get_all", 1, "extension", args[0], line);
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(extension_name);
                 return ptn_null();
             }
-            include_standard =
-                extension_name.len == 0 ||
-                ptn_string_operand_ascii_case_equal(extension_name, "Core") ||
-                ptn_string_operand_ascii_case_equal(extension_name, "standard");
+            if (extension_name.len == 0) {
+                PtnValue result = ptn_ini_get_all_unknown_extension(runtime, extension_name, line);
+                ptn_string_operand_free(extension_name);
+                return result;
+            }
+            if (ptn_string_operand_ascii_case_equal(extension_name, "Core")) {
+                extension = PTN_INI_GET_ALL_CORE;
+            } else if (ptn_string_operand_ascii_case_equal(extension_name, "standard")) {
+                extension = PTN_INI_GET_ALL_STANDARD;
+            } else if (ptn_string_operand_ascii_case_equal(extension_name, "pcre")) {
+                extension = PTN_INI_GET_ALL_PCRE;
+            } else if (ptn_string_operand_ascii_case_equal(extension_name, "reflection")) {
+                extension = PTN_INI_GET_ALL_EMPTY;
+            } else {
+                PtnValue result = ptn_ini_get_all_unknown_extension(runtime, extension_name, line);
+                ptn_string_operand_free(extension_name);
+                return result;
+            }
             ptn_string_operand_free(extension_name);
         }
     }
     int details = argc < 2 || ptn_is_truthy(args[1]);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    if (!include_standard) {
+    if (extension == PTN_INI_GET_ALL_EMPTY) {
         return result;
     }
-    ptn_ini_get_all_add_error_append_string(runtime, result, details);
-    ptn_ini_get_all_add_url_rewriter_hosts(runtime, result, details);
+    if (extension == PTN_INI_GET_ALL_EVERYTHING || extension == PTN_INI_GET_ALL_CORE) {
+        ptn_ini_get_all_add_precision(runtime, result, details);
+        ptn_ini_get_all_add_serialize_precision(runtime, result, details);
+    }
+    if (extension == PTN_INI_GET_ALL_EVERYTHING || extension == PTN_INI_GET_ALL_STANDARD) {
+        ptn_ini_get_all_add_error_append_string(runtime, result, details);
+        ptn_ini_get_all_add_url_rewriter_hosts(runtime, result, details);
+    }
+    if (extension == PTN_INI_GET_ALL_EVERYTHING || extension == PTN_INI_GET_ALL_PCRE) {
+        ptn_ini_get_all_add_pcre(runtime, result, details);
+    }
     return result;
 }
 
