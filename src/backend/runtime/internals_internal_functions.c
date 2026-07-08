@@ -61359,17 +61359,27 @@ static int ptn_stream_filter_assign_declared_public_stream_property(
     if (object.type != PTN_OBJECT || object.as.object == NULL) {
         return 1;
     }
-    if (ptn_declared_class_is_same_or_descendant(object.as.object->class_name, "php_user_filter")) {
-        return 1;
-    }
     PtnObjectPropertyMetadata *metadata =
         ptn_object_metadata_for_display_name(object.as.object, "stream");
-    if (metadata == NULL || metadata->set_visibility != PTN_PROPERTY_PUBLIC) {
+    PtnArrayKey stream_key = ptn_array_string_key("stream");
+    PtnArrayEntry *dynamic_entry = object.as.object->properties == NULL
+        ? NULL
+        : ptn_array_entry_for_key(object.as.object->properties, stream_key);
+    ptn_array_key_free(stream_key);
+    if (metadata == NULL && dynamic_entry == NULL) {
+        return 1;
+    }
+    if (metadata != NULL && metadata->set_visibility != PTN_PROPERTY_PUBLIC) {
         return 1;
     }
 
+    int native_php_user_filter =
+        ptn_declared_class_is_same_or_descendant(object.as.object->class_name, "php_user_filter");
     int warning_emitted = 0;
-    if (input_len != 0 && metadata->type_kind != PTN_PROPERTY_TYPE_MIXED) {
+    if (input_len != 0 &&
+        !native_php_user_filter &&
+        metadata != NULL &&
+        metadata->type_kind != PTN_PROPERTY_TYPE_MIXED) {
         ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
         warning_emitted = 1;
     }
@@ -61383,6 +61393,22 @@ static int ptn_stream_filter_assign_declared_public_stream_property(
         }
     }
     PtnValue stream_value = ptn_resource(filter->user_filter_stream);
+    if (metadata == NULL) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key("stream"),
+            ptn_value_clone_deref(stream_value)
+        );
+        return 1;
+    }
+    if (native_php_user_filter) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key("stream"),
+            ptn_value_clone_deref(stream_value)
+        );
+        return 1;
+    }
     PtnValue written = ptn_object_write_property(
         runtime,
         filter->user_filter_object,
@@ -65156,6 +65182,37 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
         }
         if (want == 0) {
             break;
+        }
+        if (source->read_filters != NULL || ptn_stream_filtered_read_pending_available(source) != 0) {
+            size_t filtered_len = 0;
+            int read_ok = 1;
+            char *filtered = ptn_stream_read_filtered_bytes(
+                runtime,
+                "stream_copy_to_stream",
+                source,
+                want,
+                line,
+                &filtered_len,
+                &read_ok
+            );
+            if (!read_ok) {
+                free(filtered);
+                return ptn_bool(0);
+            }
+            if (filtered_len == 0) {
+                free(filtered);
+                break;
+            }
+            size_t written = ptn_stream_write_filtered(runtime, "stream_copy_to_stream", dest, filtered, filtered_len, line);
+            free(filtered);
+            if (written != filtered_len) {
+                return ptn_bool(0);
+            }
+            if (filtered_len > (size_t)(INT64_MAX - total)) {
+                ptn_abort_out_of_memory();
+            }
+            total += (int64_t)filtered_len;
+            continue;
         }
         size_t read_len = ptn_stream_read_bytes(source, buffer, want);
         if (read_len != 0) {

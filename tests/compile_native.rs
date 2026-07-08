@@ -39270,6 +39270,86 @@ bool(true)\n\nWarning: stream_filter_append(): User-filter \"missing.filter\" re
 }
 
 #[test]
+fn compile_user_stream_filter_updates_existing_stream_property_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-stream-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-stream-property.php");
+    let output = root.join("stream-user-filter-stream-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class AppendTailFilter extends php_user_filter {
+    public $stream;
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        if ($closing) {
+            stream_bucket_append($out, stream_bucket_new($this->stream, "tail\n"));
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+#[AllowDynamicProperties]
+class DynamicStreamFilter {
+    public $filtername;
+    public $params;
+    public function onCreate(): bool {
+        $this->stream = null;
+        return true;
+    }
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        if (!$closing) {
+            var_dump(property_exists($this, "stream"));
+            var_dump(get_resource_type($this->stream));
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("append.tail", AppendTailFilter::class);
+$tail = fopen(__FILE__, "rb");
+stream_filter_append($tail, "append.tail", STREAM_FILTER_READ);
+stream_copy_to_stream($tail, STDOUT);
+
+stream_filter_register("dynamic.stream", DynamicStreamFilter::class);
+$dynamic = fopen("php://memory", "w");
+stream_filter_append($dynamic, "dynamic.stream");
+fwrite($dynamic, "data");
+rewind($dynamic);
+echo fread($dynamic, 1024), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("stream_copy_to_stream($tail, STDOUT);\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("tail\n"), "{stdout}");
+    assert!(
+        stdout.contains("bool(true)\nstring(6) \"stream\"\ndata\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_assign_declared_public_stream_property"));
+    assert!(c_source.contains("ptn_internal_stream_bucket_new"));
+}
+
+#[test]
 fn compile_user_stream_filter_empty_output_consumed_buckets_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-empty-output");
     fs::create_dir_all(&root).unwrap();
