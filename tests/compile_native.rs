@@ -21232,6 +21232,58 @@ var_dump(unserialize('O:8:"TestSelf":2:{s:4:"prop";N;s:4:"prop";O:8:"TestSelf":1
 }
 
 #[test]
+fn compile_unserialize_object_root_references_share_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-object-root-reference-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-object-root-reference-alias.php");
+    let output = root.join("unserialize-object-root-reference-alias-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$obj = unserialize('O:8:"stdClass":3:{s:1:"a";R:1;s:1:"b";R:1;s:1:"c";i:1;}');
+$obj->a = "first";
+var_dump($obj);
+$obj->b = "second";
+var_dump($obj);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(stdClass)#1 (3) {\n",
+            "  [\"a\"]=>\n",
+            "  &string(5) \"first\"\n",
+            "  [\"b\"]=>\n",
+            "  &string(5) \"first\"\n",
+            "  [\"c\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "object(stdClass)#1 (3) {\n",
+            "  [\"a\"]=>\n",
+            "  &string(6) \"second\"\n",
+            "  [\"b\"]=>\n",
+            "  &string(6) \"second\"\n",
+            "  [\"c\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_interval_unserialize_overwrites_internal_properties_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-unserialize-properties");
     fs::create_dir_all(&root).unwrap();

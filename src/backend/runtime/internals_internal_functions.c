@@ -14538,6 +14538,7 @@ typedef struct {
     int slot_is_container_entry;
     const PtnObjectPropertyMetadata *property_metadata;
     int object_reference_only;
+    PtnReference *object_reference_alias;
 } PtnUnserializeIdEntry;
 
 typedef struct {
@@ -14630,6 +14631,10 @@ static void ptn_unserialize_id_entry_clear(PtnUnserializeIdEntry *entry) {
     entry->slot_is_container_entry = 0;
     entry->property_metadata = NULL;
     entry->object_reference_only = 0;
+    if (entry->object_reference_alias != NULL) {
+        ptn_reference_release(entry->object_reference_alias);
+        entry->object_reference_alias = NULL;
+    }
 }
 
 static void ptn_unserialize_id_entry_retain_value(
@@ -14654,6 +14659,10 @@ static void ptn_unserialize_id_entry_retain_value(
         ? entry->retained_value.as.reference
         : NULL;
     entry->object_reference_only = 0;
+    if (entry->object_reference_alias != NULL) {
+        ptn_reference_release(entry->object_reference_alias);
+        entry->object_reference_alias = NULL;
+    }
     ptn_unserialize_id_entry_set_object(
         entry,
         ptn_unserialize_slot_object(entry->slot)
@@ -14916,6 +14925,7 @@ static size_t ptn_unserialize_add_slot(PtnUnserializeState *state, PtnValue *slo
     state->ids[state->id_len].slot_is_container_entry = 0;
     state->ids[state->id_len].property_metadata = NULL;
     state->ids[state->id_len].object_reference_only = 0;
+    state->ids[state->id_len].object_reference_alias = NULL;
     ptn_unserialize_id_entry_set_object(
         &state->ids[state->id_len],
         ptn_unserialize_slot_object(slot)
@@ -14947,6 +14957,10 @@ static void ptn_unserialize_update_slot_ex(
     entry->slot_is_container_entry = slot_is_container_entry;
     entry->property_metadata = property_metadata;
     entry->object_reference_only = 0;
+    if (entry->object_reference_alias != NULL) {
+        ptn_reference_release(entry->object_reference_alias);
+        entry->object_reference_alias = NULL;
+    }
     if (slot != NULL && slot->type == PTN_REFERENCE) {
         entry->reference = slot->as.reference;
         ptn_reference_adopt_property_type(entry->reference, property_metadata);
@@ -14985,6 +14999,10 @@ static void ptn_unserialize_mark_object_reference_only(PtnUnserializeState *stat
     ptn_unserialize_id_entry_set_object(entry, object);
     entry->reference = NULL;
     entry->object_reference_only = 1;
+    if (entry->object_reference_alias != NULL) {
+        ptn_reference_release(entry->object_reference_alias);
+        entry->object_reference_alias = NULL;
+    }
 }
 
 static void ptn_unserialize_retain_slot_value(PtnUnserializeState *state, PtnValue *slot) {
@@ -15342,7 +15360,12 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     }
     PtnValue resolved = ptn_value_deref(*entry->slot);
     if (resolved.type == PTN_OBJECT && !entry->slot_is_container_entry) {
-        return ptn_value_clone(resolved);
+        if (entry->object_reference_alias == NULL) {
+            PtnValue alias_value = ptn_value_clone(resolved);
+            entry->object_reference_alias = ptn_unserialize_reference_new_owned(alias_value);
+        }
+        entry->object_reference_alias->refcount++;
+        return ptn_reference_value(entry->object_reference_alias);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
