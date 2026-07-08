@@ -204322,6 +204322,120 @@ static PtnValue ptn_fsockopen_reject_null_hostname(
     return ptn_bool(0);
 }
 
+static int ptn_fsockopen_explicit_transport_len(PtnStringOperand hostname, size_t *len_out) {
+    for (size_t i = 1; i + 2 < hostname.len; i++) {
+        if (hostname.data[i] == ':' && hostname.data[i + 1] == '/' && hostname.data[i + 2] == '/') {
+            *len_out = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_fsockopen_display_with_port_alloc(PtnStringOperand hostname, int64_t port) {
+    int needed = port >= 0
+        ? snprintf(NULL, 0, "%.*s:%lld", (int)hostname.len, hostname.data, (long long)port)
+        : snprintf(NULL, 0, "%.*s", (int)hostname.len, hostname.data);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *display = malloc((size_t)needed + 1);
+    if (display == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = port >= 0
+        ? snprintf(display, (size_t)needed + 1, "%.*s:%lld", (int)hostname.len, hostname.data, (long long)port)
+        : snprintf(display, (size_t)needed + 1, "%.*s", (int)hostname.len, hostname.data);
+    if (written < 0 || written != needed) {
+        free(display);
+        ptn_abort_out_of_memory();
+    }
+    return display;
+}
+
+static PtnValue ptn_fsockopen_reject_unknown_transport(
+    PtnRuntime *runtime,
+    PtnStringOperand hostname,
+    size_t transport_len,
+    int64_t port,
+    PtnValue error_code_arg,
+    PtnValue error_message_arg,
+    size_t line
+) {
+    char *transport = ptn_duplicate_string_len(hostname.data, transport_len);
+    char *display = ptn_fsockopen_display_with_port_alloc(hostname, port);
+    int message_needed = snprintf(
+        NULL,
+        0,
+        "Unable to find the socket transport \"%s\" - did you forget to enable it when you configured PHP?",
+        transport
+    );
+    if (message_needed < 0) {
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)message_needed + 1);
+    if (message == NULL) {
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    int message_written = snprintf(
+        message,
+        (size_t)message_needed + 1,
+        "Unable to find the socket transport \"%s\" - did you forget to enable it when you configured PHP?",
+        transport
+    );
+    if (message_written < 0 || message_written != message_needed) {
+        free(message);
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    int warning_needed = snprintf(
+        NULL,
+        0,
+        "fsockopen(): Unable to connect to %s (%s)",
+        display,
+        message
+    );
+    if (warning_needed < 0) {
+        free(message);
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    char *warning = malloc((size_t)warning_needed + 1);
+    if (warning == NULL) {
+        free(message);
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    int warning_written = snprintf(
+        warning,
+        (size_t)warning_needed + 1,
+        "fsockopen(): Unable to connect to %s (%s)",
+        display,
+        message
+    );
+    if (warning_written < 0 || warning_written != warning_needed) {
+        free(warning);
+        free(message);
+        free(display);
+        free(transport);
+        ptn_abort_out_of_memory();
+    }
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_owned_string(message));
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+    free(warning);
+    free(display);
+    free(transport);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "fsockopen", 1, "hostname", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -204339,6 +204453,22 @@ static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const P
             runtime,
             "fsockopen",
             hostname,
+            port,
+            argc >= 3 ? args[2] : ptn_null(),
+            argc >= 4 ? args[3] : ptn_null(),
+            line
+        );
+        ptn_string_operand_free(hostname);
+        return result;
+    }
+    size_t transport_len = 0;
+    if (ptn_fsockopen_explicit_transport_len(hostname, &transport_len) &&
+        !((transport_len == 3 && ptn_ascii_case_equal_n(hostname.data, "tcp", 3)) ||
+          (transport_len == 3 && ptn_ascii_case_equal_n(hostname.data, "udp", 3)))) {
+        PtnValue result = ptn_fsockopen_reject_unknown_transport(
+            runtime,
+            hostname,
+            transport_len,
             port,
             argc >= 3 ? args[2] : ptn_null(),
             argc >= 4 ? args[3] : ptn_null(),

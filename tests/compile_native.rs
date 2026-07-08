@@ -42054,6 +42054,47 @@ fclose($server);
 }
 
 #[test]
+fn compile_fsockopen_rejects_unknown_transport_to_native_binary() {
+    let root = temp_dir("ptn-native-fsockopen-unknown-transport");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fsockopen-unknown-transport.php");
+    let output = root.join("fsockopen-unknown-transport-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$errno = null;
+$errstr = null;
+$client = fsockopen("invalid://127.0.0.1", 31337, $errno, $errstr, 1.5);
+var_dump($client);
+var_dump($errstr);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fsockopen(): Unable to connect to invalid://127.0.0.1:31337"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Unable to find the socket transport \"invalid\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nstring(100) \"Unable to find the socket transport \"invalid\" - did you forget to enable it when you configured PHP?\"\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_fsockopen_reject_unknown_transport"));
+}
+
+#[test]
 fn compile_udp_fsockopen_and_stream_socket_server_to_native_binary() {
     let root = temp_dir("ptn-native-udp-fsockopen-stream-socket-server");
     fs::create_dir_all(&root).unwrap();
