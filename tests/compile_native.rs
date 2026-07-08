@@ -20788,6 +20788,56 @@ var_dump($x);
 }
 
 #[test]
+fn compile_gc_status_tracks_automatic_root_buffer_runs_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-status-auto-root-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-status-auto-root-buffer.php");
+    let output = root.join("gc-status-auto-root-buffer-bin");
+    fs::write(
+        &input,
+        "<?php
+class GlobalData {
+    public static Bar $bar;
+}
+class Value {
+    public function __destruct() {
+        new Bar();
+    }
+}
+class Bar {
+    public function __construct() {
+        GlobalData::$bar = $this;
+    }
+}
+class Foo {
+    public Foo $selfRef;
+    public Value $val;
+    public function __construct(Value $val) {
+        $this->val = $val;
+        $this->selfRef = $this;
+    }
+}
+for ($i = 0; $i < 2750; $i++) {
+    new Foo(new Value());
+}
+$status = gc_status();
+var_dump($status['runs'], $status['collected'], $status['roots']);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2500)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_status_to_native_binary() {
     let root = temp_dir("ptn-native-gc-status");
     fs::create_dir_all(&root).unwrap();

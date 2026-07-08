@@ -136188,6 +136188,9 @@ static PtnValue ptn_internal_gc_status(PtnRuntime *runtime, size_t argc, const P
     ptn_array_set_entry(status.as.array, ptn_array_string_key("threshold"), ptn_int(10001));
     ptn_array_set_entry(status.as.array, ptn_array_string_key("buffer_size"), ptn_int(16384));
     size_t roots = root->gc_roots;
+    if (roots > 0) {
+        roots--;
+    }
     if (roots <= SIZE_MAX - ptn_pending_array_cycle_collections) {
         roots += ptn_pending_array_cycle_collections;
     }

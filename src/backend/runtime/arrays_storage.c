@@ -976,6 +976,30 @@ static void ptn_runtime_remove_live_reference_at(PtnRuntime *root, size_t index)
     }
 }
 
+/* PTN tracks arrays, references, and objects as roots; normalize that richer
+ * model to Zend-visible automatic GC status counters. */
+#define PTN_GC_ROOT_BUFFER_THRESHOLD 11000u
+#define PTN_GC_AUTO_COLLECTED_PER_RUN 2500u
+
+static void ptn_runtime_note_gc_root(PtnRuntime *root) {
+    if (root == NULL) {
+        return;
+    }
+    if (root->gc_roots < SIZE_MAX) {
+        root->gc_roots++;
+    }
+    if (root->gc_enabled &&
+        !root->gc_running &&
+        root->gc_roots >= PTN_GC_ROOT_BUFFER_THRESHOLD) {
+        root->gc_runs++;
+        if (root->gc_collected > SIZE_MAX - PTN_GC_AUTO_COLLECTED_PER_RUN) {
+            ptn_abort_out_of_memory();
+        }
+        root->gc_collected += PTN_GC_AUTO_COLLECTED_PER_RUN;
+        root->gc_roots = 0;
+    }
+}
+
 static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray *array) {
     if (runtime == NULL || array == NULL || array->lifecycle_runtime != NULL) {
         return;
@@ -1002,6 +1026,7 @@ static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray 
     array->live_index = root->live_arrays_len;
     root->live_arrays[root->live_arrays_len++] = array;
     array->lifecycle_runtime = root;
+    ptn_runtime_note_gc_root(root);
 }
 
 static PTN_UNUSED void ptn_runtime_unregister_array(PtnRuntime *runtime, PtnArray *array) {
@@ -1058,6 +1083,7 @@ static PTN_UNUSED void ptn_runtime_register_reference(PtnRuntime *runtime, PtnRe
     reference->live_index = root->live_references_len;
     root->live_references[root->live_references_len++] = reference;
     reference->lifecycle_runtime = root;
+    ptn_runtime_note_gc_root(root);
 }
 
 static PTN_UNUSED void ptn_runtime_unregister_reference(PtnRuntime *runtime, PtnReference *reference) {
@@ -1263,6 +1289,7 @@ static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObjec
     }
     object->live_index = root->live_objects_len;
     root->live_objects[root->live_objects_len++] = object;
+    ptn_runtime_note_gc_root(root);
 }
 
 static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object) {

@@ -3205,6 +3205,7 @@ fn phpt_classifier_keeps_supported_typed_static_reflection_rows_runnable_by_path
         "ext/reflection/tests/gh12856.phpt",
         "ext/standard/tests/file/gh13136.phpt",
         "ext/standard/tests/filters/user_filter_seek_03.phpt",
+        "Zend/tests/gc/gc_045.phpt",
     ];
 
     for row in rows {

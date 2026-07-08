@@ -3196,6 +3196,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_setStaticPropertyValue_003|ReflectionProperty_(isReadable_static|isWritable_static|typed_static)|gh12856)[.]phpt$/ ||
                 ptn_path ~ /ext\/standard\/tests\/file\/gh13136[.]phpt$/ ||
                 ptn_path ~ /ext\/standard\/tests\/filters\/user_filter_seek_03[.]phpt$/ ||
+                ptn_path ~ /(^|\/)Zend\/tests\/gc\/gc_045[.]phpt$/ ||
                 ptn_path ~ /(^|\/)Zend\/tests\/type_declarations\/typed_properties_043[.]phpt$/
         }
         function ptn_supported_assertion_closure_source_row() {
