@@ -147681,6 +147681,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string(PTN_PHP_EXTENSION_DIR);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "enable_dl")) {
+        const char *configured = getenv("PTN_ENABLE_DL");
+        *out = ptn_string(configured == NULL ? "0" : configured);
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "filter.default")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_filter_default(runtime)));
         return 1;
@@ -149286,6 +149291,44 @@ static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, con
     (void)args;
     (void)line;
     return ptn_string(PTN_PHP_SAPI_NAME);
+}
+
+static PtnValue ptn_internal_dl(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand extension = ptn_internal_expect_string_arg(runtime, "dl", 1, "extension", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(extension);
+        return ptn_null();
+    }
+
+    if (!ptn_runtime_ini_bool(getenv("PTN_ENABLE_DL"), 0)) {
+        ptn_string_operand_free(extension);
+        ptn_emit_warning(&runtime->diagnostics, "dl(): Dynamically loaded extensions aren't enabled", line);
+        return ptn_bool(0);
+    }
+    if (extension.len > 4096) {
+        ptn_string_operand_free(extension);
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "dl(): Filename exceeds the maximum allowed length of 4096 characters",
+            line
+        );
+        return ptn_bool(0);
+    }
+    if (memchr(extension.data, '/', extension.len) != NULL ||
+        memchr(extension.data, '\\', extension.len) != NULL) {
+        ptn_string_operand_free(extension);
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "dl(): Temporary module name should contain only filename",
+            line
+        );
+        return ptn_bool(0);
+    }
+
+    ptn_string_operand_free(extension);
+    ptn_emit_warning(&runtime->diagnostics, "dl(): Unable to load dynamic library", line);
+    return ptn_bool(0);
 }
 
 static void ptn_phpinfo_write_display_value(PtnRuntime *runtime, PtnValue value) {
@@ -239427,6 +239470,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
+        { "dl", 1, 1, ptn_internal_dl },
         { "dns_check_record", 1, 2, ptn_internal_dns_check_record },
         { "dns_get_record", 1, 5, ptn_internal_dns_get_record },
         { "deflate_add", 2, 3, ptn_internal_deflate_add },

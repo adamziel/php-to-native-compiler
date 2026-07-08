@@ -24740,6 +24740,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "dirname"
             | "bin2hex"
             | "hex2bin"
+            | "dl"
             | "exec"
             | "parse_url"
             | "password_get_info"

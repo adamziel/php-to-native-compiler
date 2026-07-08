@@ -41882,6 +41882,57 @@ A Message\r\n"
 }
 
 #[test]
+fn compile_standard_dl_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-dl-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-dl-warnings.php");
+    let output = root.join("standard-dl-warnings-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(ini_get("enable_dl"));
+var_dump(dl("foo"));
+putenv("PTN_ENABLE_DL=1");
+var_dump(ini_get("enable_dl"));
+var_dump(dl("/path/to/module"));
+var_dump(dl(str_repeat("a", 4097)));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ENABLE_DL", "0")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(1) \"0\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: dl(): Dynamically loaded extensions aren't enabled"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(1) \"1\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: dl(): Temporary module name should contain only filename"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: dl(): Filename exceeds the maximum allowed length of 4096 characters"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 3);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_dl"));
+    assert!(c_source.contains("PTN_ENABLE_DL"));
+}
+
+#[test]
 fn compile_unix_datagram_stream_socket_loopback_to_native_binary() {
     let root = temp_dir("ptn-native-unix-datagram-stream-socket");
     fs::create_dir_all(&root).unwrap();
