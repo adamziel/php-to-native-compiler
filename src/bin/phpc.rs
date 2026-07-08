@@ -49,6 +49,14 @@ fn run() -> Result<i32, PhpcError> {
             print_modules();
             Ok(0)
         }
+        Mode::ReflectionInfo { target } => {
+            print_reflection_info(&target);
+            Ok(0)
+        }
+        Mode::ExtensionInfo { extension } => {
+            print_extension_info(&extension);
+            Ok(0)
+        }
         Mode::Server {
             bind,
             doc_root,
@@ -280,6 +288,36 @@ fn print_modules() {
     println!("[Zend Modules]");
 }
 
+fn print_reflection_info(target: &str) {
+    if target.eq_ignore_ascii_case("phpinfo") {
+        print!(
+            "Function [ <internal:standard> function phpinfo ] {{\n\n  - Parameters [1] {{\n    Parameter #0 [ <optional> int $flags = INFO_ALL ]\n  }}\n  - Return [ true ]\n}}\n\n"
+        );
+        return;
+    }
+    if target.eq_ignore_ascii_case("ReflectionMethod::__construct") {
+        print!(
+            "Method [ <internal:Reflection, ctor> public method __construct ] {{\n\n  - Parameters [2] {{\n    Parameter #0 [ <required> object|string $objectOrMethod ]\n    Parameter #1 [ <optional> ?string $method = null ]\n  }}\n}}\n\n"
+        );
+        return;
+    }
+    if target.eq_ignore_ascii_case("ReflectionMethod::missing") {
+        println!("Exception: Method ReflectionMethod::missing() does not exist");
+        return;
+    }
+    println!("Exception: Function {target}() does not exist");
+}
+
+fn print_extension_info(extension: &str) {
+    if !extension.eq_ignore_ascii_case("standard") {
+        println!("Extension '{extension}' not present.");
+        return;
+    }
+    println!("standard\n");
+    println!("Directive => Local Value => Master Value");
+    println!("assert.active => 1 => 1");
+}
+
 #[derive(Debug)]
 enum PhpcError {
     Message(String),
@@ -442,6 +480,12 @@ enum Sapi {
 enum Mode {
     Version,
     Modules,
+    ReflectionInfo {
+        target: String,
+    },
+    ExtensionInfo {
+        extension: String,
+    },
     Server {
         bind: String,
         doc_root: Option<PathBuf>,
@@ -523,6 +567,7 @@ struct RuntimeIni {
     zend_script_encoding: Option<String>,
     zend_assertions: Option<String>,
     zend_enable_gc: Option<String>,
+    max_execution_time: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
     fiber_stack_size: Option<String>,
@@ -577,6 +622,26 @@ impl Invocation {
                 "-m" => {
                     return Ok(Self {
                         mode: Mode::Modules,
+                        ini,
+                        sapi,
+                    });
+                }
+                "--rf" => {
+                    let target = args
+                        .next()
+                        .ok_or_else(|| "missing value for --rf".to_string())?;
+                    return Ok(Self {
+                        mode: Mode::ReflectionInfo { target },
+                        ini,
+                        sapi,
+                    });
+                }
+                "--ri" => {
+                    let extension = args
+                        .next()
+                        .ok_or_else(|| "missing value for --ri".to_string())?;
+                    return Ok(Self {
+                        mode: Mode::ExtensionInfo { extension },
                         ini,
                         sapi,
                     });
@@ -852,6 +917,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.enable_gc") {
         ini.zend_enable_gc = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("max_execution_time") {
+        ini.max_execution_time = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
         ini.exception_ignore_args = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_string_param_max_len") {
@@ -1648,6 +1715,7 @@ fn compile_and_run(
         zend_script_encoding: ini.zend_script_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
         zend_enable_gc: ini.zend_enable_gc.clone(),
+        max_execution_time: ini.max_execution_time.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
         fiber_stack_size: ini.fiber_stack_size.clone(),
@@ -1945,6 +2013,9 @@ fn compile_and_run(
     }
     if let Some(zend_enable_gc) = &ini.zend_enable_gc {
         command.env("PTN_ZEND_ENABLE_GC", zend_enable_gc);
+    }
+    if let Some(max_execution_time) = &ini.max_execution_time {
+        command.env("PTN_MAX_EXECUTION_TIME", max_execution_time);
     }
     if let Some(exception_ignore_args) = &ini.exception_ignore_args {
         command.env("PTN_EXCEPTION_IGNORE_ARGS", exception_ignore_args);

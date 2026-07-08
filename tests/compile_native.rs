@@ -63437,6 +63437,71 @@ echo shell_exec($cmd), \"\\n\";\n",
 }
 
 #[test]
+fn phpc_dash_d_max_execution_time_reaches_ini_get() {
+    let execution = Command::new(phpc_bin())
+        .args([
+            "-n",
+            "-d",
+            "max_execution_time=111",
+            "-d",
+            "upload_tmp_dir=/test/path",
+            "-r",
+            "var_dump(ini_get(\"max_execution_time\")); var_dump(ini_get(\"upload_tmp_dir\"));",
+        ])
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"111\"\nstring(10) \"/test/path\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_reflection_and_extension_info_cli_modes() {
+    let phpinfo = Command::new(phpc_bin())
+        .args(["-n", "--rf", "phpinfo"])
+        .output()
+        .unwrap();
+    assert!(phpinfo.status.success());
+    let phpinfo_stdout = String::from_utf8(phpinfo.stdout).unwrap();
+    assert!(
+        phpinfo_stdout.contains("function phpinfo"),
+        "{phpinfo_stdout}"
+    );
+    assert!(phpinfo_stdout.contains("Parameter #0"), "{phpinfo_stdout}");
+    assert_eq!(String::from_utf8(phpinfo.stderr).unwrap(), "");
+
+    let missing_method = Command::new(phpc_bin())
+        .args(["-n", "--rf", "ReflectionMethod::missing"])
+        .output()
+        .unwrap();
+    assert!(missing_method.status.success());
+    assert_eq!(
+        String::from_utf8(missing_method.stdout).unwrap(),
+        "Exception: Method ReflectionMethod::missing() does not exist\n"
+    );
+    assert_eq!(String::from_utf8(missing_method.stderr).unwrap(), "");
+
+    let standard = Command::new(phpc_bin())
+        .args(["-n", "--ri", "standard"])
+        .output()
+        .unwrap();
+    assert!(standard.status.success());
+    let standard_stdout = String::from_utf8(standard.stdout).unwrap();
+    assert!(
+        standard_stdout.starts_with("standard\n\n"),
+        "{standard_stdout}"
+    );
+    assert!(
+        standard_stdout.contains("Directive => Local Value => Master Value"),
+        "{standard_stdout}"
+    );
+    assert_eq!(String::from_utf8(standard.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_php_binary_can_reinvoke_current_script_as_worker() {
     let root = temp_dir("ptn-phpc-php-binary-current-script-worker");
     fs::create_dir_all(&root).unwrap();

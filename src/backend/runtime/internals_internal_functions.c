@@ -147838,6 +147838,15 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "max_execution_time")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        *out = ptn_ini_size_string(
+            root != NULL && root->max_execution_time_enabled
+                ? root->max_execution_time_seconds
+                : 0
+        );
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
         return 1;

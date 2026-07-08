@@ -3433,12 +3433,24 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     const char *configured_max_memory_limit = getenv("PTN_MAX_MEMORY_LIMIT");
     const char *configured_memory_limit = getenv("PTN_MEMORY_LIMIT");
+    const char *configured_max_execution_time = getenv("PTN_MAX_EXECUTION_TIME");
     runtime->max_memory_limit = ptn_duplicate_string(
         configured_max_memory_limit == NULL ? "-1" : configured_max_memory_limit
     );
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    if (configured_max_execution_time != NULL) {
+        char *end = NULL;
+        errno = 0;
+        long long seconds = strtoll(configured_max_execution_time, &end, 10);
+        while (end != NULL && isspace((unsigned char)*end)) {
+            end++;
+        }
+        if (errno == 0 && end != configured_max_execution_time && end != NULL && *end == '\0') {
+            ptn_runtime_set_time_limit(runtime, seconds);
+        }
+    }
     const char *configured_fiber_stack_size = getenv("PTN_FIBER_STACK_SIZE");
     runtime->fiber_stack_size = ptn_duplicate_string(
         configured_fiber_stack_size == NULL ? "0" : configured_fiber_stack_size
