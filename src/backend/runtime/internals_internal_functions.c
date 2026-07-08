@@ -158301,6 +158301,170 @@ static PtnValue ptn_internal_user_error(PtnRuntime *runtime, size_t argc, const 
     return ptn_internal_trigger_error(runtime, argc, args, line);
 }
 
+static void ptn_internal_emit_header_already_sent_warning(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    const char *output_path =
+        root == NULL || root->output_started_source_path == NULL ? "ptn" : root->output_started_source_path;
+    size_t output_line = root == NULL ? 0 : root->output_started_line;
+    int needed = snprintf(
+        NULL,
+        0,
+        "Cannot modify header information - headers already sent by (output started at %s:%zu)",
+        output_path,
+        output_line
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Cannot modify header information - headers already sent by (output started at %s:%zu)",
+        output_path,
+        output_line
+    );
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static int ptn_internal_output_has_started(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL && root->output_has_started;
+}
+
+static int ptn_internal_cookie_samesite_is_valid(PtnStringOperand value) {
+    return value.len == 0 ||
+        ptn_session_ascii_case_equal_len(value.data, value.len, "Strict", strlen("Strict")) ||
+        ptn_session_ascii_case_equal_len(value.data, value.len, "Lax", strlen("Lax")) ||
+        ptn_session_ascii_case_equal_len(value.data, value.len, "None", strlen("None"));
+}
+
+static int ptn_internal_validate_cookie_options(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options,
+    size_t line
+) {
+    options = ptn_value_deref(options);
+    if (options.type != PTN_ARRAY) {
+        return 1;
+    }
+    PtnArrayEntry *same_site = ptn_session_array_string_entry(options.as.array, "samesite");
+    if (same_site == NULL) {
+        return 1;
+    }
+    PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, same_site->value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(value);
+        return 0;
+    }
+    int valid = ptn_internal_cookie_samesite_is_valid(value);
+    ptn_string_operand_free(value);
+    if (!valid) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
+            function_name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
+            function_name
+        );
+        ptn_throw_exception(runtime, "ValueError", message);
+        free(message);
+        return 0;
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_setcookie_common(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, 1, "name", args[0], line);
+    ptn_string_operand_free(name);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    if (argc >= 2) {
+        PtnStringOperand value = ptn_internal_expect_string_arg(runtime, function_name, 2, "value", args[1], line);
+        ptn_string_operand_free(value);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+
+    if (argc >= 3) {
+        PtnValue third = ptn_value_deref(args[2]);
+        if (third.type == PTN_ARRAY) {
+            if (!ptn_internal_validate_cookie_options(runtime, function_name, third, line)) {
+                return ptn_null();
+            }
+        } else {
+            (void)ptn_internal_expect_integer_arg(runtime, function_name, 3, "expires_or_options", args[2], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+    }
+
+    if (argc >= 4) {
+        PtnStringOperand path = ptn_internal_expect_string_arg(runtime, function_name, 4, "path", args[3], line);
+        ptn_string_operand_free(path);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    if (argc >= 5) {
+        PtnStringOperand domain = ptn_internal_expect_string_arg(runtime, function_name, 5, "domain", args[4], line);
+        ptn_string_operand_free(domain);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    if (argc >= 6) {
+        (void)ptn_is_truthy(args[5]);
+    }
+    if (argc >= 7) {
+        (void)ptn_is_truthy(args[6]);
+    }
+
+    if (ptn_internal_output_has_started(runtime)) {
+        ptn_internal_emit_header_already_sent_warning(runtime, line);
+        return ptn_bool(0);
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_setcookie(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_setcookie_common(runtime, "setcookie", argc, args, line);
+}
+
+static PtnValue ptn_internal_setrawcookie(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_setcookie_common(runtime, "setrawcookie", argc, args, line);
+}
+
 static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand header = ptn_internal_expect_string_arg(runtime, "header", 1, "header", args[0], line);
     ptn_string_operand_free(header);
@@ -158316,34 +158480,8 @@ static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnV
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root != NULL && root->output_has_started) {
-        const char *output_path =
-            root->output_started_source_path == NULL ? "ptn" : root->output_started_source_path;
-        size_t output_line = root->output_started_line;
-        int needed = snprintf(
-            NULL,
-            0,
-            "Cannot modify header information - headers already sent by (output started at %s:%zu)",
-            output_path,
-            output_line
-        );
-        if (needed < 0) {
-            ptn_abort_out_of_memory();
-        }
-        char *message = malloc((size_t)needed + 1);
-        if (message == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        snprintf(
-            message,
-            (size_t)needed + 1,
-            "Cannot modify header information - headers already sent by (output started at %s:%zu)",
-            output_path,
-            output_line
-        );
-        ptn_emit_warning(&runtime->diagnostics, message, line);
-        free(message);
+    if (ptn_internal_output_has_started(runtime)) {
+        ptn_internal_emit_header_already_sent_warning(runtime, line);
         return ptn_null();
     }
     return ptn_null();
@@ -240036,6 +240174,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "http_get_last_response_headers", 0, 0, ptn_internal_http_get_last_response_headers },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },
+        { "setcookie", 1, 7, ptn_internal_setcookie },
+        { "setrawcookie", 1, 7, ptn_internal_setrawcookie },
         { "hypot", 2, 2, ptn_internal_hypot },
         { "iconv", 3, 3, ptn_internal_iconv },
         { "iconv_get_encoding", 0, 1, ptn_internal_iconv_get_encoding },

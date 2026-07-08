@@ -24922,6 +24922,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "gethostbyname"
             | "gethostname"
             | "header"
+            | "setcookie"
+            | "setrawcookie"
             | "headers_list"
             | "connection_aborted"
             | "connection_status"

@@ -19378,6 +19378,64 @@ Done\n"
 }
 
 #[test]
+fn compile_setcookie_and_setrawcookie_to_native_binary() {
+    let root = temp_dir("ptn-native-cookie-headers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cookie-headers.php");
+    let output = root.join("cookie-headers-bin");
+    fs::write(
+        &input,
+        "<?php
+ob_start();
+var_dump(setcookie('test', 'value', ['samesite' => 'Strict']));
+var_dump(setcookie('test', 'value', ['samesite' => 'strict']));
+var_dump(setcookie('test', 'value', ['samesite' => '']));
+var_dump(setrawcookie('test', 'value', ['samesite' => 'Lax']));
+foreach (['invalid', \"two\\nlines\"] as $value) {
+    try {
+        setcookie('test', 'value', ['samesite' => $value]);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+try {
+    setrawcookie('test', 'value', ['samesite' => 'bad']);
+} catch (ValueError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+ob_end_flush();
+echo \"output\\n\";
+var_dump(@setrawcookie('cookie_name', rawurlencode('cookie_content')));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "setcookie(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"\n",
+            "setcookie(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"\n",
+            "setrawcookie(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"\n",
+            "output\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_setcookie"));
+    assert!(c_source.contains("ptn_internal_setrawcookie"));
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();
