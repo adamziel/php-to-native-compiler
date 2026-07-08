@@ -1752,6 +1752,13 @@ static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics
         (diagnostics->error_reporting & severity) != 0;
 }
 
+static int ptn_diagnostics_should_record_last_error(PtnDiagnosticSink *diagnostics, int64_t severity) {
+    return diagnostics != NULL &&
+        ((diagnostics->error_reporting & severity) != 0 ||
+            diagnostics->suppressed > 0 ||
+            diagnostics->error_reporting == 0);
+}
+
 static PTN_UNUSED const char *ptn_diagnostic_path(PtnDiagnosticSink *diagnostics, const char *path) {
     if (path != NULL) {
         return path;
@@ -2062,9 +2069,6 @@ static void ptn_emit_undefined_variable_warning_len(
     const char *path,
     size_t line
 ) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
-        return;
-    }
     size_t message_len = 0;
     char *message = ptn_diagnostic_message_with_name_len(
         "Undefined variable $",
@@ -2082,8 +2086,14 @@ static void ptn_emit_undefined_variable_warning_len(
         free(message);
         return;
     }
+    if (ptn_diagnostics_should_record_last_error(diagnostics, PTN_E_WARNING)) {
+        ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
+    }
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        free(message);
+        return;
+    }
     diagnostics->emitted_warning = 1;
-    ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     ptn_diagnostics_remember_emitted_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);
@@ -2111,9 +2121,6 @@ static void ptn_emit_undefined_global_variable_warning_len(
     const char *path,
     size_t line
 ) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
-        return;
-    }
     size_t message_len = 0;
     char *message = ptn_diagnostic_message_with_name_len(
         "Undefined global variable $",
@@ -2131,8 +2138,14 @@ static void ptn_emit_undefined_global_variable_warning_len(
         free(message);
         return;
     }
+    if (ptn_diagnostics_should_record_last_error(diagnostics, PTN_E_WARNING)) {
+        ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
+    }
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        free(message);
+        return;
+    }
     diagnostics->emitted_warning = 1;
-    ptn_diagnostics_record_last_error(diagnostics, PTN_E_WARNING, message, path, line);
     ptn_diagnostics_remember_emitted_error(diagnostics, PTN_E_WARNING, message, path, line);
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
         free(message);

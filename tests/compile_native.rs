@@ -101188,6 +101188,11 @@ $a = $missing;\n\
 $last = error_get_last();\n\
 var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n\
 var_dump(error_clear_last());\n\
+var_dump(error_get_last());\n\
+@$a = $suppressed;\n\
+$last = error_get_last();\n\
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line'] > 0);\n\
+var_dump(error_clear_last());\n\
 var_dump(error_get_last());\n",
     )
     .unwrap();
@@ -101213,6 +101218,10 @@ var_dump(error_get_last());\n",
     );
     assert!(
         stdout.contains("string(18) \"error-get-last.php\"\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(2)\nstring(30) \"Undefined variable $suppressed\""),
         "{stdout}"
     );
     assert!(stdout.ends_with("NULL\nNULL\n"), "{stdout}");
