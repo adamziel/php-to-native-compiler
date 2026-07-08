@@ -2669,7 +2669,7 @@ fn apply_include_source_transform(
             *source_bytes = b"<?php declare(strict_types=1);\nfunction curl_cli_server_start() {\n    return 'http://localhost:12345';\n}\n".to_vec();
         }
         IncludeSourceTransform::PhpCliServerHarness => {
-            *source_bytes = b"<?php declare(strict_types=1);\nif (!defined('PHP_CLI_SERVER_ADDRESS')) {\n    define('PHP_CLI_SERVER_ADDRESS', '127.0.0.1:12345');\n}\nfunction php_cli_server_start($ini = '', $router = null, $workers = 1) {\n    $GLOBALS['__ptn_php_cli_server_code'] = is_string($ini) ? $ini : '';\n    return true;\n}\n".to_vec();
+            *source_bytes = b"<?php declare(strict_types=1);\nif (!defined('PHP_CLI_SERVER_HOSTNAME')) {\n    define('PHP_CLI_SERVER_HOSTNAME', 'localhost');\n}\nif (!defined('PHP_CLI_SERVER_PORT')) {\n    define('PHP_CLI_SERVER_PORT', 12345);\n}\nif (!defined('PHP_CLI_SERVER_ADDRESS')) {\n    define('PHP_CLI_SERVER_ADDRESS', PHP_CLI_SERVER_HOSTNAME . ':' . PHP_CLI_SERVER_PORT);\n}\nfunction php_cli_server_start($ini = '', $router = null, $workers = 1) {\n    $GLOBALS['__ptn_php_cli_server_code'] = is_string($ini) ? $ini : '';\n    return true;\n}\n".to_vec();
         }
         IncludeSourceTransform::PhpFilter(filters) => {
             for filter in filters {

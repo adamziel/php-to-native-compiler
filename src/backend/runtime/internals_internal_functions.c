@@ -203443,6 +203443,26 @@ static int ptn_file_get_contents_https_response_body(
     return 1;
 }
 
+static int ptn_file_get_contents_reject_http_crlf_target(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *request_target,
+    size_t line
+) {
+    size_t target_len = strlen(request_target);
+    if (memchr(request_target, '\r', target_len) == NULL && memchr(request_target, '\n', target_len) == NULL) {
+        return 0;
+    }
+    ptn_emit_file_warning(
+        runtime,
+        "file_get_contents",
+        path,
+        "Failed to open stream: HTTP wrapper full URI path does not allow CR or LF characters",
+        line
+    );
+    return 1;
+}
+
 static int ptn_file_get_contents_https_bytes(
     PtnRuntime *runtime,
     const char *path,
@@ -203463,6 +203483,12 @@ static int ptn_file_get_contents_https_bytes(
     }
     if (debug_https != NULL) {
         fprintf(stderr, "PTN_DEBUG_HTTPS tls-address=%s target=%s host=%s\n", tls_address, request_target, host_header);
+    }
+    if (ptn_file_get_contents_reject_http_crlf_target(runtime, path, request_target, line)) {
+        free(tls_address);
+        free(request_target);
+        free(host_header);
+        return -2;
     }
 
     PtnValue tls_args[6] = {
@@ -203866,6 +203892,12 @@ static int ptn_file_get_contents_http_bytes(
     char *host_header = NULL;
     if (!ptn_file_get_contents_http_parse_url(path, &tcp_address, &request_target, &host_header)) {
         return 0;
+    }
+    if (ptn_file_get_contents_reject_http_crlf_target(runtime, path, request_target, line)) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        return -2;
     }
 
     PtnValue tcp_args[3] = { ptn_null(), ptn_null(), ptn_null() };

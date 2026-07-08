@@ -38218,6 +38218,38 @@ foreach ([
 }
 
 #[test]
+fn compile_file_get_contents_rejects_http_crlf_request_target_to_native_binary() {
+    let root = temp_dir("ptn-native-file-get-contents-http-crlf-target");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-get-contents-http-crlf-target.php");
+    let output = root.join("file-get-contents-http-crlf-target-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = "http://127.0.0.1:1/index.php HTTP/1.1\r\nHost: 127.0.0.1:1\r\n\r\nGET /index2.php";
+var_dump(file_get_contents($path));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("HTTP wrapper full URI path does not allow CR or LF characters"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)"), "{stdout}");
+    assert!(!stdout.contains("Unable to connect"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_file_get_contents_reject_http_crlf_target"));
+}
+
+#[test]
 fn compile_file_put_contents_data_wrapper_reports_not_writable_to_native_binary() {
     let root = temp_dir("ptn-native-file-put-contents-data-wrapper");
     fs::create_dir_all(&root).unwrap();
