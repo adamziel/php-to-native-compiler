@@ -286101,7 +286101,8 @@ static PTN_UNUSED PtnValue ptn_limit_iterator_call_method(
             ptn_limit_iterator_clear_cached_key(data);
             PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
             ptn_value_destroy(&rewind);
-            if (runtime->exceptions->active_exception == NULL) {
+            data->position = 0;
+            if (runtime->exceptions->active_exception == NULL && data->offset > 0) {
                 ptn_limit_iterator_seek_inner(runtime, data, data->offset, line);
             }
         } else {

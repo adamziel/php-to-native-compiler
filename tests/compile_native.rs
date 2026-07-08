@@ -2585,6 +2585,38 @@ try {
 }
 
 #[test]
+fn compile_limit_iterator_empty_seekable_rewind_does_not_seek_to_native_binary() {
+    let root = temp_dir("ptn-native-limit-iterator-empty-seekable-rewind");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("limit-iterator-empty-seekable-rewind.php");
+    let output = root.join("limit-iterator-empty-seekable-rewind-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$it = new ArrayIterator([]);
+$limit = new LimitIterator($it, 0, 5);
+foreach ($limit as $value) {
+    echo $value;
+}
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_regex_iterator_replace_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-regex-iterator-replace-reference");
     fs::create_dir_all(&root).unwrap();
