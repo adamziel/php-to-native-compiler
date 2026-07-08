@@ -15878,6 +15878,11 @@ fn emit_class_metadata_helpers(
     out.push_str("    return class_name != NULL && ptn_declared_class_is_same_or_descendant(class_name, \"_ZendTestClass\");\n");
     out.push_str("}\n");
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_zend_test_class_has_to_string_method(const char *class_name) {\n",
+    );
+    out.push_str("    return class_name != NULL && ptn_declared_class_is_same_or_descendant(class_name, \"_ZendTestClass\");\n");
+    out.push_str("}\n");
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_zend_test_class_call_test(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    (void)args;\n");
@@ -15887,12 +15892,29 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     out.push_str("    return ptn_string(\"test\");\n");
     out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_zend_test_class_call_to_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    (void)args;\n");
+    out.push_str("    if (argc != 0) {\n");
+    out.push_str("        ptn_throw_exception_at(runtime, \"ArgumentCountError\", \"_ZendTestClass::__toString() expects exactly 0 arguments\", runtime->source_path, line);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_emit_deprecation_with_handler_frame(&runtime->diagnostics, \"Method _ZendTestClass::__toString() is deprecated\", line, 0);\n");
+    out.push_str("    if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_string(\"\");\n");
+    out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED PtnFunctionMetadata ptn_declared_class_method_metadata(const char *class_name, const char *method_name) {\n",
     );
     out.push_str("    if (ptn_zend_test_class_has_test_method(class_name) && ptn_ascii_case_equal(method_name, \"test\")) {\n");
     out.push_str("        return ptn_function_metadata_found(\"_ZendTestClass::test\", 1, 0, 0, 0, NULL, 0, \"string\", \"string\", 0, 1);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("        return ptn_function_metadata_with_flags(ptn_function_metadata_found(\"_ZendTestClass::__toString\", 1, 0, 0, 0, NULL, 0, \"string\", \"string\", 0, 1), 0, 1);\n");
     out.push_str("    }\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -15976,6 +15998,12 @@ fn emit_class_metadata_helpers(
     out.push_str("        *is_abstract = 0;\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("        *declaring_class = \"_ZendTestClass\";\n");
+    out.push_str("        *visibility = PTN_PROPERTY_PUBLIC;\n");
+    out.push_str("        *is_abstract = 0;\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
@@ -16029,6 +16057,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_zend_test_class_has_test_method(class_name) && ptn_ascii_case_equal(method_name, \"test\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
@@ -16074,6 +16105,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    int64_t index = 0;\n");
     out.push_str("    if (ptn_zend_test_class_has_test_method(class_name) && ptn_declared_method_visibility_allows(access_scope, \"_ZendTestClass\", PTN_PROPERTY_PUBLIC)) {\n");
     out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"test\"));\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_declared_method_visibility_allows(access_scope, \"_ZendTestClass\", PTN_PROPERTY_PUBLIC)) {\n");
+    out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"__toString\"));\n");
     out.push_str("    }\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -16140,6 +16174,9 @@ fn emit_class_metadata_helpers(
         "\nstatic PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope) {\n",
     );
     out.push_str("    if (ptn_zend_test_class_has_test_method(class_name) && ptn_ascii_case_equal(method_name, \"test\")) {\n");
+    out.push_str("        return ptn_declared_method_visibility_allows(access_scope, \"_ZendTestClass\", PTN_PROPERTY_PUBLIC);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
     out.push_str("        return ptn_declared_method_visibility_allows(access_scope, \"_ZendTestClass\", PTN_PROPERTY_PUBLIC);\n");
     out.push_str("    }\n");
     if classes.is_empty() {
@@ -16337,6 +16374,9 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name) {\n",
     );
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     if classes.iter().all(|class| {
         class
             .methods
@@ -29946,6 +29986,9 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_zend_test_class_has_test_method(class_name) && ptn_ascii_case_equal(method_name, \"test\")) {\n");
     out.push_str("        return ptn_zend_test_class_call_test(runtime, argc, args, line);\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("        return ptn_zend_test_class_call_to_string(runtime, argc, args, line);\n");
+    out.push_str("    }\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    if (resolved.as.object->native_data == NULL && !ptn_ascii_case_equal(method_name, \"__construct\") && !ptn_internal_class_exists_name(class_name)) {\n");
     out.push_str("        const char *ptn_uninitialized_parent = ptn_declared_class_parent_name(class_name);\n");
@@ -30599,6 +30642,12 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_zend_test_class_has_test_method(target_class_name) && ptn_ascii_case_equal(method_name, \"test\")) {\n");
     out.push_str(
         "        *result_out = ptn_zend_test_class_call_test(runtime, argc, args, line);\n",
+    );
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_zend_test_class_has_to_string_method(target_class_name) && ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str(
+        "        *result_out = ptn_zend_test_class_call_to_string(runtime, argc, args, line);\n",
     );
     out.push_str("        return 1;\n");
     out.push_str("    }\n");

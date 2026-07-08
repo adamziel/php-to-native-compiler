@@ -249913,6 +249913,7 @@ static const char *ptn_reflection_method_internal_declaring_class(
         ptn_ascii_case_equal(class_name, "_ZendTestChildClass") ||
         ptn_declared_class_is_same_or_descendant(class_name, "_ZendTestClass")) &&
         (ptn_ascii_case_equal(method_name, "variadicTest") ||
+            ptn_ascii_case_equal(method_name, "__toString") ||
             ptn_ascii_case_equal(method_name, "testTmpMethodWithArgInfo"))) {
         return "_ZendTestClass";
     }
@@ -250712,6 +250713,30 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     }
     if (data->has_closure_metadata) {
         return data->closure_metadata;
+    }
+    if (
+        (ptn_ascii_case_equal(data->class_name, "_ZendTestClass") ||
+            ptn_ascii_case_equal(data->class_name, "_ZendTestChildClass") ||
+            ptn_declared_class_is_same_or_descendant(data->class_name, "_ZendTestClass")) &&
+        ptn_ascii_case_equal(data->name, "__toString")
+    ) {
+        return ptn_function_metadata_with_flags(
+            ptn_function_metadata_found(
+                "_ZendTestClass::__toString",
+                1,
+                0,
+                0,
+                0,
+                NULL,
+                0,
+                "string",
+                "string",
+                0,
+                1
+            ),
+            0,
+            1
+        );
     }
     if (ptn_ascii_case_equal(data->class_name, "XMLReader") &&
         ptn_ascii_case_equal(data->name, "expand")) {

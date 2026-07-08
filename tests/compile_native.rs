@@ -54025,6 +54025,57 @@ Cannot assign DateTime to property _ZendTestClass::$classUnionProp of type stdCl
 }
 
 #[test]
+fn compile_internal_zend_test_to_string_deprecation_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-zend-test-to-string-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-to-string-deprecation.php");
+    let output = root.join("internal-zend-test-to-string-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php
+function handleError($level, $message, $file = '', $line = 0, $context = []) {
+    throw new ErrorException($message, 0, $level, $file, $line);
+}
+
+$r = new _ZendTestClass;
+var_dump($r instanceof Stringable);
+var_dump(method_exists($r, '__toString'));
+var_dump((new ReflectionMethod(_ZendTestClass::class, '__toString'))->isDeprecated());
+
+set_error_handler('handleError');
+(string)$r ?: \"\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("bool(true)\nbool(true)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught ErrorException: Method _ZendTestClass::__toString() is deprecated"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("handleError("), "{stdout}");
+    assert!(
+        !stdout.contains("Object of class _ZendTestClass could not be converted to string"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_zend_test_class_call_to_string"));
+    assert!(c_source.contains("Method _ZendTestClass::__toString() is deprecated"));
+}
+
+#[test]
 fn compile_internal_zend_test_typed_static_and_reflection_properties_to_native_binary() {
     let root = temp_dir("ptn-native-internal-zend-test-typed-static-reflection-properties");
     fs::create_dir_all(&root).unwrap();
