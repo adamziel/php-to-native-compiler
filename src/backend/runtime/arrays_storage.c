@@ -4413,6 +4413,34 @@ static PTN_UNUSED void ptn_object_retain(PtnObject *object) {
     object->refcount++;
 }
 
+static int ptn_generator_has_delegate_source(PtnGenerator *generator) {
+    if (generator == NULL || generator->delegate_sources == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < generator->delegate_sources->len; i++) {
+        PtnValue value = ptn_value_deref(generator->delegate_sources->entries[i].value);
+        if (value.type != PTN_NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnGenerator *generator) {
+    if (
+        generator == NULL ||
+        !generator->started ||
+        generator->force_closing ||
+        !ptn_generator_has_delegate_source(generator)
+    ) {
+        return 0;
+    }
+    PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
+        ? runtime
+        : runtime->lifecycle_root;
+    return root == NULL || !root->gc_running;
+}
+
 static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object == NULL) {
         return;
@@ -4435,7 +4463,11 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         return;
     }
     if (ptn_object_is_generator(object)) {
-        ptn_generator_force_close(object->lifecycle_runtime, (PtnGenerator *)object->native_data);
+        PtnGenerator *generator = (PtnGenerator *)object->native_data;
+        if (ptn_generator_should_defer_zero_ref_release(object->lifecycle_runtime, generator)) {
+            return;
+        }
+        ptn_generator_force_close(object->lifecycle_runtime, generator);
     }
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);

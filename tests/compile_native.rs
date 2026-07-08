@@ -28695,6 +28695,62 @@ gc_collect_cycles();
 }
 
 #[test]
+fn compile_generator_yield_from_cycle_closes_during_gc_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-cycle-gc-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-cycle-gc-close.php");
+    let output = root.join("generator-yield-from-cycle-gc-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function root() {
+    global $gens;
+    try {
+        yield 1;
+    } finally {
+        var_dump($gens);
+    }
+}
+
+function gen($x) {
+    global $gens;
+    yield from $gens[] = $x ? gen(--$x) : root();
+}
+
+$gen = $gens[] = gen(2);
+var_dump($gen->current());
+unset($gen, $gens);
+print "collect\n";
+gc_collect_cycles();
+print "end\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let collect = stdout
+        .find("collect\n")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let dump = stdout
+        .find("array(4) {")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(collect < dump, "{stdout}");
+    assert!(stdout.contains("object(Generator)#"), "{stdout}");
+    assert!(stdout.ends_with("end\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_cleanup_destructor_backtrace_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-cleanup-destructor-backtrace");
     fs::create_dir_all(&root).unwrap();

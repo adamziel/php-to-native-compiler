@@ -133713,6 +133713,41 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
     if (stack == NULL || object == NULL || object->native_data == NULL) {
         return;
     }
+    if (ptn_ascii_case_equal(object->class_name, "Generator")) {
+        PtnGenerator *data = (PtnGenerator *)object->native_data;
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->values));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->keys));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->reference_notice_lines));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->yield_lines));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->delegate_sources));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->force_close_yield_from_entries));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->output_chunks));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_positions));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_kinds));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_names));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_receivers));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_arguments));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_yield_indexes));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_yield_paths));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_output_chunks));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_lines));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_from_positions));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_from_lines));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->throw_catch_positions));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->throw_catch_handler_ids));
+        ptn_gc_mark_stack_push(stack, data->return_value);
+        ptn_gc_mark_stack_push(stack, data->pending_exception);
+        ptn_gc_mark_stack_push(stack, data->closure_owner);
+        ptn_gc_mark_stack_push(stack, data->receiver);
+        ptn_gc_mark_stack_push(stack, data->lazy_receiver);
+        for (size_t i = 0; i < data->trace_argc; i++) {
+            ptn_gc_mark_stack_push(stack, data->trace_args[i]);
+        }
+        for (size_t i = 0; i < data->lazy_argc; i++) {
+            ptn_gc_mark_stack_push(stack, data->lazy_args[i]);
+        }
+        return;
+    }
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
         PtnFiberData *data = (PtnFiberData *)object->native_data;
         ptn_gc_mark_stack_push(stack, data->callback);
@@ -133805,6 +133840,9 @@ static int ptn_gc_object_has_opaque_native_data(PtnObject *object) {
         return 0;
     }
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Generator")) {
         return 0;
     }
     if (ptn_gc_object_has_array_backed_native_storage(object)) {
@@ -134059,6 +134097,92 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
 ) {
     if (object == NULL || object->native_data == NULL || depth > 1024) {
         return 0;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Generator")) {
+        PtnGenerator *data = (PtnGenerator *)object->native_data;
+        PtnArray *arrays[] = {
+            data->values,
+            data->keys,
+            data->reference_notice_lines,
+            data->yield_lines,
+            data->delegate_sources,
+            data->force_close_yield_from_entries,
+            data->output_chunks,
+            data->send_call_positions,
+            data->send_call_kinds,
+            data->send_call_names,
+            data->send_call_receivers,
+            data->send_call_arguments,
+            data->send_call_yield_indexes,
+            data->send_call_yield_paths,
+            data->send_call_output_chunks,
+            data->send_call_lines,
+            data->send_yield_from_positions,
+            data->send_yield_from_lines,
+            data->throw_catch_positions,
+            data->throw_catch_handler_ids
+        };
+        PtnValue values[] = {
+            data->return_value,
+            data->pending_exception,
+            data->closure_owner,
+            data->receiver,
+            data->lazy_receiver
+        };
+        size_t count = 0;
+        for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); i++) {
+            size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+                ptn_gc_borrowed_array_value(arrays[i]),
+                root_epoch,
+                counted_epoch,
+                depth + 1,
+                0
+            );
+            if (count > SIZE_MAX - nested) {
+                ptn_abort_out_of_memory();
+            }
+            count += nested;
+        }
+        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+            size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+                values[i],
+                root_epoch,
+                counted_epoch,
+                depth + 1,
+                0
+            );
+            if (count > SIZE_MAX - nested) {
+                ptn_abort_out_of_memory();
+            }
+            count += nested;
+        }
+        for (size_t i = 0; i < data->trace_argc; i++) {
+            size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+                data->trace_args[i],
+                root_epoch,
+                counted_epoch,
+                depth + 1,
+                0
+            );
+            if (count > SIZE_MAX - nested) {
+                ptn_abort_out_of_memory();
+            }
+            count += nested;
+        }
+        for (size_t i = 0; i < data->lazy_argc; i++) {
+            size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+                data->lazy_args[i],
+                root_epoch,
+                counted_epoch,
+                depth + 1,
+                0
+            );
+            if (count > SIZE_MAX - nested) {
+                ptn_abort_out_of_memory();
+            }
+            count += nested;
+        }
+        return count;
     }
     PtnValue values[7] = { ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null() };
     size_t values_len = 0;
