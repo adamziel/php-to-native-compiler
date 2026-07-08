@@ -238081,6 +238081,9 @@ static int ptn_soap_request_value_has_struct_array(PtnValue value, size_t depth)
     if (value.type != PTN_ARRAY || value.as.array == NULL) {
         return 0;
     }
+    if (ptn_soap_array_2d_scalar_xsd_type(value, NULL, NULL) != NULL) {
+        return 0;
+    }
     if (depth > 0 &&
         value.as.array->len != 0 &&
         ptn_soap_array_scalar_xsd_type(value) == NULL) {
@@ -238380,9 +238383,51 @@ static void ptn_soap_append_request_value_element(
             );
             return;
         }
+        size_t outer_count = 0;
+        size_t inner_count = 0;
+        const char *nested_scalar_xsd_type =
+            ptn_soap_array_2d_scalar_xsd_type(value, &outer_count, &inner_count);
         const char *scalar_xsd_type = ptn_soap_array_scalar_xsd_type(value);
         ptn_string_buffer_append_char(buffer, '<');
         ptn_string_buffer_append(buffer, element_name == NULL ? "param" : element_name);
+        if (nested_scalar_xsd_type != NULL) {
+            ptn_string_buffer_append_format(
+                buffer,
+                " SOAP-ENC:arrayType=\"SOAP-ENC:Array[%zu]\" xsi:type=\"SOAP-ENC:Array\">",
+                outer_count
+            );
+            for (size_t i = 0; i < value.as.array->len; i++) {
+                PtnValue inner = ptn_value_deref(value.as.array->entries[i].value);
+                if (inner.type != PTN_ARRAY || inner.as.array == NULL) {
+                    continue;
+                }
+                ptn_string_buffer_append_format(
+                    buffer,
+                    "<item SOAP-ENC:arrayType=\"xsd:%s[%zu]\" xsi:type=\"SOAP-ENC:Array\">",
+                    nested_scalar_xsd_type,
+                    inner_count
+                );
+                for (size_t j = 0; j < inner.as.array->len; j++) {
+                    ptn_string_buffer_append_format(buffer, "<item xsi:type=\"xsd:%s\">", nested_scalar_xsd_type);
+                    ptn_soap_append_scalar_value(
+                        runtime,
+                        buffer,
+                        inner.as.array->entries[j].value,
+                        nested_scalar_xsd_type,
+                        line
+                    );
+                    ptn_string_buffer_append(buffer, "</item>");
+                    if (runtime->exceptions->active_exception != NULL) {
+                        return;
+                    }
+                }
+                ptn_string_buffer_append(buffer, "</item>");
+            }
+            ptn_string_buffer_append(buffer, "</");
+            ptn_string_buffer_append(buffer, element_name == NULL ? "param" : element_name);
+            ptn_string_buffer_append_char(buffer, '>');
+            return;
+        }
         if (scalar_xsd_type != NULL) {
             ptn_string_buffer_append_format(
                 buffer,
@@ -238548,7 +238593,7 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         }
     } else if (!request_has_soap_param && request_has_scalar_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
@@ -238556,7 +238601,7 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         }
     } else if (request_starts_with_encoded_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }

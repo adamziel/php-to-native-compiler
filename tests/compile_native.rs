@@ -80289,6 +80289,13 @@ foreach ([
     echo round2_server_response($wsdl, $client->__getLastRequest());
 }
 
+$plain2d = [
+    ['row0col0', 'row0col1', 'row0col2'],
+    ['row1col0', 'row1col1', 'row1col2'],
+];
+$client->__soapCall('echo2DStringArray', [$plain2d], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+echo $client->__getLastRequest();
+
 $param2d = new SoapParam(new SoapVar([
     new SoapVar([new SoapVar('row0col0', XSD_STRING), new SoapVar('row0col1', XSD_STRING)], SOAP_ENC_ARRAY),
     new SoapVar([new SoapVar('row1col0', XSD_STRING), new SoapVar('row1col1', XSD_STRING)], SOAP_ENC_ARRAY),
@@ -80339,7 +80346,19 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
         "{stdout}"
     );
     assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echo2DStringArray><param0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<param0 SOAP-ENC:arrayType=\"SOAP-ENC:Array[2]\" xsi:type=\"SOAP-ENC:Array\"><item SOAP-ENC:arrayType=\"xsd:string[3]\" xsi:type=\"SOAP-ENC:Array\"><item xsi:type=\"xsd:string\">row0col0</item><item xsi:type=\"xsd:string\">row0col1</item><item xsi:type=\"xsd:string\">row0col2</item></item><item SOAP-ENC:arrayType=\"xsd:string[3]\" xsi:type=\"SOAP-ENC:Array\"><item xsi:type=\"xsd:string\">row1col0</item><item xsi:type=\"xsd:string\">row1col1</item><item xsi:type=\"xsd:string\">row1col2</item></item></param0>"),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("<input2DStringArray SOAP-ENC:arrayType=\"SOAP-ENC:Array[2]\" xsi:type=\"ns2:ArrayOfString2D\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"http://soapinterop.org/xsd\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echo2DStringArray><input2DStringArray"),
         "{stdout}"
     );
     assert!(
@@ -80370,6 +80389,7 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_request_array_scalar_xsd_type"));
+    assert!(c_source.contains("ptn_soap_array_2d_scalar_xsd_type"));
     assert!(c_source.contains("ptn_soap_wsdl_response_part_type"));
 }
 
