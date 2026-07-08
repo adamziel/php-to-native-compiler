@@ -8961,6 +8961,16 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("dns_get_record") && argument_index == 3 {
         return Some("additional_records");
     }
+    if (name.eq_ignore_ascii_case("dns_get_mx") || name.eq_ignore_ascii_case("getmxrr"))
+        && argument_index == 1
+    {
+        return Some("hosts");
+    }
+    if (name.eq_ignore_ascii_case("dns_get_mx") || name.eq_ignore_ascii_case("getmxrr"))
+        && argument_index == 2
+    {
+        return Some("weights");
+    }
     if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") && argument_index == 2 {
         return Some("errors");
     }

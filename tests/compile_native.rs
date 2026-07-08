@@ -63637,6 +63637,51 @@ done\n"
 }
 
 #[test]
+fn compile_network_name_functions_reject_null_bytes_to_native_binary() {
+    let root = temp_dir("ptn-native-network-null-byte-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("network-null-byte-validation.php");
+    let output = root.join("network-null-byte-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$out = [];\n\
+try { var_dump(gethostbyname(\"localhost\\0.example.com\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(gethostbynamel(\"localhost\\0.example.com\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(dns_check_record(\"\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(dns_get_mx(\"\\0\", $out)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(dns_get_record(\"\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(getprotobyname(\"\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(getservbyname(\"\\0\", \"tcp\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(getservbyname(\"x\", \"tcp\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(getservbyport(0, \"tcp\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(inet_pton(\"\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(ip2long(\"\\0\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "gethostbyname(): Argument #1 ($hostname) must not contain any null bytes\n\
+gethostbynamel(): Argument #1 ($hostname) must not contain any null bytes\n\
+dns_check_record(): Argument #1 ($hostname) must not contain any null bytes\n\
+dns_get_mx(): Argument #1 ($hostname) must not contain any null bytes\n\
+dns_get_record(): Argument #1 ($hostname) must not contain any null bytes\n\
+getprotobyname(): Argument #1 ($protocol) must not contain any null bytes\n\
+getservbyname(): Argument #1 ($service) must not contain any null bytes\n\
+getservbyname(): Argument #2 ($protocol) must not contain any null bytes\n\
+getservbyport(): Argument #2 ($protocol) must not contain any null bytes\n\
+inet_pton(): Argument #1 ($ip) must not contain any null bytes\n\
+ip2long(): Argument #1 ($ip) must not contain any null bytes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_binary_and_gethostbyname_to_native_binary() {
     let root = temp_dir("ptn-native-php-binary-gethostbyname");
     fs::create_dir_all(&root).unwrap();

@@ -2041,6 +2041,18 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
                 return NULL;
         }
     }
+    if (ptn_ascii_case_equal(name, "dns_get_mx") || ptn_ascii_case_equal(name, "getmxrr")) {
+        switch (index) {
+            case 0:
+                return "hostname";
+            case 1:
+                return "hosts";
+            case 2:
+                return "weights";
+            default:
+                return NULL;
+        }
+    }
     if (ptn_ascii_case_equal(name, "stream_socket_client")) {
         switch (index) {
             case 0:
@@ -10968,6 +10980,11 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
         return 1;
     }
     if (index == 1 && ptn_ascii_case_equal(name, "getimagesize")) {
+        return 1;
+    }
+    if ((index == 1 || index == 2) &&
+        (ptn_ascii_case_equal(name, "dns_get_mx") ||
+            ptn_ascii_case_equal(name, "getmxrr"))) {
         return 1;
     }
     if ((index == 1 || index == 2) &&
@@ -32756,10 +32773,40 @@ static int ptn_parse_ipv4_decimal(PtnStringOperand ip, uint32_t *out) {
     return 1;
 }
 
+static int ptn_network_reject_nul(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand operand
+) {
+    if (memchr(operand.data, '\0', operand.len) == NULL) {
+        return 1;
+    }
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must not contain any null bytes",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
 static PtnValue ptn_internal_ip2long(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand ip = ptn_internal_expect_string_arg(runtime, "ip2long", 1, "ip", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(ip);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "ip2long", 1, "ip", ip)) {
         ptn_string_operand_free(ip);
         return ptn_null();
     }
@@ -32776,6 +32823,10 @@ static PtnValue ptn_internal_inet_pton(PtnRuntime *runtime, size_t argc, const P
     (void)argc;
     PtnStringOperand ip = ptn_internal_expect_string_arg(runtime, "inet_pton", 1, "ip", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(ip);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "inet_pton", 1, "ip", ip)) {
         ptn_string_operand_free(ip);
         return ptn_null();
     }
@@ -33725,6 +33776,10 @@ static PtnValue ptn_internal_dns_get_record(PtnRuntime *runtime, size_t argc, co
         ptn_string_operand_free(hostname);
         return ptn_null();
     }
+    if (!ptn_network_reject_nul(runtime, "dns_get_record", 1, "hostname", hostname)) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
     int64_t type = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "dns_get_record", 2, "type", args[1], line)
         : PTN_DNS_ANY;
@@ -33760,6 +33815,47 @@ static PtnValue ptn_internal_dns_get_record(PtnRuntime *runtime, size_t argc, co
     }
     ptn_string_operand_free(hostname);
     return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_dns_get_mx_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(
+        runtime,
+        function_name,
+        1,
+        "hostname",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, function_name, 1, "hostname", hostname)) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    ptn_string_operand_free(hostname);
+    if (args[1].type == PTN_REFERENCE) {
+        ptn_dns_get_record_assign_reference(runtime, args[1], ptn_array_from_literal_entries(0, NULL));
+    }
+    if (argc >= 3 && args[2].type == PTN_REFERENCE) {
+        ptn_dns_get_record_assign_reference(runtime, args[2], ptn_array_from_literal_entries(0, NULL));
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_dns_get_mx(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_dns_get_mx_named(runtime, "dns_get_mx", argc, args, line);
+}
+
+static PtnValue ptn_internal_getmxrr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_dns_get_mx_named(runtime, "getmxrr", argc, args, line);
 }
 
 static int ptn_internal_headers_sent_assign_filename(PtnRuntime *runtime, PtnReference *reference) {
@@ -74982,6 +75078,14 @@ static PtnValue ptn_internal_getopt(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "gethostbyname", 1, "hostname", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "gethostbyname", 1, "hostname", hostname)) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
     char *input = ptn_duplicate_string_len(hostname.data, hostname.len);
     ptn_string_operand_free(hostname);
 #if !defined(_WIN32)
@@ -75009,6 +75113,10 @@ static PtnValue ptn_internal_gethostbynamel(PtnRuntime *runtime, size_t argc, co
     (void)argc;
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "gethostbynamel", 1, "hostname", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "gethostbynamel", 1, "hostname", hostname)) {
         ptn_string_operand_free(hostname);
         return ptn_null();
     }
@@ -75211,6 +75319,10 @@ static PtnValue ptn_internal_dns_check_record_named(
         ptn_string_operand_free(hostname);
         return ptn_null();
     }
+    if (!ptn_network_reject_nul(runtime, function_name, 1, "hostname", hostname)) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
     if (hostname.len == 0) {
         char message[128];
         int written = snprintf(
@@ -75282,6 +75394,10 @@ static PtnValue ptn_internal_getprotobyname(PtnRuntime *runtime, size_t argc, co
         ptn_string_operand_free(name);
         return ptn_null();
     }
+    if (!ptn_network_reject_nul(runtime, "getprotobyname", 1, "protocol", name)) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
     char *input = ptn_duplicate_string_len(name.data, name.len);
     ptn_string_operand_free(name);
 #if !defined(_WIN32)
@@ -75322,8 +75438,17 @@ static PtnValue ptn_internal_getservbyname(PtnRuntime *runtime, size_t argc, con
         ptn_string_operand_free(service);
         return ptn_null();
     }
+    if (!ptn_network_reject_nul(runtime, "getservbyname", 1, "service", service)) {
+        ptn_string_operand_free(service);
+        return ptn_null();
+    }
     PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, "getservbyname", 2, "protocol", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(service);
+        ptn_string_operand_free(protocol);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "getservbyname", 2, "protocol", protocol)) {
         ptn_string_operand_free(service);
         ptn_string_operand_free(protocol);
         return ptn_null();
@@ -75355,6 +75480,10 @@ static PtnValue ptn_internal_getservbyport(PtnRuntime *runtime, size_t argc, con
     }
     PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, "getservbyport", 2, "protocol", args[1], line);
     if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(protocol);
+        return ptn_null();
+    }
+    if (!ptn_network_reject_nul(runtime, "getservbyport", 2, "protocol", protocol)) {
         ptn_string_operand_free(protocol);
         return ptn_null();
     }
@@ -240175,6 +240304,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
         { "dl", 1, 1, ptn_internal_dl },
         { "dns_check_record", 1, 2, ptn_internal_dns_check_record },
+        { "dns_get_mx", 2, 3, ptn_internal_dns_get_mx },
         { "dns_get_record", 1, 5, ptn_internal_dns_get_record },
         { "deflate_add", 2, 3, ptn_internal_deflate_add },
         { "deflate_init", 1, 2, ptn_internal_deflate_init },
@@ -240293,6 +240423,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gethostbyname", 1, 1, ptn_internal_gethostbyname },
         { "gethostbynamel", 1, 1, ptn_internal_gethostbynamel },
         { "gethostname", 0, 0, ptn_internal_gethostname },
+        { "getmxrr", 2, 3, ptn_internal_getmxrr },
         { "getprotobyname", 1, 1, ptn_internal_getprotobyname },
         { "getprotobynumber", 1, 1, ptn_internal_getprotobynumber },
         { "getcwd", 0, 0, ptn_internal_getcwd },
