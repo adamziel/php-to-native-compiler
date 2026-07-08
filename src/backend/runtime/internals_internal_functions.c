@@ -240568,7 +240568,7 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     return NULL;
 }
 
-static PtnValue ptn_internal_function_names(void) {
+static PtnValue ptn_internal_function_names(PtnRuntime *runtime) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t count = 0;
     const PtnInternalFunction *functions = ptn_internal_functions(&count);
@@ -240576,6 +240576,9 @@ static PtnValue ptn_internal_function_names(void) {
     for (size_t i = 0; i < count; i++) {
         const char *name = functions[i].name;
         if (strncmp(name, "_ptn_", 5) == 0 || strstr(name, "::") != NULL) {
+            continue;
+        }
+        if (ptn_runtime_function_disabled(runtime, name)) {
             continue;
         }
         ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(name));
@@ -240830,7 +240833,7 @@ static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t a
         );
     }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names());
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names(runtime));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("user"), ptn_user_function_names(runtime));
     return result;
 }
