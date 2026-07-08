@@ -96366,6 +96366,40 @@ echo var_export($std, true), \"\\n\";",
 }
 
 #[test]
+fn compile_var_export_array_object_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-array-object-storage");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-array-object-storage.php");
+    let output = root.join("var-export-array-object-storage-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ao = new ArrayObject(array(2 => \"foo\", \"bar\" => \"baz\"));\n\
+echo var_export($ao, true), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\\ArrayObject::__set_state(array(\n",
+            "   2 => 'foo',\n",
+            "   'bar' => 'baz',\n",
+            "))\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_var_export"));
+    assert!(c_source.contains("ArrayObject"));
+}
+
+#[test]
 fn compile_var_export_object_properties_with_nested_arrays_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-object-property-arrays");
     fs::create_dir_all(&root).unwrap();
