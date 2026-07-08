@@ -39808,6 +39808,61 @@ var_dump(fstat($stream));\n",
 }
 
 #[test]
+fn compile_user_stream_wrapper_filesystem_operations_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-filesystem-ops");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-filesystem-ops.php");
+    let output = root.join("user-stream-wrapper-filesystem-ops-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class FilesystemOpsWrapper {\n\
+    public $context;\n\
+    private $constructed = false;\n\
+    public function __construct() { $this->constructed = true; }\n\
+    private function mark($name) { echo $name, ': ', $this->constructed ? 'yes' : 'no', \"\\n\"; }\n\
+    public function url_stat($url, $flags) { $this->mark('url_stat'); return []; }\n\
+    public function rmdir($dir, $options) { $this->mark('rmdir'); return true; }\n\
+    public function mkdir($dir, $mode, $options) { $this->mark('mkdir'); return true; }\n\
+    public function rename($from, $to) { $this->mark('rename'); return true; }\n\
+    public function unlink($url) { $this->mark('unlink'); return true; }\n\
+}\n\
+stream_wrapper_register('ops', FilesystemOpsWrapper::class, STREAM_IS_URL);\n\
+var_dump(is_array(stat('ops://file')));\n\
+var_dump(rmdir('ops://file'));\n\
+var_dump(mkdir('ops://file'));\n\
+var_dump(rename('ops://file', 'ops://other'));\n\
+var_dump(unlink('ops://file'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "url_stat: yes\n",
+            "bool(true)\n",
+            "rmdir: yes\n",
+            "bool(true)\n",
+            "mkdir: yes\n",
+            "bool(true)\n",
+            "rename: yes\n",
+            "bool(true)\n",
+            "unlink: yes\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_user_stream_url_stat"));
+    assert!(c_source.contains("ptn_try_user_stream_method_bool"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_options_and_partial_write_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-options-partial-write");
     fs::create_dir_all(&root).unwrap();

@@ -59684,6 +59684,94 @@ static int ptn_try_user_stream_metadata(
     return 1;
 }
 
+static int ptn_try_user_stream_url_stat(
+    PtnRuntime *runtime,
+    const char *path,
+    int flags,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    if (!ptn_user_stream_assign_context(runtime, object, ptn_default_stream_context_ensure(), line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, object, "url_stat")) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnValue stat_args[2] = {
+        ptn_string(path == NULL ? "" : path),
+        ptn_int(flags)
+    };
+    PtnValue result = runtime->method_dispatch(runtime, object, "url_stat", 2, stat_args, line);
+    ptn_value_destroy(&stat_args[0]);
+    ptn_value_destroy(&stat_args[1]);
+    ptn_value_destroy(&object);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        *out = ptn_null();
+        return 1;
+    }
+    *out = result;
+    return 1;
+}
+
+static int ptn_try_user_stream_method_bool(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+    PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    if (!ptn_user_stream_assign_context(runtime, object, ptn_default_stream_context_ensure(), line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, object, method_name)) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnValue result = runtime->method_dispatch(runtime, object, method_name, argc, args, line);
+    ptn_value_destroy(&object);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        *out = ptn_null();
+        return 1;
+    }
+    int ok = ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    *out = ptn_bool(ok);
+    return 1;
+}
+
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
@@ -69006,6 +69094,16 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
         free(path);
         return ptn_bool(0);
     }
+    PtnValue user_args[1] = {
+        ptn_string(path)
+    };
+    PtnValue user_result;
+    if (ptn_try_user_stream_method_bool(runtime, path, "unlink", 1, user_args, line, &user_result)) {
+        ptn_value_destroy(&user_args[0]);
+        free(path);
+        return user_result;
+    }
+    ptn_value_destroy(&user_args[0]);
     if (!ptn_open_basedir_check_local_path(runtime, "unlink", path, line)) {
         free(path);
         return ptn_bool(0);
@@ -69451,6 +69549,20 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
         free(source);
         return ptn_bool(0);
     }
+    PtnValue user_args[2] = {
+        ptn_string(source),
+        ptn_string(dest)
+    };
+    PtnValue user_result;
+    if (ptn_try_user_stream_method_bool(runtime, source, "rename", 2, user_args, line, &user_result)) {
+        ptn_value_destroy(&user_args[0]);
+        ptn_value_destroy(&user_args[1]);
+        free(dest);
+        free(source);
+        return user_result;
+    }
+    ptn_value_destroy(&user_args[0]);
+    ptn_value_destroy(&user_args[1]);
     if (strncmp(source, "phar://", 7) == 0 && strncmp(dest, "phar://", 7) == 0) {
         int renamed = ptn_phar_uri_rename_entry(source, dest);
         free(dest);
@@ -70235,6 +70347,34 @@ static PtnValue ptn_internal_stat_named(
     int use_lstat,
     const char *failure_kind
 ) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        char message[96];
+        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
+    if (path[0] == '\0') {
+        free(path);
+        return ptn_bool(0);
+    }
+    PtnValue user_stat;
+    if (ptn_try_user_stream_url_stat(
+            runtime,
+            path,
+            use_lstat ? PTN_STREAM_URL_STAT_LINK : 0,
+            line,
+            &user_stat)) {
+        free(path);
+        return user_stat;
+    }
+    free(path);
+
     struct stat info;
     if (!ptn_stat_path_from_value(runtime, function_name, path_value, line, use_lstat, failure_kind, &info)) {
         return ptn_bool(0);
@@ -71758,6 +71898,22 @@ static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
+    PtnValue user_args[3] = {
+        ptn_string(path),
+        ptn_int(mode),
+        ptn_int(recursive ? 1 : 0)
+    };
+    PtnValue user_result;
+    if (ptn_try_user_stream_method_bool(runtime, path, "mkdir", 3, user_args, line, &user_result)) {
+        ptn_value_destroy(&user_args[0]);
+        ptn_value_destroy(&user_args[1]);
+        ptn_value_destroy(&user_args[2]);
+        free(path);
+        return user_result;
+    }
+    ptn_value_destroy(&user_args[0]);
+    ptn_value_destroy(&user_args[1]);
+    ptn_value_destroy(&user_args[2]);
     int created = strncmp(path, "phar://", 7) == 0
         ? ptn_phar_uri_mkdir(path)
         : (recursive ? ptn_mkdir_recursive(path, mode) : ptn_platform_mkdir(path, mode) == 0);
@@ -71783,6 +71939,19 @@ static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
+    PtnValue user_args[2] = {
+        ptn_string(path),
+        ptn_int(0)
+    };
+    PtnValue user_result;
+    if (ptn_try_user_stream_method_bool(runtime, path, "rmdir", 2, user_args, line, &user_result)) {
+        ptn_value_destroy(&user_args[0]);
+        ptn_value_destroy(&user_args[1]);
+        free(path);
+        return user_result;
+    }
+    ptn_value_destroy(&user_args[0]);
+    ptn_value_destroy(&user_args[1]);
 
     if (strncmp(path, "phar://", 7) == 0) {
         if (ptn_phar_uri_rmdir(path)) {
