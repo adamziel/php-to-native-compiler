@@ -83,6 +83,8 @@ pub struct CompileSourceOptions {
     pub internal_encoding: Option<String>,
     pub encoding_translation: bool,
     pub force_internal_function_dispatch: bool,
+    pub zend_test_observer_execute_internal: bool,
+    pub zend_test_observer_show_return_value: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -177,8 +179,15 @@ fn compile_file_inner_with_source_options(
         preload_include_indices,
         &include_resolutions,
     );
-    module.runtime_requirements.internal_function_dispatch |=
-        source_options.force_internal_function_dispatch;
+    module.runtime_requirements.internal_function_dispatch |= source_options
+        .force_internal_function_dispatch
+        || source_options.zend_test_observer_execute_internal;
+    module
+        .runtime_requirements
+        .zend_test_observer_execute_internal = source_options.zend_test_observer_execute_internal;
+    module
+        .runtime_requirements
+        .zend_test_observer_show_return_value = source_options.zend_test_observer_show_return_value;
     let c_source = emit_c(&module);
     compile_c(&c_source, output)?;
     let c_path = output.with_extension("c");

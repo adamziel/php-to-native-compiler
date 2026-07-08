@@ -147,6 +147,19 @@ pub fn emit_c(module: &Module) -> String {
     if module.runtime_requirements.internal_function_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
+    if module
+        .runtime_requirements
+        .zend_test_observer_execute_internal
+    {
+        runtime_requirements.internal_function_dispatch = true;
+        runtime_requirements.zend_test_observer_execute_internal = true;
+    }
+    if module
+        .runtime_requirements
+        .zend_test_observer_show_return_value
+    {
+        runtime_requirements.zend_test_observer_show_return_value = true;
+    }
     if module_has_attribute_metadata(module) {
         runtime_requirements.internal_function_dispatch = true;
     }
@@ -401,6 +414,12 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_startup_output_handler(&runtime);\n");
     out.push_str("    runtime.native_argc = ptn_native_argc;\n");
     out.push_str("    runtime.native_argv = ptn_native_argv;\n");
+    if runtime_requirements.zend_test_observer_execute_internal {
+        out.push_str("    runtime.zend_test_observer_execute_internal = 1;\n");
+    }
+    if runtime_requirements.zend_test_observer_show_return_value {
+        out.push_str("    runtime.zend_test_observer_show_return_value = 1;\n");
+    }
     if runtime_requirements.request_context {
         out.push_str(
             "    ptn_initialize_request_context(&runtime, ptn_native_argc, ptn_native_argv);\n",
@@ -3956,6 +3975,8 @@ fn emit_include_runtime_helpers(out: &mut String) {
 #[derive(Default)]
 struct RuntimeRequirements {
     internal_function_dispatch: bool,
+    zend_test_observer_execute_internal: bool,
+    zend_test_observer_show_return_value: bool,
     dynamic_function_dispatch: bool,
     callable_dispatch: bool,
     method_dispatch: bool,
@@ -63646,7 +63667,7 @@ impl ValueEmitter {
             if temps.is_empty() {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_direct_var_dump_value(&runtime, 0, NULL, ");
+                out.push_str(" = ptn_call_internal(&runtime, \"var_dump\", 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 return result_temp;
@@ -63666,7 +63687,7 @@ impl ValueEmitter {
             out.push_str(" };\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_direct_var_dump_value(&runtime, ");
+            out.push_str(" = ptn_call_internal(&runtime, \"var_dump\", ");
             out.push_str(&arguments.len().to_string());
             out.push_str(", ");
             out.push_str(&args_temp);

@@ -587,6 +587,8 @@ struct RuntimeIni {
     allow_url_fopen: Option<String>,
     allow_url_include: Option<String>,
     allow_url_include_deprecated: bool,
+    zend_test_observer_execute_internal: Option<String>,
+    zend_test_observer_show_return_value: Option<String>,
 }
 
 impl Invocation {
@@ -917,6 +919,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.enable_gc") {
         ini.zend_enable_gc = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend_test.observer.execute_internal") {
+        ini.zend_test_observer_execute_internal = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend_test.observer.show_return_value") {
+        ini.zend_test_observer_show_return_value = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("max_execution_time") {
         ini.max_execution_time = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
@@ -1735,6 +1741,8 @@ fn compile_and_run(
         allow_url_fopen: ini.allow_url_fopen.clone(),
         allow_url_include: ini.allow_url_include.clone(),
         allow_url_include_deprecated: ini.allow_url_include_deprecated,
+        zend_test_observer_execute_internal: ini.zend_test_observer_execute_internal.clone(),
+        zend_test_observer_show_return_value: ini.zend_test_observer_show_return_value.clone(),
     };
     if ini.default_charset.is_none() {
         if let Some(internal_encoding) = &ini.internal_encoding {
@@ -1780,6 +1788,14 @@ fn compile_and_run(
             .output_handler
             .as_deref()
             .is_some_and(|handler| !handler.trim().is_empty()),
+        zend_test_observer_execute_internal: ini
+            .zend_test_observer_execute_internal
+            .as_deref()
+            .is_some_and(ini_scalar_truthy),
+        zend_test_observer_show_return_value: ini
+            .zend_test_observer_show_return_value
+            .as_deref()
+            .is_some_and(ini_scalar_truthy),
     };
     let native = TempPath::new("ptn-phpc-native", "bin");
     let archive_wrapper = phar_archive_main_wrapper(script)?;

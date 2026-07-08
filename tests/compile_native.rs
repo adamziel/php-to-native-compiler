@@ -12,7 +12,10 @@ use ptn::ast::{
     UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
-use ptn::{compile_file, compile_file_with_preloads, parser, CompileOptions, DiagnosticKind};
+use ptn::{
+    compile_file, compile_file_with_preloads, compile_file_with_preloads_and_source_options,
+    parser, CompileOptions, CompileSourceOptions, DiagnosticKind,
+};
 
 fn undefined_variable_warning(path: &Path, name: &str, line: usize) -> String {
     format!(
@@ -57056,6 +57059,54 @@ echo $differentAttribute->override('foo'), \"\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("zend_test_attribute_with_named_argument"));
     assert!(c_source.contains("ZendTestClassWithMethodWithParameterAttribute"));
+}
+
+#[test]
+fn compile_zend_test_observer_internal_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-observer-internal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-observer-internal.php");
+    let output = root.join("zend-test-observer-internal-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(array_sum([1, 2, 3]));
+",
+    )
+    .unwrap();
+
+    compile_file_with_preloads_and_source_options(
+        &input,
+        &output,
+        CompileOptions { emit_c: true },
+        &[],
+        CompileSourceOptions {
+            zend_test_observer_execute_internal: true,
+            zend_test_observer_show_return_value: true,
+            ..CompileSourceOptions::default()
+        },
+    )
+    .unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<!-- internal enter array_sum() -->\n",
+            "<!-- internal leave array_sum():6 -->\n",
+            "<!-- internal enter var_dump() -->\n",
+            "int(6)\n",
+            "<!-- internal leave var_dump():NULL -->\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

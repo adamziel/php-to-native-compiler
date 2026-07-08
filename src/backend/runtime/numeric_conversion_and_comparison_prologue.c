@@ -171,6 +171,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->max_execution_time_seconds = caller_runtime->max_execution_time_seconds;
     runtime->max_execution_time_deadline = caller_runtime->max_execution_time_deadline;
     runtime->defer_uncaught_exception_emit = 0;
+    runtime->zend_test_observer_execute_internal =
+        caller_runtime->zend_test_observer_execute_internal;
+    runtime->zend_test_observer_show_return_value =
+        caller_runtime->zend_test_observer_show_return_value;
+    runtime->zend_test_observer_internal_depth =
+        caller_runtime->zend_test_observer_internal_depth;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;

@@ -1990,6 +1990,9 @@ struct PtnRuntime {
     int64_t max_execution_time_seconds;
     time_t max_execution_time_deadline;
     int defer_uncaught_exception_emit;
+    int zend_test_observer_execute_internal;
+    int zend_test_observer_show_return_value;
+    size_t zend_test_observer_internal_depth;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;

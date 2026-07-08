@@ -41,6 +41,8 @@ pub struct Module {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ModuleRuntimeRequirements {
     pub internal_function_dispatch: bool,
+    pub zend_test_observer_execute_internal: bool,
+    pub zend_test_observer_show_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -297743,6 +297743,59 @@ static size_t ptn_internal_supplied_positional_argc(
     return supplied;
 }
 
+static void ptn_zend_test_observer_write_indent(PtnRuntime *runtime, size_t depth) {
+    for (size_t i = 0; i < depth; i++) {
+        ptn_output_write(runtime, "  ", 2);
+    }
+}
+
+static void ptn_zend_test_observer_internal_enter(PtnRuntime *runtime, const char *name) {
+    if (runtime == NULL || !runtime->zend_test_observer_execute_internal) {
+        return;
+    }
+    ptn_zend_test_observer_write_indent(runtime, runtime->zend_test_observer_internal_depth);
+    ptn_output_write(runtime, "<!-- internal enter ", 20);
+    ptn_output_write(runtime, name, strlen(name));
+    ptn_output_write(runtime, "() -->\n", 7);
+    runtime->zend_test_observer_internal_depth++;
+}
+
+static void ptn_zend_test_observer_internal_leave(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue result,
+    size_t line
+) {
+    if (runtime == NULL || !runtime->zend_test_observer_execute_internal) {
+        return;
+    }
+    if (runtime->zend_test_observer_internal_depth > 0) {
+        runtime->zend_test_observer_internal_depth--;
+    }
+    ptn_zend_test_observer_write_indent(runtime, runtime->zend_test_observer_internal_depth);
+    ptn_output_write(runtime, "<!-- internal leave ", 20);
+    ptn_output_write(runtime, name, strlen(name));
+    ptn_output_write(runtime, "()", 2);
+    if (runtime->zend_test_observer_show_return_value) {
+        ptn_output_write(runtime, ":", 1);
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        PtnDumpSeenArrays seen;
+        ptn_dump_seen_arrays_init(&seen);
+        PtnValue deref_result = ptn_value_deref(result);
+        if (ptn_var_export_should_break_value(deref_result, &seen)) {
+            ptn_string_buffer_append(&buffer, "\n  ");
+            ptn_var_export_append_value(&buffer, runtime, deref_result, 2, &seen, line);
+        } else {
+            ptn_var_export_append_value(&buffer, runtime, deref_result, 0, &seen, line);
+        }
+        ptn_dump_seen_arrays_free(&seen);
+        ptn_output_write(runtime, buffer.data, buffer.len);
+        free(buffer.data);
+    }
+    ptn_output_write(runtime, " -->\n", 5);
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
     const PtnInternalFunction *function = ptn_runtime_function_disabled(runtime, name)
         ? NULL
@@ -297799,7 +297852,9 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             args
         );
         ptn_internal_apply_sensitive_trace_frame(&trace_frame, function->name);
+        ptn_zend_test_observer_internal_enter(runtime, function->name);
         PtnValue result = function->handler(runtime, argc, args, line);
+        ptn_zend_test_observer_internal_leave(runtime, function->name, result, line);
         ptn_runtime_pop_trace_frame(runtime, &trace_frame);
         return result;
     }

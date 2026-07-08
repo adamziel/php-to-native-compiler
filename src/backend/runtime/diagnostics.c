@@ -3316,6 +3316,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->max_execution_time_seconds = 0;
     runtime->max_execution_time_deadline = 0;
     runtime->defer_uncaught_exception_emit = 0;
+    runtime->zend_test_observer_execute_internal = 0;
+    runtime->zend_test_observer_show_return_value = 0;
+    runtime->zend_test_observer_internal_depth = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
