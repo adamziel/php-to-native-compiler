@@ -25655,6 +25655,46 @@ var_dump($iteratorClone);
 }
 
 #[test]
+fn compile_array_iterator_clone_preserves_self_backed_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-array-iterator-self-backed-clone-storage");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-iterator-self-backed-clone-storage.php");
+    let output = root.join("array-iterator-self-backed-clone-storage-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$object = new ArrayObject();
+$object[] = 1;
+$objectClone = clone $object;
+$objectClone[0] = 2;
+var_dump($object[0], $objectClone[0]);
+
+$iterator = new ArrayIterator();
+$iterator[] = 1;
+$iteratorClone = clone $iterator;
+$iteratorClone[0] = 2;
+var_dump($iterator[0], $iteratorClone[0]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(2)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_object_backed_ksort_reorders_properties_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-object-backed-ksort");
     fs::create_dir_all(&root).unwrap();

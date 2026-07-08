@@ -268054,6 +268054,9 @@ static PtnArrayEntry *ptn_spl_storage_entry_for_key(
 }
 
 static PtnArray *ptn_spl_storage_mutable_array(PtnValue *storage) {
+    if (storage != NULL && storage->type == PTN_REFERENCE) {
+        return ptn_array_detach_value(&storage->as.reference->value);
+    }
     PtnValue resolved = ptn_value_deref(*storage);
     if (resolved.type == PTN_ARRAY) {
         return ptn_array_detach_value(storage);
@@ -268084,6 +268087,13 @@ static PtnArray *ptn_spl_storage_mutable_array_with_lifetime_guard(
 ) {
     if (guard_out != NULL) {
         *guard_out = ptn_null();
+    }
+    if (storage != NULL && storage->type == PTN_REFERENCE) {
+        PtnArray *array = ptn_array_detach_value(&storage->as.reference->value);
+        if (guard_out != NULL && array != NULL) {
+            *guard_out = ptn_value_clone_deref(*storage);
+        }
+        return array;
     }
     PtnValue resolved = ptn_value_deref(*storage);
     if (resolved.type == PTN_ARRAY) {
@@ -273467,6 +273477,16 @@ static PTN_UNUSED PtnValue ptn_array_iterator_clone(
     PtnValue resolved_storage = ptn_value_deref(source_data->storage);
     if (resolved_storage.type == PTN_OBJECT && resolved_storage.as.object == resolved_source.as.object) {
         clone_data->storage = ptn_value_clone(clone);
+    } else if (source_data->storage.type == PTN_REFERENCE) {
+        clone_data->storage = ptn_value_clone(source_data->storage);
+    } else if (resolved_storage.type == PTN_ARRAY) {
+        PtnValue storage_reference =
+            ptn_reference_value(ptn_reference_new_owned(source_data->storage));
+        source_data->storage = ptn_value_clone(storage_reference);
+        clone_data->storage = storage_reference;
+        ptn_spl_declare_storage_property(runtime, source, "ArrayIterator", source_data->storage, line);
+    } else if (resolved_storage.type == PTN_OBJECT) {
+        clone_data->storage = ptn_value_clone(source_data->storage);
     } else {
         clone_data->storage = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
     }
