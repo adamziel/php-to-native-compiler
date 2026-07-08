@@ -5481,11 +5481,17 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     const char *property,
     size_t line
 ) {
+    size_t class_name_len = strlen(class_name);
+    const char *anonymous_suffix = strstr(class_name, "@anonymous#");
+    if (anonymous_suffix != NULL) {
+        class_name_len = (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
+    }
     char message[256];
     int written = snprintf(
         message,
         sizeof(message),
-        "Cannot create dynamic property %s::$%s",
+        "Cannot create dynamic property %.*s::$%s",
+        (int)class_name_len,
         class_name,
         property
     );
@@ -5673,11 +5679,17 @@ static PTN_UNUSED void ptn_emit_dynamic_property_deprecation(
         !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
+    size_t class_name_len = strlen(object->class_name);
+    const char *anonymous_suffix = strstr(object->class_name, "@anonymous#");
+    if (anonymous_suffix != NULL) {
+        class_name_len = (size_t)(anonymous_suffix - object->class_name) + strlen("@anonymous");
+    }
     char message[256];
     int written = snprintf(
         message,
         sizeof(message),
-        "Creation of dynamic property %s::$%s is deprecated",
+        "Creation of dynamic property %.*s::$%s is deprecated",
+        (int)class_name_len,
         object->class_name,
         property
     );

@@ -17342,11 +17342,13 @@ static void ptn_unserialize_emit_dynamic_property_deprecation(
         return;
     }
 
+    size_t class_name_len = ptn_class_name_dump_len(class_name);
     char message[256];
     int written = snprintf(
         message,
         sizeof(message),
-        "Creation of dynamic property %s::$%s is deprecated",
+        "Creation of dynamic property %.*s::$%s is deprecated",
+        (int)class_name_len,
         class_name,
         property
     );
@@ -292881,6 +292883,24 @@ static int ptn_dynamic_execute_inc_dec_expression(
     return 1;
 }
 
+static int ptn_dynamic_execute_inc_dec_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = *pos;
+    if (!ptn_dynamic_execute_inc_dec_expression(runtime, code, len, &cursor, line)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ';')) {
+        return 0;
+    }
+    *pos = cursor;
+    return 1;
+}
+
 static int ptn_dynamic_execute_for_clause(
     PtnRuntime *runtime,
     const char *code,
@@ -293479,6 +293499,7 @@ static int ptn_dynamic_execute_statements_range(
             ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_static_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_inc_dec_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_expression_statement(runtime, code, end, pos, line)) {
             if (ptn_runtime_has_active_exception(runtime)) {

@@ -7150,6 +7150,41 @@ include $path;
 }
 
 #[test]
+fn compile_dynamic_generated_include_executes_inc_dec_statements_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-inc-dec-statement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("generated.inc");
+    let output = root.join("dynamic-include-inc-dec-statement-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/generated.inc";
+$c = 0;
+file_put_contents($path, <<<'PHP'
+<?php
+$c++;
+++ $c;
+PHP);
+include $path;
+var_dump($c);
+"#,
+    )
+    .unwrap();
+    fs::write(&include, "").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_execute_inc_dec_statement"));
+}
+
+#[test]
 fn compile_relative_dir_dynamic_include_uses_existing_cwd_path_to_native_binary() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -130976,6 +131011,7 @@ set_error_handler(function ($code, $msg) {
     echo \"Err: $msg\\n\";
     $GLOBALS['a'] = null;
 });
+$unused = new class {};
 $a = new class {};
 try {
     [&$a->y];
