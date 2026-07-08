@@ -158162,6 +158162,30 @@ static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_null();
 }
 
+static PtnValue ptn_internal_headers_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_internal_connection_aborted(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_connection_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
 static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand message = ptn_internal_expect_string_arg(
         runtime,
@@ -239369,6 +239393,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
         { "collator_sort_with_sort_keys", 2, 2, ptn_internal_collator_sort_with_sort_keys },
         { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
+        { "connection_aborted", 0, 0, ptn_internal_connection_aborted },
+        { "connection_status", 0, 0, ptn_internal_connection_status },
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
@@ -239672,6 +239698,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
         { "header", 1, 3, ptn_internal_header },
         { "header_register_callback", 1, 1, ptn_internal_header_register_callback },
+        { "headers_list", 0, 0, ptn_internal_headers_list },
         { "http_get_last_response_headers", 0, 0, ptn_internal_http_get_last_response_headers },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },

@@ -19287,6 +19287,56 @@ echo 'M';
 }
 
 #[test]
+fn compile_header_list_and_connection_status_to_native_binary() {
+    let root = temp_dir("ptn-native-header-list-connection-status");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("header-list-connection-status.php");
+    let output = root.join("header-list-connection-status-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(connection_aborted());
+var_dump(connection_status() === CONNECTION_NORMAL);
+var_dump(headers_list());
+echo \"Done\\n\";
+var_dump(header('HTTP blah'));
+var_dump(headers_sent());
+var_dump(headers_list());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(
+            "int(0)\n\
+bool(true)\n\
+array(0) {\n\
+}\n\
+Done\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Cannot modify header information - headers already sent by"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("NULL\nbool(true)\narray(0) {\n}\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_headers_list"));
+    assert!(c_source.contains("ptn_internal_connection_status"));
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();
