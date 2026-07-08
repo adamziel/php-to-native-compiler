@@ -61102,6 +61102,26 @@ static PtnValue ptn_internal_stream_filter_register(PtnRuntime *runtime, size_t 
         ptn_string_operand_free(filter_name);
         return ptn_null();
     }
+    if (filter_name.len == 0) {
+        ptn_string_operand_free(filter_name);
+        ptn_string_operand_free(class_name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_filter_register(): Argument #1 ($filter_name) must be a non-empty string"
+        );
+        return ptn_null();
+    }
+    if (class_name.len == 0) {
+        ptn_string_operand_free(filter_name);
+        ptn_string_operand_free(class_name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_filter_register(): Argument #2 ($class) must be a non-empty string"
+        );
+        return ptn_null();
+    }
 
     PtnStreamFilterKind builtin_kind;
     if (ptn_stream_filter_kind_from_name(filter_name, &builtin_kind) ||
@@ -61657,10 +61677,17 @@ static PtnValue ptn_internal_stream_bucket_add(
     if (!ptn_stream_bucket_data_operand(runtime, function_name, args[1], line, &data)) {
         return ptn_null();
     }
-    if (brigade->output_bucket_count == 0) {
+    if (prepend) {
+        size_t previous_len = brigade->output.len;
         ptn_string_buffer_append_len(&brigade->output, data.data, data.len);
-        brigade->output_bucket_count++;
+        if (data.len != 0 && previous_len != 0) {
+            memmove(brigade->output.data + data.len, brigade->output.data, previous_len);
+            memcpy(brigade->output.data, data.data, data.len);
+        }
+    } else {
+        ptn_string_buffer_append_len(&brigade->output, data.data, data.len);
     }
+    brigade->output_bucket_count++;
     ptn_string_operand_free(data);
     return ptn_null();
 }

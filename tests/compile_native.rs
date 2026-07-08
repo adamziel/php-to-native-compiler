@@ -39397,7 +39397,7 @@ create\n\
 bool(true)\n\
 int(3)\n\
 close\n\
-ABC\n"
+ABCABC\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -39405,6 +39405,46 @@ ABC\n"
     assert!(c_source.contains("ptn_internal_stream_filter_register"));
     assert!(c_source.contains("ptn_internal_stream_bucket_make_writeable"));
     assert!(c_source.contains("PTN_PSFS_PASS_ON"));
+}
+
+#[test]
+fn compile_stream_filter_register_rejects_empty_names_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-filter-register-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-filter-register-empty.php");
+    let output = root.join("stream-filter-register-empty-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach ([["", ""], ["test", ""], ["", "test"]] as $args) {
+    try {
+        stream_filter_register($args[0], $args[1]);
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+var_dump(stream_filter_register("------", "nonexistentclass"));
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stream_filter_register(): Argument #1 ($filter_name) must be a non-empty string\n\
+stream_filter_register(): Argument #2 ($class) must be a non-empty string\n\
+stream_filter_register(): Argument #1 ($filter_name) must be a non-empty string\n\
+bool(true)\n\
+Done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("must be a non-empty string"));
 }
 
 #[test]
@@ -39648,6 +39688,61 @@ filter onClose\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_stream_eof(resource)"));
+}
+
+#[test]
+fn compile_user_stream_filter_flushes_closing_bucket_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-closing-bucket");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-closing-bucket.php");
+    let output = root.join("stream-user-filter-closing-bucket-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LineReverseFilter extends php_user_filter {
+    private $data = "";
+
+    public function filter($in, $out, &$consumed, $closing): int {
+        $return = PSFS_FEED_ME;
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $this->data .= $bucket->data;
+            $consumed += $bucket->datalen;
+            while (preg_match('/(.*?)[\r\n]+(.*)/s', $this->data, $match) === 1) {
+                [, $data, $this->data] = $match;
+                stream_bucket_append($out, stream_bucket_new($this->stream, strrev($data) . PHP_EOL));
+                $return = PSFS_PASS_ON;
+            }
+        }
+        if ($closing && $this->data !== "") {
+            stream_bucket_append($out, stream_bucket_new($this->stream, strrev($this->data) . PHP_EOL));
+            $return = PSFS_PASS_ON;
+        }
+        return $return;
+    }
+}
+
+stream_filter_register("line.reverse", LineReverseFilter::class);
+$stream = fopen("data://text/plain,Line one%0ALine two%0ALine three", "r");
+stream_filter_append($stream, "line.reverse");
+echo stream_get_contents($stream);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "eno eniL\n\
+owt eniL\n\
+eerht eniL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_bucket_append"));
 }
 
 #[test]
