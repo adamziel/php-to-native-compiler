@@ -2922,13 +2922,10 @@ static PTN_UNUSED void ptn_emit_compile_deprecation_direct(PtnRuntime *runtime, 
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
-    if (diagnostics->emitted_deprecation) {
-        ptn_diagnostic_output_cstr(diagnostics, "\n");
-    }
     diagnostics->emitted_deprecation = 1;
     ptn_diagnostic_printf(
         diagnostics,
-        "Deprecated: %s in %s on line %zu\n",
+        "\nDeprecated: %s in %s on line %zu\n",
         message,
         path != NULL ? path : "ptn",
         line

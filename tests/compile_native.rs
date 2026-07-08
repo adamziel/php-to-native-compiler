@@ -21366,6 +21366,39 @@ var_dump($decoded === $decoded->x);
 }
 
 #[test]
+fn compile_serializable_deprecation_after_output_is_spaced_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-deprecation-spacing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-deprecation-spacing.php");
+    let output = root.join("serializable-deprecation-spacing-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo "before\n";
+class LegacySpacing implements Serializable {
+    public function serialize(): string { return ''; }
+    public function unserialize($data): void {}
+}
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("before\n\nDeprecated: LegacySpacing implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("after\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_previous_chain_serializes_to_native_binary() {
     let root = temp_dir("ptn-native-exception-previous-serialize");
     fs::create_dir_all(&root).unwrap();
