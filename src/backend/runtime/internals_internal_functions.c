@@ -135716,6 +135716,7 @@ static void ptn_gc_close_unreachable_suspended_fibers(PtnRuntime *root, size_t e
 static size_t ptn_gc_destructed_object_count(PtnObject *object) {
     if (
         object == NULL ||
+        ptn_ascii_case_equal(object->class_name, "Generator") ||
         (
             object->destructor_called &&
             (object->properties == NULL || object->properties->len == 0)

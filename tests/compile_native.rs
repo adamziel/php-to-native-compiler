@@ -19976,6 +19976,39 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_collects_object_generator_cycles_without_counting_generator_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-object-generator-cycles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-object-generator-cycles.php");
+    let output = root.join("gc-object-generator-cycles-bin");
+    fs::write(
+        &input,
+        "<?php
+$func = function () {
+    yield 2;
+};
+$a = new stdClass();
+$b = new stdClass();
+$a->b = $b;
+$b->a = $a;
+$func = $a->func = $func();
+unset($b);
+unset($a);
+unset($func);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_reference_assignment_counts_only_nested_array_cycles_to_native_binary() {
     let root = temp_dir("ptn-native-gc-reference-assignment-nested-cycles");
     fs::create_dir_all(&root).unwrap();
@@ -28601,6 +28634,53 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_generator_force_close"));
+}
+
+#[test]
+fn compile_generator_force_close_yield_from_finally_order_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-yield-from-finally-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-yield-from-finally-order.php");
+    let output = root.join("generator-force-close-yield-from-finally-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen1() {
+    try {
+        yield 1;
+        yield 2;
+        return true;
+    } finally {
+        echo "Inner finally\n";
+    }
+}
+
+function gen2() {
+    try {
+        echo "Entered try/catch\n";
+        var_dump(yield from gen1());
+    } finally {
+        echo "Finally\n";
+    }
+}
+
+$generator = gen2();
+var_dump($generator->current());
+unset($generator);
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Entered try/catch\nint(1)\nInner finally\nFinally\nDone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

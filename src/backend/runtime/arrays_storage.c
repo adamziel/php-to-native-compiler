@@ -4465,7 +4465,7 @@ static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnG
     PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
         ? runtime
         : runtime->lifecycle_root;
-    return root == NULL || !root->gc_running;
+    return root == NULL || (!root->gc_running && root->current_fiber != NULL);
 }
 
 static PTN_UNUSED void ptn_object_release(PtnObject *object) {
