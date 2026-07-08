@@ -17379,6 +17379,10 @@ static PTN_UNUSED int ptn_object_declares_iterator_method(
         ptn_declared_class_method_exists(object->class_name, method_name);
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_internal_iterator_iterator_note_current_exception(PtnValue receiver);
+#endif
+
 static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
     PtnArrayIterator *iterator,
     const char *method_name
@@ -17399,6 +17403,11 @@ static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
         iterator->line
     );
     if (iterator->runtime->exceptions->active_exception != NULL) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (ptn_ascii_case_equal(method_name, "current")) {
+            ptn_internal_iterator_iterator_note_current_exception(iterator->iterator_object);
+        }
+#endif
         ptn_value_destroy(&result);
         ptn_rethrow_exception(iterator->runtime);
         return ptn_null();

@@ -262803,6 +262803,7 @@ typedef struct {
     int has_cached_current;
     PtnValue cached_key;
     int has_cached_key;
+    int current_exception_invalidated_position;
 } PtnIteratorIteratorData;
 
 typedef struct {
@@ -263571,6 +263572,21 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
         return NULL;
     }
     return (PtnIteratorIteratorData *)receiver.as.object->native_data;
+}
+
+static PTN_UNUSED void ptn_internal_iterator_iterator_note_current_exception(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "IteratorIterator") ||
+          ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "CachingIterator") ||
+          ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "FilterIterator") ||
+          ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "InfiniteIterator") ||
+          ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "NoRewindIterator")) ||
+        receiver.as.object->native_data == NULL) {
+        return;
+    }
+    PtnIteratorIteratorData *data = (PtnIteratorIteratorData *)receiver.as.object->native_data;
+    data->current_exception_invalidated_position = 1;
 }
 
 static PtnAppendIteratorData *ptn_append_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -279755,6 +279771,7 @@ static PtnValue ptn_iterator_iterator_new_for_class(
     data->has_cached_current = 0;
     data->cached_key = ptn_null();
     data->has_cached_key = 0;
+    data->current_exception_invalidated_position = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
@@ -285483,6 +285500,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
             return ptn_null();
         }
         ptn_iterator_iterator_clear_cached_position(data);
+        data->current_exception_invalidated_position = 0;
         PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
         ptn_value_destroy(&next);
         data->has_cached_valid = 0;
@@ -285507,6 +285525,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
             return ptn_null();
         }
         data->has_cached_valid = 0;
+        data->current_exception_invalidated_position = 0;
         return ptn_null();
     }
     if (ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name) &&
@@ -285516,12 +285535,14 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
             return ptn_null();
         }
         ptn_iterator_iterator_clear_cached_position(data);
+        data->current_exception_invalidated_position = 0;
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
     }
     if (ptn_iterator_iterator_receiver_is_plain_filter_iterator(receiver_class_name) &&
         ptn_ascii_case_equal(name, "rewind")) {
         data->has_cached_valid = 0;
         ptn_iterator_iterator_clear_cached_position(data);
+        data->current_exception_invalidated_position = 0;
         PtnValue rewind = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
         ptn_value_destroy(&rewind);
         if (runtime->exceptions->active_exception == NULL) {
@@ -285532,6 +285553,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     if (ptn_iterator_iterator_receiver_is_plain_filter_iterator(receiver_class_name) &&
         ptn_ascii_case_equal(name, "next")) {
         ptn_iterator_iterator_clear_cached_position(data);
+        data->current_exception_invalidated_position = 0;
         PtnValue next = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
         ptn_value_destroy(&next);
         if (runtime->exceptions->active_exception == NULL) {
@@ -285542,6 +285564,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->has_cached_valid = 0;
         ptn_iterator_iterator_clear_cached_position(data);
+        data->current_exception_invalidated_position = 0;
         PtnTraceFrame trace_frame;
         char trace_name[192];
         int written = snprintf(
@@ -285560,6 +285583,10 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         return rewind;
     }
     if (ptn_ascii_case_equal(name, "current")) {
+        if (data->current_exception_invalidated_position) {
+            ptn_reflection_check_no_arguments(runtime, "IteratorIterator", name, argc);
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
         if (ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name) &&
             data->has_cached_current) {
             ptn_reflection_check_no_arguments(runtime, "NoRewindIterator", name, argc);
@@ -285567,9 +285594,25 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
                 ? ptn_null()
                 : ptn_value_clone_deref(data->cached_current);
         }
+        PtnTryFrame current_frame;
+        int current_frame_active = 0;
+        if (runtime->exceptions != NULL) {
+            ptn_try_frame_push(runtime, &current_frame);
+            current_frame_active = 1;
+            if (setjmp(current_frame.jump) != 0) {
+                ptn_try_frame_pop(runtime, &current_frame);
+                data->current_exception_invalidated_position = 1;
+                ptn_rethrow_exception(runtime);
+                return ptn_null();
+            }
+        }
         PtnValue current = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
-        if (runtime->exceptions->active_exception == NULL &&
-            ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name)) {
+        if (current_frame_active) {
+            ptn_try_frame_pop(runtime, &current_frame);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            data->current_exception_invalidated_position = 1;
+        } else if (ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name)) {
             ptn_iterator_iterator_clear_cached_position(data);
             data->cached_current = ptn_value_clone_deref(current);
             data->has_cached_current = 1;
@@ -285669,6 +285712,13 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_ascii_case_equal(name, "next") ||
         ptn_ascii_case_equal(name, "offsetGet")
     ) {
+        if (ptn_ascii_case_equal(name, "key") && data->current_exception_invalidated_position) {
+            ptn_reflection_check_no_arguments(runtime, "IteratorIterator", name, argc);
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "next")) {
+            data->current_exception_invalidated_position = 0;
+        }
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
     }
     if (ptn_internal_class_name_is_caching_iterator(receiver_class_name)) {

@@ -2617,6 +2617,53 @@ echo "done\n";
 }
 
 #[test]
+fn compile_iterator_iterator_current_exception_invalidates_position_to_native_binary() {
+    let root = temp_dir("ptn-native-iterator-iterator-current-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterator-iterator-current-exception.php");
+    let output = root.join("iterator-iterator-current-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ThrowingCurrentIterator implements Iterator {
+    public function rewind(): void {}
+    public function next(): void {}
+    public function valid(): bool { return true; }
+    public function current(): mixed { throw new Exception("boo"); }
+    public function key(): mixed { return null; }
+}
+
+$it = new IteratorIterator(new ThrowingCurrentIterator());
+try {
+    foreach ($it as $key => $value) {
+        echo $key, $value;
+    }
+} catch (Exception $e) {
+    var_dump($e->getMessage());
+}
+var_dump($it->current());
+var_dump($it->key());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"boo\"\nNULL\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_regex_iterator_replace_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-regex-iterator-replace-reference");
     fs::create_dir_all(&root).unwrap();
