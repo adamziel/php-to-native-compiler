@@ -351,6 +351,13 @@ typedef struct {
 #define PTN_LOCK_EX 2
 #define PTN_LOCK_UN 3
 #define PTN_LOCK_NB 4
+#define PTN_MYSQLI_REPORT_OFF 0
+#define PTN_MYSQLI_REPORT_ERROR 1
+#define PTN_MYSQLI_REPORT_STRICT 2
+#define PTN_MYSQLI_REPORT_INDEX 4
+#define PTN_MYSQLI_REPORT_ALL 255
+#define PTN_MYSQLI_CLIENT_VERSION 80000
+#define PTN_MYSQLI_CLIENT_INFO "mysqlnd"
 #define PTN_FNM_NOESCAPE 1
 #define PTN_FNM_PATHNAME 2
 #define PTN_FNM_PERIOD 4
@@ -2875,6 +2882,17 @@ static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_na
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_simplexml(const char *class_name);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "mysqli");
+}
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_driver(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "mysqli_driver");
+}
+#else
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_driver(const char *class_name);
+#endif
 static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_comparison_mode(const char *class_name);
@@ -3122,6 +3140,18 @@ static PTN_UNUSED PtnValue ptn_pdo_new(
 static PTN_UNUSED PtnValue ptn_pdo_statement_new(
     PtnRuntime *runtime,
     const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_mysqli_new(
+    PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
     size_t line

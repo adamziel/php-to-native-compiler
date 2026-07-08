@@ -1,0 +1,2 @@
+ext/mysqli/tests/mysqli_class_mysqli_driver_interface.phpt
+ext/mysqli/tests/mysqli_driver/write_property.phpt

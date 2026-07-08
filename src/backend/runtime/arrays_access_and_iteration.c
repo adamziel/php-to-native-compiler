@@ -1032,6 +1032,27 @@ static PtnValue ptn_declared_class_new_instance(
     size_t line
 );
 
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "mysqli");
+}
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_driver(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "mysqli_driver");
+}
+static PTN_UNUSED PtnValue ptn_mysqli_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+#endif
+
 #if defined(PTN_HAS_INTERNAL_FUNCTION_DISPATCH) || defined(PTN_HAS_URI_INTERNAL_HELPERS)
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
 static PTN_UNUSED PtnValue ptn_uri_new(
@@ -1682,6 +1703,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
         );
         return ptn_null();
     }
+    if (ptn_internal_class_name_is_mysqli(lookup_class_name)) {
+        return ptn_mysqli_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(lookup_class_name)) {
+        return ptn_mysqli_driver_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_sqlite3(lookup_class_name)) {
         return ptn_sqlite3_new(runtime, argc, args, line);
     }
@@ -1894,6 +1921,14 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_xml_parser(lookup_class_name)) {
         return ptn_xml_parser_new(runtime, argc, args, line);
+    }
+#endif
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_mysqli(lookup_class_name)) {
+        return ptn_mysqli_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(lookup_class_name)) {
+        return ptn_mysqli_driver_new(runtime, argc, args, line);
     }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
@@ -5765,6 +5800,22 @@ static PTN_UNUSED int ptn_runtime_consume_dynamic_property_deprecation_suppressi
 #define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
 #define PTN_PROPERTY_ACCESS_UNSET 3
 
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+);
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_array_object_property_read(
     PtnRuntime *runtime,
@@ -7152,6 +7203,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     )) {
         return internal_xml_value;
     }
+    PtnValue mysqli_driver_value = ptn_null();
+    if (ptn_internal_mysqli_driver_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &mysqli_driver_value
+    )) {
+        return mysqli_driver_value;
+    }
     PtnValue array_object_value = ptn_null();
     if (ptn_internal_array_object_property_read(
         runtime,
@@ -7162,6 +7223,18 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         &array_object_value
     )) {
         return array_object_value;
+    }
+#endif
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue mysqli_driver_value = ptn_null();
+    if (ptn_internal_mysqli_driver_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &mysqli_driver_value
+    )) {
+        return mysqli_driver_value;
     }
 #endif
     PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
@@ -8855,6 +8928,17 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         )) {
             PTN_OBJECT_WRITE_RETURN(internal_xml_value);
         }
+        PtnValue mysqli_driver_value = ptn_null();
+        if (ptn_internal_mysqli_driver_property_write(
+            runtime,
+            receiver,
+            property,
+            value,
+            line,
+            &mysqli_driver_value
+        )) {
+            PTN_OBJECT_WRITE_RETURN(mysqli_driver_value);
+        }
         PtnValue array_object_value = ptn_null();
         if (ptn_internal_array_object_property_write(
             runtime,
@@ -8867,6 +8951,19 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         )) {
             PTN_OBJECT_WRITE_RETURN(array_object_value);
         }
+    }
+#endif
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue mysqli_driver_value = ptn_null();
+    if (ptn_internal_mysqli_driver_property_write(
+        runtime,
+        receiver,
+        property,
+        value,
+        line,
+        &mysqli_driver_value
+    )) {
+        PTN_OBJECT_WRITE_RETURN(mysqli_driver_value);
     }
 #endif
     PtnObjectPropertyMetadata *blocked_metadata =
@@ -10465,6 +10562,125 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
         line
     );
 }
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_mysqli_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)args;
+    return ptn_object_new_shell_at(runtime, "mysqli", line);
+}
+
+static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 0) {
+        ptn_throw_exception(
+            runtime,
+            "ArgumentCountError",
+            "mysqli_driver::__construct() expects exactly 0 arguments"
+        );
+        return ptn_null();
+    }
+    (void)args;
+    PtnValue object = ptn_object_new_shell_at(runtime, "mysqli_driver", line);
+    PtnValue report_mode = ptn_int(PTN_MYSQLI_REPORT_OFF);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "report_mode",
+        "mysqli_driver",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        1,
+        report_mode,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&report_mode);
+    return runtime->exceptions->active_exception != NULL ? ptn_null() : object;
+}
+
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_mysqli_driver(receiver.as.object->class_name)) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(property, "client_info")) {
+        *value_out = ptn_string(PTN_MYSQLI_CLIENT_INFO);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "client_version")) {
+        *value_out = ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "driver_version")) {
+        if (runtime != NULL) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "The driver_version property is deprecated",
+                line
+            );
+        }
+        *value_out = ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+) {
+    (void)value;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_mysqli_driver(receiver.as.object->class_name)) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(property, "client_info") ||
+        ptn_ascii_case_equal(property, "client_version") ||
+        ptn_ascii_case_equal(property, "driver_version")) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot write read-only property mysqli_driver::$%s",
+            property
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        *value_out = ptn_null();
+        return 1;
+    }
+    return 0;
+}
+#endif
 
 static PTN_UNUSED void ptn_zend_test_class_initialize_properties(
     PtnRuntime *runtime,

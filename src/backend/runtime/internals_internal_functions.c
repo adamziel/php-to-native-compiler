@@ -385,6 +385,21 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     if (strcmp(name, "WSDL_CACHE_BOTH") == 0) {
         return ptn_int(3);
     }
+    if (strcmp(name, "MYSQLI_REPORT_OFF") == 0) {
+        return ptn_int(PTN_MYSQLI_REPORT_OFF);
+    }
+    if (strcmp(name, "MYSQLI_REPORT_ERROR") == 0) {
+        return ptn_int(PTN_MYSQLI_REPORT_ERROR);
+    }
+    if (strcmp(name, "MYSQLI_REPORT_STRICT") == 0) {
+        return ptn_int(PTN_MYSQLI_REPORT_STRICT);
+    }
+    if (strcmp(name, "MYSQLI_REPORT_INDEX") == 0) {
+        return ptn_int(PTN_MYSQLI_REPORT_INDEX);
+    }
+    if (strcmp(name, "MYSQLI_REPORT_ALL") == 0) {
+        return ptn_int(PTN_MYSQLI_REPORT_ALL);
+    }
     PtnValue value;
     if (ptn_openssl_constant_value(name, &value)) {
         return value;
@@ -3110,6 +3125,12 @@ static PTN_UNUSED int ptn_internal_class_exists_name(const char *class_name) {
         ptn_ascii_case_equal(class_name, "StreamErrorCode") ||
         ptn_ascii_case_equal(class_name, "StreamErrorMode") ||
         ptn_ascii_case_equal(class_name, "StreamErrorStore")) {
+        return 1;
+    }
+    if (ptn_internal_class_name_is_mysqli(class_name)) {
+        return 1;
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(class_name)) {
         return 1;
     }
     (void)class_name;
@@ -33567,6 +33588,54 @@ static int ptn_mail_params_request_numbered_cat(PtnStringOperand params) {
         }
     }
     return 0;
+}
+
+static PtnValue ptn_internal_mysqli_get_client_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(PTN_MYSQLI_CLIENT_INFO);
+}
+
+static PtnValue ptn_internal_mysqli_get_client_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+}
+
+static PtnValue ptn_internal_mysqli_connect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_mysqli_connect_errno(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(2002);
+}
+
+static PtnValue ptn_internal_mysqli_connect_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string("No such file or directory");
+}
+
+static PtnValue ptn_internal_mysqli_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -154439,6 +154508,11 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "LOCK_EX", PTN_LOCK_EX);
     ptn_get_defined_constants_add_int(table, "LOCK_UN", PTN_LOCK_UN);
     ptn_get_defined_constants_add_int(table, "LOCK_NB", PTN_LOCK_NB);
+    ptn_get_defined_constants_add_int(table, "MYSQLI_REPORT_OFF", PTN_MYSQLI_REPORT_OFF);
+    ptn_get_defined_constants_add_int(table, "MYSQLI_REPORT_ERROR", PTN_MYSQLI_REPORT_ERROR);
+    ptn_get_defined_constants_add_int(table, "MYSQLI_REPORT_STRICT", PTN_MYSQLI_REPORT_STRICT);
+    ptn_get_defined_constants_add_int(table, "MYSQLI_REPORT_INDEX", PTN_MYSQLI_REPORT_INDEX);
+    ptn_get_defined_constants_add_int(table, "MYSQLI_REPORT_ALL", PTN_MYSQLI_REPORT_ALL);
     ptn_get_defined_constants_add_int(table, "ASSERT_ACTIVE", 1);
     ptn_get_defined_constants_add_int(table, "ASSERT_CALLBACK", 2);
     ptn_get_defined_constants_add_int(table, "ASSERT_BAIL", 3);
@@ -241568,6 +241642,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "microtime", 0, 1, ptn_internal_microtime },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
+        { "mysqli_close", 1, 1, ptn_internal_mysqli_close },
+        { "mysqli_connect", 0, 6, ptn_internal_mysqli_connect },
+        { "mysqli_connect_errno", 0, 0, ptn_internal_mysqli_connect_errno },
+        { "mysqli_connect_error", 0, 0, ptn_internal_mysqli_connect_error },
+        { "mysqli_get_client_info", 0, 0, ptn_internal_mysqli_get_client_info },
+        { "mysqli_get_client_version", 0, 0, ptn_internal_mysqli_get_client_version },
         { "MessageFormatter::create", 2, 2, ptn_internal_messageformatter_create },
         { "MessageFormatter::formatMessage", 3, 3, ptn_internal_messageformatter_format_message },
         { "MessageFormatter::parseMessage", 3, 3, ptn_internal_messageformatter_parse_message },
@@ -242284,6 +242364,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "mb_")) {
         return "mbstring";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "mysqli_")) {
+        return "mysqli";
     }
     if (ptn_internal_function_name_has_prefix(name, "token_")) {
         return "tokenizer";
@@ -244333,6 +244416,8 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_no_discard(class_name)
         || ptn_internal_class_name_is_return_type_will_change(class_name)
         || ptn_internal_class_name_is_datetime_immutable(class_name)
+        || ptn_internal_class_name_is_mysqli(class_name)
+        || ptn_internal_class_name_is_mysqli_driver(class_name)
         || ptn_internal_class_name_is_datetime_zone(class_name)
         || ptn_internal_class_name_is_date_interval(class_name)
         || ptn_internal_class_name_is_date_period(class_name)
@@ -244624,6 +244709,136 @@ static void ptn_declare_internal_readonly_property(
         line
     );
     ptn_value_destroy(&assigned);
+}
+
+static const char *ptn_mysqli_client_info(void) {
+    return PTN_MYSQLI_CLIENT_INFO;
+}
+
+static PTN_UNUSED PtnValue ptn_mysqli_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)args;
+    return ptn_object_new_shell_at(runtime, "mysqli", line);
+}
+
+static PtnValue ptn_mysqli_driver_class_vars(void) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("client_info"), ptn_string(ptn_mysqli_client_info()));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("client_version"), ptn_int(PTN_MYSQLI_CLIENT_VERSION));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("driver_version"), ptn_int(PTN_MYSQLI_CLIENT_VERSION));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("report_mode"), ptn_int(PTN_MYSQLI_REPORT_OFF));
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 0) {
+        ptn_throw_exception(
+            runtime,
+            "ArgumentCountError",
+            "mysqli_driver::__construct() expects exactly 0 arguments"
+        );
+        return ptn_null();
+    }
+    (void)args;
+    PtnValue object = ptn_object_new_shell_at(runtime, "mysqli_driver", line);
+    PtnValue report_mode = ptn_int(PTN_MYSQLI_REPORT_OFF);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "report_mode",
+        "mysqli_driver",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        1,
+        report_mode,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&report_mode);
+    return runtime->exceptions->active_exception != NULL ? ptn_null() : object;
+}
+
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_mysqli_driver(receiver.as.object->class_name)) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(property, "client_info")) {
+        *value_out = ptn_string(ptn_mysqli_client_info());
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "client_version")) {
+        *value_out = ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "driver_version")) {
+        if (runtime != NULL) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "The driver_version property is deprecated",
+                line
+            );
+        }
+        *value_out = ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_internal_mysqli_driver_property_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+) {
+    (void)value;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_mysqli_driver(receiver.as.object->class_name)) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(property, "client_info") ||
+        ptn_ascii_case_equal(property, "client_version") ||
+        ptn_ascii_case_equal(property, "driver_version")) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot write read-only property mysqli_driver::$%s",
+            property
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        *value_out = ptn_null();
+        return 1;
+    }
+    return 0;
 }
 
 static void ptn_throw_nullable_string_arg_type_error(
@@ -245981,6 +246196,12 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
             || ptn_ascii_case_equal(property_name, "text")
             || ptn_ascii_case_equal(property_name, "line")
             || ptn_ascii_case_equal(property_name, "pos");
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(class_name)) {
+        return ptn_ascii_case_equal(property_name, "client_info")
+            || ptn_ascii_case_equal(property_name, "client_version")
+            || ptn_ascii_case_equal(property_name, "driver_version")
+            || ptn_ascii_case_equal(property_name, "report_mode");
     }
     if (ptn_internal_class_name_is_date_interval(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "DateInterval")) {
@@ -250818,6 +251039,8 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_infinite_iterator(class_name)
             || ptn_internal_class_name_is_iterator_iterator(class_name)
             || ptn_internal_class_name_is_limit_iterator(class_name)
+            || ptn_internal_class_name_is_mysqli(class_name)
+            || ptn_internal_class_name_is_mysqli_driver(class_name)
             || ptn_internal_class_name_is_regex_iterator(class_name)
             || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
             || ptn_internal_class_name_is_spl_queue(class_name)
@@ -253810,6 +254033,18 @@ static int ptn_reflection_property_class_metadata(
         *modifiers = 1 | 512;
         return 1;
     }
+    if (ptn_internal_class_name_is_mysqli_driver(class_name) &&
+        (ptn_ascii_case_equal(property_name, "client_info") ||
+         ptn_ascii_case_equal(property_name, "client_version") ||
+         ptn_ascii_case_equal(property_name, "driver_version") ||
+         ptn_ascii_case_equal(property_name, "report_mode"))) {
+        *declaring_class = "mysqli_driver";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 1;
+        *modifiers = ptn_ascii_case_equal(property_name, "report_mode") ? 1 : (1 | 128);
+        return 1;
+    }
     return ptn_builtin_exception_reflection_property_metadata(
         class_name,
         property_name,
@@ -253848,6 +254083,18 @@ static PtnValue ptn_reflection_property_default_value(
         &zend_test_modifiers
     )) {
         return ptn_zend_test_reflection_property_default_value(class_name, property_name);
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(class_name)) {
+        if (ptn_ascii_case_equal(property_name, "client_info")) {
+    return ptn_string(PTN_MYSQLI_CLIENT_INFO);
+}
+        if (ptn_ascii_case_equal(property_name, "client_version") ||
+            ptn_ascii_case_equal(property_name, "driver_version")) {
+            return ptn_int(PTN_MYSQLI_CLIENT_VERSION);
+        }
+        if (ptn_ascii_case_equal(property_name, "report_mode")) {
+            return ptn_int(PTN_MYSQLI_REPORT_OFF);
+        }
     }
     return ptn_declared_class_reflection_property_default(runtime, class_name, property_name);
 }
@@ -297043,6 +297290,10 @@ static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, co
     }
 
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
+    if (ptn_internal_class_name_is_mysqli_driver(resolved_class_name)) {
+        free(class_name);
+        return ptn_mysqli_driver_class_vars();
+    }
     PtnValue result = ptn_declared_class_vars(runtime, resolved_class_name, access_scope);
     free(class_name);
     return result;
