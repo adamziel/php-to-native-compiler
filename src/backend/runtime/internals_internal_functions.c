@@ -65726,11 +65726,22 @@ static int ptn_stream_context_params_validate_notifications(
 
 static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnResource *context = NULL;
-    if (!ptn_internal_expect_stream_context_arg(runtime, "stream_context_set_params", args[0], line, &context)) {
+    PtnValue context_value = ptn_value_deref(args[0]);
+    if (context_value.type != PTN_RESOURCE) {
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_context_set_params(): Argument #1 ($context) must be of type resource, %s given",
+            ptn_offset_container_type_name(context_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
+    PtnResource *context = context_value.as.resource;
     PtnValue params = ptn_value_deref(args[1]);
     if (params.type != PTN_ARRAY) {
         char message[176];
@@ -65769,11 +65780,35 @@ static PtnResource *ptn_default_stream_context_ensure(void) {
 }
 
 static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
-    (void)line;
     PtnResource *context = ptn_default_stream_context_ensure();
+    if (argc > 0 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnValue options = ptn_value_deref(args[0]);
+        if (options.type != PTN_ARRAY) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "stream_context_get_default(): Argument #1 ($options) must be of type ?array, %s given",
+                ptn_offset_container_type_name(options)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        if (ptn_stream_context_default_options_have_error_mode(options)) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "Stream error handling options cannot be set on the default context"
+            );
+            return ptn_null();
+        }
+        if (!ptn_stream_context_merge_options(runtime, context, options, line)) {
+            return ptn_null();
+        }
+    }
     ptn_resource_retain(context);
     return ptn_resource(context);
 }

@@ -37083,6 +37083,15 @@ try {
     echo $e->getMessage(), "\n";
 }
 
+$stream = fopen("php://temp", "r+");
+var_dump(stream_context_set_params($stream, []));
+try {
+    preg_replace("", function () {}, $stream);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+fclose($stream);
+
 var_dump(STREAM_IPPROTO_IP);
 var_dump(STREAM_PEEK);
 $path = __DIR__ . DIRECTORY_SEPARATOR . "recvfrom.tmp";
@@ -37111,6 +37120,8 @@ Array\n\
 )\n\
 TypeError: stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"fn_not_exist\" not found or invalid function name\n\
 Invalid stream/context parameter\n\
+bool(true)\n\
+preg_replace(): Argument #2 ($replacement) must be of type array|string, Closure given\n\
 int(0)\n\
 int(2)\n\
 bool(false)\n\
@@ -37155,6 +37166,13 @@ var_dump(stream_context_get_params($ctx));
 
 $created = stream_context_create(["http" => ["method" => "GET"]], ["notification" => "cb"]);
 var_dump(stream_context_get_params($created));
+try {
+    stream_context_get_default([["A" => 0]]);
+} catch (ValueError $exception) {
+    echo "default-shape: ", $exception->getMessage(), "\n";
+}
+$default = stream_context_get_default(["http" => ["method" => "PATCH"]]);
+var_dump(stream_context_get_options($default)["http"]["method"]);
 "#,
     )
     .unwrap();
@@ -37198,6 +37216,11 @@ var_dump(stream_context_get_params($created));
         stdout.contains("[\"method\"]=>\n      string(3) \"GET\""),
         "{stdout}"
     );
+    assert!(
+        stdout.contains("default-shape: Options should have the form [\"wrappername\"][\"optionname\"] = $value"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"PATCH\""), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
