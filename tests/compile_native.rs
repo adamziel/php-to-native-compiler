@@ -130587,6 +130587,44 @@ try {
 }
 
 #[test]
+fn compile_http_build_query_respects_object_property_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-http-build-query-object-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("http-build-query-object-scope.php");
+    let output = root.join("http-build-query-object-scope-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class QueryScope {
+    protected $foo = 'lala';
+    private $bar = 'meuh';
+    public $test = 'test';
+
+    public function inside() {
+        var_dump(http_build_query($this));
+    }
+}
+
+$obj = new QueryScope();
+$obj->inside();
+var_dump(http_build_query($obj));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(27) \"foo=lala&bar=meuh&test=test\"\n\
+string(9) \"test=test\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uri_objects_hide_virtual_properties_to_native_binary() {
     let root = temp_dir("ptn-native-uri-virtual-properties");
     fs::create_dir_all(&root).unwrap();

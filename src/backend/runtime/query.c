@@ -171,10 +171,6 @@ static void ptn_http_build_query_append_array(
     }
 }
 
-static int ptn_http_build_query_object_property_is_public(PtnArrayKey key) {
-    return key.type == PTN_ARRAY_KEY_STRING && (key.string_len == 0 || key.as.string[0] != '\0');
-}
-
 static void ptn_http_build_query_append_object(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
@@ -187,12 +183,10 @@ static void ptn_http_build_query_append_object(
     size_t seen_objects_len,
     size_t line
 ) {
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
-        if (
-            !ptn_http_build_query_object_property_is_public(entry->key) ||
-            !ptn_object_property_visible_for_foreach(runtime, object, entry->key, NULL)
-        ) {
+        if (!ptn_object_property_visible_for_foreach(runtime, object, entry->key, access_scope)) {
             continue;
         }
         const PtnObjectPropertyMetadata *metadata =
