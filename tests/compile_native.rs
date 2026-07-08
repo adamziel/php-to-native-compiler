@@ -41794,6 +41794,94 @@ array(0) {\n\
 }
 
 #[test]
+fn compile_standard_mail_headers_and_sendmail_path_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-mail-headers-sendmail");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-mail-headers-sendmail.php");
+    let output = root.join("standard-mail-headers-sendmail-bin");
+    let mail_file = root.join("mail.out");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_error(callable $callback): void {
+    try {
+        $callback();
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+dump_error(fn() => mail("foo\0bar", "x", "y"));
+dump_error(fn() => mail("x", "foo\0bar", "y"));
+dump_error(fn() => mail("x", "y", "foo\0bar"));
+dump_error(fn() => mail("x", "y", "z", "foo\0bar"));
+dump_error(fn() => mail("x", "y", "z", "q", "foo\0bar"));
+dump_error(fn() => mail("x", "y", "z", ["Reply-To" => "foo@example.com\nCc: hacker@example.com"]));
+dump_error(fn() => mail("x", "y", "z", ["to" => "blocked@example.com"]));
+dump_error(fn() => mail("x", "y", "z", ["from" => ["array"]]));
+dump_error(fn() => mail("x", "y", "z", ["foo" => ["bar" => "value"]]));
+dump_error(fn() => mail("x", "y", "z", ["foo" => [123]]));
+dump_error(fn() => mail("x", "y", "z", ["foo7\0" => ["bar"]]));
+var_dump(ini_set("mail.cr_lf_mode", "lf"));
+var_dump(ini_get("mail.cr_lf_mode"));
+
+$headers = [
+    "KHeaders" => "aaaa",
+    "foo" => [
+        "bar\r\n hoge",
+        "bar\r\n\t fuga",
+    ],
+];
+var_dump(mail("user@example.com", "Test Subject", "A Message", $headers));
+echo file_get_contents(getenv("PTN_TEST_MAIL_OUT"));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env(
+            "PTN_SENDMAIL_PATH",
+            format!("cat > {}", mail_file.display()),
+        )
+        .env("PTN_MAIL_ADD_X_HEADER", "Off")
+        .env("PTN_TEST_MAIL_OUT", &mail_file)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ValueError: mail(): Argument #1 ($to) must not contain any null bytes\n\
+ValueError: mail(): Argument #2 ($subject) must not contain any null bytes\n\
+ValueError: mail(): Argument #3 ($message) must not contain any null bytes\n\
+ValueError: mail(): Argument #4 ($additional_headers) must not contain any null bytes\n\
+ValueError: mail(): Argument #5 ($additional_params) must not contain any null bytes\n\
+ValueError: Header \"Reply-To\" contains LF character that is not allowed in the header\n\
+ValueError: The additional headers cannot contain the \"To\" header\n\
+TypeError: Header \"from\" must be of type string, array given\n\
+TypeError: Header \"foo\" must only contain numeric keys, \"bar\" found\n\
+TypeError: Header \"foo\" must only contain values of type string, int found\n\
+ValueError: Header name \"foo7\" contains invalid characters\n\
+bool(false)\n\
+string(4) \"crlf\"\n\
+bool(true)\n\
+To: user@example.com\r\n\
+Subject: Test Subject\r\n\
+KHeaders: aaaa\n\
+foo: bar\r\n hoge\n\
+foo: bar\r\n\t fuga\n\
+\r\n\
+A Message\r\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_mail_sendmail_path_from_cat_redirect_alloc"));
+    assert!(c_source.contains("ptn_internal_mail_reject_nul"));
+}
+
+#[test]
 fn compile_unix_datagram_stream_socket_loopback_to_native_binary() {
     let root = temp_dir("ptn-native-unix-datagram-stream-socket");
     fs::create_dir_all(&root).unwrap();

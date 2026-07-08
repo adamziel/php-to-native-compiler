@@ -32688,6 +32688,134 @@ static PtnValue ptn_internal_long2ip(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
+static int ptn_mail_operand_contains_nul(PtnStringOperand operand) {
+    return memchr(operand.data, '\0', operand.len) != NULL;
+}
+
+static int ptn_internal_mail_reject_nul(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand operand
+) {
+    if (!ptn_mail_operand_contains_nul(operand)) {
+        return 1;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "mail(): Argument #%zu ($%s) must not contain any null bytes",
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
+static char *ptn_mail_header_display_name_alloc(const char *name, size_t len) {
+    const char *nul = memchr(name, '\0', len);
+    if (nul != NULL) {
+        len = (size_t)(nul - name);
+    }
+    return ptn_duplicate_string_len(name, len);
+}
+
+static int ptn_mail_header_name_invalid(const char *name, size_t len) {
+    if (len == 0 || memchr(name, '\0', len) != NULL) {
+        return 1;
+    }
+    return memchr(name, '*', len) != NULL || memchr(name, ':', len) != NULL;
+}
+
+static int ptn_mail_header_name_equals(const char *name, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    return len == literal_len && ptn_ascii_case_equal_n(name, literal, len);
+}
+
+static int ptn_mail_header_must_be_single_string(const char *name, size_t len) {
+    static const char *const single_headers[] = {
+        "orig-date",
+        "from",
+        "sender",
+        "reply-to",
+        "bcc",
+        "message-id",
+        "in-reply-to",
+    };
+    for (size_t i = 0; i < sizeof(single_headers) / sizeof(single_headers[0]); i++) {
+        if (ptn_mail_header_name_equals(name, len, single_headers[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *ptn_mail_header_value_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->class_name != NULL) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL && value.as.exception->class_name != NULL) {
+        return value.as.exception->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static int ptn_mail_validate_header_value(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnStringOperand value
+) {
+    for (size_t i = 0; i < value.len; i++) {
+        unsigned char byte = (unsigned char)value.data[i];
+        const char *kind = NULL;
+        if (byte == '\0') {
+            kind = "NULL character";
+        } else if (byte == '\n') {
+            kind = "LF character";
+        } else if (byte == '\r') {
+            if (i + 1 < value.len && value.data[i + 1] == '\n') {
+                if (i + 2 < value.len && (value.data[i + 2] == ' ' || value.data[i + 2] == '\t')) {
+                    i++;
+                    continue;
+                }
+                kind = "CRLF characters that are used as a line separator";
+            } else {
+                kind = "CR character";
+            }
+        }
+        if (kind != NULL) {
+            char *display = ptn_mail_header_display_name_alloc(name, name_len);
+            const char *format = byte == '\r' && i + 1 < value.len && value.data[i + 1] == '\n'
+                ? "Header \"%s\" contains %s and are not allowed in the header"
+                : "Header \"%s\" contains %s that is not allowed in the header";
+            int needed = snprintf(NULL, 0, format, display, kind);
+            if (needed < 0) {
+                free(display);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(display);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, format, display, kind);
+            free(display);
+            ptn_throw_exception_owned_message(runtime, "ValueError", message);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ptn_internal_mail_validate_header_array(PtnRuntime *runtime, PtnArray *headers, size_t line) {
     for (size_t i = 0; i < headers->len; i++) {
         PtnArrayEntry *entry = &headers->entries[i];
@@ -32705,9 +32833,126 @@ static int ptn_internal_mail_validate_header_array(PtnRuntime *runtime, PtnArray
             ptn_throw_exception(runtime, "TypeError", message);
             return 0;
         }
+        const char *name = entry->key.as.string;
+        size_t name_len = entry->key.string_len;
+        if (ptn_mail_header_name_equals(name, name_len, "to")) {
+            ptn_throw_exception(runtime, "ValueError", "The additional headers cannot contain the \"To\" header");
+            return 0;
+        }
+        if (ptn_mail_header_name_invalid(name, name_len)) {
+            char *display = ptn_mail_header_display_name_alloc(name, name_len);
+            int needed = snprintf(NULL, 0, "Header name \"%s\" contains invalid characters", display);
+            if (needed < 0) {
+                free(display);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(display);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, "Header name \"%s\" contains invalid characters", display);
+            free(display);
+            ptn_throw_exception_owned_message(runtime, "ValueError", message);
+            return 0;
+        }
         PtnValue header_value = ptn_value_deref(entry->value);
+        if (header_value.type == PTN_ARRAY) {
+            if (ptn_mail_header_must_be_single_string(name, name_len)) {
+                char *display = ptn_mail_header_display_name_alloc(name, name_len);
+                int needed = snprintf(NULL, 0, "Header \"%s\" must be of type string, array given", display);
+                if (needed < 0) {
+                    free(display);
+                    ptn_abort_out_of_memory();
+                }
+                char *message = malloc((size_t)needed + 1);
+                if (message == NULL) {
+                    free(display);
+                    ptn_abort_out_of_memory();
+                }
+                snprintf(message, (size_t)needed + 1, "Header \"%s\" must be of type string, array given", display);
+                free(display);
+                ptn_throw_exception_owned_message(runtime, "TypeError", message);
+                return 0;
+            }
+            for (size_t value_index = 0; value_index < header_value.as.array->len; value_index++) {
+                PtnArrayEntry *value_entry = &header_value.as.array->entries[value_index];
+                if (value_entry->key.type != PTN_ARRAY_KEY_INT) {
+                    char *display = ptn_mail_header_display_name_alloc(name, name_len);
+                    int needed = snprintf(
+                        NULL,
+                        0,
+                        "Header \"%s\" must only contain numeric keys, \"%.*s\" found",
+                        display,
+                        (int)value_entry->key.string_len,
+                        value_entry->key.as.string
+                    );
+                    if (needed < 0) {
+                        free(display);
+                        ptn_abort_out_of_memory();
+                    }
+                    char *message = malloc((size_t)needed + 1);
+                    if (message == NULL) {
+                        free(display);
+                        ptn_abort_out_of_memory();
+                    }
+                    snprintf(
+                        message,
+                        (size_t)needed + 1,
+                        "Header \"%s\" must only contain numeric keys, \"%.*s\" found",
+                        display,
+                        (int)value_entry->key.string_len,
+                        value_entry->key.as.string
+                    );
+                    free(display);
+                    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+                    return 0;
+                }
+                PtnValue nested = ptn_value_deref(value_entry->value);
+                if (nested.type != PTN_STRING) {
+                    char *display = ptn_mail_header_display_name_alloc(name, name_len);
+                    int needed = snprintf(
+                        NULL,
+                        0,
+                        "Header \"%s\" must only contain values of type string, %s found",
+                        display,
+                        ptn_mail_header_value_type_name(nested)
+                    );
+                    if (needed < 0) {
+                        free(display);
+                        ptn_abort_out_of_memory();
+                    }
+                    char *message = malloc((size_t)needed + 1);
+                    if (message == NULL) {
+                        free(display);
+                        ptn_abort_out_of_memory();
+                    }
+                    snprintf(
+                        message,
+                        (size_t)needed + 1,
+                        "Header \"%s\" must only contain values of type string, %s found",
+                        display,
+                        ptn_mail_header_value_type_name(nested)
+                    );
+                    free(display);
+                    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+                    return 0;
+                }
+                PtnStringOperand nested_value = ptn_value_to_string_operand_with_runtime(runtime, nested, line);
+                int ok = ptn_mail_validate_header_value(runtime, name, name_len, nested_value);
+                ptn_string_operand_free(nested_value);
+                if (!ok) {
+                    return 0;
+                }
+            }
+            continue;
+        }
         PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, header_value, line);
         if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(value);
+            return 0;
+        }
+        if (!ptn_mail_validate_header_value(runtime, name, name_len, value)) {
             ptn_string_operand_free(value);
             return 0;
         }
@@ -32749,6 +32994,44 @@ static int ptn_internal_mail_validate_headers(
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(header_string);
         return 0;
+    }
+    size_t start = 0;
+    while (start < header_string.len && (header_string.data[start] == '\r' || header_string.data[start] == '\n')) {
+        start++;
+    }
+    size_t end = header_string.len;
+    while (end > start && (header_string.data[end - 1] == '\r' || header_string.data[end - 1] == '\n')) {
+        end--;
+    }
+    if (start != 0) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "mail(): Multiple or malformed newlines found in additional_header",
+            line
+        );
+        ptn_string_operand_free(header_string);
+        return 0;
+    }
+    for (size_t i = start; i < end; i++) {
+        if (header_string.data[i] != '\r' && header_string.data[i] != '\n') {
+            continue;
+        }
+        size_t j = i;
+        if (header_string.data[j] == '\r' && j + 1 < end && header_string.data[j + 1] == '\n') {
+            j += 2;
+        } else {
+            j++;
+        }
+        if (j < end && (header_string.data[j] == '\r' || header_string.data[j] == '\n')) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "mail(): Multiple or malformed newlines found in additional_header",
+                line
+            );
+            ptn_string_operand_free(header_string);
+            return 0;
+        }
+        i = j == 0 ? 0 : j - 1;
     }
     ptn_string_operand_free(header_string);
     return 1;
@@ -32841,6 +33124,46 @@ static char *ptn_mail_sendmail_path_from_tee_alloc(const char *setting) {
     return end > start ? ptn_duplicate_string_len(start, (size_t)(end - start)) : NULL;
 }
 
+static char *ptn_mail_sendmail_path_from_cat_redirect_alloc(const char *setting) {
+    if (setting == NULL) {
+        return NULL;
+    }
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    if (strncmp(setting, "cat", 3) != 0 || (setting[3] != '\0' && !isspace((unsigned char)setting[3]))) {
+        return NULL;
+    }
+    const char *redirect = strchr(setting + 3, '>');
+    if (redirect == NULL) {
+        return NULL;
+    }
+    const char *start = redirect + 1;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        return NULL;
+    }
+    const char *end = start;
+    while (*end != '\0' && !isspace((unsigned char)*end)) {
+        end++;
+    }
+    return end > start ? ptn_duplicate_string_len(start, (size_t)(end - start)) : NULL;
+}
+
+static int ptn_mail_sendmail_kill_signal(const char *setting, int *signal_out, const char **signal_name_out) {
+    while (isspace((unsigned char)*setting)) {
+        setting++;
+    }
+    if (strncmp(setting, "kill", 4) != 0 || (setting[4] != '\0' && !isspace((unsigned char)setting[4]))) {
+        return 0;
+    }
+    *signal_out = 15;
+    *signal_name_out = "Terminated";
+    return 1;
+}
+
 static PtnStringOperand ptn_internal_mail_headers_string(
     PtnRuntime *runtime,
     PtnValue headers_value,
@@ -32861,7 +33184,25 @@ static PtnStringOperand ptn_internal_mail_headers_string(
         if (entry->key.type != PTN_ARRAY_KEY_STRING) {
             continue;
         }
-        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, ptn_value_deref(entry->value), line);
+        PtnValue header_value = ptn_value_deref(entry->value);
+        if (header_value.type == PTN_ARRAY) {
+            for (size_t value_index = 0; value_index < header_value.as.array->len; value_index++) {
+                PtnArrayEntry *value_entry = &header_value.as.array->entries[value_index];
+                PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, ptn_value_deref(value_entry->value), line);
+                if (runtime->exceptions->active_exception != NULL) {
+                    free(buffer.data);
+                    ptn_string_operand_free(value);
+                    return ptn_string_operand_borrowed("");
+                }
+                ptn_string_buffer_append_len(&buffer, entry->key.as.string, entry->key.string_len);
+                ptn_string_buffer_append(&buffer, ": ");
+                ptn_string_buffer_append_len(&buffer, value.data, value.len);
+                ptn_string_buffer_append_char(&buffer, '\n');
+                ptn_string_operand_free(value);
+            }
+            continue;
+        }
+        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, header_value, line);
         if (runtime->exceptions->active_exception != NULL) {
             free(buffer.data);
             ptn_string_operand_free(value);
@@ -32884,15 +33225,40 @@ static PtnStringOperand ptn_internal_mail_headers_string(
     return operand;
 }
 
+static PtnStringOperand ptn_internal_mail_trim_header_string(PtnStringOperand headers) {
+    if (headers.len == 0) {
+        return headers;
+    }
+    size_t end = headers.len;
+    while (end > 0 && (headers.data[end - 1] == '\r' || headers.data[end - 1] == '\n')) {
+        end--;
+    }
+    if (end == headers.len) {
+        return headers;
+    }
+    PtnStringOperand trimmed = {
+        .data = ptn_duplicate_string_len(headers.data, end),
+        .owned = NULL,
+        .len = end,
+    };
+    trimmed.owned = (char *)trimmed.data;
+    ptn_string_operand_free(headers);
+    return trimmed;
+}
+
+static int ptn_mail_ini_boolean_enabled(const char *value);
+
 static int ptn_internal_mail_write_file(
     PtnStringOperand to,
     PtnStringOperand subject,
     PtnStringOperand message,
     PtnStringOperand headers,
-    const char *path
+    const char *path,
+    const char *source_path,
+    int number_lines
 ) {
     const char *mode = getenv("PTN_MAIL_CR_LF_MODE");
-    const char *newline = (mode != NULL && ptn_ascii_case_equal(mode, "crlf")) ? "\r\n" : "\n";
+    const char *newline = (mode != NULL && ptn_ascii_case_equal(mode, "lf")) ? "\n" : "\r\n";
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     ptn_string_buffer_append(&output, "To: ");
@@ -32907,9 +33273,39 @@ static int ptn_internal_mail_write_file(
             ptn_string_buffer_append(&output, newline);
         }
     }
+    const char *add_x_header = getenv("PTN_MAIL_ADD_X_HEADER");
+    int add_origin = ptn_mail_ini_boolean_enabled(add_x_header);
+    if (add_origin) {
+        const char *source = source_path == NULL ? "" : source_path;
+        const char *basename = strrchr(source, '/');
+        basename = basename == NULL ? source : basename + 1;
+        ptn_string_buffer_append(&output, "X-PHP-Originating-Script: 0:");
+        ptn_string_buffer_append(&output, basename);
+        ptn_string_buffer_append(&output, newline);
+    }
     ptn_string_buffer_append(&output, newline);
     ptn_string_buffer_append_len(&output, message.data, message.len);
     ptn_string_buffer_append(&output, newline);
+
+    if (number_lines) {
+        PtnStringBuffer numbered;
+        ptn_string_buffer_init(&numbered);
+        size_t offset = 0;
+        size_t line_number = 1;
+        while (offset < output.len) {
+            ptn_string_buffer_append_format(&numbered, "%6zu\t", line_number++);
+            size_t line_start = offset;
+            while (offset < output.len && output.data[offset] != '\n') {
+                offset++;
+            }
+            if (offset < output.len) {
+                offset++;
+            }
+            ptn_string_buffer_append_len(&numbered, output.data + line_start, offset - line_start);
+        }
+        free(output.data);
+        output = numbered;
+    }
 
     FILE *file = fopen(path, "wb");
     int ok = 0;
@@ -32919,6 +33315,25 @@ static int ptn_internal_mail_write_file(
     }
     free(output.data);
     return ok;
+}
+
+static int ptn_mail_ini_boolean_enabled(const char *value) {
+    if (value == NULL || *value == '\0') {
+        return 0;
+    }
+    return !ptn_ascii_case_equal(value, "0") &&
+        !ptn_ascii_case_equal(value, "Off") &&
+        !ptn_ascii_case_equal(value, "false") &&
+        !ptn_ascii_case_equal(value, "No");
+}
+
+static int ptn_mail_params_request_numbered_cat(PtnStringOperand params) {
+    for (size_t i = 0; i + 1 < params.len; i++) {
+        if (params.data[i] == '-' && params.data[i + 1] == 'n') {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -32940,12 +33355,23 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
         ptn_string_operand_free(message);
         return ptn_null();
     }
+    if (!ptn_internal_mail_reject_nul(runtime, 1, "to", to) ||
+        !ptn_internal_mail_reject_nul(runtime, 2, "subject", subject) ||
+        !ptn_internal_mail_reject_nul(runtime, 3, "message", message)) {
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(subject);
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
     PtnStringOperand headers = ptn_string_operand_borrowed("");
     if (argc >= 4 &&
         !ptn_internal_mail_validate_headers(runtime, "mail", args[3], line)) {
         ptn_string_operand_free(to);
         ptn_string_operand_free(subject);
         ptn_string_operand_free(message);
+        if (runtime->exceptions->active_exception == NULL) {
+            return ptn_bool(0);
+        }
         return ptn_null();
     }
     if (argc >= 4) {
@@ -32957,9 +33383,21 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
             ptn_string_operand_free(headers);
             return ptn_null();
         }
+        PtnValue header_value = ptn_value_deref(args[3]);
+        if (header_value.type != PTN_ARRAY) {
+            headers = ptn_internal_mail_trim_header_string(headers);
+            if (!ptn_internal_mail_reject_nul(runtime, 4, "additional_headers", headers)) {
+                ptn_string_operand_free(to);
+                ptn_string_operand_free(subject);
+                ptn_string_operand_free(message);
+                ptn_string_operand_free(headers);
+                return ptn_null();
+            }
+        }
     }
+    PtnStringOperand params = ptn_string_operand_borrowed("");
     if (argc >= 5) {
-        PtnStringOperand params = ptn_internal_expect_string_arg(
+        params = ptn_internal_expect_string_arg(
             runtime,
             "mail",
             5,
@@ -32967,12 +33405,21 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
             args[4],
             line
         );
-        ptn_string_operand_free(params);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(to);
             ptn_string_operand_free(subject);
             ptn_string_operand_free(message);
             ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
+            return ptn_null();
+        }
+        int params_ok = ptn_internal_mail_reject_nul(runtime, 5, "additional_params", params);
+        if (!params_ok || runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
             return ptn_null();
         }
     }
@@ -32985,6 +33432,7 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
             ptn_string_operand_free(subject);
             ptn_string_operand_free(message);
             ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
             if (exit_code == 0 || exit_code == 75) {
                 return ptn_bool(1);
             }
@@ -33001,19 +33449,68 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
             ptn_emit_warning(&runtime->diagnostics, warning, line);
             return ptn_bool(0);
         }
+        int signal_number = 0;
+        const char *signal_name = NULL;
+        if (ptn_mail_sendmail_kill_signal(setting, &signal_number, &signal_name)) {
+            free(setting);
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
+            char warning[128];
+            int written = snprintf(
+                warning,
+                sizeof(warning),
+                "mail(): Sendmail killed by signal %d (%s)",
+                signal_number,
+                signal_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(warning)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, warning, line);
+            return ptn_bool(0);
+        }
         char *mail_path = ptn_mail_sendmail_path_from_ini_alloc(setting);
         if (mail_path == NULL) {
             mail_path = ptn_mail_sendmail_path_from_tee_alloc(setting);
         }
+        if (mail_path == NULL) {
+            mail_path = ptn_mail_sendmail_path_from_cat_redirect_alloc(setting);
+        }
         if (mail_path != NULL) {
-            int ok = ptn_internal_mail_write_file(to, subject, message, headers, mail_path);
+            int ok = ptn_internal_mail_write_file(
+                to,
+                subject,
+                message,
+                headers,
+                mail_path,
+                runtime->source_path,
+                ptn_mail_params_request_numbered_cat(params)
+            );
             free(mail_path);
             free(setting);
             ptn_string_operand_free(to);
             ptn_string_operand_free(subject);
             ptn_string_operand_free(message);
             ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
             return ptn_bool(ok);
+        }
+        if (setting[0] != '\0') {
+            free(setting);
+            ptn_string_operand_free(to);
+            ptn_string_operand_free(subject);
+            ptn_string_operand_free(message);
+            ptn_string_operand_free(headers);
+            ptn_string_operand_free(params);
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "mail(): Sendmail exited with non-zero exit code 127",
+                line
+            );
+            return ptn_bool(0);
         }
         free(setting);
     }
@@ -33021,6 +33518,7 @@ static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnVal
     ptn_string_operand_free(subject);
     ptn_string_operand_free(message);
     ptn_string_operand_free(headers);
+    ptn_string_operand_free(params);
     return ptn_bool(0);
 }
 
@@ -148208,6 +148706,10 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "mail.cr_lf_mode")) {
+        ptn_string_operand_free(option);
+        return ptn_bool(0);
+    }
     const PtnSessionIniDefinition *session_ini = ptn_session_ini_definition_from_operand(option);
     if (session_ini != NULL) {
         if (ptn_ascii_case_equal(session_ini->name, "session.auto_start")) {
@@ -149282,6 +149784,10 @@ static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const Ptn
         value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
         ptn_string_operand_free(option);
         return value;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "mail.cr_lf_mode")) {
+        ptn_string_operand_free(option);
+        return ptn_string("crlf");
     }
     int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
