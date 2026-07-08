@@ -249,6 +249,47 @@ fn compile_dynamic_variable_unset_to_native_binary() {
 }
 
 #[test]
+fn compile_set_time_limit_fatals_inside_loop_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-set-time-limit-loop-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "while-loop",
+            "<?php set_time_limit(1); while (true) { $i = 1; }",
+        ),
+        (
+            "for-loop",
+            "<?php set_time_limit(1); for ($i = 0; $i < INF; $i++) { }",
+        ),
+        (
+            "foreach-loop",
+            "<?php set_time_limit(1); foreach (new InfiniteIterator(new ArrayIterator([1])) as $i) { }",
+        ),
+    ];
+
+    for (name, source) in cases {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+        compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(
+            !execution.status.success(),
+            "{name} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&execution.stdout),
+            String::from_utf8_lossy(&execution.stderr)
+        );
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(
+            stderr.contains("Fatal error: Maximum execution time of 1 second exceeded in "),
+            "{name} stderr: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn compile_dynamic_this_write_context_errors_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-this-write-context-errors");
     fs::create_dir_all(&root).unwrap();

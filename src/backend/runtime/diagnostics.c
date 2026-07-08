@@ -2341,6 +2341,50 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_runtime_set_time_limit(PtnRuntime *runtime, int64_t seconds) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (seconds <= 0) {
+        root->max_execution_time_enabled = 0;
+        root->max_execution_time_seconds = 0;
+        root->max_execution_time_deadline = 0;
+        return;
+    }
+    root->max_execution_time_enabled = 1;
+    root->max_execution_time_seconds = seconds;
+    root->max_execution_time_deadline = time(NULL) + (time_t)seconds;
+}
+
+static PTN_UNUSED void ptn_runtime_check_execution_timeout(
+    PtnRuntime *runtime,
+    const char *source_path,
+    size_t line
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || !root->max_execution_time_enabled) {
+        return;
+    }
+    time_t now = time(NULL);
+    if (now < root->max_execution_time_deadline) {
+        return;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Maximum execution time of %lld second%s exceeded",
+        (long long)root->max_execution_time_seconds,
+        root->max_execution_time_seconds == 1 ? "" : "s"
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_emit_fatal_error_at(runtime, "Maximum execution time exceeded", source_path, line);
+        return;
+    }
+    ptn_emit_fatal_error_at(runtime, message, source_path, line);
+}
+
 static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
     PtnRuntime *runtime,
     const char *message,
@@ -3270,6 +3314,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->tick_functions_len = 0;
     runtime->tick_functions_capacity = 0;
     runtime->tick_functions_running = 0;
+    runtime->max_execution_time_enabled = 0;
+    runtime->max_execution_time_seconds = 0;
+    runtime->max_execution_time_deadline = 0;
     runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;

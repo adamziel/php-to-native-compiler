@@ -32835,6 +32835,14 @@ fn emit_class_declaration_validation(
     }
 }
 
+fn emit_execution_timeout_check(out: &mut String, source_path: &str, line: usize) {
+    out.push_str("        ptn_runtime_check_execution_timeout(&runtime, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
 fn emit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
@@ -34294,6 +34302,7 @@ fn emit_instruction(
             out.push_str("    }\n");
         }
         Instruction::While { condition, body } => {
+            let timeout_line = value_expr_runtime_line(condition).unwrap_or(0);
             let end_label = values.next_label("ptn_loop_end");
             let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
@@ -34303,6 +34312,7 @@ fn emit_instruction(
             out.push_str(&continue_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            emit_execution_timeout_check(out, source_path, timeout_line);
             let condition_predicate = values.emit_condition(out, condition);
             out.push_str("        if (!(");
             out.push_str(&condition_predicate);
@@ -34336,10 +34346,12 @@ fn emit_instruction(
             values.known_simple_preg_patterns.clear();
         }
         Instruction::DoWhile { body, condition } => {
+            let timeout_line = value_expr_runtime_line(condition).unwrap_or(0);
             let end_label = values.next_label("ptn_loop_end");
             let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
+            emit_execution_timeout_check(out, source_path, timeout_line);
             control_targets.push(ControlTarget::loop_target(
                 end_label.clone(),
                 continue_label.clone(),
@@ -34383,6 +34395,10 @@ fn emit_instruction(
             updates,
             body,
         } => {
+            let timeout_line = conditions
+                .last()
+                .and_then(value_expr_runtime_line)
+                .unwrap_or(0);
             for initializer in initializers {
                 emit_instruction(
                     out,
@@ -34399,6 +34415,7 @@ fn emit_instruction(
             let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
+            emit_execution_timeout_check(out, source_path, timeout_line);
             if let Some((condition, side_effects)) = conditions.split_last() {
                 for side_effect in side_effects {
                     let side_effect_temp = values.emit_materialized_value(out, side_effect);
@@ -34697,6 +34714,7 @@ fn emit_instruction(
             out.push_str("    while (");
             out.push_str(&iterator_temp);
             out.push_str(".valid) {\n");
+            emit_execution_timeout_check(out, source_path, *line);
             let value_temp = values.next_temp();
             out.push_str("        PtnValue ");
             out.push_str(&value_temp);

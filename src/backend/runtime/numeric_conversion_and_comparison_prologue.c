@@ -166,6 +166,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->tick_functions_len = 0;
     runtime->tick_functions_capacity = 0;
     runtime->tick_functions_running = 0;
+    runtime->max_execution_time_enabled = caller_runtime->max_execution_time_enabled;
+    runtime->max_execution_time_seconds = caller_runtime->max_execution_time_seconds;
+    runtime->max_execution_time_deadline = caller_runtime->max_execution_time_deadline;
     runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;

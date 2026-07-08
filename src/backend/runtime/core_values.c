@@ -1985,6 +1985,9 @@ struct PtnRuntime {
     size_t tick_functions_len;
     size_t tick_functions_capacity;
     int tick_functions_running;
+    int max_execution_time_enabled;
+    int64_t max_execution_time_seconds;
+    time_t max_execution_time_deadline;
     int defer_uncaught_exception_emit;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
@@ -2367,6 +2370,12 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_emit_fatal_error_at(
     PtnRuntime *runtime,
     const char *message,
+    const char *source_path,
+    size_t line
+);
+static PTN_UNUSED void ptn_runtime_set_time_limit(PtnRuntime *runtime, int64_t seconds);
+static PTN_UNUSED void ptn_runtime_check_execution_timeout(
+    PtnRuntime *runtime,
     const char *source_path,
     size_t line
 );

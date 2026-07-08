@@ -134361,10 +134361,9 @@ static PtnValue ptn_internal_hebrev(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_set_time_limit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
-    (void)ptn_value_to_integer(args[0]);
+    ptn_runtime_set_time_limit(runtime, ptn_value_to_integer(args[0]));
     return ptn_bool(1);
 }
 
