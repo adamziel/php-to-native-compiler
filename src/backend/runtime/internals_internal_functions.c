@@ -136517,9 +136517,14 @@ static int ptn_ini_expand_text(
             }
             if (last_concat_token &&
                 lookahead < text.len &&
-                (text.data[lookahead] == '"' ||
-                 text.data[lookahead] == '\'' ||
-                 ptn_ini_is_name_start((unsigned char)text.data[lookahead]))) {
+                (text.data[lookahead] == '"' || text.data[lookahead] == '\'')) {
+                continue;
+            }
+            if (last_concat_token &&
+                lookahead < text.len &&
+                ptn_ini_is_name_start((unsigned char)text.data[lookahead])) {
+                ptn_string_buffer_append_char(buffer, ' ');
+                i = lookahead - 1;
                 continue;
             }
         }

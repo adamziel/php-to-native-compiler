@@ -38830,6 +38830,7 @@ fn compile_parse_ini_file_normal_boolean_values_to_native_binary() {
         r#"<?php
 $path = __DIR__ . "/values.ini";
 file_put_contents($path, "[section]\nyes=yes\non=on\ntrue=true\nno=no\noff=off\nfalse=false\nnull=null\nempty=\n");
+file_put_contents($path, "foo = E_ALL E_NOTICE\n", FILE_APPEND);
 $values = parse_ini_file($path, true);
 var_dump(
     $values["section"]["yes"],
@@ -38839,7 +38840,8 @@ var_dump(
     $values["section"]["off"],
     $values["section"]["false"],
     $values["section"]["null"],
-    $values["section"]["empty"]
+    $values["section"]["empty"],
+    $values["section"]["foo"]
 );
 @unlink($path);
 "#,
@@ -38859,7 +38861,8 @@ string(0) \"\"\n\
 string(0) \"\"\n\
 string(0) \"\"\n\
 string(0) \"\"\n\
-string(0) \"\"\n"
+string(0) \"\"\n\
+string(7) \"30719 8\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
