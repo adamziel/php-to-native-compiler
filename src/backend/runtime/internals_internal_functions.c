@@ -2053,6 +2053,22 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
                 return NULL;
         }
     }
+    if (ptn_ascii_case_equal(name, "fsockopen") || ptn_ascii_case_equal(name, "pfsockopen")) {
+        switch (index) {
+            case 0:
+                return "hostname";
+            case 1:
+                return "port";
+            case 2:
+                return "error_code";
+            case 3:
+                return "error_message";
+            case 4:
+                return "timeout";
+            default:
+                return NULL;
+        }
+    }
     if (ptn_ascii_case_equal(name, "stream_socket_client")) {
         switch (index) {
             case 0:
@@ -10894,6 +10910,10 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 1 &&
         (ptn_ascii_case_equal(name, "curl_multi_exec") ||
             ptn_ascii_case_equal(name, "curl_multi_info_read"))) {
+        return 1;
+    }
+    if ((index == 2 || index == 3) &&
+        (ptn_ascii_case_equal(name, "fsockopen") || ptn_ascii_case_equal(name, "pfsockopen"))) {
         return 1;
     }
     if (index == 2 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::parse")) {
@@ -203983,6 +204003,17 @@ static int ptn_validate_pfsockopen_timeout(PtnRuntime *runtime, PtnValue timeout
     return 1;
 }
 
+static char *ptn_fsockopen_null_hostname_display_alloc(PtnStringOperand hostname, int64_t port);
+static PtnValue ptn_fsockopen_reject_null_hostname(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand hostname,
+    int64_t port,
+    PtnValue error_code_arg,
+    PtnValue error_message_arg,
+    size_t line
+);
+
 static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "pfsockopen", 1, "hostname", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -203999,6 +204030,19 @@ static PtnValue ptn_internal_pfsockopen(PtnRuntime *runtime, size_t argc, const 
         !ptn_validate_pfsockopen_timeout(runtime, args[4], line)) {
         ptn_string_operand_free(hostname);
         return ptn_null();
+    }
+    if (memchr(hostname.data, '\0', hostname.len) != NULL) {
+        PtnValue result = ptn_fsockopen_reject_null_hostname(
+            runtime,
+            "pfsockopen",
+            hostname,
+            port,
+            argc >= 3 ? args[2] : ptn_null(),
+            argc >= 4 ? args[3] : ptn_null(),
+            line
+        );
+        ptn_string_operand_free(hostname);
+        return result;
     }
     const char *udp_prefix = "udp://";
     size_t udp_prefix_len = strlen(udp_prefix);
@@ -204206,6 +204250,78 @@ static char *ptn_fsockopen_tcp_address(PtnStringOperand hostname, int64_t port) 
     return address;
 }
 
+static char *ptn_fsockopen_null_hostname_display_alloc(PtnStringOperand hostname, int64_t port) {
+    const char *nul = memchr(hostname.data, '\0', hostname.len);
+    size_t display_len = nul == NULL ? hostname.len : (size_t)(nul - hostname.data);
+    int needed = port >= 0
+        ? snprintf(NULL, 0, "%.*s:%lld", (int)display_len, hostname.data, (long long)port)
+        : snprintf(NULL, 0, "%.*s", (int)display_len, hostname.data);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *display = malloc((size_t)needed + 1);
+    if (display == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = port >= 0
+        ? snprintf(display, (size_t)needed + 1, "%.*s:%lld", (int)display_len, hostname.data, (long long)port)
+        : snprintf(display, (size_t)needed + 1, "%.*s", (int)display_len, hostname.data);
+    if (written < 0 || written != needed) {
+        free(display);
+        ptn_abort_out_of_memory();
+    }
+    return display;
+}
+
+static PtnValue ptn_fsockopen_reject_null_hostname(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand hostname,
+    int64_t port,
+    PtnValue error_code_arg,
+    PtnValue error_message_arg,
+    size_t line
+) {
+    char *display = ptn_fsockopen_null_hostname_display_alloc(hostname, port);
+    const char *message = "The hostname must not contain null bytes";
+    int warning_needed = snprintf(
+        NULL,
+        0,
+        "%s(): Unable to connect to %s (%s)",
+        function_name,
+        display,
+        message
+    );
+    if (warning_needed < 0) {
+        free(display);
+        ptn_abort_out_of_memory();
+    }
+    char *warning = malloc((size_t)warning_needed + 1);
+    if (warning == NULL) {
+        free(display);
+        ptn_abort_out_of_memory();
+    }
+    int warning_written = snprintf(
+        warning,
+        (size_t)warning_needed + 1,
+        "%s(): Unable to connect to %s (%s)",
+        function_name,
+        display,
+        message
+    );
+    if (warning_written < 0 || warning_written != warning_needed) {
+        free(warning);
+        free(display);
+        ptn_abort_out_of_memory();
+    }
+    ptn_stream_socket_client_assign_reference(runtime, error_code_arg, ptn_int(0));
+    ptn_stream_socket_client_assign_reference(runtime, error_message_arg, ptn_string(message));
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+    free(warning);
+    free(display);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "fsockopen", 1, "hostname", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -204217,6 +204333,19 @@ static PtnValue ptn_internal_fsockopen(PtnRuntime *runtime, size_t argc, const P
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(hostname);
         return ptn_null();
+    }
+    if (memchr(hostname.data, '\0', hostname.len) != NULL) {
+        PtnValue result = ptn_fsockopen_reject_null_hostname(
+            runtime,
+            "fsockopen",
+            hostname,
+            port,
+            argc >= 3 ? args[2] : ptn_null(),
+            argc >= 4 ? args[3] : ptn_null(),
+            line
+        );
+        ptn_string_operand_free(hostname);
+        return result;
     }
     char *address = ptn_fsockopen_tcp_address(hostname, port);
     ptn_string_operand_free(hostname);

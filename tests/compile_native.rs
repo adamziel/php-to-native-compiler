@@ -42009,6 +42009,51 @@ done\n"
 }
 
 #[test]
+fn compile_fsockopen_rejects_null_byte_hostname_to_native_binary() {
+    let root = temp_dir("ptn-native-fsockopen-null-byte-hostname");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fsockopen-null-byte-hostname.php");
+    let output = root.join("fsockopen-null-byte-hostname-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$server = stream_socket_server("tcp://localhost:0");
+preg_match('/:(\d+)$/', stream_socket_get_name($server, false), $m);
+$errno = 123;
+$errstr = "old";
+$client = fsockopen("localhost" . chr(0) . ".example.com", (int)$m[1], $errno, $errstr);
+var_dump($client);
+echo "errno=$errno\n";
+echo "errstr=$errstr\n";
+fclose($server);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fsockopen(): Unable to connect to localhost:"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("(The hostname must not contain null bytes)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nerrno=0\nerrstr=The hostname must not contain null bytes\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_fsockopen_reject_null_hostname"));
+}
+
+#[test]
 fn compile_udp_fsockopen_and_stream_socket_server_to_native_binary() {
     let root = temp_dir("ptn-native-udp-fsockopen-stream-socket-server");
     fs::create_dir_all(&root).unwrap();

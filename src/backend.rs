@@ -9068,6 +9068,16 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("socket_addrinfo_lookup") && argument_index == 3 {
         return Some("error_code");
     }
+    if (name.eq_ignore_ascii_case("fsockopen") || name.eq_ignore_ascii_case("pfsockopen"))
+        && argument_index == 2
+    {
+        return Some("error_code");
+    }
+    if (name.eq_ignore_ascii_case("fsockopen") || name.eq_ignore_ascii_case("pfsockopen"))
+        && argument_index == 3
+    {
+        return Some("error_message");
+    }
     if name.eq_ignore_ascii_case("stream_socket_client") && argument_index == 1 {
         return Some("error_code");
     }
@@ -41164,6 +41174,28 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String("\n")),
         },
     ];
+    static FSOCKOPEN_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "hostname",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "port",
+            default: Some(InternalParameterDefault::Int(-1)),
+        },
+        InternalParameterSpec {
+            name: "error_code",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "error_message",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "timeout",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static STREAM_SOCKET_CLIENT_PARAMETERS: [InternalParameterSpec; 6] = [
         InternalParameterSpec {
             name: "address",
@@ -42690,6 +42722,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&FGETCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fputcsv") {
         Some(&FPUTCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("fsockopen") || name.eq_ignore_ascii_case("pfsockopen") {
+        Some(&FSOCKOPEN_PARAMETERS)
     } else if name.eq_ignore_ascii_case("stream_socket_client") {
         Some(&STREAM_SOCKET_CLIENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("str_getcsv") {
