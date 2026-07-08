@@ -213789,7 +213789,14 @@ static PtnValue ptn_phar_file_info_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "PharFileInfo::openFile() expects at most 3 arguments");
             return ptn_null();
         }
-        PtnValue mode = argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_string("r");
+        PtnValue mode = ptn_string("r");
+        if (argc >= 1) {
+            PtnValue resolved_mode = ptn_value_deref(args[0]);
+            if (resolved_mode.type != PTN_STRING || resolved_mode.as.string.len != 0) {
+                ptn_value_destroy(&mode);
+                mode = ptn_value_clone_deref(args[0]);
+            }
+        }
         PtnValue forwarded[3] = { mode, ptn_bool(0), ptn_null() };
         size_t forwarded_argc = 1;
         if (argc >= 2) {
@@ -278580,7 +278587,14 @@ static PtnValue ptn_spl_file_info_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::openFile() expects at most 3 arguments");
             return ptn_null();
         }
-        PtnValue mode = argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_string("r");
+        PtnValue mode = ptn_string("r");
+        if (argc >= 1) {
+            PtnValue resolved_mode = ptn_value_deref(args[0]);
+            if (resolved_mode.type != PTN_STRING || resolved_mode.as.string.len != 0) {
+                ptn_value_destroy(&mode);
+                mode = ptn_value_clone_deref(args[0]);
+            }
+        }
         PtnValue forwarded[3] = { mode, ptn_bool(0), ptn_null() };
         size_t forwarded_argc = 1;
         if (argc >= 2) {

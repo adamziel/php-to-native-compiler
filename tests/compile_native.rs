@@ -1451,6 +1451,40 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_file_info_open_file_empty_mode_defaults_to_read_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-open-file-empty-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-open-file-empty-mode.php");
+    let output = root.join("spl-open-file-empty-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$info = new SplFileInfo(__FILE__);
+try {
+    $file = $info->openFile("", false, []);
+    echo get_class($file), "\n";
+    var_dump($info->getPathname());
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("SplFileObject\n"), "{stdout}");
+    assert!(stdout.contains("spl-open-file-empty-mode.php"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SplFileInfo::openFile"));
+}
+
+#[test]
 fn compile_spl_file_object_fgetcsv_skip_empty_multiline_to_native_binary() {
     let root = temp_dir("ptn-native-spl-file-object-fgetcsv-skip-empty-multiline");
     fs::create_dir_all(&root).unwrap();
