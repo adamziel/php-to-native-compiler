@@ -32689,6 +32689,50 @@ static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_bool(1);
 }
 
+static int ptn_parse_ipv4_decimal(PtnStringOperand ip, uint32_t *out) {
+    if (ip.len == 0) {
+        return 0;
+    }
+
+    uint32_t parts[4] = { 0, 0, 0, 0 };
+    size_t part = 0;
+    size_t digit_count = 0;
+    int leading_zero = 0;
+    uint32_t current = 0;
+    for (size_t i = 0; i < ip.len; i++) {
+        unsigned char ch = (unsigned char)ip.data[i];
+        if (isdigit(ch)) {
+            if (digit_count == 0) {
+                leading_zero = ch == '0';
+            } else if (leading_zero) {
+                return 0;
+            }
+            if (digit_count == 3) {
+                return 0;
+            }
+            current = current * 10 + (uint32_t)(ch - '0');
+            if (current > 255) {
+                return 0;
+            }
+            digit_count++;
+            continue;
+        }
+        if (ch != '.' || digit_count == 0 || part >= 3) {
+            return 0;
+        }
+        parts[part++] = current;
+        current = 0;
+        digit_count = 0;
+        leading_zero = 0;
+    }
+    if (digit_count == 0 || part != 3) {
+        return 0;
+    }
+    parts[3] = current;
+    *out = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    return 1;
+}
+
 static PtnValue ptn_internal_ip2long(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand ip = ptn_internal_expect_string_arg(runtime, "ip2long", 1, "ip", args[0], line);
@@ -32696,46 +32740,66 @@ static PtnValue ptn_internal_ip2long(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(ip);
         return ptn_null();
     }
-    if (ip.len == 0) {
+    uint32_t packed = 0;
+    if (!ptn_parse_ipv4_decimal(ip, &packed)) {
         ptn_string_operand_free(ip);
         return ptn_bool(0);
     }
-
-    uint32_t parts[4] = { 0, 0, 0, 0 };
-    size_t part = 0;
-    size_t digit_count = 0;
-    uint32_t current = 0;
-    for (size_t i = 0; i < ip.len; i++) {
-        unsigned char ch = (unsigned char)ip.data[i];
-        if (isdigit(ch)) {
-            if (digit_count == 3) {
-                ptn_string_operand_free(ip);
-                return ptn_bool(0);
-            }
-            current = current * 10 + (uint32_t)(ch - '0');
-            if (current > 255) {
-                ptn_string_operand_free(ip);
-                return ptn_bool(0);
-            }
-            digit_count++;
-            continue;
-        }
-        if (ch != '.' || digit_count == 0 || part >= 3) {
-            ptn_string_operand_free(ip);
-            return ptn_bool(0);
-        }
-        parts[part++] = current;
-        current = 0;
-        digit_count = 0;
-    }
-    if (digit_count == 0 || part != 3) {
-        ptn_string_operand_free(ip);
-        return ptn_bool(0);
-    }
-    parts[3] = current;
-    uint32_t packed = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
     ptn_string_operand_free(ip);
     return ptn_int((int64_t)packed);
+}
+
+static PtnValue ptn_internal_inet_pton(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand ip = ptn_internal_expect_string_arg(runtime, "inet_pton", 1, "ip", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(ip);
+        return ptn_null();
+    }
+    uint32_t packed = 0;
+    if (!ptn_parse_ipv4_decimal(ip, &packed)) {
+        ptn_string_operand_free(ip);
+        return ptn_bool(0);
+    }
+    ptn_string_operand_free(ip);
+    char *bytes = malloc(4);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    bytes[0] = (char)((packed >> 24) & 0xffu);
+    bytes[1] = (char)((packed >> 16) & 0xffu);
+    bytes[2] = (char)((packed >> 8) & 0xffu);
+    bytes[3] = (char)(packed & 0xffu);
+    return ptn_owned_string_len(bytes, 4);
+}
+
+static PtnValue ptn_internal_inet_ntop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand packed = ptn_internal_expect_string_arg(runtime, "inet_ntop", 1, "ip", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(packed);
+        return ptn_null();
+    }
+    if (packed.len != 4) {
+        ptn_string_operand_free(packed);
+        return ptn_bool(0);
+    }
+    const unsigned char *bytes = (const unsigned char *)packed.data;
+    char buffer[16];
+    int written = snprintf(
+        buffer,
+        sizeof(buffer),
+        "%u.%u.%u.%u",
+        (unsigned)bytes[0],
+        (unsigned)bytes[1],
+        (unsigned)bytes[2],
+        (unsigned)bytes[3]
+    );
+    ptn_string_operand_free(packed);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
 static PtnValue ptn_internal_long2ip(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -239863,6 +239927,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "idate", 1, 2, ptn_internal_idate },
         { "image_type_to_extension", 1, 2, ptn_internal_image_type_to_extension },
         { "image_type_to_mime_type", 1, 1, ptn_internal_image_type_to_mime_type },
+        { "inet_ntop", 1, 1, ptn_internal_inet_ntop },
+        { "inet_pton", 1, 1, ptn_internal_inet_pton },
         { "ip2long", 1, 1, ptn_internal_ip2long },
         { "iptcembed", 2, 3, ptn_internal_iptcembed },
         { "iptcparse", 1, 1, ptn_internal_iptcparse },

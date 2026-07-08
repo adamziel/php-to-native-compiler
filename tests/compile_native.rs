@@ -73734,6 +73734,60 @@ ptn_closed_stream_option($host, CURLOPT_INFILE);\n",
 }
 
 #[test]
+fn compile_ipv4_network_address_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-ipv4-network-address-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ipv4-network-address-helpers.php");
+    let output = root.join("ipv4-network-address-helpers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$packed = chr(127) . chr(0) . chr(0) . chr(1);
+var_dump(inet_ntop($packed));
+var_dump(bin2hex(inet_pton('66.163.161.116')));
+var_dump(inet_ntop(inet_pton('255.255.255.255')));
+var_dump(inet_ntop(-1), inet_ntop(''), inet_ntop('blah-blah'));
+var_dump(inet_pton(''), inet_pton(-1), inet_pton('abra'));
+foreach (['1.1.011.011', '127.0.0.1', '1.1.071.071', '0.0.0.0', '1.1.081.081', '192.168.0.0', '256.0.0.1', '192.168.0xa.5'] as $ip) {
+    var_dump(ip2long($ip));
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(9) \"127.0.0.1\"\n\
+string(8) \"42a3a174\"\n\
+string(15) \"255.255.255.255\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+int(2130706433)\n\
+bool(false)\n\
+int(0)\n\
+bool(false)\n\
+int(3232235520)\n\
+bool(false)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_inet_pton"));
+    assert!(c_source.contains("ptn_internal_inet_ntop"));
+    assert!(c_source.contains("ptn_internal_ip2long"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

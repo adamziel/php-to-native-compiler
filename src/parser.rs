@@ -24939,6 +24939,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "http_response_code"
             | "image_type_to_extension"
             | "image_type_to_mime_type"
+            | "inet_ntop"
+            | "inet_pton"
             | "ip2long"
             | "long2ip"
             | "mail"
