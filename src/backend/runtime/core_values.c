@@ -1963,6 +1963,7 @@ struct PtnRuntime {
     char *url_rewriter_hosts;
     const char *current_output_source_path;
     size_t current_output_line;
+    const char *current_eval_namespace;
     char *output_started_source_path;
     size_t output_started_line;
     int http_response_code_initialized;

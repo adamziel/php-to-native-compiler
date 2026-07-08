@@ -289372,7 +289372,26 @@ static int ptn_eval_parse_constant_expression(
         return 0;
     }
     const char *lookup = name[0] == '\\' ? name + 1 : name;
+    char *resolved_lookup = NULL;
+    if (runtime != NULL &&
+        runtime->current_eval_namespace != NULL &&
+        runtime->current_eval_namespace[0] != '\0' &&
+        ptn_stream_uri_has_ascii_case_prefix(lookup, "namespace\\") &&
+        lookup[strlen("namespace\\")] != '\0') {
+        const char *relative_name = lookup + strlen("namespace\\");
+        size_t namespace_len = strlen(runtime->current_eval_namespace);
+        size_t relative_len = strlen(relative_name);
+        resolved_lookup = malloc(namespace_len + 1 + relative_len + 1);
+        if (resolved_lookup == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(resolved_lookup, runtime->current_eval_namespace, namespace_len);
+        resolved_lookup[namespace_len] = '\\';
+        memcpy(resolved_lookup + namespace_len + 1, relative_name, relative_len + 1);
+        lookup = resolved_lookup;
+    }
     *out = ptn_read_constant(runtime, lookup, runtime != NULL ? runtime->source_path : NULL, line);
+    free(resolved_lookup);
     free(name);
     *pos = cursor;
     return 1;
@@ -293367,6 +293386,71 @@ static int ptn_dynamic_execute_statements_range(
     size_t base_line,
     PtnValue *return_out,
     int *returned
+);
+
+static int ptn_dynamic_execute_namespace_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
+) {
+    size_t cursor = ptn_eval_skip_ws(code, end, *pos);
+    if (!ptn_eval_keyword_at(code, end, cursor, "namespace")) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, end, cursor + strlen("namespace"));
+    char *namespace_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, end, &cursor, &namespace_name)) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, end, cursor);
+    if (cursor >= end || code[cursor] != '{') {
+        free(namespace_name);
+        return 0;
+    }
+    size_t body_start = cursor + 1;
+    size_t body_end = ptn_eval_find_matching_brace(code, len, cursor);
+    if (body_end > end) {
+        free(namespace_name);
+        return 0;
+    }
+
+    const char *previous_namespace = runtime == NULL ? NULL : runtime->current_eval_namespace;
+    if (runtime != NULL) {
+        runtime->current_eval_namespace = namespace_name;
+    }
+    size_t body_pos = body_start;
+    int ok = ptn_dynamic_execute_statements_range(
+        runtime,
+        code,
+        len,
+        &body_pos,
+        body_end,
+        base_line,
+        return_out,
+        returned
+    );
+    if (runtime != NULL) {
+        runtime->current_eval_namespace = previous_namespace;
+    }
+    free(namespace_name);
+    *pos = body_end + 1;
+    return ok;
+}
+
+static int ptn_dynamic_execute_statements_range(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t end,
+    size_t base_line,
+    PtnValue *return_out,
+    int *returned
 ) {
     while (*pos < end) {
         *pos = ptn_eval_skip_ws(code, end, *pos);
@@ -293379,6 +293463,22 @@ static int ptn_dynamic_execute_statements_range(
         }
         size_t statement_pos = *pos;
         size_t line = ptn_eval_line_for_pos(code, statement_pos, base_line);
+        if (ptn_dynamic_execute_namespace_statement(
+                runtime,
+                code,
+                len,
+                pos,
+                end,
+                base_line,
+                return_out,
+                returned
+            )) {
+            if (*returned || ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
+        }
+        *pos = statement_pos;
         if (ptn_dynamic_execute_return_statement(runtime, code, end, pos, line, return_out, returned)) {
             return 1;
         }
@@ -295188,19 +295288,18 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
     return NULL;
 }
 
+static void ptn_eval_throw_parse_error(PtnRuntime *runtime, char *message, size_t eval_call_line) {
+    char *eval_path = ptn_eval_source_path(runtime, eval_call_line);
+    ptn_throw_exception_owned_message_at(runtime, "ParseError", message, eval_path, 1);
+}
+
 static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *code = ptn_value_to_string(args[0]);
     char *parse_error_message = ptn_eval_dynamic_parse_error_message(code);
     if (parse_error_message != NULL) {
         free(code);
-        ptn_throw_exception_owned_message_at(
-            runtime,
-            "ParseError",
-            parse_error_message,
-            runtime == NULL ? NULL : runtime->source_path,
-            line
-        );
+        ptn_eval_throw_parse_error(runtime, parse_error_message, line);
         return ptn_null();
     }
     ptn_eval_scan_class_declarations(runtime, code, line);
@@ -295230,13 +295329,7 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     parse_error_message = ptn_eval_dynamic_parse_error_message(code);
     if (parse_error_message != NULL) {
         free(code);
-        ptn_throw_exception_owned_message_at(
-            runtime,
-            "ParseError",
-            parse_error_message,
-            runtime == NULL ? NULL : runtime->source_path,
-            line
-        );
+        ptn_eval_throw_parse_error(runtime, parse_error_message, line);
         return ptn_null();
     }
     free(code);

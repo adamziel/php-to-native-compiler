@@ -144,6 +144,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->url_rewriter_hosts = NULL;
     runtime->current_output_source_path = NULL;
     runtime->current_output_line = 0;
+    runtime->current_eval_namespace = NULL;
     runtime->output_started_source_path = NULL;
     runtime->output_started_line = 0;
     runtime->http_response_code_initialized = 0;

@@ -27372,6 +27372,91 @@ echo "done\n";
 }
 
 #[test]
+fn compile_eval_namespace_block_resolves_namespace_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-namespace-constant-resolution");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-namespace-constant-resolution.php");
+    let output = root.join("eval-namespace-constant-resolution-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace foo {
+    define('foo\true', 'test');
+    echo "In eval\n";
+    eval('namespace foo { var_dump(true); var_dump(TrUe); var_dump(namespace\true); var_dump(\true); }');
+    echo "Outside eval\n";
+    var_dump(true);
+    var_dump(TrUe);
+    var_dump(namespace\true);
+    var_dump(\true);
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "In eval\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(4) \"test\"\n",
+            "bool(true)\n",
+            "Outside eval\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(4) \"test\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("current_eval_namespace"));
+    assert!(c_source.contains("ptn_dynamic_execute_namespace_statement"));
+}
+
+#[test]
+fn compile_eval_parse_error_reports_eval_pseudo_source_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-parse-error-pseudo-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-parse-error-pseudo-source.php");
+    let output = root.join("eval-parse-error-pseudo-source-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval(
+<<<EOC
+/** doc comment */
+function f() {
+EOC
+);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Parse error: Unclosed '{' in "), "{stdout}");
+    assert!(
+        stdout.contains("eval-parse-error-pseudo-source.php(2) : eval()'d code on line "),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("eval-parse-error-pseudo-source.php on line 2"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();
