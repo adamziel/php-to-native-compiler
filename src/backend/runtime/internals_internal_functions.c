@@ -256060,10 +256060,24 @@ static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *cl
     return ptn_reflection_class_declared_clone_is_public_concrete(runtime, class_name);
 }
 
-static void ptn_reflection_class_append_builtin_constants(PtnValue result, const char *class_name) {
-    if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
+static void ptn_reflection_class_append_builtin_constants(
+    PtnValue result,
+    const char *class_name,
+    int filter_present,
+    int filter
+) {
+    if (filter_present && (filter & 1) == 0) {
+        return;
+    }
+    int is_array_iterator_family =
+        ptn_declared_class_is_same_or_descendant(class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "ArrayObject");
+    if (is_array_iterator_family) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("STD_PROP_LIST"), ptn_int(1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ARRAY_AS_PROPS"), ptn_int(2));
+        if (ptn_declared_class_is_same_or_descendant(class_name, "RecursiveArrayIterator")) {
+            ptn_array_set_entry(result.as.array, ptn_array_string_key("CHILD_ARRAYS_ONLY"), ptn_int(4));
+        }
         return;
     }
     if (ptn_internal_class_name_is_date_period(class_name)) {
@@ -256524,6 +256538,68 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("RFC7231"), ptn_string("D, d M Y H:i:s \\G\\M\\T"));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("RSS"), ptn_string("D, d M Y H:i:s O"));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("W3C"), ptn_string("Y-m-d\\TH:i:sP"));
+    }
+}
+
+static void ptn_reflection_class_append_builtin_reflection_constant(
+    PtnRuntime *runtime,
+    PtnValue result,
+    const char *declaring_class,
+    const char *constant_name
+) {
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key((int64_t)result.as.array->len),
+        ptn_reflection_class_constant_object_from_name(runtime, declaring_class, constant_name)
+    );
+}
+
+static void ptn_reflection_class_append_builtin_reflection_constants(
+    PtnRuntime *runtime,
+    PtnValue result,
+    const char *class_name,
+    int filter_present,
+    int filter
+) {
+    if (filter_present && (filter & 1) == 0) {
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(class_name, "ArrayIterator")) {
+        ptn_reflection_class_append_builtin_reflection_constant(
+            runtime,
+            result,
+            "ArrayIterator",
+            "STD_PROP_LIST"
+        );
+        ptn_reflection_class_append_builtin_reflection_constant(
+            runtime,
+            result,
+            "ArrayIterator",
+            "ARRAY_AS_PROPS"
+        );
+        if (ptn_declared_class_is_same_or_descendant(class_name, "RecursiveArrayIterator")) {
+            ptn_reflection_class_append_builtin_reflection_constant(
+                runtime,
+                result,
+                "RecursiveArrayIterator",
+                "CHILD_ARRAYS_ONLY"
+            );
+        }
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(class_name, "ArrayObject")) {
+        ptn_reflection_class_append_builtin_reflection_constant(
+            runtime,
+            result,
+            "ArrayObject",
+            "STD_PROP_LIST"
+        );
+        ptn_reflection_class_append_builtin_reflection_constant(
+            runtime,
+            result,
+            "ArrayObject",
+            "ARRAY_AS_PROPS"
+        );
     }
 }
 
@@ -257880,9 +257956,12 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        if (!filter_present) {
-            ptn_reflection_class_append_builtin_constants(constants, class_name);
-        }
+        ptn_reflection_class_append_builtin_constants(
+            constants,
+            class_name,
+            filter_present,
+            filter_value
+        );
         return constants;
     }
     if (ptn_ascii_case_equal(name, "getReflectionConstants")) {
@@ -257893,7 +257972,16 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         PtnValue filter = argc == 1 ? ptn_value_deref(args[0]) : ptn_null();
         int filter_present = filter.type != PTN_NULL;
         int filter_value = filter_present ? (int)ptn_value_to_integer(filter) : 0;
-        return ptn_declared_class_reflection_constants(runtime, class_name, filter_present, filter_value);
+        PtnValue constants =
+            ptn_declared_class_reflection_constants(runtime, class_name, filter_present, filter_value);
+        ptn_reflection_class_append_builtin_reflection_constants(
+            runtime,
+            constants,
+            class_name,
+            filter_present,
+            filter_value
+        );
+        return constants;
     }
     if (ptn_ascii_case_equal(name, "getReflectionConstant")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);

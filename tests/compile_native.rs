@@ -57877,6 +57877,82 @@ var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
 }
 
 #[test]
+fn compile_reflection_internal_array_iterator_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-internal-array-iterator-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-internal-array-iterator-constants.php");
+    let output = root.join("reflection-internal-array-iterator-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo extends ArrayIterator {}
+
+$foo = new ReflectionClass(Foo::class);
+$arrayIterator = new ReflectionClass(ArrayIterator::class);
+$recursive = new ReflectionClass(RecursiveArrayIterator::class);
+
+var_dump($foo->getConstants());
+var_dump($arrayIterator->getConstants());
+var_dump($recursive->getConstants());
+var_dump($recursive->getConstants(ReflectionClassConstant::IS_PUBLIC));
+var_dump($recursive->getConstants(ReflectionClassConstant::IS_PRIVATE));
+foreach ($recursive->getReflectionConstants() as $constant) {
+    echo $constant->getDeclaringClass()->getName(), '::', $constant->getName(), '=', $constant->getValue(), \"\\n\";
+}
+var_dump(ArrayIterator::STD_PROP_LIST, RecursiveArrayIterator::ARRAY_AS_PROPS, RecursiveArrayIterator::CHILD_ARRAYS_ONLY);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"STD_PROP_LIST\"]=>\n",
+            "  int(1)\n",
+            "  [\"ARRAY_AS_PROPS\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"STD_PROP_LIST\"]=>\n",
+            "  int(1)\n",
+            "  [\"ARRAY_AS_PROPS\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"STD_PROP_LIST\"]=>\n",
+            "  int(1)\n",
+            "  [\"ARRAY_AS_PROPS\"]=>\n",
+            "  int(2)\n",
+            "  [\"CHILD_ARRAYS_ONLY\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"STD_PROP_LIST\"]=>\n",
+            "  int(1)\n",
+            "  [\"ARRAY_AS_PROPS\"]=>\n",
+            "  int(2)\n",
+            "  [\"CHILD_ARRAYS_ONLY\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "ArrayIterator::STD_PROP_LIST=1\n",
+            "ArrayIterator::ARRAY_AS_PROPS=2\n",
+            "RecursiveArrayIterator::CHILD_ARRAYS_ONLY=4\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_name_arguments_type_errors_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-class-name-argument-type-errors");
     fs::create_dir_all(&root).unwrap();

@@ -6807,7 +6807,9 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *constant,
     PtnValue *out
 ) {
-    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ArrayObject")) {
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ArrayObject") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "ArrayIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveArrayIterator")) {
         if (strcmp(constant, "STD_PROP_LIST") == 0) {
             *out = ptn_int(1);
             return 1;
