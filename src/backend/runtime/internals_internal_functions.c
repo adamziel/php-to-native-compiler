@@ -63044,9 +63044,13 @@ static char *ptn_stream_read_filtered_bytes(
     size_t length,
     size_t line,
     size_t *out_len,
-    int *ok
+    int *ok,
+    int *read_error
 ) {
     *ok = 1;
+    if (read_error != NULL) {
+        *read_error = 0;
+    }
     *out_len = 0;
     if (length == 0) {
         return ptn_duplicate_string_len("", 0);
@@ -63070,6 +63074,9 @@ static char *ptn_stream_read_filtered_bytes(
         }
         if (read_len == 0 && ptn_stream_error(resource)) {
             ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+            if (read_error != NULL) {
+                *read_error = 1;
+            }
             ptn_stream_clear_error(resource);
             free(buffer);
             *ok = 0;
@@ -63127,6 +63134,9 @@ static char *ptn_stream_read_filtered_bytes(
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
                 ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                if (read_error != NULL) {
+                    *read_error = 1;
+                }
                 ptn_stream_clear_error(resource);
                 *ok = 0;
                 return NULL;
@@ -63137,6 +63147,9 @@ static char *ptn_stream_read_filtered_bytes(
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
                 ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                if (read_error != NULL) {
+                    *read_error = 1;
+                }
                 ptn_stream_clear_error(resource);
                 *ok = 0;
                 return NULL;
@@ -64095,7 +64108,8 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
         length,
         line,
         &filtered_len,
-        &ok
+        &ok,
+        NULL
     );
     if (!ok) {
         return ptn_bool(0);
@@ -65551,6 +65565,7 @@ static PtnValue ptn_stream_read_remaining(
     if (requested_length >= 0) {
         size_t filtered_len = 0;
         int ok = 0;
+        int read_error = 0;
         char *filtered = ptn_stream_read_filtered_bytes(
             runtime,
             function_name,
@@ -65558,9 +65573,13 @@ static PtnValue ptn_stream_read_remaining(
             (size_t)requested_length,
             line,
             &filtered_len,
-            &ok
+            &ok,
+            &read_error
         );
         if (!ok) {
+            if (read_error && strcmp(function_name, "stream_get_contents") == 0) {
+                return ptn_string("");
+            }
             return ptn_bool(0);
         }
         return ptn_owned_string_len(filtered, filtered_len);
@@ -65725,7 +65744,8 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
                 want,
                 line,
                 &filtered_len,
-                &read_ok
+                &read_ok,
+                NULL
             );
             if (!read_ok) {
                 free(filtered);
@@ -67402,7 +67422,8 @@ static PtnStringOperand ptn_file_put_contents_stream_operand(
             8192,
             line,
             &chunk_len,
-            &read_ok
+            &read_ok,
+            NULL
         );
         if (!read_ok) {
             free(chunk);
@@ -206922,7 +206943,8 @@ static PtnValue ptn_internal_gzread(PtnRuntime *runtime, size_t argc, const PtnV
         length,
         line,
         &filtered_len,
-        &ok
+        &ok,
+        NULL
     );
     if (!ok) {
         return ptn_bool(0);
@@ -277743,7 +277765,8 @@ static PtnValue ptn_spl_file_object_fread(
         length,
         line,
         &filtered_len,
-        &ok
+        &ok,
+        NULL
     );
     if (!ok) {
         return ptn_bool(0);

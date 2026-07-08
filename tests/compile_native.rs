@@ -41474,6 +41474,40 @@ echo \"Done\\n\";\n",
 }
 
 #[test]
+fn compile_stream_get_contents_write_only_stream_returns_empty_string_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-get-contents-write-only-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-get-contents-write-only-empty.php");
+    let output = root.join("stream-get-contents-write-only-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/write-only.txt';\n\
+$stream = fopen($path, 'w');\n\
+$value = stream_get_contents($stream, 1, 1);\n\
+fclose($stream);\n\
+var_dump($value);\n\
+unlink($path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Notice: stream_get_contents(): Read of 8192 bytes failed with errno=9 Bad file descriptor"
+    ));
+    assert!(stdout.ends_with("string(0) \"\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_get_contents"));
+    assert!(c_source.contains("ptn_stream_read_filtered_bytes"));
+}
+
+#[test]
 fn compile_stream_filter_remove_detaches_and_invalidates_to_native_binary() {
     let root = temp_dir("ptn-native-stream-filter-remove-detaches");
     fs::create_dir_all(&root).unwrap();
