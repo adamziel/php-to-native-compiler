@@ -15906,6 +15906,22 @@ fn emit_class_metadata_helpers(
         "\nstatic PTN_UNUSED PtnValue ptn_zend_test_class_call_test(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    (void)args;\n");
+    out.push_str("    const char *const *arg_names = runtime == NULL ? NULL : runtime->next_call_arg_names;\n");
+    out.push_str("    for (size_t i = 0; arg_names != NULL && i < argc; i++) {\n");
+    out.push_str("        if (arg_names[i] != NULL) {\n");
+    out.push_str("            int needed = snprintf(NULL, 0, \"Unknown named parameter $%s\", arg_names[i]);\n");
+    out.push_str("            if (needed < 0) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("            if (message == NULL) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            snprintf(message, (size_t)needed + 1, \"Unknown named parameter $%s\", arg_names[i]);\n");
+    out.push_str("            ptn_throw_exception_owned_message_at(runtime, \"Error\", message, runtime->source_path, line);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     out.push_str("    if (argc != 0) {\n");
     out.push_str("        ptn_throw_exception_at(runtime, \"ArgumentCountError\", \"_ZendTestClass::test() expects exactly 0 arguments\", runtime->source_path, line);\n");
     out.push_str("        return ptn_null();\n");

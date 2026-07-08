@@ -55151,6 +55151,45 @@ echo new ReflectionFunction($o->testTmpMethodWithArgInfo(...));
 }
 
 #[test]
+fn compile_internal_zend_test_parameterless_method_rejects_unknown_named_argument_to_native_binary()
+{
+    let root = temp_dir("ptn-native-internal-zend-test-unknown-named-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-zend-test-unknown-named-argument.php");
+    let output = root.join("internal-zend-test-unknown-named-argument-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    $o = new _ZendTestClass();
+    $o->test('a', 'b', c: 'c');
+} catch (Error $e) {
+    echo $e->getMessage(), \"\n\";
+}
+try {
+    _ZendTestClass::test('a', 'b', c: 'c');
+} catch (Error $e) {
+    echo $e->getMessage(), \"\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unknown named parameter $c\nUnknown named parameter $c\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Unknown named parameter $%s"));
+}
+
+#[test]
 fn compile_failed_internal_typed_property_assignment_releases_receiver_guard_to_native_binary() {
     let root = temp_dir("ptn-native-internal-typed-property-receiver-guard");
     fs::create_dir_all(&root).unwrap();
