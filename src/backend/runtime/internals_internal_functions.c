@@ -238152,6 +238152,7 @@ static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntim
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_metadata_stub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zend_test_tmp_method_with_arg_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zend_trigger_bailout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -238855,6 +238856,13 @@ static PtnValue ptn_internal_zend_test_gh18756(PtnRuntime *runtime, size_t argc,
     (void)argc;
     (void)args;
     (void)line;
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_zend_trigger_bailout(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_fatal_error_at(runtime, "Bailout", runtime->source_path, line);
     return ptn_null();
 }
 
@@ -240556,6 +240564,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
+        { "zend_trigger_bailout", 0, 0, ptn_internal_zend_trigger_bailout },
         { "zend_weakmap_attach", 2, 2, ptn_internal_zend_weakmap_attach },
         { "zend_test_nodiscard", 0, 0, ptn_internal_zend_test_nodiscard },
         { "zend_get_unit_enum", 0, 0, ptn_internal_zend_get_unit_enum },
@@ -240625,6 +240634,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_trigger_bailout") ||
         ptn_ascii_case_equal(name, "zend_weakmap_attach") ||
         ptn_ascii_case_equal(name, "zend_get_unit_enum") ||
         ptn_ascii_case_equal(name, "zend_test_nullable_array_return") ||

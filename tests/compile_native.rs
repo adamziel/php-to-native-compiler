@@ -55722,6 +55722,33 @@ echo \"==DONE==\\n\";
 }
 
 #[test]
+fn compile_zend_trigger_bailout_helper_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-trigger-bailout-helper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-trigger-bailout-helper.php");
+    let output = root.join("zend-trigger-bailout-helper-bin");
+    fs::write(
+        &input,
+        "<?php
+zend_trigger_bailout();
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Bailout in "), "{stderr}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_trigger_bailout"));
+}
+
+#[test]
 fn compile_zend_test_attribute_new_instance_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-attribute-new-instance");
     fs::create_dir_all(&root).unwrap();
