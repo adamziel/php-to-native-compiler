@@ -170,6 +170,7 @@ typedef struct {
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
 #define PTN_PHP_BINARY "phpc"
+#define PTN_PHP_BUILD_DATE __DATE__ " " __TIME__
 #define PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH 4096
 #define PTN_INI_SCANNER_NORMAL 0
 #define PTN_INI_SCANNER_RAW 1

@@ -26286,6 +26286,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PHP_MAXPATHLEN"
             | "PHP_BINARY"
             | "PHP_VERSION"
+            | "PHP_BUILD_DATE"
             | "PHP_MAJOR_VERSION"
             | "PHP_MINOR_VERSION"
             | "PHP_RELEASE_VERSION"

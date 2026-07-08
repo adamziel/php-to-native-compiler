@@ -62510,6 +62510,31 @@ string(19) \"ptn.invalid.example\"\n"
 }
 
 #[test]
+fn compile_php_binary_prefers_test_php_executable_to_native_binary() {
+    let root = temp_dir("ptn-native-php-binary-test-executable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-binary-test-executable.php");
+    let output = root.join("php-binary-test-executable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(PHP_BINARY === getenv('TEST_PHP_EXECUTABLE'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("TEST_PHP_EXECUTABLE", "/tmp/ptn-test-php-wrapper")
+        .env("PTN_PHP_BINARY", "/tmp/ptn-php-binary-wrapper")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_php_binary_can_reinvoke_phpc_from_script() {
     let root = temp_dir("ptn-phpc-php-binary-reinvoke");
     fs::create_dir_all(&root).unwrap();
@@ -80754,7 +80779,9 @@ fn compile_php_core_version_platform_constants_to_native_binary() {
 var_dump(PHP_MAJOR_VERSION, PHP_MINOR_VERSION, PHP_RELEASE_VERSION, PHP_EXTRA_VERSION, PHP_VERSION_ID);\n\
 var_dump(PHP_ZTS, PHP_DEBUG, PHP_OS_FAMILY);\n\
 var_dump(defined('PHP_VERSION_ID'), defined('PHP_OS_FAMILY'));\n\
-var_dump(constant('PHP_EXTRA_VERSION'), constant('PHP_OS_FAMILY'));\n",
+var_dump(constant('PHP_EXTRA_VERSION'), constant('PHP_OS_FAMILY'));\n\
+echo strlen(PHP_BUILD_DATE), \"\\n\";\n\
+var_dump(defined('PHP_BUILD_DATE'), PHP_BUILD_DATE === constant('PHP_BUILD_DATE'));\n",
     )
     .unwrap();
 
@@ -80773,10 +80800,11 @@ var_dump(constant('PHP_EXTRA_VERSION'), constant('PHP_OS_FAMILY'));\n",
     } else {
         "Unknown"
     };
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        stdout,
         format!(
-            "int(8)\nint(4)\nint(0)\nstring(0) \"\"\nint(80400)\nint(0)\nint(0)\nstring({}) \"{}\"\nbool(true)\nbool(true)\nstring(0) \"\"\nstring({}) \"{}\"\n",
+            "int(8)\nint(4)\nint(0)\nstring(0) \"\"\nint(80400)\nint(0)\nint(0)\nstring({}) \"{}\"\nbool(true)\nbool(true)\nstring(0) \"\"\nstring({}) \"{}\"\n20\nbool(true)\nbool(true)\n",
             php_os_family.len(),
             php_os_family,
             php_os_family.len(),

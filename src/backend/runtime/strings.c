@@ -4054,7 +4054,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "PHP_BINARY") == 0) {
-        const char *binary = getenv("PTN_PHP_BINARY");
+        const char *binary = getenv("TEST_PHP_EXECUTABLE");
+        if (binary == NULL || binary[0] == '\0') {
+            binary = getenv("PTN_PHP_BINARY");
+        }
         if (binary == NULL || binary[0] == '\0') {
             binary = PTN_PHP_BINARY;
         }
@@ -4063,6 +4066,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "PHP_VERSION") == 0) {
         *out = ptn_string(PTN_PHP_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_BUILD_DATE") == 0) {
+        *out = ptn_string(PTN_PHP_BUILD_DATE);
         return 1;
     }
     if (strcmp(name, "PHP_MAJOR_VERSION") == 0) {
