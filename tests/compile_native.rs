@@ -609,7 +609,7 @@ fn compile_empty_iterator_surface_to_native_binary() {
     let output = root.join("empty-iterator-surface-bin");
     fs::write(
         &input,
-        r#"<?php
+        r##"<?php
 function make_iterator(): Iterator {
     return new EmptyIterator();
 }
@@ -76257,7 +76257,7 @@ fn compile_soap_wsdl_anyxml_struct_fields_to_native_binary() {
     .unwrap();
     fs::write(
         &input,
-        r#"<?php
+        r##"<?php
 class LocalSoapClient extends SoapClient {
     function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
         echo $request;
@@ -79137,6 +79137,67 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_type_is_or_extends"));
+}
+
+#[test]
+fn compile_soap_encoded_response_resolves_href_cycle_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-encoded-href-cycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-encoded-href-cycle.php");
+    let output = root.join("soap-encoded-href-cycle-bin");
+    fs::write(
+        &input,
+        r##"<?php
+class LocalSoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        return <<<'XML'
+<SOAP-ENV:Envelope SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://test.com/soap/v3/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/">
+   <SOAP-ENV:Body>
+      <ns1:getObjectResponse>
+         <getObjectReturn xsi:type="ns1:Customer" id="ref1">
+            <accountId xsi:type="xsd:int">1234</accountId>
+            <parent href="#ref1"/>
+            <external href="#i2"/>
+         </getObjectReturn>
+      </ns1:getObjectResponse>
+      <externalTarget id="i2" xsi:type="SOAP-ENC:Struct">
+         <idClient xsi:type="xsd:long">2</idClient>
+         <address href="#i3"/>
+      </externalTarget>
+      <address xsi:type="xsd:string" id="i3">Test</address>
+   </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+XML;
+    }
+}
+
+$client = new LocalSoapClient(null, ['uri' => 'test://', 'location' => 'test://']);
+var_dump($client->getObject());
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("[\"accountId\"]=>\n  int(1234)"), "{stdout}");
+    assert!(stdout.contains("[\"parent\"]=>\n  *RECURSION*"), "{stdout}");
+    assert!(stdout.contains("[\"external\"]=>\n  object(stdClass)"), "{stdout}");
+    assert!(stdout.contains("[\"idClient\"]=>\n    int(2)"), "{stdout}");
+    assert!(stdout.contains("[\"address\"]=>\n    string(4) \"Test\""), "{stdout}");
+    assert!(!stdout.contains("[\"href\"]"), "{stdout}");
+    assert!(!stdout.contains("[\"id\"]"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_decode_ref_map_add"));
 }
 
 #[test]

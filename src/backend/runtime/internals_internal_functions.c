@@ -231727,6 +231727,131 @@ static PtnValue ptn_soap_decode_default_arg(
     size_t line
 );
 
+typedef struct {
+    char *id;
+    PtnValue value;
+} PtnSoapDecodedRef;
+
+typedef struct {
+    PtnSoapDecodedRef *entries;
+    size_t count;
+    size_t capacity;
+    PtnXmlNode *root;
+} PtnSoapDecodeRefMap;
+
+static void ptn_soap_decode_ref_map_free(PtnSoapDecodeRefMap *map) {
+    if (map == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < map->count; i++) {
+        free(map->entries[i].id);
+        ptn_value_destroy(&map->entries[i].value);
+    }
+    free(map->entries);
+    map->entries = NULL;
+    map->count = 0;
+    map->capacity = 0;
+}
+
+static const char *ptn_soap_element_local_attribute_value(PtnXmlNode *element, const char *local_name) {
+    if (element == NULL || local_name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < element->attribute_count; i++) {
+        PtnXmlNode *attr = element->attributes[i];
+        if (attr == NULL || attr->name == NULL) {
+            continue;
+        }
+        if (ptn_ascii_case_equal(ptn_xml_local_name(attr->name), local_name)) {
+            return attr->value == NULL ? "" : attr->value;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_soap_decode_ref_map_find(
+    PtnSoapDecodeRefMap *map,
+    const char *id,
+    PtnValue *value_out
+) {
+    if (map == NULL || id == NULL || id[0] == '\0') {
+        return 0;
+    }
+    for (size_t i = 0; i < map->count; i++) {
+        if (strcmp(map->entries[i].id, id) == 0) {
+            *value_out = ptn_value_clone_deref(map->entries[i].value);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_soap_decode_ref_map_add(
+    PtnSoapDecodeRefMap *map,
+    const char *id,
+    PtnValue value
+) {
+    if (map == NULL || id == NULL || id[0] == '\0') {
+        return;
+    }
+    for (size_t i = 0; i < map->count; i++) {
+        if (strcmp(map->entries[i].id, id) == 0) {
+            ptn_value_destroy(&map->entries[i].value);
+            map->entries[i].value = ptn_value_clone_deref(value);
+            return;
+        }
+    }
+    if (map->count == map->capacity) {
+        size_t new_capacity = map->capacity == 0 ? 8 : map->capacity * 2;
+        PtnSoapDecodedRef *new_entries = realloc(map->entries, new_capacity * sizeof(PtnSoapDecodedRef));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        map->entries = new_entries;
+        map->capacity = new_capacity;
+    }
+    map->entries[map->count].id = ptn_duplicate_string(id);
+    map->entries[map->count].value = ptn_value_clone_deref(value);
+    map->count++;
+}
+
+static const char *ptn_soap_decode_ref_id(const char *href) {
+    if (href == NULL || href[0] == '\0') {
+        return NULL;
+    }
+    return href[0] == '#' ? href + 1 : href;
+}
+
+static PtnXmlNode *ptn_soap_find_local_id(PtnXmlNode *node, const char *id) {
+    if (node == NULL || id == NULL || id[0] == '\0') {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT) {
+        const char *node_id = ptn_soap_element_local_attribute_value(node, "id");
+        if (node_id != NULL && strcmp(node_id, id) == 0) {
+            return node;
+        }
+    }
+    for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+        PtnXmlNode *found = ptn_soap_find_local_id(node->children[i], id);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_soap_decode_default_arg_ex(
+    PtnRuntime *runtime,
+    PtnXmlNode *node,
+    PtnSoapType *types,
+    size_t type_count,
+    const char *expected_type_name,
+    int single_element_arrays,
+    size_t line,
+    PtnSoapDecodeRefMap *ref_map
+);
+
 static void ptn_soap_emit_fault_and_exit(
     PtnRuntime *runtime,
     int soap_12,
@@ -232120,6 +232245,10 @@ static int ptn_soap_attribute_is_metadata(PtnXmlNode *attr) {
         ptn_ascii_case_equal(local, "type") ||
         ptn_ascii_case_equal(local, "nil") ||
         ptn_ascii_case_equal(local, "arrayType") ||
+        ptn_ascii_case_equal(local, "id") ||
+        ptn_ascii_case_equal(local, "href") ||
+        ptn_ascii_case_equal(local, "ref") ||
+        ptn_ascii_case_equal(local, "root") ||
         (soap_envelope_attr &&
          (ptn_ascii_case_equal(local, "actor") ||
           ptn_ascii_case_equal(local, "role") ||
@@ -232442,26 +232571,46 @@ static PtnValue ptn_soap_decode_apache_map_arg(
     return result;
 }
 
-static PtnValue ptn_soap_decode_default_arg(
+static PtnValue ptn_soap_decode_default_arg_ex(
     PtnRuntime *runtime,
     PtnXmlNode *node,
     PtnSoapType *types,
     size_t type_count,
     const char *expected_type_name,
     int single_element_arrays,
-    size_t line
+    size_t line,
+    PtnSoapDecodeRefMap *ref_map
 ) {
+    const char *href = ptn_soap_element_local_attribute_value(node, "href");
+    const char *ref_id = ptn_soap_decode_ref_id(href);
+    PtnValue referenced = ptn_null();
+    if (ptn_soap_decode_ref_map_find(ref_map, ref_id, &referenced)) {
+        return referenced;
+    }
+    PtnXmlNode *ref_target = ref_map == NULL ? NULL : ptn_soap_find_local_id(ref_map->root, ref_id);
+    if (ref_target != NULL && ref_target != node) {
+        return ptn_soap_decode_default_arg_ex(
+            runtime,
+            ref_target,
+            types,
+            type_count,
+            expected_type_name,
+            single_element_arrays,
+            line,
+            ref_map
+        );
+    }
     PtnSoapXmlType xml_type;
     ptn_soap_xml_type_from_node(node, &xml_type);
     if (ptn_soap_xml_type_is_apache_map(&xml_type)) {
         PtnValue result = ptn_soap_decode_apache_map_arg(
             runtime,
             node,
-            types,
-            type_count,
-            single_element_arrays,
-            line
-        );
+                types,
+                type_count,
+                single_element_arrays,
+                line
+            );
         ptn_soap_xml_type_free(&xml_type);
         return result;
     }
@@ -232516,14 +232665,15 @@ static PtnValue ptn_soap_decode_default_arg(
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_int_key(result.as.array->next_auto_key),
-                ptn_soap_decode_default_arg(
+                ptn_soap_decode_default_arg_ex(
                     runtime,
                     child,
                     types,
                     type_count,
                     schema_type == NULL ? NULL : schema_type->array_item_type,
                     single_element_arrays,
-                    line
+                    line,
+                    ref_map
                 )
             );
         }
@@ -232570,6 +232720,8 @@ static PtnValue ptn_soap_decode_default_arg(
         return result;
     }
     PtnValue object = ptn_object_new_shell(runtime, "stdClass");
+    const char *node_id = ptn_soap_element_local_attribute_value(node, "id");
+    ptn_soap_decode_ref_map_add(ref_map, node_id, object);
     PtnSoapDecodedPropertySet decoded_properties = { 0 };
     if (schema_type != NULL && schema_type->has_simple_content) {
         PtnValue content = ptn_null();
@@ -232617,14 +232769,15 @@ static PtnValue ptn_soap_decode_default_arg(
             if (ptn_soap_wildcard_child_decodes_as_schema_object(child, types, type_count)) {
                 ptn_soap_any_flush_raw(&wildcard_any, &wildcard_any_is_array, &wildcard_raw);
                 ptn_soap_any_ensure_array(&wildcard_any, &wildcard_any_is_array);
-                PtnValue decoded = ptn_soap_decode_default_arg(
+                PtnValue decoded = ptn_soap_decode_default_arg_ex(
                     runtime,
                     child,
                     types,
                     type_count,
                     wildcard->type,
                     single_element_arrays,
-                    line
+                    line,
+                    ref_map
                 );
                 ptn_array_set_entry(
                     wildcard_any.as.array,
@@ -232651,14 +232804,15 @@ static PtnValue ptn_soap_decode_default_arg(
             }
             continue;
         }
-        PtnValue decoded = ptn_soap_decode_default_arg(
+        PtnValue decoded = ptn_soap_decode_default_arg_ex(
             runtime,
             child,
             types,
             type_count,
             field == NULL ? NULL : field->type,
             single_element_arrays,
-            line
+            line,
+            ref_map
         );
         ptn_soap_write_decoded_field_property(
             runtime,
@@ -232768,6 +232922,31 @@ static PtnValue ptn_soap_decode_default_arg(
     }
     ptn_soap_decoded_property_set_free(&decoded_properties);
     ptn_soap_xml_type_free(&xml_type);
+    return result;
+}
+
+static PtnValue ptn_soap_decode_default_arg(
+    PtnRuntime *runtime,
+    PtnXmlNode *node,
+    PtnSoapType *types,
+    size_t type_count,
+    const char *expected_type_name,
+    int single_element_arrays,
+    size_t line
+) {
+    PtnSoapDecodeRefMap ref_map = { 0 };
+    ref_map.root = node;
+    PtnValue result = ptn_soap_decode_default_arg_ex(
+        runtime,
+        node,
+        types,
+        type_count,
+        expected_type_name,
+        single_element_arrays,
+        line,
+        &ref_map
+    );
+    ptn_soap_decode_ref_map_free(&ref_map);
     return result;
 }
 
@@ -238882,7 +239061,8 @@ static PtnValue ptn_soap_decode_response_xml(
         return ptn_null();
     }
     ptn_string_operand_free(xml);
-    PtnXmlNode *body = ptn_soap_find_body(ptn_xml_document_element(document));
+    PtnXmlNode *envelope = ptn_xml_document_element(document);
+    PtnXmlNode *body = ptn_soap_find_body(envelope);
     PtnXmlNode *response_node = ptn_xml_first_element_child(body);
     if (response_node == NULL) {
         return ptn_null();
@@ -238933,15 +239113,19 @@ static PtnValue ptn_soap_decode_response_xml(
             ptn_soap_options_feature_enabled(data->options, 1),
             &decoded
         )) {
-        decoded = ptn_soap_decode_default_arg(
+        PtnSoapDecodeRefMap ref_map = { 0 };
+        ref_map.root = envelope;
+        decoded = ptn_soap_decode_default_arg_ex(
             runtime,
             payload,
             data == NULL ? NULL : data->types,
             data == NULL ? 0 : data->type_count,
             expected_type_name,
             data == NULL ? 0 : ptn_soap_options_feature_enabled(data->options, 1),
-            line
+            line,
+            &ref_map
         );
+        ptn_soap_decode_ref_map_free(&ref_map);
     }
     free(classmap_type_name);
     ptn_soap_xml_type_free(&type);
