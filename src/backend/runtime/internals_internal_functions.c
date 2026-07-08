@@ -60029,6 +60029,13 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     if (!ptn_stream_resource_is_open(value.as.resource)) {
+        if (ptn_resource_manual_close_forbidden(value.as.resource)) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "fclose(): cannot close the provided stream, as it must not be manually closed",
+                line
+            );
+        }
         ptn_throw_exception(
             runtime,
             "TypeError",
@@ -60042,6 +60049,14 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
             "fclose(): cannot close the provided stream, as it must not be manually closed",
             line
         );
+        if (value.as.resource->manual_close_forbidden == 2) {
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "fclose(): Argument #1 ($stream) must be an open stream resource"
+            );
+            return ptn_null();
+        }
         return ptn_bool(0);
     }
     ptn_phar_commit_writable_stream(value.as.resource);
@@ -60757,7 +60772,12 @@ static PtnStreamBucketBrigade *ptn_stream_bucket_brigade_arg(
 }
 
 static PtnValue ptn_stream_bucket_object(PtnRuntime *runtime, const char *data, size_t len) {
-    PtnValue bucket = ptn_object_new_shell(runtime, "stdClass");
+    PtnValue bucket = ptn_object_new_shell(runtime, "StreamBucket");
+    ptn_array_set_entry(
+        bucket.as.object->properties,
+        ptn_array_string_key("bucket"),
+        ptn_resource(ptn_resource_new_named("userfilter.bucket"))
+    );
     ptn_array_set_entry(
         bucket.as.object->properties,
         ptn_array_string_key("data"),
@@ -60769,6 +60789,11 @@ static PtnValue ptn_stream_bucket_object(PtnRuntime *runtime, const char *data, 
     ptn_array_set_entry(
         bucket.as.object->properties,
         ptn_array_string_key("datalen"),
+        ptn_int((int64_t)len)
+    );
+    ptn_array_set_entry(
+        bucket.as.object->properties,
+        ptn_array_string_key("dataLength"),
         ptn_int((int64_t)len)
     );
     return bucket;
@@ -61547,6 +61572,12 @@ static char *ptn_stream_apply_user_filter_alloc(
         consumed,
         ptn_bool(closing)
     };
+    int previous_manual_close_forbidden = 0;
+    int forbid_manual_close = filter->user_filter_stream != NULL;
+    if (forbid_manual_close) {
+        previous_manual_close_forbidden = filter->user_filter_stream->manual_close_forbidden;
+        filter->user_filter_stream->manual_close_forbidden = 2;
+    }
     PtnValue result = runtime->method_dispatch(
         runtime,
         filter->user_filter_object,
@@ -61555,6 +61586,9 @@ static char *ptn_stream_apply_user_filter_alloc(
         args,
         line
     );
+    if (forbid_manual_close) {
+        filter->user_filter_stream->manual_close_forbidden = previous_manual_close_forbidden;
+    }
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&result);
         ptn_value_destroy(&args[0]);

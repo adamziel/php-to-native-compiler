@@ -38958,6 +38958,104 @@ ABC\n"
 }
 
 #[test]
+fn compile_stream_bucket_new_exposes_stream_bucket_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-bucket-object-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-bucket-object-shape.php");
+    let output = root.join("stream-bucket-object-shape-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$bucket = stream_bucket_new(fopen("php://temp", "w+"), "abc");
+echo $bucket::class, "\n";
+echo get_resource_type($bucket->bucket), "\n";
+var_dump($bucket->data, $bucket->datalen, $bucket->dataLength);
+
+class BucketFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        stream_bucket_append($out, stream_bucket_new(fopen("php://temp", "w+"), ""));
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("bucket.shape", BucketFilter::class);
+stream_filter_append($stream = fopen("php://temp", "r+"), "bucket.shape");
+stream_get_contents($stream);
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "StreamBucket\n\
+userfilter.bucket\n\
+string(3) \"abc\"\n\
+int(3)\n\
+int(3)\n\
+Done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("StreamBucket"));
+    assert!(c_source.contains("userfilter.bucket"));
+}
+
+#[test]
+fn compile_user_filter_stream_cannot_be_manually_closed_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-close-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-close-guard.php");
+    let output = root.join("stream-user-filter-close-guard-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class CloseGuardFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while (stream_bucket_make_writeable($in)) {
+        }
+        try {
+            fclose($this->stream);
+        } catch (TypeError $e) {
+            echo $e->getMessage(), "\n";
+        }
+        return PSFS_FEED_ME;
+    }
+}
+
+stream_filter_register("close.guard", CloseGuardFilter::class);
+$stream = fopen("php://memory", "w");
+stream_filter_append($stream, "close.guard");
+fwrite($stream, "x");
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fclose(): cannot close the provided stream, as it must not be manually closed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("fclose(): Argument #1 ($stream) must be an open stream resource\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("manual_close_forbidden"));
+}
+
+#[test]
 fn compile_user_filter_include_tagless_stream_to_native_binary() {
     let root = temp_dir("ptn-native-user-filter-include-tagless-stream");
     fs::create_dir_all(&root).unwrap();
