@@ -40843,6 +40843,80 @@ try {
 }
 
 #[test]
+fn compile_include_user_stream_blocks_nested_url_wrapper_open_to_native_binary() {
+    let root = temp_dir("ptn-native-include-user-stream-nested-url");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("include-user-stream-nested-url.php");
+    let output = root.join("include-user-stream-nested-url-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class TestWrapper {
+    public $context;
+    private $data = '<?php echo "Hello World\n";?>';
+    private $pos = 0;
+    private $stream = null;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        if (strpos($path, "test2://") === 0) {
+            $this->stream = fopen("test1://" . substr($path, 8), $mode);
+            return !empty($this->stream);
+        }
+        $this->pos = 0;
+        return true;
+    }
+
+    public function stream_read($count) {
+        if (!empty($this->stream)) {
+            return fread($this->stream, $count);
+        }
+        $ret = substr($this->data, $this->pos, $count);
+        $this->pos += strlen($ret);
+        return $ret;
+    }
+
+    public function stream_tell() {
+        return !empty($this->stream) ? ftell($this->stream) : $this->pos;
+    }
+
+    public function stream_eof() {
+        return !empty($this->stream) ? feof($this->stream) : $this->pos >= strlen($this->data);
+    }
+}
+
+stream_wrapper_register("test1", TestWrapper::class, STREAM_IS_URL);
+stream_wrapper_register("test2", TestWrapper::class);
+echo @file_get_contents("test1://hello"), "\n";
+include "test2://hello";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("<?php echo \"Hello World\\n\";?>\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("fopen(): test1:// wrapper is disabled in the server configuration by allow_url_include=0"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("include(test2://hello): Failed to open stream: \"TestWrapper::stream_open\" call failed"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("\nHello World\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_include_callback_depth"));
+}
+
+#[test]
 fn compile_stream_wrapper_unregister_restore_state_to_native_binary() {
     let root = temp_dir("ptn-native-stream-wrapper-unregister-restore-state");
     fs::create_dir_all(&root).unwrap();
@@ -107519,6 +107593,10 @@ class mystream {
 
     public function stream_eof() {
         return $this->position >= strlen($GLOBALS[$this->varname]);
+    }
+
+    public function url_stat($path, $flags) {
+        return [];
     }
 }
 

@@ -56528,6 +56528,7 @@ typedef struct {
 static PtnUserStreamWrapper *ptn_user_stream_wrappers = NULL;
 static size_t ptn_user_stream_wrapper_count = 0;
 static size_t ptn_user_stream_wrapper_capacity = 0;
+static int ptn_user_stream_include_callback_depth = 0;
 static const char *const ptn_builtin_stream_wrappers[] = {
     "https",
     "php",
@@ -59560,8 +59561,17 @@ static int ptn_try_open_user_stream_wrapper(
     if (wrapper == NULL) {
         return 0;
     }
-    if (wrapper->is_url && !ptn_runtime_allow_url_fopen()) {
-        ptn_user_stream_emit_url_disabled_warning(runtime, function_name, wrapper, "allow_url_fopen", line);
+    int url_include_context = ptn_user_stream_include_callback_depth > 0;
+    if (wrapper->is_url &&
+        ((url_include_context && !ptn_runtime_allow_url_include()) ||
+            (!url_include_context && !ptn_runtime_allow_url_fopen()))) {
+        ptn_user_stream_emit_url_disabled_warning(
+            runtime,
+            function_name,
+            wrapper,
+            url_include_context ? "allow_url_include" : "allow_url_fopen",
+            line
+        );
         ptn_emit_file_warning(
             runtime,
             function_name == NULL ? "fopen" : function_name,
@@ -65173,7 +65183,8 @@ static int ptn_user_stream_url_stat_exists(
         ptn_value_destroy(&result);
         return 0;
     }
-    int exists = ptn_is_truthy(result);
+    PtnValue resolved = ptn_value_deref(result);
+    int exists = resolved.type == PTN_ARRAY || ptn_is_truthy(result);
     ptn_value_destroy(&result);
     return exists ? 1 : 0;
 }
@@ -294100,9 +294111,17 @@ static int ptn_try_read_user_stream_wrapper_bytes(
     *data_out = NULL;
     *len_out = 0;
     PtnValue stream_value = ptn_null();
+    int include_style_read = function_name != NULL &&
+        (ptn_ascii_case_equal(function_name, "include") || ptn_ascii_case_equal(function_name, "require"));
+    int previous_include_callback_depth = ptn_user_stream_include_callback_depth;
+    if (include_style_read) {
+        ptn_user_stream_include_callback_depth++;
+    }
     if (!ptn_try_open_user_stream_wrapper(runtime, function_name, path, "rb", context, line, &stream_value)) {
+        ptn_user_stream_include_callback_depth = previous_include_callback_depth;
         return 0;
     }
+    ptn_user_stream_include_callback_depth = previous_include_callback_depth;
     if (runtime != NULL &&
         runtime->exceptions != NULL &&
         runtime->exceptions->active_exception != NULL) {
@@ -294117,8 +294136,6 @@ static int ptn_try_read_user_stream_wrapper_bytes(
     }
     PtnResource *stream = resolved_stream.as.resource;
     PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(stream);
-    int include_style_read = function_name != NULL &&
-        (ptn_ascii_case_equal(function_name, "include") || ptn_ascii_case_equal(function_name, "require"));
     if (include_style_read &&
         user_stream != NULL &&
         user_stream->runtime != NULL &&
