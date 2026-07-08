@@ -40599,6 +40599,116 @@ unlink($path);
 }
 
 #[test]
+fn compile_user_stream_filter_on_create_false_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-on-create-false");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-on-create-false.php");
+    let output = root.join("stream-user-filter-on-create-false-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class RejectFilter extends php_user_filter {
+    public function onCreate(): bool {
+        return false;
+    }
+}
+
+stream_filter_register("reject.filter", RejectFilter::class);
+$fp = fopen("php://memory", "rw");
+var_dump(stream_filter_append($fp, "reject.filter"));
+fwrite($fp, "Test");
+fseek($fp, 0);
+var_dump(fgets($fp));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Warning: stream_filter_append(): Unable to create or locate filter \"reject.filter\""
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\nstring(4) \"Test\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_emit_unable_to_create"));
+}
+
+#[test]
+fn compile_user_stream_filter_multi_remove_closes_each_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-multi-remove-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-multi-remove-close.php");
+    let output = root.join("stream-user-filter-multi-remove-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class FirstFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        static $closed = 0;
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            stream_bucket_append($out, stream_bucket_new($this->stream, $bucket->data));
+        }
+        if ($closing) {
+            $closed++;
+        }
+        if ($closed > 0) {
+            var_dump($closed++);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+class SecondFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        static $closed = 0;
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            stream_bucket_append($out, stream_bucket_new($this->stream, $bucket->data));
+        }
+        if ($closing) {
+            $closed++;
+        }
+        if ($closed > 0) {
+            var_dump($closed++);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+$r = fopen("php://stdout", "w+");
+stream_filter_register("first", FirstFilter::class);
+stream_filter_register("second", SecondFilter::class);
+$first = stream_filter_prepend($r, "first", STREAM_FILTER_WRITE, []);
+$second = stream_filter_prepend($r, "second", STREAM_FILTER_WRITE, []);
+fwrite($r, "test\n");
+stream_filter_remove($second);
+stream_filter_remove($first);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "test\nint(1)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_flush_until_closed"));
+}
+
+#[test]
 fn compile_user_stream_filter_private_filtername_uses_external_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-stream-user-filter-private-filtername");
     fs::create_dir_all(&root).unwrap();

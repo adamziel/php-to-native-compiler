@@ -61988,14 +61988,6 @@ static int ptn_stream_filter_chain_has_failed_user(PtnStreamFilter *filter) {
     return 0;
 }
 
-static void ptn_stream_filter_chain_mark_user_closed(PtnStreamFilter *filter) {
-    for (; filter != NULL; filter = filter->next) {
-        if (filter->kind == PTN_STREAM_FILTER_USER) {
-            filter->user_filter_closed = 1;
-        }
-    }
-}
-
 static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
@@ -62281,13 +62273,7 @@ static int ptn_stream_filter_assign_declared_public_stream_property(
         warning_emitted = 1;
     }
     if (closing) {
-        PtnResource *stream = filter->user_filter_stream;
-        if (stream != NULL) {
-            ptn_stream_filter_chain_mark_user_closed(stream->read_filters);
-            ptn_stream_filter_chain_mark_user_closed(stream->write_filters);
-        } else {
-            filter->user_filter_closed = 1;
-        }
+        filter->user_filter_closed = 1;
     }
     PtnValue stream_value = ptn_resource(filter->user_filter_stream);
     if (metadata == NULL) {
@@ -63864,6 +63850,9 @@ static PtnValue ptn_internal_stream_filter_attach(
                 ptn_string_operand_free(name);
                 return ptn_null();
             }
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+            }
             if (ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
                 ptn_stream_filter_free(read_filter);
             }
@@ -63891,6 +63880,7 @@ static PtnValue ptn_internal_stream_filter_attach(
                 ptn_string_operand_free(name);
                 return ptn_null();
             }
+            ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
             if (read_filter != NULL &&
                 ptn_stream_filter_chain_unlink(&stream->read_filters, read_filter)) {
                 ptn_stream_filter_free(read_filter);
@@ -63982,6 +63972,30 @@ static void ptn_stream_filter_flush_single_closing(
     (void)output_len;
 }
 
+static void ptn_stream_filter_flush_until_closed(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStreamFilter *target,
+    size_t line
+) {
+    if (target == NULL || target->user_filter_closed) {
+        return;
+    }
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        target,
+        "",
+        0,
+        1,
+        line,
+        &output_len
+    );
+    free(output);
+    (void)output_len;
+}
+
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue filter = ptn_value_deref(args[0]);
@@ -64015,23 +64029,38 @@ static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t ar
 
     PtnResource *stream = filter_data->stream;
     int removed = 0;
-    if (filter_data->read_filter != NULL &&
-        ptn_stream_filter_chain_unlink(&stream->read_filters, filter_data->read_filter)) {
-        ptn_stream_filtered_read_pending_clear(stream);
-        ptn_stream_filter_flush_single_closing(runtime, "stream_filter_remove", filter_data->read_filter, line);
+    if (filter_data->read_filter != NULL) {
+        ptn_stream_filter_flush_until_closed(
+            runtime,
+            "stream_filter_remove",
+            filter_data->read_filter,
+            line
+        );
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+    }
+    if (filter_data->read_filter != NULL &&
+        ptn_stream_filter_chain_unlink(&stream->read_filters, filter_data->read_filter)) {
+        ptn_stream_filtered_read_pending_clear(stream);
         ptn_stream_filter_free(filter_data->read_filter);
         removed = 1;
     }
     if (filter_data->write_filter != NULL &&
-        filter_data->write_filter != filter_data->read_filter &&
-        ptn_stream_filter_chain_unlink(&stream->write_filters, filter_data->write_filter)) {
-        ptn_stream_filter_flush_single_closing(runtime, "stream_filter_remove", filter_data->write_filter, line);
+        filter_data->write_filter != filter_data->read_filter) {
+        ptn_stream_filter_flush_until_closed(
+            runtime,
+            "stream_filter_remove",
+            filter_data->write_filter,
+            line
+        );
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+    }
+    if (filter_data->write_filter != NULL &&
+        filter_data->write_filter != filter_data->read_filter &&
+        ptn_stream_filter_chain_unlink(&stream->write_filters, filter_data->write_filter)) {
         ptn_stream_filter_free(filter_data->write_filter);
         removed = 1;
     }
