@@ -58805,6 +58805,17 @@ static int ptn_try_open_user_stream_wrapper(
         *out = ptn_bool(0);
         return 1;
     }
+    if (ptn_declared_runtime_trait_exists(runtime, wrapper->class_name)) {
+        ptn_emit_file_warning(
+            runtime,
+            function_name == NULL ? "fopen" : function_name,
+            path,
+            "Failed to open stream: operation failed",
+            line
+        );
+        *out = ptn_bool(0);
+        return 1;
+    }
 
     PtnValue object = ptn_new_user_stream_wrapper_object(runtime, wrapper->class_name, line);
     if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
@@ -58962,6 +58973,12 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return php_stream;
     }
+    if (ptn_try_open_user_stream_wrapper(runtime, "fopen", path, mode, context, line, &php_stream)) {
+        free(uri);
+        free(mode);
+        free(path);
+        return php_stream;
+    }
 
     if (!ptn_fopen_mode_has_valid_primary(mode)) {
         int needed = snprintf(NULL, 0, "Failed to open stream: `%s' is not a valid mode for fopen", mode);
@@ -59079,12 +59096,6 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(mode);
         free(path);
         return ptn_bool(0);
-    }
-    if (ptn_try_open_user_stream_wrapper(runtime, "fopen", path, mode, context, line, &php_stream)) {
-        free(uri);
-        free(mode);
-        free(path);
-        return php_stream;
     }
     if (ptn_ascii_case_has_prefix(path, "php://")) {
         PtnValue result = ptn_stream_open_failure_result(
@@ -60353,6 +60364,11 @@ static int ptn_user_stream_filter_class_exists(PtnRuntime *runtime, const char *
     return ptn_declared_runtime_user_class_exists(runtime, class_name) ||
         ptn_declared_runtime_class_exists(runtime, class_name) ||
         ptn_internal_class_exists_name(class_name);
+}
+
+static int ptn_user_stream_wrapper_class_exists(PtnRuntime *runtime, const char *class_name) {
+    return ptn_user_stream_filter_class_exists(runtime, class_name) ||
+        ptn_declared_runtime_trait_exists(runtime, class_name);
 }
 
 static void ptn_user_stream_filter_emit_missing_class_warning(
@@ -66262,7 +66278,7 @@ static PtnValue ptn_internal_stream_wrapper_register_named(
         ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): Protocol already defined", line);
         return ptn_bool(0);
     }
-    if (!ptn_user_stream_filter_class_exists(runtime, class_copy)) {
+    if (!ptn_user_stream_wrapper_class_exists(runtime, class_copy)) {
         int needed = snprintf(
             NULL,
             0,

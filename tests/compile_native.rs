@@ -39863,6 +39863,39 @@ var_dump(unlink('ops://file'));\n",
 }
 
 #[test]
+fn compile_trait_stream_wrapper_registers_but_open_fails_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-stream-wrapper-open-fails");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-stream-wrapper-open-fails.php");
+    let output = root.join("trait-stream-wrapper-open-fails-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+trait TraitWrapper {\n\
+    public function stream_open($path, $mode, $options, &$opened_path) { return true; }\n\
+}\n\
+var_dump(stream_wrapper_register('traitwrap', 'TraitWrapper'));\n\
+var_dump(fopen('traitwrap://', 0));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "bool(true)\n\nWarning: fopen(traitwrap://): Failed to open stream: operation failed in "
+    ));
+    assert!(stdout.ends_with(" on line 6\nbool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_stream_wrapper_class_exists"));
+    assert!(c_source.contains("ptn_declared_runtime_trait_exists"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_options_and_partial_write_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-options-partial-write");
     fs::create_dir_all(&root).unwrap();
