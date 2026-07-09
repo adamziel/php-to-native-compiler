@@ -227395,15 +227395,19 @@ static void ptn_soap_parse_complex_type_in_range(
         return;
     }
 
+    int simple_base_is_restriction = 0;
     char *simple_base = ptn_soap_first_attr_in_range(start, end, "extension", "base");
     if (simple_base == NULL) {
         simple_base = ptn_soap_first_attr_in_range(start, end, "restriction", "base");
+        simple_base_is_restriction = simple_base != NULL;
     }
     if (ptn_soap_range_has_tag(start, end, "simpleContent")) {
         type->has_simple_content = 1;
         ptn_soap_type_set_base_type(type, simple_base == NULL ? "string" : simple_base);
         PtnSoapType *base_type = ptn_soap_type_list_find(*types, *type_count, simple_base);
-        ptn_soap_type_copy_fields(type, base_type);
+        if (!simple_base_is_restriction) {
+            ptn_soap_type_copy_fields(type, base_type);
+        }
         ptn_soap_parse_fields_in_range(
             document_start,
             document_end,
@@ -227424,6 +227428,11 @@ static void ptn_soap_parse_complex_type_in_range(
     }
 
     char *extension_base = ptn_soap_first_attr_in_range(start, end, "extension", "base");
+    int base_is_restriction = 0;
+    if (extension_base == NULL) {
+        extension_base = ptn_soap_first_attr_in_range(start, end, "restriction", "base");
+        base_is_restriction = extension_base != NULL;
+    }
     if (extension_base != NULL) {
         type->is_extension = 1;
         ptn_soap_type_set_base_type(type, extension_base);
@@ -227436,7 +227445,9 @@ static void ptn_soap_parse_complex_type_in_range(
         if (base_type != NULL && base_type->has_simple_content) {
             type->has_simple_content = 1;
         }
-        ptn_soap_type_copy_fields(type, base_type);
+        if (!base_is_restriction) {
+            ptn_soap_type_copy_fields(type, base_type);
+        }
         free(extension_base);
     }
     ptn_soap_parse_fields_in_range(
