@@ -1,0 +1,11 @@
+ext/standard/tests/serialize/bug62373.phpt
+ext/standard/tests/serialize/bug62836_1.phpt
+ext/standard/tests/serialize/bug62836_2.phpt
+ext/standard/tests/serialize/bug68976.phpt
+ext/standard/tests/serialize/bug70172.phpt
+ext/standard/tests/serialize/bug70172_2.phpt
+ext/standard/tests/serialize/bug72731.phpt
+ext/standard/tests/serialize/bug74103.phpt
+ext/standard/tests/serialize/bug81111.phpt
+ext/standard/tests/serialize/serialization_arrays_004.phpt
+ext/standard/tests/serialize/serialization_objects_005.phpt

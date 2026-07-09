@@ -17893,6 +17893,14 @@ static int ptn_unserialize_store_entry(
 ) {
     size_t existing_index = ptn_array_find_key(array, key);
     if (existing_index < array->len) {
+        if (parsed.value.type == PTN_REFERENCE &&
+            array->entries[existing_index].value.type == PTN_REFERENCE &&
+            parsed.value.as.reference == array->entries[existing_index].value.as.reference) {
+            ptn_array_key_free(key);
+            ptn_value_destroy(&parsed.value);
+            ptn_unserialize_fail(state);
+            return 0;
+        }
         ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
         ptn_array_set_entry(array, key, parsed.value);
         ptn_unserialize_update_entry_slot(state, parsed.id, &array->entries[existing_index].value);
