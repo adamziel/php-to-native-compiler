@@ -226212,6 +226212,11 @@ static int ptn_soap_options_feature_enabled(PtnValue options, int feature) {
     return ((int)ptn_value_to_integer(value) & feature) != 0;
 }
 
+static int ptn_soap_options_trace_enabled(PtnValue options) {
+    PtnValue value = ptn_null();
+    return ptn_soap_options_entry(options, "trace", &value) && ptn_is_truthy(value);
+}
+
 typedef struct {
     char *name;
     char *type;
@@ -226260,6 +226265,8 @@ typedef struct {
     size_t last_request_len;
     char *last_request_headers;
     size_t last_request_headers_len;
+    char *last_response;
+    size_t last_response_len;
     PtnSoapType *types;
     size_t type_count;
     size_t type_capacity;
@@ -226379,6 +226386,7 @@ static void ptn_soap_client_data_free(void *data_ptr) {
     ptn_value_destroy(&data->cookies);
     free(data->last_request);
     free(data->last_request_headers);
+    free(data->last_response);
     for (size_t i = 0; i < data->type_count; i++) {
         ptn_soap_type_free(&data->types[i]);
     }
@@ -226417,6 +226425,23 @@ static PtnSoapClientData *ptn_soap_client_ensure_data(PtnValue receiver) {
         receiver.as.object->native_data_free = ptn_soap_client_data_free;
     }
     return (PtnSoapClientData *)receiver.as.object->native_data;
+}
+
+static void ptn_soap_client_store_last_response(
+    PtnSoapClientData *data,
+    PtnValue response
+) {
+    if (data == NULL || !ptn_soap_options_trace_enabled(data->options)) {
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(response);
+    if (resolved.type != PTN_STRING) {
+        return;
+    }
+    char *copy = ptn_duplicate_string_len((const char *)resolved.as.string.data, resolved.as.string.len);
+    free(data->last_response);
+    data->last_response = copy;
+    data->last_response_len = resolved.as.string.len;
 }
 
 static void ptn_soap_header_data_free(void *data_ptr) {
@@ -231843,6 +231868,8 @@ typedef struct {
     char *class_name;
     size_t class_ctor_argc;
     PtnValue *class_ctor_args;
+    char *last_response;
+    size_t last_response_len;
 } PtnSoapServerData;
 
 typedef struct {
@@ -231865,6 +231892,7 @@ static void ptn_soap_server_data_free(void *raw) {
         ptn_value_destroy(&data->class_ctor_args[i]);
     }
     free(data->class_ctor_args);
+    free(data->last_response);
     free(data);
 }
 
@@ -231896,6 +231924,8 @@ static PtnSoapServerData *ptn_soap_server_data_new(PtnValue wsdl, PtnValue optio
     data->class_name = NULL;
     data->class_ctor_argc = 0;
     data->class_ctor_args = NULL;
+    data->last_response = NULL;
+    data->last_response_len = 0;
     return data;
 }
 
@@ -231911,6 +231941,30 @@ static PtnSoapServerData *ptn_soap_server_ensure_data(PtnValue receiver) {
         receiver.as.object->native_data_free = ptn_soap_server_data_free;
     }
     return (PtnSoapServerData *)receiver.as.object->native_data;
+}
+
+static void ptn_soap_server_store_last_response(
+    PtnSoapServerData *data,
+    const char *response,
+    size_t response_len
+) {
+    if (data == NULL || !ptn_soap_options_trace_enabled(data->options)) {
+        return;
+    }
+    char *copy = ptn_duplicate_string_len(response == NULL ? "" : response, response_len);
+    free(data->last_response);
+    data->last_response = copy;
+    data->last_response_len = response_len;
+}
+
+static void ptn_soap_server_output_response(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    const char *response,
+    size_t response_len
+) {
+    ptn_soap_server_store_last_response(data, response, response_len);
+    ptn_output_write(runtime, response, response_len);
 }
 
 static char *ptn_soap_value_string_dup(PtnRuntime *runtime, PtnValue value, size_t line) {
@@ -236617,16 +236671,59 @@ static void ptn_soap_emit_encoded_null_response(
     if (omit_return) {
         ptn_string_buffer_append(&buffer, "/>");
     } else {
+        char *response_type_name = ptn_soap_wsdl_response_part_type(data, method_name);
         ptn_string_buffer_append(&buffer, "><");
         ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
-        ptn_string_buffer_append(&buffer, " xsi:nil=\"true\"/></ns");
+        ptn_string_buffer_append(&buffer, " xsi:nil=\"true\"");
+        if (response_type_name != NULL) {
+            if (ptn_soap_type_is_builtin_scalar(response_type_name)) {
+                ptn_string_buffer_append_format(
+                    &buffer,
+                    " xsi:type=\"xsd:%s\"",
+                    ptn_soap_xsd_type_name(response_type_name)
+                );
+            } else {
+                ptn_string_buffer_append_format(&buffer, " xsi:type=\"ns1:%s\"", response_type_name);
+            }
+        }
+        ptn_string_buffer_append(&buffer, "/></ns");
         ptn_string_buffer_append_format(&buffer, "%zu:%sResponse>", body_prefix, method_name == NULL ? "" : method_name);
+        free(response_type_name);
     }
     ptn_string_buffer_append(&buffer, "</SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
-    ptn_output_write(runtime, buffer.data, buffer.len);
+    ptn_soap_server_output_response(runtime, data, buffer.data, buffer.len);
     free(buffer.data);
     free(header_xml.data);
     ptn_soap_namespace_list_free(&namespaces);
+}
+
+static PtnValue ptn_soap_server_get_last_response(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc
+) {
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapServer::__getLastResponse() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSoapServerData *data = ptn_soap_server_ensure_data(receiver);
+    if (data == NULL || data->last_response == NULL) {
+        return ptn_null();
+    }
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len(data->last_response, data->last_response_len),
+        data->last_response_len
+    );
 }
 
 static void ptn_soap_emit_response(
@@ -240250,6 +240347,35 @@ static PtnValue ptn_soap_get_last_request_headers(
     );
 }
 
+static PtnValue ptn_soap_get_last_response(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc
+) {
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapClient::__getLastResponse() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
+    if (data == NULL || data->last_response == NULL) {
+        return ptn_null();
+    }
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len(data->last_response, data->last_response_len),
+        data->last_response_len
+    );
+}
+
 static PtnValue ptn_soap_set_location(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -240686,6 +240812,7 @@ static PtnValue ptn_soap_wsdl_operation_call(
     if (runtime->exceptions->active_exception != NULL) {
         return result;
     }
+    ptn_soap_client_store_last_response(data, result);
     PtnValue decoded = ptn_soap_decode_response_xml(runtime, data, method_name, result, 1, line);
     ptn_value_destroy(&result);
     return decoded;
@@ -240763,6 +240890,7 @@ static PtnValue ptn_soap_non_wsdl_operation_call(
     if (runtime->exceptions->active_exception != NULL) {
         return result;
     }
+    ptn_soap_client_store_last_response(data, result);
     PtnValue decoded = ptn_soap_decode_response_xml(runtime, data, method_name, result, 0, line);
     ptn_value_destroy(&result);
     return decoded;
@@ -240832,6 +240960,9 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     if (is_client && ptn_ascii_case_equal(name, "__getLastRequestHeaders")) {
         return ptn_soap_get_last_request_headers(runtime, receiver, argc);
     }
+    if (is_client && ptn_ascii_case_equal(name, "__getLastResponse")) {
+        return ptn_soap_get_last_response(runtime, receiver, argc);
+    }
     if (is_client && ptn_ascii_case_equal(name, "__setCookie")) {
         return ptn_soap_client_set_cookie(runtime, receiver, argc, args, line);
     }
@@ -240900,6 +241031,9 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     }
     if (is_server && ptn_ascii_case_equal(name, "getFunctions")) {
         return ptn_soap_server_get_functions(runtime, receiver, argc);
+    }
+    if (is_server && ptn_ascii_case_equal(name, "__getLastResponse")) {
+        return ptn_soap_server_get_last_response(runtime, receiver, argc);
     }
     if (is_server && ptn_ascii_case_equal(name, "setClass")) {
         return ptn_soap_server_set_class(runtime, receiver, argc, args, line);
@@ -248167,6 +248301,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "__getFunctions")
             || ptn_ascii_case_equal(method_name, "__getLastRequest")
             || ptn_ascii_case_equal(method_name, "__getLastRequestHeaders")
+            || ptn_ascii_case_equal(method_name, "__getLastResponse")
             || ptn_ascii_case_equal(method_name, "__getTypes")
             || ptn_ascii_case_equal(method_name, "__setCookie")
             || ptn_ascii_case_equal(method_name, "__setLocation")
@@ -248175,6 +248310,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_soap_server(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__getLastResponse")
             || ptn_ascii_case_equal(method_name, "addFunction")
             || ptn_ascii_case_equal(method_name, "getFunctions")
             || ptn_ascii_case_equal(method_name, "setClass")
@@ -250106,6 +250242,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "__getFunctions");
         ptn_append_method_name(result, &index, "__getLastRequest");
         ptn_append_method_name(result, &index, "__getLastRequestHeaders");
+        ptn_append_method_name(result, &index, "__getLastResponse");
         ptn_append_method_name(result, &index, "__getTypes");
         ptn_append_method_name(result, &index, "__setCookie");
         ptn_append_method_name(result, &index, "__setLocation");
@@ -250115,6 +250252,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_soap_server(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "__getLastResponse");
         ptn_append_method_name(result, &index, "addFunction");
         ptn_append_method_name(result, &index, "getFunctions");
         ptn_append_method_name(result, &index, "setClass");
