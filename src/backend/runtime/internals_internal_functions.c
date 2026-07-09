@@ -228833,7 +228833,27 @@ static void ptn_soap_append_schema_scalar_value(
         return;
     }
     if (schema_type != NULL && schema_type->is_union) {
-        ptn_soap_append_scalar_value(runtime, buffer, value, "string", line);
+        PtnValue resolved = ptn_value_deref(value);
+        if (resolved.type == PTN_ARRAY && resolved.as.array != NULL) {
+            for (size_t i = 0; i < resolved.as.array->len; i++) {
+                if (i != 0) {
+                    ptn_string_buffer_append_char(buffer, ' ');
+                }
+                ptn_soap_append_scalar_value(
+                    runtime,
+                    buffer,
+                    resolved.as.array->entries[i].value,
+                    "string",
+                    line
+                );
+                if (runtime->exceptions->active_exception != NULL) {
+                    free(local);
+                    return;
+                }
+            }
+        } else {
+            ptn_soap_append_scalar_value(runtime, buffer, value, "string", line);
+        }
         free(local);
         return;
     }

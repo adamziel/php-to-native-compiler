@@ -1,3 +1,4 @@
+ext/soap/tests/schema/schema020.phpt
 ext/soap/tests/schema/schema035.phpt
 ext/soap/tests/schema/schema036.phpt
 ext/soap/tests/schema/schema040.phpt
