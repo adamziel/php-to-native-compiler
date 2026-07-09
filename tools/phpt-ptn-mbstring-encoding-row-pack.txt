@@ -1,2 +1,7 @@
+ext/mbstring/tests/zend_multibyte-05.phpt
+ext/mbstring/tests/zend_multibyte-06.phpt
+ext/mbstring/tests/zend_multibyte-07.phpt
+ext/mbstring/tests/zend_multibyte-08.phpt
+ext/mbstring/tests/zend_multibyte-09.phpt
 ext/mbstring/tests/uuencode_encoding.phpt
 ext/mbstring/tests/zh_CN_default_encodings.phpt

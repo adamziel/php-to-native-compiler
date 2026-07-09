@@ -212,8 +212,9 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
         .script_encoding
         .as_deref()
         .filter(|encoding| is_usable_source_encoding(encoding))
-        .map(str::to_string)
-        .or_else(|| sniff_declared_source_encoding(bytes))
+        .map(str::to_string);
+    let source_encoding = sniff_declared_source_encoding(bytes)
+        .or(source_encoding)
         .or_else(|| {
             options
                 .internal_encoding
@@ -277,6 +278,13 @@ fn canonical_encoding_key(value: &str) -> Vec<u8> {
 }
 
 fn iconv_convert_bytes(bytes: &[u8], from: &str, to: &str) -> Result<Vec<u8>> {
+    let input_bytes;
+    let bytes = if encoding_names_equivalent(from, "EUC-JP") && encoding_names_equivalent(to, "UTF-8") {
+        input_bytes = sanitize_euc_jp_source_bytes(bytes);
+        input_bytes.as_slice()
+    } else {
+        bytes
+    };
     let from = CString::new(from)
         .map_err(|_| Diagnostic::new("source encoding name contains an interior NUL byte", None))?;
     let to = CString::new(to)
@@ -294,6 +302,52 @@ fn iconv_convert_bytes(bytes: &[u8], from: &str, to: &str) -> Result<Vec<u8>> {
         iconv_close(descriptor);
     }
     result
+}
+
+fn sanitize_euc_jp_source_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let byte = bytes[i];
+        if byte <= 0x7f {
+            output.push(byte);
+            i += 1;
+        } else if (0xa1..=0xfe).contains(&byte) {
+            if i + 1 < bytes.len() && (0xa1..=0xfe).contains(&bytes[i + 1]) {
+                output.push(byte);
+                output.push(bytes[i + 1]);
+                i += 2;
+            } else {
+                output.push(b'?');
+                i += if i + 1 < bytes.len() { 2 } else { 1 };
+            }
+        } else if byte == 0x8e {
+            if i + 1 < bytes.len() && (0xa1..=0xdf).contains(&bytes[i + 1]) {
+                output.push(byte);
+                output.push(bytes[i + 1]);
+                i += 2;
+            } else {
+                output.push(b'?');
+                i += 1;
+            }
+        } else if byte == 0x8f {
+            if i + 2 < bytes.len() &&
+                (0xa1..=0xfe).contains(&bytes[i + 1]) &&
+                (0xa1..=0xfe).contains(&bytes[i + 2]) {
+                output.push(byte);
+                output.push(bytes[i + 1]);
+                output.push(bytes[i + 2]);
+                i += 3;
+            } else {
+                output.push(b'?');
+                i += 1;
+            }
+        } else {
+            output.push(b'?');
+            i += 1;
+        }
+    }
+    output
 }
 
 fn iconv_convert_bytes_with_descriptor(descriptor: *mut c_void, bytes: &[u8]) -> Result<Vec<u8>> {
@@ -321,6 +375,17 @@ fn iconv_convert_bytes_with_descriptor(descriptor: *mut c_void, bytes: &[u8]) ->
         }
         if output_left == 0 {
             output.resize(output.len().saturating_mul(2).max(64), 0);
+            continue;
+        }
+        if input_left > 0 {
+            if output_used == output.len() {
+                output.resize(output.len().saturating_mul(2).max(64), 0);
+                continue;
+            }
+            output[output_used] = b'?';
+            output_used += 1;
+            input_ptr = unsafe { input_ptr.add(1) };
+            input_left -= 1;
             continue;
         }
         return Err(Diagnostic::new(
