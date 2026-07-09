@@ -4113,6 +4113,48 @@ static PTN_UNUSED void ptn_throw_exception_at_without_current_trace_frame(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_exception_to_string_conversion_error(
+    PtnRuntime *runtime,
+    char *message
+) {
+    if (runtime == NULL) {
+        free(message);
+        exit(255);
+    }
+    PtnTraceFrame trace_frame;
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "Exception->__toString",
+        NULL,
+        0,
+        0,
+        NULL
+    );
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "Error",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        "[no active file]",
+        0
+    );
+    runtime->trace_frame = saved_trace_frame;
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
     ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
 }
@@ -4948,8 +4990,32 @@ static PTN_UNUSED PtnStringOperand ptn_object_exception_message(
         message_len = message_value.as.string.len;
         message = ptn_duplicate_string_len((const char *)message_value.as.string.data, message_len);
     } else if (message_value.type == PTN_OBJECT) {
-        PtnStringOperand object_message =
-            ptn_value_to_string_operand_with_runtime(runtime, message_value, line);
+        PtnStringOperand object_message;
+        if (!ptn_try_object_to_string_operand(runtime, message_value, line, &object_message)) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "Object of class %s could not be converted to string",
+                message_value.as.object->class_name
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *conversion_message = malloc((size_t)needed + 1);
+            if (conversion_message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                conversion_message,
+                (size_t)needed + 1,
+                "Object of class %s could not be converted to string",
+                message_value.as.object->class_name
+            );
+            ptn_throw_exception_to_string_conversion_error(runtime, conversion_message);
+            ptn_value_destroy(&lookup.value);
+            char *empty = ptn_duplicate_string("");
+            return (PtnStringOperand) { empty, empty, 0 };
+        }
         if (ptn_runtime_has_active_exception(runtime)) {
             ptn_string_operand_free(object_message);
             ptn_value_destroy(&lookup.value);
