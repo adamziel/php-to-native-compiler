@@ -85,6 +85,7 @@ pub struct CompileSourceOptions {
     pub force_internal_function_dispatch: bool,
     pub zend_test_observer_execute_internal: bool,
     pub zend_test_observer_show_return_value: bool,
+    pub short_open_tag: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +147,7 @@ fn compile_file_inner_with_source_options(
         &source,
         &HashMap::new(),
         source_options.zend_multibyte,
+        source_options.short_open_tag,
     )?;
     let source_file = input.to_string_lossy().into_owned();
     let source_dir = input
@@ -167,6 +169,7 @@ fn compile_file_inner_with_source_options(
         &included_classes,
         &included_traits,
         source_options.zend_multibyte,
+        source_options.short_open_tag,
     )?;
     let include_sources = includes.sources;
     let include_resolutions = includes.resolutions;
@@ -1635,6 +1638,7 @@ impl IncludeCollector {
             &source,
             &self.runtime_class_aliases,
             self.source_options.zend_multibyte,
+            self.source_options.short_open_tag,
         ) {
             Ok(program) => (program, None),
             Err(error) if error.kind == DiagnosticKind::ParseError => {
@@ -1729,6 +1733,7 @@ impl IncludeCollector {
                     &included_classes,
                     &included_traits,
                     self.source_options.zend_multibyte,
+                    self.source_options.short_open_tag,
                 )?;
         }
         Ok(())

@@ -587,6 +587,7 @@ struct RuntimeIni {
     allow_url_fopen: Option<String>,
     allow_url_include: Option<String>,
     allow_url_include_deprecated: bool,
+    short_open_tag: Option<String>,
     zend_test_observer_execute_internal: Option<String>,
     zend_test_observer_show_return_value: Option<String>,
 }
@@ -825,6 +826,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         if let Some(parsed) = parse_error_reporting_level(raw_value) {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("short_open_tag") {
+        ini.short_open_tag = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("ignore_repeated_errors") {
         ini.ignore_repeated_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("ignore_repeated_source") {
@@ -1743,6 +1746,7 @@ fn compile_and_run(
         allow_url_fopen: ini.allow_url_fopen.clone(),
         allow_url_include: ini.allow_url_include.clone(),
         allow_url_include_deprecated: ini.allow_url_include_deprecated,
+        short_open_tag: ini.short_open_tag.clone(),
         zend_test_observer_execute_internal: ini.zend_test_observer_execute_internal.clone(),
         zend_test_observer_show_return_value: ini.zend_test_observer_show_return_value.clone(),
     };
@@ -1786,6 +1790,7 @@ fn compile_and_run(
             .mbstring_encoding_translation
             .as_deref()
             .is_some_and(ini_scalar_truthy),
+        short_open_tag: ini.short_open_tag.as_deref().is_some_and(ini_scalar_truthy),
         force_internal_function_dispatch: ini
             .output_handler
             .as_deref()

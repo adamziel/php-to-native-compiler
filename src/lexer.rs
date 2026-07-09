@@ -280,6 +280,13 @@ pub fn lex_with_warnings(source: &str) -> Result<LexOutput> {
     Lexer::new(source).lex()
 }
 
+pub fn lex_with_warnings_and_short_open_tag(
+    source: &str,
+    short_open_tag: bool,
+) -> Result<LexOutput> {
+    Lexer::new(source).with_short_open_tag(short_open_tag).lex()
+}
+
 struct Lexer<'a> {
     source: &'a str,
     cursor: usize,
@@ -289,6 +296,7 @@ struct Lexer<'a> {
     compile_warnings: Vec<CompileWarning>,
     seen_open_tag: bool,
     closed_php: bool,
+    short_open_tag: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -302,7 +310,13 @@ impl<'a> Lexer<'a> {
             compile_warnings: Vec::new(),
             seen_open_tag: false,
             closed_php: false,
+            short_open_tag: false,
         }
+    }
+
+    fn with_short_open_tag(mut self, short_open_tag: bool) -> Self {
+        self.short_open_tag = short_open_tag;
+        self
     }
 
     fn lex(mut self) -> Result<LexOutput> {
@@ -560,6 +574,7 @@ impl<'a> Lexer<'a> {
 
     fn source_starts_with_open_tag_at(&self, cursor: usize) -> bool {
         self.source_starts_with_php_open_tag_at(cursor)
+            || self.source_starts_with_short_open_tag_at(cursor)
             || self.source_starts_with_short_echo_tag_at(cursor)
     }
 
@@ -577,6 +592,15 @@ impl<'a> Lexer<'a> {
         self.source
             .get(cursor..cursor.saturating_add(3))
             .is_some_and(|tag| tag == "<?=")
+    }
+
+    fn source_starts_with_short_open_tag_at(&self, cursor: usize) -> bool {
+        self.short_open_tag
+            && self
+                .source
+                .get(cursor..cursor.saturating_add(2))
+                .is_some_and(|tag| tag == "<?")
+            && !self.source_starts_with_short_echo_tag_at(cursor)
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -2277,9 +2301,17 @@ impl<'a> Lexer<'a> {
     fn push_open_or_short_echo_tag(&mut self) {
         if self.source_starts_with_short_echo_tag_at(self.cursor) {
             self.push_short_echo_tag();
+        } else if self.source_starts_with_short_open_tag_at(self.cursor) {
+            self.push_short_open_tag();
         } else {
             self.push_open_tag();
         }
+    }
+
+    fn push_short_open_tag(&mut self) {
+        self.push_fixed(TokenKind::OpenTag, 2);
+        self.seen_open_tag = true;
+        self.closed_php = false;
     }
 
     fn push_short_echo_tag(&mut self) {

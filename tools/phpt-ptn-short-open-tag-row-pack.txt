@@ -1,0 +1,3 @@
+tests/lang/short_tags.001.phpt
+tests/lang/short_tags.002.phpt
+tests/lang/short_tags.004.phpt

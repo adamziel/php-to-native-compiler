@@ -18,8 +18,9 @@ use crate::ast::{
 };
 use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
-    lex_with_warnings, StringInterpolationIndex as TokenStringInterpolationIndex,
-    StringPart as TokenStringPart, Token, TokenKind,
+    lex_with_warnings, lex_with_warnings_and_short_open_tag,
+    StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
+    Token, TokenKind,
 };
 
 const KEYWORD_OR_PRECEDENCE: u8 = 1;
@@ -72,6 +73,7 @@ pub(crate) fn parse_for_include_collection_with_multibyte(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
     zend_multibyte: bool,
+    short_open_tag: bool,
 ) -> Result<Program> {
     parse_with_options(
         source,
@@ -82,6 +84,7 @@ pub(crate) fn parse_for_include_collection_with_multibyte(
         false,
         false,
         zend_multibyte,
+        short_open_tag,
     )
 }
 
@@ -98,6 +101,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
         true,
         false,
         false,
+        false,
     )
 }
 
@@ -107,6 +111,7 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols_with_multibyte(
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
     zend_multibyte: bool,
+    short_open_tag: bool,
 ) -> Result<Program> {
     parse_with_options(
         source,
@@ -117,6 +122,7 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols_with_multibyte(
         true,
         false,
         zend_multibyte,
+        short_open_tag,
     )
 }
 
@@ -126,6 +132,7 @@ pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols_with_multibyt
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
     zend_multibyte: bool,
+    short_open_tag: bool,
 ) -> Result<Program> {
     parse_with_options(
         source,
@@ -136,6 +143,7 @@ pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols_with_multibyt
         false,
         false,
         zend_multibyte,
+        short_open_tag,
     )
 }
 
@@ -148,8 +156,9 @@ fn parse_with_options(
     validate_function_names: bool,
     force_top_level_declarations_conditional: bool,
     zend_multibyte: bool,
+    short_open_tag: bool,
 ) -> Result<Program> {
-    let lexed = lex_with_warnings(source)?;
+    let lexed = lex_with_warnings_and_short_open_tag(source, short_open_tag)?;
     let tokens = lexed.tokens;
     let compiler_halt_offset = find_compiler_halt_offset(&tokens);
     let mut parser = Parser {
@@ -197,6 +206,7 @@ fn parse_with_options(
         ticks: false,
         strict_types_declare_allowed: true,
         zend_multibyte,
+        short_open_tag,
         compiler_halt_offset,
         compile_warnings: lexed.compile_warnings,
         validate_method_signatures,
@@ -277,6 +287,7 @@ struct Parser<'a> {
     ticks: bool,
     strict_types_declare_allowed: bool,
     zend_multibyte: bool,
+    short_open_tag: bool,
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
@@ -678,10 +689,7 @@ impl Parser<'_> {
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
         collect_continue_targeting_switch_warnings(&statements, &mut self.compile_warnings);
-        collect_http_response_header_deprecation_warnings(
-            &statements,
-            &mut self.compile_warnings,
-        );
+        collect_http_response_header_deprecation_warnings(&statements, &mut self.compile_warnings);
         for function in &functions {
             validate_anonymous_functions_in_statements(&function.body, &functions)?;
             validate_reference_assignment_sources(&function.body, &functions)?;
@@ -6907,6 +6915,7 @@ impl Parser<'_> {
             true,
             true,
             self.zend_multibyte,
+            self.short_open_tag,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -7059,6 +7068,7 @@ impl Parser<'_> {
             true,
             true,
             self.zend_multibyte,
+            self.short_open_tag,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -7112,6 +7122,7 @@ impl Parser<'_> {
             true,
             true,
             self.zend_multibyte,
+            self.short_open_tag,
         ) {
             Ok(program) => program,
             Err(_) => return Ok(None),
@@ -9621,6 +9632,7 @@ impl Parser<'_> {
             ticks: self.ticks,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
             zend_multibyte: self.zend_multibyte,
+            short_open_tag: self.short_open_tag,
             compiler_halt_offset: None,
             compile_warnings: lexed.compile_warnings,
             validate_method_signatures: false,
@@ -22004,14 +22016,22 @@ fn first_http_response_header_read_in_statement(
             assigned.insert(name.to_ascii_lowercase());
             read
         }
-        Statement::ArrayAssign { target, value, .. } => first_http_response_header_read_in_array_dim_target(target, assigned)
-            .or_else(|| first_http_response_header_read_in_expr(value, assigned)),
-        Statement::ArrayAssignRef { target, source, .. } => first_http_response_header_read_in_array_dim_target(target, assigned)
-            .or_else(|| first_http_response_header_read_in_expr(source, assigned)),
-        Statement::Increment { target, .. } => first_http_response_header_read_in_inc_dec_target(target, assigned),
+        Statement::ArrayAssign { target, value, .. } => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(value, assigned))
+        }
+        Statement::ArrayAssignRef { target, source, .. } => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(source, assigned))
+        }
+        Statement::Increment { target, .. } => {
+            first_http_response_header_read_in_inc_dec_target(target, assigned)
+        }
         Statement::Unset { targets, .. } => {
             for target in targets {
-                if let Some(span) = first_http_response_header_read_in_unset_target(target, assigned) {
+                if let Some(span) =
+                    first_http_response_header_read_in_unset_target(target, assigned)
+                {
                     return Some(span);
                 }
             }
@@ -22040,15 +22060,19 @@ fn first_http_response_header_read_in_statement(
             }
             None
         }
-        Statement::Call { arguments, .. } | Statement::Echo { expressions: arguments, .. } => {
-            first_http_response_header_read_in_exprs(arguments, assigned)
-        }
+        Statement::Call { arguments, .. }
+        | Statement::Echo {
+            expressions: arguments,
+            ..
+        } => first_http_response_header_read_in_exprs(arguments, assigned),
         Statement::Print { expression, .. } | Statement::Expression { expression, .. } => {
             first_http_response_header_read_in_expr(expression, assigned)
         }
         Statement::Const { declarations, .. } => {
             for declaration in declarations {
-                if let Some(span) = first_http_response_header_read_in_expr(&declaration.value, assigned) {
+                if let Some(span) =
+                    first_http_response_header_read_in_expr(&declaration.value, assigned)
+                {
                     return Some(span);
                 }
             }
@@ -22073,11 +22097,10 @@ fn first_http_response_header_read_in_statement(
             }),
         Statement::While {
             condition, body, ..
-        } => first_http_response_header_read_in_expr(condition, assigned)
-            .or_else(|| {
-                let mut loop_assigned = assigned.clone();
-                first_http_response_header_read_in_statements(body, &mut loop_assigned)
-            }),
+        } => first_http_response_header_read_in_expr(condition, assigned).or_else(|| {
+            let mut loop_assigned = assigned.clone();
+            first_http_response_header_read_in_statements(body, &mut loop_assigned)
+        }),
         Statement::DoWhile {
             body, condition, ..
         } => {
@@ -22104,34 +22127,37 @@ fn first_http_response_header_read_in_statement(
             value,
             body,
             ..
-        } => first_http_response_header_read_in_expr(iterable, assigned)
-            .or_else(|| {
-                if let Some(key) = key {
-                    mark_assignment_target_assigned(key, assigned);
-                }
-                mark_assignment_target_assigned(value, assigned);
-                let mut loop_assigned = assigned.clone();
-                first_http_response_header_read_in_statements(body, &mut loop_assigned)
-            }),
+        } => first_http_response_header_read_in_expr(iterable, assigned).or_else(|| {
+            if let Some(key) = key {
+                mark_assignment_target_assigned(key, assigned);
+            }
+            mark_assignment_target_assigned(value, assigned);
+            let mut loop_assigned = assigned.clone();
+            first_http_response_header_read_in_statements(body, &mut loop_assigned)
+        }),
         Statement::Switch {
             expression, cases, ..
         } => first_http_response_header_read_in_expr(expression, assigned).or_else(|| {
             for case in cases {
                 let mut case_assigned = assigned.clone();
                 if let Some(condition) = &case.condition {
-                    if let Some(span) = first_http_response_header_read_in_expr(condition, &mut case_assigned) {
+                    if let Some(span) =
+                        first_http_response_header_read_in_expr(condition, &mut case_assigned)
+                    {
                         return Some(span);
                     }
                 }
-                if let Some(span) = first_http_response_header_read_in_statements(&case.body, &mut case_assigned) {
+                if let Some(span) =
+                    first_http_response_header_read_in_statements(&case.body, &mut case_assigned)
+                {
                     return Some(span);
                 }
             }
             None
         }),
-        Statement::Return { value, .. } | Statement::Exit { value, .. } => {
-            value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned))
-        }
+        Statement::Return { value, .. } | Statement::Exit { value, .. } => value
+            .as_ref()
+            .and_then(|value| first_http_response_header_read_in_expr(value, assigned)),
         Statement::Throw { value, .. } => first_http_response_header_read_in_expr(value, assigned),
         Statement::Try {
             body,
@@ -22147,7 +22173,10 @@ fn first_http_response_header_read_in_statement(
                         if let Some(variable) = &catch.variable {
                             catch_assigned.insert(variable.to_ascii_lowercase());
                         }
-                        if let Some(span) = first_http_response_header_read_in_statements(&catch.body, &mut catch_assigned) {
+                        if let Some(span) = first_http_response_header_read_in_statements(
+                            &catch.body,
+                            &mut catch_assigned,
+                        ) {
                             return Some(span);
                         }
                     }
@@ -22155,7 +22184,10 @@ fn first_http_response_header_read_in_statement(
                 })
                 .or_else(|| {
                     let mut finally_assigned = assigned.clone();
-                    first_http_response_header_read_in_statements(finally_body, &mut finally_assigned)
+                    first_http_response_header_read_in_statements(
+                        finally_body,
+                        &mut finally_assigned,
+                    )
                 })
         }
         Statement::Empty { .. }
@@ -22194,7 +22226,9 @@ fn first_http_response_header_read_in_expr(
         }
         Expr::DynamicVariable { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
-        | Expr::DynamicNewObject { class_name: name, .. }
+        | Expr::DynamicNewObject {
+            class_name: name, ..
+        }
         | Expr::Clone { expr: name, .. }
         | Expr::Empty { target: name, .. }
         | Expr::Print {
@@ -22206,21 +22240,27 @@ fn first_http_response_header_read_in_expr(
         | Expr::Unary { expr: name, .. }
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
-        | Expr::PipeValue { expr: name, .. } => first_http_response_header_read_in_expr(name, assigned),
+        | Expr::PipeValue { expr: name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
         Expr::AnonymousFunction(function) => {
             let mut function_assigned = HashSet::new();
             first_http_response_header_read_in_statements(&function.body, &mut function_assigned)
         }
-        Expr::IncDec { target, .. } => first_http_response_header_read_in_inc_dec_target(target, assigned),
+        Expr::IncDec { target, .. } => {
+            first_http_response_header_read_in_inc_dec_target(target, assigned)
+        }
         Expr::Assign {
             target, op, value, ..
         } => {
             if !matches!(op, AssignmentOp::Assign) {
-                if let Some(span) = first_http_response_header_read_in_assignment_target(target, assigned) {
+                if let Some(span) =
+                    first_http_response_header_read_in_assignment_target(target, assigned)
+                {
                     return Some(span);
                 }
             } else if let AssignmentTarget::DynamicVariable { name, .. }
-                | AssignmentTarget::DynamicArrayDim { name, .. } = target
+            | AssignmentTarget::DynamicArrayDim { name, .. } = target
             {
                 if let Some(span) = first_http_response_header_read_in_expr(name, assigned) {
                     return Some(span);
@@ -22275,18 +22315,25 @@ fn first_http_response_header_read_in_expr(
         Expr::ParentPropertyHookCall { arguments, .. } => {
             first_http_response_header_read_in_exprs(arguments, assigned)
         }
-        Expr::InstanceOf { expr, target, .. } => first_http_response_header_read_in_expr(expr, assigned)
-            .or_else(|| match target {
-                InstanceOfTarget::Expr(target) => first_http_response_header_read_in_expr(target, assigned),
+        Expr::InstanceOf { expr, target, .. } => {
+            first_http_response_header_read_in_expr(expr, assigned).or_else(|| match target {
+                InstanceOfTarget::Expr(target) => {
+                    first_http_response_header_read_in_expr(target, assigned)
+                }
                 InstanceOfTarget::ClassName { .. } => None,
-            }),
+            })
+        }
         Expr::Match { subject, arms, .. } => {
             first_http_response_header_read_in_expr(subject, assigned).or_else(|| {
                 for arm in arms {
-                    if let Some(span) = first_http_response_header_read_in_exprs(&arm.conditions, assigned) {
+                    if let Some(span) =
+                        first_http_response_header_read_in_exprs(&arm.conditions, assigned)
+                    {
                         return Some(span);
                     }
-                    if let Some(span) = first_http_response_header_read_in_expr(&arm.value, assigned) {
+                    if let Some(span) =
+                        first_http_response_header_read_in_expr(&arm.value, assigned)
+                    {
                         return Some(span);
                     }
                 }
@@ -22316,16 +22363,24 @@ fn first_http_response_header_read_in_expr(
             None
         }
         Expr::List(list) => first_http_response_header_read_in_list_expr(list, assigned),
-        Expr::ArrayAccess { array, index, .. } => first_http_response_header_read_in_expr(array, assigned)
-            .or_else(|| index.as_ref().and_then(|index| first_http_response_header_read_in_expr(index, assigned))),
-        Expr::Exit { value, .. } => {
-            value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned))
+        Expr::ArrayAccess { array, index, .. } => {
+            first_http_response_header_read_in_expr(array, assigned).or_else(|| {
+                index
+                    .as_ref()
+                    .and_then(|index| first_http_response_header_read_in_expr(index, assigned))
+            })
         }
-        Expr::Yield { key, value, .. } => {
-            key.as_ref()
-                .and_then(|key| first_http_response_header_read_in_expr(key, assigned))
-                .or_else(|| value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned)))
-        }
+        Expr::Exit { value, .. } => value
+            .as_ref()
+            .and_then(|value| first_http_response_header_read_in_expr(value, assigned)),
+        Expr::Yield { key, value, .. } => key
+            .as_ref()
+            .and_then(|key| first_http_response_header_read_in_expr(key, assigned))
+            .or_else(|| {
+                value
+                    .as_ref()
+                    .and_then(|value| first_http_response_header_read_in_expr(value, assigned))
+            }),
         Expr::Binary { left, right, .. } => first_http_response_header_read_in_expr(left, assigned)
             .or_else(|| first_http_response_header_read_in_expr(right, assigned)),
         Expr::Ternary {
@@ -22334,7 +22389,11 @@ fn first_http_response_header_read_in_expr(
             if_false,
             ..
         } => first_http_response_header_read_in_expr(condition, assigned)
-            .or_else(|| if_true.as_ref().and_then(|expr| first_http_response_header_read_in_expr(expr, assigned)))
+            .or_else(|| {
+                if_true
+                    .as_ref()
+                    .and_then(|expr| first_http_response_header_read_in_expr(expr, assigned))
+            })
             .or_else(|| first_http_response_header_read_in_expr(if_false, assigned)),
         Expr::InterpolatedString(parts, _) => {
             first_http_response_header_read_in_string_parts(parts, assigned)
@@ -22378,11 +22437,13 @@ fn first_http_response_header_read_in_assignment_target(
         | AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
             first_http_response_header_read_in_expr(name, assigned)
         }
-        AssignmentTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
-        AssignmentTarget::ValueArrayDim { array, dimensions, .. } => {
-            first_http_response_header_read_in_expr(array, assigned)
-                .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned))
+        AssignmentTarget::ArrayDim(target) => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
         }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => first_http_response_header_read_in_expr(array, assigned)
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
         AssignmentTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -22413,7 +22474,9 @@ fn first_http_response_header_read_in_assignment_target(
             first_http_response_header_read_in_expr(receiver, assigned)
                 .or_else(|| first_http_response_header_read_in_expr(name, assigned))
         }
-        AssignmentTarget::List(target) => first_http_response_header_read_in_list_assignment_target(target, assigned),
+        AssignmentTarget::List(target) => {
+            first_http_response_header_read_in_list_assignment_target(target, assigned)
+        }
         AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => None,
     }
 }
@@ -22431,7 +22494,9 @@ fn first_http_response_header_read_in_reference_target(
         ReferenceTarget::DynamicVariable { name, .. } => {
             first_http_response_header_read_in_expr(name, assigned)
         }
-        ReferenceTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
+        ReferenceTarget::ArrayDim(target) => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
+        }
         ReferenceTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -22464,11 +22529,13 @@ fn first_http_response_header_read_in_inc_dec_target(
         | IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             first_http_response_header_read_in_expr(name, assigned)
         }
-        IncDecTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
-        IncDecTarget::ValueArrayDim { array, dimensions, .. } => {
-            first_http_response_header_read_in_expr(array, assigned)
-                .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned))
+        IncDecTarget::ArrayDim(target) => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => first_http_response_header_read_in_expr(array, assigned)
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
         IncDecTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -22500,11 +22567,13 @@ fn first_http_response_header_read_in_unset_target(
         | UnsetTarget::DynamicStaticPropertyName { name, .. } => {
             first_http_response_header_read_in_expr(name, assigned)
         }
-        UnsetTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
-        UnsetTarget::ValueArrayDim { array, dimensions, .. } => {
-            first_http_response_header_read_in_expr(array, assigned)
-                .or_else(|| first_http_response_header_read_in_exprs(dimensions, assigned))
+        UnsetTarget::ArrayDim(target) => {
+            first_http_response_header_read_in_array_dim_target(target, assigned)
         }
+        UnsetTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => first_http_response_header_read_in_expr(array, assigned)
+            .or_else(|| first_http_response_header_read_in_exprs(dimensions, assigned)),
         UnsetTarget::PropertyArrayDim {
             receiver,
             dimensions,
