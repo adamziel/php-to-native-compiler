@@ -1314,6 +1314,7 @@ typedef struct {
 struct PtnGenerator {
     PtnArray *values;
     PtnArray *keys;
+    PtnArray *key_is_auto;
     PtnObject *object;
     PtnValue return_value;
     PtnArray *reference_notice_lines;
@@ -1332,6 +1333,9 @@ struct PtnGenerator {
     PtnArray *send_call_lines;
     PtnArray *send_yield_from_positions;
     PtnArray *send_yield_from_lines;
+    PtnArray *send_yield_slot_source_positions;
+    PtnArray *send_yield_slot_target_positions;
+    PtnArray *send_yield_slot_kinds;
     PtnArray *throw_catch_positions;
     PtnArray *throw_catch_handler_ids;
     PtnValue pending_exception;
@@ -2312,6 +2316,8 @@ static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime,
 static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, const PtnValue *yield_paths, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtime, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_yield_slot(PtnRuntime *runtime, size_t source_back_offset, int update_key, size_t line);
+static PTN_UNUSED void ptn_generator_apply_send_yield_slots(PtnRuntime *runtime, PtnGenerator *generator, PtnValue sent_value);
 static PTN_UNUSED void ptn_generator_register_throw_catch(PtnRuntime *runtime, size_t handler_id);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);

@@ -11337,6 +11337,9 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->keys != NULL) {
         ptn_array_free(generator->keys);
     }
+    if (generator->key_is_auto != NULL) {
+        ptn_array_free(generator->key_is_auto);
+    }
     ptn_value_destroy(&generator->return_value);
     if (generator->reference_notice_lines != NULL) {
         ptn_array_free(generator->reference_notice_lines);
@@ -11386,6 +11389,15 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     }
     if (generator->send_yield_from_lines != NULL) {
         ptn_array_free(generator->send_yield_from_lines);
+    }
+    if (generator->send_yield_slot_source_positions != NULL) {
+        ptn_array_free(generator->send_yield_slot_source_positions);
+    }
+    if (generator->send_yield_slot_target_positions != NULL) {
+        ptn_array_free(generator->send_yield_slot_target_positions);
+    }
+    if (generator->send_yield_slot_kinds != NULL) {
+        ptn_array_free(generator->send_yield_slot_kinds);
     }
     if (generator->throw_catch_positions != NULL) {
         ptn_array_free(generator->throw_catch_positions);
@@ -11527,6 +11539,7 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     }
     PtnValue values = ptn_array_from_literal_entries(0, NULL);
     PtnValue keys = ptn_array_from_literal_entries(0, NULL);
+    PtnValue key_is_auto = ptn_array_from_literal_entries(0, NULL);
     PtnValue reference_notice_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue yield_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue delegate_sources = ptn_array_from_literal_entries(0, NULL);
@@ -11543,10 +11556,14 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue send_call_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_positions = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_yield_from_lines = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_yield_slot_source_positions = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_yield_slot_target_positions = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_yield_slot_kinds = ptn_array_from_literal_entries(0, NULL);
     PtnValue throw_catch_positions = ptn_array_from_literal_entries(0, NULL);
     PtnValue throw_catch_handler_ids = ptn_array_from_literal_entries(0, NULL);
     generator->values = values.as.array;
     generator->keys = keys.as.array;
+    generator->key_is_auto = key_is_auto.as.array;
     generator->object = NULL;
     generator->return_value = ptn_null();
     generator->reference_notice_lines = reference_notice_lines.as.array;
@@ -11565,6 +11582,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->send_call_lines = send_call_lines.as.array;
     generator->send_yield_from_positions = send_yield_from_positions.as.array;
     generator->send_yield_from_lines = send_yield_from_lines.as.array;
+    generator->send_yield_slot_source_positions = send_yield_slot_source_positions.as.array;
+    generator->send_yield_slot_target_positions = send_yield_slot_target_positions.as.array;
+    generator->send_yield_slot_kinds = send_yield_slot_kinds.as.array;
     generator->throw_catch_positions = throw_catch_positions.as.array;
     generator->throw_catch_handler_ids = throw_catch_handler_ids.as.array;
     generator->pending_exception = ptn_null();
@@ -12050,6 +12070,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
         generator == NULL ||
         generator->values == NULL ||
         generator->keys == NULL ||
+        generator->key_is_auto == NULL ||
         generator->reference_notice_lines == NULL ||
         generator->yield_lines == NULL ||
         generator->delegate_sources == NULL ||
@@ -12100,6 +12121,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     if (
         !ptn_array_append_key_available(runtime, generator->values) ||
         !ptn_array_append_key_available(runtime, generator->keys) ||
+        !ptn_array_append_key_available(runtime, generator->key_is_auto) ||
         !ptn_array_append_key_available(runtime, generator->reference_notice_lines) ||
         !ptn_array_append_key_available(runtime, generator->yield_lines) ||
         !ptn_array_append_key_available(runtime, generator->delegate_sources) ||
@@ -12113,6 +12135,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     }
     PtnArrayKey value_key = ptn_array_int_key(generator->values->next_auto_key);
     PtnArrayKey raw_key_index = ptn_array_int_key(generator->keys->next_auto_key);
+    PtnArrayKey key_auto_key = ptn_array_int_key(generator->key_is_auto->next_auto_key);
     PtnArrayKey notice_key = ptn_array_int_key(generator->reference_notice_lines->next_auto_key);
     PtnArrayKey line_key = ptn_array_int_key(generator->yield_lines->next_auto_key);
     PtnArrayKey delegate_key = ptn_array_int_key(generator->delegate_sources->next_auto_key);
@@ -12120,6 +12143,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     PtnArrayKey output_key = ptn_array_int_key(generator->output_chunks->next_auto_key);
     ptn_array_set_entry(generator->values, value_key, stored);
     ptn_array_set_entry(generator->keys, raw_key_index, raw_key);
+    ptn_array_set_entry(generator->key_is_auto, key_auto_key, ptn_int(has_key ? 0 : 1));
     ptn_array_set_entry(generator->reference_notice_lines, notice_key, reference_notice_line);
     ptn_array_set_entry(generator->yield_lines, line_key, ptn_int((int64_t)line));
     ptn_array_set_entry(generator->delegate_sources, delegate_key, ptn_null());
@@ -15193,6 +15217,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
         }
 #endif
+        if (previous_resume_method == NULL) {
+            ptn_generator_apply_send_yield_slots(runtime, generator, resume_value);
+        }
         ptn_generator_apply_resume_return_value(runtime, generator, resume_value);
         ptn_value_destroy(&delegate_resume_value);
         ptn_generator_release_consumed_reference(generator, generator->position);
@@ -15479,6 +15506,144 @@ static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtim
     );
 }
 
+static PTN_UNUSED void ptn_generator_register_send_yield_slot(
+    PtnRuntime *runtime,
+    size_t source_back_offset,
+    int update_key,
+    size_t line
+) {
+    (void)line;
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (
+        generator == NULL ||
+        generator->values == NULL ||
+        generator->send_yield_slot_source_positions == NULL ||
+        generator->send_yield_slot_target_positions == NULL ||
+        generator->send_yield_slot_kinds == NULL ||
+        generator->values->len <= source_back_offset
+    ) {
+        return;
+    }
+    if (
+        !ptn_array_append_key_available(runtime, generator->send_yield_slot_source_positions) ||
+        !ptn_array_append_key_available(runtime, generator->send_yield_slot_target_positions) ||
+        !ptn_array_append_key_available(runtime, generator->send_yield_slot_kinds)
+    ) {
+        return;
+    }
+    size_t target_position = generator->values->len - 1;
+    size_t source_position = target_position - source_back_offset;
+    ptn_array_set_entry(
+        generator->send_yield_slot_source_positions,
+        ptn_array_int_key(generator->send_yield_slot_source_positions->next_auto_key),
+        ptn_int((int64_t)source_position)
+    );
+    ptn_array_set_entry(
+        generator->send_yield_slot_target_positions,
+        ptn_array_int_key(generator->send_yield_slot_target_positions->next_auto_key),
+        ptn_int((int64_t)target_position)
+    );
+    ptn_array_set_entry(
+        generator->send_yield_slot_kinds,
+        ptn_array_int_key(generator->send_yield_slot_kinds->next_auto_key),
+        ptn_int(update_key ? 1 : 0)
+    );
+}
+
+static PTN_UNUSED void ptn_generator_recompute_auto_keys(PtnGenerator *generator) {
+    if (
+        generator == NULL ||
+        generator->keys == NULL ||
+        generator->key_is_auto == NULL
+    ) {
+        return;
+    }
+    int64_t next_auto_key = 0;
+    size_t len = generator->keys->len < generator->key_is_auto->len
+        ? generator->keys->len
+        : generator->key_is_auto->len;
+    for (size_t i = 0; i < len; i++) {
+        PtnValue auto_value = ptn_value_deref(generator->key_is_auto->entries[i].value);
+        int is_auto = auto_value.type == PTN_INT && auto_value.as.integer != 0;
+        if (is_auto) {
+            PtnArrayEntry *entry = &generator->keys->entries[i];
+            ptn_value_destroy(&entry->value);
+            entry->value = ptn_int(next_auto_key);
+            if (next_auto_key < INT64_MAX) {
+                next_auto_key++;
+            }
+            continue;
+        }
+        PtnValue key = ptn_value_deref(generator->keys->entries[i].value);
+        if (
+            key.type == PTN_INT &&
+            key.as.integer >= next_auto_key &&
+            key.as.integer < INT64_MAX
+        ) {
+            next_auto_key = key.as.integer + 1;
+        }
+    }
+    generator->next_auto_key = next_auto_key;
+}
+
+static PTN_UNUSED void ptn_generator_apply_send_yield_slots(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    PtnValue sent_value
+) {
+    if (
+        generator == NULL ||
+        generator->send_yield_slot_source_positions == NULL ||
+        generator->send_yield_slot_target_positions == NULL ||
+        generator->send_yield_slot_kinds == NULL ||
+        generator->values == NULL ||
+        generator->keys == NULL
+    ) {
+        return;
+    }
+    for (size_t i = 0; i < generator->send_yield_slot_source_positions->len; i++) {
+        if (!ptn_generator_entry_matches_position(
+                generator->send_yield_slot_source_positions,
+                i,
+                generator->position
+        )) {
+            continue;
+        }
+        PtnValue target_value = ptn_value_deref(
+            ptn_generator_array_entry_value(generator->send_yield_slot_target_positions, i)
+        );
+        PtnValue kind_value = ptn_value_deref(
+            ptn_generator_array_entry_value(generator->send_yield_slot_kinds, i)
+        );
+        if (target_value.type != PTN_INT || target_value.as.integer < 0) {
+            continue;
+        }
+        size_t target_position = (size_t)target_value.as.integer;
+        PtnArray *slot_array = (
+            kind_value.type == PTN_INT &&
+            kind_value.as.integer == 1
+        ) ? generator->keys : generator->values;
+        if (slot_array == NULL || target_position >= slot_array->len) {
+            continue;
+        }
+        PtnArrayEntry *entry = &slot_array->entries[target_position];
+        ptn_value_destroy(&entry->value);
+        entry->value = ptn_value_clone_deref(sent_value);
+        if (
+            kind_value.type == PTN_INT &&
+            kind_value.as.integer == 1 &&
+            generator->key_is_auto != NULL &&
+            target_position < generator->key_is_auto->len
+        ) {
+            PtnArrayEntry *auto_entry = &generator->key_is_auto->entries[target_position];
+            ptn_value_destroy(&auto_entry->value);
+            auto_entry->value = ptn_int(0);
+            ptn_generator_recompute_auto_keys(generator);
+        }
+        (void)runtime;
+    }
+}
+
 static PTN_UNUSED void ptn_generator_throw_yield_from_running_delegate(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -15742,17 +15907,42 @@ static PTN_UNUSED PtnValue ptn_generator_replay_array_value_yield_expr(
     size_t fallback_line
 ) {
     size_t line = fallback_line;
+    int mode = 0;
+    PtnValue static_operand = ptn_null();
     if (descriptor != NULL && descriptor->len >= 2) {
         PtnValue line_value = ptn_value_deref(descriptor->entries[1].value);
         if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
             line = (size_t)line_value.as.integer;
         }
     }
-    PtnValue value = ptn_value_clone_deref(sent_value);
+    if (descriptor != NULL && descriptor->len >= 4) {
+        PtnValue mode_value = ptn_value_deref(descriptor->entries[2].value);
+        if (mode_value.type == PTN_INT) {
+            mode = (int)mode_value.as.integer;
+        }
+        static_operand = ptn_value_deref(descriptor->entries[3].value);
+    }
+    PtnValue key = ptn_null();
+    PtnValue value = ptn_null();
+    int has_key = 0;
+    if (mode == 1) {
+        has_key = 1;
+        key = ptn_value_clone_deref(static_operand);
+        value = ptn_value_clone_deref(sent_value);
+    } else if (mode == 2) {
+        has_key = 1;
+        key = ptn_value_clone_deref(sent_value);
+        value = ptn_value_clone_deref(static_operand);
+    } else {
+        value = ptn_value_clone_deref(sent_value);
+    }
     PtnArrayLiteralEntry entries[] = {
-        { 0, ptn_null(), value }
+        { has_key, key, value }
     };
     PtnValue result = ptn_array_from_literal_entries_at(runtime, line, 1, entries);
+    if (has_key) {
+        ptn_value_destroy(&key);
+    }
     ptn_value_destroy(&value);
     return result;
 }
@@ -16004,6 +16194,7 @@ static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue rece
     }
 #endif
 
+    ptn_generator_apply_send_yield_slots(runtime, generator, sent_value);
     ptn_generator_apply_resume_return_value(runtime, generator, sent_value);
     PtnValue advanced = ptn_generator_next(runtime, receiver, line);
     ptn_value_destroy(&advanced);

@@ -135242,6 +135242,7 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
         PtnGenerator *data = (PtnGenerator *)object->native_data;
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->values));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->keys));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->key_is_auto));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->reference_notice_lines));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->yield_lines));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->delegate_sources));
@@ -135258,6 +135259,9 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_call_lines));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_from_positions));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_from_lines));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_slot_source_positions));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_slot_target_positions));
+        ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->send_yield_slot_kinds));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->throw_catch_positions));
         ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(data->throw_catch_handler_ids));
         ptn_gc_mark_stack_push(stack, data->return_value);
@@ -135628,6 +135632,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
         PtnArray *arrays[] = {
             data->values,
             data->keys,
+            data->key_is_auto,
             data->reference_notice_lines,
             data->yield_lines,
             data->delegate_sources,
@@ -135644,6 +135649,9 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
             data->send_call_lines,
             data->send_yield_from_positions,
             data->send_yield_from_lines,
+            data->send_yield_slot_source_positions,
+            data->send_yield_slot_target_positions,
+            data->send_yield_slot_kinds,
             data->throw_catch_positions,
             data->throw_catch_handler_ids
         };

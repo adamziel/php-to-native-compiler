@@ -45045,7 +45045,7 @@ enum GeneratorSendArgumentSource {
     AssignedDirect,
     AssignedPath(Vec<ValueExpr>),
     BinaryExpr(GeneratorSendBinaryExpr),
-    ArrayValueExpr(usize),
+    ArrayExpr(GeneratorSendArrayExpr),
 }
 
 #[derive(Clone)]
@@ -45054,6 +45054,20 @@ struct GeneratorSendBinaryExpr {
     yield_on_left: bool,
     other: Box<ValueExpr>,
     line: usize,
+}
+
+#[derive(Clone)]
+struct GeneratorSendArrayExpr {
+    mode: GeneratorSendArrayExprMode,
+    static_operand: Option<Box<ValueExpr>>,
+    line: usize,
+}
+
+#[derive(Clone, Copy)]
+enum GeneratorSendArrayExprMode {
+    ValueWithoutKey,
+    ValueWithStaticKey,
+    KeyWithStaticValue,
 }
 
 #[derive(Clone)]
@@ -45145,6 +45159,10 @@ fn value_expr_is_generator_send_replay_static(value: &ValueExpr) -> bool {
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_expr_is_generator_send_replay_static(expr)
         }
+        ValueExpr::Binary { left, right, .. } => {
+            value_expr_is_generator_send_replay_static(left)
+                && value_expr_is_generator_send_replay_static(right)
+        }
         _ => false,
     }
 }
@@ -45183,23 +45201,42 @@ fn binary_yield_send_argument_source(argument: &ValueExpr) -> Option<GeneratorSe
     None
 }
 
-fn array_value_yield_send_argument_source(
-    argument: &ValueExpr,
-) -> Option<GeneratorSendArgumentSource> {
+fn array_yield_send_argument_source(argument: &ValueExpr) -> Option<GeneratorSendArgumentSource> {
     let ValueExpr::Array(elements) = argument else {
         return None;
     };
     let [element] = elements.as_slice() else {
         return None;
     };
-    if element.key.is_some() {
-        return None;
-    }
     let IrArrayElementValue::Value(value) = &element.value else {
         return None;
     };
     if value_expr_is_direct_yield(value) {
-        return Some(GeneratorSendArgumentSource::ArrayValueExpr(element.line));
+        return Some(GeneratorSendArgumentSource::ArrayExpr(
+            GeneratorSendArrayExpr {
+                mode: if let Some(key) = &element.key {
+                    if !value_expr_is_generator_send_replay_static(key) {
+                        return None;
+                    }
+                    GeneratorSendArrayExprMode::ValueWithStaticKey
+                } else {
+                    GeneratorSendArrayExprMode::ValueWithoutKey
+                },
+                static_operand: element.key.clone().map(Box::new),
+                line: element.line,
+            },
+        ));
+    }
+    if let Some(key) = &element.key {
+        if value_expr_is_direct_yield(key) && value_expr_is_generator_send_replay_static(value) {
+            return Some(GeneratorSendArgumentSource::ArrayExpr(
+                GeneratorSendArrayExpr {
+                    mode: GeneratorSendArrayExprMode::KeyWithStaticValue,
+                    static_operand: Some(Box::new(value.clone())),
+                    line: element.line,
+                },
+            ));
+        }
     }
     None
 }
@@ -48176,7 +48213,7 @@ impl ValueEmitter {
                 if let Some(source) = binary_yield_send_argument_source(argument) {
                     return Some(GeneratorSendArgument { index, source });
                 }
-                if let Some(source) = array_value_yield_send_argument_source(argument) {
+                if let Some(source) = array_yield_send_argument_source(argument) {
                     return Some(GeneratorSendArgument { index, source });
                 }
                 let ValueExpr::Load { name, .. } = argument else {
@@ -61918,6 +61955,8 @@ impl ValueEmitter {
         value: Option<&ValueExpr>,
         line: usize,
     ) -> String {
+        let key_is_direct_yield = key.map(value_expr_is_direct_yield).unwrap_or(false);
+        let value_is_direct_yield = value.map(value_expr_is_direct_yield).unwrap_or(false);
         let key_temp = key.map(|key| self.emit_materialized_value(out, key));
         let value_temp = match value {
             Some(value) if self.current_function_return_by_ref => {
@@ -61957,6 +61996,19 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        if key_is_direct_yield {
+            let source_back_offset = if value_is_direct_yield { 2 } else { 1 };
+            out.push_str("    ptn_generator_register_send_yield_slot(&runtime, ");
+            out.push_str(&source_back_offset.to_string());
+            out.push_str(", 1, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        if value_is_direct_yield {
+            out.push_str("    ptn_generator_register_send_yield_slot(&runtime, 1, 0, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         if let Some(key_temp) = key_temp {
             emit_value_cleanup(out, "    ", &key_temp);
         }
@@ -64317,12 +64369,23 @@ impl ValueEmitter {
                     out.push_str(" = ptn_null();\n");
                     temps.push(temp);
                 }
-                Some(GeneratorSendArgumentSource::ArrayValueExpr(_)) => {
+                Some(GeneratorSendArgumentSource::ArrayExpr(array_expr)) => {
                     if let ValueExpr::Array(elements) = argument {
                         if let Some(element) = elements.first() {
-                            if let IrArrayElementValue::Value(value) = &element.value {
-                                let yield_temp = self.emit_materialized_value(out, value);
-                                emit_value_cleanup(out, "    ", &yield_temp);
+                            match array_expr.mode {
+                                GeneratorSendArrayExprMode::ValueWithoutKey
+                                | GeneratorSendArrayExprMode::ValueWithStaticKey => {
+                                    if let IrArrayElementValue::Value(value) = &element.value {
+                                        let yield_temp = self.emit_materialized_value(out, value);
+                                        emit_value_cleanup(out, "    ", &yield_temp);
+                                    }
+                                }
+                                GeneratorSendArrayExprMode::KeyWithStaticValue => {
+                                    if let Some(key) = &element.key {
+                                        let yield_temp = self.emit_materialized_value(out, key);
+                                        emit_value_cleanup(out, "    ", &yield_temp);
+                                    }
+                                }
                             }
                         }
                     }
@@ -64483,25 +64546,42 @@ impl ValueEmitter {
         path_temp
     }
 
-    fn emit_generator_yield_array_value_expr_path(
+    fn emit_generator_yield_array_expr_path(
         &mut self,
         out: &mut String,
-        line: usize,
+        array_expr: &GeneratorSendArrayExpr,
     ) -> String {
+        let static_temp = array_expr
+            .static_operand
+            .as_deref()
+            .map(|operand| self.emit_materialized_value(out, operand));
         let entries_temp = self.next_temp();
         out.push_str("    PtnArrayLiteralEntry ");
         out.push_str(&entries_temp);
         out.push_str("[] = { ");
         out.push_str("{ 1, ptn_int(0), ptn_string(\"__ptn_array_yield_value_expr\") }, ");
         out.push_str("{ 1, ptn_int(1), ptn_int(");
-        out.push_str(&line.to_string());
-        out.push_str(") } };\n");
+        out.push_str(&array_expr.line.to_string());
+        out.push_str(") }, ");
+        out.push_str("{ 1, ptn_int(2), ptn_int(");
+        out.push_str(match array_expr.mode {
+            GeneratorSendArrayExprMode::ValueWithoutKey => "0",
+            GeneratorSendArrayExprMode::ValueWithStaticKey => "1",
+            GeneratorSendArrayExprMode::KeyWithStaticValue => "2",
+        });
+        out.push_str(") }, ");
+        out.push_str("{ 1, ptn_int(3), ");
+        out.push_str(static_temp.as_deref().unwrap_or("ptn_null()"));
+        out.push_str(" } };\n");
         let path_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&path_temp);
-        out.push_str(" = ptn_array_from_literal_entries(2, ");
+        out.push_str(" = ptn_array_from_literal_entries(4, ");
         out.push_str(&entries_temp);
         out.push_str(");\n");
+        if let Some(static_temp) = static_temp {
+            emit_value_cleanup(out, "    ", &static_temp);
+        }
         path_temp
     }
 
@@ -64520,8 +64600,8 @@ impl ValueEmitter {
                 GeneratorSendArgumentSource::BinaryExpr(binary) => {
                     path_temps.push(self.emit_generator_yield_binary_expr_path(out, binary));
                 }
-                GeneratorSendArgumentSource::ArrayValueExpr(line) => {
-                    path_temps.push(self.emit_generator_yield_array_value_expr_path(out, *line));
+                GeneratorSendArgumentSource::ArrayExpr(array_expr) => {
+                    path_temps.push(self.emit_generator_yield_array_expr_path(out, array_expr));
                 }
                 GeneratorSendArgumentSource::DirectYieldExpr
                 | GeneratorSendArgumentSource::AssignedDirect => {
