@@ -174088,6 +174088,14 @@ static int ptn_xml_check_insertable_ex(PtnRuntime *runtime, const char *method_n
         ptn_dom_throw_exception_code_for_method(runtime, "Hierarchy Request Error", PTN_DOM_HIERARCHY_REQUEST_ERR, line, method_name, 1, &value);
         return 0;
     }
+    if (parent != NULL &&
+        parent->type != PTN_XML_NODE_DOCUMENT &&
+        parent->type != PTN_XML_NODE_DOCUMENT_FRAGMENT &&
+        parent->type != PTN_XML_NODE_ELEMENT &&
+        parent->type != PTN_XML_NODE_ENTITY_REFERENCE) {
+        ptn_dom_throw_exception_code_for_method(runtime, "Hierarchy Request Error", PTN_DOM_HIERARCHY_REQUEST_ERR, line, method_name, 1, &value);
+        return 0;
+    }
     PtnXmlNode *parent_doc = ptn_xml_document_for_node(parent);
     PtnXmlNode *node_doc = ptn_xml_document_for_node(node);
     PtnXmlNode *node_parent_doc = node->parent != NULL ? ptn_xml_document_for_node(node->parent) : NULL;
@@ -194766,7 +194774,10 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "isId")
             || ptn_ascii_case_equal(method_name, "rename")
+            || ptn_ascii_case_equal(method_name, "appendChild")
+            || ptn_ascii_case_equal(method_name, "insertBefore")
             || ptn_ascii_case_equal(method_name, "removeChild")
+            || ptn_ascii_case_equal(method_name, "replaceChild")
             || ptn_ascii_case_equal(method_name, "hasChildNodes")
             || ptn_ascii_case_equal(method_name, "C14N")
             || ptn_ascii_case_equal(method_name, "C14NFile")
@@ -194810,6 +194821,10 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "deleteData")
             || ptn_ascii_case_equal(method_name, "replaceData")
             || ptn_ascii_case_equal(method_name, "substringData")
+            || ptn_ascii_case_equal(method_name, "appendChild")
+            || ptn_ascii_case_equal(method_name, "insertBefore")
+            || ptn_ascii_case_equal(method_name, "removeChild")
+            || ptn_ascii_case_equal(method_name, "replaceChild")
             || ptn_ascii_case_equal(method_name, "before")
             || ptn_ascii_case_equal(method_name, "after")
             || ptn_ascii_case_equal(method_name, "replaceWith")
@@ -194833,7 +194848,10 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "deleteData")
             || ptn_ascii_case_equal(method_name, "replaceData")
             || ptn_ascii_case_equal(method_name, "substringData")
+            || ptn_ascii_case_equal(method_name, "appendChild")
             || ptn_ascii_case_equal(method_name, "insertBefore")
+            || ptn_ascii_case_equal(method_name, "removeChild")
+            || ptn_ascii_case_equal(method_name, "replaceChild")
             || ptn_ascii_case_equal(method_name, "before")
             || ptn_ascii_case_equal(method_name, "after")
             || ptn_ascii_case_equal(method_name, "replaceWith")
