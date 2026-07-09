@@ -352,7 +352,7 @@ aggregate_run_status=0
     echo "corpus-revision: $corpus_revision"
     echo "manifest: $resolved_manifest"
     echo "runnable-manifest: $runnable_manifest"
-    echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" PTN_PHPT_RUN_TESTS_JOBS=\"$phpt_run_tests_jobs\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
+    echo "command: cargo build --bin phpc; cd \"$php_src\" && PHPC_BIN=\"$phpc_bin\" PTN_PHPT_RUN_TESTS_JOBS=\"$phpt_run_tests_jobs\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
     echo "timeout-seconds: $phpt_test_timeout"
     echo "run-tests-jobs: $phpt_run_tests_jobs"
     echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
@@ -377,10 +377,13 @@ for bucket in "${bucket_order[@]}"; do
     if [[ "$phpt_run_tests_jobs" -gt 1 ]]; then
         run_tests_args+=("-j$phpt_run_tests_jobs")
     fi
-    PHPC_BIN="$phpc_bin" \
-      TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
-      TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
-      php "$php_src/run-tests.php" "${run_tests_args[@]}" "${tests[@]}" 2>&1 | tee "$log"
+    (
+      cd "$php_src"
+      PHPC_BIN="$phpc_bin" \
+        TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
+        TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
+        php "$php_src/run-tests.php" "${run_tests_args[@]}" "${tests[@]}"
+    ) 2>&1 | tee "$log"
     run_status=${PIPESTATUS[0]}
     set -e
 

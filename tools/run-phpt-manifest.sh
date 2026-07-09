@@ -138,7 +138,10 @@ fi
 start="$(date +%s)"
 
 set +e
-PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q "${run_tests_jobs[@]}" --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}" 2>&1 | tee "$log"
+(
+  cd "$php_src"
+  PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q "${run_tests_jobs[@]}" --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}"
+) 2>&1 | tee "$log"
 run_status="${PIPESTATUS[0]}"
 set -e
 
