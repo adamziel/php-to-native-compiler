@@ -4471,6 +4471,23 @@ static int ptn_generator_has_delegate_source(PtnGenerator *generator) {
     return 0;
 }
 
+static int ptn_generator_has_generator_delegate_source(PtnGenerator *generator) {
+    if (generator == NULL || generator->delegate_sources == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < generator->delegate_sources->len; i++) {
+        PtnValue value = ptn_value_deref(generator->delegate_sources->entries[i].value);
+        if (
+            value.type == PTN_OBJECT &&
+            value.as.object != NULL &&
+            ptn_object_is_generator(value.as.object)
+        ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnGenerator *generator) {
     if (
         generator == NULL ||
@@ -4483,7 +4500,14 @@ static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnG
     PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
         ? runtime
         : runtime->lifecycle_root;
-    return root == NULL || (!root->gc_running && root->current_fiber != NULL);
+    if (root == NULL) {
+        return 1;
+    }
+    if (root->gc_running) {
+        return 0;
+    }
+    return root->current_fiber != NULL ||
+        (root->gc_enabled && ptn_generator_has_generator_delegate_source(generator));
 }
 
 static PTN_UNUSED void ptn_object_release(PtnObject *object) {
