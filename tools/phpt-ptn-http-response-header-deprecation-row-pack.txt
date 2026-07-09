@@ -1,0 +1,3 @@
+ext/standard/tests/http/http_response_header_deprecated_dynamic_fetch.phpt
+ext/standard/tests/http/http_response_header_deprecated_multiple_op_arrays.phpt
+ext/standard/tests/http/http_response_header_deprecated_nested_op_arrays.phpt

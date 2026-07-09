@@ -49,6 +49,8 @@ const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe ch
 const INVALID_FIRST_CLASS_CALLABLE_PLACEHOLDER_MESSAGE: &str =
     "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders";
 const MAX_ARRAY_LITERAL_NESTING: usize = 128;
+const HTTP_RESPONSE_HEADER_DEPRECATION: &str =
+    "The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead";
 
 fn nullsafe_write_context_diagnostic(span: SourceSpan) -> Diagnostic {
     Diagnostic::new(NULLSAFE_WRITE_CONTEXT_MESSAGE, Some(span))
@@ -676,12 +678,36 @@ impl Parser<'_> {
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
         collect_continue_targeting_switch_warnings(&statements, &mut self.compile_warnings);
+        collect_http_response_header_deprecation_warnings(
+            &statements,
+            &mut self.compile_warnings,
+        );
         for function in &functions {
             validate_anonymous_functions_in_statements(&function.body, &functions)?;
             validate_reference_assignment_sources(&function.body, &functions)?;
             validate_control_transfers_in_statements(&function.body, 0)?;
             collect_continue_targeting_switch_warnings(&function.body, &mut self.compile_warnings);
+            collect_http_response_header_deprecation_warnings(
+                &function.body,
+                &mut self.compile_warnings,
+            );
             validate_goto_labels(&function.body)?;
+        }
+        for class in &classes {
+            for method in &class.methods {
+                collect_http_response_header_deprecation_warnings(
+                    &method.body,
+                    &mut self.compile_warnings,
+                );
+            }
+        }
+        for trait_decl in &traits {
+            for method in &trait_decl.methods {
+                collect_http_response_header_deprecation_warnings(
+                    &method.body,
+                    &mut self.compile_warnings,
+                );
+            }
         }
         validate_goto_labels(&statements)?;
         Ok(Program {
@@ -21930,6 +21956,733 @@ fn collect_continue_targeting_switch_warnings(
     compile_warnings: &mut Vec<CompileWarning>,
 ) {
     collect_continue_targeting_switch_warnings_inner(statements, &mut Vec::new(), compile_warnings);
+}
+
+fn collect_http_response_header_deprecation_warnings(
+    statements: &[Statement],
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    let mut assigned = HashSet::new();
+    if let Some(span) = first_http_response_header_read_in_statements(statements, &mut assigned) {
+        compile_warnings.push(CompileWarning {
+            message: HTTP_RESPONSE_HEADER_DEPRECATION.to_string(),
+            span,
+            kind: CompileWarningKind::Deprecation,
+        });
+    }
+}
+
+fn first_http_response_header_read_in_statements(
+    statements: &[Statement],
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for statement in statements {
+        if let Some(span) = first_http_response_header_read_in_statement(statement, assigned) {
+            return Some(span);
+        }
+    }
+    None
+}
+
+fn first_http_response_header_read_in_statement(
+    statement: &Statement,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match statement {
+        Statement::Assign {
+            name, op, value, ..
+        } => {
+            if !matches!(op, AssignmentOp::Assign) && is_http_response_header_name(name) {
+                return Some(statement_span(statement));
+            }
+            let read = first_http_response_header_read_in_expr(value, assigned);
+            assigned.insert(name.to_ascii_lowercase());
+            read
+        }
+        Statement::AssignRef { name, source, .. } => {
+            let read = first_http_response_header_read_in_expr(source, assigned);
+            assigned.insert(name.to_ascii_lowercase());
+            read
+        }
+        Statement::ArrayAssign { target, value, .. } => first_http_response_header_read_in_array_dim_target(target, assigned)
+            .or_else(|| first_http_response_header_read_in_expr(value, assigned)),
+        Statement::ArrayAssignRef { target, source, .. } => first_http_response_header_read_in_array_dim_target(target, assigned)
+            .or_else(|| first_http_response_header_read_in_expr(source, assigned)),
+        Statement::Increment { target, .. } => first_http_response_header_read_in_inc_dec_target(target, assigned),
+        Statement::Unset { targets, .. } => {
+            for target in targets {
+                if let Some(span) = first_http_response_header_read_in_unset_target(target, assigned) {
+                    return Some(span);
+                }
+            }
+            None
+        }
+        Statement::Global { targets, .. } => {
+            for target in targets {
+                if let GlobalTarget::Variable { name, .. } = target {
+                    assigned.insert(name.to_ascii_lowercase());
+                } else if let GlobalTarget::DynamicVariable { name, .. } = target {
+                    if let Some(span) = first_http_response_header_read_in_expr(name, assigned) {
+                        return Some(span);
+                    }
+                }
+            }
+            None
+        }
+        Statement::Static { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(value) = &declaration.value {
+                    if let Some(span) = first_http_response_header_read_in_expr(value, assigned) {
+                        return Some(span);
+                    }
+                }
+                assigned.insert(declaration.name.to_ascii_lowercase());
+            }
+            None
+        }
+        Statement::Call { arguments, .. } | Statement::Echo { expressions: arguments, .. } => {
+            first_http_response_header_read_in_exprs(arguments, assigned)
+        }
+        Statement::Print { expression, .. } | Statement::Expression { expression, .. } => {
+            first_http_response_header_read_in_expr(expression, assigned)
+        }
+        Statement::Const { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(span) = first_http_response_header_read_in_expr(&declaration.value, assigned) {
+                    return Some(span);
+                }
+            }
+            None
+        }
+        Statement::Block { statements, .. } => {
+            first_http_response_header_read_in_statements(statements, assigned)
+        }
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => first_http_response_header_read_in_expr(condition, assigned)
+            .or_else(|| {
+                let mut branch_assigned = assigned.clone();
+                first_http_response_header_read_in_statements(then_body, &mut branch_assigned)
+            })
+            .or_else(|| {
+                let mut branch_assigned = assigned.clone();
+                first_http_response_header_read_in_statements(else_body, &mut branch_assigned)
+            }),
+        Statement::While {
+            condition, body, ..
+        } => first_http_response_header_read_in_expr(condition, assigned)
+            .or_else(|| {
+                let mut loop_assigned = assigned.clone();
+                first_http_response_header_read_in_statements(body, &mut loop_assigned)
+            }),
+        Statement::DoWhile {
+            body, condition, ..
+        } => {
+            let mut loop_assigned = assigned.clone();
+            first_http_response_header_read_in_statements(body, &mut loop_assigned)
+                .or_else(|| first_http_response_header_read_in_expr(condition, assigned))
+        }
+        Statement::For {
+            initializers,
+            conditions,
+            updates,
+            body,
+            ..
+        } => first_http_response_header_read_in_statements(initializers, assigned)
+            .or_else(|| first_http_response_header_read_in_exprs(conditions, assigned))
+            .or_else(|| {
+                let mut loop_assigned = assigned.clone();
+                first_http_response_header_read_in_statements(body, &mut loop_assigned)
+            })
+            .or_else(|| first_http_response_header_read_in_statements(updates, assigned)),
+        Statement::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => first_http_response_header_read_in_expr(iterable, assigned)
+            .or_else(|| {
+                if let Some(key) = key {
+                    mark_assignment_target_assigned(key, assigned);
+                }
+                mark_assignment_target_assigned(value, assigned);
+                let mut loop_assigned = assigned.clone();
+                first_http_response_header_read_in_statements(body, &mut loop_assigned)
+            }),
+        Statement::Switch {
+            expression, cases, ..
+        } => first_http_response_header_read_in_expr(expression, assigned).or_else(|| {
+            for case in cases {
+                let mut case_assigned = assigned.clone();
+                if let Some(condition) = &case.condition {
+                    if let Some(span) = first_http_response_header_read_in_expr(condition, &mut case_assigned) {
+                        return Some(span);
+                    }
+                }
+                if let Some(span) = first_http_response_header_read_in_statements(&case.body, &mut case_assigned) {
+                    return Some(span);
+                }
+            }
+            None
+        }),
+        Statement::Return { value, .. } | Statement::Exit { value, .. } => {
+            value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned))
+        }
+        Statement::Throw { value, .. } => first_http_response_header_read_in_expr(value, assigned),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            let mut try_assigned = assigned.clone();
+            first_http_response_header_read_in_statements(body, &mut try_assigned)
+                .or_else(|| {
+                    for catch in catches {
+                        let mut catch_assigned = assigned.clone();
+                        if let Some(variable) = &catch.variable {
+                            catch_assigned.insert(variable.to_ascii_lowercase());
+                        }
+                        if let Some(span) = first_http_response_header_read_in_statements(&catch.body, &mut catch_assigned) {
+                            return Some(span);
+                        }
+                    }
+                    None
+                })
+                .or_else(|| {
+                    let mut finally_assigned = assigned.clone();
+                    first_http_response_header_read_in_statements(finally_body, &mut finally_assigned)
+                })
+        }
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Label { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => None,
+    }
+}
+
+fn first_http_response_header_read_in_exprs(
+    exprs: &[Expr],
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for expr in exprs {
+        if let Some(span) = first_http_response_header_read_in_expr(expr, assigned) {
+            return Some(span);
+        }
+    }
+    None
+}
+
+fn first_http_response_header_read_in_expr(
+    expr: &Expr,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match expr {
+        Expr::Variable(name, span)
+            if is_http_response_header_name(name) && !assigned.contains("http_response_header") =>
+        {
+            Some(*span)
+        }
+        Expr::DynamicVariable { name, .. }
+        | Expr::FirstClassCallable { callable: name, .. }
+        | Expr::DynamicNewObject { class_name: name, .. }
+        | Expr::Clone { expr: name, .. }
+        | Expr::Empty { target: name, .. }
+        | Expr::Print {
+            expression: name, ..
+        }
+        | Expr::Include { path: name, .. }
+        | Expr::Throw { value: name, .. }
+        | Expr::YieldFrom { expr: name, .. }
+        | Expr::Unary { expr: name, .. }
+        | Expr::Cast { expr: name, .. }
+        | Expr::Grouped { expr: name, .. }
+        | Expr::PipeValue { expr: name, .. } => first_http_response_header_read_in_expr(name, assigned),
+        Expr::AnonymousFunction(function) => {
+            let mut function_assigned = HashSet::new();
+            first_http_response_header_read_in_statements(&function.body, &mut function_assigned)
+        }
+        Expr::IncDec { target, .. } => first_http_response_header_read_in_inc_dec_target(target, assigned),
+        Expr::Assign {
+            target, op, value, ..
+        } => {
+            if !matches!(op, AssignmentOp::Assign) {
+                if let Some(span) = first_http_response_header_read_in_assignment_target(target, assigned) {
+                    return Some(span);
+                }
+            } else if let AssignmentTarget::DynamicVariable { name, .. }
+                | AssignmentTarget::DynamicArrayDim { name, .. } = target
+            {
+                if let Some(span) = first_http_response_header_read_in_expr(name, assigned) {
+                    return Some(span);
+                }
+            }
+            let read = first_http_response_header_read_in_expr(value, assigned);
+            mark_assignment_target_assigned(target, assigned);
+            read
+        }
+        Expr::AssignRef { target, source, .. } => {
+            let read = first_http_response_header_read_in_expr(source, assigned);
+            mark_assignment_target_assigned(target, assigned);
+            read
+        }
+        Expr::Call { arguments, .. }
+        | Expr::NewObject { arguments, .. }
+        | Expr::Isset {
+            targets: arguments, ..
+        } => first_http_response_header_read_in_exprs(arguments, assigned),
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => first_http_response_header_read_in_expr(callee, assigned)
+            .or_else(|| first_http_response_header_read_in_exprs(arguments, assigned)),
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_exprs(arguments, assigned)),
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+            .or_else(|| first_http_response_header_read_in_exprs(arguments, assigned)),
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::NullsafePropertyFetch { receiver, .. }
+        | Expr::DynamicStaticPropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. }
+        | Expr::DynamicClassConstantFetch { name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
+        Expr::ParentPropertyHookCall { arguments, .. } => {
+            first_http_response_header_read_in_exprs(arguments, assigned)
+        }
+        Expr::InstanceOf { expr, target, .. } => first_http_response_header_read_in_expr(expr, assigned)
+            .or_else(|| match target {
+                InstanceOfTarget::Expr(target) => first_http_response_header_read_in_expr(target, assigned),
+                InstanceOfTarget::ClassName { .. } => None,
+            }),
+        Expr::Match { subject, arms, .. } => {
+            first_http_response_header_read_in_expr(subject, assigned).or_else(|| {
+                for arm in arms {
+                    if let Some(span) = first_http_response_header_read_in_exprs(&arm.conditions, assigned) {
+                        return Some(span);
+                    }
+                    if let Some(span) = first_http_response_header_read_in_expr(&arm.value, assigned) {
+                        return Some(span);
+                    }
+                }
+                None
+            })
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    if let Some(span) = first_http_response_header_read_in_expr(key, assigned) {
+                        return Some(span);
+                    }
+                }
+                let value_read = match &element.value {
+                    ArrayElementValue::Hole(_) => None,
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        first_http_response_header_read_in_expr(value, assigned)
+                    }
+                    ArrayElementValue::Reference(target) => {
+                        first_http_response_header_read_in_reference_target(target, assigned)
+                    }
+                };
+                if value_read.is_some() {
+                    return value_read;
+                }
+            }
+            None
+        }
+        Expr::List(list) => first_http_response_header_read_in_list_expr(list, assigned),
+        Expr::ArrayAccess { array, index, .. } => first_http_response_header_read_in_expr(array, assigned)
+            .or_else(|| index.as_ref().and_then(|index| first_http_response_header_read_in_expr(index, assigned))),
+        Expr::Exit { value, .. } => {
+            value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned))
+        }
+        Expr::Yield { key, value, .. } => {
+            key.as_ref()
+                .and_then(|key| first_http_response_header_read_in_expr(key, assigned))
+                .or_else(|| value.as_ref().and_then(|value| first_http_response_header_read_in_expr(value, assigned)))
+        }
+        Expr::Binary { left, right, .. } => first_http_response_header_read_in_expr(left, assigned)
+            .or_else(|| first_http_response_header_read_in_expr(right, assigned)),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => first_http_response_header_read_in_expr(condition, assigned)
+            .or_else(|| if_true.as_ref().and_then(|expr| first_http_response_header_read_in_expr(expr, assigned)))
+            .or_else(|| first_http_response_header_read_in_expr(if_false, assigned)),
+        Expr::InterpolatedString(parts, _) => {
+            first_http_response_header_read_in_string_parts(parts, assigned)
+        }
+        Expr::ShellExec { .. } => None,
+        Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => None,
+    }
+}
+
+fn first_http_response_header_read_in_array_dim_target(
+    target: &ArrayDimTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    if is_http_response_header_name(&target.array) && !assigned.contains("http_response_header") {
+        return Some(target.span);
+    }
+    first_http_response_header_read_in_optional_exprs(&target.dimensions, assigned)
+}
+
+fn first_http_response_header_read_in_assignment_target(
+    target: &AssignmentTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match target {
+        AssignmentTarget::Variable { name, span }
+            if is_http_response_header_name(name) && !assigned.contains("http_response_header") =>
+        {
+            Some(*span)
+        }
+        AssignmentTarget::DynamicVariable { name, .. }
+        | AssignmentTarget::DynamicArrayDim { name, .. }
+        | AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
+        AssignmentTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
+        AssignmentTarget::ValueArrayDim { array, dimensions, .. } => {
+            first_http_response_header_read_in_expr(array, assigned)
+                .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned))
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        }
+        | AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            first_http_response_header_read_in_optional_exprs(dimensions, assigned)
+        }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
+        AssignmentTarget::Property { receiver, .. }
+        | AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+        }
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+        }
+        AssignmentTarget::List(target) => first_http_response_header_read_in_list_assignment_target(target, assigned),
+        AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => None,
+    }
+}
+
+fn first_http_response_header_read_in_reference_target(
+    target: &ReferenceTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match target {
+        ReferenceTarget::Variable { name, span }
+            if is_http_response_header_name(name) && !assigned.contains("http_response_header") =>
+        {
+            Some(*span)
+        }
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
+        ReferenceTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
+        ReferenceTarget::Property { receiver, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+        }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+        }
+        ReferenceTarget::Variable { .. } => None,
+    }
+}
+
+fn first_http_response_header_read_in_inc_dec_target(
+    target: &IncDecTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match target {
+        IncDecTarget::Variable { name, span }
+            if is_http_response_header_name(name) && !assigned.contains("http_response_header") =>
+        {
+            Some(*span)
+        }
+        IncDecTarget::DynamicVariable { name, .. }
+        | IncDecTarget::DynamicArrayDim { name, .. }
+        | IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
+        IncDecTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
+        IncDecTarget::ValueArrayDim { array, dimensions, .. } => {
+            first_http_response_header_read_in_expr(array, assigned)
+                .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned))
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_optional_exprs(dimensions, assigned)),
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            first_http_response_header_read_in_optional_exprs(dimensions, assigned)
+        }
+        IncDecTarget::Property { receiver, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+        }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+        }
+        IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => None,
+    }
+}
+
+fn first_http_response_header_read_in_unset_target(
+    target: &UnsetTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    match target {
+        UnsetTarget::Variable { .. } | UnsetTarget::StaticProperty { .. } => None,
+        UnsetTarget::DynamicVariable { name, .. }
+        | UnsetTarget::DynamicArrayDim { name, .. }
+        | UnsetTarget::DynamicStaticPropertyName { name, .. } => {
+            first_http_response_header_read_in_expr(name, assigned)
+        }
+        UnsetTarget::ArrayDim(target) => first_http_response_header_read_in_array_dim_target(target, assigned),
+        UnsetTarget::ValueArrayDim { array, dimensions, .. } => {
+            first_http_response_header_read_in_expr(array, assigned)
+                .or_else(|| first_http_response_header_read_in_exprs(dimensions, assigned))
+        }
+        UnsetTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        }
+        | UnsetTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => first_http_response_header_read_in_expr(receiver, assigned)
+            .or_else(|| first_http_response_header_read_in_exprs(dimensions, assigned)),
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            first_http_response_header_read_in_exprs(dimensions, assigned)
+        }
+        UnsetTarget::Property { receiver, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+        }
+        UnsetTarget::DynamicProperty { receiver, name, .. } => {
+            first_http_response_header_read_in_expr(receiver, assigned)
+                .or_else(|| first_http_response_header_read_in_expr(name, assigned))
+        }
+    }
+}
+
+fn first_http_response_header_read_in_optional_exprs(
+    exprs: &[Option<Expr>],
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for expr in exprs.iter().flatten() {
+        if let Some(span) = first_http_response_header_read_in_expr(expr, assigned) {
+            return Some(span);
+        }
+    }
+    None
+}
+
+fn first_http_response_header_read_in_list_assignment_target(
+    target: &ListAssignmentTarget,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for element in &target.elements {
+        if let Some(key) = &element.key {
+            if let Some(span) = first_http_response_header_read_in_expr(key, assigned) {
+                return Some(span);
+            }
+        }
+        let read = match &element.target {
+            ListAssignmentElementTarget::Value(target) => {
+                first_http_response_header_read_in_assignment_target(target, assigned)
+            }
+            ListAssignmentElementTarget::Reference(target) => {
+                first_http_response_header_read_in_reference_target(target, assigned)
+            }
+        };
+        if read.is_some() {
+            return read;
+        }
+    }
+    None
+}
+
+fn first_http_response_header_read_in_list_expr(
+    list: &ListExpr,
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for element in &list.elements {
+        if let Some(key) = &element.key {
+            if let Some(span) = first_http_response_header_read_in_expr(key, assigned) {
+                return Some(span);
+            }
+        }
+        let read = match &element.target {
+            Some(ListExprElementTarget::Value(value)) => {
+                first_http_response_header_read_in_expr(value, assigned)
+            }
+            Some(ListExprElementTarget::Reference(target)) => {
+                first_http_response_header_read_in_reference_target(target, assigned)
+            }
+            None => None,
+        };
+        if read.is_some() {
+            return read;
+        }
+    }
+    None
+}
+
+fn first_http_response_header_read_in_string_parts(
+    parts: &[StringPart],
+    assigned: &mut HashSet<String>,
+) -> Option<SourceSpan> {
+    for part in parts {
+        let read = match part {
+            StringPart::Expression(expr)
+            | StringPart::LegacyDollarBraceExpression(expr)
+            | StringPart::DynamicVariableExpression(expr) => {
+                first_http_response_header_read_in_expr(expr, assigned)
+            }
+            StringPart::Variable(_)
+            | StringPart::LegacyDollarBraceVariable(_)
+            | StringPart::Literal(_)
+            | StringPart::PropertyFetch { .. }
+            | StringPart::PropertyChain { .. }
+            | StringPart::MethodCall { .. }
+            | StringPart::ArrayAccess { .. } => None,
+        };
+        if read.is_some() {
+            return read;
+        }
+    }
+    None
+}
+
+fn mark_assignment_target_assigned(target: &AssignmentTarget, assigned: &mut HashSet<String>) {
+    match target {
+        AssignmentTarget::Variable { name, .. } => {
+            assigned.insert(name.to_ascii_lowercase());
+        }
+        AssignmentTarget::List(target) => {
+            for element in &target.elements {
+                match &element.target {
+                    ListAssignmentElementTarget::Value(target) => {
+                        mark_assignment_target_assigned(target, assigned);
+                    }
+                    ListAssignmentElementTarget::Reference(ReferenceTarget::Variable {
+                        name,
+                        ..
+                    }) => {
+                        assigned.insert(name.to_ascii_lowercase());
+                    }
+                    ListAssignmentElementTarget::Reference(_) => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_http_response_header_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("http_response_header")
+}
+
+fn statement_span(statement: &Statement) -> SourceSpan {
+    match statement {
+        Statement::Empty { span }
+        | Statement::ClassDeclaration { span, .. }
+        | Statement::TraitDeclaration { span, .. }
+        | Statement::FunctionDeclaration { span, .. }
+        | Statement::Assign { span, .. }
+        | Statement::AssignRef { span, .. }
+        | Statement::ArrayAssign { span, .. }
+        | Statement::ArrayAssignRef { span, .. }
+        | Statement::Increment { span, .. }
+        | Statement::Unset { span, .. }
+        | Statement::Global { span, .. }
+        | Statement::Static { span, .. }
+        | Statement::Call { span, .. }
+        | Statement::Echo { span, .. }
+        | Statement::Print { span, .. }
+        | Statement::Expression { span, .. }
+        | Statement::Const { span, .. }
+        | Statement::Block { span, .. }
+        | Statement::If { span, .. }
+        | Statement::While { span, .. }
+        | Statement::DoWhile { span, .. }
+        | Statement::For { span, .. }
+        | Statement::Foreach { span, .. }
+        | Statement::Switch { span, .. }
+        | Statement::Break { span, .. }
+        | Statement::Continue { span, .. }
+        | Statement::Return { span, .. }
+        | Statement::Exit { span, .. }
+        | Statement::Throw { span, .. }
+        | Statement::Try { span, .. }
+        | Statement::Label { span, .. }
+        | Statement::Goto { span, .. }
+        | Statement::InlineHtml { span, .. } => *span,
+    }
 }
 
 fn collect_continue_targeting_switch_warnings_inner(

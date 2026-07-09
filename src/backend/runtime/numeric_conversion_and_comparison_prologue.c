@@ -1984,6 +1984,23 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     return ptn_runtime_read_variable_len(runtime, name, strlen(name), path, line);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_read_dynamic_variable_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    const char *path,
+    size_t line
+) {
+    if (ptn_string_equals_literal_len(name, name_len, "http_response_header")) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead",
+            line
+        );
+    }
+    return ptn_runtime_read_variable_len(runtime, name, name_len, path, line);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_increment_len(
     PtnRuntime *runtime,
     const char *name,

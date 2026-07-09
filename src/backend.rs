@@ -48049,7 +48049,7 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_read_variable_len(&runtime, ");
+        out.push_str(" = ptn_runtime_read_dynamic_variable_len(&runtime, ");
         out.push_str(&name_temp);
         out.push_str(", ");
         out.push_str(&len_temp);
