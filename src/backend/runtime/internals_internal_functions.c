@@ -86211,6 +86211,7 @@ static int ptn_timezone_parse_gmt_offset_literal(const char *name, int *offset_o
 static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out);
 static time_t ptn_datetime_utc_timestamp_for_parts(int64_t year, int month, int day, int hour, int minute, int second);
 static PtnValue ptn_datetime_create_object(PtnRuntime *runtime, const char *class_name, time_t timestamp, int microsecond, const char *timezone, size_t line);
+static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, PtnValue right, int absolute, size_t line);
 static PtnValue ptn_datetime_zone_create_from_name(PtnRuntime *runtime, const char *class_name, const char *name, size_t line);
 
 static void ptn_intl_date_formatter_data_free(void *ptr) {
@@ -166848,6 +166849,104 @@ static PtnValue ptn_date_interval_create_from_date_string(
     );
 }
 
+typedef enum {
+    PTN_DATE_INTERVAL_RANGE_UNKNOWN = 0,
+    PTN_DATE_INTERVAL_RANGE_FAILED = 1,
+    PTN_DATE_INTERVAL_RANGE_PARSED = 2
+} PtnDateIntervalRangeParseStatus;
+
+static int ptn_date_interval_parse_datetime_endpoint(
+    PtnRuntime *runtime,
+    const char *input,
+    size_t input_len,
+    PtnValue *out,
+    size_t line
+) {
+    char *datetime = ptn_duplicate_string_len(input, input_len);
+    time_t timestamp = 0;
+    int microsecond = 0;
+    char *parsed_timezone = NULL;
+    const char *default_timezone = ptn_current_timezone_name();
+    if (!ptn_datetime_parse_date_string(datetime, default_timezone, &timestamp, &microsecond, &parsed_timezone)) {
+        free(datetime);
+        return 0;
+    }
+    const char *timezone = parsed_timezone == NULL ? default_timezone : parsed_timezone;
+    *out = ptn_datetime_create_object(runtime, "DateTimeImmutable", timestamp, microsecond, timezone, line);
+    free(parsed_timezone);
+    free(datetime);
+    return 1;
+}
+
+static PtnDateIntervalRangeParseStatus ptn_date_interval_parse_datetime_range(
+    PtnRuntime *runtime,
+    const char *spec,
+    PtnValue *interval_out,
+    size_t line
+) {
+    const char *slash = strchr(spec, '/');
+    if (slash != NULL) {
+        const char *right = slash + 1;
+        if (right[0] == '\0') {
+            return PTN_DATE_INTERVAL_RANGE_FAILED;
+        }
+        PtnValue left_value = ptn_null();
+        PtnValue right_value = ptn_null();
+        if (!ptn_date_interval_parse_datetime_endpoint(runtime, spec, (size_t)(slash - spec), &left_value, line)) {
+            return PTN_DATE_INTERVAL_RANGE_UNKNOWN;
+        }
+        if (!ptn_date_interval_parse_datetime_endpoint(runtime, right, strlen(right), &right_value, line)) {
+            ptn_value_destroy(&left_value);
+            return PTN_DATE_INTERVAL_RANGE_UNKNOWN;
+        }
+        *interval_out = ptn_datetime_diff_interval(runtime, left_value, right_value, 0, line);
+        ptn_value_destroy(&left_value);
+        ptn_value_destroy(&right_value);
+        return runtime->exceptions->active_exception == NULL
+            ? PTN_DATE_INTERVAL_RANGE_PARSED
+            : PTN_DATE_INTERVAL_RANGE_UNKNOWN;
+    }
+
+    for (const char *cursor = spec; *cursor != '\0'; cursor++) {
+        if (!isspace((unsigned char)*cursor)) {
+            continue;
+        }
+        const char *right = cursor;
+        while (isspace((unsigned char)*right)) {
+            right++;
+        }
+        if (*right == '\0') {
+            break;
+        }
+        PtnValue left_value = ptn_null();
+        PtnValue right_value = ptn_null();
+        if (!ptn_date_interval_parse_datetime_endpoint(runtime, spec, (size_t)(cursor - spec), &left_value, line)) {
+            continue;
+        }
+        if (!ptn_date_interval_parse_datetime_endpoint(runtime, right, strlen(right), &right_value, line)) {
+            ptn_value_destroy(&left_value);
+            continue;
+        }
+        *interval_out = ptn_datetime_diff_interval(runtime, left_value, right_value, 0, line);
+        ptn_value_destroy(&left_value);
+        ptn_value_destroy(&right_value);
+        return runtime->exceptions->active_exception == NULL
+            ? PTN_DATE_INTERVAL_RANGE_PARSED
+            : PTN_DATE_INTERVAL_RANGE_UNKNOWN;
+    }
+
+    PtnValue ignored = ptn_null();
+    int single_datetime = ptn_date_interval_parse_datetime_endpoint(
+        runtime,
+        spec,
+        strlen(spec),
+        &ignored,
+        line
+    );
+    ptn_value_destroy(&ignored);
+    return single_datetime ? PTN_DATE_INTERVAL_RANGE_FAILED : PTN_DATE_INTERVAL_RANGE_UNKNOWN;
+}
+
 static PTN_UNUSED PtnValue ptn_date_interval_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -166875,8 +166974,17 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     char *spec_string = ptn_duplicate_string_len(spec.data, spec.len);
     PtnDateIntervalData parsed;
     if (!ptn_date_interval_parse_iso_spec(spec_string, &parsed)) {
+        PtnValue interval = ptn_null();
+        PtnDateIntervalRangeParseStatus range_status =
+            ptn_date_interval_parse_datetime_range(runtime, spec_string, &interval, line);
+        if (range_status == PTN_DATE_INTERVAL_RANGE_PARSED) {
+            free(spec_string);
+            ptn_string_operand_free(spec);
+            return interval;
+        }
+        ptn_value_destroy(&interval);
         char message[256];
-        const char *format = strchr(spec_string, '/') != NULL
+        const char *format = range_status == PTN_DATE_INTERVAL_RANGE_FAILED
             ? "Failed to parse interval (%s)"
             : "Unknown or bad format (%s)";
         int written = snprintf(

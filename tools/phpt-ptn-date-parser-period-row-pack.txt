@@ -2,5 +2,6 @@ ext/date/tests/bug52454.phpt
 ext/date/tests/bug52430.phpt
 ext/date/tests/bug52577.phpt
 ext/date/tests/bug52668.phpt
+ext/date/tests/bug52808.phpt
 ext/date/tests/bug53879.phpt
 ext/date/tests/bug54283.phpt
