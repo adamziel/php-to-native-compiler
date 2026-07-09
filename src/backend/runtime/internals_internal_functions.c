@@ -314,7 +314,16 @@ static int ptn_zend_test_constant_value(const char *name, PtnValue *out) {
         *out = ptn_string("global");
         return 1;
     }
+    if (strcmp(lookup, "ZendTestNS2\\ZEND_CONSTANT_A") == 0 ||
+        strcmp(lookup, "ZendTestNS2\\ZendSubNS\\ZEND_CONSTANT_A") == 0) {
+        *out = ptn_string("namespaced");
+        return 1;
+    }
     if (strcmp(lookup, "ZEND_TEST_DEPRECATED") == 0) {
+        *out = ptn_int(42);
+        return 1;
+    }
+    if (strcmp(lookup, "ZEND_TEST_ATTRIBUTED_CONSTANT") == 0) {
         *out = ptn_int(42);
         return 1;
     }
@@ -155485,9 +155494,20 @@ static void ptn_defined_constants_add_user(PtnRuntime *runtime, PtnValue table) 
     }
     for (size_t i = 0; i < runtime->constants->len; i++) {
         PtnSymbol *symbol = &runtime->constants->items[i];
+        const char *display_name = symbol->name;
+        PtnValue stored_display_name;
+        if (
+            runtime->constant_display_names != NULL &&
+            ptn_symbols_get_len(runtime->constant_display_names, symbol->name, symbol->name_len, &stored_display_name)
+        ) {
+            PtnValue resolved_display_name = ptn_value_deref(stored_display_name);
+            if (resolved_display_name.type == PTN_STRING) {
+                display_name = (const char *)resolved_display_name.as.string.data;
+            }
+        }
         ptn_array_set_entry(
             table.as.array,
-            ptn_array_string_key(symbol->name),
+            ptn_array_string_key(display_name),
             ptn_value_clone_deref(symbol->value)
         );
     }
@@ -155496,6 +155516,20 @@ static void ptn_defined_constants_add_user(PtnRuntime *runtime, PtnValue table) 
 static PtnValue ptn_defined_constants_user_table(PtnRuntime *runtime) {
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     ptn_defined_constants_add_user(runtime, table);
+    return table;
+}
+
+static void ptn_defined_constants_add_zend_test(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "ZEND_TEST_DEPRECATED", 42);
+    ptn_get_defined_constants_add_string(table, "ZEND_CONSTANT_A", "global");
+    ptn_get_defined_constants_add_int(table, "ZEND_TEST_ATTRIBUTED_CONSTANT", 42);
+    ptn_get_defined_constants_add_string(table, "ZendTestNS2\\ZEND_CONSTANT_A", "namespaced");
+    ptn_get_defined_constants_add_string(table, "ZendTestNS2\\ZendSubNS\\ZEND_CONSTANT_A", "namespaced");
+}
+
+static PtnValue ptn_defined_constants_zend_test_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_zend_test(table);
     return table;
 }
 
@@ -156256,6 +156290,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("curl"), ptn_defined_constants_curl_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("soap"), ptn_defined_constants_soap_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("standard"), ptn_defined_constants_standard_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("zend_test"), ptn_defined_constants_zend_test_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("user"), ptn_defined_constants_user_table(runtime));
         return categorized;
     }
@@ -156274,6 +156309,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     ptn_defined_constants_add_curl(core);
     ptn_defined_constants_add_soap(core);
     ptn_defined_constants_add_standard(core);
+    ptn_defined_constants_add_zend_test(core);
     ptn_defined_constants_add_user(runtime, core);
     return core;
 }
@@ -267832,6 +267868,9 @@ static PtnValue ptn_reflection_extension_constants(const char *extension_name) {
     }
     if (ptn_ascii_case_equal(extension_name, "soap")) {
         return ptn_defined_constants_soap_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "zend_test")) {
+        return ptn_defined_constants_zend_test_table();
     }
     return ptn_array_from_literal_entries(0, NULL);
 }

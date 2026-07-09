@@ -1742,6 +1742,7 @@ ptn_phpt_requires_zend_test_native_helper() {
 
     [[ "$row" == ext/zend_test/tests/* ]] || return 1
     [[ "$row" == "ext/zend_test/tests/do_operation_not_cast.phpt" ]] && return 1
+    ptn_phpt_supported_zend_test_constant_metadata_row "$row" && return 1
     ptn_phpt_supported_zend_test_consumed_args_row "$row" && return 1
     ptn_phpt_supported_zend_test_class_metadata_row "$row" && return 1
 
@@ -1766,6 +1767,18 @@ ptn_phpt_requires_zend_test_native_helper() {
     )
 
     return 1
+}
+
+ptn_phpt_supported_zend_test_constant_metadata_row() {
+    case "$1" in
+        ext/zend_test/tests/gen_stub_test_02.phpt|\
+        ext/zend_test/tests/gh11423.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 ptn_phpt_supported_zend_test_consumed_args_row() {
@@ -1801,6 +1814,7 @@ ptn_phpt_requires_zend_test_deprecated_attribute_stubs() {
 
     [[ "$row" == ext/zend_test/tests/* ]] || return 1
     [[ "$row" == "ext/zend_test/tests/attribute-deprecated.phpt" ]] && return 0
+    ptn_phpt_supported_zend_test_constant_metadata_row "$row" && return 1
     LC_ALL=C grep -Eq "zend_test_deprecated_attr|ZEND_TEST_DEPRECATED_ATTR|ZEND_TEST_ATTRIBUTED_CONSTANT" "$path"
 }
 

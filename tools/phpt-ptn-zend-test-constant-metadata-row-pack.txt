@@ -1,0 +1,2 @@
+ext/zend_test/tests/gen_stub_test_02.phpt
+ext/zend_test/tests/gh11423.phpt

@@ -1873,6 +1873,8 @@ struct PtnRuntime {
     PtnSymbolTable *constants;
     PtnSymbolTable owned_constant_sources;
     PtnSymbolTable *constant_sources;
+    PtnSymbolTable owned_constant_display_names;
+    PtnSymbolTable *constant_display_names;
     PtnSymbolTable owned_class_aliases;
     PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_dynamic_classes;

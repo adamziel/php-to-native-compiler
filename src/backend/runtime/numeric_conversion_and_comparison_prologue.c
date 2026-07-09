@@ -8,6 +8,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->constants = caller_runtime->constants;
     ptn_symbols_init(&runtime->owned_constant_sources);
     runtime->constant_sources = caller_runtime->constant_sources;
+    ptn_symbols_init(&runtime->owned_constant_display_names);
+    runtime->constant_display_names = caller_runtime->constant_display_names;
     ptn_symbols_init(&runtime->owned_class_aliases);
     runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_dynamic_classes);
@@ -1154,6 +1156,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_functions, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_classes, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_aliases, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_constant_display_names, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constant_sources, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
@@ -11253,6 +11256,11 @@ static PTN_UNUSED void ptn_runtime_define_constant_len(
 ) {
     PtnStringOperand key = ptn_runtime_global_constant_key_len(name, name_len);
     ptn_symbols_set_len(runtime->constants, key.data, key.len, value);
+    if (runtime->constant_display_names != NULL) {
+        PtnValue display_name = ptn_owned_string_len(ptn_duplicate_string_len(name, name_len), name_len);
+        ptn_symbols_set_len(runtime->constant_display_names, key.data, key.len, display_name);
+        ptn_value_destroy(&display_name);
+    }
     ptn_string_operand_free(key);
 }
 
