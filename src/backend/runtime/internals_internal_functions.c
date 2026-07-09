@@ -162098,6 +162098,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Europe/Berlin", 128, 0 },
     { "Europe/Budapest", 128, 0 },
     { "Europe/Istanbul", 128, 0 },
+    { "Europe/Kiev", 128, 1 },
     { "Europe/Kyiv", 128, 0 },
     { "Europe/Lisbon", 128, 0 },
     { "Europe/London", 128, 0 },
@@ -162172,6 +162173,7 @@ static const PtnTimezoneLocation ptn_timezone_locations[] = {
     { "Europe/Berlin", "DE", 52.5, 13.36666, "most of Germany" },
     { "Europe/Budapest", "HU", 47.5, 19.08333, "" },
     { "Europe/Istanbul", "TR", 41.01666, 28.96666, "" },
+    { "Europe/Kiev", "UA", 50.43333, 30.51666, "most of Ukraine" },
     { "Europe/Kyiv", "UA", 50.43333, 30.51666, "most of Ukraine" },
     { "Europe/Lisbon", "PT", 38.71666, -9.13334, "Portugal (mainland)" },
     { "Europe/London", "GB", 51.50833, -0.12528, "" },
@@ -162638,6 +162640,7 @@ static int ptn_timezone_is_europe_dst_zone(const char *name) {
         ptn_ascii_case_equal(name, "Europe/Brussels") ||
         ptn_ascii_case_equal(name, "Europe/Budapest") ||
         ptn_ascii_case_equal(name, "Europe/Oslo") ||
+        ptn_ascii_case_equal(name, "Europe/Kiev") ||
         ptn_ascii_case_equal(name, "Europe/Kyiv") ||
         ptn_ascii_case_equal(name, "Europe/Rome");
 }
@@ -163008,7 +163011,8 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         ptn_ascii_case_equal(name, "Europe/Rome")) {
         return europe_dst ? 7200 : 3600;
     }
-    if (ptn_ascii_case_equal(name, "Europe/Kyiv")) {
+    if (ptn_ascii_case_equal(name, "Europe/Kiev") ||
+        ptn_ascii_case_equal(name, "Europe/Kyiv")) {
         return europe_dst ? 10800 : 7200;
     }
     if (ptn_ascii_case_equal(name, "Europe/Minsk") ||
@@ -163175,7 +163179,8 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
         ptn_ascii_case_equal(name, "Europe/Rome")) {
         return europe_dst ? "CEST" : "CET";
     }
-    if (ptn_ascii_case_equal(name, "Europe/Kyiv")) {
+    if (ptn_ascii_case_equal(name, "Europe/Kiev") ||
+        ptn_ascii_case_equal(name, "Europe/Kyiv")) {
         return europe_dst ? "EEST" : "EET";
     }
     if (ptn_ascii_case_equal(name, "Europe/Minsk") ||
@@ -165229,6 +165234,24 @@ static int ptn_datetime_parse_date_string(
     }
     if (parsed < 3) {
         consumed = 0;
+        if (sscanf(input, " %d.%d.%lld%n", &day, &month, &year, &consumed) == 3 &&
+            ptn_datetime_tail_is_space(input, consumed)) {
+            return ptn_datetime_components_to_timestamp(
+                year,
+                month,
+                day,
+                0,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+        consumed = 0;
         if (sscanf(input, " %lld-%d%n", &year, &month, &consumed) == 2 &&
             ptn_datetime_tail_is_space(input, consumed)) {
             return ptn_datetime_components_to_timestamp(
@@ -166209,6 +166232,16 @@ static int ptn_date_interval_special_relative_prefix_consumed(const char *spec, 
     if (sscanf(spec, " %15s %31s %n", first, second, &consumed) == 2) {
         int weekday = 0;
         int ordinal = 0;
+        if ((ptn_ascii_case_equal(first, "this") ||
+             ptn_ascii_case_equal(first, "current") ||
+             ptn_ascii_case_equal(first, "next") ||
+             ptn_ascii_case_equal(first, "last") ||
+             ptn_ascii_case_equal(first, "previous")) &&
+            (ptn_ascii_case_equal(second, "week") ||
+             ptn_ascii_case_equal(second, "weeks"))) {
+            *consumed_out = consumed;
+            return 1;
+        }
         if ((ptn_ascii_case_equal(first, "next") ||
              ptn_ascii_case_equal(first, "last") ||
              ptn_ascii_case_equal(first, "previous")) &&
@@ -166420,6 +166453,16 @@ static int ptn_date_interval_parse_special_relative_spec(const char *spec, PtnDa
         ptn_date_interval_tail_is_space(spec, consumed)) {
         int weekday = 0;
         int ordinal = 0;
+        if ((ptn_ascii_case_equal(direction, "this") ||
+             ptn_ascii_case_equal(direction, "current") ||
+             ptn_ascii_case_equal(direction, "next") ||
+             ptn_ascii_case_equal(direction, "last") ||
+             ptn_ascii_case_equal(direction, "previous")) &&
+            (ptn_ascii_case_equal(weekday_token, "week") ||
+             ptn_ascii_case_equal(weekday_token, "weeks"))) {
+            data->has_relative_special = 1;
+            return 1;
+        }
         if ((ptn_ascii_case_equal(direction, "next") ||
              ptn_ascii_case_equal(direction, "last") ||
              ptn_ascii_case_equal(direction, "previous")) &&
@@ -167447,6 +167490,30 @@ static int ptn_datetime_apply_relative_special_to_timestamp(
         (ptn_ascii_case_equal(weekday_word, "weekday") ||
          ptn_ascii_case_equal(weekday_word, "weekdays"))) {
         ptn_datetime_add_weekdays_to_wall_parts(&parts, weekday_amount);
+        *timestamp_out = ptn_datetime_timestamp_from_wall_parts(datetime, &parts);
+        return 1;
+    }
+
+    char week_direction[16];
+    char week_word[32];
+    consumed = 0;
+    if (sscanf(spec, " %15s %31s %n", week_direction, week_word, &consumed) == 2 &&
+        ptn_date_interval_tail_is_space(spec, consumed) &&
+        (ptn_ascii_case_equal(week_direction, "this") ||
+         ptn_ascii_case_equal(week_direction, "current") ||
+         ptn_ascii_case_equal(week_direction, "next") ||
+         ptn_ascii_case_equal(week_direction, "last") ||
+         ptn_ascii_case_equal(week_direction, "previous")) &&
+        (ptn_ascii_case_equal(week_word, "week") ||
+         ptn_ascii_case_equal(week_word, "weeks"))) {
+        int iso_weekday = parts.tm_wday == 0 ? 7 : parts.tm_wday;
+        parts.tm_mday -= iso_weekday - 1;
+        if (ptn_ascii_case_equal(week_direction, "next")) {
+            parts.tm_mday += 7;
+        } else if (ptn_ascii_case_equal(week_direction, "last") ||
+            ptn_ascii_case_equal(week_direction, "previous")) {
+            parts.tm_mday -= 7;
+        }
         *timestamp_out = ptn_datetime_timestamp_from_wall_parts(datetime, &parts);
         return 1;
     }
@@ -172550,6 +172617,63 @@ static int ptn_datetime_try_iso_bracketed_timezone_format(
     return 1;
 }
 
+static int ptn_datetime_try_cookie_format(
+    const char *format,
+    const char *datetime,
+    time_t *timestamp_out,
+    int *microsecond_out,
+    char **timezone_out
+) {
+    if (!ptn_ascii_case_equal(format, "l, d-M-Y H:i:s T") &&
+        !ptn_ascii_case_equal(format, "D, d-M-Y H:i:s T")) {
+        return 0;
+    }
+    char weekday[32];
+    char month_name[32];
+    char timezone[128];
+    int day = 0;
+    long long year = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    int consumed = 0;
+    if (sscanf(
+            datetime,
+            " %31[^,], %d-%31[^-]-%lld %d:%d:%d %127s%n",
+            weekday,
+            &day,
+            month_name,
+            &year,
+            &hour,
+            &minute,
+            &second,
+            timezone,
+            &consumed
+        ) != 8 ||
+        !ptn_datetime_tail_is_space(datetime, consumed)) {
+        return 0;
+    }
+    (void)weekday;
+    int month = ptn_date_month_number_from_name(month_name);
+    if (month == 0 || !ptn_timezone_identifier_is_known(timezone)) {
+        return 0;
+    }
+    return ptn_datetime_components_to_timestamp(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        0,
+        timezone,
+        NULL,
+        timestamp_out,
+        microsecond_out,
+        timezone_out
+    );
+}
+
 static int ptn_datetime_format_ends_with_unescaped_char(const char *format, char marker) {
     size_t len = strlen(format);
     if (len == 0 || format[len - 1] != marker) {
@@ -172571,6 +172695,9 @@ static int ptn_datetime_parse_create_from_format(
     char **timezone_out
 ) {
     if (ptn_datetime_try_iso_bracketed_timezone_format(format, datetime, timestamp_out, microsecond_out, timezone_out)) {
+        return 1;
+    }
+    if (ptn_datetime_try_cookie_format(format, datetime, timestamp_out, microsecond_out, timezone_out)) {
         return 1;
     }
     if (ptn_datetime_try_unix_timestamp_format(format, datetime, timestamp_out, microsecond_out)) {
