@@ -64270,7 +64270,7 @@ static void ptn_emit_stream_write_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_notice(&runtime->diagnostics, message, line);
+    ptn_emit_notice_with_path(&runtime->diagnostics, message, NULL, line, 1);
 }
 
 static int ptn_stream_write_failure_is_silent(PtnResource *resource) {

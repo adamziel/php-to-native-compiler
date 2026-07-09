@@ -1,0 +1,2 @@
+ext/standard/tests/file/fwrite.phpt
+ext/standard/tests/file/fwrite_variation1.phpt

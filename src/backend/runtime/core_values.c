@@ -5184,6 +5184,18 @@ static PTN_UNUSED void ptn_memory_stream_note_size(PtnResource *resource, PtnMem
 static PTN_UNUSED int ptn_stream_errno_would_block(int error);
 static PTN_UNUSED int ptn_stream_resource_uri_is_socket_like(PtnResource *resource);
 
+static PTN_UNUSED int ptn_stream_mode_allows_write(PtnResource *resource) {
+    if (resource == NULL || resource->stream_mode == NULL || resource->stream_mode[0] == '\0') {
+        return 1;
+    }
+    const char *mode = resource->stream_mode;
+    return strchr(mode, '+') != NULL ||
+        mode[0] == 'w' || mode[0] == 'W' ||
+        mode[0] == 'a' || mode[0] == 'A' ||
+        mode[0] == 'x' || mode[0] == 'X' ||
+        mode[0] == 'c' || mode[0] == 'C';
+}
+
 static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const void *data, size_t len) {
     if (resource == NULL) {
         return 0;
@@ -5191,6 +5203,11 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
     if (resource->memory_stream == NULL) {
         if (resource->stream == NULL) {
             errno = EBADF;
+            return 0;
+        }
+        if (!ptn_stream_mode_allows_write(resource)) {
+            errno = EBADF;
+            resource->stream_error = 1;
             return 0;
         }
 #if PTN_HAVE_OPENSSL
@@ -5672,7 +5689,7 @@ static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
         if (ptn_stream_resource_uri_is_socket_like(resource)) {
             return resource->stream_error != 0 || ferror(resource->stream) != 0;
         }
-        return ferror(resource->stream) != 0;
+        return resource->stream_error != 0 || ferror(resource->stream) != 0;
     }
     return resource->memory_stream->error != 0;
 }
