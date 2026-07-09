@@ -1471,9 +1471,9 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
     PtnValue receiver = ptn_value_borrow(ptn_object(object));
-    size_t destructor_line = runtime->call_site_line != 0
-        ? runtime->call_site_line
-        : root->call_site_line;
+    size_t destructor_line = object->cleanup_trace_source_line != 0
+        ? object->cleanup_trace_source_line
+        : (runtime->call_site_line != 0 ? runtime->call_site_line : root->call_site_line);
     if (destructor_line == 0) {
         destructor_line = 1;
     }
@@ -2681,6 +2681,24 @@ static PTN_UNUSED PtnValue ptn_object_new_shell_at(
                 : ptn_duplicate_string(cleanup_source_file);
             object->cleanup_trace_source_line = cleanup_source_line;
         }
+    } else if (has_declared_destructor && line != 0) {
+        size_t cleanup_source_line = line;
+        if (
+            runtime != NULL &&
+            runtime->current_function_name != NULL &&
+            (
+                strstr(runtime->current_function_name, "->__destruct") != NULL ||
+                strstr(runtime->current_function_name, "::__destruct") != NULL
+            ) &&
+            runtime->trace_frame != NULL &&
+            runtime->trace_frame->line != 0
+        ) {
+            cleanup_source_line = runtime->trace_frame->line;
+        }
+        object->cleanup_trace_source_file = runtime == NULL || runtime->source_path == NULL
+            ? NULL
+            : ptn_duplicate_string(runtime->source_path);
+        object->cleanup_trace_source_line = cleanup_source_line;
     }
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();

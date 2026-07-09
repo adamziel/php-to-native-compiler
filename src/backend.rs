@@ -55463,9 +55463,11 @@ impl ValueEmitter {
             out.push_str("PtnValue ");
         }
         out.push_str(result_temp);
-        out.push_str(" = ptn_object_new_shell(&runtime, \"");
+        out.push_str(" = ptn_object_new_shell_at(&runtime, \"");
         out.push_str(&c_string(&declared_class.name));
-        out.push_str("\");\n");
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         if inherited_modeled_internal_class_name(declared_class, &self.classes)
             .is_some_and(|name| name.eq_ignore_ascii_case("ZipArchive"))
         {
