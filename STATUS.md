@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-07-09T17:50:17Z |
+| last refresh | 2026-07-09T18:00:18Z |
 | source commit | `66e8df03ac14` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -22,28 +22,27 @@
 | field | value |
 | --- | --- |
 | source commit | `79f5b8ed1686` |
-| statused tests | 16064 |
-| passed tests | 12584 |
-| failed tests | 1633 |
-| skipped tests | 1843 |
+| statused tests | 16515 |
+| passed tests | 12766 |
+| failed tests | 1707 |
+| skipped tests | 2038 |
 | warned tests | 4 |
-| unknown tests | 5803 |
+| unknown tests | 5352 |
 | run | `/home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260709T101857Z` |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-07-09T17:00Z) | 0 |
-| last 24 hours (2026-07-08T18:00Z - 2026-07-09T17:00Z) | 0 |
-| last 7 days (2026-07-02T18:00Z - 2026-07-09T17:00Z) | 310 |
+| latest hour (2026-07-09T18:00Z) | 0 |
+| last 24 hours (2026-07-08T19:00Z - 2026-07-09T18:00Z) | 0 |
+| last 7 days (2026-07-02T19:00Z - 2026-07-09T18:00Z) | 310 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 1814 | 21867 |
-| hourly history retained 2026-07-02T18:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-02T19:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-02T20:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-02T21:00Z | 0 | 0 | 0 |
@@ -210,12 +209,12 @@
 | hourly history retained 2026-07-09T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-09T15:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-07-09T16:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-07-09T17:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-07-02T18:00Z | 0 | 1504 |
 | 2026-07-02T19:00Z | 0 | 1504 |
 | 2026-07-02T20:00Z | 0 | 1504 |
 | 2026-07-02T21:00Z | 0 | 1504 |
@@ -383,3 +382,4 @@
 | 2026-07-09T15:00Z | 0 | 1814 |
 | 2026-07-09T16:00Z | 0 | 1814 |
 | 2026-07-09T17:00Z | 0 | 1814 |
+| 2026-07-09T18:00Z | 0 | 1814 |
