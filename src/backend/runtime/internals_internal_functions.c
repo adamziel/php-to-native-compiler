@@ -227029,6 +227029,13 @@ static void ptn_soap_parse_fields_in_range(
                 ptn_soap_type_copy_fields(type, group);
             }
             free(ref);
+        } else if (ptn_soap_tag_is_opening_name(tag, tag_end, "group")) {
+            char *ref = ptn_soap_attr_dup(tag, tag_end, "ref");
+            if (ref != NULL) {
+                PtnSoapType *group = ptn_soap_type_list_find(groups, group_count, ref);
+                ptn_soap_type_copy_fields(type, group);
+            }
+            free(ref);
         }
         cursor = tag_end;
     }
@@ -227520,10 +227527,14 @@ static void ptn_soap_parse_wsdl_types_from_source(
         if (tag_end == NULL) {
             break;
         }
-        if (ptn_soap_tag_is_opening_name(tag, tag_end, "attributeGroup")) {
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "attributeGroup") ||
+            ptn_soap_tag_is_opening_name(tag, tag_end, "group")) {
+            const char *group_tag_name = ptn_soap_tag_is_opening_name(tag, tag_end, "attributeGroup")
+                ? "attributeGroup"
+                : "group";
             char *name = ptn_soap_attr_dup(tag, tag_end, "name");
             if (name != NULL) {
-                const char *close = ptn_soap_find_closing_tag(tag_end, end, "attributeGroup");
+                const char *close = ptn_soap_find_closing_tag(tag_end, end, group_tag_name);
                 PtnSoapType *group = ptn_soap_type_list_add(&groups, &group_count, &group_capacity, name);
                 if (close != NULL) {
                     char *schema_namespace = NULL;
@@ -227545,9 +227556,9 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         tag_end,
                         close,
                         group,
-                        NULL,
-                        NULL,
-                        NULL,
+                        types,
+                        type_count,
+                        type_capacity,
                         groups,
                         group_count,
                         schema_namespace,
