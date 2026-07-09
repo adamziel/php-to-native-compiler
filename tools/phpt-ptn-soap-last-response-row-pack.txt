@@ -1,1 +1,2 @@
 ext/soap/tests/SoapServer/__getLastResponse.phpt
+ext/soap/tests/bugs/bug28985.phpt

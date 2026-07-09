@@ -226892,7 +226892,7 @@ static void ptn_soap_parse_fields_in_range(
                 ptn_soap_type_add_field_ex(
                     type,
                     field_name,
-                    field_type == NULL ? "string" : field_type,
+                    field_type == NULL ? (is_attribute ? "string" : "anyType") : field_type,
                     is_qualified ? schema_namespace_uri : "",
                     field_default,
                     is_attribute,
@@ -228048,7 +228048,18 @@ static PtnValue ptn_soap_get_types(PtnRuntime *runtime, PtnValue receiver, size_
             ptn_string_buffer_append_format(&buffer, "anyType %s[]", data->types[i].name);
         } else {
             ptn_string_buffer_append_format(&buffer, "struct %s {", data->types[i].name);
-            for (size_t j = 0; j < data->types[i].field_count; j++) {
+            size_t first_field = 0;
+            if (data->types[i].is_extension && !data->types[i].has_simple_content) {
+                PtnSoapType *base_type = ptn_soap_type_list_find(
+                    data->types,
+                    data->type_count,
+                    data->types[i].base_type
+                );
+                if (base_type != NULL && base_type->field_count <= data->types[i].field_count) {
+                    first_field = base_type->field_count;
+                }
+            }
+            for (size_t j = first_field; j < data->types[i].field_count; j++) {
                 ptn_string_buffer_append_format(
                     &buffer,
                     "\n %s %s;",
