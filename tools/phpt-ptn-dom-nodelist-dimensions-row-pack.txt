@@ -1,0 +1,1 @@
+ext/dom/tests/modern/spec/NodeList_dimensions_errors.phpt
