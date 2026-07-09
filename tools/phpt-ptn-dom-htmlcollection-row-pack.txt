@@ -1,0 +1,7 @@
+ext/dom/tests/modern/spec/NodeList_dimensions_errors.phpt
+ext/dom/tests/modern/spec/NodeList_dimensions.phpt
+ext/dom/tests/modern/html/interactions/HTMLCollection_dimension_errors.phpt
+ext/dom/tests/modern/html/interactions/HTMLCollection_named_reads.phpt
+ext/dom/tests/modern/common/innerHTML_cache_invalidation.phpt
+ext/dom/tests/modern/common/ParentNode_children.phpt
+ext/dom/tests/modern/spec/XMLDocument_getElementsByTagName.phpt

@@ -6104,6 +6104,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMNodeList\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMNamedNodeMap\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\NodeList\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\HTMLCollection\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\NamedNodeMap\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
@@ -13213,6 +13214,7 @@ fn emit_class_metadata_helpers(
         "Dom\\CdataSection",
         "Dom\\Comment",
         "Dom\\NodeList",
+        "Dom\\HTMLCollection",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
         "Dom\\XPath",
@@ -14148,6 +14150,7 @@ fn emit_class_metadata_helpers(
         "Dom\\CdataSection",
         "Dom\\Comment",
         "Dom\\NodeList",
+        "Dom\\HTMLCollection",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
         "Dom\\XPath",
@@ -28400,6 +28403,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "dom\\cdatasection" => Some("Dom\\CdataSection"),
         "dom\\comment" => Some("Dom\\Comment"),
         "dom\\nodelist" => Some("Dom\\NodeList"),
+        "dom\\htmlcollection" => Some("Dom\\HTMLCollection"),
         "dom\\namednodemap" => Some("Dom\\NamedNodeMap"),
         "dom\\tokenlist" => Some("Dom\\TokenList"),
         "dom\\xpath" => Some("Dom\\XPath"),
@@ -40154,6 +40158,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Dom\\CDataSection")
                 || class_name.eq_ignore_ascii_case("Dom\\Comment")
                 || class_name.eq_ignore_ascii_case("Dom\\NodeList")
+                || class_name.eq_ignore_ascii_case("Dom\\HTMLCollection")
                 || class_name.eq_ignore_ascii_case("Dom\\NamedNodeMap")
                 || class_name.eq_ignore_ascii_case("Dom\\TokenList")
                 || class_name.eq_ignore_ascii_case("Dom\\AdjacentPosition")

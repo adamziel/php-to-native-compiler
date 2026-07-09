@@ -4021,6 +4021,7 @@ static int ptn_dom_class_name_is_modern(const char *class_name) {
         ptn_ascii_case_equal(class_name, "Dom\\CDataSection") ||
         ptn_ascii_case_equal(class_name, "Dom\\Comment") ||
         ptn_ascii_case_equal(class_name, "Dom\\NodeList") ||
+        ptn_ascii_case_equal(class_name, "Dom\\HTMLCollection") ||
         ptn_ascii_case_equal(class_name, "Dom\\NamedNodeMap") ||
         ptn_ascii_case_equal(class_name, "Dom\\TokenList") ||
         ptn_ascii_case_equal(class_name, "Dom\\XPath")
@@ -4128,6 +4129,9 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
         return "DOMCdataSection";
     }
     if (ptn_ascii_case_equal(class_name, "Dom\\NodeList")) {
+        return "DOMNodeList";
+    }
+    if (ptn_ascii_case_equal(class_name, "Dom\\HTMLCollection")) {
         return "DOMNodeList";
     }
     if (ptn_ascii_case_equal(class_name, "Dom\\NamedNodeMap")) {
@@ -158984,6 +158988,7 @@ static int ptn_iterator_to_array_prefers_fresh_iterator(PtnValue source) {
     const char *class_name = source.as.object->class_name;
     return ptn_declared_class_is_same_or_descendant(class_name, "DOMNodeList") ||
         ptn_declared_class_is_same_or_descendant(class_name, "Dom\\NodeList") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\HTMLCollection") ||
         ptn_declared_class_is_same_or_descendant(class_name, "DOMNamedNodeMap") ||
         ptn_declared_class_is_same_or_descendant(class_name, "Dom\\NamedNodeMap");
 }
@@ -173630,6 +173635,7 @@ struct PtnXmlNode {
     size_t attribute_count;
     size_t attribute_capacity;
     PtnObject *object;
+    PtnObject *children_collection;
     PtnObject *class_list;
     uint64_t class_list_mutation_version;
     int class_list_next_mutation_resume_same_index;
@@ -173657,6 +173663,7 @@ struct PtnXmlNode {
 typedef struct {
     PtnXmlNode *parent;
     PtnObject *parent_object;
+    PtnObject *self;
     PtnXmlNode **items;
     size_t item_count;
     size_t item_capacity;
@@ -173667,6 +173674,7 @@ typedef struct {
     int filter_namespace;
     int attributes;
     int rewind_forbidden;
+    int cached_children;
 } PtnXmlNodeListData;
 
 typedef struct PtnDomTokenListData {
@@ -175725,6 +175733,9 @@ static void ptn_xml_node_list_data_free(void *data) {
     if (list == NULL) {
         return;
     }
+    if (list->cached_children && list->parent != NULL && list->parent->children_collection == list->self) {
+        list->parent->children_collection = NULL;
+    }
     if (list->parent_object != NULL) {
         ptn_object_release(list->parent_object);
         list->parent_object = NULL;
@@ -175741,13 +175752,20 @@ static const char *ptn_xml_node_list_class_name_for_parent(PtnXmlNode *parent) {
         : "DOMNodeList";
 }
 
-static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent) {
+static const char *ptn_xml_html_collection_class_name_for_parent(PtnXmlNode *parent) {
+    return parent != NULL && ptn_xml_document_for_node(parent) != NULL && ptn_xml_document_for_node(parent)->modern_dom
+        ? "Dom\\HTMLCollection"
+        : "DOMNodeList";
+}
+
+static PtnValue ptn_xml_node_list_object_with_class(PtnRuntime *runtime, PtnXmlNode *parent, const char *class_name) {
     PtnXmlNodeListData *data = malloc(sizeof(PtnXmlNodeListData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->parent = parent;
     data->parent_object = parent == NULL ? NULL : parent->object;
+    data->self = NULL;
     if (data->parent_object != NULL) {
         ptn_object_retain(data->parent_object);
     }
@@ -175761,11 +175779,20 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
     data->filter_namespace = 0;
     data->attributes = 0;
     data->rewind_forbidden = 0;
-    const char *class_name = ptn_xml_node_list_class_name_for_parent(parent);
-    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    data->cached_children = 0;
+    PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "DOMNodeList" : class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
+    data->self = object.as.object;
     return object;
+}
+
+static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent) {
+    return ptn_xml_node_list_object_with_class(runtime, parent, ptn_xml_node_list_class_name_for_parent(parent));
+}
+
+static PtnValue ptn_xml_html_collection_object(PtnRuntime *runtime, PtnXmlNode *parent) {
+    return ptn_xml_node_list_object_with_class(runtime, parent, ptn_xml_html_collection_class_name_for_parent(parent));
 }
 
 static PtnValue ptn_xml_child_nodes_object(PtnRuntime *runtime, PtnXmlNode *parent) {
@@ -175776,12 +175803,23 @@ static PtnValue ptn_xml_child_nodes_object(PtnRuntime *runtime, PtnXmlNode *pare
 }
 
 static PtnValue ptn_xml_children_object(PtnRuntime *runtime, PtnXmlNode *parent) {
-    PtnValue object = ptn_xml_node_list_object(runtime, parent);
+    if (parent != NULL && parent->children_collection != NULL) {
+        ptn_object_retain(parent->children_collection);
+        return ptn_object(parent->children_collection);
+    }
+    PtnValue object = ptn_xml_html_collection_object(runtime, parent);
     PtnXmlNodeListData *list = ptn_xml_node_list_data(object);
+    if (list != NULL) {
+        list->cached_children = 1;
+    }
     for (size_t i = 0; parent != NULL && i < parent->child_count; i++) {
         if (parent->children[i] != NULL && parent->children[i]->type == PTN_XML_NODE_ELEMENT) {
             ptn_xml_node_list_push(list, parent->children[i]);
         }
+    }
+    if (parent != NULL) {
+        parent->children_collection = object.as.object;
+        ptn_object_retain(parent->children_collection);
     }
     return object;
 }
@@ -175793,6 +175831,7 @@ static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *e
     }
     data->parent = element;
     data->parent_object = element == NULL ? NULL : element->object;
+    data->self = NULL;
     if (data->parent_object != NULL) {
         ptn_object_retain(data->parent_object);
     }
@@ -175806,12 +175845,14 @@ static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *e
     data->filter_namespace = 0;
     data->attributes = 1;
     data->rewind_forbidden = 0;
+    data->cached_children = 0;
     const char *class_name = element != NULL && ptn_xml_document_for_node(element) != NULL && ptn_xml_document_for_node(element)->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
+    data->self = object.as.object;
     return object;
 }
 
@@ -175822,6 +175863,7 @@ static PtnValue ptn_xml_named_node_map_snapshot_object(PtnRuntime *runtime, PtnX
     }
     data->parent = owner;
     data->parent_object = owner == NULL ? NULL : owner->object;
+    data->self = NULL;
     if (data->parent_object != NULL) {
         ptn_object_retain(data->parent_object);
     }
@@ -175835,12 +175877,14 @@ static PtnValue ptn_xml_named_node_map_snapshot_object(PtnRuntime *runtime, PtnX
     data->filter_namespace = 0;
     data->attributes = 0;
     data->rewind_forbidden = 0;
+    data->cached_children = 0;
     const char *class_name = owner != NULL && owner->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
+    data->self = object.as.object;
     return object;
 }
 
@@ -175851,6 +175895,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     }
     data->parent = NULL;
     data->parent_object = NULL;
+    data->self = NULL;
     data->items = NULL;
     data->item_count = 0;
     data->item_capacity = 0;
@@ -175861,6 +175906,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     data->filter_namespace = 0;
     data->attributes = 0;
     data->rewind_forbidden = 0;
+    data->cached_children = 0;
     size_t length = ptn_xml_node_list_length(source);
     for (size_t i = 0; i < length; i++) {
         ptn_xml_node_list_push(data, ptn_xml_node_list_item(source, i));
@@ -175868,6 +175914,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "DOMNodeList" : class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
+    data->self = object.as.object;
     return object;
 }
 
@@ -177057,7 +177104,7 @@ static void ptn_xml_collect_elements_by_tag(PtnXmlNodeListData *list, PtnXmlNode
 }
 
 static PtnValue ptn_xml_get_elements_by_tag_name_object(PtnRuntime *runtime, PtnXmlNode *root, const char *tag_name) {
-    PtnValue object = ptn_xml_node_list_object(runtime, root);
+    PtnValue object = ptn_xml_html_collection_object(runtime, root);
     PtnXmlNodeListData *list = ptn_xml_node_list_data(object);
     list->filter_elements = 1;
     list->tag_name = ptn_duplicate_string(tag_name == NULL ? "*" : tag_name);
@@ -177072,7 +177119,7 @@ static PtnValue ptn_xml_get_elements_by_tag_name_ns_object(
     const char *namespace_uri,
     const char *local_name
 ) {
-    PtnValue object = ptn_xml_node_list_object(runtime, root);
+    PtnValue object = ptn_xml_html_collection_object(runtime, root);
     PtnXmlNodeListData *list = ptn_xml_node_list_data(object);
     list->filter_namespace = 1;
     list->namespace_uri = namespace_uri == NULL ? NULL : ptn_duplicate_string(namespace_uri);
@@ -177210,7 +177257,7 @@ static void ptn_dom_collect_elements_by_class_tokens(PtnXmlNodeListData *list, P
 }
 
 static PtnValue ptn_dom_get_elements_by_class_name_object(PtnRuntime *runtime, PtnXmlNode *root, PtnStringOperand class_names) {
-    PtnValue object = ptn_xml_node_list_object(runtime, root);
+    PtnValue object = ptn_xml_html_collection_object(runtime, root);
     PtnXmlNodeListData *list = ptn_xml_node_list_data(object);
     list->items = malloc(sizeof(PtnXmlNode *));
     if (list->items == NULL) {
@@ -177240,6 +177287,34 @@ static PtnXmlNode *ptn_dom_node_list_named_item(PtnXmlNodeListData *list, const 
         const char *id = ptn_xml_element_attribute_value(node, "id");
         if (id != NULL && strcmp(id, name) == 0) {
             return node;
+        }
+        const char *node_name = ptn_xml_element_attribute_value(node, "name");
+        if (node_name != NULL && strcmp(node_name, name) == 0) {
+            return node;
+        }
+    }
+    return NULL;
+}
+
+static PtnXmlNode *ptn_dom_html_collection_named_item(PtnXmlNodeListData *list, const char *name) {
+    if (list == NULL || name == NULL || name[0] == '\0') {
+        return NULL;
+    }
+    for (size_t i = 0; i < ptn_xml_node_list_length(list); i++) {
+        PtnXmlNode *node = ptn_xml_node_list_item(list, i);
+        if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        const char *id = ptn_xml_element_attribute_value(node, "id");
+        if (id != NULL && strcmp(id, name) == 0) {
+            return node;
+        }
+    }
+    for (size_t i = 0; i < ptn_xml_node_list_length(list); i++) {
+        PtnXmlNode *node = ptn_xml_node_list_item(list, i);
+        if (node == NULL || node->type != PTN_XML_NODE_ELEMENT ||
+            !ptn_ascii_case_equal(node->namespace_uri == NULL ? "" : node->namespace_uri, ptn_dom_xhtml_namespace_uri())) {
+            continue;
         }
         const char *node_name = ptn_xml_element_attribute_value(node, "name");
         if (node_name != NULL && strcmp(node_name, name) == 0) {
@@ -192230,6 +192305,20 @@ static void ptn_dom_throw_offset_type_error(PtnRuntime *runtime, const char *cla
     ptn_throw_exception(runtime, "Error", message);
 }
 
+static void ptn_dom_throw_offset_isset_type_error(PtnRuntime *runtime, PtnValue offset) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot access offset of type %s in isset or empty",
+        ptn_dom_offset_type_name(offset)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static int ptn_dom_node_list_offset_index(
     PtnRuntime *runtime,
     const char *class_name,
@@ -193590,6 +193679,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (list == NULL) {
             return ptn_null();
         }
+        int is_html_collection = ptn_ascii_case_equal(object_class_name, "Dom\\HTMLCollection");
         if (ptn_ascii_case_equal(name, "count")) {
             char method[160];
             int written = snprintf(method, sizeof(method), "%s::count", object_class_name);
@@ -193609,21 +193699,51 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         }
         if (ptn_ascii_case_equal(class_name, "DOMNodeList") && ptn_ascii_case_equal(name, "namedItem")) {
             if (argc != 1) {
-                return ptn_dom_throw_count(runtime, "DOMNodeList::namedItem", "exactly 1 argument", argc);
+                char method[192];
+                int written = snprintf(method, sizeof(method), "%s::namedItem", object_class_name);
+                if (written < 0 || (size_t)written >= sizeof(method)) {
+                    ptn_abort_out_of_memory();
+                }
+                return ptn_dom_throw_count(runtime, method, "exactly 1 argument", argc);
             }
-            PtnStringOperand item_name = ptn_internal_expect_string_arg(runtime, "DOMNodeList::namedItem", 1, "name", args[0], line);
+            char method[192];
+            int written = snprintf(method, sizeof(method), "%s::namedItem", object_class_name);
+            if (written < 0 || (size_t)written >= sizeof(method)) {
+                ptn_abort_out_of_memory();
+            }
+            PtnStringOperand item_name = ptn_internal_expect_string_arg(runtime, method, 1, "name", args[0], line);
             if (runtime->exceptions->active_exception != NULL) {
                 return ptn_null();
             }
             char *name_copy = ptn_duplicate_string_len(item_name.data, item_name.len);
             ptn_string_operand_free(item_name);
-            PtnXmlNode *named = ptn_dom_node_list_named_item(list, name_copy);
+            PtnXmlNode *named = is_html_collection
+                ? ptn_dom_html_collection_named_item(list, name_copy)
+                : ptn_dom_node_list_named_item(list, name_copy);
             free(name_copy);
             return ptn_xml_node_value_for_runtime(runtime, named);
         }
         if (ptn_ascii_case_equal(name, "offsetExists")) {
             if (ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
                 return ptn_bool(argc >= 1 && ptn_dom_named_node_map_offset_node(list, args[0]) != NULL);
+            }
+            if (is_html_collection && argc >= 1) {
+                PtnValue key = ptn_value_deref(args[0]);
+                int64_t parsed = 0;
+                if (key.type == PTN_STRING &&
+                    !ptn_string_is_integer_array_key_len((const char *)key.as.string.data, key.as.string.len, &parsed)) {
+                    char *name_copy = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+                    PtnXmlNode *named = ptn_dom_html_collection_named_item(list, name_copy);
+                    free(name_copy);
+                    return ptn_bool(named != NULL);
+                }
+            }
+            if (argc >= 1) {
+                PtnValue key = ptn_value_deref(args[0]);
+                if (key.type != PTN_INT && key.type != PTN_FLOAT && key.type != PTN_STRING) {
+                    ptn_dom_throw_offset_isset_type_error(runtime, key);
+                    return ptn_bool(0);
+                }
             }
             int64_t index = 0;
             if (argc >= 1 && !ptn_dom_node_list_offset_index(runtime, object_class_name, args[0], line, &index)) {
@@ -193648,6 +193768,17 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
                     return ptn_null();
                 }
                 return ptn_xml_node_value_for_runtime(runtime, ptn_dom_named_node_map_offset_get_node(runtime, list, args[0], object_class_name, line));
+            }
+            if (is_html_collection && argc >= 1) {
+                PtnValue key = ptn_value_deref(args[0]);
+                int64_t parsed = 0;
+                if (key.type == PTN_STRING &&
+                    !ptn_string_is_integer_array_key_len((const char *)key.as.string.data, key.as.string.len, &parsed)) {
+                    char *name_copy = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+                    PtnXmlNode *named = ptn_dom_html_collection_named_item(list, name_copy);
+                    free(name_copy);
+                    return ptn_xml_node_value_for_runtime(runtime, named);
+                }
             }
             int64_t index = 0;
             if (argc >= 1 && !ptn_dom_node_list_offset_index(runtime, object_class_name, args[0], line, &index)) {

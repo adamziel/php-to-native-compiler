@@ -17230,6 +17230,7 @@ static PTN_UNUSED int ptn_arrayaccess_append_reference_temporary(
         value.as.object != NULL &&
         (ptn_ascii_case_equal(value.as.object->class_name, "DOMNodeList") ||
             ptn_ascii_case_equal(value.as.object->class_name, "Dom\\NodeList") ||
+            ptn_ascii_case_equal(value.as.object->class_name, "Dom\\HTMLCollection") ||
             ptn_ascii_case_equal(value.as.object->class_name, "DOMNamedNodeMap") ||
             ptn_ascii_case_equal(value.as.object->class_name, "Dom\\NamedNodeMap") ||
             ptn_ascii_case_equal(value.as.object->class_name, "DOMTokenList") ||
