@@ -183691,6 +183691,10 @@ static void ptn_dom_materialize_empty_default_namespace(PtnRuntime *runtime, Ptn
             parent_default[0] != '\0' &&
             ptn_xml_element_find_attribute(node, "xmlns") == NULL) {
             ptn_xml_element_set_attribute_string(runtime, node, "xmlns", "");
+            PtnXmlNode *xmlns_attr = ptn_xml_element_find_attribute(node, "xmlns");
+            if (xmlns_attr != NULL) {
+                xmlns_attr->synthetic_namespace_declaration = 1;
+            }
         }
         for (size_t i = 0; i < node->child_count; i++) {
             ptn_dom_materialize_empty_default_namespace(runtime, node, node->children[i]);

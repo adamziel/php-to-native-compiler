@@ -1,0 +1,1 @@
+ext/dom/tests/modern/spec/Node_lookupNamespaceURI.phpt
