@@ -1,0 +1,1 @@
+Zend/tests/gh8962.phpt

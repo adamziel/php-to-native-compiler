@@ -798,6 +798,10 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
                     const char *class_name = scope.type == PTN_OBJECT
                         ? scope.as.object->class_name
                         : scope.as.exception->class_name;
+                    if (scope.type == PTN_OBJECT && scope.as.object != NULL) {
+                        scope.as.object->defer_object_id_release_once = 1;
+                    }
+                    ptn_closure_set_capture(closure, "this", scope);
                     ptn_closure_set_origin(
                         closure,
                         PTN_CLOSURE_ORIGIN_METHOD,
