@@ -25572,6 +25572,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "password_hash"
             | "password_needs_rehash"
             | "password_verify"
+            | "pg_connect"
             | "urlencode"
             | "urldecode"
             | "rawurlencode"

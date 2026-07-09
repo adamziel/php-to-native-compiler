@@ -33722,6 +33722,14 @@ static PtnValue ptn_internal_mysqli_close(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_pg_connect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "mail", 1, "to", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -242459,6 +242467,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "mysqli_connect_error", 0, 0, ptn_internal_mysqli_connect_error },
         { "mysqli_get_client_info", 0, 0, ptn_internal_mysqli_get_client_info },
         { "mysqli_get_client_version", 0, 0, ptn_internal_mysqli_get_client_version },
+        { "pg_connect", 1, 2, ptn_internal_pg_connect },
         { "MessageFormatter::create", 2, 2, ptn_internal_messageformatter_create },
         { "MessageFormatter::formatMessage", 3, 3, ptn_internal_messageformatter_format_message },
         { "MessageFormatter::parseMessage", 3, 3, ptn_internal_messageformatter_parse_message },
