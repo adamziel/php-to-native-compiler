@@ -1,0 +1,1 @@
+Zend/tests/objects/objects_032.phpt

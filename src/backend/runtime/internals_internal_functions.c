@@ -11599,7 +11599,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
                 PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
-                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
+                PtnValue entry_value =
+                    array->entries[i].value.type == PTN_REFERENCE &&
+                        array->entries[i].value.as.reference->refcount == 1
+                        ? ptn_value_clone_deref(array->entries[i].value)
+                        : ptn_value_clone(array->entries[i].value);
                 ptn_var_dump_indent(indent + 1);
                 ptn_var_dump_array_key(key);
                 ptn_var_dump_value_indented(entry_value, indent + 1, seen);
