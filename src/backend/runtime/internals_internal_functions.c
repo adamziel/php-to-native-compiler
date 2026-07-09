@@ -190393,12 +190393,14 @@ static int ptn_dom_string_offset_index(const char *data, size_t len, int64_t *in
 }
 
 static int ptn_dom_named_node_map_offset_index_is_in_range(PtnRuntime *runtime, int64_t index) {
-    if (index >= 0 && index <= INT_MAX) {
+    if (index <= INT_MAX) {
         return 1;
     }
     ptn_throw_exception(runtime, "ValueError", "must be between 0 and 2147483647");
     return 0;
 }
+
+static void ptn_dom_throw_offset_type_error(PtnRuntime *runtime, const char *class_name, PtnValue offset);
 
 static PtnXmlNode *ptn_dom_named_node_map_offset_node(PtnXmlNodeListData *list, PtnValue offset) {
     if (list == NULL) {
@@ -190446,6 +190448,7 @@ static PtnXmlNode *ptn_dom_named_node_map_offset_get_node(
     PtnRuntime *runtime,
     PtnXmlNodeListData *list,
     PtnValue offset,
+    const char *class_name,
     size_t line
 ) {
     if (list == NULL) {
@@ -190479,6 +190482,10 @@ static PtnXmlNode *ptn_dom_named_node_map_offset_get_node(
         return (size_t)index >= ptn_xml_node_list_length(list)
             ? NULL
             : ptn_xml_node_list_item(list, (size_t)index);
+    }
+    if (key.type == PTN_BOOL || key.type == PTN_NULL) {
+        ptn_dom_throw_offset_type_error(runtime, class_name, key);
+        return NULL;
     }
     return ptn_dom_named_node_map_offset_node(list, offset);
 }
@@ -193082,7 +193089,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
                     ptn_throw_exception(runtime, "Error", message);
                     return ptn_null();
                 }
-                return ptn_xml_node_value_for_runtime(runtime, ptn_dom_named_node_map_offset_get_node(runtime, list, args[0], line));
+                return ptn_xml_node_value_for_runtime(runtime, ptn_dom_named_node_map_offset_get_node(runtime, list, args[0], object_class_name, line));
             }
             int64_t index = 0;
             if (argc >= 1 && !ptn_dom_node_list_offset_index(runtime, object_class_name, args[0], line, &index)) {
