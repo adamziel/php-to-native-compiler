@@ -238459,12 +238459,71 @@ static int ptn_soap_request_value_is_encoded_array_arg(PtnValue value, size_t de
     return 0;
 }
 
+static int ptn_soap_string_value_equals(PtnValue value, const char *literal) {
+    value = ptn_value_deref(value);
+    size_t literal_len = strlen(literal);
+    return value.type == PTN_STRING &&
+        value.as.string.len == literal_len &&
+        memcmp(value.as.string.data, literal, literal_len) == 0;
+}
+
+static int ptn_soap_request_value_is_encoded_soap_struct_array_arg(PtnValue value, size_t depth) {
+    if (depth > 64) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        if (ptn_ascii_case_equal(value.as.object->class_name, "SoapParam")) {
+            PtnValue data = ptn_null();
+            return ptn_soap_object_property(value, "param_data", &data) &&
+                ptn_soap_request_value_is_encoded_soap_struct_array_arg(data, depth + 1);
+        }
+        if (ptn_ascii_case_equal(value.as.object->class_name, "SoapVar")) {
+            PtnValue encoded = ptn_null();
+            PtnValue encoded_type = ptn_null();
+            PtnValue encoded_stype = ptn_null();
+            PtnValue encoded_ns = ptn_null();
+            (void)ptn_soap_object_property(value, "enc_value", &encoded);
+            (void)ptn_soap_object_property(value, "enc_type", &encoded_type);
+            (void)ptn_soap_object_property(value, "enc_stype", &encoded_stype);
+            int has_ns = ptn_soap_object_property(value, "enc_ns", &encoded_ns) &&
+                ptn_value_deref(encoded_ns).type != PTN_NULL;
+            if (
+                ptn_value_to_integer(encoded_type) == 300 &&
+                has_ns &&
+                ptn_soap_string_value_equals(encoded_stype, "ArrayOfSOAPStruct")
+            ) {
+                return 1;
+            }
+            return ptn_soap_request_value_is_encoded_soap_struct_array_arg(encoded, depth + 1);
+        }
+        return 0;
+    }
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (ptn_soap_request_value_is_encoded_soap_struct_array_arg(value.as.array->entries[i].value, depth + 1)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_soap_request_args_start_with_encoded_array(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_ARRAY || value.as.array == NULL || value.as.array->len == 0) {
         return 0;
     }
     return ptn_soap_request_value_is_encoded_array_arg(value.as.array->entries[0].value, 0);
+}
+
+static int ptn_soap_request_args_start_with_encoded_soap_struct_array(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL || value.as.array->len == 0) {
+        return 0;
+    }
+    return ptn_soap_request_value_is_encoded_soap_struct_array_arg(value.as.array->entries[0].value, 0);
 }
 
 static void ptn_soap_append_request_value_element(
@@ -238639,6 +238698,17 @@ static void ptn_soap_append_request_value_element(
                     buffer,
                     " SOAP-ENC:arrayType=\"xsd:%s[%zu]\"",
                     scalar_xsd_type,
+                    count
+                );
+            } else if (
+                array_ns != NULL &&
+                array_ns[0] != '\0' &&
+                array_type != NULL &&
+                strcmp(array_type, "ArrayOfSOAPStruct") == 0
+            ) {
+                ptn_string_buffer_append_format(
+                    buffer,
+                    " SOAP-ENC:arrayType=\"ns2:SOAPStruct[%zu]\"",
                     count
                 );
             } else {
@@ -238913,6 +238983,8 @@ static int ptn_soap_client_record_non_wsdl_request(
     int request_has_scalar_array = ptn_soap_request_value_has_scalar_array(method_args, 0);
     int request_has_struct_array = ptn_soap_request_value_has_struct_array(method_args, 0);
     int request_starts_with_encoded_array = ptn_soap_request_args_start_with_encoded_array(method_args);
+    int request_starts_with_encoded_soap_struct_array =
+        ptn_soap_request_args_start_with_encoded_soap_struct_array(method_args);
     if (!ptn_soap_append_options_xml_declaration(runtime, &buffer, data->options, line)) {
         free(uri);
         free(header_xml.data);
@@ -238935,15 +239007,22 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         }
     } else if (!request_has_soap_param && request_has_scalar_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
         if (request_has_apache_map) {
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         }
+    } else if (request_starts_with_encoded_soap_struct_array && request_needs_ns2 && !request_has_apache_map) {
+        ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (request_needs_xsi) {
+            ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+        }
     } else if (request_starts_with_encoded_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
@@ -238951,6 +239030,13 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://xml.apache.org/xml-soap\"");
         } else if (request_needs_ns2) {
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
+        }
+    } else if (request_has_soap_param && request_needs_ns2 && !request_has_apache_map) {
+        ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
+        if (request_needs_xsi) {
+            ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
     } else {
         ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
