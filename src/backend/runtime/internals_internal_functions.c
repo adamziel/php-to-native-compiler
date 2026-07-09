@@ -33606,11 +33606,22 @@ static PtnValue ptn_internal_mysqli_get_client_version(PtnRuntime *runtime, size
     return ptn_int(PTN_MYSQLI_CLIENT_VERSION);
 }
 
+static int64_t ptn_mysqli_report_mode = PTN_MYSQLI_REPORT_OFF;
+
 static PtnValue ptn_internal_mysqli_connect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
-    (void)line;
+    if ((ptn_mysqli_report_mode & PTN_MYSQLI_REPORT_ERROR) != 0 &&
+        (ptn_mysqli_report_mode & PTN_MYSQLI_REPORT_STRICT) != 0) {
+        ptn_throw_exception_at(
+            runtime,
+            "mysqli_sql_exception",
+            "No such file or directory",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
     return ptn_bool(0);
 }
 
@@ -244715,6 +244726,13 @@ static const char *ptn_mysqli_client_info(void) {
     return PTN_MYSQLI_CLIENT_INFO;
 }
 
+static PTN_UNUSED void ptn_internal_mysqli_driver_report_mode_updated(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        ptn_mysqli_report_mode = value.as.integer;
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_mysqli_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -244731,7 +244749,7 @@ static PtnValue ptn_mysqli_driver_class_vars(void) {
     ptn_array_set_entry(result.as.array, ptn_array_string_key("client_info"), ptn_string(ptn_mysqli_client_info()));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("client_version"), ptn_int(PTN_MYSQLI_CLIENT_VERSION));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("driver_version"), ptn_int(PTN_MYSQLI_CLIENT_VERSION));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("report_mode"), ptn_int(PTN_MYSQLI_REPORT_OFF));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("report_mode"), ptn_int(ptn_mysqli_report_mode));
     return result;
 }
 
@@ -244751,7 +244769,7 @@ static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
     }
     (void)args;
     PtnValue object = ptn_object_new_shell_at(runtime, "mysqli_driver", line);
-    PtnValue report_mode = ptn_int(PTN_MYSQLI_REPORT_OFF);
+    PtnValue report_mode = ptn_int(ptn_mysqli_report_mode);
     PtnValue assigned = ptn_object_declare_property(
         runtime,
         object,
@@ -254093,7 +254111,7 @@ static PtnValue ptn_reflection_property_default_value(
             return ptn_int(PTN_MYSQLI_CLIENT_VERSION);
         }
         if (ptn_ascii_case_equal(property_name, "report_mode")) {
-            return ptn_int(PTN_MYSQLI_REPORT_OFF);
+            return ptn_int(ptn_mysqli_report_mode);
         }
     }
     return ptn_declared_class_reflection_property_default(runtime, class_name, property_name);

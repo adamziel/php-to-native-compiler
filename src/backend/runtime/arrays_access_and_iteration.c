@@ -1052,6 +1052,7 @@ static PTN_UNUSED PtnValue ptn_mysqli_driver_new(
     size_t line
 );
 #endif
+static PTN_UNUSED void ptn_internal_mysqli_driver_report_mode_updated(PtnValue value);
 
 #if defined(PTN_HAS_INTERNAL_FUNCTION_DISPATCH) || defined(PTN_HAS_URI_INTERNAL_HELPERS)
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
@@ -9286,6 +9287,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     } else {
         ptn_array_set_entry_publish_first(receiver.as.object->properties, key, stored);
     }
+    if (metadata != NULL &&
+        ptn_internal_class_name_is_mysqli_driver(receiver.as.object->class_name) &&
+        ptn_ascii_case_equal(metadata->display_name, "report_mode")) {
+        ptn_internal_mysqli_driver_report_mode_updated(result);
+    }
     ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     free(storage_key);
     PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
@@ -10679,6 +10685,10 @@ static PTN_UNUSED int ptn_internal_mysqli_driver_property_write(
         return 1;
     }
     return 0;
+}
+
+static PTN_UNUSED void ptn_internal_mysqli_driver_report_mode_updated(PtnValue value) {
+    (void)value;
 }
 #endif
 

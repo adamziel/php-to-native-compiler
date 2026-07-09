@@ -1,0 +1,8 @@
+ext/mysqli/tests/functions/mysqli_get_client_info.phpt
+ext/mysqli/tests/functions/mysqli_errno.phpt
+ext/mysqli/tests/functions/mysqli_error.phpt
+ext/mysqli/tests/functions/mysqli_field_count.phpt
+ext/mysqli/tests/functions/mysqli_character_set_name.phpt
+ext/mysqli/tests/functions/mysqli_get_host_info.phpt
+ext/mysqli/tests/functions/mysqli_get_proto_info.phpt
+ext/mysqli/tests/functions/mysqli_get_server_version.phpt

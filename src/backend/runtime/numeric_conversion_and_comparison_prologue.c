@@ -3384,6 +3384,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "PDOException")) {
         return "PDOException";
     }
+    if (ptn_exception_name_equal(class_name, "mysqli_sql_exception")) {
+        return "mysqli_sql_exception";
+    }
     if (ptn_exception_name_equal(class_name, "PharException")) {
         return "PharException";
     }
@@ -3529,6 +3532,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "SoapFault") ||
+            ptn_exception_name_equal(class_name, "mysqli_sql_exception") ||
             ptn_exception_name_equal(class_name, "PharException") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
             ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
@@ -3554,6 +3558,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     }
     if (ptn_exception_name_equal(type_name, "RuntimeException")) {
         return ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
+            ptn_exception_name_equal(class_name, "mysqli_sql_exception") ||
             ptn_exception_name_equal(class_name, "UnexpectedValueException") ||
             ptn_exception_name_equal(class_name, "OutOfBoundsException") ||
             ptn_exception_name_equal(class_name, "OutOfRangeException");
