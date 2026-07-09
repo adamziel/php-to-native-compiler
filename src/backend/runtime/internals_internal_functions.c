@@ -100589,12 +100589,21 @@ static const char *ptn_mb_env_or_state(const char *env_name, const char *state, 
     return fallback;
 }
 
+static const char *ptn_mb_auto_detect_order(void);
+
 static const char *ptn_mb_current_language(void) {
     return ptn_mb_env_or_state("PTN_MBSTRING_LANGUAGE", ptn_mb_language_name, "neutral");
 }
 
 static const char *ptn_mb_current_detect_order(void) {
-    return ptn_mb_env_or_state("PTN_MBSTRING_DETECT_ORDER", ptn_mb_detect_order_name, "ASCII,UTF-8");
+    if (ptn_mb_detect_order_name[0] != '\0') {
+        return ptn_mb_detect_order_name;
+    }
+    const char *env = getenv("PTN_MBSTRING_DETECT_ORDER");
+    if (env != NULL && env[0] != '\0') {
+        return env;
+    }
+    return ptn_mb_auto_detect_order();
 }
 
 static const char *ptn_mb_current_substitute_character(void) {
@@ -100605,6 +100614,12 @@ static const char *ptn_mb_auto_detect_order(void) {
     const char *language = ptn_mb_current_language();
     if (ptn_ascii_case_equal(language, "Japanese") || ptn_ascii_case_equal(language, "ja")) {
         return "ASCII,JIS,UTF-8,EUC-JP,SJIS";
+    }
+    if (ptn_ascii_case_equal(language, "Simplified Chinese") ||
+        ptn_ascii_case_equal(language, "Chinese") ||
+        ptn_ascii_case_equal(language, "zh-cn") ||
+        ptn_ascii_case_equal(language, "zh_CN")) {
+        return "ASCII,UTF-8,EUC-CN,CP936,GB18030-2022";
     }
     return "ASCII,UTF-8";
 }
@@ -129388,6 +129403,88 @@ static PtnValue ptn_mb_base64_or_qp_convert(
     return result;
 }
 
+static PtnValue ptn_mb_uuencode_operand(PtnStringOperand input) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (input.len == 0) {
+        return ptn_owned_string_len(output.data, output.len);
+    }
+    ptn_string_buffer_append(&output, "begin 0644 filename\n");
+    for (size_t offset = 0; offset < input.len; offset += 45) {
+        size_t line_len = input.len - offset;
+        if (line_len > 45) {
+            line_len = 45;
+        }
+        ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)line_len));
+        for (size_t i = 0; i < line_len; i += 3) {
+            unsigned char a = (unsigned char)input.data[offset + i];
+            unsigned char b = i + 1 < line_len ? (unsigned char)input.data[offset + i + 1] : 0;
+            unsigned char c = i + 2 < line_len ? (unsigned char)input.data[offset + i + 2] : 0;
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(a >> 2)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(((a << 4) | (b >> 4)) & 0x3f)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(((b << 2) | (c >> 6)) & 0x3f)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(c & 0x3f)));
+        }
+        ptn_string_buffer_append_char(&output, '\n');
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_mb_uudecode_operand(PtnStringOperand input) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    if (input.len >= 6 && memcmp(input.data, "begin ", 6) == 0) {
+        while (offset < input.len && input.data[offset] != '\n') {
+            offset++;
+        }
+        if (offset < input.len && input.data[offset] == '\n') {
+            offset++;
+        }
+    }
+    while (offset < input.len) {
+        while (offset < input.len && (input.data[offset] == '\r' || input.data[offset] == '\n')) {
+            offset++;
+        }
+        if (offset >= input.len) {
+            break;
+        }
+        if ((offset + 3 <= input.len && memcmp(input.data + offset, "end", 3) == 0) ||
+            input.data[offset] == '`') {
+            break;
+        }
+        int decoded_len = ptn_uudecode_value((unsigned char)input.data[offset++]);
+        if (decoded_len < 0) {
+            break;
+        }
+        int produced = 0;
+        while (produced < decoded_len && offset < input.len && input.data[offset] != '\n' && input.data[offset] != '\r') {
+            int a = ptn_uudecode_value((unsigned char)input.data[offset++]);
+            int b = offset < input.len ? ptn_uudecode_value((unsigned char)input.data[offset++]) : -1;
+            int c = offset < input.len ? ptn_uudecode_value((unsigned char)input.data[offset++]) : -1;
+            int d = offset < input.len ? ptn_uudecode_value((unsigned char)input.data[offset++]) : -1;
+            if (a < 0 || b < 0 || c < 0 || d < 0) {
+                break;
+            }
+            unsigned char bytes[3];
+            bytes[0] = (unsigned char)((a << 2) | (b >> 4));
+            bytes[1] = (unsigned char)(((b & 0x0f) << 4) | (c >> 2));
+            bytes[2] = (unsigned char)(((c & 0x03) << 6) | d);
+            for (size_t i = 0; i < 3 && produced < decoded_len; i++) {
+                ptn_string_buffer_append_char(&output, (char)bytes[i]);
+                produced++;
+            }
+        }
+        while (offset < input.len && input.data[offset] != '\n') {
+            offset++;
+        }
+        if (offset < input.len && input.data[offset] == '\n') {
+            offset++;
+        }
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PtnValue ptn_mb_convert_string_operand(
     PtnRuntime *runtime,
     PtnStringOperand input,
@@ -129397,6 +129494,9 @@ static PtnValue ptn_mb_convert_string_operand(
 ) {
     if (ptn_ascii_case_equal(to_encoding, "BASE64") || ptn_ascii_case_equal(to_encoding, "Quoted-Printable")) {
         return ptn_mb_base64_or_qp_convert(runtime, "mb_convert_encoding", input, to_encoding, line);
+    }
+    if (ptn_ascii_case_equal(to_encoding, "UUENCODE")) {
+        return ptn_mb_uuencode_operand(input);
     }
     if (ptn_ascii_case_equal(from_encoding, "BASE64")) {
         PtnValue temp = ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len);
@@ -129414,6 +129514,18 @@ static PtnValue ptn_mb_convert_string_operand(
             return ptn_owned_string_len(out, out_len);
         }
         return decoded;
+    }
+    if (ptn_ascii_case_equal(from_encoding, "UUENCODE")) {
+        PtnValue decoded = ptn_mb_uudecode_operand(input);
+        if (ptn_mb_encoding_is_raw(to_encoding)) {
+            return decoded;
+        }
+        PtnStringOperand decoded_operand = ptn_value_to_string_operand(decoded);
+        size_t out_len = 0;
+        char *out = ptn_mb_iconv_convert_alloc_counting(decoded_operand.data, decoded_operand.len, "UTF-8", to_encoding, &out_len);
+        ptn_string_operand_free(decoded_operand);
+        ptn_value_destroy(&decoded);
+        return ptn_owned_string_len(out, out_len);
     }
     if (ptn_ascii_case_equal(from_encoding, "Quoted-Printable")) {
         size_t decoded_len = 0;

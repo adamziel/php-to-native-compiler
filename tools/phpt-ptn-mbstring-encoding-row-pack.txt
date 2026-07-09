@@ -1,0 +1,2 @@
+ext/mbstring/tests/uuencode_encoding.phpt
+ext/mbstring/tests/zh_CN_default_encodings.phpt
