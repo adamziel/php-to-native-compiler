@@ -1,5 +1,6 @@
 ext/soap/tests/schema/schema035.phpt
 ext/soap/tests/schema/schema036.phpt
+ext/soap/tests/schema/schema040.phpt
 ext/soap/tests/schema/schema041.phpt
 ext/soap/tests/schema/schema045.phpt
 ext/soap/tests/schema/schema046.phpt

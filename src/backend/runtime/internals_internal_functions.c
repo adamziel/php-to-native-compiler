@@ -226818,6 +226818,13 @@ static void ptn_soap_parse_simple_type_in_range(
     PtnSoapType *type
 );
 
+static char *ptn_soap_first_attr_in_range(
+    const char *start,
+    const char *end,
+    const char *tag_name,
+    const char *attr_name
+);
+
 static void ptn_soap_parse_complex_type_in_range(
     const char *document_start,
     const char *document_end,
@@ -226899,11 +226906,18 @@ static void ptn_soap_parse_fields_in_range(
             char *max_occurs = ptn_soap_attr_dup(tag, tag_end, "maxOccurs");
             const char *field_element_close = NULL;
             const char *field_element_close_end = NULL;
+            const char *field_attribute_close = NULL;
+            const char *field_attribute_close_end = NULL;
             if (!is_attribute && !ptn_soap_tag_is_self_closing(tag, tag_end)) {
                 field_element_close = ptn_soap_find_closing_tag(tag_end, end, "element");
                 field_element_close_end = field_element_close == NULL
                     ? NULL
                     : ptn_soap_tag_end(field_element_close, end);
+            } else if (is_attribute && !ptn_soap_tag_is_self_closing(tag, tag_end)) {
+                field_attribute_close = ptn_soap_find_closing_tag(tag_end, end, "attribute");
+                field_attribute_close_end = field_attribute_close == NULL
+                    ? NULL
+                    : ptn_soap_tag_end(field_attribute_close, end);
             }
             if (field_name == NULL && ref != NULL) {
                 field_name = ptn_soap_local_name_dup(ref);
@@ -226964,6 +226978,13 @@ static void ptn_soap_parse_fields_in_range(
                             }
                         }
                     }
+                } else if (is_attribute && field_type == NULL && field_attribute_close != NULL) {
+                    field_type = ptn_soap_first_attr_in_range(
+                        tag_end,
+                        field_attribute_close,
+                        "restriction",
+                        "base"
+                    );
                 }
                 int is_qualified = form != NULL
                     ? ptn_ascii_case_equal(form, "qualified")
@@ -226992,6 +227013,8 @@ static void ptn_soap_parse_fields_in_range(
             free(max_occurs);
             if (field_element_close_end != NULL) {
                 tag_end = field_element_close_end;
+            } else if (field_attribute_close_end != NULL) {
+                tag_end = field_attribute_close_end;
             }
         } else if (ptn_soap_tag_is_opening_name(tag, tag_end, "any")) {
             char *namespace_attr = ptn_soap_attr_dup(tag, tag_end, "namespace");
@@ -227427,11 +227450,14 @@ static void ptn_soap_parse_complex_type_in_range(
         return;
     }
 
-    char *extension_base = ptn_soap_first_attr_in_range(start, end, "extension", "base");
+    char *extension_base = NULL;
     int base_is_restriction = 0;
-    if (extension_base == NULL) {
-        extension_base = ptn_soap_first_attr_in_range(start, end, "restriction", "base");
-        base_is_restriction = extension_base != NULL;
+    if (ptn_soap_range_has_tag(start, end, "complexContent")) {
+        extension_base = ptn_soap_first_attr_in_range(start, end, "extension", "base");
+        if (extension_base == NULL) {
+            extension_base = ptn_soap_first_attr_in_range(start, end, "restriction", "base");
+            base_is_restriction = extension_base != NULL;
+        }
     }
     if (extension_base != NULL) {
         type->is_extension = 1;
