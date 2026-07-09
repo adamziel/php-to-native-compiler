@@ -176301,13 +176301,14 @@ static int ptn_xml_node_matches_tag(PtnXmlNode *node, const char *tag_name) {
     const char *node_name = node->name == NULL ? "" : node->name;
     int requested_has_prefix = strchr(requested, ':') != NULL;
     PtnXmlNode *document = ptn_xml_document_for_node(node);
-    if (!requested_has_prefix && strchr(node_name, ':') != NULL && document != NULL && document->html_document) {
+    if (!requested_has_prefix && strchr(node_name, ':') != NULL) {
         return 0;
     }
     const char *candidate = requested_has_prefix ? node_name : ptn_xml_local_name(node_name);
     int html_namespace = node->namespace_uri != NULL &&
         strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0;
-    if (!html_namespace) {
+    int html_document = document != NULL && document->html_document;
+    if (!html_document || !html_namespace) {
         return strcmp(candidate, requested) == 0;
     }
     if (!requested_has_prefix) {
