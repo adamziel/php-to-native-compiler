@@ -5899,6 +5899,21 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     int create_if_missing,
     PtnValue *reference_out
 );
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_for_nested_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out,
+    int *temporary_reference_out
+);
+static PTN_UNUSED void ptn_internal_array_object_unwrap_temporary_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue reference,
+    size_t line
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_diagnostics(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -22803,13 +22818,15 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue nested_reference = ptn_null();
-            if (ptn_internal_array_object_offset_reference(
+            int temporary_array_object_reference = 0;
+            if (ptn_internal_array_object_offset_reference_for_nested_write(
                 runtime,
                 slot_value,
                 offset_value,
                 line,
                 1,
-                &nested_reference
+                &nested_reference,
+                &temporary_array_object_reference
             )) {
                 ptn_value_array_path_set_impl(
                     runtime,
@@ -22820,6 +22837,14 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
                     line,
                     emit_null_key_deprecation
                 );
+                if (temporary_array_object_reference) {
+                    ptn_internal_array_object_unwrap_temporary_offset_reference(
+                        runtime,
+                        slot_value,
+                        nested_reference,
+                        line
+                    );
+                }
                 ptn_value_destroy(&nested_reference);
                 return;
             }
@@ -23196,13 +23221,15 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue nested_reference = ptn_null();
-            if (ptn_internal_array_object_offset_reference(
+            int temporary_array_object_reference = 0;
+            if (ptn_internal_array_object_offset_reference_for_nested_write(
                 runtime,
                 slot_value,
                 offset_value,
                 line,
                 1,
-                &nested_reference
+                &nested_reference,
+                &temporary_array_object_reference
             )) {
                 PtnValue result = ptn_value_array_path_set_result(
                     runtime,
@@ -23212,6 +23239,14 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
                     value,
                     line
                 );
+                if (temporary_array_object_reference) {
+                    ptn_internal_array_object_unwrap_temporary_offset_reference(
+                        runtime,
+                        slot_value,
+                        nested_reference,
+                        line
+                    );
+                }
                 ptn_value_destroy(&nested_reference);
                 return result;
             }
@@ -23814,13 +23849,15 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         PtnValue nested_reference = ptn_null();
-        if (ptn_internal_array_object_offset_reference(
+        int temporary_array_object_reference = 0;
+        if (ptn_internal_array_object_offset_reference_for_nested_write(
             runtime,
             *target_value,
             offset_value,
             line,
             1,
-            &nested_reference
+            &nested_reference,
+            &temporary_array_object_reference
         )) {
             ptn_value_array_path_set_impl(
                 runtime,
@@ -23831,6 +23868,14 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
                 line,
                 emit_null_key_deprecation
             );
+            if (temporary_array_object_reference) {
+                ptn_internal_array_object_unwrap_temporary_offset_reference(
+                    runtime,
+                    *target_value,
+                    nested_reference,
+                    line
+                );
+            }
             ptn_value_destroy(&nested_reference);
             return;
         }
@@ -23932,13 +23977,15 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         PtnValue nested_reference = ptn_null();
-        if (ptn_internal_array_object_offset_reference(
+        int temporary_array_object_reference = 0;
+        if (ptn_internal_array_object_offset_reference_for_nested_write(
             runtime,
             *target_value,
             offset_value,
             line,
             1,
-            &nested_reference
+            &nested_reference,
+            &temporary_array_object_reference
         )) {
             PtnValue result = ptn_value_array_path_set_result(
                 runtime,
@@ -23948,6 +23995,14 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
                 value,
                 line
             );
+            if (temporary_array_object_reference) {
+                ptn_internal_array_object_unwrap_temporary_offset_reference(
+                    runtime,
+                    *target_value,
+                    nested_reference,
+                    line
+                );
+            }
             ptn_value_destroy(&nested_reference);
             return result;
         }

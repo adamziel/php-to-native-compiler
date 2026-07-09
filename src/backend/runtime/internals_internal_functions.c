@@ -273262,12 +273262,16 @@ static int ptn_internal_array_object_offset_reference_impl(
     size_t line,
     int create_if_missing,
     int emit_key_diagnostics,
-    PtnValue *reference_out
+    PtnValue *reference_out,
+    int *temporary_reference_out
 ) {
     if (reference_out == NULL) {
         return 0;
     }
     *reference_out = ptn_null();
+    if (temporary_reference_out != NULL) {
+        *temporary_reference_out = 0;
+    }
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type == PTN_OBJECT &&
@@ -273343,6 +273347,7 @@ static int ptn_internal_array_object_offset_reference_impl(
         ? ptn_array_key_clone(key)
         : ptn_spl_object_property_key_from_array_key(key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, storage_key);
+    int temporary_reference = 0;
     if (entry == NULL) {
         if (!create_if_missing) {
             ptn_emit_undefined_array_key_warning(runtime, key, line);
@@ -273356,6 +273361,7 @@ static int ptn_internal_array_object_offset_reference_impl(
             ptn_array_key_clone(storage_key),
             ptn_reference_value(ptn_reference_new_owned(ptn_null()))
         );
+        temporary_reference = 1;
         ptn_spl_object_backing_mark_property_initialized(object, storage_key);
         entry = ptn_array_entry_for_key(array, storage_key);
     }
@@ -273367,8 +273373,12 @@ static int ptn_internal_array_object_offset_reference_impl(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        temporary_reference = 1;
     }
     *reference_out = ptn_value_clone(entry->value);
+    if (temporary_reference_out != NULL) {
+        *temporary_reference_out = temporary_reference;
+    }
     ptn_array_key_free(storage_key);
     ptn_array_key_free(key);
     ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
@@ -273390,8 +273400,63 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
         line,
         create_if_missing,
         1,
-        reference_out
+        reference_out,
+        NULL
     );
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_for_nested_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int create_if_missing,
+    PtnValue *reference_out,
+    int *temporary_reference_out
+) {
+    return ptn_internal_array_object_offset_reference_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        create_if_missing,
+        1,
+        reference_out,
+        temporary_reference_out
+    );
+}
+
+static PTN_UNUSED void ptn_internal_array_object_unwrap_temporary_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue reference,
+    size_t line
+) {
+    if (reference.type != PTN_REFERENCE) {
+        return;
+    }
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL) {
+        return;
+    }
+    PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+    if (array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (
+            entry->value.type == PTN_REFERENCE &&
+            entry->value.as.reference == reference.as.reference
+        ) {
+            PtnValue unwrapped = ptn_value_clone_deref(entry->value);
+            ptn_value_destroy(&entry->value);
+            entry->value = unwrapped;
+            ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+            return;
+        }
+    }
 }
 
 static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_diagnostics(
@@ -273409,7 +273474,8 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference_without_key_dia
         line,
         create_if_missing,
         0,
-        reference_out
+        reference_out,
+        NULL
     );
 }
 

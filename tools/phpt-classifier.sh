@@ -3267,7 +3267,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /Zend\/tests\/constexpr\/new[.]phpt$/
         }
         function ptn_supported_readonly_indirect_mutation_row() {
-            return ptn_path ~ /Zend\/tests\/readonly_props\/(cache_slot|readonly_clone_error[237]|readonly_clone_success1|readonly_modification)[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/readonly_props\/(cache_slot|readonly_clone_error[237]|readonly_clone_success1|readonly_containing_object|readonly_modification)[.]phpt$/
         }
         {
             line = ptn_php_code_line($0)
