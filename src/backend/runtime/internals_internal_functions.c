@@ -226608,6 +226608,7 @@ static const char *ptn_soap_find_closing_tag(
     const char *name
 ) {
     const char *cursor = start;
+    size_t depth = 1;
     while (cursor < limit) {
         const char *tag = memchr(cursor, '<', (size_t)(limit - cursor));
         if (tag == NULL) {
@@ -226617,8 +226618,14 @@ static const char *ptn_soap_find_closing_tag(
         if (tag_end == NULL) {
             return NULL;
         }
-        if (tag + 1 < tag_end && tag[1] == '/' && ptn_soap_tag_name_is(tag, tag_end, name)) {
-            return tag;
+        if (ptn_soap_tag_is_closing_name(tag, tag_end, name)) {
+            depth--;
+            if (depth == 0) {
+                return tag;
+            }
+        } else if (ptn_soap_tag_is_opening_name(tag, tag_end, name) &&
+                   !ptn_soap_tag_is_self_closing(tag, tag_end)) {
+            depth++;
         }
         cursor = tag_end;
     }
@@ -226803,12 +226810,39 @@ static char *ptn_soap_global_schema_named_attr_dup(
     return NULL;
 }
 
+static int ptn_soap_range_has_tag(const char *start, const char *end, const char *tag_name);
+
+static void ptn_soap_parse_simple_type_in_range(
+    const char *start,
+    const char *end,
+    PtnSoapType *type
+);
+
+static void ptn_soap_parse_complex_type_in_range(
+    const char *document_start,
+    const char *document_end,
+    const char *start,
+    const char *end,
+    PtnSoapType *type,
+    PtnSoapType **types,
+    size_t *type_count,
+    size_t *type_capacity,
+    PtnSoapType *groups,
+    size_t group_count,
+    const char *schema_namespace_uri,
+    int element_default_qualified,
+    int attribute_default_qualified
+);
+
 static void ptn_soap_parse_fields_in_range(
     const char *document_start,
     const char *document_end,
     const char *start,
     const char *end,
     PtnSoapType *type,
+    PtnSoapType **types,
+    size_t *type_count,
+    size_t *type_capacity,
     PtnSoapType *groups,
     size_t group_count,
     const char *schema_namespace_uri,
@@ -226863,6 +226897,14 @@ static void ptn_soap_parse_fields_in_range(
             char *form = ptn_soap_attr_dup(tag, tag_end, "form");
             char *min_occurs = ptn_soap_attr_dup(tag, tag_end, "minOccurs");
             char *max_occurs = ptn_soap_attr_dup(tag, tag_end, "maxOccurs");
+            const char *field_element_close = NULL;
+            const char *field_element_close_end = NULL;
+            if (!is_attribute && !ptn_soap_tag_is_self_closing(tag, tag_end)) {
+                field_element_close = ptn_soap_find_closing_tag(tag_end, end, "element");
+                field_element_close_end = field_element_close == NULL
+                    ? NULL
+                    : ptn_soap_tag_end(field_element_close, end);
+            }
             if (field_name == NULL && ref != NULL) {
                 field_name = ptn_soap_local_name_dup(ref);
                 const char *schema_tag = is_attribute ? "attribute" : "element";
@@ -226884,8 +226926,45 @@ static void ptn_soap_parse_fields_in_range(
                         "default"
                     );
                 }
+                if (field_type == NULL) {
+                    field_type = ptn_soap_local_name_dup(ref);
+                }
             }
             if (field_name != NULL) {
+                if (!is_attribute && field_type == NULL && field_element_close != NULL) {
+                    if (ptn_soap_range_has_tag(tag_end, field_element_close, "complexType") ||
+                        ptn_soap_range_has_tag(tag_end, field_element_close, "simpleType")) {
+                        field_type = ptn_duplicate_string(field_name);
+                        if (types != NULL &&
+                            type_count != NULL &&
+                            type_capacity != NULL &&
+                            ptn_soap_type_list_find(*types, *type_count, field_name) == NULL) {
+                            PtnSoapType *anonymous_type =
+                                ptn_soap_type_list_add(types, type_count, type_capacity, field_name);
+                            free(anonymous_type->namespace_uri);
+                            anonymous_type->namespace_uri = ptn_duplicate_string(schema_namespace_uri);
+                            if (ptn_soap_range_has_tag(tag_end, field_element_close, "complexType")) {
+                                ptn_soap_parse_complex_type_in_range(
+                                    document_start,
+                                    document_end,
+                                    tag_end,
+                                    field_element_close,
+                                    anonymous_type,
+                                    types,
+                                    type_count,
+                                    type_capacity,
+                                    groups,
+                                    group_count,
+                                    schema_namespace_uri,
+                                    element_default_qualified,
+                                    attribute_default_qualified
+                                );
+                            } else {
+                                ptn_soap_parse_simple_type_in_range(tag_end, field_element_close, anonymous_type);
+                            }
+                        }
+                    }
+                }
                 int is_qualified = form != NULL
                     ? ptn_ascii_case_equal(form, "qualified")
                     : (is_attribute ? attribute_default_qualified : element_default_qualified);
@@ -226911,6 +226990,9 @@ static void ptn_soap_parse_fields_in_range(
             free(form);
             free(min_occurs);
             free(max_occurs);
+            if (field_element_close_end != NULL) {
+                tag_end = field_element_close_end;
+            }
         } else if (ptn_soap_tag_is_opening_name(tag, tag_end, "any")) {
             char *namespace_attr = ptn_soap_attr_dup(tag, tag_end, "namespace");
             char *min_occurs = ptn_soap_attr_dup(tag, tag_end, "minOccurs");
@@ -227218,8 +227300,9 @@ static void ptn_soap_parse_complex_type_in_range(
     const char *start,
     const char *end,
     PtnSoapType *type,
-    PtnSoapType *types,
-    size_t type_count,
+    PtnSoapType **types,
+    size_t *type_count,
+    size_t *type_capacity,
     PtnSoapType *groups,
     size_t group_count,
     const char *schema_namespace_uri,
@@ -227312,7 +227395,7 @@ static void ptn_soap_parse_complex_type_in_range(
     if (ptn_soap_range_has_tag(start, end, "simpleContent")) {
         type->has_simple_content = 1;
         ptn_soap_type_set_base_type(type, simple_base == NULL ? "string" : simple_base);
-        PtnSoapType *base_type = ptn_soap_type_list_find(types, type_count, simple_base);
+        PtnSoapType *base_type = ptn_soap_type_list_find(*types, *type_count, simple_base);
         ptn_soap_type_copy_fields(type, base_type);
         ptn_soap_parse_fields_in_range(
             document_start,
@@ -227320,6 +227403,9 @@ static void ptn_soap_parse_complex_type_in_range(
             start,
             end,
             type,
+            types,
+            type_count,
+            type_capacity,
             groups,
             group_count,
             schema_namespace_uri,
@@ -227339,7 +227425,10 @@ static void ptn_soap_parse_complex_type_in_range(
             document_end,
             extension_base
         );
-        PtnSoapType *base_type = ptn_soap_type_list_find(types, type_count, extension_base);
+        PtnSoapType *base_type = ptn_soap_type_list_find(*types, *type_count, extension_base);
+        if (base_type != NULL && base_type->has_simple_content) {
+            type->has_simple_content = 1;
+        }
         ptn_soap_type_copy_fields(type, base_type);
         free(extension_base);
     }
@@ -227349,6 +227438,9 @@ static void ptn_soap_parse_complex_type_in_range(
         start,
         end,
         type,
+        types,
+        type_count,
+        type_capacity,
         groups,
         group_count,
         schema_namespace_uri,
@@ -227453,6 +227545,9 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         tag_end,
                         close,
                         group,
+                        NULL,
+                        NULL,
+                        NULL,
                         groups,
                         group_count,
                         schema_namespace,
@@ -227528,8 +227623,9 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         tag_end,
                         close,
                         type,
-                        *types,
-                        *type_count,
+                        types,
+                        type_count,
+                        type_capacity,
                         groups,
                         group_count,
                         schema_namespace,
@@ -227573,8 +227669,9 @@ static void ptn_soap_parse_wsdl_types_from_source(
                         tag_end,
                         scan_end,
                         type,
-                        *types,
-                        *type_count,
+                        types,
+                        type_count,
+                        type_capacity,
                         groups,
                         group_count,
                         schema_namespace,
