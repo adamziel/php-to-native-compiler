@@ -17731,9 +17731,16 @@ static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator 
 }
 
 static PTN_UNUSED int ptn_object_implements_builtin_interface(PtnObject *object, const char *interface_name) {
-    return object != NULL &&
-        (ptn_declared_class_implements_interface(object->class_name, interface_name) ||
-         ptn_builtin_class_implements_interface(object->class_name, interface_name));
+    if (object == NULL || object->class_name == NULL) {
+        return 0;
+    }
+    if (ptn_declared_class_implements_interface(object->class_name, interface_name) ||
+        ptn_builtin_class_implements_interface(object->class_name, interface_name)) {
+        return 1;
+    }
+    return ptn_declared_class_is_same_or_descendant(object->class_name, "DatePeriod") &&
+        (ptn_ascii_case_equal(interface_name, "IteratorAggregate") ||
+         ptn_ascii_case_equal(interface_name, "Traversable"));
 }
 
 static PTN_UNUSED int ptn_object_supports_foreach_by_reference(PtnObject *object) {
@@ -17826,6 +17833,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFileObject") &&
         ptn_internal_class_method_exists("SplFileObject", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "DatePeriod") &&
+        ptn_internal_class_method_exists("DatePeriod", method_name)) {
         return 1;
     }
 #endif

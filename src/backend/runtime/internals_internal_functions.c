@@ -162143,6 +162143,7 @@ typedef struct {
     int live_dom_token_list_has_current;
     int clone_datetime_current;
     int rewind_forbidden;
+    int allow_rewind_after_move;
 } PtnInternalIteratorData;
 
 typedef struct {
@@ -165161,6 +165162,60 @@ static int ptn_datetime_parse_textual_date_string(
     return 0;
 }
 
+static int ptn_datetime_parse_relative_day_string(
+    const char *input,
+    const char *default_timezone,
+    time_t *timestamp_out,
+    int *microsecond_out,
+    char **timezone_out
+) {
+    char keyword[32];
+    int consumed = 0;
+    if (sscanf(input, " %31s %n", keyword, &consumed) != 1 ||
+        !ptn_datetime_tail_is_space(input, consumed)) {
+        return 0;
+    }
+    int day_delta = 0;
+    int hour = 0;
+    if (ptn_ascii_case_equal(keyword, "tomorrow")) {
+        day_delta = 1;
+    } else if (ptn_ascii_case_equal(keyword, "yesterday")) {
+        day_delta = -1;
+    } else if (ptn_ascii_case_equal(keyword, "today") ||
+        ptn_ascii_case_equal(keyword, "midnight")) {
+        day_delta = 0;
+    } else if (ptn_ascii_case_equal(keyword, "noon")) {
+        hour = 12;
+    } else {
+        return 0;
+    }
+
+    const char *timezone = default_timezone == NULL || default_timezone[0] == '\0'
+        ? ptn_current_timezone_name()
+        : default_timezone;
+    time_t now = time(NULL);
+    int offset = ptn_timezone_offset_for_name(timezone, now);
+    time_t wall_now = now + offset;
+    struct tm *parts = gmtime(&wall_now);
+    if (parts == NULL) {
+        return 0;
+    }
+    struct tm wall_parts = *parts;
+    wall_parts.tm_mday += day_delta;
+    wall_parts.tm_hour = hour;
+    wall_parts.tm_min = 0;
+    wall_parts.tm_sec = 0;
+    wall_parts.tm_isdst = -1;
+    time_t wall_midpoint = ptn_mktime_in_utc(&wall_parts);
+    int adjusted_offset = ptn_timezone_offset_for_wall_timestamp(timezone, wall_midpoint);
+    *timestamp_out = wall_midpoint - adjusted_offset;
+    *microsecond_out = 0;
+    if (timezone_out != NULL) {
+        *timezone_out = NULL;
+    }
+    return 1;
+}
+
 static int ptn_datetime_parse_date_string(
     const char *input,
     const char *default_timezone,
@@ -165195,6 +165250,14 @@ static int ptn_datetime_parse_date_string(
             }
         }
         input = normalized;
+    }
+    if (ptn_datetime_parse_relative_day_string(
+            input,
+            default_timezone,
+            timestamp_out,
+            microsecond_out,
+            timezone_out)) {
+        return 1;
     }
     long long year = 0;
     int month = 0;
@@ -169354,6 +169417,7 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
+    data->allow_rewind_after_move = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -169367,6 +169431,7 @@ static PtnValue ptn_internal_iterator_from_values_cloning_datetimes(PtnRuntime *
     if (resolved.type == PTN_OBJECT && resolved.as.object != NULL && resolved.as.object->native_data != NULL) {
         PtnInternalIteratorData *data = (PtnInternalIteratorData *)resolved.as.object->native_data;
         data->clone_datetime_current = 1;
+        data->allow_rewind_after_move = 1;
     }
     return iterator;
 }
@@ -169386,6 +169451,7 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
+    data->allow_rewind_after_move = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -169408,6 +169474,7 @@ static PtnValue ptn_internal_iterator_from_weak_map(PtnRuntime *runtime, PtnValu
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
+    data->allow_rewind_after_move = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -169462,6 +169529,7 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
         if (data->rewind_forbidden &&
+            !data->allow_rewind_after_move &&
             ptn_internal_iterator_live_dom_token_list(data) == NULL &&
             ptn_internal_iterator_live_weak_map(data) == NULL) {
             ptn_throw_exception_at(
@@ -170151,6 +170219,14 @@ static void ptn_date_period_throw_malformed_period(PtnRuntime *runtime, const ch
     ptn_throw_exception(runtime, "DateMalformedPeriodStringException", message);
 }
 
+static void ptn_date_period_throw_recurrence_count(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "Exception",
+        "DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than 9223372036854775807"
+    );
+}
+
 static char *ptn_date_period_normalized_iso_start(const char *start, int *zulu_out) {
     *zulu_out = 0;
     size_t len = strlen(start);
@@ -170359,6 +170435,10 @@ static PTN_UNUSED PtnValue ptn_date_period_new(
     PtnValue third = ptn_value_deref(args[2]);
     if (third.type == PTN_INT) {
         recurrences = third.as.integer;
+        if (recurrences < 1 || recurrences >= INT64_MAX) {
+            ptn_date_period_throw_recurrence_count(runtime);
+            return ptn_null();
+        }
     } else if (ptn_datetime_data_from_value(third) != NULL) {
         end = third;
     } else {
@@ -170485,8 +170565,6 @@ static PTN_UNUSED PtnValue ptn_date_period_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getIterator")) {
-        ptn_date_period_ensure_current(runtime, data, line);
-        ptn_date_period_sync_properties(runtime, receiver, data, line);
         return ptn_internal_iterator_from_values_cloning_datetimes(runtime, data->dates, line);
     }
     if (ptn_ascii_case_equal(name, "getStartDate")) {
