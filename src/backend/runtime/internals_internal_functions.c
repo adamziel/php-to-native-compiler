@@ -288734,6 +288734,13 @@ static size_t ptn_eval_skip_ws(const char *code, size_t len, size_t pos) {
             }
             continue;
         }
+        if (code[pos] == '#') {
+            pos++;
+            while (pos < len && code[pos] != '\n') {
+                pos++;
+            }
+            continue;
+        }
         if (pos + 1 < len && code[pos] == '/' && code[pos + 1] == '*') {
             pos += 2;
             while (pos + 1 < len && !(code[pos] == '*' && code[pos + 1] == '/')) {
@@ -288779,6 +288786,14 @@ static int ptn_eval_skip_comment(const char *code, size_t len, size_t *pos) {
     size_t cursor = *pos;
     if (cursor + 1 < len && code[cursor] == '/' && code[cursor + 1] == '/') {
         cursor += 2;
+        while (cursor < len && code[cursor] != '\n') {
+            cursor++;
+        }
+        *pos = cursor;
+        return 1;
+    }
+    if (code[cursor] == '#') {
+        cursor++;
         while (cursor < len && code[cursor] != '\n') {
             cursor++;
         }

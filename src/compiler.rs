@@ -2832,7 +2832,17 @@ fn resolve_include_path(path: &str, source_dir: &str) -> PathBuf {
     if path.is_absolute() {
         path
     } else {
-        Path::new(source_dir).join(path)
+        let source_relative = Path::new(source_dir).join(&path);
+        if source_relative.exists() {
+            return source_relative;
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            let cwd_relative = cwd.join(&path);
+            if cwd_relative.exists() {
+                return cwd_relative;
+            }
+        }
+        source_relative
     }
 }
 

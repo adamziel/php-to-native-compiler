@@ -1,0 +1,4 @@
+ext/pdo_odbc/tests/bug67465.phpt
+ext/pdo_dblib/tests/datetime2.phpt
+ext/pdo_pgsql/tests/bug36727.phpt
+ext/pdo_mysql/tests/bug_64705.phpt
