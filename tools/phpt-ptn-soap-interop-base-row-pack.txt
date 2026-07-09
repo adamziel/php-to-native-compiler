@@ -1,0 +1,8 @@
+ext/soap/tests/interop/Round2/Base/r2_base_003p.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_003s.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_003w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_004p.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_004s.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_004w.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_006p.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_006s.phpt
