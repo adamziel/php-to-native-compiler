@@ -59756,7 +59756,10 @@ static int ptn_try_open_user_stream_wrapper(
     if (wrapper == NULL) {
         return 0;
     }
-    int url_include_context = ptn_user_stream_include_callback_depth > 0;
+    int url_include_context = ptn_user_stream_include_callback_depth > 0 &&
+        function_name != NULL &&
+        (ptn_ascii_case_equal(function_name, "include") ||
+            ptn_ascii_case_equal(function_name, "require"));
     if (wrapper->is_url &&
         ((url_include_context && !ptn_runtime_allow_url_include()) ||
             (!url_include_context && !ptn_runtime_allow_url_fopen()))) {
@@ -70788,12 +70791,22 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
         free(source);
         return ptn_bool(0);
     }
+    PtnUserStreamWrapper *source_wrapper = ptn_user_stream_wrapper_find_path(source);
+    PtnUserStreamWrapper *dest_wrapper = ptn_user_stream_wrapper_find_path(dest);
+    if (source_wrapper != NULL || dest_wrapper != NULL) {
+        if (source_wrapper == NULL || dest_wrapper == NULL || source_wrapper != dest_wrapper) {
+            free(dest);
+            free(source);
+            return ptn_bool(0);
+        }
+    }
     PtnValue user_args[2] = {
         ptn_string(source),
         ptn_string(dest)
     };
     PtnValue user_result;
-    if (ptn_try_user_stream_method_bool(runtime, source, "rename", 2, user_args, line, &user_result)) {
+    if (source_wrapper != NULL &&
+        ptn_try_user_stream_method_bool(runtime, source, "rename", 2, user_args, line, &user_result)) {
         ptn_value_destroy(&user_args[0]);
         ptn_value_destroy(&user_args[1]);
         free(dest);
@@ -71404,6 +71417,170 @@ static PtnValue ptn_stat_array_from_info(const struct stat *info) {
     return result;
 }
 
+static int64_t ptn_stat_field_index(PtnStatField field) {
+    switch (field) {
+        case PTN_STAT_FIELD_DEV:
+            return 0;
+        case PTN_STAT_FIELD_INO:
+            return 1;
+        case PTN_STAT_FIELD_MODE:
+            return 2;
+        case PTN_STAT_FIELD_NLINK:
+            return 3;
+        case PTN_STAT_FIELD_UID:
+            return 4;
+        case PTN_STAT_FIELD_GID:
+            return 5;
+        case PTN_STAT_FIELD_RDEV:
+            return 6;
+        case PTN_STAT_FIELD_SIZE:
+            return 7;
+        case PTN_STAT_FIELD_ATIME:
+            return 8;
+        case PTN_STAT_FIELD_MTIME:
+            return 9;
+        case PTN_STAT_FIELD_CTIME:
+            return 10;
+        case PTN_STAT_FIELD_BLKSIZE:
+            return 11;
+        case PTN_STAT_FIELD_BLOCKS:
+            return 12;
+    }
+    return -1;
+}
+
+static const char *ptn_stat_field_name(PtnStatField field) {
+    switch (field) {
+        case PTN_STAT_FIELD_DEV:
+            return "dev";
+        case PTN_STAT_FIELD_INO:
+            return "ino";
+        case PTN_STAT_FIELD_MODE:
+            return "mode";
+        case PTN_STAT_FIELD_NLINK:
+            return "nlink";
+        case PTN_STAT_FIELD_UID:
+            return "uid";
+        case PTN_STAT_FIELD_GID:
+            return "gid";
+        case PTN_STAT_FIELD_RDEV:
+            return "rdev";
+        case PTN_STAT_FIELD_SIZE:
+            return "size";
+        case PTN_STAT_FIELD_ATIME:
+            return "atime";
+        case PTN_STAT_FIELD_MTIME:
+            return "mtime";
+        case PTN_STAT_FIELD_CTIME:
+            return "ctime";
+        case PTN_STAT_FIELD_BLKSIZE:
+            return "blksize";
+        case PTN_STAT_FIELD_BLOCKS:
+            return "blocks";
+    }
+    return "";
+}
+
+static PtnArrayEntry *ptn_stat_array_entry_for_index(PtnArray *array, int64_t index) {
+    PtnArrayKey key = ptn_array_int_key(index);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static PtnArrayEntry *ptn_stat_array_entry_for_name(PtnArray *array, const char *name) {
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_user_stat_field_value(PtnValue stat, PtnStatField field, int64_t *out) {
+    PtnValue resolved = ptn_value_deref(stat);
+    if (resolved.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArray *array = resolved.as.array;
+    PtnArrayEntry *entry = ptn_stat_array_entry_for_name(array, ptn_stat_field_name(field));
+    if (entry == NULL) {
+        entry = ptn_stat_array_entry_for_index(array, ptn_stat_field_index(field));
+    }
+    if (entry == NULL) {
+        return 0;
+    }
+    *out = ptn_value_to_integer(entry->value);
+    return 1;
+}
+
+static int ptn_user_stat_is_array(PtnValue stat) {
+    return ptn_value_deref(stat).type == PTN_ARRAY;
+}
+
+static void ptn_user_stream_normalize_stat_array(PtnValue *stat) {
+    if (!ptn_user_stat_is_array(*stat)) {
+        return;
+    }
+    PtnValue source = *stat;
+    PtnValue normalized = ptn_array_from_literal_entries(0, NULL);
+    for (int field = PTN_STAT_FIELD_DEV; field <= PTN_STAT_FIELD_BLOCKS; field++) {
+        PtnStatField stat_field = (PtnStatField)field;
+        int64_t value = 0;
+        if (ptn_user_stat_field_value(source, stat_field, &value)) {
+            ptn_stat_array_set_index(&normalized, ptn_stat_field_index(stat_field), value);
+        }
+    }
+    for (int field = PTN_STAT_FIELD_DEV; field <= PTN_STAT_FIELD_BLOCKS; field++) {
+        PtnStatField stat_field = (PtnStatField)field;
+        int64_t value = 0;
+        if (ptn_user_stat_field_value(source, stat_field, &value)) {
+            ptn_stat_array_set_name(&normalized, ptn_stat_field_name(stat_field), value);
+        }
+    }
+    ptn_value_destroy(stat);
+    *stat = normalized;
+}
+
+static char *ptn_user_stream_stat_cache_path = NULL;
+static int ptn_user_stream_stat_cache_flags = 0;
+static PtnValue ptn_user_stream_stat_cache_value;
+static int ptn_user_stream_stat_cache_valid = 0;
+
+static void ptn_user_stream_stat_cache_clear(const char *path) {
+    if (!ptn_user_stream_stat_cache_valid) {
+        return;
+    }
+    if (path != NULL && strcmp(path, ptn_user_stream_stat_cache_path) != 0) {
+        return;
+    }
+    ptn_value_destroy(&ptn_user_stream_stat_cache_value);
+    free(ptn_user_stream_stat_cache_path);
+    ptn_user_stream_stat_cache_path = NULL;
+    ptn_user_stream_stat_cache_flags = 0;
+    ptn_user_stream_stat_cache_valid = 0;
+}
+
+static void ptn_user_stream_stat_cache_store(const char *path, int flags, PtnValue stat) {
+    if (path == NULL || !ptn_user_stat_is_array(stat)) {
+        return;
+    }
+    ptn_user_stream_stat_cache_clear(NULL);
+    ptn_user_stream_stat_cache_path = ptn_duplicate_string(path);
+    ptn_user_stream_stat_cache_flags = flags;
+    ptn_user_stream_stat_cache_value = ptn_value_clone_deref(stat);
+    ptn_user_stream_stat_cache_valid = 1;
+}
+
+static int ptn_user_stream_stat_cache_lookup(const char *path, int flags, PtnValue *out) {
+    if (!ptn_user_stream_stat_cache_valid ||
+        path == NULL ||
+        ptn_user_stream_stat_cache_flags != flags ||
+        strcmp(path, ptn_user_stream_stat_cache_path) != 0) {
+        return 0;
+    }
+    *out = ptn_value_clone_deref(ptn_user_stream_stat_cache_value);
+    return 1;
+}
+
 static PtnValue ptn_stat_array_from_memory_stream(PtnMemoryStream *stream) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     int64_t size = stream->len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)stream->len;
@@ -71603,13 +71780,18 @@ static PtnValue ptn_internal_stat_named(
         return ptn_bool(0);
     }
     PtnValue user_stat;
+    int user_stat_flags = use_lstat ? PTN_STREAM_URL_STAT_LINK : 0;
     if (ptn_try_user_stream_url_stat(
             runtime,
             path,
-            use_lstat ? PTN_STREAM_URL_STAT_LINK : 0,
+            user_stat_flags,
             line,
             &user_stat)) {
+        char *cache_path = ptn_duplicate_string(path);
         free(path);
+        ptn_user_stream_normalize_stat_array(&user_stat);
+        ptn_user_stream_stat_cache_store(cache_path, user_stat_flags, user_stat);
+        free(cache_path);
         return user_stat;
     }
     free(path);
@@ -71630,6 +71812,44 @@ static PtnValue ptn_internal_file_stat_field(
     const char *failure_kind,
     PtnStatField field
 ) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path != NULL && path[0] != '\0') {
+        PtnValue user_stat;
+        int user_stat_flags = use_lstat ? PTN_STREAM_URL_STAT_LINK : 0;
+        if (ptn_user_stream_stat_cache_lookup(path, user_stat_flags, &user_stat)) {
+            free(path);
+            int64_t field_value = 0;
+            if (ptn_user_stat_field_value(user_stat, field, &field_value)) {
+                ptn_value_destroy(&user_stat);
+                return ptn_int(field_value);
+            }
+            ptn_value_destroy(&user_stat);
+            return ptn_bool(0);
+        }
+        if (ptn_try_user_stream_url_stat(
+                runtime,
+                path,
+                user_stat_flags,
+                line,
+                &user_stat)) {
+            char *cache_path = ptn_duplicate_string(path);
+            free(path);
+            ptn_user_stream_normalize_stat_array(&user_stat);
+            ptn_user_stream_stat_cache_store(cache_path, user_stat_flags, user_stat);
+            free(cache_path);
+            int64_t field_value = 0;
+            if (ptn_user_stat_field_value(user_stat, field, &field_value)) {
+                ptn_value_destroy(&user_stat);
+                return ptn_int(field_value);
+            }
+            ptn_value_destroy(&user_stat);
+            return ptn_bool(0);
+        }
+    }
+    free(path);
+
     struct stat info;
     if (!ptn_stat_path_from_value(runtime, function_name, path_value, line, use_lstat, failure_kind, &info)) {
         return ptn_bool(0);
@@ -71820,6 +72040,7 @@ static void ptn_realpath_cache_store(PtnRuntime *runtime, const char *path, cons
 }
 
 static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    ptn_user_stream_stat_cache_clear(NULL);
     if (argc >= 1 && ptn_is_truthy(args[0])) {
         char *path = NULL;
         if (argc >= 2) {
@@ -155373,6 +155594,7 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_IS_URL", PTN_STREAM_IS_URL);
     ptn_get_defined_constants_add_int(table, "STREAM_URL_STAT_LINK", PTN_STREAM_URL_STAT_LINK);
     ptn_get_defined_constants_add_int(table, "STREAM_URL_STAT_QUIET", PTN_STREAM_URL_STAT_QUIET);
+    ptn_get_defined_constants_add_int(table, "STREAM_MKDIR_RECURSIVE", PTN_STREAM_MKDIR_RECURSIVE);
     ptn_get_defined_constants_add_int(table, "STREAM_REPORT_ERRORS", PTN_STREAM_REPORT_ERRORS);
     ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_RESOLVE", PTN_STREAM_NOTIFY_RESOLVE);
     ptn_get_defined_constants_add_int(table, "STREAM_NOTIFY_CONNECT", PTN_STREAM_NOTIFY_CONNECT);
@@ -156057,6 +156279,7 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_IS_URL",
         "STREAM_URL_STAT_LINK",
         "STREAM_URL_STAT_QUIET",
+        "STREAM_MKDIR_RECURSIVE",
         "STREAM_REPORT_ERRORS",
         "STREAM_NOTIFY_RESOLVE",
         "STREAM_NOTIFY_CONNECT",
@@ -296894,8 +297117,16 @@ static PTN_UNUSED int ptn_dynamic_include_php_file_resolved(
     char *code = NULL;
     size_t code_len = 0;
     PtnUserStreamWrapper *include_wrapper = ptn_user_stream_wrapper_find_path(path);
-    if (include_wrapper != NULL && include_wrapper->is_url && !ptn_runtime_allow_url_include()) {
-        ptn_user_stream_emit_url_disabled_warning(runtime, "include", include_wrapper, "allow_url_include", line);
+    if (include_wrapper != NULL &&
+        include_wrapper->is_url &&
+        (!ptn_runtime_allow_url_fopen() || !ptn_runtime_allow_url_include())) {
+        ptn_user_stream_emit_url_disabled_warning(
+            runtime,
+            "include",
+            include_wrapper,
+            !ptn_runtime_allow_url_fopen() ? "allow_url_fopen" : "allow_url_include",
+            line
+        );
         ptn_emit_file_warning(
             runtime,
             "include",

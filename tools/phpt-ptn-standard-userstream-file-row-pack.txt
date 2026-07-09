@@ -1,0 +1,2 @@
+ext/standard/tests/file/include_userstream_003.phpt
+ext/standard/tests/file/userwrapper.phpt

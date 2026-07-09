@@ -3589,6 +3589,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_URL_STAT_QUIET);
         return 1;
     }
+    if (strcmp(name, "STREAM_MKDIR_RECURSIVE") == 0) {
+        *out = ptn_int(PTN_STREAM_MKDIR_RECURSIVE);
+        return 1;
+    }
     if (strcmp(name, "STREAM_IS_URL") == 0) {
         *out = ptn_int(PTN_STREAM_IS_URL);
         return 1;
