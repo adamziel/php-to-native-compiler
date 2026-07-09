@@ -137191,6 +137191,20 @@ static int ptn_ini_expand_text(
             if (last_concat_token &&
                 lookahead < text.len &&
                 ptn_ini_is_name_start((unsigned char)text.data[lookahead])) {
+                size_t name_end = lookahead + 1;
+                while (name_end < text.len && ptn_ini_is_name_byte((unsigned char)text.data[name_end])) {
+                    name_end++;
+                }
+                PtnIniText name = ptn_ini_text(text.data + lookahead, name_end - lookahead);
+                char *name_copy = ptn_ini_duplicate_text(name);
+                PtnValue constant;
+                int is_constant = ptn_runtime_constant_value(runtime, name_copy, &constant);
+                free(name_copy);
+                if (is_constant) {
+                    ptn_value_destroy(&constant);
+                    i = lookahead - 1;
+                    continue;
+                }
                 ptn_string_buffer_append_char(buffer, ' ');
                 i = lookahead - 1;
                 continue;
