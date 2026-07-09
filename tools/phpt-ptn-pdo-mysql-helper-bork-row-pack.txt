@@ -1,0 +1,7 @@
+ext/curl/tests/curl_file_upload_stream.phpt
+ext/simplexml/tests/bug81325.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_008p.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_009w.phpt
+ext/pdo_mysql/tests/bug_64705.phpt
+ext/pdo_mysql/tests/construct_persistent_failure.phpt
+ext/pdo_mysql/tests/pdo_mysql_class_constants.phpt
