@@ -165034,6 +165034,42 @@ static int ptn_datetime_parse_date_string(
     timezone_suffix[0] = '\0';
     int consumed = 0;
     int ordinal_day = 0;
+
+    const char *compact_cursor = input;
+    while (isspace((unsigned char)*compact_cursor)) {
+        compact_cursor++;
+    }
+    size_t compact_digits = 0;
+    while (isdigit((unsigned char)compact_cursor[compact_digits])) {
+        compact_digits++;
+    }
+    const char *compact_tail = compact_cursor + compact_digits;
+    while (isspace((unsigned char)*compact_tail)) {
+        compact_tail++;
+    }
+    if (compact_digits == 8 && *compact_tail == '\0') {
+        year = 0;
+        for (size_t i = 0; i < 4; i++) {
+            year = year * 10 + (compact_cursor[i] - '0');
+        }
+        month = (compact_cursor[4] - '0') * 10 + (compact_cursor[5] - '0');
+        day = (compact_cursor[6] - '0') * 10 + (compact_cursor[7] - '0');
+        return ptn_datetime_components_to_timestamp(
+            year,
+            month,
+            day,
+            0,
+            0,
+            0,
+            0,
+            NULL,
+            default_timezone,
+            timestamp_out,
+            microsecond_out,
+            timezone_out
+        );
+    }
+
     consumed = 0;
     if (sscanf(input, " %lld-%d%n", &year, &ordinal_day, &consumed) == 2 &&
         ptn_datetime_tail_is_space(input, consumed)) {
@@ -169332,6 +169368,10 @@ static PtnValue ptn_date_period_build_dates(
     PtnDateTimeData next_cursor = cursor;
     next_cursor.timestamp = ptn_datetime_apply_interval_to_timestamp(&next_cursor, interval, 0);
     int forward = ptn_date_period_timestamp_compare(&next_cursor, &cursor) >= 0;
+    int64_t recurrence_limit = recurrences;
+    if (end == NULL && recurrence_limit >= 0 && include_start_date) {
+        recurrence_limit++;
+    }
     int64_t emitted = 0;
     size_t guard = 0;
     int should_emit = include_start_date;
@@ -169345,7 +169385,7 @@ static PtnValue ptn_date_period_build_dates(
         if (should_emit || !include_start_date) {
             ptn_date_period_append_datetime(runtime, dates, iteration_class, &cursor, line);
             emitted++;
-            if (end == NULL && recurrences >= 0 && emitted >= recurrences) {
+            if (end == NULL && recurrence_limit >= 0 && emitted >= recurrence_limit) {
                 break;
             }
         }
@@ -169928,21 +169968,37 @@ static PTN_UNUSED PtnValue ptn_date_period_new(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc >= 1 && argc <= 2 && ptn_value_deref(args[0]).type == PTN_STRING) {
+    if (argc >= 1 && argc <= 2 &&
+        (ptn_value_deref(args[0]).type == PTN_STRING || ptn_value_deref(args[0]).type == PTN_NULL)) {
+        if (ptn_value_deref(args[0]).type == PTN_NULL) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "DatePeriod::__construct(): Passing null to parameter #1 ($start) of type string is deprecated",
+                line
+            );
+        }
         ptn_emit_deprecation(
             &runtime->diagnostics,
             "Calling DatePeriod::__construct(string $isostr, int $options = 0) is deprecated, use DatePeriod::createFromISO8601String() instead",
             line
         );
-        PtnStringOperand isostr = ptn_internal_expect_string_arg(runtime, "DatePeriod::__construct", 1, "isostr", args[0], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
+        char *isostr_string = NULL;
+        PtnStringOperand isostr = {0};
+        if (ptn_value_deref(args[0]).type == PTN_NULL) {
+            isostr_string = ptn_duplicate_string("");
+        } else {
+            isostr = ptn_internal_expect_string_arg(runtime, "DatePeriod::__construct", 1, "isostr", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            isostr_string = ptn_duplicate_string_len(isostr.data, isostr.len);
         }
-        char *isostr_string = ptn_duplicate_string_len(isostr.data, isostr.len);
         int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
         PtnValue result = ptn_date_period_from_iso8601_string(runtime, class_name, isostr_string, options, line);
         free(isostr_string);
-        ptn_string_operand_free(isostr);
+        if (ptn_value_deref(args[0]).type != PTN_NULL) {
+            ptn_string_operand_free(isostr);
+        }
         return result;
     }
     if (argc != 3 && argc != 4) {
@@ -171533,6 +171589,16 @@ static int ptn_date_parse_result_date_is_invalid(int year, int month, int day) {
     return month < 1 || month > 12 || day < 1 || day > ptn_date_days_in_month(year, month);
 }
 
+static int ptn_date_parse_result_time_is_invalid(int hour, int minute, int second, double fraction) {
+    return hour < 0 ||
+        hour > 24 ||
+        minute < 0 ||
+        minute > 59 ||
+        second < 0 ||
+        second > 59 ||
+        (hour == 24 && (minute != 0 || second != 0 || fraction != 0.0));
+}
+
 static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "date_parse", 1, "datetime", args[0], line);
@@ -171590,7 +171656,7 @@ static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const 
         const char *tail = datetime + consumed;
         has_fraction = ptn_datetime_parse_fraction_tail(&tail, &fraction, NULL);
         if (ptn_datetime_tail_is_space(datetime, (int)(tail - datetime))) {
-            PtnValue result = ptn_date_parse_result(1, year, 1, month, 1, day, 1, hour, 1, minute, 1, second, has_fraction, fraction);
+            PtnValue result = ptn_date_parse_result(1, year, 1, month, 1, day, 1, hour, 1, minute, 1, second, 1, fraction);
             if (ptn_date_parse_result_date_is_invalid(year, month, day)) {
                 ptn_date_parse_result_set_diagnostics(
                     result,
@@ -171598,6 +171664,14 @@ static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const 
                     1,
                     (int64_t)strlen(datetime) + 1,
                     "The parsed date was invalid"
+                );
+            } else if (ptn_date_parse_result_time_is_invalid(hour, minute, second, fraction)) {
+                ptn_date_parse_result_set_diagnostics(
+                    result,
+                    "warnings",
+                    1,
+                    (int64_t)consumed + 1,
+                    "The parsed time was invalid"
                 );
             }
             free(datetime);
