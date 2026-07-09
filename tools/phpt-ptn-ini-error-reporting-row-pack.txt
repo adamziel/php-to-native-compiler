@@ -1,0 +1,3 @@
+tests/func/011.phpt
+tests/func/bug64523.phpt
+tests/func/ini_alter.phpt

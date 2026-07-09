@@ -146849,9 +146849,9 @@ static int ptn_runtime_function_disabled(PtnRuntime *runtime, const char *name) 
     return ptn_runtime_disabled_function_list_contains(root->disabled_functions, lookup_name);
 }
 
-static PtnValue ptn_ini_int_string(int value) {
+static PtnValue ptn_ini_int_string(int64_t value) {
     char buffer[32];
-    int written = snprintf(buffer, sizeof(buffer), "%d", value);
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value);
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
         ptn_abort_out_of_memory();
     }
@@ -148339,6 +148339,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string(configured == NULL ? "1" : configured);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "error_reporting")) {
+        *out = ptn_ini_int_string(runtime->diagnostics.error_reporting);
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
         PtnRuntime *root = ptn_runtime_root(runtime);
         const char *value = root == NULL
@@ -149401,6 +149405,12 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_runtime_set_error_append_string(runtime, next);
         free(next);
         ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "error_reporting")) {
+        PtnValue previous = ptn_ini_int_string(runtime->diagnostics.error_reporting);
+        runtime->diagnostics.error_reporting = ptn_normalize_error_reporting(ptn_value_to_integer(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
@@ -241592,6 +241602,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ini_get_all", 0, 2, ptn_internal_ini_get_all },
         { "ini_parse_quantity", 1, 1, ptn_internal_ini_parse_quantity },
         { "ini_restore", 1, 1, ptn_internal_ini_restore },
+        { "ini_alter", 2, 2, ptn_internal_ini_set },
         { "ini_set", 2, 2, ptn_internal_ini_set },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
@@ -242686,6 +242697,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "ini_get_all") ||
         ptn_ascii_case_equal(name, "ini_parse_quantity") ||
         ptn_ascii_case_equal(name, "ini_restore") ||
+        ptn_ascii_case_equal(name, "ini_alter") ||
         ptn_ascii_case_equal(name, "ini_set") ||
         ptn_ascii_case_equal(name, "interface_exists") ||
         ptn_ascii_case_equal(name, "is_a") ||

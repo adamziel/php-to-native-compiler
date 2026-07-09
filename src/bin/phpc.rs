@@ -1227,6 +1227,8 @@ impl<'a> ErrorReportingParser<'a> {
         self.skip_whitespace();
         if self.consume_byte(b'~') {
             Some(!self.parse_unary()?)
+        } else if self.consume_byte(b'!') {
+            Some((self.parse_unary()? == 0) as i64)
         } else {
             self.parse_atom()
         }
