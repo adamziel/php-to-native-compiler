@@ -10787,7 +10787,15 @@ static size_t ptn_var_dump_object_visible_property_count(PtnObject *object) {
         ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
         return 1;
     }
-    return ptn_object_initialized_property_dump_count(object);
+    size_t count = ptn_object_initialized_property_dump_count(object);
+    if (
+        object->active_property_value_unsets != 0 &&
+        object->var_dump_property_count_initialized &&
+        object->last_var_dump_property_count > count
+    ) {
+        return object->last_var_dump_property_count;
+    }
+    return count;
 }
 
 static void ptn_var_dump_object_header(
@@ -10824,6 +10832,8 @@ static void ptn_var_dump_object_header(
             property_count
         );
     }
+    object->var_dump_property_count_initialized = 1;
+    object->last_var_dump_property_count = property_count;
 }
 
 static int ptn_var_dump_spl_fixed_array_object(
