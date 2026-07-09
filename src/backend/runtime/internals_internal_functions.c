@@ -409,6 +409,12 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     if (strcmp(name, "MYSQLI_REPORT_ALL") == 0) {
         return ptn_int(PTN_MYSQLI_REPORT_ALL);
     }
+    if (strcmp(name, "CURLOPT_SSL_VERIFYPEER") == 0) {
+        return ptn_int(64);
+    }
+    if (strcmp(name, "CURLOPT_SSL_VERIFYHOST") == 0) {
+        return ptn_int(81);
+    }
     PtnValue value;
     if (ptn_openssl_constant_value(name, &value)) {
         return value;
@@ -76144,6 +76150,8 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_STDERR 10037
 #define PTN_CURLOPT_VERBOSE 41
 #define PTN_CURLOPT_NOPROGRESS 43
+#define PTN_CURLOPT_SSL_VERIFYPEER 64
+#define PTN_CURLOPT_SSL_VERIFYHOST 81
 #define PTN_CURLOPT_XFERINFOFUNCTION 20219
 #define PTN_CURLOPT_PROGRESSFUNCTION 20056
 #define PTN_CURLOPT_WILDCARDMATCH 197
@@ -77273,6 +77281,28 @@ static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const P
         ptn_string_operand_free(url);
     }
     return ptn_resource(handle);
+}
+
+static PtnValue ptn_internal_curl_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("version_number"), ptn_int(0x074700));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("age"), ptn_int(10));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("features"), ptn_int(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("ssl_version_number"), ptn_int(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("version"), ptn_string("7.71.0"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("host"), ptn_string("ptn"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("ssl_version"), ptn_string("OpenSSL/3.0.0"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("libz_version"), ptn_string("1.2.11"));
+    PtnValue protocols = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(protocols.as.array, ptn_array_int_key(0), ptn_string("http"));
+    ptn_array_set_entry(protocols.as.array, ptn_array_int_key(1), ptn_string("https"));
+    ptn_array_set_entry(protocols.as.array, ptn_array_int_key(2), ptn_string("file"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("protocols"), protocols);
+    return result;
 }
 
 static int ptn_curl_escape_byte_is_unreserved(unsigned char byte) {
@@ -155504,6 +155534,8 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_STDERR", PTN_CURLOPT_STDERR);
     ptn_get_defined_constants_add_int(table, "CURLOPT_VERBOSE", PTN_CURLOPT_VERBOSE);
     ptn_get_defined_constants_add_int(table, "CURLOPT_NOPROGRESS", PTN_CURLOPT_NOPROGRESS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_SSL_VERIFYPEER", PTN_CURLOPT_SSL_VERIFYPEER);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_SSL_VERIFYHOST", PTN_CURLOPT_SSL_VERIFYHOST);
     ptn_get_defined_constants_add_int(table, "CURLOPT_XFERINFOFUNCTION", PTN_CURLOPT_XFERINFOFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_PROGRESSFUNCTION", PTN_CURLOPT_PROGRESSFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_WILDCARDMATCH", PTN_CURLOPT_WILDCARDMATCH);
@@ -156180,6 +156212,8 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_STDERR",
         "CURLOPT_VERBOSE",
         "CURLOPT_NOPROGRESS",
+        "CURLOPT_SSL_VERIFYPEER",
+        "CURLOPT_SSL_VERIFYHOST",
         "CURLOPT_XFERINFOFUNCTION",
         "CURLOPT_PROGRESSFUNCTION",
         "CURLOPT_WILDCARDMATCH",
@@ -241829,6 +241863,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
         { "curl_setopt_array", 2, 2, ptn_internal_curl_setopt_array },
         { "curl_unescape", 2, 2, ptn_internal_curl_unescape },
+        { "curl_version", 0, 0, ptn_internal_curl_version },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
         { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
