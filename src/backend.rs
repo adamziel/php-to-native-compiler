@@ -40477,6 +40477,7 @@ fn collect_call_runtime_requirements(
     {
         requirements.direct_internal_helpers = true;
         requirements.dynamic_function_dispatch = true;
+        requirements.internal_function_dispatch = true;
         requirements.method_dispatch = true;
         return;
     }
@@ -62919,8 +62920,18 @@ impl ValueEmitter {
         line: usize,
         discarded: bool,
     ) -> String {
-        let callable_temp = self.emit_materialized_value(out, &arguments[0]);
         let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_function_disabled(&runtime, \"call_user_func\")) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_internal(&runtime, \"call_user_func\", 0, NULL, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        let callable_temp = self.emit_materialized_value(out, &arguments[0]);
         let previous_call_site_line_temp = self.next_temp();
         let previous_warn_by_ref_temp = self.next_temp();
         let checked_callback_temp = self.next_temp();
@@ -62936,9 +62947,6 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(";\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = 1;\n");
-        out.push_str("    PtnValue ");
-        out.push_str(&result_temp);
-        out.push_str(" = ptn_null();\n");
         out.push_str("    PtnValue ");
         out.push_str(&checked_callback_temp);
         out.push_str(" = ptn_internal_expect_callback_arg_autoload_chaining_deprecation(&runtime, \"call_user_func\", 1, \"callback\", ptn_value_share(");
@@ -62988,6 +62996,7 @@ impl ValueEmitter {
             out.push_str(&callback_ok_temp);
             out.push_str(") {\n");
             out.push_str("        ptn_rethrow_exception(&runtime);\n");
+            out.push_str("    }\n");
             out.push_str("    }\n");
             return result_temp;
         }
@@ -63082,6 +63091,7 @@ impl ValueEmitter {
         out.push_str(&callback_ok_temp);
         out.push_str(") {\n");
         out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        out.push_str("    }\n");
         out.push_str("    }\n");
         result_temp
     }

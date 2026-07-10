@@ -115922,6 +115922,44 @@ try {
 }
 
 #[test]
+fn compile_disabled_call_user_func_skips_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-disabled-call-user-func");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("disabled-call-user-func.php");
+    let output = root.join("disabled-call-user-func-bin");
+    fs::write(
+        &input,
+        "<?php
+function side_effect() {
+    echo \"SIDE\\n\";
+    return 'strlen';
+}
+
+try {
+    call_user_func(side_effect());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_DISABLE_FUNCTIONS", "call_user_func")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Call to undefined function call_user_func()\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_call_user_func_invalid_callback_skips_later_arguments_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-invalid-callback-argument-order");
     fs::create_dir_all(&root).unwrap();
@@ -115956,7 +115994,9 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(
-        c_source.contains("ptn_internal_expect_callback_arg_autoload(&runtime, \"call_user_func\"")
+        c_source.contains(
+            "ptn_internal_expect_callback_arg_autoload_chaining_deprecation(&runtime, \"call_user_func\""
+        )
     );
     assert!(c_source.contains("runtime.exceptions->active_exception == NULL"));
 }
