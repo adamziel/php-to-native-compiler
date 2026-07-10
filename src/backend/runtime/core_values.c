@@ -1213,11 +1213,13 @@ typedef struct PtnException PtnException;
 typedef struct PtnGenerator PtnGenerator;
 typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
+typedef struct PtnReleaseState PtnReleaseState;
 typedef struct PtnRuntime PtnRuntime;
 typedef struct PtnResource PtnResource;
 typedef struct PtnStreamFilter PtnStreamFilter;
 typedef struct PtnTraceFrame PtnTraceFrame;
 typedef struct PtnTryFrame PtnTryFrame;
+typedef struct PtnWeakMapMembership PtnWeakMapMembership;
 
 typedef struct {
     char *path;
@@ -1766,6 +1768,7 @@ struct PtnObject {
     PtnObjectNativeDataFree native_data_free;
     PtnRuntime *lifecycle_runtime;
     size_t live_index;
+    PtnWeakMapMembership *weak_map_memberships;
     int destructor_enabled;
     int destructor_called;
     int lazy_uninitialized;
@@ -1964,6 +1967,7 @@ struct PtnResource {
     int manual_close_forbidden;
     size_t object_id;
     PtnRuntime *object_id_runtime;
+    PtnWeakMapMembership *weak_map_memberships;
 #if PTN_HAVE_OPENSSL
     SSL *ssl;
     SSL_CTX *ssl_ctx;
@@ -2762,6 +2766,7 @@ static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *clas
 static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *frame);
 static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame);
+static void ptn_release_state_finish(PtnRuntime *runtime, PtnReleaseState *state);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);
@@ -5427,6 +5432,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    resource->weak_map_memberships = NULL;
     ptn_resource_init_tls_state(resource);
     return resource;
 }
@@ -5478,6 +5484,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    resource->weak_map_memberships = NULL;
     ptn_resource_init_tls_state(resource);
     return resource;
 }
@@ -5526,6 +5533,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    resource->weak_map_memberships = NULL;
     ptn_resource_init_tls_state(resource);
     return resource;
 }
@@ -5568,6 +5576,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
+    resource->weak_map_memberships = NULL;
     ptn_resource_init_tls_state(resource);
     ptn_resource_register(resource);
     return resource;
@@ -6259,6 +6268,22 @@ static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     resource->refcount++;
 }
 
+static PTN_UNUSED PtnReleaseState *ptn_runtime_prune_weak_maps_for_released_resource(
+    PtnRuntime *runtime,
+    PtnResource *released_resource
+);
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnReleaseState *ptn_runtime_prune_weak_maps_for_released_resource(
+    PtnRuntime *runtime,
+    PtnResource *released_resource
+) {
+    (void)runtime;
+    (void)released_resource;
+    return NULL;
+}
+#endif
+
 static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     if (resource == NULL) {
         return;
@@ -6348,8 +6373,17 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     if (resource->refcount == 0) {
         return;
     }
+    PtnRuntime *release_runtime = resource->object_id_runtime;
+    PtnReleaseState *weak_map_release_state =
+        resource->refcount == 1 && resource->weak_map_memberships != NULL
+            ? ptn_runtime_prune_weak_maps_for_released_resource(
+                release_runtime,
+                resource
+            )
+            : NULL;
     resource->refcount--;
     if (resource->refcount != 0) {
+        ptn_release_state_finish(release_runtime, weak_map_release_state);
         return;
     }
     ptn_resource_unregister(resource);
@@ -6368,6 +6402,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
         resource->object_id_runtime = NULL;
     }
     free(resource);
+    ptn_release_state_finish(release_runtime, weak_map_release_state);
 }
 
 static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {

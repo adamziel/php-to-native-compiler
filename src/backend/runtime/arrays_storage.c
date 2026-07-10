@@ -452,11 +452,18 @@ static void ptn_runtime_unlink_cleanup_root(
         link = &(*link)->next;
     }
 }
-static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(
+    PtnRuntime *runtime,
+    PtnObject *released_object
+);
 
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(
+    PtnRuntime *runtime,
+    PtnObject *released_object
+) {
     (void)runtime;
+    (void)released_object;
 }
 #endif
 
@@ -3666,6 +3673,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell_at(
     object->native_data_free = NULL;
     object->lifecycle_runtime = root;
     object->live_index = 0;
+    object->weak_map_memberships = NULL;
     object->destructor_enabled = 1;
     object->destructor_called = 0;
     object->lazy_uninitialized = 0;
@@ -5557,12 +5565,12 @@ static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnG
         (root->gc_enabled && ptn_generator_has_generator_delegate_source(generator));
 }
 
-typedef struct {
+struct PtnReleaseState {
     size_t phase;
     PtnException *pending_exception;
     PtnRuntime *root;
     PtnCleanupRoot pending_exception_root;
-} PtnReleaseState;
+};
 
 static PtnReleaseState *ptn_release_state_new(PtnRuntime *runtime) {
     PtnReleaseState *state = malloc(sizeof(PtnReleaseState));
@@ -5779,7 +5787,7 @@ static PTN_UNUSED void ptn_object_release_in_runtime(
             release_runtime == NULL || release_runtime->exceptions == NULL
                 ? NULL
                 : release_runtime->exceptions->active_exception;
-        ptn_runtime_prune_weak_maps_for_released_object(release_runtime);
+        ptn_runtime_prune_weak_maps_for_released_object(release_runtime, object);
         ptn_release_state_remember_new_active_exception(
             release_runtime,
             state,

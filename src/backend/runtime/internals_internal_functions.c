@@ -162628,6 +162628,9 @@ typedef struct {
     uint64_t live_dom_token_list_seen_version;
     char *live_dom_token_list_current_token;
     int live_dom_token_list_has_current;
+    uint64_t live_weak_map_seen_version;
+    uint64_t live_weak_map_current_order;
+    int live_weak_map_has_current;
     int clone_datetime_current;
     int rewind_forbidden;
     int allow_rewind_after_move;
@@ -169875,6 +169878,9 @@ static PtnValue ptn_dom_token_list_item_value(PtnDomTokenListData *data, size_t 
 static size_t ptn_weak_map_iterator_entry_count(PtnWeakMapData *map);
 static PtnValue ptn_weak_map_iterator_current_value(PtnWeakMapData *map, size_t index);
 static PtnValue ptn_weak_map_iterator_key_value(PtnWeakMapData *map, size_t index);
+static uint64_t ptn_weak_map_iterator_mutation_version(PtnWeakMapData *map);
+static uint64_t ptn_weak_map_iterator_entry_order(PtnWeakMapData *map, size_t index);
+static size_t ptn_weak_map_iterator_index_at_or_after_order(PtnWeakMapData *map, uint64_t order);
 
 static PtnArray *ptn_internal_iterator_values(PtnInternalIteratorData *data) {
     PtnValue values = data == NULL ? ptn_null() : ptn_value_deref(data->values);
@@ -169902,6 +169908,38 @@ static PtnWeakMapData *ptn_internal_iterator_live_weak_map(PtnInternalIteratorDa
         return (PtnWeakMapData *)value.as.object->native_data;
     }
     return NULL;
+}
+
+static void ptn_internal_iterator_note_weak_map_current(
+    PtnInternalIteratorData *data,
+    PtnWeakMapData *map
+) {
+    data->live_weak_map_seen_version = ptn_weak_map_iterator_mutation_version(map);
+    data->live_weak_map_current_order = ptn_weak_map_iterator_entry_order(
+        map,
+        data->index
+    );
+    data->live_weak_map_has_current = data->live_weak_map_current_order != 0;
+}
+
+static void ptn_internal_iterator_reconcile_weak_map_current(
+    PtnInternalIteratorData *data,
+    PtnWeakMapData *map,
+    int advance
+) {
+    uint64_t version = ptn_weak_map_iterator_mutation_version(map);
+    if (!data->live_weak_map_has_current ||
+        version == data->live_weak_map_seen_version) {
+        return;
+    }
+    data->index = ptn_weak_map_iterator_index_at_or_after_order(
+        map,
+        data->live_weak_map_current_order
+    );
+    if (advance && data->index < ptn_weak_map_iterator_entry_count(map)) {
+        data->index++;
+    }
+    data->live_weak_map_seen_version = version;
 }
 
 static size_t ptn_internal_iterator_entry_count(PtnInternalIteratorData *data) {
@@ -169937,7 +169975,9 @@ static PtnValue ptn_internal_iterator_current_value(PtnRuntime *runtime, PtnInte
     }
     PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
     if (weak_map != NULL) {
-        return ptn_weak_map_iterator_current_value(weak_map, data->index);
+        PtnValue current = ptn_weak_map_iterator_current_value(weak_map, data->index);
+        ptn_internal_iterator_note_weak_map_current(data, weak_map);
+        return current;
     }
     PtnArray *array = ptn_internal_iterator_values(data);
     if (array == NULL || data->index >= array->len) {
@@ -169978,6 +170018,9 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
     data->live_dom_token_list_seen_version = 0;
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
+    data->live_weak_map_seen_version = 0;
+    data->live_weak_map_current_order = 0;
+    data->live_weak_map_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
     data->allow_rewind_after_move = 0;
@@ -170012,6 +170055,9 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(ptn_dom_token_list_data(token_list));
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
+    data->live_weak_map_seen_version = 0;
+    data->live_weak_map_current_order = 0;
+    data->live_weak_map_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
     data->allow_rewind_after_move = 0;
@@ -170035,6 +170081,9 @@ static PtnValue ptn_internal_iterator_from_weak_map(PtnRuntime *runtime, PtnValu
     data->live_dom_token_list_seen_version = 0;
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
+    data->live_weak_map_seen_version = 0;
+    data->live_weak_map_current_order = 0;
+    data->live_weak_map_has_current = 0;
     data->clone_datetime_current = 0;
     data->rewind_forbidden = 0;
     data->allow_rewind_after_move = 0;
@@ -170090,6 +170139,12 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     }
     PtnArray *array = ptn_internal_iterator_values(data);
     size_t count = ptn_internal_iterator_entry_count(data);
+    PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
+    if (weak_map != NULL &&
+        !ptn_ascii_case_equal(name, "rewind") &&
+        !ptn_ascii_case_equal(name, "next")) {
+        ptn_internal_iterator_reconcile_weak_map_current(data, weak_map, 0);
+    }
     if (ptn_ascii_case_equal(name, "rewind")) {
         if (data->rewind_forbidden &&
             !data->allow_rewind_after_move &&
@@ -170108,6 +170163,10 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
         data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(token_list);
         data->live_dom_token_list_has_current = 0;
+        weak_map = ptn_internal_iterator_live_weak_map(data);
+        data->live_weak_map_seen_version = ptn_weak_map_iterator_mutation_version(weak_map);
+        data->live_weak_map_current_order = 0;
+        data->live_weak_map_has_current = 0;
         free(data->live_dom_token_list_current_token);
         data->live_dom_token_list_current_token = NULL;
         return ptn_null();
@@ -170122,9 +170181,11 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         if (ptn_internal_iterator_live_dom_token_list(data) != NULL) {
             return ptn_int((int64_t)data->index);
         }
-        PtnWeakMapData *weak_map = ptn_internal_iterator_live_weak_map(data);
+        weak_map = ptn_internal_iterator_live_weak_map(data);
         if (weak_map != NULL) {
-            return ptn_weak_map_iterator_key_value(weak_map, data->index);
+            PtnValue key = ptn_weak_map_iterator_key_value(weak_map, data->index);
+            ptn_internal_iterator_note_weak_map_current(data, weak_map);
+            return key;
         }
         if (data->index >= count) {
             return ptn_null();
@@ -170158,10 +170219,18 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
             data->live_dom_token_list_current_token = NULL;
             return ptn_null();
         }
-        if (ptn_internal_iterator_live_weak_map(data) != NULL) {
-            if (data->index < count) {
+        weak_map = ptn_internal_iterator_live_weak_map(data);
+        if (weak_map != NULL) {
+            uint64_t version = ptn_weak_map_iterator_mutation_version(weak_map);
+            if (version != data->live_weak_map_seen_version &&
+                data->live_weak_map_has_current) {
+                ptn_internal_iterator_reconcile_weak_map_current(data, weak_map, 1);
+            } else if (data->index < count) {
                 data->index++;
             }
+            data->live_weak_map_seen_version = version;
+            data->live_weak_map_current_order = 0;
+            data->live_weak_map_has_current = 0;
             return ptn_null();
         }
         if (data->index < count) {
@@ -223665,17 +223734,229 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
     return ptn_null();
 }
 
+typedef struct {
+    const void *identity;
+    size_t object_id;
+    size_t entry_plus_one;
+    unsigned char is_resource;
+} PtnWeakMapLookupSlot;
+
+struct PtnWeakMapMembership {
+    PtnWeakMapData *map;
+    size_t entry_index;
+    PtnWeakMapMembership *next;
+    PtnWeakMapMembership **previous_link;
+};
+
 struct PtnWeakMapData {
     PtnRuntime *runtime;
+    PtnObject *owner;
     PtnObject **objects;
     PtnResource **resources;
     size_t *object_ids;
+    uint64_t *entry_orders;
     PtnValue *values;
     unsigned char *value_reference_visible;
+    PtnWeakMapMembership **memberships;
+    PtnWeakMapLookupSlot *lookup_slots;
+    size_t lookup_capacity;
+    size_t lookup_len;
+    size_t lookup_deleted;
     size_t len;
+    size_t dead_count;
     size_t capacity;
     size_t index;
+    uint64_t next_entry_order;
+    uint64_t mutation_version;
 };
+
+static size_t ptn_weak_map_identity_hash(
+    const void *identity,
+    size_t object_id,
+    int is_resource
+) {
+    size_t hash = (size_t)(uintptr_t)identity;
+    hash ^= object_id + (size_t)0x9e3779b9U + (hash << 6) + (hash >> 2);
+    hash ^= is_resource ? (size_t)0x85ebca6bU : (size_t)0xc2b2ae35U;
+#if SIZE_MAX > UINT32_MAX
+    hash ^= hash >> 33;
+    hash *= (size_t)0xff51afd7ed558ccdULL;
+    hash ^= hash >> 33;
+#else
+    hash ^= hash >> 16;
+    hash *= (size_t)0x7feb352dU;
+    hash ^= hash >> 15;
+#endif
+    return hash;
+}
+
+static void ptn_weak_map_lookup_insert_raw(
+    PtnWeakMapData *map,
+    const void *identity,
+    size_t object_id,
+    int is_resource,
+    size_t entry_index
+) {
+    size_t mask = map->lookup_capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(identity, object_id, is_resource) & mask;
+    while (map->lookup_slots[slot_index].entry_plus_one != 0) {
+        slot_index = (slot_index + 1) & mask;
+    }
+    PtnWeakMapLookupSlot *slot = &map->lookup_slots[slot_index];
+    slot->identity = identity;
+    slot->object_id = object_id;
+    slot->entry_plus_one = entry_index + 1;
+    slot->is_resource = is_resource ? 1 : 0;
+    map->lookup_len++;
+}
+
+static void ptn_weak_map_lookup_rebuild(PtnWeakMapData *map, size_t minimum_capacity) {
+    if (map == NULL) {
+        return;
+    }
+    size_t live_len = map->len - map->dead_count;
+    size_t new_capacity = 8;
+    while (new_capacity < minimum_capacity || live_len >= new_capacity / 2) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    PtnWeakMapLookupSlot *slots = calloc(new_capacity, sizeof(PtnWeakMapLookupSlot));
+    if (slots == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    free(map->lookup_slots);
+    map->lookup_slots = slots;
+    map->lookup_capacity = new_capacity;
+    map->lookup_len = 0;
+    map->lookup_deleted = 0;
+    for (size_t i = 0; i < map->len; i++) {
+        const void *identity = map->resources[i] != NULL
+            ? (const void *)map->resources[i]
+            : (const void *)map->objects[i];
+        if (identity == NULL) {
+            continue;
+        }
+        ptn_weak_map_lookup_insert_raw(
+            map,
+            identity,
+            map->object_ids[i],
+            map->resources[i] != NULL,
+            i
+        );
+    }
+}
+
+static void ptn_weak_map_lookup_ensure_insert_capacity(PtnWeakMapData *map) {
+    if (map->lookup_capacity == 0 ||
+        map->lookup_len + map->lookup_deleted + 1 >= map->lookup_capacity / 2) {
+        size_t minimum_capacity = map->lookup_capacity == 0 ? 8 : map->lookup_capacity * 2;
+        if (minimum_capacity < map->lookup_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_weak_map_lookup_rebuild(map, minimum_capacity);
+    }
+}
+
+static int ptn_weak_map_lookup_find(
+    PtnWeakMapData *map,
+    const void *identity,
+    size_t object_id,
+    int is_resource,
+    size_t *entry_index_out,
+    size_t *lookup_index_out
+) {
+    if (map == NULL || identity == NULL || map->lookup_capacity == 0) {
+        return 0;
+    }
+    size_t mask = map->lookup_capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(identity, object_id, is_resource) & mask;
+    for (;;) {
+        PtnWeakMapLookupSlot *slot = &map->lookup_slots[slot_index];
+        if (slot->entry_plus_one == 0) {
+            return 0;
+        }
+        if (slot->entry_plus_one != SIZE_MAX &&
+            slot->identity == identity &&
+            slot->object_id == object_id &&
+            slot->is_resource == (is_resource ? 1 : 0)) {
+            if (entry_index_out != NULL) {
+                *entry_index_out = slot->entry_plus_one - 1;
+            }
+            if (lookup_index_out != NULL) {
+                *lookup_index_out = slot_index;
+            }
+            return 1;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+}
+
+static void ptn_weak_map_lookup_remove(
+    PtnWeakMapData *map,
+    const void *identity,
+    size_t object_id,
+    int is_resource
+) {
+    size_t lookup_index = 0;
+    if (!ptn_weak_map_lookup_find(
+            map,
+            identity,
+            object_id,
+            is_resource,
+            NULL,
+            &lookup_index
+        )) {
+        return;
+    }
+    PtnWeakMapLookupSlot *slot = &map->lookup_slots[lookup_index];
+    slot->identity = NULL;
+    slot->object_id = 0;
+    slot->entry_plus_one = SIZE_MAX;
+    slot->is_resource = 0;
+    map->lookup_len--;
+    map->lookup_deleted++;
+}
+
+static void ptn_weak_map_membership_detach(PtnWeakMapMembership *membership) {
+    if (membership == NULL || membership->previous_link == NULL) {
+        return;
+    }
+    *membership->previous_link = membership->next;
+    if (membership->next != NULL) {
+        membership->next->previous_link = membership->previous_link;
+    }
+    membership->next = NULL;
+    membership->previous_link = NULL;
+}
+
+static PtnWeakMapMembership *ptn_weak_map_membership_attach(
+    PtnWeakMapData *map,
+    PtnObject *object,
+    PtnResource *resource,
+    size_t entry_index
+) {
+    if (map == NULL || (object == NULL && resource == NULL)) {
+        return NULL;
+    }
+    PtnWeakMapMembership *membership = malloc(sizeof(PtnWeakMapMembership));
+    if (membership == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnWeakMapMembership **head = object != NULL
+        ? &object->weak_map_memberships
+        : &resource->weak_map_memberships;
+    membership->map = map;
+    membership->entry_index = entry_index;
+    membership->next = *head;
+    membership->previous_link = head;
+    if (membership->next != NULL) {
+        membership->next->previous_link = &membership->next;
+    }
+    *head = membership;
+    return membership;
+}
 
 static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object) {
     if (
@@ -223698,39 +223979,116 @@ static void ptn_weak_map_data_free(void *data) {
     if (map == NULL) {
         return;
     }
-    PtnRuntime *root = ptn_runtime_root(map->runtime);
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        map->runtime,
+        map->runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    if (map->owner != NULL && map->owner->native_data == map) {
+        map->owner->native_data = NULL;
+        map->owner->native_data_free = NULL;
+    }
+    map->owner = NULL;
     if (root != NULL && root->live_weak_maps_len > 0) {
         root->live_weak_maps_len--;
     }
-    for (size_t i = 0; i < map->len; i++) {
-        if (map->resources != NULL && map->resources[i] != NULL) {
-            ptn_resource_release(map->resources[i]);
-        }
-        ptn_value_destroy(&map->values[i]);
+    map->runtime = NULL;
+
+    size_t len = map->len;
+    PtnObject **objects = map->objects;
+    PtnResource **resources = map->resources;
+    size_t *object_ids = map->object_ids;
+    uint64_t *entry_orders = map->entry_orders;
+    PtnValue *values = map->values;
+    unsigned char *value_reference_visible = map->value_reference_visible;
+    PtnWeakMapMembership **memberships = map->memberships;
+    PtnWeakMapLookupSlot *lookup_slots = map->lookup_slots;
+    map->objects = NULL;
+    map->resources = NULL;
+    map->object_ids = NULL;
+    map->entry_orders = NULL;
+    map->values = NULL;
+    map->value_reference_visible = NULL;
+    map->memberships = NULL;
+    map->lookup_slots = NULL;
+    map->lookup_capacity = 0;
+    map->lookup_len = 0;
+    map->lookup_deleted = 0;
+    map->len = 0;
+    map->dead_count = 0;
+    map->capacity = 0;
+    map->index = 0;
+    map->next_entry_order = 1;
+    map->mutation_version = 0;
+
+    PtnCleanupRoot *roots = len == 0 ? NULL : calloc(len, sizeof(PtnCleanupRoot));
+    if (len != 0 && roots == NULL) {
+        ptn_abort_out_of_memory();
     }
-    free(map->objects);
-    free(map->resources);
-    free(map->object_ids);
-    free(map->values);
-    free(map->value_reference_visible);
+    for (size_t i = 0; i < len; i++) {
+        if (memberships != NULL && memberships[i] != NULL) {
+            ptn_weak_map_membership_detach(memberships[i]);
+            free(memberships[i]);
+            memberships[i] = NULL;
+        }
+        roots[i].value = ptn_null();
+        roots[i].next = NULL;
+        ptn_runtime_link_cleanup_root(root, &roots[i], values[i]);
+    }
+
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    for (size_t i = 0; i < len; i++) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnTryFrame value_frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &value_frame);
+            if (setjmp(value_frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(release_runtime, &values[i]);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &value_frame);
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                release_runtime,
+                state,
+                active_before
+            );
+        }
+        ptn_runtime_unlink_cleanup_root(root, &roots[i]);
+    }
+    free(objects);
+    free(resources);
+    free(object_ids);
+    free(entry_orders);
+    free(values);
+    free(value_reference_visible);
+    free(memberships);
+    free(lookup_slots);
+    free(roots);
     free(map);
+    ptn_release_state_finish(release_runtime, state);
 }
 
 static PtnObject *ptn_weak_map_live_object(PtnWeakMapData *map, PtnObject *candidate, size_t object_id) {
-    if (map == NULL || map->runtime == NULL || candidate == NULL) {
+    if (map == NULL || candidate == NULL) {
         return NULL;
     }
-    PtnRuntime *root = ptn_runtime_root(map->runtime);
-    if (root == NULL) {
-        return NULL;
-    }
-    for (size_t i = 0; i < root->live_objects_len; i++) {
-        PtnObject *object = root->live_objects[i];
-        if (object == candidate &&
-            object->object_id == object_id &&
-            object->refcount != 0) {
-            return object;
-        }
+    if (candidate->object_id == object_id && candidate->refcount != 0) {
+        return candidate;
     }
     return NULL;
 }
@@ -223759,6 +224117,9 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
     if (map == NULL) {
         return;
     }
+    if (map->dead_count == 0) {
+        return;
+    }
     PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
         runtime,
         map->runtime,
@@ -223769,15 +224130,12 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
     PtnValue *removed_values = original_len == 0
         ? NULL
         : malloc(original_len * sizeof(PtnValue));
-    PtnResource **removed_resources = original_len == 0
-        ? NULL
-        : calloc(original_len, sizeof(PtnResource *));
     PtnCleanupRoot *removed_roots = original_len == 0
         ? NULL
         : calloc(original_len, sizeof(PtnCleanupRoot));
     if (
         original_len != 0 &&
-        (removed_values == NULL || removed_resources == NULL || removed_roots == NULL)
+        (removed_values == NULL || removed_roots == NULL)
     ) {
         ptn_abort_out_of_memory();
     }
@@ -223798,10 +224156,26 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
             if (read < adjusted_index && adjusted_index > 0) {
                 adjusted_index--;
             }
+            const void *identity = map->resources[read] != NULL
+                ? (const void *)map->resources[read]
+                : (const void *)map->objects[read];
+            if (identity != NULL) {
+                ptn_weak_map_lookup_remove(
+                    map,
+                    identity,
+                    map->object_ids[read],
+                    map->resources[read] != NULL
+                );
+            }
+            if (map->memberships[read] != NULL) {
+                ptn_weak_map_membership_detach(map->memberships[read]);
+                free(map->memberships[read]);
+                map->memberships[read] = NULL;
+            }
             removed_values[removed_len] = map->values[read];
             map->values[read] = ptn_null();
+            map->entry_orders[read] = 0;
             if (map->resources != NULL) {
-                removed_resources[removed_len] = map->resources[read];
                 map->resources[read] = NULL;
             }
             removed_roots[removed_len].value = ptn_null();
@@ -223820,11 +224194,20 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
             map->object_ids[write] = live_resource != NULL
                 ? ptn_resource_object_id(live_resource)
                 : live_object->object_id;
+            map->entry_orders[write] = map->entry_orders[read];
             map->values[write] = map->values[read];
             map->value_reference_visible[write] = map->value_reference_visible[read];
+            map->memberships[write] = map->memberships[read];
+            if (map->memberships[write] != NULL) {
+                map->memberships[write]->entry_index = write;
+            }
             map->objects[read] = NULL;
             map->resources[read] = NULL;
+            map->object_ids[read] = 0;
+            map->entry_orders[read] = 0;
             map->values[read] = ptn_null();
+            map->value_reference_visible[read] = 0;
+            map->memberships[read] = NULL;
         } else {
             map->objects[write] = live_object;
             map->resources[write] = live_resource;
@@ -223835,49 +224218,18 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
         write++;
     }
     map->len = write;
+    map->dead_count = 0;
     map->index = adjusted_index > map->len ? map->len : adjusted_index;
+    map->mutation_version++;
+    ptn_weak_map_lookup_rebuild(map, map->lookup_capacity);
     if (removed_len == 0) {
         free(removed_values);
-        free(removed_resources);
         free(removed_roots);
         return;
     }
 
     PtnReleaseState *state = ptn_release_state_new(release_runtime);
     for (size_t i = 0; i < removed_len; i++) {
-        if (removed_resources[i] != NULL) {
-            PtnResource *resource = removed_resources[i];
-            removed_resources[i] = NULL;
-            PtnException *active_before =
-                release_runtime == NULL || release_runtime->exceptions == NULL
-                    ? NULL
-                    : release_runtime->exceptions->active_exception;
-            PtnTryFrame resource_frame;
-            int resource_caught_exception = 0;
-            int resource_frame_active =
-                release_runtime != NULL && release_runtime->exceptions != NULL;
-            if (resource_frame_active) {
-                ptn_try_frame_push(release_runtime, &resource_frame);
-                if (setjmp(resource_frame.jump) != 0) {
-                    resource_caught_exception = 1;
-                }
-            }
-            if (!resource_caught_exception) {
-                ptn_resource_release(resource);
-            }
-            if (resource_frame_active) {
-                ptn_try_frame_pop(release_runtime, &resource_frame);
-            }
-            if (resource_caught_exception) {
-                ptn_release_state_remember_exception(release_runtime, state);
-            } else {
-                ptn_release_state_remember_new_active_exception(
-                    release_runtime,
-                    state,
-                    active_before
-                );
-            }
-        }
         PtnException *active_before =
             release_runtime == NULL || release_runtime->exceptions == NULL
                 ? NULL
@@ -223910,7 +224262,6 @@ static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *m
         ptn_runtime_unlink_cleanup_root(root, &removed_roots[i]);
     }
     free(removed_values);
-    free(removed_resources);
     free(removed_roots);
     ptn_release_state_finish(release_runtime, state);
 }
@@ -223919,80 +224270,83 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
     ptn_weak_map_prune_in_runtime(map == NULL ? NULL : map->runtime, map);
 }
 
-static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root == NULL || root->live_objects_len == 0 || root->live_weak_maps_len == 0) {
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(
+    PtnRuntime *runtime,
+    PtnObject *released_object
+) {
+    if (released_object == NULL || released_object->weak_map_memberships == NULL) {
         return;
     }
 
-    PtnObject **owners = malloc(root->live_objects_len * sizeof(PtnObject *));
-    if (owners == NULL) {
+    size_t membership_count = 0;
+    for (PtnWeakMapMembership *membership = released_object->weak_map_memberships;
+         membership != NULL;
+         membership = membership->next) {
+        if (membership_count == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        membership_count++;
+    }
+    if (membership_count > SIZE_MAX / sizeof(PtnValue) ||
+        membership_count > SIZE_MAX / sizeof(PtnCleanupRoot)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue *removed_values = malloc(membership_count * sizeof(PtnValue));
+    PtnCleanupRoot *removed_roots = calloc(membership_count, sizeof(PtnCleanupRoot));
+    if (removed_values == NULL || removed_roots == NULL) {
+        free(removed_values);
+        free(removed_roots);
         ptn_abort_out_of_memory();
     }
 
-    size_t owner_count = 0;
-    for (size_t i = 0; i < root->live_objects_len; i++) {
-        PtnObject *owner = root->live_objects[i];
-        if (owner == NULL ||
-            owner->refcount == 0 ||
-            !ptn_internal_class_name_is_weak_map(owner->class_name) ||
-            owner->native_data == NULL) {
-            continue;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    size_t removed_len = 0;
+    while (released_object->weak_map_memberships != NULL) {
+        PtnWeakMapMembership *membership = released_object->weak_map_memberships;
+        PtnWeakMapData *map = membership->map;
+        size_t index = membership->entry_index;
+        if (map != NULL &&
+            index < map->len &&
+            map->memberships[index] == membership &&
+            map->objects[index] == released_object &&
+            map->object_ids[index] == released_object->object_id) {
+            ptn_weak_map_lookup_remove(
+                map,
+                released_object,
+                map->object_ids[index],
+                0
+            );
+            removed_values[removed_len] = map->values[index];
+            map->objects[index] = NULL;
+            map->object_ids[index] = 0;
+            map->entry_orders[index] = 0;
+            map->values[index] = ptn_null();
+            map->value_reference_visible[index] = 0;
+            map->memberships[index] = NULL;
+            map->dead_count++;
+            map->mutation_version++;
+            removed_roots[removed_len].value = ptn_null();
+            removed_roots[removed_len].next = NULL;
+            ptn_runtime_link_cleanup_root(
+                root,
+                &removed_roots[removed_len],
+                removed_values[removed_len]
+            );
+            removed_len++;
         }
-        ptn_object_retain(owner);
-        owners[owner_count++] = owner;
+        ptn_weak_map_membership_detach(membership);
+        free(membership);
     }
 
     PtnReleaseState *state = ptn_release_state_new(runtime);
-    for (size_t i = 0; i < owner_count; i++) {
-        PtnObject *owner = owners[i];
-        if (owner->refcount != 0 &&
-            ptn_internal_class_name_is_weak_map(owner->class_name) &&
-            owner->native_data != NULL) {
-            PtnException *active_before =
-                runtime->exceptions == NULL
-                    ? NULL
-                    : runtime->exceptions->active_exception;
-            PtnTryFrame frame;
-            int caught_exception = 0;
-            int frame_active = runtime->exceptions != NULL;
-            if (frame_active) {
-                ptn_try_frame_push(runtime, &frame);
-                if (setjmp(frame.jump) != 0) {
-                    caught_exception = 1;
-                }
-            }
-            if (!caught_exception) {
-                ptn_weak_map_prune_in_runtime(
-                    runtime,
-                    (PtnWeakMapData *)owner->native_data
-                );
-            }
-            if (frame_active) {
-                ptn_try_frame_pop(runtime, &frame);
-            }
-            if (caught_exception) {
-                ptn_release_state_remember_exception(runtime, state);
-            } else {
-                ptn_release_state_remember_new_active_exception(
-                    runtime,
-                    state,
-                    active_before
-                );
-            }
-        }
-    }
-
-    for (size_t i = 0; i < owner_count; i++) {
-        PtnObject *owner = owners[i];
-        owners[i] = NULL;
+    for (size_t i = 0; i < removed_len; i++) {
         PtnException *active_before =
-            runtime->exceptions == NULL
+            runtime == NULL || runtime->exceptions == NULL
                 ? NULL
                 : runtime->exceptions->active_exception;
         PtnTryFrame frame;
         int caught_exception = 0;
-        int frame_active = runtime->exceptions != NULL;
+        int frame_active = runtime != NULL && runtime->exceptions != NULL;
         if (frame_active) {
             ptn_try_frame_push(runtime, &frame);
             if (setjmp(frame.jump) != 0) {
@@ -224000,7 +224354,7 @@ static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntim
             }
         }
         if (!caught_exception) {
-            ptn_object_release_in_runtime(runtime, owner);
+            ptn_value_drop_in_runtime(runtime, &removed_values[i]);
         }
         if (frame_active) {
             ptn_try_frame_pop(runtime, &frame);
@@ -224014,9 +224368,116 @@ static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntim
                 active_before
             );
         }
+        ptn_runtime_unlink_cleanup_root(root, &removed_roots[i]);
     }
-    free(owners);
+    free(removed_values);
+    free(removed_roots);
     ptn_release_state_finish(runtime, state);
+}
+
+static PTN_UNUSED PtnReleaseState *ptn_runtime_prune_weak_maps_for_released_resource(
+    PtnRuntime *runtime,
+    PtnResource *released_resource
+) {
+    if (released_resource == NULL || released_resource->weak_map_memberships == NULL) {
+        return NULL;
+    }
+
+    size_t membership_count = 0;
+    for (PtnWeakMapMembership *membership = released_resource->weak_map_memberships;
+         membership != NULL;
+         membership = membership->next) {
+        if (membership_count == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        membership_count++;
+    }
+    if (membership_count > SIZE_MAX / sizeof(PtnValue) ||
+        membership_count > SIZE_MAX / sizeof(PtnCleanupRoot)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue *removed_values = malloc(membership_count * sizeof(PtnValue));
+    PtnCleanupRoot *removed_roots = calloc(membership_count, sizeof(PtnCleanupRoot));
+    if (removed_values == NULL || removed_roots == NULL) {
+        free(removed_values);
+        free(removed_roots);
+        ptn_abort_out_of_memory();
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    size_t removed_len = 0;
+    while (released_resource->weak_map_memberships != NULL) {
+        PtnWeakMapMembership *membership = released_resource->weak_map_memberships;
+        PtnWeakMapData *map = membership->map;
+        size_t index = membership->entry_index;
+        if (map != NULL &&
+            index < map->len &&
+            map->memberships[index] == membership &&
+            map->resources[index] == released_resource &&
+            map->object_ids[index] == ptn_resource_object_id(released_resource)) {
+            ptn_weak_map_lookup_remove(
+                map,
+                released_resource,
+                map->object_ids[index],
+                1
+            );
+            removed_values[removed_len] = map->values[index];
+            map->resources[index] = NULL;
+            map->object_ids[index] = 0;
+            map->entry_orders[index] = 0;
+            map->values[index] = ptn_null();
+            map->value_reference_visible[index] = 0;
+            map->memberships[index] = NULL;
+            map->dead_count++;
+            map->mutation_version++;
+            removed_roots[removed_len].value = ptn_null();
+            removed_roots[removed_len].next = NULL;
+            ptn_runtime_link_cleanup_root(
+                root,
+                &removed_roots[removed_len],
+                removed_values[removed_len]
+            );
+            removed_len++;
+        }
+        ptn_weak_map_membership_detach(membership);
+        free(membership);
+    }
+
+    PtnReleaseState *state = ptn_release_state_new(runtime);
+    for (size_t i = 0; i < removed_len; i++) {
+        PtnException *active_before =
+            runtime == NULL || runtime->exceptions == NULL
+                ? NULL
+                : runtime->exceptions->active_exception;
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        int frame_active = runtime != NULL && runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(runtime, &frame);
+            if (setjmp(frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(runtime, &removed_values[i]);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(runtime, &frame);
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                runtime,
+                state,
+                active_before
+            );
+        }
+        ptn_runtime_unlink_cleanup_root(root, &removed_roots[i]);
+    }
+    free(removed_values);
+    free(removed_roots);
+    return state;
 }
 
 static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
@@ -224033,60 +224494,90 @@ static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
     if (new_capacity > SIZE_MAX / sizeof(PtnObject *) ||
         new_capacity > SIZE_MAX / sizeof(PtnResource *) ||
         new_capacity > SIZE_MAX / sizeof(size_t) ||
+        new_capacity > SIZE_MAX / sizeof(uint64_t) ||
         new_capacity > SIZE_MAX / sizeof(PtnValue) ||
-        new_capacity > SIZE_MAX / sizeof(unsigned char)) {
+        new_capacity > SIZE_MAX / sizeof(unsigned char) ||
+        new_capacity > SIZE_MAX / sizeof(PtnWeakMapMembership *)) {
         ptn_abort_out_of_memory();
     }
     PtnObject **objects = malloc(new_capacity * sizeof(PtnObject *));
     PtnResource **resources = malloc(new_capacity * sizeof(PtnResource *));
     size_t *object_ids = malloc(new_capacity * sizeof(size_t));
+    uint64_t *entry_orders = malloc(new_capacity * sizeof(uint64_t));
     PtnValue *values = malloc(new_capacity * sizeof(PtnValue));
     unsigned char *value_reference_visible = malloc(new_capacity * sizeof(unsigned char));
-    if (objects == NULL || resources == NULL || object_ids == NULL || values == NULL || value_reference_visible == NULL) {
+    PtnWeakMapMembership **memberships = malloc(
+        new_capacity * sizeof(PtnWeakMapMembership *)
+    );
+    if (objects == NULL ||
+        resources == NULL ||
+        object_ids == NULL ||
+        entry_orders == NULL ||
+        values == NULL ||
+        value_reference_visible == NULL ||
+        memberships == NULL) {
         free(objects);
         free(resources);
         free(object_ids);
+        free(entry_orders);
         free(values);
         free(value_reference_visible);
+        free(memberships);
         ptn_abort_out_of_memory();
     }
     if (map->len != 0) {
         memcpy(objects, map->objects, map->len * sizeof(PtnObject *));
         memcpy(resources, map->resources, map->len * sizeof(PtnResource *));
         memcpy(object_ids, map->object_ids, map->len * sizeof(size_t));
+        memcpy(entry_orders, map->entry_orders, map->len * sizeof(uint64_t));
         memcpy(values, map->values, map->len * sizeof(PtnValue));
         memcpy(value_reference_visible, map->value_reference_visible, map->len * sizeof(unsigned char));
+        memcpy(memberships, map->memberships, map->len * sizeof(PtnWeakMapMembership *));
     }
     free(map->objects);
     free(map->resources);
     free(map->object_ids);
+    free(map->entry_orders);
     free(map->values);
     free(map->value_reference_visible);
+    free(map->memberships);
     map->objects = objects;
     map->resources = resources;
     map->object_ids = object_ids;
+    map->entry_orders = entry_orders;
     map->values = values;
     map->value_reference_visible = value_reference_visible;
+    map->memberships = memberships;
     map->capacity = new_capacity;
 }
 
-static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime) {
+static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime, PtnObject *owner) {
     PtnWeakMapData *map = malloc(sizeof(PtnWeakMapData));
     if (map == NULL) {
         ptn_abort_out_of_memory();
     }
     map->runtime = ptn_runtime_root(runtime);
+    map->owner = owner;
     if (map->runtime != NULL) {
         map->runtime->live_weak_maps_len++;
     }
     map->objects = NULL;
     map->resources = NULL;
     map->object_ids = NULL;
+    map->entry_orders = NULL;
     map->values = NULL;
     map->value_reference_visible = NULL;
+    map->memberships = NULL;
+    map->lookup_slots = NULL;
+    map->lookup_capacity = 0;
+    map->lookup_len = 0;
+    map->lookup_deleted = 0;
     map->len = 0;
+    map->dead_count = 0;
     map->capacity = 0;
     map->index = 0;
+    map->next_entry_order = 1;
+    map->mutation_version = 0;
     return map;
 }
 
@@ -224144,53 +224635,84 @@ static int ptn_weak_map_find_index(PtnWeakMapData *map, PtnObject *object, PtnRe
     if (map == NULL || (object == NULL && resource == NULL)) {
         return 0;
     }
-    ptn_weak_map_prune(map);
-    for (size_t i = 0; i < map->len; i++) {
-        if (resource != NULL) {
-            if (map->resources[i] != resource || map->object_ids[i] != ptn_resource_object_id(resource)) {
-                continue;
-            }
-            if (index_out != NULL) {
-                *index_out = i;
-            }
-            return 1;
-        }
-        if (map->resources[i] == NULL && map->objects[i] == object && map->object_ids[i] == object->object_id) {
-            if (index_out != NULL) {
-                *index_out = i;
-            }
-            return 1;
-        }
+    const void *identity = resource != NULL
+        ? (const void *)resource
+        : (const void *)object;
+    size_t object_id = resource != NULL
+        ? ptn_resource_object_id(resource)
+        : object->object_id;
+    size_t index = 0;
+    if (!ptn_weak_map_lookup_find(
+            map,
+            identity,
+            object_id,
+            resource != NULL,
+            &index,
+            NULL
+        ) || index >= map->len) {
+        return 0;
     }
-    return 0;
+    if (resource != NULL) {
+        if (map->resources[index] != resource || map->object_ids[index] != object_id) {
+            return 0;
+        }
+    } else if (map->resources[index] != NULL ||
+               map->objects[index] != object ||
+               map->object_ids[index] != object_id) {
+        return 0;
+    }
+    if (index_out != NULL) {
+        *index_out = index;
+    }
+    return 1;
 }
 
 static void ptn_weak_map_remove_at(PtnWeakMapData *map, size_t index) {
-    if (map == NULL || index >= map->len) {
+    if (map == NULL ||
+        index >= map->len ||
+        (map->objects[index] == NULL && map->resources[index] == NULL)) {
         return;
     }
     PtnValue removed = map->values[index];
     PtnResource *removed_resource = map->resources[index];
-    for (size_t i = index + 1; i < map->len; i++) {
-        map->objects[i - 1] = map->objects[i];
-        map->resources[i - 1] = map->resources[i];
-        map->object_ids[i - 1] = map->object_ids[i];
-        map->values[i - 1] = map->values[i];
-        map->value_reference_visible[i - 1] = map->value_reference_visible[i];
+    const void *identity = removed_resource != NULL
+        ? (const void *)removed_resource
+        : (const void *)map->objects[index];
+    ptn_weak_map_lookup_remove(
+        map,
+        identity,
+        map->object_ids[index],
+        removed_resource != NULL
+    );
+    if (map->memberships[index] != NULL) {
+        ptn_weak_map_membership_detach(map->memberships[index]);
+        free(map->memberships[index]);
     }
-    map->len--;
-    map->objects[map->len] = NULL;
-    map->resources[map->len] = NULL;
-    map->object_ids[map->len] = 0;
-    map->values[map->len] = ptn_null();
-    map->value_reference_visible[map->len] = 0;
-    if (map->index > map->len) {
-        map->index = map->len;
-    }
-    if (removed_resource != NULL) {
-        ptn_resource_release(removed_resource);
-    }
+    map->objects[index] = NULL;
+    map->resources[index] = NULL;
+    map->object_ids[index] = 0;
+    map->entry_orders[index] = 0;
+    map->values[index] = ptn_null();
+    map->value_reference_visible[index] = 0;
+    map->memberships[index] = NULL;
+    map->dead_count++;
+    map->mutation_version++;
     ptn_value_destroy(&removed);
+}
+
+static void ptn_weak_map_prepare_insert(PtnWeakMapData *map) {
+    if (map->len == map->capacity && map->dead_count != 0) {
+        ptn_weak_map_prune(map);
+    }
+    ptn_weak_map_reserve(map, map->len + 1);
+    ptn_weak_map_lookup_ensure_insert_capacity(map);
+}
+
+static uint64_t ptn_weak_map_take_entry_order(PtnWeakMapData *map) {
+    if (map->next_entry_order == UINT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return map->next_entry_order++;
 }
 
 static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnResource *resource, PtnValue value) {
@@ -224202,16 +224724,29 @@ static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnResource
         ptn_value_destroy(&old);
         return;
     }
-    ptn_weak_map_reserve(map, map->len + 1);
-    map->objects[map->len] = object;
-    map->resources[map->len] = resource;
-    map->object_ids[map->len] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
-    if (resource != NULL) {
-        ptn_resource_retain(resource);
-    }
-    map->values[map->len] = ptn_value_clone(value);
-    map->value_reference_visible[map->len] = 0;
+    ptn_weak_map_prepare_insert(map);
+    size_t entry_index = map->len;
+    map->objects[entry_index] = object;
+    map->resources[entry_index] = resource;
+    map->object_ids[entry_index] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
+    map->entry_orders[entry_index] = ptn_weak_map_take_entry_order(map);
+    map->values[entry_index] = ptn_value_clone(value);
+    map->value_reference_visible[entry_index] = 0;
+    map->memberships[entry_index] = ptn_weak_map_membership_attach(
+        map,
+        object,
+        resource,
+        entry_index
+    );
+    ptn_weak_map_lookup_insert_raw(
+        map,
+        resource != NULL ? (const void *)resource : (const void *)object,
+        map->object_ids[entry_index],
+        resource != NULL,
+        entry_index
+    );
     map->len++;
+    map->mutation_version++;
 }
 
 static PtnValue ptn_weak_map_key_value(PtnObject *object, PtnResource *resource) {
@@ -224230,6 +224765,31 @@ static size_t ptn_weak_map_iterator_entry_count(PtnWeakMapData *map) {
         return 0;
     }
     ptn_weak_map_prune(map);
+    return map->len;
+}
+
+static uint64_t ptn_weak_map_iterator_mutation_version(PtnWeakMapData *map) {
+    return map == NULL ? 0 : map->mutation_version;
+}
+
+static uint64_t ptn_weak_map_iterator_entry_order(PtnWeakMapData *map, size_t index) {
+    if (map == NULL) {
+        return 0;
+    }
+    ptn_weak_map_prune(map);
+    return index < map->len ? map->entry_orders[index] : 0;
+}
+
+static size_t ptn_weak_map_iterator_index_at_or_after_order(PtnWeakMapData *map, uint64_t order) {
+    if (map == NULL) {
+        return 0;
+    }
+    ptn_weak_map_prune(map);
+    for (size_t i = 0; i < map->len; i++) {
+        if (map->entry_orders[i] >= order) {
+            return i;
+        }
+    }
     return map->len;
 }
 
@@ -224347,7 +224907,7 @@ static PTN_UNUSED PtnValue ptn_weak_map_new(
         return ptn_null();
     }
     PtnValue object = ptn_object_new_shell(runtime, "WeakMap");
-    object.as.object->native_data = ptn_weak_map_data_new(runtime);
+    object.as.object->native_data = ptn_weak_map_data_new(runtime, object.as.object);
     object.as.object->native_data_free = ptn_weak_map_data_free;
     return object;
 }
@@ -224364,20 +224924,27 @@ static PTN_UNUSED PtnValue ptn_weak_map_clone(
     }
     ptn_weak_map_prune(source_map);
     PtnValue object = ptn_object_new_shell(runtime, "WeakMap");
-    PtnWeakMapData *clone = ptn_weak_map_data_new(runtime);
+    PtnWeakMapData *clone = ptn_weak_map_data_new(runtime, object.as.object);
     ptn_weak_map_reserve(clone, source_map->len);
     for (size_t i = 0; i < source_map->len; i++) {
         clone->objects[i] = source_map->objects[i];
         clone->resources[i] = source_map->resources[i];
-        if (clone->resources[i] != NULL) {
-            ptn_resource_retain(clone->resources[i]);
-        }
         clone->object_ids[i] = source_map->object_ids[i];
+        clone->entry_orders[i] = source_map->entry_orders[i];
         clone->values[i] = ptn_value_clone(source_map->values[i]);
         clone->value_reference_visible[i] = source_map->value_reference_visible[i];
+        clone->memberships[i] = ptn_weak_map_membership_attach(
+            clone,
+            clone->objects[i],
+            clone->resources[i],
+            i
+        );
     }
     clone->len = source_map->len;
     clone->index = source_map->index;
+    clone->next_entry_order = source_map->next_entry_order;
+    clone->mutation_version = source_map->mutation_version;
+    ptn_weak_map_lookup_rebuild(clone, 0);
     object.as.object->native_data = clone;
     object.as.object->native_data_free = ptn_weak_map_data_free;
     return object;
@@ -224411,16 +224978,29 @@ static PTN_UNUSED int ptn_weak_map_bind_reference(
         ptn_value_destroy(&old);
         return 1;
     }
-    ptn_weak_map_reserve(map, map->len + 1);
-    map->objects[map->len] = object;
-    map->resources[map->len] = resource;
-    map->object_ids[map->len] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
-    if (resource != NULL) {
-        ptn_resource_retain(resource);
-    }
-    map->values[map->len] = ptn_value_clone(reference);
-    map->value_reference_visible[map->len] = 1;
+    ptn_weak_map_prepare_insert(map);
+    size_t entry_index = map->len;
+    map->objects[entry_index] = object;
+    map->resources[entry_index] = resource;
+    map->object_ids[entry_index] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
+    map->entry_orders[entry_index] = ptn_weak_map_take_entry_order(map);
+    map->values[entry_index] = ptn_value_clone(reference);
+    map->value_reference_visible[entry_index] = 1;
+    map->memberships[entry_index] = ptn_weak_map_membership_attach(
+        map,
+        object,
+        resource,
+        entry_index
+    );
+    ptn_weak_map_lookup_insert_raw(
+        map,
+        resource != NULL ? (const void *)resource : (const void *)object,
+        map->object_ids[entry_index],
+        resource != NULL,
+        entry_index
+    );
     map->len++;
+    map->mutation_version++;
     return 1;
 }
 
@@ -224506,15 +225086,303 @@ static size_t ptn_weak_map_count_exclusive_value_object_refs(
     return 0;
 }
 
-static size_t ptn_weak_map_count_weak_value_refs_to_object(
-    PtnRuntime *root,
-    PtnObject *target
+static size_t ptn_weak_map_count_exclusive_value_resource_refs(
+    PtnValue value,
+    PtnResource *target,
+    size_t depth
 ) {
-    if (root == NULL || target == NULL || target->refcount == 0) {
+    if (target == NULL || depth > 64) {
         return 0;
     }
+    if (value.type == PTN_REFERENCE) {
+        if (value.as.reference == NULL || value.as.reference->refcount > 1) {
+            return 0;
+        }
+        return ptn_weak_map_count_exclusive_value_resource_refs(
+            value.as.reference->value,
+            target,
+            depth + 1
+        );
+    }
 
-    size_t count = 0;
+    value = ptn_value_deref(value);
+    if (value.type == PTN_RESOURCE) {
+        return value.as.resource == target ? 1 : 0;
+    }
+    if (value.type == PTN_OBJECT) {
+        PtnObject *object = value.as.object;
+        if (object == NULL || object->refcount > 1 || object->properties == NULL) {
+            return 0;
+        }
+        size_t count = 0;
+        for (size_t i = 0; i < object->properties->len; i++) {
+            count += ptn_weak_map_count_exclusive_value_resource_refs(
+                object->properties->entries[i].value,
+                target,
+                depth + 1
+            );
+        }
+        return count;
+    }
+    if (value.type == PTN_ARRAY) {
+        PtnArray *array = value.as.array;
+        if (array == NULL || array->refcount > 1) {
+            return 0;
+        }
+        size_t count = 0;
+        for (size_t i = 0; i < array->len; i++) {
+            count += ptn_weak_map_count_exclusive_value_resource_refs(
+                array->entries[i].value,
+                target,
+                depth + 1
+            );
+        }
+        return count;
+    }
+    return 0;
+}
+
+typedef struct {
+    PtnObject *object;
+    size_t object_id;
+    size_t weak_refs;
+    size_t observed_refcount;
+} PtnWeakMapWeakRefCacheSlot;
+
+typedef struct {
+    PtnWeakMapWeakRefCacheSlot *slots;
+    size_t capacity;
+    size_t len;
+} PtnWeakMapWeakRefCache;
+
+typedef struct {
+    PtnResource *resource;
+    size_t object_id;
+    size_t weak_refs;
+    size_t observed_refcount;
+} PtnWeakMapWeakResourceRefCacheSlot;
+
+typedef struct {
+    PtnWeakMapWeakResourceRefCacheSlot *slots;
+    size_t capacity;
+    size_t len;
+} PtnWeakMapWeakResourceRefCache;
+
+static void ptn_weak_map_weak_ref_cache_rebuild(
+    PtnWeakMapWeakRefCache *cache,
+    size_t minimum_capacity
+) {
+    size_t new_capacity = 8;
+    while (new_capacity < minimum_capacity || cache->len >= new_capacity / 2) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    PtnWeakMapWeakRefCacheSlot *slots = calloc(
+        new_capacity,
+        sizeof(PtnWeakMapWeakRefCacheSlot)
+    );
+    if (slots == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnWeakMapWeakRefCacheSlot *old_slots = cache->slots;
+    size_t old_capacity = cache->capacity;
+    cache->slots = slots;
+    cache->capacity = new_capacity;
+    cache->len = 0;
+    for (size_t i = 0; i < old_capacity; i++) {
+        PtnWeakMapWeakRefCacheSlot old = old_slots[i];
+        if (old.object == NULL) {
+            continue;
+        }
+        size_t mask = cache->capacity - 1;
+        size_t slot_index = ptn_weak_map_identity_hash(
+            old.object,
+            old.object_id,
+            0
+        ) & mask;
+        while (cache->slots[slot_index].object != NULL) {
+            slot_index = (slot_index + 1) & mask;
+        }
+        cache->slots[slot_index] = old;
+        cache->len++;
+    }
+    free(old_slots);
+}
+
+static void ptn_weak_map_weak_ref_cache_add(
+    PtnWeakMapWeakRefCache *cache,
+    PtnObject *object,
+    size_t weak_refs
+) {
+    if (cache == NULL || object == NULL || weak_refs == 0) {
+        return;
+    }
+    if (cache->capacity == 0 || cache->len + 1 >= cache->capacity / 2) {
+        size_t minimum_capacity = cache->capacity == 0 ? 8 : cache->capacity * 2;
+        if (minimum_capacity < cache->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_weak_map_weak_ref_cache_rebuild(cache, minimum_capacity);
+    }
+    size_t mask = cache->capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(object, object->object_id, 0) & mask;
+    while (cache->slots[slot_index].object != NULL) {
+        PtnWeakMapWeakRefCacheSlot *slot = &cache->slots[slot_index];
+        if (slot->object == object && slot->object_id == object->object_id) {
+            slot->weak_refs = weak_refs > SIZE_MAX - slot->weak_refs
+                ? SIZE_MAX
+                : slot->weak_refs + weak_refs;
+            return;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+    PtnWeakMapWeakRefCacheSlot *slot = &cache->slots[slot_index];
+    slot->object = object;
+    slot->object_id = object->object_id;
+    slot->weak_refs = weak_refs;
+    slot->observed_refcount = object->refcount;
+    cache->len++;
+}
+
+static int ptn_weak_map_weak_ref_cache_is_weak_only(
+    const PtnWeakMapWeakRefCache *cache,
+    PtnObject *object,
+    size_t object_id
+) {
+    if (cache == NULL || object == NULL || cache->capacity == 0) {
+        return 0;
+    }
+    size_t mask = cache->capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(object, object_id, 0) & mask;
+    for (;;) {
+        const PtnWeakMapWeakRefCacheSlot *slot = &cache->slots[slot_index];
+        if (slot->object == NULL) {
+            return 0;
+        }
+        if (slot->object == object && slot->object_id == object_id) {
+            return slot->weak_refs != 0 && slot->weak_refs >= slot->observed_refcount;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+}
+
+static void ptn_weak_map_weak_resource_cache_rebuild(
+    PtnWeakMapWeakResourceRefCache *cache,
+    size_t minimum_capacity
+) {
+    size_t new_capacity = 8;
+    while (new_capacity < minimum_capacity || cache->len >= new_capacity / 2) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    PtnWeakMapWeakResourceRefCacheSlot *slots = calloc(
+        new_capacity,
+        sizeof(PtnWeakMapWeakResourceRefCacheSlot)
+    );
+    if (slots == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnWeakMapWeakResourceRefCacheSlot *old_slots = cache->slots;
+    size_t old_capacity = cache->capacity;
+    cache->slots = slots;
+    cache->capacity = new_capacity;
+    cache->len = 0;
+    for (size_t i = 0; i < old_capacity; i++) {
+        PtnWeakMapWeakResourceRefCacheSlot old = old_slots[i];
+        if (old.resource == NULL) {
+            continue;
+        }
+        size_t mask = cache->capacity - 1;
+        size_t slot_index = ptn_weak_map_identity_hash(
+            old.resource,
+            old.object_id,
+            1
+        ) & mask;
+        while (cache->slots[slot_index].resource != NULL) {
+            slot_index = (slot_index + 1) & mask;
+        }
+        cache->slots[slot_index] = old;
+        cache->len++;
+    }
+    free(old_slots);
+}
+
+static void ptn_weak_map_weak_resource_cache_add(
+    PtnWeakMapWeakResourceRefCache *cache,
+    PtnResource *resource,
+    size_t object_id,
+    size_t weak_refs
+) {
+    if (cache == NULL || resource == NULL || weak_refs == 0) {
+        return;
+    }
+    if (cache->capacity == 0 || cache->len + 1 >= cache->capacity / 2) {
+        size_t minimum_capacity = cache->capacity == 0 ? 8 : cache->capacity * 2;
+        if (minimum_capacity < cache->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_weak_map_weak_resource_cache_rebuild(cache, minimum_capacity);
+    }
+    size_t mask = cache->capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(resource, object_id, 1) & mask;
+    while (cache->slots[slot_index].resource != NULL) {
+        PtnWeakMapWeakResourceRefCacheSlot *slot = &cache->slots[slot_index];
+        if (slot->resource == resource && slot->object_id == object_id) {
+            slot->weak_refs = weak_refs > SIZE_MAX - slot->weak_refs
+                ? SIZE_MAX
+                : slot->weak_refs + weak_refs;
+            return;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+    PtnWeakMapWeakResourceRefCacheSlot *slot = &cache->slots[slot_index];
+    slot->resource = resource;
+    slot->object_id = object_id;
+    slot->weak_refs = weak_refs;
+    slot->observed_refcount = resource->refcount;
+    cache->len++;
+}
+
+static int ptn_weak_map_weak_resource_cache_is_weak_only(
+    const PtnWeakMapWeakResourceRefCache *cache,
+    PtnResource *resource,
+    size_t object_id
+) {
+    if (cache == NULL || resource == NULL || cache->capacity == 0) {
+        return 0;
+    }
+    size_t mask = cache->capacity - 1;
+    size_t slot_index = ptn_weak_map_identity_hash(resource, object_id, 1) & mask;
+    for (;;) {
+        const PtnWeakMapWeakResourceRefCacheSlot *slot = &cache->slots[slot_index];
+        if (slot->resource == NULL) {
+            return 0;
+        }
+        if (slot->resource == resource && slot->object_id == object_id) {
+            return slot->weak_refs != 0 && slot->weak_refs >= slot->observed_refcount;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+}
+
+static PtnWeakMapWeakRefCache ptn_weak_map_build_weak_ref_cache(
+    PtnRuntime *root,
+    PtnWeakMapWeakResourceRefCache *resource_cache
+) {
+    PtnWeakMapWeakRefCache cache;
+    cache.slots = NULL;
+    cache.capacity = 0;
+    cache.len = 0;
+    resource_cache->slots = NULL;
+    resource_cache->capacity = 0;
+    resource_cache->len = 0;
+    if (root == NULL) {
+        return cache;
+    }
     for (size_t i = 0; i < root->live_objects_len; i++) {
         PtnObject *owner = root->live_objects[i];
         if (owner == NULL ||
@@ -224523,35 +225391,57 @@ static size_t ptn_weak_map_count_weak_value_refs_to_object(
             owner->native_data == NULL) {
             continue;
         }
-
         PtnWeakMapData *map = (PtnWeakMapData *)owner->native_data;
+        ptn_weak_map_prune(map);
+        size_t owner_refs = 0;
         for (size_t entry = 0; entry < map->len; entry++) {
-            int target_is_owner = owner == target;
-            int target_is_key =
-                map->objects[entry] == target &&
-                map->object_ids[entry] == target->object_id;
-            if (!target_is_owner && !target_is_key) {
-                continue;
-            }
-            count += ptn_weak_map_count_exclusive_value_object_refs(
+            PtnObject *key = map->objects[entry];
+            PtnResource *resource_key = map->resources[entry];
+            size_t refs = ptn_weak_map_count_exclusive_value_object_refs(
                 map->values[entry],
-                target,
+                owner,
                 0
             );
+            owner_refs = refs > SIZE_MAX - owner_refs
+                ? SIZE_MAX
+                : owner_refs + refs;
+            if (resource_key != NULL) {
+                ptn_weak_map_weak_resource_cache_add(
+                    resource_cache,
+                    resource_key,
+                    map->object_ids[entry],
+                    ptn_weak_map_count_exclusive_value_resource_refs(
+                        map->values[entry],
+                        resource_key,
+                        0
+                    )
+                );
+                continue;
+            }
+            if (key == NULL || key == owner) {
+                continue;
+            }
+            ptn_weak_map_weak_ref_cache_add(
+                &cache,
+                key,
+                ptn_weak_map_count_exclusive_value_object_refs(
+                    map->values[entry],
+                    key,
+                    0
+                )
+            );
         }
+        ptn_weak_map_weak_ref_cache_add(&cache, owner, owner_refs);
     }
-    return count;
+    return cache;
 }
 
-static int ptn_weak_map_object_is_weakly_held_only(PtnRuntime *root, PtnObject *target) {
-    if (root == NULL || target == NULL || target->refcount == 0) {
-        return 0;
-    }
-    size_t weak_refs = ptn_weak_map_count_weak_value_refs_to_object(root, target);
-    return weak_refs != 0 && weak_refs >= target->refcount;
-}
-
-static size_t ptn_weak_map_collect_object_cycles(PtnRuntime *root, PtnObject *owner) {
+static size_t ptn_weak_map_collect_object_cycles(
+    PtnRuntime *root,
+    PtnObject *owner,
+    const PtnWeakMapWeakRefCache *cache,
+    const PtnWeakMapWeakResourceRefCache *resource_cache
+) {
     if (root == NULL ||
         owner == NULL ||
         owner->refcount == 0 ||
@@ -224562,15 +225452,30 @@ static size_t ptn_weak_map_collect_object_cycles(PtnRuntime *root, PtnObject *ow
 
     PtnWeakMapData *map = (PtnWeakMapData *)owner->native_data;
     ptn_weak_map_prune(map);
-    int owner_weak_only = ptn_weak_map_object_is_weakly_held_only(root, owner);
+    int owner_weak_only = ptn_weak_map_weak_ref_cache_is_weak_only(
+        cache,
+        owner,
+        owner->object_id
+    );
     size_t removed = 0;
     int retained_owner = 0;
-    size_t index = 0;
-    while (index < map->len) {
+    size_t original_len = map->len;
+    for (size_t index = 0; index < original_len; index++) {
         PtnObject *key = map->objects[index];
-        int key_weak_only = ptn_weak_map_object_is_weakly_held_only(root, key);
+        PtnResource *resource_key = map->resources[index];
+        size_t key_id = map->object_ids[index];
+        int key_weak_only = resource_key != NULL
+            ? ptn_weak_map_weak_resource_cache_is_weak_only(
+                resource_cache,
+                resource_key,
+                key_id
+            )
+            : ptn_weak_map_weak_ref_cache_is_weak_only(
+                cache,
+                key,
+                key_id
+            );
         if (!owner_weak_only && !key_weak_only) {
-            index++;
             continue;
         }
         if (!retained_owner) {
@@ -224579,6 +225484,9 @@ static size_t ptn_weak_map_collect_object_cycles(PtnRuntime *root, PtnObject *ow
         }
         ptn_weak_map_remove_at(map, index);
         removed++;
+    }
+    if (removed != 0) {
+        ptn_weak_map_prune(map);
     }
     if (retained_owner) {
         ptn_object_release(owner);
@@ -224594,14 +225502,26 @@ static PTN_UNUSED size_t ptn_runtime_collect_weak_map_cycles(PtnRuntime *runtime
 
     size_t collected = 0;
     for (;;) {
+        PtnWeakMapWeakResourceRefCache resource_cache;
+        PtnWeakMapWeakRefCache cache = ptn_weak_map_build_weak_ref_cache(
+            root,
+            &resource_cache
+        );
         size_t pass_collected = 0;
         for (size_t i = 0; i < root->live_objects_len; i++) {
             PtnObject *object = root->live_objects[i];
-            pass_collected = ptn_weak_map_collect_object_cycles(root, object);
+            pass_collected = ptn_weak_map_collect_object_cycles(
+                root,
+                object,
+                &cache,
+                &resource_cache
+            );
             if (pass_collected != 0) {
                 break;
             }
         }
+        free(cache.slots);
+        free(resource_cache.slots);
         if (pass_collected == 0) {
             break;
         }

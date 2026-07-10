@@ -20256,6 +20256,192 @@ var_dump(count($map), count($clone));
 }
 
 #[test]
+fn zend_gh13569_weak_map_gc_scales_to_30000_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-gh13569");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gh13569.php");
+    let output = root.join("gh13569-bin");
+    fs::write(
+        &input,
+        "<?php
+$wm = new WeakMap();
+$objs = [];
+for ($i = 0; $i < 30_000; $i++) {
+    $objs[] = $obj = new stdClass;
+    $wm[$obj] = $obj;
+}
+gc_collect_cycles();
+$tmp = $wm;
+$tmp = null;
+gc_collect_cycles();
+echo \"==DONE==\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("10")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "==DONE==\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_map_large_release_mutation_and_order_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-large-release-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-large-release-mutation.php");
+    let output = root.join("weak-map-large-release-mutation-bin");
+    fs::write(
+        &input,
+        "<?php
+class Payload {
+    public function __destruct() { echo \"drop\\n\"; }
+}
+class CleanupPayload {
+    public function __construct(public string $name, public bool $fail) {}
+    public function __destruct() {
+        global $cleaned;
+        $cleaned[] = $this->name;
+        if ($this->fail) {
+            throw new RuntimeException($this->name);
+        }
+    }
+}
+
+$a = (object)['name' => 'a'];
+$b = (object)['name' => 'b'];
+$c = (object)['name' => 'c'];
+$map = new WeakMap;
+$map[$a] = 1;
+$map[$b] = 2;
+$map[$c] = 3;
+$map[$b] = 20;
+foreach ($map as $key => $value) {
+    echo $key->name, '=', $value, \"\\n\";
+}
+unset($key, $value);
+
+$clone = clone $map;
+unset($b);
+gc_collect_cycles();
+echo count($map), ':', count($clone), \"\\n\";
+
+unset($map[$a]);
+$map[$a] = 10;
+foreach ($map as $key => $value) {
+    echo $key->name, '=', $value, \"\\n\";
+}
+unset($key, $value);
+$slot =& $map[$a];
+$slot = 11;
+var_dump($map[$a]);
+unset($slot);
+
+$old = new stdClass;
+$map[$old] = 99;
+$oldId = spl_object_id($old);
+unset($old);
+gc_collect_cycles();
+for ($i = 0; $i < 20; $i++) {
+    $replacement = new stdClass;
+    if (spl_object_id($replacement) === $oldId) {
+        break;
+    }
+    unset($replacement);
+    gc_collect_cycles();
+}
+var_dump(
+    spl_object_id($replacement) === $oldId,
+    count($map),
+    isset($map[$replacement])
+);
+$map[$replacement] = 30;
+$map[$replacement] = 31;
+unset($map[$replacement]);
+$map[$replacement] = 32;
+var_dump(count($map), $map[$replacement]);
+
+$payloadKey = new stdClass;
+$map[$payloadKey] = new Payload;
+unset($payloadKey);
+echo \"after\\n\";
+
+$cleaned = [];
+$exceptionKey = new stdClass;
+$exceptionMapA = new WeakMap;
+$exceptionMapB = new WeakMap;
+$exceptionMapA[$exceptionKey] = new CleanupPayload('fail', true);
+$exceptionMapB[$exceptionKey] = new CleanupPayload('kept', false);
+try {
+    unset($exceptionKey);
+} catch (RuntimeException $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+sort($cleaned);
+echo implode(',', $cleaned), ':', count($exceptionMapA), ':', count($exceptionMapB), \"\\n\";
+
+$bulk = [];
+for ($i = 0; $i < 30_000; $i++) {
+    $bulk[] = $key = new stdClass;
+    $map[$key] = $i;
+}
+unset($key, $bulk);
+gc_collect_cycles();
+var_dump(count($map));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("10")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "a=1\n",
+            "b=20\n",
+            "c=3\n",
+            "2:2\n",
+            "c=3\n",
+            "a=10\n",
+            "int(11)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "bool(false)\n",
+            "int(3)\n",
+            "int(32)\n",
+            "drop\n",
+            "after\n",
+            "fail\n",
+            "fail,kept:0:0\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_weak_map_get_iterator_to_native_binary() {
     let root = temp_dir("ptn-native-weak-map-get-iterator");
     fs::create_dir_all(&root).unwrap();
@@ -20313,6 +20499,212 @@ var_dump($it->valid(), $it->key(), $it->current(), count($map));
             "NULL\n",
             "NULL\n",
             "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_map_iterator_mutation_and_reentrant_teardown_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-iterator-mutation-teardown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-iterator-mutation-teardown.php");
+    let output = root.join("weak-map-iterator-mutation-teardown-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = (object)['name' => 'a'];
+$b = (object)['name' => 'b'];
+$c = (object)['name' => 'c'];
+$d = (object)['name' => 'd'];
+$map = new WeakMap;
+$map[$a] = 1;
+$map[$b] = 2;
+$map[$c] = 3;
+$it = $map->getIterator();
+for ($it->rewind(); $it->valid(); $it->next()) {
+    $key = $it->key();
+    echo $key->name;
+    if ($key === $b) {
+        unset($a);
+        echo '[', $it->key()->name, ':', $it->current(), ']';
+    }
+    if ($key === $c) {
+        $map[$d] = 4;
+    }
+}
+unset($key);
+echo '|';
+
+$it = $map->getIterator();
+$it->rewind();
+$key = $it->key();
+echo $key->name;
+unset($b, $key);
+gc_collect_cycles();
+$it->next();
+echo $it->key()->name, \"\\n\";
+
+$map[$c] = 30;
+unset($map[$c]);
+$map[$c] = 31;
+$map[$c] = 32;
+var_dump(count($map), $map[$c]);
+foreach ($map as $key => $value) {
+    echo $key->name;
+}
+unset($key, $value);
+echo \"\\n\";
+
+class TeardownValue {
+    public function __construct(public string $name, public bool $fail) {}
+    public function __destruct() {
+        global $teardownLog;
+        $teardownLog[] = $this->name;
+        if ($this->fail) {
+            throw new RuntimeException($this->name);
+        }
+    }
+}
+$teardownLog = [];
+$first = new stdClass;
+$second = new stdClass;
+$dying = new WeakMap;
+$dying[$first] = new TeardownValue('fail', true);
+$dying[$second] = new TeardownValue('kept', false);
+$weak = WeakReference::create($dying);
+try {
+    unset($dying);
+} catch (RuntimeException $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+sort($teardownLog);
+echo implode(',', $teardownLog), \"\\n\";
+var_dump($weak->get());
+
+$selfMap = new WeakMap;
+$selfKey = new stdClass;
+$selfMap[$selfKey] = $selfKey;
+unset($selfKey);
+var_dump(count($selfMap));
+gc_collect_cycles();
+var_dump(count($selfMap));
+unset($selfMap);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ab[b:2]cd|bd\n",
+            "int(2)\n",
+            "int(32)\n",
+            "dc\n",
+            "fail\n",
+            "fail,kept\n",
+            "NULL\n",
+            "int(1)\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_map_curl_handle_keys_are_weak_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-curl-handle-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-curl-handle-keys.php");
+    let output = root.join("weak-map-curl-handle-keys-bin");
+    fs::write(
+        &input,
+        "<?php
+class CurlPayload {
+    public function __destruct() { echo \"released\\n\"; }
+}
+class ThrowingCurlPayload {
+    public function __destruct() { throw new RuntimeException('boom'); }
+}
+
+$map = new WeakMap;
+$handle = curl_init();
+$map[$handle] = new CurlPayload;
+$clone = clone $map;
+var_dump(count($map), count($clone));
+unset($handle);
+gc_collect_cycles();
+var_dump(count($map), count($clone));
+
+$throwMap = new WeakMap;
+$throwHandle = curl_init();
+$throwMap[$throwHandle] = new ThrowingCurlPayload;
+try {
+    unset($throwHandle);
+} catch (RuntimeException $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+var_dump(count($throwMap));
+$replacement = curl_init();
+var_dump(get_debug_type($replacement));
+unset($replacement);
+
+$selfMap = new WeakMap;
+$selfHandle = curl_init();
+$selfMap[$selfHandle] = $selfHandle;
+unset($selfHandle);
+var_dump(count($selfMap));
+gc_collect_cycles();
+var_dump(count($selfMap));
+unset($selfMap);
+
+$nestedMap = new WeakMap;
+$nestedHandle = curl_init();
+$nestedMap[$nestedHandle] = [$nestedHandle];
+unset($nestedHandle);
+var_dump(count($nestedMap));
+gc_collect_cycles();
+var_dump(count($nestedMap));
+unset($nestedMap);
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(1)\n",
+            "released\n",
+            "int(0)\n",
+            "int(0)\n",
+            "boom\n",
+            "int(0)\n",
+            "string(10) \"CurlHandle\"\n",
+            "int(1)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "done\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
