@@ -166316,16 +166316,23 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
     const char *timezone = ptn_current_timezone_name();
     char *owned_timezone = NULL;
     PtnDateTimeZoneData *argument_zone = NULL;
+    int argument_zone_is_uninitialized = 0;
     if (argc >= 2) {
         PtnValue timezone_arg = ptn_value_deref(args[1]);
         if (timezone_arg.type != PTN_NULL) {
-            argument_zone = ptn_datetime_zone_data_from_value(timezone_arg);
-            if (argument_zone == NULL) {
+            if (timezone_arg.type != PTN_OBJECT ||
+                timezone_arg.as.object == NULL ||
+                !ptn_declared_class_is_same_or_descendant(timezone_arg.as.object->class_name, "DateTimeZone")) {
                 ptn_date_throw_type_error(runtime, class_name, 2, "timezone", "?DateTimeZone", args[1]);
                 return ptn_null();
             }
-            owned_timezone = ptn_duplicate_string(argument_zone->name);
-            timezone = owned_timezone;
+            argument_zone = (PtnDateTimeZoneData *)timezone_arg.as.object->native_data;
+            if (argument_zone == NULL) {
+                argument_zone_is_uninitialized = 1;
+            } else {
+                owned_timezone = ptn_duplicate_string(argument_zone->name);
+                timezone = owned_timezone;
+            }
         }
     }
     if (argc >= 1) {
@@ -166370,6 +166377,17 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
         }
         free(input_name);
         ptn_string_operand_free(input);
+    }
+
+    /* PORT NOTE: datetime parse failure takes precedence over invalid native zone state. */
+    if (argument_zone_is_uninitialized) {
+        free(owned_timezone);
+        ptn_throw_exception(
+            runtime,
+            "Error",
+            "The DateTimeZone object has not been correctly initialized by its constructor"
+        );
+        return ptn_null();
     }
 
     PtnValue object = ptn_datetime_create_object(runtime, class_name, timestamp, microsecond, timezone, line);

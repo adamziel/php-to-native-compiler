@@ -38791,6 +38791,57 @@ var_dump(date_create('Invalid'), date_create_immutable('Invalid'));
 }
 
 #[test]
+fn compile_date_create_rejects_uninitialized_timezone_after_parsing_to_native_binary() {
+    let root = temp_dir("ptn-native-date-create-uninitialized-timezone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-create-uninitialized-timezone.php");
+    let output = root.join("date-create-uninitialized-timezone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyDateTimeZone extends DateTimeZone
+{
+    function __construct()
+    {
+    }
+}
+
+$zone = new MyDateTimeZone();
+try {
+    date_create('2005-07-14 22:30:41', $zone);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+var_dump(date_create('not a date', $zone));
+
+$initialized = new DateTimeZone('UTC');
+echo date_create('2005-07-14 22:30:41', $initialized)->format('Y-m-d H:i:s e'), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: The DateTimeZone object has not been correctly initialized by its constructor\n",
+            "bool(false)\n",
+            "2005-07-14 22:30:41 UTC\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_datetime_timestamp_microseconds_and_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timestamp-microseconds-offsets");
     fs::create_dir_all(&root).unwrap();
