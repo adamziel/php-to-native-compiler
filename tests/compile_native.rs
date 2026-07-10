@@ -60901,6 +60901,44 @@ function invalid_target() {}
 }
 
 #[test]
+fn compile_zend_test_deprecated_constant_fetches_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-deprecated-constant-fetches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-deprecated-constant-fetches.php");
+    let output = root.join("zend-test-deprecated-constant-fetches-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function (int $level, string $message) {\n\
+    echo $level, ':', $message, \"\\n\";\n\
+    return true;\n\
+});\n\
+var_dump(ZEND_TEST_DEPRECATED);\n\
+var_dump(constant('ZEND_TEST_DEPRECATED'));\n\
+const DEPRECATED_COPY = ZEND_TEST_DEPRECATED;\n\
+var_dump(DEPRECATED_COPY);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "8192:Constant ZEND_TEST_DEPRECATED is deprecated\n",
+            "int(42)\n",
+            "8192:Constant ZEND_TEST_DEPRECATED is deprecated\n",
+            "int(42)\n",
+            "8192:Constant ZEND_TEST_DEPRECATED is deprecated\n",
+            "int(42)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zend_test_gh18756_helper_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-gh18756-helper");
     fs::create_dir_all(&root).unwrap();

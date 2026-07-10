@@ -330,6 +330,11 @@ static int ptn_zend_test_constant_value(const char *name, PtnValue *out) {
     return 0;
 }
 
+static int ptn_zend_test_constant_is_deprecated(const char *name) {
+    const char *lookup = name != NULL && name[0] == '\\' ? name + 1 : name;
+    return lookup != NULL && strcmp(lookup, "ZEND_TEST_DEPRECATED") == 0;
+}
+
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
     const char *separator = strstr(name, "::");
     if (separator != NULL && separator != name && separator[2] != '\0') {
@@ -420,6 +425,13 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
         return value;
     }
     if (ptn_zend_test_constant_value(name, &value)) {
+        if (ptn_zend_test_constant_is_deprecated(name)) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ZEND_TEST_DEPRECATED is deprecated",
+                line
+            );
+        }
         return value;
     }
     if (ptn_runtime_constant_value(runtime, name, &value)) {
@@ -156778,7 +156790,7 @@ static const char *ptn_internal_constant_deprecated_message(const char *name) {
 
 static int ptn_internal_constant_is_deprecated(const char *name) {
     name = ptn_symbol_name_without_leading_slash(name);
-    return ptn_ascii_case_equal(name, "ZEND_TEST_DEPRECATED") ||
+    return ptn_zend_test_constant_is_deprecated(name) ||
         ptn_internal_constant_deprecated_since(name) != NULL;
 }
 
