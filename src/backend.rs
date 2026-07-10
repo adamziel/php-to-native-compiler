@@ -48130,47 +48130,78 @@ impl ValueEmitter {
         out: &mut String,
         receiver: &ValueExpr,
     ) -> Option<String> {
-        let Some(ReferenceTarget::ArrayDim(target)) =
-            reference_array_dim_target_from_value(receiver)
-        else {
+        let Some(target) = reference_array_dim_target_from_value(receiver) else {
             return None;
         };
-        if target.dimensions.is_empty() {
-            return None;
+        match target {
+            ReferenceTarget::ArrayDim(target) => {
+                if target.dimensions.is_empty() {
+                    return None;
+                }
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_array_path_read_for_indirect_write_receiver(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                Some(result_temp)
+            }
+            ReferenceTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => {
+                if dimensions.is_empty() {
+                    return None;
+                }
+                let owner_temp = self.emit_materialized_indirect_write_receiver(out, &receiver);
+                let property_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&property_temp);
+                out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
+                out.push_str(&owner_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let path = emit_array_path_segments(out, self, &dimensions);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_array_path_read_for_indirect_write_receiver(&runtime, &");
+                out.push_str(&property_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(", ");
+                out.push_str(if self.top_level_scope { "1" } else { "0" });
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &property_temp);
+                emit_value_cleanup(out, "    ", &owner_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                Some(result_temp)
+            }
+            _ => None,
         }
-
-        let has_append_segment = target.dimensions.iter().any(Option::is_none);
-        let path = emit_array_path_segments(out, self, &target.dimensions);
-        let result_temp = self.next_temp();
-        if has_append_segment {
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
-            out.push_str(&c_string(&target.array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ptn_null(), ");
-            out.push_str(&target.line.to_string());
-            out.push_str(");\n");
-        } else {
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_array_path_read_for_indirect_write_receiver(&runtime, \"");
-            out.push_str(&c_string(&target.array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&target.line.to_string());
-            out.push_str(");\n");
-        }
-        for segment_temp in path.value_temps {
-            emit_value_cleanup(out, "    ", &segment_temp);
-        }
-        Some(result_temp)
     }
 
     fn emit_dynamic_variable_read(
@@ -50856,12 +50887,14 @@ impl ValueEmitter {
         out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
         out.push_str("        ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(" = ptn_object_write_property_from_compound_assignment(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
         self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&current_temp);
         out.push_str(", ");
         out.push_str(&computed_temp);
         out.push_str(", ");

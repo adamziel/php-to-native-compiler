@@ -74536,6 +74536,150 @@ echo $sxe->asXML();
 }
 
 #[test]
+fn compile_simplexml_missing_write_context_autovivifies_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-missing-write-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-missing-write-context.php");
+    let output = root.join("simplexml-missing-write-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function show_xml($label, $xml) {
+    echo "--", $label, "--\n", $xml->asXML();
+}
+
+$direct = simplexml_load_string('<root/>');
+$direct->a->b->value = 'direct';
+$direct->indexed->item[0]->value = 'indexed';
+$direct->appended->item[]->value = 'appended';
+show_xml('writes', $direct);
+
+$read = simplexml_load_string('<root/>');
+$proxy = $read->missing;
+var_dump(count($proxy));
+var_dump(isset($read->missing), empty($read->missing));
+var_dump($read->missing->leaf);
+$proxy->child = 'ignored';
+show_xml('read-proxy', $read);
+
+$stored = simplexml_load_string('<root><a/></root>');
+$existing = $stored->a;
+$existing[]->child = 'stored';
+show_xml('stored-existing', $stored);
+
+$missing_doc = simplexml_load_string('<root/>');
+$missing = $missing_doc->a;
+$missing->child = 'ignored';
+show_xml('stored-missing', $missing_doc);
+
+$attributes = simplexml_load_string('<root><a/><a/></root>');
+$attributes->a['key'] = 'first';
+show_xml('attribute-first', $attributes);
+
+set_error_handler(function ($severity, $message) {
+    echo "warning:", $message, "\n";
+    return true;
+});
+$multiple = simplexml_load_string('<root><a>one</a><a>two</a></root>');
+$multiple->a = 'ignored';
+$multiple->a->child = 'first';
+show_xml('multiple', $multiple);
+
+$gap = simplexml_load_string('<root/>');
+$gap->missing[2]->leaf = 'gap';
+show_xml('gap', $gap);
+restore_error_handler();
+
+set_error_handler(function () {
+    throw new Exception('warning-stop');
+});
+$blocked = simplexml_load_string('<root/>');
+try {
+    $blocked->missing[2]->leaf = 'blocked';
+} catch (Exception $exception) {
+    echo $exception->getMessage(), "\n";
+}
+restore_error_handler();
+show_xml('blocked-gap', $blocked);
+
+$read_write = simplexml_load_string('<root/>');
+$compound = ($read_write->a->b .= 'value');
+var_dump($compound);
+show_xml('read-write', $read_write);
+
+$namespaced = simplexml_load_string('<root xmlns="urn:d"/>');
+$namespaced->a->b = 'namespaced';
+$dom_node = dom_import_simplexml($namespaced->a);
+var_dump($dom_node->namespaceURI);
+var_dump(count($namespaced->children('urn:d')->a));
+show_xml('namespace', $namespaced);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "--writes--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><a><b><value>direct</value></b></a><indexed><item><value>indexed</value></item></indexed><appended><item><value>appended</value></item></appended></root>\n",
+            "int(0)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "NULL\n",
+            "--read-proxy--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root/>\n",
+            "--stored-existing--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><a/><a><child>stored</child></a></root>\n",
+            "--stored-missing--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root/>\n",
+            "--attribute-first--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><a key=\"first\"/><a/></root>\n",
+            "warning:main(): Cannot assign to an array of nodes (duplicate subnodes or attr detected)\n",
+            "--multiple--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><a>one<child>first</child></a><a>two</a></root>\n",
+            "warning:main(): Cannot add element missing number 2 when only 0 such elements exist\n",
+            "--gap--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><missing><leaf>gap</leaf></missing></root>\n",
+            "warning-stop\n",
+            "--blocked-gap--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root/>\n",
+            "string(5) \"value\"\n",
+            "--read-write--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><a><b/></a></root>\n",
+            "string(5) \"urn:d\"\n",
+            "int(1)\n",
+            "--namespace--\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns=\"urn:d\"><a><b>namespaced</b></a></root>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_read_for_indirect_write_receiver"));
+    assert!(c_source.contains("ptn_object_read_property_for_indirect_write"));
+}
+
+#[test]
 fn compile_simplexml_iterator_keys_and_attribute_unset_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-iterator-keys-attribute-unset");
     fs::create_dir_all(&root).unwrap();

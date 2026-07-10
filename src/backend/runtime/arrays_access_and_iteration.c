@@ -5870,6 +5870,22 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_internal_xml_property_read_for_write_context(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    int read_write,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_simplexml_array_path_read_for_indirect_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    PtnValue *value_out
+);
 static PTN_UNUSED int ptn_internal_date_interval_property_read(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -5886,6 +5902,15 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_xml_property_write_compound(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue current,
     PtnValue value,
     size_t line,
     PtnValue *value_out
@@ -7692,11 +7717,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         return date_interval_value;
     }
     PtnValue internal_xml_value = ptn_null();
-    if (ptn_internal_xml_property_read(
+    if (ptn_internal_xml_property_read_for_write_context(
         runtime,
         receiver,
         property,
         line,
+        0,
         &internal_xml_value
     )) {
         return internal_xml_value;
@@ -8023,11 +8049,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
         return date_interval_value;
     }
     PtnValue internal_xml_value = ptn_null();
-    if (ptn_internal_xml_property_read(
+    if (ptn_internal_xml_property_read_for_write_context(
         runtime,
         receiver,
         property,
         line,
+        1,
         &internal_xml_value
     )) {
         return internal_xml_value;
@@ -8095,11 +8122,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
         return date_interval_value;
     }
     PtnValue internal_xml_value = ptn_null();
-    if (ptn_internal_xml_property_read(
+    if (ptn_internal_xml_property_read_for_write_context(
         runtime,
         receiver,
         property,
         line,
+        0,
         &internal_xml_value
     )) {
         return internal_xml_value;
@@ -9415,6 +9443,39 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         value,
         line,
         0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property_from_compound_assignment(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue current,
+    PtnValue value,
+    size_t line
+) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_write_compound(
+            runtime,
+            receiver,
+            property,
+            current,
+            value,
+            line,
+            &internal_xml_value
+        )) {
+        return internal_xml_value;
+    }
+#endif
+    return ptn_object_write_property(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        value,
+        line
     );
 }
 
@@ -24409,6 +24470,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_indirect_write_receiv
     size_t segment_count,
     size_t line
 ) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (!ptn_runtime_is_globals_name(name)) {
+        PtnValue *slot = ptn_symbols_value_slot(
+            ptn_runtime_variable_symbol_table(runtime, name),
+            name
+        );
+        PtnValue simplexml_value = ptn_null();
+        if (slot != NULL &&
+            ptn_internal_simplexml_array_path_read_for_indirect_write(
+                runtime,
+                *slot,
+                segments,
+                segment_count,
+                line,
+                &simplexml_value
+            )) {
+            return simplexml_value;
+        }
+    }
+#endif
     if (ptn_runtime_array_path_indirect_receiver_uses_arrayaccess_get(
             runtime,
             name,
@@ -24439,6 +24520,63 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_indirect_write_receiv
     return ptn_runtime_array_path_set_result(
         runtime,
         name,
+        segments,
+        segment_count,
+        ptn_null(),
+        line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_indirect_write_receiver(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    int top_level
+) {
+    if (target == NULL) {
+        return ptn_null();
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue simplexml_value = ptn_null();
+    if (ptn_internal_simplexml_array_path_read_for_indirect_write(
+            runtime,
+            *target,
+            segments,
+            segment_count,
+            line,
+            &simplexml_value
+        )) {
+        return simplexml_value;
+    }
+#endif
+    for (size_t i = 0; i < segment_count; i++) {
+        if (!segments[i].append) {
+            continue;
+        }
+        const char *path = runtime == NULL ? NULL : runtime->source_path;
+        if (top_level) {
+            ptn_emit_fatal_error_at(runtime, "Cannot use [] for reading", path, line);
+        } else {
+            ptn_throw_exception_at(runtime, "Error", "Cannot use [] for reading", path, line);
+        }
+        return ptn_null();
+    }
+    PtnLookupResult lookup = ptn_value_array_path_lookup_quiet(
+        runtime,
+        *target,
+        segments,
+        segment_count,
+        line
+    );
+    if (lookup.exists) {
+        return lookup.value;
+    }
+    ptn_value_destroy(&lookup.value);
+    return ptn_value_array_path_set_result(
+        runtime,
+        target,
         segments,
         segment_count,
         ptn_null(),
