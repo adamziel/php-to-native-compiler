@@ -59759,6 +59759,11 @@ var_dump($sprintf->isVariadic());
 var_dump($sprintf->getNumberOfParameters());
 var_dump($sprintf->getNumberOfRequiredParameters());
 
+$dumpParameters = (new \\ReflectionFunction(\"var_dump\"))->getParameters();
+var_dump($dumpParameters[0]->getName());
+var_dump($dumpParameters[1]->getName());
+var_dump($dumpParameters[1]->isVariadic());
+
 $user = new \\ReflectionFunction(\"A\\\\B\\\\foo\");
 var_dump($user->getName());
 var_dump($user->isInternal());
@@ -59794,6 +59799,9 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
             "bool(true)\n",
             "int(2)\n",
             "int(1)\n",
+            "string(5) \"value\"\n",
+            "string(6) \"values\"\n",
+            "bool(true)\n",
             "string(7) \"A\\B\\foo\"\n",
             "bool(false)\n",
             "bool(true)\n",

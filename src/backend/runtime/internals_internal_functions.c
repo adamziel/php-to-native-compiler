@@ -2041,6 +2041,16 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
     if (name == NULL) {
         return NULL;
     }
+    if (ptn_ascii_case_equal(name, "var_dump")) {
+        switch (index) {
+            case 0:
+                return "value";
+            case 1:
+                return "values";
+            default:
+                return NULL;
+        }
+    }
     if (ptn_ascii_case_equal(name, "mail")) {
         switch (index) {
             case 0:
