@@ -250,6 +250,29 @@ ptn_phpt_csv_contains_ci() {
     return 1
 }
 
+ptn_phpt_csv_without_ci() {
+    local needle
+    needle=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
+    local csv=$2
+    local item
+    local normalized
+    local -a kept=()
+    local old_ifs=$IFS
+
+    IFS=,
+    for item in $csv; do
+        normalized=$(ptn_phpt_lower "$(ptn_phpt_trim "$item")")
+        if [[ "$normalized" != "$needle" ]]; then
+            kept+=("$(ptn_phpt_trim "$item")")
+        fi
+    done
+    IFS=$old_ifs
+
+    IFS=,
+    printf '%s\n' "${kept[*]}"
+    IFS=$old_ifs
+}
+
 ptn_phpt_section() {
     local path=$1
     local target=$2
@@ -2028,6 +2051,23 @@ ptn_phpt_has_external_service_harness() {
     grep -Eiq \
         'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1:[0-9]|\[::1\]:[0-9]' \
         "$path"
+}
+
+ptn_phpt_supported_pdo_sqlite_redirect_controller_row() {
+    local rel=$1
+    [[ "$rel" == "ext/pdo_sqlite/tests/common.phpt" ]]
+}
+
+ptn_phpt_external_pdo_redirect_controller_row() {
+    local rel=$1
+    case "$rel" in
+        ext/pdo_dblib/tests/common.phpt|ext/pdo_firebird/tests/common.phpt|ext/pdo_mysql/tests/common.phpt|ext/pdo_odbc/tests/common.phpt|ext/pdo_pgsql/tests/common.phpt)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 ptn_phpt_has_process_boundary() {
@@ -4371,6 +4411,11 @@ ptn_phpt_classify_row() {
 
     sections=$(ptn_phpt_sections_csv "$path")
 
+    if ptn_phpt_external_pdo_redirect_controller_row "$rel"; then
+        printf 'external-service\trequires an external PDO database service for redirected tests\n'
+        return 0
+    fi
+
     if value=$(ptn_phpt_first_unsupported_path_extension "$rel"); then
         ptn_phpt_unavailable_extension_classification "$value"
         return 0
@@ -4589,7 +4634,12 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_unsupported_sections)"); then
+    local unsupported_sections
+    unsupported_sections=$(ptn_phpt_unsupported_sections)
+    if ptn_phpt_supported_pdo_sqlite_redirect_controller_row "$rel"; then
+        unsupported_sections=$(ptn_phpt_csv_without_ci "REDIRECTTEST" "$unsupported_sections")
+    fi
+    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$unsupported_sections"); then
         if [[ "$value" != "FILE_EXTERNAL" ]] || ! ptn_phpt_supported_file_external_row "$rel"; then
             printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
             return 0

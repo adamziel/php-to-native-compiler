@@ -114250,6 +114250,71 @@ foreach (new NoRewindIterator($it) as $key => $value) {
 }
 
 #[test]
+fn phpc_collects_literal_getenv_include_and_keeps_runtime_fallback() {
+    let root = temp_dir("ptn-native-literal-getenv-include");
+    let compile_root = root.join("compile");
+    let runtime_root = root.join("runtime");
+    fs::create_dir_all(&compile_root).unwrap();
+    fs::create_dir_all(&runtime_root).unwrap();
+    let input = root.join("main.php");
+    fs::write(
+        compile_root.join("compiled.inc"),
+        r#"<?php
+class EnvCollectedProbe {
+    static function run($classname = stdClass::class) {
+        $value = new $classname();
+        echo get_class($value), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        compile_root.join("fallback.inc"),
+        "<?php echo \"compile-time-fallback\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        runtime_root.join("fallback.inc"),
+        "<?php echo \"runtime-fallback\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+$dir = getenv('PTN_TEST_INCLUDE_ROOT');
+require_once $dir . 'compiled.inc';
+EnvCollectedProbe::run();
+putenv('PTN_TEST_INCLUDE_ROOT=' . __DIR__ . '/runtime/');
+$dir = getenv('PTN_TEST_INCLUDE_ROOT');
+require_once $dir . 'fallback.inc';
+"#,
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .env(
+            "PTN_TEST_INCLUDE_ROOT",
+            format!("{}/", compile_root.display()),
+        )
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "phpc exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stdClass\nruntime-fallback\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bounded_dynamic_include_paths_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-include-paths");
     fs::create_dir_all(&root).unwrap();

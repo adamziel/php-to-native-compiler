@@ -6207,6 +6207,60 @@ fn phpt_classifier_splits_process_boundary_residual_current4_rows() {
 }
 
 #[test]
+fn phpt_classifier_allows_only_sqlite_pdo_redirect_controller() {
+    let controller = "--TEST--\nPDO redirect controller\n--REDIRECTTEST--\n<?php\nreturn [\n    'TESTS' => dirname(__DIR__, 2) . '/pdo/tests',\n    'ENV' => ['PDOTEST_DSN' => 'sqlite::memory:'],\n];\n?>\n";
+
+    let sqlite = classify_at_relative_path(controller, "ext/pdo_sqlite/tests/common.phpt");
+    assert_eq!(
+        sqlite,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    for path in [
+        "ext/pdo_dblib/tests/common.phpt",
+        "ext/pdo_firebird/tests/common.phpt",
+        "ext/pdo_mysql/tests/common.phpt",
+        "ext/pdo_odbc/tests/common.phpt",
+        "ext/pdo_pgsql/tests/common.phpt",
+    ] {
+        let external = classify_at_relative_path(controller, path);
+        assert!(
+            external.starts_with("external-service\t"),
+            "{path}: {external:?}"
+        );
+    }
+
+    let odbc_with_unsupported_skipif_extension = classify_at_relative_path(
+        "--TEST--\nODBC redirect controller\n--EXTENSIONS--\npdo_odbc\n--SKIPIF--\n<?php if (!extension_loaded('com_dotnet')) die('skip'); ?>\n--REDIRECTTEST--\n<?php return ['TESTS' => 'ext/pdo/tests', 'ENV' => []]; ?>\n",
+        "ext/pdo_odbc/tests/common.phpt",
+    );
+    assert!(
+        odbc_with_unsupported_skipif_extension.starts_with("external-service\t"),
+        "{odbc_with_unsupported_skipif_extension:?}"
+    );
+
+    let sqlite_with_headers = classify_at_relative_path(
+        "--TEST--\nSQLite redirect with headers\n--REDIRECTTEST--\n<?php return ['TESTS' => 'ext/pdo/tests', 'ENV' => []]; ?>\n--HEADERS--\nX-Test: value\n",
+        "ext/pdo_sqlite/tests/common.phpt",
+    );
+    assert!(
+        sqlite_with_headers.starts_with("sapi-behavior\t"),
+        "{sqlite_with_headers:?}"
+    );
+    assert!(
+        sqlite_with_headers.contains("requires unsupported PHPT section --HEADERS--"),
+        "{sqlite_with_headers:?}"
+    );
+
+    let unrelated = classify_at_relative_path(controller, "tests/redirect/common.phpt");
+    assert!(unrelated.starts_with("sapi-behavior\t"), "{unrelated:?}");
+    assert!(
+        unrelated.contains("requires unsupported PHPT section --REDIRECTTEST--"),
+        "{unrelated:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_allows_supported_dom_file_external_row() {
     let supported = classify_at_relative_path(
         "--TEST--\ndom external file\n--EXTENSIONS--\ndom\n--FILE_EXTERNAL--\ndomdocumentloadxml_test_method_savexml.inc\n--EXPECT--\n",

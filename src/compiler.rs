@@ -1898,6 +1898,20 @@ fn bounded_static_include_paths(
             Some(vec![if cfg!(windows) { ";" } else { ":" }.to_string()])
         }
         Expr::Call {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } if name.eq_ignore_ascii_case("getenv")
+            && arguments.len() == 1
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !unpack) =>
+        {
+            let name = compile_time_string_literal(&arguments[0])?;
+            Some(vec![std::env::var(name).ok()?])
+        }
+        Expr::Call {
             name, arguments, ..
         } if name.eq_ignore_ascii_case("dirname")
             && (arguments.len() == 1 || arguments.len() == 2) =>
