@@ -61088,6 +61088,33 @@ echo \"==DONE==\\n\";
 }
 
 #[test]
+fn compile_zend_test_is_zend_ptr_helper_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-is-zend-ptr-helper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-is-zend-ptr-helper.php");
+    let output = root.join("zend-test-is-zend-ptr-helper-bin");
+    fs::write(
+        &input,
+        "<?php
+zend_test_is_zend_ptr(0);
+zend_test_is_zend_ptr(1 << 30);
+echo \"==DONE==\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "==DONE==\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_test_is_zend_ptr"));
+}
+
+#[test]
 fn compile_zend_trigger_bailout_helper_to_native_binary() {
     let root = temp_dir("ptn-native-zend-trigger-bailout-helper");
     fs::create_dir_all(&root).unwrap();
