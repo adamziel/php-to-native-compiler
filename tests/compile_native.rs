@@ -27764,6 +27764,31 @@ try {
 }
 
 #[test]
+fn compile_eval_close_tag_ends_line_comment_and_emits_inline_html_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-close-tag-inline-html");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-close-tag-inline-html.php");
+    let output = root.join("eval-close-tag-inline-html-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$code = 'echo \"1\"; // ignored ?>inline<?PHP echo \"2\"; # ignored ?>tail';\n\
+eval($code);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1inline2tail"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_function_local_dynamic_eval_preserves_concat_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-eval-local-concat-diagnostics");
     fs::create_dir_all(&root).unwrap();

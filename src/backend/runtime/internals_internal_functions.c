@@ -290783,6 +290783,35 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
 static char *ptn_eval_source_path(PtnRuntime *runtime, size_t line);
 static void ptn_eval_throw_parse_error(PtnRuntime *runtime, char *message, size_t eval_call_line);
 
+static int ptn_eval_php_open_tag_at(const char *code, size_t len, size_t pos) {
+    static const char tag[] = "<?php";
+    if (pos + sizeof(tag) - 1 > len) {
+        return 0;
+    }
+    for (size_t i = 0; i < sizeof(tag) - 1; i++) {
+        if (ptn_ascii_lower_char(code[pos + i]) != tag[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_eval_skip_inline_html_region(
+    const char *code,
+    size_t len,
+    size_t *pos
+) {
+    if (*pos + 1 >= len || code[*pos] != '?' || code[*pos + 1] != '>') {
+        return 0;
+    }
+    size_t cursor = *pos + 2;
+    while (cursor < len && !ptn_eval_php_open_tag_at(code, len, cursor)) {
+        cursor++;
+    }
+    *pos = cursor < len ? cursor + 5 : len;
+    return 1;
+}
+
 static int ptn_eval_identifier_start(unsigned char ch) {
     return ch == '_' ||
         ch == '\\' ||
@@ -290823,14 +290852,22 @@ static size_t ptn_eval_skip_ws(const char *code, size_t len, size_t pos) {
         }
         if (pos + 1 < len && code[pos] == '/' && code[pos + 1] == '/') {
             pos += 2;
-            while (pos < len && code[pos] != '\n') {
+            while (
+                pos < len &&
+                code[pos] != '\n' &&
+                !(pos + 1 < len && code[pos] == '?' && code[pos + 1] == '>')
+            ) {
                 pos++;
             }
             continue;
         }
         if (code[pos] == '#') {
             pos++;
-            while (pos < len && code[pos] != '\n') {
+            while (
+                pos < len &&
+                code[pos] != '\n' &&
+                !(pos + 1 < len && code[pos] == '?' && code[pos + 1] == '>')
+            ) {
                 pos++;
             }
             continue;
@@ -297733,8 +297770,22 @@ static int ptn_dynamic_execute_statements_range(
             return 1;
         }
         if (*pos + 1 < end && code[*pos] == '?' && code[*pos + 1] == '>') {
-            *pos = end;
-            return 1;
+            size_t html_start = *pos + 2;
+            size_t cursor = html_start;
+            while (cursor < end) {
+                if (ptn_eval_php_open_tag_at(code, end, cursor)) {
+                    ptn_output_write(runtime, code + html_start, cursor - html_start);
+                    *pos = cursor + 5;
+                    break;
+                }
+                cursor++;
+            }
+            if (cursor >= end) {
+                ptn_output_write(runtime, code + html_start, end - html_start);
+                *pos = end;
+                return 1;
+            }
+            continue;
         }
         size_t statement_pos = *pos;
         size_t line = ptn_eval_line_for_pos(code, statement_pos, base_line);
@@ -298591,10 +298642,14 @@ static int ptn_dynamic_php_skip_comment(const char *code, size_t len, size_t *po
     size_t cursor = *pos;
     if (cursor + 1 < len && code[cursor] == '/' && code[cursor + 1] == '/') {
         cursor += 2;
-        while (cursor < len && code[cursor] != '\n') {
+        while (
+            cursor < len &&
+            code[cursor] != '\n' &&
+            !(cursor + 1 < len && code[cursor] == '?' && code[cursor + 1] == '>')
+        ) {
             cursor++;
         }
-        if (cursor < len) {
+        if (cursor < len && code[cursor] == '\n') {
             cursor++;
         }
         *pos = cursor;
@@ -298602,10 +298657,14 @@ static int ptn_dynamic_php_skip_comment(const char *code, size_t len, size_t *po
     }
     if (cursor < len && code[cursor] == '#') {
         cursor++;
-        while (cursor < len && code[cursor] != '\n') {
+        while (
+            cursor < len &&
+            code[cursor] != '\n' &&
+            !(cursor + 1 < len && code[cursor] == '?' && code[cursor + 1] == '>')
+        ) {
             cursor++;
         }
-        if (cursor < len) {
+        if (cursor < len && code[cursor] == '\n') {
             cursor++;
         }
         *pos = cursor;
@@ -298714,6 +298773,9 @@ static char *ptn_dynamic_php_source_parse_error_message(
             continue;
         }
         if (ptn_dynamic_php_skip_comment(code, len, &pos)) {
+            continue;
+        }
+        if (ptn_eval_skip_inline_html_region(code, len, &pos)) {
             continue;
         }
         if (code[pos] == '\'') {
@@ -299549,6 +299611,10 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
         pos = ptn_eval_skip_ws(code, len, pos);
         if (pos >= len) {
             break;
+        }
+        if (ptn_eval_skip_inline_html_region(code, len, &pos)) {
+            previous_can_end_expression = 0;
+            continue;
         }
         unsigned char ch = (unsigned char)code[pos];
         if (ch == 0x7F) {
