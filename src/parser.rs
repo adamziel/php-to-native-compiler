@@ -24029,6 +24029,12 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
     let mut names: HashMap<String, SourceSpan> = HashMap::new();
     for function in functions {
         let lookup_name = function.name.to_ascii_lowercase();
+        if lookup_name.rsplit('\\').next() == Some("assert") {
+            return Err(Diagnostic::new(
+                "Defining a custom assert() function is not allowed, as the function has special semantics",
+                Some(function.span),
+            ));
+        }
         if is_modeled_internal_function_name(&lookup_name) {
             return Err(Diagnostic::new(
                 format!("Cannot redeclare function {lookup_name}()"),

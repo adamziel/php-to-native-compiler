@@ -9413,7 +9413,17 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function is_callable()");
 
     let error = parser::parse("<?php function Assert($value) { return true; }").unwrap_err();
-    assert_eq!(error.message, "Cannot redeclare function assert()");
+    assert_eq!(
+        error.message,
+        "Defining a custom assert() function is not allowed, as the function has special semantics"
+    );
+
+    let error =
+        parser::parse("<?php namespace FooBar; function assert() {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Defining a custom assert() function is not allowed, as the function has special semantics"
+    );
 
     let error =
         parser::parse("<?php function debug_zval_dump($value) { return null; }").unwrap_err();
