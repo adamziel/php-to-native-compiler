@@ -5701,7 +5701,7 @@ fn lexer_accepts_php_high_byte_identifier_names() {
 #[test]
 fn lexer_treats_oversized_integer_literals_as_floats() {
     let tokens = lexer::lex(
-        "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000",
+        "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000 0o1234567012345670123456 01234567012345670123456",
     )
     .unwrap();
     for token in &tokens[1..3] {
@@ -5715,6 +5715,11 @@ fn lexer_treats_oversized_integer_literals_as_floats() {
         tokens[3].kind,
         TokenKind::Float(value) if value == binary_overflow
     ));
+
+    let octal_overflow = f64::from_bits(0x43e4_e5dc_14e5_dc16);
+    for token in &tokens[4..6] {
+        assert!(matches!(token.kind, TokenKind::Float(value) if value == octal_overflow));
+    }
 }
 
 #[test]

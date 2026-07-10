@@ -2689,7 +2689,11 @@ fn radix_digits_to_f64(text: &str, radix: u32, span: SourceSpan) -> Result<f64> 
         let digit = ch
             .to_digit(radix)
             .ok_or_else(|| Diagnostic::new("invalid integer literal", Some(span)))?;
-        value = value * radix_value + digit as f64;
+        value = if matches!(radix, 2 | 8) {
+            (value * radix_value + ch as u32 as f64) - b'0' as f64
+        } else {
+            value * radix_value + digit as f64
+        };
     }
     Ok(value)
 }
