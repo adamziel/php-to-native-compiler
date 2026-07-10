@@ -82234,6 +82234,16 @@ static int ptn_hash_context_state_q(PtnArray *state, int64_t key, uint64_t *valu
     return 1;
 }
 
+static int ptn_hash_context_state_has_int_prefix(PtnArray *state, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        int64_t ignored = 0;
+        if (!ptn_hash_context_payload_int(state, (int64_t)i, &ignored)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PtnHashContextData *ptn_hash_context_alloc_unserialized(char *algo) {
     PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
     if (data == NULL) {
@@ -82362,7 +82372,8 @@ static int ptn_hash_context_restore_php_state(
     if (ptn_ascii_case_equal(data->algo, "sha1") || ptn_ascii_case_equal(data->algo, "ripemd160")) {
         int64_t bits = 0;
         size_t len = 0;
-        if (!ptn_hash_context_payload_int(state, 5, &bits) ||
+        if (!ptn_hash_context_state_has_int_prefix(state, 7) ||
+            !ptn_hash_context_payload_int(state, 5, &bits) ||
             !ptn_hash_context_byte_len_from_bits(bits, &len)) {
             return 0;
         }

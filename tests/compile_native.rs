@@ -52652,6 +52652,42 @@ Incomplete or ill-formed serialization data (\"xxh64\" code -2000)\n"
 }
 
 #[test]
+fn compile_hash_context_rejects_invalid_sha1_unserialize_state_to_native_binary() {
+    let root = temp_dir("ptn-native-hash-context-sha1-unserialize-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hash-context-sha1-unserialize-state.php");
+    let output = root.join("hash-context-sha1-unserialize-state-bin");
+    fs::write(
+        &input,
+        "<?php
+$payload = 'TzoxMToiSGFzaENvbnRleHQiOjU6e2k6MDtzOjQ6InNoYTEiO2k6MTtpOjA7aToyO2E6ODp7aTowO2k6MTczMjU4NDE5MztpOjE7aTotMjcxNzMzODc5O2k6MjtpOi0xNzMyNTg0MTk0O2k6MztpOjI3MTczMzg3ODtpOjQ7aTotMTAwOTU4OTc3NjtpOjU7aToyMDA7aTo2O3M6MDoiIjtpOjc7czo2NDoiSSBjYW4ndCByZW1lbWJlciBhbnl0aGluZwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACI7fWk6MztpOjI7aTo0O2E6MDp7fX0=';
+try {
+    unserialize(base64_decode($payload));
+    echo \"Unexpected success\\n\";
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Incomplete or ill-formed serialization data (\"sha1\" code -1024)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hash_context_serializes_php_state_to_native_binary() {
     let root = temp_dir("ptn-native-hash-context-php-state");
     fs::create_dir_all(&root).unwrap();
