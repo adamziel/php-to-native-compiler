@@ -245439,6 +245439,14 @@ static PtnValue ptn_internal_zend_test_gh18756(PtnRuntime *runtime, size_t argc,
     return ptn_null();
 }
 
+static PtnValue ptn_internal_zend_test_is_pcre_bundled(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_zend_test_is_zend_ptr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_integer_arg(
@@ -247202,6 +247210,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_deprecated", 0, 1, ptn_internal_zend_test_deprecated },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
+        { "zend_test_is_pcre_bundled", 0, 0, ptn_internal_zend_test_is_pcre_bundled },
         { "zend_test_is_zend_ptr", 1, 1, ptn_internal_zend_test_is_zend_ptr },
         { "zend_test_parameter_with_attribute", 1, 1, ptn_internal_zend_test_parameter_with_attribute },
         { "zend_trigger_bailout", 0, 0, ptn_internal_zend_trigger_bailout },
@@ -247275,6 +247284,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
+        ptn_ascii_case_equal(name, "zend_test_is_pcre_bundled") ||
         ptn_ascii_case_equal(name, "zend_test_is_zend_ptr") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_parameter_with_attribute") ||
@@ -247643,6 +247653,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     static const PtnParameterMetadata PTN_INTERNAL_DATEFMT_LENIENT_PARAMETERS[] = {
         { "lenient", "bool", "bool", 0, 0, 0, 0, 1, NULL, NULL, NULL },
     };
+    if (ptn_ascii_case_equal(function->name, "zend_test_is_pcre_bundled")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            "bool",
+            "bool",
+            0,
+            1
+        );
+    }
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",

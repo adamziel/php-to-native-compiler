@@ -62897,6 +62897,92 @@ echo \"==DONE==\\n\";
 }
 
 #[test]
+fn compile_zend_test_is_pcre_bundled_helper_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-is-pcre-bundled-helper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-is-pcre-bundled-helper.php");
+    let output = root.join("zend-test-is-pcre-bundled-helper-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$name = 'zend_test_is_pcre_bundled';
+var_dump(function_exists($name), zend_test_is_pcre_bundled(), $name());
+
+$function = new ReflectionFunction($name);
+$returnType = $function->getReturnType();
+var_dump(
+    $function->isInternal(),
+    $function->getNumberOfParameters(),
+    $function->getNumberOfRequiredParameters(),
+    (string) $returnType,
+    $returnType->isBuiltin(),
+    $returnType->allowsNull(),
+    $function->getExtensionName(),
+    $function->getExtension()->getName()
+);
+
+var_dump(
+    in_array($name, get_extension_funcs('zend_test'), true),
+    isset((new ReflectionExtension('zend_test'))->getFunctions()[$name]),
+    in_array($name, get_defined_functions()['internal'], true)
+);
+
+var_dump(
+    PCRE_VERSION_MAJOR === 10,
+    PCRE_VERSION_MINOR >= 0,
+    str_starts_with(PCRE_VERSION, PCRE_VERSION_MAJOR . '.' . PCRE_VERSION_MINOR)
+);
+
+try {
+    zend_test_is_pcre_bundled(1);
+} catch (ArgumentCountError $error) {
+    echo $error->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "int(0)\n",
+            "string(4) \"bool\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "string(9) \"zend_test\"\n",
+            "string(9) \"zend_test\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "zend_test_is_pcre_bundled() expects exactly 0 arguments, 1 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_test_is_pcre_bundled"));
+    assert!(c_source.contains("ptn_internal_function_is_zend_test_helper"));
+}
+
+#[test]
 fn compile_zend_test_is_zend_ptr_helper_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-is-zend-ptr-helper");
     fs::create_dir_all(&root).unwrap();
