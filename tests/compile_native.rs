@@ -99436,6 +99436,123 @@ echo \"done\\n\";
 }
 
 #[test]
+fn compile_optimized_array_map_first_class_callable_uses_source_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-optimized-array-map-source-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("optimized-array-map-source-trace.php");
+    let output = root.join("optimized-array-map-source-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+
+function foo(string $key): string {
+    throw new Exception('Test');
+}
+
+array_filter(
+    array_combine(
+        ['a'],
+        array_map(foo(...), ['a']),
+    ),
+);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Exception: Test in {}:4\nStack trace:\n#0 {}(10): foo('a')\n#1 {{main}}\n  thrown in {} on line 4\n",
+            input.display(),
+            input.display(),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_optimized_array_map_first_class_callable_preserves_call_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-optimized-array-map-call-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("optimized-array-map-call-semantics.php");
+    let output = root.join("optimized-array-map-call-semantics-bin");
+    fs::write(
+        &input,
+        "<?php
+declare(strict_types=1);
+function strict_int(int $value): int { return $value; }
+function needs_ref(&$value) { return $value; }
+function values() { echo \"array-first\\n\"; return ['1']; }
+try { array_map(strict_int(...), values()); } catch (TypeError $e) { echo \"strict\\n\"; }
+try { array_map(needs_ref(...), [1]); } catch (Error $e) { echo \"by-ref\\n\"; }
+var_dump(array_map(missing(...), []));
+class MapTarget {
+    public static function staticMethod($value) { throw new Exception('static'); }
+    public function method($value) { throw new Exception('object'); }
+}
+try { array_map(MapTarget::staticMethod(...), ['x']); } catch (Exception $e) {
+    echo strpos($e->getTraceAsString(), '[internal function]') === false
+        ? \"static-direct\\n\"
+        : \"static-internal\\n\";
+}
+$target = new MapTarget();
+try { array_map($target->method(...), ['x']); } catch (Exception $e) {
+    echo strpos($e->getTraceAsString(), '[internal function]') !== false
+        ? \"object-internal\\n\"
+        : \"object-direct\\n\";
+}
+class MapResult {
+    public function __construct(public string $name) {}
+    public function __destruct() { echo \"~$this->name\\n\"; }
+}
+function map_value($value) {
+    echo \"call-$value\\n\";
+    if ($value === 2) { throw new Exception('stop'); }
+    return new MapResult(\"mapped-$value\");
+}
+try { array_map(map_value(...), [1, 2]); } catch (Exception $e) { echo \"caught\\n\"; }
+echo \"after\\n\";
+class MapInput { public function __destruct() { echo \"~input\\n\"; } }
+function map_throw($value) { throw new Exception('input'); }
+try { array_map(map_throw(...), [new MapInput()]); } catch (Exception $e) {
+    echo \"caught-input\\n\";
+    unset($e);
+}
+echo \"after-input\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array-first\nstrict\nby-ref\narray(0) {\n}\n",
+            "static-direct\nobject-internal\n",
+            "call-1\ncall-2\n~mapped-1\ncaught\nafter\n",
+            "caught-input\n~input\nafter-input\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert_eq!(
+        c_source
+            .matches(" = ptn_optimized_array_map_foreach(&runtime, ")
+            .count(),
+        6
+    );
+}
+
+#[test]
 fn compile_array_map_null_key_callback_result_to_native_binary() {
     let root = temp_dir("ptn-native-array-map-null-key-callback-result");
     fs::create_dir_all(&root).unwrap();

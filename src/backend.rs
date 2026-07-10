@@ -63450,12 +63450,22 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> Option<String> {
-        if arguments.len() != 2 || !matches!(arguments[0], ValueExpr::FirstClassCallable { .. }) {
+        let [
+            ValueExpr::FirstClassCallable { callable, .. },
+            array,
+        ] = arguments
+        else {
+            return None;
+        };
+        let ValueExpr::String(callback_name) = callable.as_ref() else {
+            return None;
+        };
+        if php_name_eq(callback_name, "assert") {
             return None;
         }
 
-        let callback_temp = self.emit_materialized_value(out, &arguments[0]);
-        let array_temp = self.emit_materialized_value(out, &arguments[1]);
+        let array_temp = self.emit_materialized_value(out, array);
+        let callback_temp = self.emit_materialized_first_class_callable_target(out, callable);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);

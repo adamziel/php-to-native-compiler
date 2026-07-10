@@ -29550,8 +29550,51 @@ static PTN_UNUSED PtnValue ptn_optimized_array_map_foreach(
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnValue callback_arg = ptn_value_clone_deref(array->entries[i].value);
-        PtnValue callback_result =
-            ptn_internal_call_callback(runtime, callback, 1, &callback_arg, line);
+        PtnValue callback_result = ptn_null();
+        PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+        int saved_warn_by_ref_argument_mismatch =
+            runtime->warn_by_ref_argument_mismatch;
+        int saved_throw_argument_count_errors =
+            runtime->throw_argument_count_errors;
+        int saved_strict_types = runtime->strict_types;
+        int saved_suppress_user_call_frame_location =
+            runtime->suppress_user_call_frame_location;
+        int saved_suppress_user_argument_count_location =
+            runtime->suppress_user_argument_count_location;
+        PtnTryFrame callback_frame;
+        ptn_try_frame_push(runtime, &callback_frame);
+        if (setjmp(callback_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &callback_frame);
+            runtime->trace_frame = saved_trace_frame;
+            runtime->warn_by_ref_argument_mismatch =
+                saved_warn_by_ref_argument_mismatch;
+            runtime->throw_argument_count_errors =
+                saved_throw_argument_count_errors;
+            runtime->strict_types = saved_strict_types;
+            runtime->suppress_user_call_frame_location =
+                saved_suppress_user_call_frame_location;
+            runtime->suppress_user_argument_count_location =
+                saved_suppress_user_argument_count_location;
+            ptn_value_destroy(&callback_arg);
+            ptn_value_destroy(&result);
+            /* The generated caller cannot resume its temp cleanup after rethrow. */
+            ptn_value_destroy(&callback);
+            ptn_value_destroy(&array_value);
+            ptn_rethrow_exception(runtime);
+        }
+        callback_result =
+            ptn_call_callable(runtime, callback, 1, &callback_arg, line, 0);
+        ptn_try_frame_pop(runtime, &callback_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->warn_by_ref_argument_mismatch =
+            saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            saved_throw_argument_count_errors;
+        runtime->strict_types = saved_strict_types;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
+        runtime->suppress_user_argument_count_location =
+            saved_suppress_user_argument_count_location;
         ptn_value_destroy(&callback_arg);
 
         PtnValue mapped = ptn_value_clone_deref(callback_result);
