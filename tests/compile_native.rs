@@ -9197,6 +9197,19 @@ fn parser_rejects_duplicate_user_function_declarations() {
 }
 
 #[test]
+fn parser_rejects_duplicate_function_parameter_names() {
+    for source in [
+        "<?php function duplicate($value, $value) {}",
+        "<?php class C { function duplicate($value, $value) {} }",
+        "<?php $closure = function ($value, $value) {};",
+        "<?php $arrow = fn($value, $value) => $value;",
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, "Redefinition of parameter $value");
+    }
+}
+
+#[test]
 fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function STRLEN($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strlen()");

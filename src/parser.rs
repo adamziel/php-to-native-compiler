@@ -4803,6 +4803,15 @@ impl Parser<'_> {
             }
         }
         self.expect_right_paren()?;
+        let mut parameter_names = HashSet::new();
+        for parameter in &parameters {
+            if !parameter_names.insert(parameter.name.as_str()) {
+                return Err(Diagnostic::new(
+                    format!("Redefinition of parameter ${}", parameter.name),
+                    Some(parameter.span),
+                ));
+            }
+        }
         if let Some((index, parameter)) = parameters
             .iter()
             .enumerate()
