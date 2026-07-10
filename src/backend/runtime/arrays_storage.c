@@ -5613,6 +5613,7 @@ static void ptn_release_state_finish(
     }
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (
+        pending_exception != NULL &&
         runtime->exceptions->active_exception != NULL &&
         !(
             runtime->exceptions->try_frame == NULL &&

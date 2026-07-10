@@ -19785,6 +19785,63 @@ var_dump(@setrawcookie('cookie_name', rawurlencode('cookie_content')));
 }
 
 #[test]
+fn compile_function_unwind_releases_local_destructors_before_rethrow_to_native_binary() {
+    let root = temp_dir("ptn-native-function-unwind-local-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-unwind-local-destructor.php");
+    let output = root.join("function-unwind-local-destructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class aaa {
+    public function __destruct() {
+        try {
+            throw new Exception(__CLASS__);
+        } catch(Exception $ex) {
+            echo \"1. $ex\\n\";
+        }
+    }
+}
+function bbb() {
+    $a = new aaa();
+    throw new Exception(__FUNCTION__);
+}
+try {
+    bbb();
+    echo \"must be skipped !!!\";
+} catch(Exception $ex) {
+    echo \"2. $ex\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(&format!(
+            "1. Exception: aaa in {}:5\nStack trace:\n#0 {}(16): aaa->__destruct()\n#1 {{main}}",
+            input.display(),
+            input.display(),
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "2. Exception: bbb in {}:13\nStack trace:\n#0 {}(16): bbb()\n#1 {{main}}",
+            input.display(),
+            input.display(),
+        )),
+        "{stdout}"
+    );
+    assert!(!stdout.contains(&format!("{}(12): aaa->__destruct()", input.display())));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();
