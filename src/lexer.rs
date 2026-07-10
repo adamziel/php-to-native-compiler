@@ -144,7 +144,7 @@ pub enum TokenKind {
     Clone,
     Identifier(String),
     String(String),
-    BacktickString(String),
+    BacktickString(BacktickString),
     InterpolatedString(Vec<StringPart>),
     Int(i64),
     Float(f64),
@@ -252,6 +252,12 @@ pub enum StringPart {
         array: String,
         indices: Vec<StringInterpolationIndex>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BacktickString {
+    Literal(String),
+    Interpolated(Vec<StringPart>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -649,21 +655,25 @@ impl<'a> Lexer<'a> {
     fn lex_backtick_string(&mut self) -> Result<()> {
         let start = self.current_span(0);
         self.bump_char();
-        let mut value = String::new();
+        let mut literal = String::new();
+        let mut parts = Vec::new();
+        let mut has_variable = false;
         while let Some(ch) = self.peek_char() {
             if ch == '`' {
                 self.bump_char();
+                let value = if has_variable {
+                    if !literal.is_empty() {
+                        parts.push(StringPart::Literal(literal));
+                    }
+                    BacktickString::Interpolated(parts)
+                } else {
+                    BacktickString::Literal(literal)
+                };
                 self.tokens.push(Token {
                     kind: TokenKind::BacktickString(value),
                     span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
                 });
                 return Ok(());
-            }
-            if ch == '$' && self.starts_string_interpolation() {
-                return Err(Diagnostic::new(
-                    "backtick interpolation is unsupported",
-                    Some(self.current_char_span()),
-                ));
             }
             if ch == '\\' {
                 self.bump_char();
@@ -671,18 +681,124 @@ impl<'a> Lexer<'a> {
                     Diagnostic::new("unterminated backtick escape", Some(self.current_span(0)))
                 })?;
                 match escaped {
-                    '`' => value.push('`'),
-                    '\\' => value.push('\\'),
-                    '$' => value.push('$'),
+                    'n' => literal.push('\n'),
+                    'r' => literal.push('\r'),
+                    't' => literal.push('\t'),
+                    'e' => literal.push('\u{1b}'),
+                    'v' => literal.push('\u{0b}'),
+                    'f' => literal.push('\u{0c}'),
+                    '`' => literal.push('`'),
+                    '\\' => literal.push('\\'),
+                    '$' => literal.push('$'),
+                    '"' => {
+                        literal.push('\\');
+                        literal.push('"');
+                    }
+                    'x' | 'X' => {
+                        self.bump_char();
+                        let mut digits = String::new();
+                        for _ in 0..2 {
+                            if let Some(hex) = self.peek_char() {
+                                if hex.is_ascii_hexdigit() {
+                                    digits.push(hex);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        if digits.is_empty() {
+                            literal.push('\\');
+                            literal.push(escaped);
+                        } else {
+                            let value = u8::from_str_radix(&digits, 16).unwrap();
+                            push_php_string_byte(&mut literal, value);
+                        }
+                        continue;
+                    }
+                    'u' if self.rest().starts_with("u{") => {
+                        self.lex_unicode_codepoint_escape(&mut literal)?;
+                        continue;
+                    }
+                    '0'..='7' => {
+                        let escape_span = self.current_char_span();
+                        let mut digits = String::new();
+                        for _ in 0..3 {
+                            if let Some(octal) = self.peek_char() {
+                                if matches!(octal, '0'..='7') {
+                                    digits.push(octal);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        self.push_octal_escape_byte(&mut literal, &digits, escape_span);
+                        continue;
+                    }
                     other => {
-                        value.push('\\');
-                        value.push(other);
+                        literal.push('\\');
+                        literal.push(other);
                     }
                 }
                 self.bump_char();
                 continue;
             }
-            value.push(ch);
+
+            if ch == '{' && self.rest().starts_with("{$") {
+                if !literal.is_empty() {
+                    parts.push(StringPart::Literal(literal));
+                    literal = String::new();
+                }
+                parts.push(self.lex_braced_interpolation_part()?);
+                has_variable = true;
+                continue;
+            }
+
+            if ch == '$' {
+                let interpolation_start = self.current_span(1);
+                self.bump_char();
+                if let Some(first) = self.peek_char() {
+                    if first == '{' {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
+                        }
+                        parts.push(
+                            self.lex_legacy_dollar_brace_interpolation_part(interpolation_start)?,
+                        );
+                        has_variable = true;
+                        continue;
+                    }
+                    if is_ident_start(first) {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
+                        }
+                        let mut name = String::new();
+                        while let Some(ch) = self.peek_char() {
+                            if is_ident_continue(ch) {
+                                name.push(ch);
+                                self.bump_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        parts.push(
+                            self.lex_unbraced_interpolation_variable_part(
+                                name,
+                                interpolation_start,
+                            )?,
+                        );
+                        has_variable = true;
+                        continue;
+                    }
+                }
+                literal.push('$');
+                continue;
+            }
+
+            literal.push(ch);
             self.bump_char();
         }
         Err(Diagnostic::new("unterminated backtick string", Some(start)))
@@ -1845,18 +1961,6 @@ impl<'a> Lexer<'a> {
                 ));
         }
         Ok(())
-    }
-
-    fn starts_heredoc_interpolation(&self) -> bool {
-        match self.rest().chars().nth(1) {
-            Some('$' | '{') => true,
-            Some(ch) => is_ident_start(ch),
-            None => false,
-        }
-    }
-
-    fn starts_string_interpolation(&self) -> bool {
-        self.starts_heredoc_interpolation()
     }
 
     fn lex_number(&mut self) -> Result<()> {

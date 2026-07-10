@@ -330,6 +330,7 @@ pub struct FunctionDecl {
     pub return_by_ref: bool,
     pub is_generator: bool,
     pub is_anonymous: bool,
+    pub collect_compile_deprecations: bool,
     pub initially_declared: bool,
     pub body: Vec<Instruction>,
 }
@@ -1215,6 +1216,7 @@ struct LoweringContext<'a> {
     current_class_parent_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
+    collect_compile_deprecations: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1354,6 +1356,7 @@ impl<'a> LoweringContext<'a> {
             current_class_parent_name: None,
             current_trait_name: None,
             current_function_display_name: None,
+            collect_compile_deprecations: true,
         };
         for function in &program.functions {
             context.declare_function(function);
@@ -1580,6 +1583,7 @@ impl<'a> LoweringContext<'a> {
             return_by_ref: function.return_by_ref,
             is_generator: statements_contain_yield(&function.body),
             is_anonymous: false,
+            collect_compile_deprecations: true,
             initially_declared: !function.is_conditionally_declared,
             body: Vec::new(),
         });
@@ -2027,6 +2031,7 @@ impl<'a> LoweringContext<'a> {
             return_by_ref: function.return_by_ref,
             is_generator: statements_contain_yield(&function.body),
             is_anonymous: true,
+            collect_compile_deprecations: self.collect_compile_deprecations,
             initially_declared: true,
             body: Vec::new(),
         });
@@ -2287,6 +2292,7 @@ impl<'a> LoweringContext<'a> {
                     return_by_ref: method.return_by_ref,
                     is_generator: statements_contain_yield(&method.body),
                     is_anonymous: false,
+                    collect_compile_deprecations: true,
                     initially_declared: true,
                     body: Vec::new(),
                 });
@@ -3210,6 +3216,7 @@ impl<'a> LoweringContext<'a> {
                         return_by_ref: method.return_by_ref,
                         is_generator: statements_contain_yield(&method.body),
                         is_anonymous: false,
+                        collect_compile_deprecations: true,
                         initially_declared: false,
                         body: Vec::new(),
                     });
@@ -5054,7 +5061,7 @@ impl<'a> LoweringContext<'a> {
             }
             Expr::ShellExec { command, span } => ValueExpr::InternalCall {
                 name: "__ptn_backtick_exec".to_string(),
-                arguments: vec![ValueExpr::String(command.clone())],
+                arguments: vec![self.lower_expr(command)],
                 argument_names: vec![None],
                 argument_unpacks: vec![false],
                 allow_global_fallback: true,
@@ -5449,12 +5456,21 @@ impl<'a> LoweringContext<'a> {
                 left,
                 right,
                 span,
-            } => ValueExpr::Binary {
-                op: lower_binary_op(*op),
-                left: Box::new(self.lower_expr(left)),
-                right: Box::new(self.lower_expr(right)),
-                line: span.line,
-            },
+            } => {
+                let lowered_left = self.lower_expr(left);
+                let previous_collect_compile_deprecations = self.collect_compile_deprecations;
+                if ast_binary_rhs_is_compile_time_unreachable(*op, left) {
+                    self.collect_compile_deprecations = false;
+                }
+                let lowered_right = self.lower_expr(right);
+                self.collect_compile_deprecations = previous_collect_compile_deprecations;
+                ValueExpr::Binary {
+                    op: lower_binary_op(*op),
+                    left: Box::new(lowered_left),
+                    right: Box::new(lowered_right),
+                    line: span.line,
+                }
+            }
             Expr::Ternary {
                 condition,
                 if_true,
@@ -5778,8 +5794,8 @@ fn assertion_bare_callable_name(name: &str) -> bool {
 fn assertion_expr_text(expr: &Expr) -> String {
     match expr {
         Expr::String(value, _) => assertion_string_text(value),
-        Expr::InterpolatedString(_, _) => "\"\"".to_string(),
-        Expr::ShellExec { command, .. } => format!("`{}`", command.replace('`', "\\`")),
+        Expr::InterpolatedString(parts, _) => assertion_interpolated_string_text(parts, '"'),
+        Expr::ShellExec { command, .. } => assertion_shell_exec_text(command),
         Expr::Int(value, _) => value.to_string(),
         Expr::Float(value, _) => assertion_float_text(*value),
         Expr::Bool(value, _) => value.to_string(),
@@ -6127,6 +6143,170 @@ fn assertion_string_text(value: &str) -> String {
     }
     text.push('\'');
     text
+}
+
+fn assertion_shell_exec_text(command: &Expr) -> String {
+    match command {
+        Expr::String(value, _) => assertion_encapsed_literal_text(value, '`'),
+        Expr::InterpolatedString(parts, _) => assertion_interpolated_string_text(parts, '`'),
+        _ => assertion_encapsed_literal_text(&assertion_expr_text(command), '`'),
+    }
+}
+
+fn assertion_interpolated_string_text(parts: &[AstStringPart], delimiter: char) -> String {
+    let mut text = String::new();
+    text.push(delimiter);
+    for (index, part) in parts.iter().enumerate() {
+        let next_literal = parts.get(index + 1).and_then(|part| match part {
+            AstStringPart::Literal(value) => Some(value.as_str()),
+            _ => None,
+        });
+        match part {
+            AstStringPart::Literal(value) => {
+                push_assertion_encapsed_literal(&mut text, value, delimiter);
+            }
+            AstStringPart::Variable(name)
+            | AstStringPart::LegacyDollarBraceVariable(name) => {
+                if next_literal.is_some_and(assertion_interpolation_variable_needs_braces) {
+                    text.push_str("{$");
+                    text.push_str(name);
+                    text.push('}');
+                } else {
+                    text.push('$');
+                    text.push_str(name);
+                }
+            }
+            AstStringPart::Expression(expr) => {
+                text.push('{');
+                text.push_str(&assertion_expr_text(expr));
+                text.push('}');
+            }
+            AstStringPart::LegacyDollarBraceExpression(expr) => {
+                text.push_str(&assertion_legacy_dollar_brace_expression_text(expr));
+            }
+            AstStringPart::DynamicVariableExpression(expr) => {
+                text.push_str("{${");
+                text.push_str(&assertion_expr_text(expr));
+                text.push_str("}}");
+            }
+            AstStringPart::PropertyFetch { variable, property } => {
+                text.push_str("{$");
+                text.push_str(variable);
+                text.push_str("->");
+                text.push_str(property);
+                text.push('}');
+            }
+            AstStringPart::PropertyChain {
+                variable,
+                properties,
+            } => {
+                text.push_str("{$");
+                text.push_str(variable);
+                for property in properties {
+                    text.push_str("->");
+                    text.push_str(property);
+                }
+                text.push('}');
+            }
+            AstStringPart::MethodCall { variable, method } => {
+                text.push_str("{$");
+                text.push_str(variable);
+                text.push_str("->");
+                text.push_str(method);
+                text.push_str("()}");
+            }
+            AstStringPart::ArrayAccess { array, indices } => {
+                text.push_str("{$");
+                text.push_str(array);
+                for index in indices {
+                    text.push('[');
+                    match index {
+                        AstStringInterpolationIndex::String(value) => {
+                            text.push_str(&assertion_string_text(value));
+                        }
+                        AstStringInterpolationIndex::Int(value) => {
+                            text.push_str(&value.to_string());
+                        }
+                        AstStringInterpolationIndex::Variable(name) => {
+                            text.push('$');
+                            text.push_str(name);
+                        }
+                    }
+                    text.push(']');
+                }
+                text.push('}');
+            }
+        }
+    }
+    text.push(delimiter);
+    text
+}
+
+fn assertion_encapsed_literal_text(value: &str, delimiter: char) -> String {
+    let mut text = String::new();
+    text.push(delimiter);
+    push_assertion_encapsed_literal(&mut text, value, delimiter);
+    text.push(delimiter);
+    text
+}
+
+fn push_assertion_encapsed_literal(text: &mut String, value: &str, delimiter: char) {
+    for ch in value.chars() {
+        match ch {
+            '\\' => text.push_str("\\\\"),
+            '$' => text.push_str("\\$"),
+            '\n' => text.push_str("\\n"),
+            '\r' => text.push_str("\\r"),
+            '\t' => text.push_str("\\t"),
+            '\u{1b}' => text.push_str("\\e"),
+            '\u{0b}' => text.push_str("\\v"),
+            '\u{0c}' => text.push_str("\\f"),
+            value if value == delimiter => {
+                text.push('\\');
+                text.push(value);
+            }
+            _ => text.push(ch),
+        }
+    }
+}
+
+fn assertion_interpolation_variable_needs_braces(literal: &str) -> bool {
+    let Some(first) = literal.chars().next() else {
+        return false;
+    };
+    first == '['
+        || first == '_'
+        || first.is_ascii_alphanumeric()
+        || (first as u32) >= 0x80
+        || literal.starts_with("->")
+        || literal.starts_with("?->")
+}
+
+fn assertion_legacy_dollar_brace_expression_text(expr: &Expr) -> String {
+    if let Expr::String(value, _) = expr {
+        return format!("${{{value}}}");
+    }
+
+    let expression = assertion_expr_text(expr);
+    if legacy_dollar_brace_expr_has_bare_name_root(expr) {
+        let mut text = String::from("{$");
+        text.push_str(&expression);
+        text.push('}');
+        text
+    } else {
+        let mut text = String::from("{${");
+        text.push_str(&expression);
+        text.push_str("}}");
+        text
+    }
+}
+
+fn legacy_dollar_brace_expr_has_bare_name_root(expr: &Expr) -> bool {
+    match expr {
+        Expr::Constant(_, _) => true,
+        Expr::ArrayAccess { array, .. } => legacy_dollar_brace_expr_has_bare_name_root(array),
+        _ => false,
+    }
 }
 
 fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {
@@ -7261,6 +7441,25 @@ fn lower_inc_dec_result(result: AstIncDecResult) -> IncDecResult {
     match result {
         AstIncDecResult::Pre => IncDecResult::Pre,
         AstIncDecResult::Post => IncDecResult::Post,
+    }
+}
+
+fn ast_binary_rhs_is_compile_time_unreachable(op: AstBinaryOp, left: &Expr) -> bool {
+    match (op, ast_expr_static_truthiness(left)) {
+        (AstBinaryOp::And, Some(false)) | (AstBinaryOp::Or, Some(true)) => true,
+        _ => false,
+    }
+}
+
+fn ast_expr_static_truthiness(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::Bool(value, _) => Some(*value),
+        Expr::Int(value, _) => Some(*value != 0),
+        Expr::Float(value, _) => Some(*value != 0.0),
+        Expr::Null(_) => Some(false),
+        Expr::String(value, _) => Some(!value.is_empty() && value != "0"),
+        Expr::Grouped { expr, .. } => ast_expr_static_truthiness(expr),
+        _ => None,
     }
 }
 

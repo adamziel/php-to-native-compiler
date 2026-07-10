@@ -30835,99 +30835,12 @@ static PtnValue ptn_array_splice_values(
     return removed;
 }
 
-static void ptn_array_splice_capture_active_exception(
+static void ptn_array_splice_release_removed_with_frame(
     PtnRuntime *runtime,
-    PtnException **primary
-) {
-    if (runtime == NULL || runtime->exceptions == NULL ||
-        runtime->exceptions->active_exception == NULL) {
-        return;
-    }
-    if (*primary == NULL) {
-        *primary = runtime->exceptions->active_exception;
-        ptn_exception_retain(*primary);
-    }
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = NULL;
-}
-
-static void ptn_array_splice_restore_active_exception(PtnRuntime *runtime, PtnException *primary) {
-    if (runtime == NULL || runtime->exceptions == NULL || primary == NULL) {
-        return;
-    }
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = primary;
-}
-
-static void ptn_array_splice_drop_value_capturing_exception(
-    PtnRuntime *runtime,
-    PtnValue *value,
-    PtnException **primary
-);
-
-static void ptn_array_splice_drop_reference_capturing_exception(
-    PtnRuntime *runtime,
-    PtnReference *reference,
-    PtnException **primary
-) {
-    if (reference == NULL || reference->refcount == 0) {
-        return;
-    }
-    if (reference->refcount > 1) {
-        reference->refcount--;
-        return;
-    }
-    reference->refcount = 0;
-    ptn_array_splice_drop_value_capturing_exception(runtime, &reference->value, primary);
-    free(reference->property_type_class_name);
-    free(reference->property_type_text);
-    free(reference->property_declaring_class);
-    free(reference->property_name);
-    for (size_t i = 0; i < reference->property_type_source_len; i++) {
-        free(reference->property_type_sources[i].class_name);
-        free(reference->property_type_sources[i].text);
-        free(reference->property_type_sources[i].declaring_class);
-        free(reference->property_type_sources[i].property_name);
-    }
-    free(reference->property_type_sources);
-    free(reference);
-}
-
-static void ptn_array_splice_drop_array_capturing_exception(
-    PtnRuntime *runtime,
-    PtnArray *array,
-    PtnException **primary
-) {
-    if (array == NULL) {
-        return;
-    }
-    ptn_cow_debug_assert_array_refcount(array, "release");
-    ptn_cow_debug_note_array_release();
-    if (array->refcount > 1) {
-        array->refcount--;
-        return;
-    }
-    array->refcount = 0;
-    if (array->iterator_refcount != 0) {
-        return;
-    }
-    ptn_cow_debug_note_array_free();
-    for (size_t i = 0; i < array->len; i++) {
-        ptn_array_key_free(array->entries[i].key);
-        ptn_array_splice_drop_value_capturing_exception(runtime, &array->entries[i].value, primary);
-    }
-    free(array->index_slots);
-    free(array->entries);
-    free(array);
-}
-
-static void ptn_array_splice_drop_with_frame(
-    PtnRuntime *runtime,
-    PtnValue *value,
-    PtnException **primary
+    PtnValue *removed
 ) {
     if (runtime == NULL || runtime->exceptions == NULL) {
-        ptn_value_drop(value);
+        ptn_value_drop_in_runtime(runtime, removed);
         return;
     }
 
@@ -30942,7 +30855,7 @@ static void ptn_array_splice_drop_with_frame(
 
     ptn_try_frame_push(runtime, &drop_frame);
     if (setjmp(drop_frame.jump) == 0) {
-        ptn_value_drop(value);
+        ptn_value_drop_in_runtime(runtime, removed);
     }
     ptn_try_frame_pop(runtime, &drop_frame);
 
@@ -30953,44 +30866,6 @@ static void ptn_array_splice_drop_with_frame(
         saved_suppress_user_argument_count_location;
     runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
-
-    ptn_array_splice_capture_active_exception(runtime, primary);
-}
-
-static void ptn_array_splice_drop_value_capturing_exception(
-    PtnRuntime *runtime,
-    PtnValue *value,
-    PtnException **primary
-) {
-    if (value == NULL || !value->owned) {
-        return;
-    }
-
-    if (value->type == PTN_ARRAY) {
-        PtnArray *array = value->as.array;
-        *value = ptn_null();
-        ptn_array_splice_drop_array_capturing_exception(runtime, array, primary);
-        return;
-    }
-    if (value->type == PTN_REFERENCE) {
-        PtnReference *reference = value->as.reference;
-        *value = ptn_null();
-        ptn_array_splice_drop_reference_capturing_exception(runtime, reference, primary);
-        return;
-    }
-
-    for (size_t attempt = 0; value->owned && attempt < 3; attempt++) {
-        ptn_array_splice_drop_with_frame(runtime, value, primary);
-    }
-    if (value->owned) {
-        *value = ptn_null();
-    }
-}
-
-static void ptn_array_splice_drop_removed_result(PtnRuntime *runtime, PtnValue *removed) {
-    PtnException *primary = NULL;
-    ptn_array_splice_drop_value_capturing_exception(runtime, removed, &primary);
-    ptn_array_splice_restore_active_exception(runtime, primary);
 }
 
 static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
@@ -31001,23 +30876,37 @@ static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
 ) {
     PtnValue resolved_target = ptn_value_deref(target);
     PtnArray *array = resolved_target.type == PTN_ARRAY ? resolved_target.as.array : NULL;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnCleanupRoot target_cleanup_root;
     uint64_t mutation_epoch = 0;
     if (array != NULL) {
         ptn_array_retain(array);
         mutation_epoch = array->mutation_epoch;
+        target_cleanup_root.value = ptn_null();
+        target_cleanup_root.next = NULL;
+        PtnValue target_cleanup_value = ptn_null();
+        target_cleanup_value.type = PTN_ARRAY;
+        target_cleanup_value.as.array = array;
+        ptn_runtime_link_cleanup_root(
+            root,
+            &target_cleanup_root,
+            target_cleanup_value
+        );
     }
 
-    ptn_array_splice_drop_removed_result(runtime, removed);
+    ptn_array_splice_release_removed_with_frame(runtime, removed);
 
     if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         if (array != NULL) {
-            ptn_array_free(array);
+            ptn_runtime_unlink_cleanup_root(root, &target_cleanup_root);
+            ptn_array_free_in_runtime(runtime, array);
         }
         ptn_rethrow_exception(runtime);
         return;
     }
     if (array != NULL && array->mutation_epoch != mutation_epoch) {
-        ptn_array_free(array);
+        ptn_runtime_unlink_cleanup_root(root, &target_cleanup_root);
+        ptn_array_free_in_runtime(runtime, array);
         ptn_throw_exception_at(
             runtime,
             "Error",
@@ -31028,7 +30917,8 @@ static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
         return;
     }
     if (array != NULL) {
-        ptn_array_free(array);
+        ptn_runtime_unlink_cleanup_root(root, &target_cleanup_root);
+        ptn_array_free_in_runtime(runtime, array);
     }
 }
 

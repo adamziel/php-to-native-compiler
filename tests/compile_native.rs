@@ -87616,6 +87616,66 @@ var_dump(shell_exec(\"printf 'sx\\n'\"));\n",
 }
 
 #[test]
+fn parser_preserves_backtick_interpolation_and_escape_rules() {
+    let program = parser::parse(
+        r#"<?php `$a|{$items[$key]}|\$a|\`|\n|\x41|\101|\"`;"#,
+    )
+    .unwrap();
+    let Statement::Expression {
+        expression: Expr::ShellExec { command, .. },
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected shell execution expression");
+    };
+    let Expr::InterpolatedString(parts, _) = command.as_ref() else {
+        panic!("expected interpolated shell command");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Variable("a".to_string()),
+            StringPart::Literal("|".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::Variable("key".to_string())],
+            },
+            StringPart::Literal("|$a|`|\n|A|A|\\\"".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn compile_backtick_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-backtick-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("backtick-interpolation.php");
+    let output = root.join("backtick-interpolation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BacktickInterpolationBox { public $value = 'property'; }
+$word = 'hello';
+$items = ['name' => 'world'];
+$key = 'name';
+$box = new BacktickInterpolationBox();
+var_dump(`printf '%s|%s|%s' '$word' '{$items[$key]}' '{$box->value}'`);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: The backtick (`) operator is deprecated, use shell_exec() instead in ptn on line 7\nstring(20) \"hello|world|property\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_locale_constants_and_setlocale_to_native_binary() {
     let root = temp_dir("ptn-native-locale-constants-setlocale");
     fs::create_dir_all(&root).unwrap();
@@ -87834,6 +87894,43 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_initialize_declared_exception_object"));
+}
+
+#[test]
+fn compile_assertion_text_formats_interpolation_without_dead_branch_deprecation() {
+    let root = temp_dir("ptn-native-assert-interpolation-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-interpolation-text.php");
+    let output = root.join("assert-interpolation-text-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+assert(0 && ($a = function () {
+    $var = 'test';
+    $str = "$var, $var[1], {$var}[], {$var[1]}[], ${var}[], ${var[1]}[]";
+}));
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(): assert(0 && ($a = function () {\n",
+            "    $var = 'test';\n",
+            "    $str = \"$var, {$var[1]}, {$var}[], {$var[1]}[], {$var}[], {$var[1]}[]\";\n",
+            "})) failed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -103046,6 +103143,77 @@ var_dump($x, $removed, $a, $rep, function_exists(\"array_splice\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_splice"));
     assert!(c_source.contains("ptn_array_splice_values"));
+}
+
+#[test]
+fn compile_array_splice_discarded_result_release_remains_rooted_across_fiber_suspend_to_native_binary(
+) {
+    let root = temp_dir("ptn-native-array-splice-discard-suspended-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-splice-discard-suspended-release.php");
+    let output = root.join("array-splice-discard-suspended-release-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ArraySpliceReleaseProbe {
+    public function __construct(public string $label, public bool $pause = false) {}
+
+    public function __destruct() {
+        echo $this->label, " destruct\n";
+        if ($this->pause) {
+            echo Fiber::suspend("paused"), " resumed\n";
+        }
+    }
+}
+
+$fiber = new Fiber(function () {
+    $values = [
+        new ArraySpliceReleaseProbe("first", true),
+        new ArraySpliceReleaseProbe("second"),
+    ];
+    array_splice($values, 0);
+    echo "fiber done\n";
+});
+
+echo $fiber->start(), "\n";
+echo "main before gc\n";
+gc_collect_cycles();
+echo "main after gc\n";
+for ($i = 0; $i < 100; $i++) {
+    $churn = [$i, $i];
+}
+$fiber->resume("first");
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "first destruct\n",
+            "paused\n",
+            "main before gc\n",
+            "main after gc\n",
+            "first resumed\n",
+            "second destruct\n",
+            "fiber done\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_splice_discard_result"));
+    assert!(c_source.contains("ptn_array_splice_release_removed_with_frame"));
 }
 
 #[test]

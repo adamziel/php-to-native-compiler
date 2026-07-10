@@ -19,6 +19,7 @@ use crate::ast::{
 use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
     lex_with_warnings, lex_with_warnings_and_short_open_tag,
+    BacktickString as TokenBacktickString,
     StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
     Token, TokenKind,
 };
@@ -214,6 +215,7 @@ fn parse_with_options(
         validate_function_names,
         force_top_level_declarations_conditional,
         current_statement_doc_comment: None,
+        suppress_unreachable_compile_validation: false,
     };
     parser.parse_program().map_err(|error| {
         error.with_notices(diagnostic_notices_from_compile_warnings(
@@ -296,6 +298,7 @@ struct Parser<'a> {
     validate_function_names: bool,
     force_top_level_declarations_conditional: bool,
     current_statement_doc_comment: Option<String>,
+    suppress_unreachable_compile_validation: bool,
 }
 
 #[derive(Clone)]
@@ -4693,7 +4696,9 @@ impl Parser<'_> {
         self.allow_unscoped_relative_types += 1;
         let parameters = self.parse_function_parameters()?;
         let captures = self.parse_closure_use_captures()?;
-        validate_closure_use_parameter_names(&parameters, &captures)?;
+        if !self.suppress_unreachable_compile_validation {
+            validate_closure_use_parameter_names(&parameters, &captures)?;
+        }
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_return_type_hint()?)
@@ -4709,7 +4714,9 @@ impl Parser<'_> {
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         let body = body?;
-        validate_closure_use_static_names(&captures, &body)?;
+        if !self.suppress_unreachable_compile_validation {
+            validate_closure_use_static_names(&captures, &body)?;
+        }
         let span = combine_spans(span, self.previous_span());
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             attributes,
@@ -8525,12 +8532,19 @@ impl Parser<'_> {
             } else {
                 precedence + 1
             };
-            let right = self.parse_binary_expr(next_min_precedence)?;
-            let right = if self.peek_is_expression_assignment_op() {
-                self.parse_assignment_expr_from_left(right)?
-            } else {
-                right
-            };
+            let previous_suppression = self.suppress_unreachable_compile_validation;
+            if parser_binary_rhs_is_compile_time_unreachable(op, &left) {
+                self.suppress_unreachable_compile_validation = true;
+            }
+            let right = self.parse_binary_expr(next_min_precedence).and_then(|right| {
+                if self.peek_is_expression_assignment_op() {
+                    self.parse_assignment_expr_from_left(right)
+                } else {
+                    Ok(right)
+                }
+            });
+            self.suppress_unreachable_compile_validation = previous_suppression;
+            let right = right?;
             let span = combine_spans(left.span(), right.span());
             left = Expr::Binary {
                 op,
@@ -9298,10 +9312,22 @@ impl Parser<'_> {
                     .collect::<Result<Vec<_>>>()?,
                 token.span,
             )),
-            TokenKind::BacktickString(command) => Ok(Expr::ShellExec {
-                command,
-                span: token.span,
-            }),
+            TokenKind::BacktickString(command) => {
+                let command = match command {
+                    TokenBacktickString::Literal(value) => Expr::String(value, token.span),
+                    TokenBacktickString::Interpolated(parts) => Expr::InterpolatedString(
+                        parts
+                            .into_iter()
+                            .map(|part| self.lower_string_part(part, token.span))
+                            .collect::<Result<Vec<_>>>()?,
+                        token.span,
+                    ),
+                };
+                Ok(Expr::ShellExec {
+                    command: Box::new(command),
+                    span: token.span,
+                })
+            }
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::True => Ok(Expr::Bool(true, token.span)),
@@ -9676,6 +9702,8 @@ impl Parser<'_> {
             validate_function_names: true,
             force_top_level_declarations_conditional: false,
             current_statement_doc_comment: None,
+            suppress_unreachable_compile_validation: self
+                .suppress_unreachable_compile_validation,
         };
         parser.expect_open_tag()?;
         let mut parsed = parser.parse_expr().map_err(|mut diagnostic| {
@@ -11701,6 +11729,25 @@ fn validate_closure_use_name(name: &str, span: SourceSpan) -> Result<()> {
     Ok(())
 }
 
+fn parser_binary_rhs_is_compile_time_unreachable(op: BinaryOp, left: &Expr) -> bool {
+    match (op, parser_expr_static_truthiness(left)) {
+        (BinaryOp::And, Some(false)) | (BinaryOp::Or, Some(true)) => true,
+        _ => false,
+    }
+}
+
+fn parser_expr_static_truthiness(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::Bool(value, _) => Some(*value),
+        Expr::Int(value, _) => Some(*value != 0),
+        Expr::Float(value, _) => Some(*value != 0.0),
+        Expr::Null(_) => Some(false),
+        Expr::String(value, _) => Some(!value.is_empty() && value != "0"),
+        Expr::Grouped { expr, .. } => parser_expr_static_truthiness(expr),
+        _ => None,
+    }
+}
+
 fn validate_closure_use_parameter_names(
     parameters: &[FunctionParameter],
     captures: &[ClosureUseCapture],
@@ -12648,8 +12695,11 @@ fn describe_unexpected_token(token: &Token) -> String {
         TokenKind::Identifier(name) => format!("identifier \"{name}\""),
         TokenKind::Variable(name) => format!("variable \"${name}\""),
         TokenKind::String(value) => format!("string \"{}\"", escape_token_text(value)),
-        TokenKind::BacktickString(value) => {
+        TokenKind::BacktickString(TokenBacktickString::Literal(value)) => {
             format!("execution string \"{}\"", escape_token_text(value))
+        }
+        TokenKind::BacktickString(TokenBacktickString::Interpolated(_)) => {
+            "execution string".to_string()
         }
         TokenKind::InterpolatedString(_) => "encapsed string".to_string(),
         TokenKind::Int(value) => format!("integer \"{value}\""),
@@ -13165,6 +13215,9 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_string_part(part, exclusions, seen, captures);
             }
         }
+        Expr::ShellExec { command, .. } => {
+            collect_arrow_captures_from_expr(command, exclusions, seen, captures);
+        }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -13175,7 +13228,6 @@ fn collect_arrow_captures_from_expr(
             }
         }
         Expr::String(_, _)
-        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -22544,7 +22596,9 @@ fn first_http_response_header_read_in_expr(
         Expr::InterpolatedString(parts, _) => {
             first_http_response_header_read_in_string_parts(parts, assigned)
         }
-        Expr::ShellExec { .. } => None,
+        Expr::ShellExec { command, .. } => {
+            first_http_response_header_read_in_expr(command, assigned)
+        }
         Expr::String(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)
@@ -30847,8 +30901,8 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
                     .is_some_and(|value| expr_uses_this_property(value, property_name))
                 || expr_uses_this_property(if_false, property_name)
         }
+        Expr::ShellExec { command, .. } => expr_uses_this_property(command, property_name),
         Expr::String(_, _)
-        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)

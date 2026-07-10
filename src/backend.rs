@@ -37413,6 +37413,9 @@ fn collect_module_legacy_dollar_brace_deprecations(
         }
     }
     for function in &module.functions {
+        if !function.collect_compile_deprecations {
+            continue;
+        }
         for parameter in &function.parameters {
             if let Some(default_value) = &parameter.default_value {
                 collect_value_legacy_dollar_brace_deprecations(default_value, &mut deprecations);
@@ -39038,9 +39041,13 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::PipeValue { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
-        ValueExpr::Binary { left, right, .. } => {
+        ValueExpr::Binary {
+            op, left, right, ..
+        } => {
             collect_value_legacy_dollar_brace_deprecations(left, deprecations);
-            collect_value_legacy_dollar_brace_deprecations(right, deprecations);
+            if !ir_binary_rhs_is_compile_time_unreachable(*op, left) {
+                collect_value_legacy_dollar_brace_deprecations(right, deprecations);
+            }
         }
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
@@ -39097,6 +39104,24 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::YieldFrom { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
+    }
+}
+
+fn ir_binary_rhs_is_compile_time_unreachable(op: BinaryOp, left: &ValueExpr) -> bool {
+    match (op, ir_value_static_truthiness(left)) {
+        (BinaryOp::And, Some(false)) | (BinaryOp::Or, Some(true)) => true,
+        _ => false,
+    }
+}
+
+fn ir_value_static_truthiness(value: &ValueExpr) -> Option<bool> {
+    match value {
+        ValueExpr::Bool(value) => Some(*value),
+        ValueExpr::Int(value) => Some(*value != 0),
+        ValueExpr::Float(value) => Some(*value != 0.0),
+        ValueExpr::Null => Some(false),
+        ValueExpr::String(value) => Some(!value.is_empty() && value != "0"),
+        _ => None,
     }
 }
 

@@ -981,7 +981,7 @@ pub enum Expr {
     String(String, SourceSpan),
     InterpolatedString(Vec<StringPart>, SourceSpan),
     ShellExec {
-        command: String,
+        command: Box<Expr>,
         span: SourceSpan,
     },
     Int(i64, SourceSpan),
