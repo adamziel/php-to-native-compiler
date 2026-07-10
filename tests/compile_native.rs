@@ -38093,6 +38093,243 @@ try { unset($sub->start); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
 }
 
 #[test]
+fn compile_date_period_uninitialized_objects_gh11416_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-gh11416");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-gh11416.php");
+    let output = root.join("date-period-gh11416-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+$now = new DateTimeImmutable();
+$simpleInterval = new DateInterval("P2D");
+
+$date = (new ReflectionClass(DateTime::class))->newInstanceWithoutConstructor();
+try {
+    new DatePeriod($date, new DateInterval('P1D'), 2);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+$date = (new ReflectionClass(DateTime::class))->newInstanceWithoutConstructor();
+try {
+    new DatePeriod($now, new DateInterval('P1D'), $date);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+$date = (new ReflectionClass(DateTime::class))->newInstanceWithoutConstructor();
+$dateperiod = (new ReflectionClass(DatePeriod::class))->newInstanceWithoutConstructor();
+$dateinterval = (new ReflectionClass(DateInterval::class))->newInstanceWithoutConstructor();
+try {
+    $dateperiod->__unserialize(['start' => $date]);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+try {
+    $dateperiod->__unserialize(['start' => $now, 'end' => $date]);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+try {
+    $dateperiod->__unserialize(['start' => $now, 'end' => $now, 'current' => $date]);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+try {
+    $dateperiod->__unserialize(['start' => $now, 'end' => $now, 'current' => $now, 'interval' => $dateinterval]);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+try {
+    $dateperiod->__unserialize([
+        'start' => $now, 'end' => $now, 'current' => $now, 'interval' => $simpleInterval,
+        'recurrences' => 2, 'include_start_date' => true, 'include_end_date' => true,
+    ]);
+    echo "DatePeriod::__unserialize: SUCCESS\n";
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+echo "OK\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "DateObjectError: Object of type DateTimeInterface has not been correctly initialized by calling parent::__construct() in its constructor\n",
+            "DateObjectError: Object of type DateTimeInterface has not been correctly initialized by calling parent::__construct() in its constructor\n",
+            "Error: Invalid serialization data for DatePeriod object\n",
+            "Error: Invalid serialization data for DatePeriod object\n",
+            "Error: Invalid serialization data for DatePeriod object\n",
+            "Error: Invalid serialization data for DatePeriod object\n",
+            "DatePeriod::__unserialize: SUCCESS\n",
+            "OK\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_value_is_datetime_interface"));
+    assert!(c_source.contains("ptn_date_period_serialized_state_is_valid"));
+}
+
+#[test]
+fn compile_date_reflection_shells_and_period_constructor_types_to_native_binary() {
+    let root = temp_dir("ptn-native-date-reflection-shells-period-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-reflection-shells-period-types.php");
+    let output = root.join("date-reflection-shells-period-types-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach ([DateTime::class, DateTimeImmutable::class, DateTimeZone::class, DateInterval::class, DatePeriod::class] as $class) {
+    $shell = (new ReflectionClass($class))->newInstanceWithoutConstructor();
+    echo get_class($shell), "\n";
+}
+
+$start = new DateTimeImmutable('2024-01-01');
+$interval = new DateInterval('P1D');
+$uninitialized = (new ReflectionClass(DateTime::class))->newInstanceWithoutConstructor();
+$wrongArguments = [
+    [new stdClass(), $interval, 2],
+    [$start, new stdClass(), 2],
+    [$start, $interval, new stdClass()],
+    [$uninitialized, new stdClass(), 2],
+    [$uninitialized, $interval, new stdClass()],
+];
+foreach ($wrongArguments as $arguments) {
+    try {
+        new DatePeriod(...$arguments);
+    } catch (TypeError $e) {
+        echo get_class($e), ': ', $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let constructor_error = "TypeError: DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments\n";
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "DateTime\nDateTimeImmutable\nDateTimeZone\nDateInterval\nDatePeriod\n{constructor_error}{constructor_error}{constructor_error}{constructor_error}{constructor_error}"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_date_period_serialized_state_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-serialized-state-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-serialized-state-validation.php");
+    let output = root.join("date-period-serialized-state-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class DatePeriodIntervalSubclass extends DateInterval {}
+
+$base = [
+    'start' => new DateTimeImmutable('2024-02-01'),
+    'current' => new DateTimeImmutable('2024-02-03'),
+    'end' => null,
+    'interval' => new DateInterval('P2D'),
+    'recurrences' => 4,
+    'include_start_date' => true,
+    'include_end_date' => false,
+];
+
+$invalid = [];
+foreach (array_keys($base) as $key) {
+    $state = $base;
+    unset($state[$key]);
+    $invalid[] = $state;
+}
+$state = $base;
+$state['recurrences'] = 2147483648;
+$invalid[] = $state;
+$state = $base;
+$state['recurrences'] = '4';
+$invalid[] = $state;
+$state = $base;
+$state['interval'] = new DatePeriodIntervalSubclass('P2D');
+$invalid[] = $state;
+
+foreach ($invalid as $state) {
+    $period = (new ReflectionClass(DatePeriod::class))->newInstanceWithoutConstructor();
+    try {
+        $period->__unserialize($state);
+        echo "INVALID ACCEPTED\n";
+    } catch (Error $e) {
+        echo $e::class, ': ', $e->getMessage(), "\n";
+    }
+}
+
+$period = (new ReflectionClass(DatePeriod::class))->newInstanceWithoutConstructor();
+$missingRecurrences = $base;
+unset($missingRecurrences['recurrences']);
+try {
+    $period->__unserialize($missingRecurrences);
+} catch (Error $e) {}
+try {
+    $period->getIterator();
+} catch (DateObjectError $e) {
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}
+
+$period = (new ReflectionClass(DatePeriod::class))->newInstanceWithoutConstructor();
+$period->__unserialize($base);
+echo $period->getStartDate()->format('Y-m-d'), "\n";
+echo $period->getDateInterval()->format('%d'), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let invalid = "Error: Invalid serialization data for DatePeriod object\n";
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{invalid}{invalid}{invalid}{invalid}{invalid}{invalid}{invalid}{invalid}{invalid}{invalid}DateObjectError: Object of type DatePeriod has not been correctly initialized by calling parent::__construct() in its constructor\n2024-02-01\n2\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_period_special_relative_interval_serializes_numeric_interval_to_native_binary() {
     let root = temp_dir("ptn-native-date-period-special-relative-serialize");
     fs::create_dir_all(&root).unwrap();

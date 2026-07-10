@@ -164120,6 +164120,21 @@ static PtnDateTimeData *ptn_datetime_data_from_value(PtnValue value) {
     return (PtnDateTimeData *)value.as.object->native_data;
 }
 
+static int ptn_date_value_is_datetime_interface(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        (ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DateTime") ||
+         ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DateTimeImmutable"));
+}
+
+static int ptn_date_value_is_interval(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DateInterval");
+}
+
 static int ptn_date_stored_string_equals(PtnValue value, const char *expected) {
     value = ptn_value_deref(value);
     if (value.type != PTN_STRING || expected == NULL) {
@@ -170168,9 +170183,9 @@ static PtnValue ptn_date_period_state_value(PtnArray *array, const char *name) {
 static int ptn_date_period_state_integer_is_valid(PtnArray *array, const char *name) {
     PtnValue value;
     if (!ptn_date_period_state_entry_value(array, name, &value)) {
-        return 1;
+        return 0;
     }
-    return value.type == PTN_INT && value.as.integer >= 0;
+    return value.type == PTN_INT && value.as.integer >= 0 && value.as.integer <= INT_MAX;
 }
 
 static int64_t ptn_date_period_state_integer(PtnArray *array, const char *name, int64_t default_value) {
@@ -170183,7 +170198,7 @@ static int64_t ptn_date_period_state_integer(PtnArray *array, const char *name, 
 static int ptn_date_period_state_bool_is_valid(PtnArray *array, const char *name) {
     PtnValue value;
     if (!ptn_date_period_state_entry_value(array, name, &value)) {
-        return 1;
+        return 0;
     }
     return value.type == PTN_BOOL;
 }
@@ -170199,20 +170214,30 @@ static int ptn_date_period_serialized_state_is_valid(PtnArray *array) {
     if (array == NULL) {
         return 0;
     }
-    PtnValue start = ptn_date_period_state_value(array, "start");
-    PtnValue current = ptn_date_period_state_value(array, "current");
-    PtnValue end = ptn_date_period_state_value(array, "end");
-    PtnValue interval = ptn_date_period_state_value(array, "interval");
+    PtnValue start;
+    PtnValue current;
+    PtnValue end;
+    PtnValue interval;
+    if (!ptn_date_period_state_entry_value(array, "start", &start) ||
+        !ptn_date_period_state_entry_value(array, "current", &current) ||
+        !ptn_date_period_state_entry_value(array, "end", &end) ||
+        !ptn_date_period_state_entry_value(array, "interval", &interval)) {
+        return 0;
+    }
     int start_is_null = start.type == PTN_NULL;
     int end_is_null = end.type == PTN_NULL;
     if ((!start_is_null && ptn_datetime_data_from_value(start) == NULL) ||
+        interval.type != PTN_OBJECT ||
+        interval.as.object == NULL ||
+        !ptn_ascii_case_equal(interval.as.object->class_name, "DateInterval") ||
         ptn_date_interval_data_from_value(interval) == NULL) {
         return 0;
     }
     if (start_is_null && !end_is_null) {
         return 0;
     }
-    if (current.type != PTN_NULL && ptn_datetime_data_from_value(current) == NULL) {
+    if (current.type != PTN_NULL &&
+        (start_is_null || ptn_datetime_data_from_value(current) == NULL)) {
         return 0;
     }
     if (end.type != PTN_NULL && ptn_datetime_data_from_value(end) == NULL) {
@@ -170962,25 +170987,38 @@ static PTN_UNUSED PtnValue ptn_date_period_new(
     }
     PtnValue start = ptn_value_deref(args[0]);
     PtnValue interval = ptn_value_deref(args[1]);
-    if (ptn_datetime_data_from_value(start) == NULL || ptn_date_interval_data_from_value(interval) == NULL) {
-        ptn_date_period_throw_constructor_arguments(runtime);
-        return ptn_null();
-    }
     int64_t options = argc == 4 ? ptn_value_to_integer(args[3]) : 0;
     PtnValue end = ptn_null();
     int64_t recurrences = 0;
     PtnValue third = ptn_value_deref(args[2]);
-    if (third.type == PTN_INT) {
+    int third_is_recurrence = third.type == PTN_INT;
+    int third_is_end = ptn_date_value_is_datetime_interface(third);
+    if (!ptn_date_value_is_datetime_interface(start) ||
+        !ptn_date_value_is_interval(interval) ||
+        (!third_is_recurrence && !third_is_end)) {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    if (ptn_datetime_data_from_value(start) == NULL) {
+        ptn_date_throw_uninitialized_named_object_error(runtime, "DateTimeInterface");
+        return ptn_null();
+    }
+    if (third_is_end && ptn_datetime_data_from_value(third) == NULL) {
+        ptn_date_throw_uninitialized_named_object_error(runtime, "DateTimeInterface");
+        return ptn_null();
+    }
+    if (ptn_date_interval_data_from_value(interval) == NULL) {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    if (third_is_recurrence) {
         recurrences = third.as.integer;
         if (recurrences < 1 || recurrences >= INT64_MAX) {
             ptn_date_period_throw_recurrence_count(runtime);
             return ptn_null();
         }
-    } else if (ptn_datetime_data_from_value(third) != NULL) {
-        end = third;
     } else {
-        ptn_date_period_throw_constructor_arguments(runtime);
-        return ptn_null();
+        end = third;
     }
     return ptn_date_period_create_object(
         runtime,
@@ -262709,7 +262747,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_object_new_shell(runtime, "stdClass");
         }
         if (ptn_ascii_case_equal(class_name, "DateTime") ||
-            ptn_internal_class_name_is_datetime_immutable(class_name)) {
+            ptn_internal_class_name_is_datetime_immutable(class_name) ||
+            ptn_internal_class_name_is_datetime_zone(class_name) ||
+            ptn_internal_class_name_is_date_interval(class_name) ||
+            ptn_internal_class_name_is_date_period(class_name)) {
             return ptn_object_new_shell(runtime, class_name);
         }
         if (ptn_internal_class_name_is_array_object(class_name)) {
@@ -271771,42 +271812,68 @@ static void ptn_date_period_unserialize_array(
     PtnValue current = ptn_date_period_state_value(array, "current");
     PtnValue end = ptn_date_period_state_value(array, "end");
     PtnValue interval = ptn_date_period_state_value(array, "interval");
-    int64_t recurrences_property = ptn_date_period_state_integer(array, "recurrences", 0);
     PtnDatePeriodData *previous_data = (PtnDatePeriodData *)object.as.object->native_data;
-    int previous_include_start_date = previous_data == NULL ? 1 : previous_data->include_start_date;
+    int64_t previous_recurrences_property = previous_data == NULL
+        ? 0
+        : previous_data->recurrences_property;
+    int previous_include_start_date = previous_data == NULL ? 0 : previous_data->include_start_date;
     int previous_include_end_date = previous_data == NULL ? 0 : previous_data->include_end_date;
 
+    if (!ptn_date_period_state_integer_is_valid(array, "recurrences")) {
+        if (previous_data != NULL) {
+            ptn_date_period_apply_unserialized_state(
+                runtime,
+                object,
+                start,
+                current,
+                end,
+                interval,
+                previous_recurrences_property,
+                previous_include_start_date,
+                previous_include_end_date,
+                line
+            );
+        }
+        ptn_throw_exception(runtime, "Error", "Invalid serialization data for DatePeriod object");
+        return;
+    }
+    int64_t recurrences_property = ptn_date_period_state_integer(array, "recurrences", 0);
+
     if (!ptn_date_period_state_bool_is_valid(array, "include_start_date")) {
-        ptn_date_period_apply_unserialized_state(
-            runtime,
-            object,
-            start,
-            current,
-            end,
-            interval,
-            recurrences_property,
-            previous_include_start_date,
-            previous_include_end_date,
-            line
-        );
+        if (previous_data != NULL) {
+            ptn_date_period_apply_unserialized_state(
+                runtime,
+                object,
+                start,
+                current,
+                end,
+                interval,
+                recurrences_property,
+                previous_include_start_date,
+                previous_include_end_date,
+                line
+            );
+        }
         ptn_throw_exception(runtime, "Error", "Invalid serialization data for DatePeriod object");
         return;
     }
     int include_start_date = ptn_date_period_state_bool(array, "include_start_date", 1);
 
     if (!ptn_date_period_state_bool_is_valid(array, "include_end_date")) {
-        ptn_date_period_apply_unserialized_state(
-            runtime,
-            object,
-            start,
-            current,
-            end,
-            interval,
-            recurrences_property,
-            include_start_date,
-            previous_include_end_date,
-            line
-        );
+        if (previous_data != NULL) {
+            ptn_date_period_apply_unserialized_state(
+                runtime,
+                object,
+                start,
+                current,
+                end,
+                interval,
+                recurrences_property,
+                include_start_date,
+                previous_include_end_date,
+                line
+            );
+        }
         ptn_throw_exception(runtime, "Error", "Invalid serialization data for DatePeriod object");
         return;
     }
