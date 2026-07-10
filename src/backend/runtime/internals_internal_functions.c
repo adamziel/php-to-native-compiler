@@ -165748,6 +165748,49 @@ static int ptn_datetime_parse_date_string(
             timezone_out
         );
     }
+    if (compact_digits == 14) {
+        const char *compact_timezone = NULL;
+        if (*compact_tail != '\0') {
+            size_t suffix_len = strcspn(compact_tail, " \t\r\n");
+            if (suffix_len == 0 || suffix_len >= sizeof(timezone_suffix)) {
+                return 0;
+            }
+            memcpy(timezone_suffix, compact_tail, suffix_len);
+            timezone_suffix[suffix_len] = '\0';
+            const char *after_timezone = ptn_datetime_skip_space_or_icu_separator(compact_tail + suffix_len);
+            if (*after_timezone != '\0') {
+                return 0;
+            }
+            compact_timezone = timezone_suffix;
+        }
+
+        year = 0;
+        for (size_t i = 0; i < 4; i++) {
+            year = year * 10 + (compact_cursor[i] - '0');
+        }
+        month = (compact_cursor[4] - '0') * 10 + (compact_cursor[5] - '0');
+        day = (compact_cursor[6] - '0') * 10 + (compact_cursor[7] - '0');
+        hour = (compact_cursor[8] - '0') * 10 + (compact_cursor[9] - '0');
+        minute = (compact_cursor[10] - '0') * 10 + (compact_cursor[11] - '0');
+        second = (compact_cursor[12] - '0') * 10 + (compact_cursor[13] - '0');
+        if (hour > 24 || minute > 59 || second > 60) {
+            return 0;
+        }
+        return ptn_datetime_components_to_timestamp(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            0,
+            compact_timezone,
+            default_timezone,
+            timestamp_out,
+            microsecond_out,
+            timezone_out
+        );
+    }
 
     consumed = 0;
     if (sscanf(input, " %lld-%d%n", &year, &ordinal_day, &consumed) == 2 &&

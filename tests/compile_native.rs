@@ -38971,6 +38971,63 @@ var_dump(DateTime::createFromFormat('O', 'invalid'));
 }
 
 #[test]
+fn compile_compact_datetime_with_timezone_to_native_binary() {
+    let root = temp_dir("ptn-native-compact-datetime-timezone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-datetime-timezone.php");
+    let output = root.join("compact-datetime-timezone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('GMT');
+echo gmdate('Y-m-d H:i:s', strtotime('20050620091407 GMT')), "\n";
+
+date_default_timezone_set('UTC');
+foreach (['20050620091407', '20050620091407 GMT', '20050620091407+0200', '20050620091407 GMT+0200'] as $source) {
+    echo gmdate('Y-m-d H:i:s', strtotime($source)), "\n";
+}
+echo gmdate('Y-m-d H:i:s', strtotime('20050620')), "\n";
+echo gmdate('Y-m-d H:i:s', strtotime('20050620240000')), "\n";
+echo gmdate('Y-m-d H:i:s', strtotime('20050620091460')), "\n";
+
+foreach (['20051320091407', '20050620251407', '20050620096007', '20050620091461', '20050620091407 Invalid/Zone'] as $source) {
+    var_dump(strtotime($source));
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2005-06-20 09:14:07\n",
+            "2005-06-20 09:14:07\n",
+            "2005-06-20 09:14:07\n",
+            "2005-06-20 07:14:07\n",
+            "2005-06-20 07:14:07\n",
+            "2005-06-20 00:00:00\n",
+            "2005-06-21 00:00:00\n",
+            "2005-06-20 09:15:00\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_parse_from_format_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-date-parse-from-format-diagnostics");
     fs::create_dir_all(&root).unwrap();
