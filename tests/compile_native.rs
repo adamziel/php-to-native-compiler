@@ -54279,9 +54279,67 @@ echo $dynamic(\"three\"), \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_has_call_magic"));
-    assert!(c_source.contains("ptn_magic_args[0] = ptn_string(method_name);"));
+    assert!(c_source.contains(
+        "ptn_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));"
+    ));
     assert!(c_source.contains("MagicBase::__call"));
     assert!(c_source.contains("ptn_call_callable(&runtime"));
+}
+
+#[test]
+fn compile_magic_call_arguments_dereference_transport_references_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-call-dereference-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-call-dereference-arguments.php");
+    let output = root.join("magic-call-dereference-arguments-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicArguments {
+    public function __call($name, $arguments) {
+        echo 'instance:', strlen($name), chr(10);
+        var_dump($arguments);
+        $arguments[0] = 'mutated';
+    }
+
+    public static function __callStatic($name, $arguments) {
+        echo 'static:', strlen($name), chr(10);
+        var_dump($arguments);
+        $arguments[0] = 'mutated';
+    }
+}
+
+$plain = 'plain';
+$target = 'referenced';
+$reference =& $target;
+$object = new MagicArguments();
+$nulMethod = chr(0) . 'ignored';
+$object->$nulMethod($plain);
+$object->normal($reference);
+MagicArguments::$nulMethod($plain);
+MagicArguments::normal($reference);
+var_dump($plain, $target, $reference);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "instance:0\narray(1) {\n  [0]=>\n  string(5) \"plain\"\n}\n",
+            "instance:6\narray(1) {\n  [0]=>\n  string(10) \"referenced\"\n}\n",
+            "static:0\narray(1) {\n  [0]=>\n  string(5) \"plain\"\n}\n",
+            "static:6\narray(1) {\n  [0]=>\n  string(10) \"referenced\"\n}\n",
+            "string(5) \"plain\"\n",
+            "string(10) \"referenced\"\n",
+            "string(10) \"referenced\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

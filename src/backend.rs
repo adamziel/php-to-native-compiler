@@ -16686,7 +16686,7 @@ fn emit_class_metadata_helpers(
         out.push_str("            }\n");
         out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
         out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
-        out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+        out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
         out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
         out.push_str("        }\n");
         let function = &functions[method.function_index];
@@ -16834,7 +16834,7 @@ fn emit_class_metadata_helpers(
             out.push_str("            }\n");
             out.push_str("            const char *ptn_trait_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_trait_magic_arg_i] : NULL;\n");
             out.push_str("            PtnArrayKey ptn_trait_magic_arg_key = ptn_trait_magic_arg_name != NULL ? ptn_array_string_key(ptn_trait_magic_arg_name) : ptn_array_int_key((int64_t)ptn_trait_magic_arg_i);\n");
-            out.push_str("            PtnValue ptn_trait_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_trait_magic_arg_i]) ? ptn_value_clone(args[ptn_trait_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_trait_magic_arg_i]));\n");
+            out.push_str("            PtnValue ptn_trait_magic_arg_value = ptn_value_deep_clone(ptn_value_deref(args[ptn_trait_magic_arg_i]));\n");
             out.push_str("            ptn_array_set_entry(ptn_trait_magic_args[1].as.array, ptn_trait_magic_arg_key, ptn_trait_magic_arg_value);\n");
             out.push_str("        }\n");
             emit_dynamic_method_deprecated_warning(
@@ -28843,7 +28843,7 @@ fn emit_scoped_instance_magic_call(
     out.push_str(indent);
     out.push_str("    PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
     out.push_str(indent);
-    out.push_str("    PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+    out.push_str("    PtnValue ptn_magic_arg_value = ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
     out.push_str(indent);
     out.push_str("    ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
     out.push_str(indent);
@@ -30326,7 +30326,7 @@ fn emit_method_dispatch(
             out.push_str("            }\n");
             out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
             out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
-            out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+            out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
             out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
             out.push_str("        }\n");
             let function = &functions[method.function_index];
