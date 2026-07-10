@@ -18,13 +18,16 @@ Usage:
   tools/run-phpt-oracle-campaign.sh [OPTIONS]
   tools/run-phpt-oracle-campaign.sh --resume RUN_DIR [--foreground]
 
-Prepare and run one target-PHP oracle campaign using one official php-src
-run-tests.php parent process. The default launch is detached through
-run-detached-check.sh. No compiler strict-run behavior is changed.
+Prepare and run one PHPT campaign using one official php-src run-tests.php
+parent process. The default launch is detached through run-detached-check.sh.
+Without --test-php this is a target-PHP oracle campaign.
 
 Options:
   --corpus DIR                 php-src checkout
-  --php FILE                   target PHP CLI used as harness and test binary
+  --php FILE                   target PHP CLI used to run the harness
+  --test-php FILE              PHP-compatible test binary (default: --php)
+  --test-source-revision REV   optional source commit for test-binary provenance
+  --test-source-root DIR       clean source worktree used to build the test binary
   --out-root DIR               campaign root (default: .runtime/phpt-oracle)
   --jobs N                     run-tests.php workers (default: 8)
   --timeout N                  per-test timeout seconds (default: 300)
@@ -39,7 +42,8 @@ Options:
 Each attempt runs in a disposable detached Git worktree, never in the canonical
 corpus checkout. It retains raw run-tests output, official -W results, a
 normalized ledger, hashes, and unresolved rows. A resumed attempt reruns the
-exact full inventory; it never merges partial evidence.
+exact full inventory; it never merges partial evidence. When --test-php differs
+from --php, the campaign is recorded as a strict native-compiler campaign.
 EOF
 }
 
@@ -118,6 +122,17 @@ append_event() {
 write_campaign_status() {
   local run_dir=$1 state=$2 outcome=$3 attempt=$4 run_tests_exit=$5 ledger_state=$6 attempt_dir=$7
   local metadata="$run_dir/metadata.tsv" temporary="$run_dir/.status.tsv.$$"
+  local metadata_schema campaign_kind test_php_sha test_source_revision
+  metadata_schema=$(metadata_value "$metadata" schema)
+  if [[ "$metadata_schema" == 2 ]]; then
+    campaign_kind=$(metadata_value "$metadata" campaign_kind)
+    test_php_sha=$(metadata_value "$metadata" test_php_binary_sha256)
+    test_source_revision=$(metadata_value "$metadata" test_source_revision)
+  else
+    campaign_kind=target-php-oracle
+    test_php_sha=$(metadata_value "$metadata" php_binary_sha256)
+    test_source_revision=-
+  fi
   {
     printf 'schema\t1\n'
     printf 'state\t%s\n' "$state"
@@ -127,6 +142,9 @@ write_campaign_status() {
     printf 'corpus_revision\t%s\n' "$(metadata_value "$metadata" corpus_revision)"
     printf 'inventory_count\t%s\n' "$(metadata_value "$metadata" inventory_count)"
     printf 'inventory_sha256\t%s\n' "$(metadata_value "$metadata" inventory_sha256)"
+    printf 'campaign_kind\t%s\n' "$campaign_kind"
+    printf 'test_php_binary_sha256\t%s\n' "$test_php_sha"
+    printf 'test_source_revision\t%s\n' "$test_source_revision"
     printf 'run_tests_exit\t%s\n' "$run_tests_exit"
     printf 'ledger_state\t%s\n' "$ledger_state"
     printf 'attempt_dir\t%s\n' "$attempt_dir"
@@ -139,14 +157,42 @@ validate_prepared_campaign() {
   [[ -d "$run_dir" && ! -L "$run_dir" ]] || die "campaign directory is invalid: $run_dir"
   [[ -f "$inventory" && ! -L "$inventory" ]] || die "campaign inventory is invalid: $inventory"
 
-  local corpus php revision count inventory_sha actual_revision actual_count actual_sha
+  local schema campaign_kind corpus php test_php test_php_sha revision count inventory_sha
+  local test_source_revision test_source_root actual_revision actual_count actual_sha campaign_ledger
+  schema=$(metadata_value "$metadata" schema)
+  [[ "$schema" == 1 || "$schema" == 2 ]] || die "unsupported campaign metadata schema: $schema"
   corpus=$(metadata_value "$metadata" corpus_root)
   php=$(metadata_value "$metadata" php_binary)
+  if [[ "$schema" == 2 ]]; then
+    campaign_kind=$(metadata_value "$metadata" campaign_kind)
+    test_php=$(metadata_value "$metadata" test_php_binary)
+    test_php_sha=$(metadata_value "$metadata" test_php_binary_sha256)
+    test_source_revision=$(metadata_value "$metadata" test_source_revision)
+    test_source_root=$(metadata_value "$metadata" test_source_root)
+    campaign_ledger="$run_dir/phpt-ledger.py"
+  else
+    campaign_kind=target-php-oracle
+    test_php=$php
+    test_php_sha=$(metadata_value "$metadata" php_binary_sha256)
+    test_source_revision=-
+    test_source_root=-
+    campaign_ledger=$ledger_tool
+  fi
   revision=$(metadata_value "$metadata" corpus_revision)
   count=$(metadata_value "$metadata" inventory_count)
   inventory_sha=$(metadata_value "$metadata" inventory_sha256)
   [[ -d "$corpus" && -f "$corpus/run-tests.php" ]] || die "prepared corpus is unavailable"
-  [[ -x "$php" && -f "$php" ]] || die "prepared PHP binary is unavailable"
+  [[ -x "$php" && -f "$php" ]] || die "prepared harness PHP binary is unavailable"
+  [[ -x "$test_php" && -f "$test_php" ]] || die "prepared test PHP binary is unavailable"
+  if [[ "$campaign_kind" == strict-native-compiler ]]; then
+    [[ "$test_source_root" != - && -d "$test_source_root" ]] ||
+      die "prepared test source root is unavailable"
+    [[ "$(git -C "$test_source_root" rev-parse HEAD 2>/dev/null || true)" == "$test_source_revision" ]] ||
+      die "prepared test source revision changed"
+    [[ -z "$(git -C "$test_source_root" status --porcelain=v1 --untracked-files=all \
+      --ignore-submodules=none | sed -n '1p')" ]] ||
+      die "prepared test source root is not clean"
+  fi
   is_revision "$revision" || die "prepared corpus revision is malformed"
   is_positive_integer "$count" || die "prepared inventory count is malformed"
   is_sha256 "$inventory_sha" || die "prepared inventory SHA-256 is malformed"
@@ -163,7 +209,15 @@ validate_prepared_campaign() {
   [[ "$actual_count" == "$count" ]] || die "prepared inventory count changed"
   [[ "$actual_sha" == "$inventory_sha" ]] || die "prepared inventory SHA-256 changed"
   [[ "$(sha256_file "$php")" == "$(metadata_value "$metadata" php_binary_sha256)" ]] ||
-    die "prepared PHP binary changed"
+    die "prepared harness PHP binary changed"
+  [[ "$(sha256_file "$test_php")" == "$test_php_sha" ]] ||
+    die "prepared test PHP binary changed"
+  if [[ "$schema" == 2 ]]; then
+    [[ -f "$campaign_ledger" && ! -L "$campaign_ledger" ]] ||
+      die "prepared ledger tool is missing"
+    [[ "$(sha256_file "$campaign_ledger")" == "$(metadata_value "$metadata" ledger_tool_sha256)" ]] ||
+      die "prepared ledger tool changed"
+  fi
   [[ "$(sha256_file "$corpus/run-tests.php")" == "$(metadata_value "$metadata" run_tests_sha256)" ]] ||
     die "prepared run-tests.php changed"
   [[ -f "$run_dir/php-n-modules.txt" && ! -L "$run_dir/php-n-modules.txt" ]] ||
@@ -177,12 +231,41 @@ validate_prepared_campaign() {
 }
 
 prepare_campaign() {
-  local corpus=$1 php=$2 out_root=$3 jobs=$4 timeout=$5 revision=$6 expected_count=$7 expected_sha=$8
+  local corpus=$1 php=$2 test_php=$3 test_source_revision=$4 test_source_root=$5
+  local out_root=$6 jobs=$7 timeout=$8 revision=$9 expected_count=${10} expected_sha=${11}
   [[ -d "$corpus" ]] || die "corpus directory does not exist: $corpus"
   corpus=$(absolute_dir "$corpus")
   [[ -f "$corpus/run-tests.php" ]] || die "run-tests.php is missing from corpus"
-  [[ -x "$php" && -f "$php" ]] || die "target PHP is not executable: $php"
+  [[ -x "$php" && -f "$php" ]] || die "harness PHP is not executable: $php"
   php=$(absolute_file "$php")
+  [[ -x "$test_php" && -f "$test_php" ]] || die "test PHP is not executable: $test_php"
+  test_php=$(absolute_file "$test_php")
+  local test_php_source=$test_php campaign_kind campaign_prefix
+  if [[ "$test_php" == "$php" ]]; then
+    campaign_kind=target-php-oracle
+    campaign_prefix=oracle
+  else
+    campaign_kind=strict-native-compiler
+    campaign_prefix=native
+    [[ "$test_source_revision" != - ]] ||
+      die "--test-source-revision is required when --test-php differs from --php"
+    [[ "$test_source_root" != - && -d "$test_source_root" ]] ||
+      die "--test-source-root is required when --test-php differs from --php"
+    test_source_root=$(absolute_dir "$test_source_root")
+    [[ "$(git -C "$test_source_root" rev-parse HEAD 2>/dev/null || true)" == "$test_source_revision" ]] ||
+      die "test source root revision does not match --test-source-revision"
+    [[ -z "$(git -C "$test_source_root" status --porcelain=v1 --untracked-files=all \
+      --ignore-submodules=none | sed -n '1p')" ]] ||
+      die "test source root must be clean"
+    case "$test_php_source" in
+      "$test_source_root"/*) ;;
+      *) die "--test-php must be inside --test-source-root" ;;
+    esac
+  fi
+  if [[ "$test_source_revision" != - ]]; then
+    is_revision "$test_source_revision" ||
+      die "--test-source-revision must be a full hexadecimal revision"
+  fi
   is_positive_integer "$jobs" || die "--jobs must be a positive integer"
   is_positive_integer "$timeout" || die "--timeout must be a positive integer"
   [[ "$jobs" -le 256 ]] || die "--jobs must not exceed 256"
@@ -202,10 +285,15 @@ prepare_campaign() {
 
   mkdir -p "$out_root"
   out_root=$(absolute_dir "$out_root")
-  local stamp run_dir inventory count inventory_sha php_version
+  local stamp run_dir inventory count inventory_sha php_version test_php_version
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  run_dir="$out_root/oracle-$stamp"
-  mkdir -p "$run_dir/attempts"
+  run_dir="$out_root/$campaign_prefix-$stamp"
+  mkdir -p "$run_dir/attempts" "$run_dir/bin"
+  install -m 0555 "$ledger_tool" "$run_dir/phpt-ledger.py"
+  if [[ "$campaign_kind" == strict-native-compiler ]]; then
+    install -m 0555 "$test_php_source" "$run_dir/bin/php-under-test"
+    test_php="$run_dir/bin/php-under-test"
+  fi
   inventory="$run_dir/inventory.txt"
   (
     cd "$corpus"
@@ -220,6 +308,8 @@ prepare_campaign() {
     die "inventory count mismatch: expected $expected_count, found $count"
   [[ "$inventory_sha" == "$expected_sha" ]] || die "inventory SHA-256 mismatch"
   php_version=$("$php" -n -r 'printf("%s|%s", PHP_VERSION, PHP_SAPI);')
+  test_php_version=$("$test_php" --version 2>&1 | sed -n '1p')
+  [[ -n "$test_php_version" ]] || die "test PHP did not report a version"
   "$php" -n -m > "$run_dir/php-n-modules.txt" 2>&1
   "$php" --ini > "$run_dir/php-ini.txt" 2>&1
   [[ $(wc -c < "$run_dir/php-n-modules.txt") -le 1048576 ]] ||
@@ -230,9 +320,14 @@ prepare_campaign() {
   assert_tsv_scalar corpus "$corpus"
   assert_tsv_scalar php "$php"
   assert_tsv_scalar php_version "$php_version"
+  assert_tsv_scalar test_php "$test_php"
+  assert_tsv_scalar test_php_source "$test_php_source"
+  assert_tsv_scalar test_php_version "$test_php_version"
+  assert_tsv_scalar test_source_revision "$test_source_revision"
+  assert_tsv_scalar test_source_root "$test_source_root"
   {
-    printf 'schema\t1\n'
-    printf 'campaign_kind\ttarget-php-oracle\n'
+    printf 'schema\t2\n'
+    printf 'campaign_kind\t%s\n' "$campaign_kind"
     printf 'created_at_utc\t%s\n' "$(utc_now)"
     printf 'corpus_root\t%s\n' "$corpus"
     printf 'corpus_revision\t%s\n' "$actual_revision"
@@ -241,9 +336,16 @@ prepare_campaign() {
     printf 'php_binary\t%s\n' "$php"
     printf 'php_binary_sha256\t%s\n' "$(sha256_file "$php")"
     printf 'php_version_sapi\t%s\n' "$php_version"
+    printf 'test_php_binary\t%s\n' "$test_php"
+    printf 'test_php_binary_sha256\t%s\n' "$(sha256_file "$test_php")"
+    printf 'test_php_source_binary\t%s\n' "$test_php_source"
+    printf 'test_php_version\t%s\n' "$test_php_version"
+    printf 'test_source_revision\t%s\n' "$test_source_revision"
+    printf 'test_source_root\t%s\n' "$test_source_root"
     printf 'php_n_modules_sha256\t%s\n' "$(sha256_file "$run_dir/php-n-modules.txt")"
     printf 'php_ini_sha256\t%s\n' "$(sha256_file "$run_dir/php-ini.txt")"
     printf 'run_tests_sha256\t%s\n' "$(sha256_file "$corpus/run-tests.php")"
+    printf 'ledger_tool_sha256\t%s\n' "$(sha256_file "$run_dir/phpt-ledger.py")"
     printf 'jobs\t%s\n' "$jobs"
     printf 'timeout_seconds\t%s\n' "$timeout"
   } > "$run_dir/metadata.tsv"
@@ -310,10 +412,21 @@ execute_campaign() {
   write_campaign_status "$run_dir" running in_progress "$attempt" - not_created "attempts/$attempt_name"
   append_event "$run_dir" started "$attempt" "one run-tests.php parent"
 
-  local corpus work_corpus php jobs timeout inventory raw log run_pid= signal_name= signal_code=
+  local schema campaign_kind corpus work_corpus php test_php campaign_ledger
+  local jobs timeout inventory raw log run_pid= signal_name= signal_code=
+  schema=$(metadata_value "$metadata" schema)
   corpus=$(metadata_value "$metadata" corpus_root)
   work_corpus="$attempt_dir/corpus"
   php=$(metadata_value "$metadata" php_binary)
+  if [[ "$schema" == 2 ]]; then
+    campaign_kind=$(metadata_value "$metadata" campaign_kind)
+    test_php=$(metadata_value "$metadata" test_php_binary)
+    campaign_ledger="$run_dir/phpt-ledger.py"
+  else
+    campaign_kind=target-php-oracle
+    test_php=$php
+    campaign_ledger=$ledger_tool
+  fi
   jobs=$(metadata_value "$metadata" jobs)
   timeout=$(metadata_value "$metadata" timeout_seconds)
   is_positive_integer "$jobs" && [[ "$jobs" -le 256 ]] || die "prepared jobs value is invalid"
@@ -386,15 +499,20 @@ execute_campaign() {
   trap 'forward_signal TERM 143' TERM
 
   local run_tests_args=(-q "-j$jobs" --set-timeout "$timeout")
-  run_tests_args+=(-p "$php" -r "$inventory" -W "$raw")
+  run_tests_args+=(-p "$test_php" -r "$inventory" -W "$raw")
+  local run_environment=(
+    NO_INTERACTION=1
+    REPORT_EXIT_STATUS=1
+    TEST_PHP_EXECUTABLE="$test_php"
+    TEST_PHP_LOG_FORMAT=LEODS
+  )
+  if [[ "$campaign_kind" == strict-native-compiler ]]; then
+    run_environment+=(TEST_PHP_CGI_EXECUTABLE="$test_php")
+  fi
   set +e
   (
     cd "$work_corpus" || exit 97
-    exec setsid env \
-      NO_INTERACTION=1 \
-      REPORT_EXIT_STATUS=1 \
-      TEST_PHP_EXECUTABLE="$php" \
-      TEST_PHP_LOG_FORMAT=LEODS \
+    exec setsid env "${run_environment[@]}" \
       "$php" "$work_corpus/run-tests.php" "${run_tests_args[@]}"
   ) > "$log" 2>&1 &
   run_pid=$!
@@ -408,7 +526,7 @@ execute_campaign() {
   fi
 
   set +e
-  python3 "$ledger_tool" \
+  python3 "$campaign_ledger" \
     --inventory "$inventory" \
     --results "$raw" \
     --ledger "$attempt_dir/ledger.tsv" \
@@ -472,7 +590,7 @@ launch_campaign() {
     execute_campaign "$run_dir"
   else
     local name
-    name="phpt-oracle-$(basename "$run_dir")"
+    name="phpt-campaign-$(basename "$run_dir")"
     PTN_DETACHED_CHECK_ROOT="$run_dir/detached" \
       "$detached_tool" "$name" -- "$script" --execute "$run_dir"
     printf 'campaign_run_dir=%s\ncampaign_status=%s/status.tsv\n' "$run_dir" "$run_dir"
@@ -487,6 +605,9 @@ fi
 
 corpus=$default_corpus
 php=$default_php
+test_php=
+test_source_revision=-
+test_source_root=-
 out_root="$repo_root/.runtime/phpt-oracle"
 jobs=${PTN_ORACLE_JOBS:-8}
 timeout=${PTN_ORACLE_TIMEOUT:-300}
@@ -501,6 +622,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --corpus) [[ $# -ge 2 ]] || die "--corpus requires a value"; corpus=$2; shift 2 ;;
     --php) [[ $# -ge 2 ]] || die "--php requires a value"; php=$2; shift 2 ;;
+    --test-php) [[ $# -ge 2 ]] || die "--test-php requires a value"; test_php=$2; shift 2 ;;
+    --test-source-revision)
+      [[ $# -ge 2 ]] || die "--test-source-revision requires a value"
+      test_source_revision=$2
+      shift 2
+      ;;
+    --test-source-root)
+      [[ $# -ge 2 ]] || die "--test-source-root requires a value"
+      test_source_root=$2
+      shift 2
+      ;;
     --out-root) [[ $# -ge 2 ]] || die "--out-root requires a value"; out_root=$2; shift 2 ;;
     --jobs) [[ $# -ge 2 ]] || die "--jobs requires a value"; jobs=$2; shift 2 ;;
     --timeout) [[ $# -ge 2 ]] || die "--timeout requires a value"; timeout=$2; shift 2 ;;
@@ -523,8 +655,10 @@ if [[ -n "$resume" ]]; then
   [[ "$prepare_only" -eq 0 ]] || die "--prepare-only cannot be combined with --resume"
   run_dir=$(absolute_dir "$resume")
 else
-  run_dir=$(prepare_campaign "$corpus" "$php" "$out_root" "$jobs" "$timeout" \
-    "$expected_revision" "$expected_count" "$expected_inventory_sha")
+  [[ -n "$test_php" ]] || test_php=$php
+  run_dir=$(prepare_campaign "$corpus" "$php" "$test_php" "$test_source_revision" \
+    "$test_source_root" "$out_root" "$jobs" "$timeout" "$expected_revision" \
+    "$expected_count" "$expected_inventory_sha")
 fi
 
 printf 'campaign_run_dir=%s\ninventory=%s/inventory.txt\nmetadata=%s/metadata.tsv\nstatus=%s/status.tsv\n' \

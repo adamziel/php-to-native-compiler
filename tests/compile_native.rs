@@ -19754,17 +19754,17 @@ $map[$obj] = new class {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stderr.contains("Fatal error: Uncaught Exception: Test in "),
-        "{stderr}"
+        stdout.contains("Fatal error: Uncaught Exception: Test in "),
+        "{stdout}"
     );
     assert!(
-        stderr.contains("#0 [internal function]: class@anonymous->__destruct()"),
-        "{stderr}"
+        stdout.contains("#0 [internal function]: class@anonymous->__destruct()"),
+        "{stdout}"
     );
-    assert!(stderr.contains("#1 {main}"), "{stderr}");
+    assert!(stdout.contains("#1 {main}"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

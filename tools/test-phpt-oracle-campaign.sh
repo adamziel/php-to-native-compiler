@@ -13,6 +13,12 @@ root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 corpus="$root/corpus"
 mkdir -p "$corpus/tests"
+test_php="$corpus/test-php"
+cat > "$test_php" <<'EOF'
+#!/usr/bin/env bash
+exec /home/claude/ptn-oracle/php-cli-8c63ec/bin/php "$@"
+EOF
+chmod +x "$test_php"
 cp "$target_run_tests" "$corpus/run-tests.php"
 
 cat > "$corpus/.gitignore" <<'EOF'
@@ -93,7 +99,7 @@ EOF
 git -C "$corpus" init -q
 git -C "$corpus" config user.email fixture@example.invalid
 git -C "$corpus" config user.name fixture
-git -C "$corpus" add .gitignore run-tests.php tests
+git -C "$corpus" add .gitignore run-tests.php test-php tests
 git -C "$corpus" commit -qm fixture
 revision=$(git -C "$corpus" rev-parse HEAD)
 inventory="$root/inventory.txt"
@@ -105,10 +111,45 @@ inventory="$root/inventory.txt"
 )
 inventory_sha=$(sha256sum "$inventory" | awk '{print $1}')
 
+oracle_prepare=$(
+  "$runner" \
+    --corpus "$corpus" \
+    --php "$target_php" \
+    --out-root "$root/oracle-runs" \
+    --jobs 2 \
+    --timeout 15 \
+    --expected-revision "$revision" \
+    --expected-count 6 \
+    --expected-inventory-sha "$inventory_sha" \
+    --prepare-only
+)
+oracle_run_dir=$(printf '%s\n' "$oracle_prepare" | awk -F= '$1 == "campaign_run_dir" { print $2; exit }')
+[[ -n "$oracle_run_dir" && -d "$oracle_run_dir" ]]
+[[ $(awk -F '\t' '$1 == "campaign_kind" { print $2 }' "$oracle_run_dir/metadata.tsv") == target-php-oracle ]]
+[[ $(awk -F '\t' '$1 == "test_php_binary" { print $2 }' "$oracle_run_dir/metadata.tsv") == "$target_php" ]]
+awk -F '\t' 'BEGIN { OFS="\t" }
+  $1 == "schema" { $2=1 }
+  $1 == "test_php_binary" ||
+  $1 == "test_php_binary_sha256" ||
+  $1 == "test_php_source_binary" ||
+  $1 == "test_php_version" ||
+  $1 == "test_source_revision" ||
+  $1 == "test_source_root" ||
+  $1 == "ledger_tool_sha256" { next }
+  { print }
+' "$oracle_run_dir/metadata.tsv" > "$oracle_run_dir/metadata.tsv.schema1"
+mv "$oracle_run_dir/metadata.tsv.schema1" "$oracle_run_dir/metadata.tsv"
+"$runner" --resume "$oracle_run_dir" --foreground >/dev/null
+[[ $(awk -F '\t' '$1 == "state" { print $2 }' "$oracle_run_dir/status.tsv") == finished ]]
+[[ $(awk -F '\t' '$1 == "PASS" { print $2 }' "$oracle_run_dir/attempts/0001/summary.tsv") == 4 ]]
+
 output=$(
   "$runner" \
     --corpus "$corpus" \
     --php "$target_php" \
+    --test-php "$test_php" \
+    --test-source-revision "$revision" \
+    --test-source-root "$corpus" \
     --out-root "$root/runs" \
     --jobs 2 \
     --timeout 15 \
@@ -120,12 +161,20 @@ output=$(
 run_dir=$(printf '%s\n' "$output" | awk -F= '$1 == "campaign_run_dir" { print $2; exit }')
 [[ -n "$run_dir" && -d "$run_dir" ]] || { echo "campaign run directory missing" >&2; exit 1; }
 [[ -s "$run_dir/php-n-modules.txt" && -s "$run_dir/php-ini.txt" ]]
+[[ $(awk -F '\t' '$1 == "campaign_kind" { print $2 }' "$run_dir/metadata.tsv") == strict-native-compiler ]]
+[[ $(awk -F '\t' '$1 == "test_php_binary" { print $2 }' "$run_dir/metadata.tsv") == "$run_dir/bin/php-under-test" ]]
+[[ $(awk -F '\t' '$1 == "test_php_source_binary" { print $2 }' "$run_dir/metadata.tsv") == "$test_php" ]]
+[[ $(awk -F '\t' '$1 == "test_source_revision" { print $2 }' "$run_dir/metadata.tsv") == "$revision" ]]
+[[ $(awk -F '\t' '$1 == "test_source_root" { print $2 }' "$run_dir/metadata.tsv") == "$corpus" ]]
+[[ -x "$run_dir/bin/php-under-test" && -x "$run_dir/phpt-ledger.py" ]]
 
 status="$run_dir/status.tsv"
 attempt="$run_dir/attempts/0001"
 [[ $(awk -F '\t' '$1 == "state" { print $2 }' "$status") == finished ]]
 [[ $(awk -F '\t' '$1 == "ledger_state" { print $2 }' "$status") == complete ]]
 [[ $(awk -F '\t' '$1 == "run_tests_exit" { print $2 }' "$status") == 0 ]]
+[[ $(awk -F '\t' '$1 == "campaign_kind" { print $2 }' "$status") == strict-native-compiler ]]
+[[ $(awk -F '\t' '$1 == "test_source_revision" { print $2 }' "$status") == "$revision" ]]
 [[ $(awk -F '\t' '$1 == "PASS" { print $2 }' "$attempt/summary.tsv") == 4 ]]
 [[ $(awk -F '\t' '$1 == "SKIP" { print $2 }' "$attempt/summary.tsv") == 1 ]]
 [[ $(awk -F '\t' '$1 == "XFAIL" { print $2 }' "$attempt/summary.tsv") == 1 ]]
