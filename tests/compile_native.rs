@@ -27832,6 +27832,7 @@ echo eval("return 10 >> 1;"), "\n";
 echo eval("return 6 & 3;"), "\n";
 echo eval("return 6 ^ 3;"), "\n";
 echo eval("return 6 | 3;"), "\n";
+var_dump(eval("return 0 <=> NAN;"), eval("return NAN <=> 0;"), eval("return NAN <=> NAN;"));
 var_dump(eval("return true || false xor true;"));
 $x = false;
 var_dump(eval('return $x = true xor false;'));
@@ -27888,6 +27889,9 @@ try {
             "2\n",
             "5\n",
             "7\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(1)\n",
             "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",

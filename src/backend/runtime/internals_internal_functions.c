@@ -294908,13 +294908,8 @@ static PtnValue ptn_eval_apply_binary_operator(
             return ptn_bool(ptn_compare_equal(runtime, left, right, line));
         case PTN_EVAL_BINARY_NOT_EQUAL:
             return ptn_bool(!ptn_compare_equal(runtime, left, right, line));
-        case PTN_EVAL_BINARY_SPACESHIP: {
-            int order = ptn_compare_order(runtime, left, right, line);
-            return ptn_int((int64_t)(
-                order == PTN_COMPARE_LESS ? -1 :
-                (order == PTN_COMPARE_GREATER ? 1 : 0)
-            ));
-        }
+        case PTN_EVAL_BINARY_SPACESHIP:
+            return ptn_int((int64_t)ptn_compare_spaceship(runtime, left, right, line));
         case PTN_EVAL_BINARY_IDENTICAL:
             return ptn_bool(ptn_compare_identical(runtime, left, right, line));
         case PTN_EVAL_BINARY_NOT_IDENTICAL:
