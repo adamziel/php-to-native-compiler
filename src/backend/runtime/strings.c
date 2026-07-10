@@ -144,6 +144,36 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(
         ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on array", path, line);
         return ptn_null();
     }
+    if (value.type == PTN_RESOURCE) {
+        ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on resource", path, line);
+        return ptn_null();
+    }
+    if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+        const char *type_name = "stdClass";
+        if (value.type == PTN_OBJECT &&
+            value.as.object != NULL &&
+            value.as.object->class_name != NULL) {
+            type_name = value.as.object->class_name;
+        } else if (value.type == PTN_CLOSURE) {
+            type_name = "Closure";
+        } else if (value.type == PTN_EXCEPTION &&
+                   value.as.exception != NULL &&
+                   value.as.exception->class_name != NULL) {
+            type_name = value.as.exception->class_name;
+        }
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot perform bitwise not on %s",
+            type_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "TypeError", message, path, line);
+        return ptn_null();
+    }
     return ptn_int(~ptn_bitwise_integer_operand_checked(runtime, value, line));
 }
 
@@ -160,29 +190,55 @@ static PTN_UNUSED int64_t ptn_shift_distance(PtnRuntime *runtime, PtnValue value
 static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, "<<", right, line);
+    int64_t left_integer = 0;
+    int64_t distance = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            "<<",
+            right,
+            line,
+            0,
+            0,
+            ptn_bitwise_integer_operand_checked,
+            &left_integer,
+            &distance
+        )) {
         return ptn_null();
     }
-    uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand_checked(runtime, left, line);
-    int64_t distance = ptn_shift_distance(runtime, right, line);
+    if (distance < 0) {
+        ptn_throw_exception_at(runtime, "ArithmeticError", "Bit shift by negative number", runtime->source_path, line);
+        return ptn_null();
+    }
     if (distance >= 64) {
         return ptn_int(0);
     }
-    return ptn_int((int64_t)(left_bits << (unsigned int)distance));
+    return ptn_int((int64_t)((uint64_t)left_integer << (unsigned int)distance));
 }
 
 static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, ">>", right, line);
+    int64_t left_integer = 0;
+    int64_t distance = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            ">>",
+            right,
+            line,
+            0,
+            0,
+            ptn_bitwise_integer_operand_checked,
+            &left_integer,
+            &distance
+        )) {
         return ptn_null();
     }
-    int64_t left_integer = ptn_bitwise_integer_operand_checked(runtime, left, line);
-    int64_t distance = ptn_shift_distance(runtime, right, line);
+    if (distance < 0) {
+        ptn_throw_exception_at(runtime, "ArithmeticError", "Bit shift by negative number", runtime->source_path, line);
+        return ptn_null();
+    }
     if (distance >= 64) {
         return ptn_int(left_integer < 0 ? -1 : 0);
     }
@@ -959,10 +1015,19 @@ static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     size_t line
 ) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_ARRAY) {
-        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
-    }
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static PTN_UNUSED int ptn_concat_emit_array_conversion_warning(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    if (ptn_value_deref(value).type != PTN_ARRAY) {
+        return 1;
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    return !ptn_runtime_has_active_exception(runtime);
 }
 
 static PTN_UNUSED void ptn_concat_enforce_memory_limit(
@@ -1007,9 +1072,31 @@ static PTN_UNUSED PtnValue ptn_concat_many(
         return ptn_string("");
     }
 
+    if (!ptn_concat_emit_array_conversion_warning(runtime, operands[0].value, operands[0].line) ||
+        (count > 1 && !ptn_concat_emit_array_conversion_warning(
+            runtime,
+            operands[1].value,
+            operands[1].line
+        ))) {
+        return ptn_null();
+    }
+
     size_t joined_len = 0;
     for (size_t i = 0; i < count; i++) {
+        if (i >= 2 &&
+            !ptn_concat_emit_array_conversion_warning(runtime, operands[i].value, operands[i].line)) {
+            for (size_t j = 0; j < i; j++) {
+                ptn_string_operand_free(strings[j]);
+            }
+            return ptn_null();
+        }
         strings[i] = ptn_concat_string_operand(runtime, operands[i].value, operands[i].line);
+        if (ptn_runtime_has_active_exception(runtime)) {
+            for (size_t j = 0; j <= i; j++) {
+                ptn_string_operand_free(strings[j]);
+            }
+            return ptn_null();
+        }
         if (strings[i].len > SIZE_MAX - joined_len) {
             ptn_abort_out_of_memory();
         }
@@ -1042,6 +1129,49 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
     PtnConcatOperand operands[] = { { left, line }, { right, line } };
     PtnStringOperand strings[2];
     return ptn_concat_many(runtime, operands, 2, strings);
+}
+
+static PTN_UNUSED PtnValue ptn_concat_assign(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    if (!ptn_concat_emit_array_conversion_warning(runtime, left, line)) {
+        return ptn_null();
+    }
+    PtnStringOperand left_string = ptn_concat_string_operand(runtime, left, line);
+    if (ptn_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(left_string);
+        return ptn_null();
+    }
+
+    if (!ptn_concat_emit_array_conversion_warning(runtime, right, line)) {
+        ptn_string_operand_free(left_string);
+        return ptn_null();
+    }
+    PtnStringOperand right_string = ptn_concat_string_operand(runtime, right, line);
+    if (ptn_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        return ptn_null();
+    }
+
+    if (left_string.len > SIZE_MAX - right_string.len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t joined_len = left_string.len + right_string.len;
+    ptn_concat_enforce_memory_limit(runtime, joined_len, line);
+    char *joined = malloc(joined_len + 1);
+    if (joined == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(joined, left_string.data, left_string.len);
+    memcpy(joined + left_string.len, right_string.data, right_string.len);
+    joined[joined_len] = '\0';
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return ptn_owned_string_len(joined, joined_len);
 }
 
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
@@ -1509,6 +1639,7 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_URL", 10002)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_FILE", 10001)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_HEADER", 42)
+    PTN_BUILTIN_INT_CONSTANT("CURLOPT_HTTPHEADER", 10023)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_UPLOAD", 46)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_INFILE", 10009)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_POST", 47)
@@ -1519,6 +1650,7 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_HEADERFUNCTION", 20079)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_WRITEHEADER", 10029)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_COOKIEFILE", 10031)
+    PTN_BUILTIN_INT_CONSTANT("CURLOPT_CUSTOMREQUEST", 10036)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_FOLLOWLOCATION", 52)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_HTTP_VERSION", 84)
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_PROTOCOLS", 181)
@@ -1534,6 +1666,8 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("CURLOPT_FNMATCH_FUNCTION", 20200)
     PTN_BUILTIN_INT_CONSTANT("CURLINFO_HEADER_OUT", 2)
     PTN_BUILTIN_INT_CONSTANT("CURLINFO_EFFECTIVE_URL", 1048577)
+    PTN_BUILTIN_INT_CONSTANT("CURLINFO_HTTP_CODE", 2097154)
+    PTN_BUILTIN_INT_CONSTANT("CURLINFO_RESPONSE_CODE", 2097154)
     PTN_BUILTIN_INT_CONSTANT("CURLINFO_HTTP_VERSION", 2097198)
     PTN_BUILTIN_INT_CONSTANT("CURL_HTTP_VERSION_1_1", 2)
     PTN_BUILTIN_INT_CONSTANT("CURLM_OK", 0)

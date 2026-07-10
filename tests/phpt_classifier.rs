@@ -13,6 +13,19 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+fn progress_run_log(progress: &std::path::Path) -> std::path::PathBuf {
+    fs::read_dir(progress)
+        .expect("read progress dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("run-") && name.ends_with(".log"))
+        })
+        .expect("run-tests log")
+}
+
 fn classify(body: &str) -> String {
     classify_with_harness_programs(body, false)
 }
@@ -578,7 +591,8 @@ fn run_bounded_phpt_passes_configured_native_timeout_to_run_tests() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("seen-timeout: 321"), "{stdout}");
+    let run_log = fs::read_to_string(progress_run_log(&progress)).expect("read run-tests log");
+    assert!(run_log.contains("seen-timeout: 321"), "{run_log}");
     assert!(
         stdout.contains("result: buckets=1 selected=1 runnable=1 excluded=0 tests=1 passed=1 failed=0 skipped=0 warned=0"),
         "{stdout}"
@@ -638,7 +652,8 @@ fn run_phpt_manifest_passes_configured_native_timeout_to_run_tests() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("seen-timeout: 77"), "{stdout}");
+    let run_log = fs::read_to_string(progress_run_log(&progress)).expect("read run-tests log");
+    assert!(run_log.contains("seen-timeout: 77"), "{run_log}");
     assert!(stdout.contains("timeout_seconds=77"), "{stdout}");
 }
 
@@ -2318,7 +2333,7 @@ fn phpt_classifier_splits_generator_runtime_residual_rows() {
 }
 
 #[test]
-fn phpt_classifier_allows_supported_fiber_constructor_and_current_surface() {
+fn phpt_classifier_allows_supported_fiber_public_surface() {
     let cases = [
         (
             "fiber constructor only",
@@ -2327,6 +2342,18 @@ fn phpt_classifier_allows_supported_fiber_constructor_and_current_surface() {
         (
             "fiber get current",
             "--TEST--\nfiber get current\n--FILE--\n<?php\nvar_dump(Fiber::getCurrent());\n$fiber = new Fiber(function (): void {\n    var_dump(Fiber::getCurrent());\n});\n$fiber->start();\n--EXPECTF--\n",
+        ),
+        (
+            "fiber suspend start resume",
+            "--TEST--\nfiber suspend resume\n--FILE--\n<?php\n$fiber = new Fiber(function (): void {\n    Fiber::suspend(\"pause\");\n});\n$fiber->start();\n$fiber->resume();\n--EXPECT--\n",
+        ),
+        (
+            "fiber throw",
+            "--TEST--\nfiber throw\n--FILE--\n<?php\n$fiber = new Fiber(function (): void {\n    try {\n        Fiber::suspend();\n    } catch (Exception $exception) {\n    }\n});\n$fiber->start();\n$fiber->throw(new Exception(\"boom\"));\n--EXPECT--\n",
+        ),
+        (
+            "fiber self reference and nested gc",
+            "--TEST--\nfiber gc\n--FILE--\n<?php\n$fiber = new Fiber(function () use (&$fiber) {\n    Fiber::suspend();\n    (new Fiber(function (): void {\n        gc_collect_cycles();\n    }))->start();\n});\n$fiber->start();\n$fiber->resume();\n--EXPECT--\n",
         ),
     ];
 

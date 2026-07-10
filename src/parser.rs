@@ -202,6 +202,7 @@ fn parse_with_options(
         return_by_ref_stack: Vec::new(),
         property_hook_body_depth: 0,
         active_property_hook_scope: None,
+        anonymous_class_declaration_fatal_stack: Vec::new(),
         strict_types: false,
         ticks: false,
         strict_types_declare_allowed: true,
@@ -283,6 +284,7 @@ struct Parser<'a> {
     return_by_ref_stack: Vec<bool>,
     property_hook_body_depth: usize,
     active_property_hook_scope: Option<ActivePropertyHookScope>,
+    anonymous_class_declaration_fatal_stack: Vec<(String, Vec<ClassDeclarationFatal>)>,
     strict_types: bool,
     ticks: bool,
     strict_types_declare_allowed: bool,
@@ -4095,6 +4097,34 @@ impl Parser<'_> {
         self.property_hook_body_depth = saved_depth;
         self.active_property_hook_scope = saved_scope;
         result
+    }
+
+    fn defer_current_anonymous_class_declaration_fatal(
+        &mut self,
+        diagnostic: Diagnostic,
+    ) -> Result<()> {
+        let Some(span) = diagnostic.span else {
+            return Err(diagnostic);
+        };
+        let active_class_name = self
+            .active_type_scope
+            .as_ref()
+            .map(|scope| scope.class_name.clone());
+        let Some((class_name, fatals)) = self.anonymous_class_declaration_fatal_stack.last_mut()
+        else {
+            return Err(diagnostic);
+        };
+        if active_class_name
+            .as_deref()
+            .is_none_or(|active| !active.eq_ignore_ascii_case(class_name))
+        {
+            return Err(diagnostic);
+        }
+        fatals.push(ClassDeclarationFatal {
+            message: diagnostic.message,
+            span,
+        });
+        Ok(())
     }
 
     fn parse_property_hook_set_parameters(
@@ -9139,48 +9169,54 @@ impl Parser<'_> {
                                     || name.eq_ignore_ascii_case("set"))
                         }) {
                             if self.active_type_scope.is_none() {
-                                return Err(Diagnostic::new(
-                                    "Cannot use \"parent\" when no class scope is active",
-                                    Some(start_span),
-                                ));
+                                self.defer_current_anonymous_class_declaration_fatal(
+                                    Diagnostic::new(
+                                        "Cannot use \"parent\" when no class scope is active",
+                                        Some(start_span),
+                                    ),
+                                )?;
                             }
-                            match self.active_property_hook_scope.as_ref() {
+                            let active_property_hook_scope =
+                                self.active_property_hook_scope.clone();
+                            match active_property_hook_scope.as_ref() {
                                 Some(active_hook) => {
                                     if active_hook.property_name != *property_name {
-                                        return Err(Diagnostic::new(
+                                        self.defer_current_anonymous_class_declaration_fatal(Diagnostic::new(
                                             format!(
                                                 "Must not use parent::${property_name}::{}() in a different property (${active_property_name})",
                                                 hook_name,
                                                 active_property_name = active_hook.property_name
                                             ),
                                             Some(start_span),
-                                        ));
+                                        ))?;
                                     }
                                     if !active_hook.hook_name.eq_ignore_ascii_case(hook_name) {
-                                        return Err(Diagnostic::new(
+                                        self.defer_current_anonymous_class_declaration_fatal(Diagnostic::new(
                                             format!(
                                                 "Must not use parent::${property_name}::{}() in a different property hook ({})",
                                                 hook_name, active_hook.hook_name
                                             ),
                                             Some(start_span),
-                                        ));
+                                        ))?;
                                     }
                                 }
                                 None => {
-                                    return Err(Diagnostic::new(
+                                    self.defer_current_anonymous_class_declaration_fatal(Diagnostic::new(
                                         format!(
                                             "Must not use parent::${property_name}::{}() outside a property hook",
                                             hook_name
                                         ),
                                         Some(start_span),
-                                    ));
+                                    ))?;
                                 }
                             }
                             if self.peek_is_first_class_callable_arguments() {
-                                return Err(Diagnostic::new(
-                                    "Cannot create Closure for parent property hook call",
-                                    Some(member_span),
-                                ));
+                                self.defer_current_anonymous_class_declaration_fatal(
+                                    Diagnostic::new(
+                                        "Cannot create Closure for parent property hook call",
+                                        Some(member_span),
+                                    ),
+                                )?;
                             }
                             let (arguments, argument_names, argument_unpacks, right_span) =
                                 self.parse_call_arguments()?;
@@ -9628,6 +9664,7 @@ impl Parser<'_> {
             return_by_ref_stack: self.return_by_ref_stack.clone(),
             property_hook_body_depth: self.property_hook_body_depth,
             active_property_hook_scope: self.active_property_hook_scope.clone(),
+            anonymous_class_declaration_fatal_stack: Vec::new(),
             strict_types: self.strict_types,
             ticks: self.ticks,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
@@ -10395,6 +10432,9 @@ impl Parser<'_> {
 
         let class_name = self.next_anonymous_class_name(parent_name.as_deref(), &interfaces);
         self.expect_left_brace()?;
+        // Anonymous classes are declared when their `new class` expression executes.
+        self.anonymous_class_declaration_fatal_stack
+            .push((class_name.clone(), Vec::new()));
         let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
             class_name: class_name.clone(),
             parent_name: parent_name.clone(),
@@ -10440,6 +10480,10 @@ impl Parser<'_> {
         }
         self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
+        let (_, declaration_fatals) = self
+            .anonymous_class_declaration_fatal_stack
+            .pop()
+            .expect("anonymous class declaration fatal stack");
         let span = combine_spans(start_span, right_span);
         let source = self
             .source
@@ -10452,7 +10496,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
-            declaration_fatals: Vec::new(),
+            declaration_fatals,
             attributes,
             doc_comment: self.doc_comment_before(start_span.byte_start),
             is_conditionally_declared: false,
@@ -16540,7 +16584,16 @@ fn validate_method_signature_compatibility(
             }
 
             let mut interface_methods = Vec::new();
-            collect_class_interface_methods(class, &method.name, classes, &mut interface_methods);
+            if method.name.eq_ignore_ascii_case("__construct") {
+                collect_constructor_interface_methods(
+                    class,
+                    visible_parent_method,
+                    classes,
+                    &mut interface_methods,
+                );
+            } else {
+                collect_class_interface_methods(class, &method.name, classes, &mut interface_methods);
+            }
             for (interface, interface_method) in interface_methods {
                 if visibility_rank(method.visibility) > visibility_rank(interface_method.visibility)
                 {
@@ -17018,6 +17071,99 @@ fn collect_class_interface_methods<'a>(
         &mut seen_interfaces,
         methods,
     );
+}
+
+fn collect_constructor_interface_methods<'a>(
+    class: &'a ClassDecl,
+    visible_parent_constructor: Option<(&'a ClassDecl, &'a MethodDecl)>,
+    classes: &'a [ClassDecl],
+    methods: &mut Vec<(&'a ClassDecl, &'a MethodDecl)>,
+) {
+    let mut direct_interface_methods = Vec::new();
+    let mut seen_direct_interfaces = HashSet::new();
+    for interface_name in &class.interfaces {
+        collect_interface_methods(
+            interface_name,
+            "__construct",
+            classes,
+            &mut seen_direct_interfaces,
+            &mut direct_interface_methods,
+        );
+    }
+    methods.extend(direct_interface_methods);
+
+    if let Some((parent_class, parent_method)) = visible_parent_constructor {
+        if !parent_method.is_abstract {
+            if let Some(prototype) = find_constructor_interface_prototype(parent_class, classes) {
+                /* PORT NOTE: zend assigns one interface prototype to a concrete
+                 * constructor. Child constructors validate against that prototype,
+                 * not every interface inherited by the parent class. */
+                methods.push(prototype);
+                return;
+            }
+        }
+    }
+
+    if !methods.is_empty() {
+        return;
+    }
+
+    collect_class_interface_methods(class, "__construct", classes, methods);
+}
+
+fn find_constructor_interface_prototype<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    fn find_in_interface<'a>(
+        interface_name: &str,
+        classes: &'a [ClassDecl],
+        seen_interfaces: &mut HashSet<String>,
+    ) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+        let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+        if !seen_interfaces.insert(lookup_name) {
+            return None;
+        }
+        let interface = find_class(classes, interface_name)?;
+        if !interface.is_interface {
+            return None;
+        }
+        if let Some(method) = interface.methods.iter().find(|method| {
+            method.visibility == PropertyVisibility::Public
+                && method.name.eq_ignore_ascii_case("__construct")
+        }) {
+            return Some((interface, method));
+        }
+        for parent_interface in &interface.interfaces {
+            if let Some(prototype) =
+                find_in_interface(parent_interface, classes, seen_interfaces)
+            {
+                return Some(prototype);
+            }
+        }
+        None
+    }
+
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in candidate.interfaces.iter().rev() {
+            if let Some(prototype) =
+                find_in_interface(interface_name, classes, &mut seen_interfaces)
+            {
+                return Some(prototype);
+            }
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|parent_name| find_class(classes, parent_name));
+    }
+    None
 }
 
 fn collect_class_trait_abstract_methods<'a>(
@@ -26593,6 +26739,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "CURLOPT_INFILE"
             | "CURLOPT_POST"
             | "CURLOPT_POSTFIELDS"
+            | "CURLOPT_HTTPHEADER"
+            | "CURLOPT_CUSTOMREQUEST"
             | "CURLOPT_WRITEFUNCTION"
             | "CURLOPT_READFUNCTION"
             | "CURLOPT_RETURNTRANSFER"
@@ -26621,6 +26769,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PATHINFO_ALL"
             | "CURLINFO_HEADER_OUT"
             | "CURLINFO_EFFECTIVE_URL"
+            | "CURLINFO_HTTP_CODE"
+            | "CURLINFO_RESPONSE_CODE"
             | "CURLINFO_HTTP_VERSION"
             | "CURL_HTTP_VERSION_1_1"
             | "CURLM_OK"

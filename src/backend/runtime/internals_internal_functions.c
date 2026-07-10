@@ -9474,7 +9474,7 @@ static PtnValue ptn_output_buffer_apply_callback(
         if (runtime->exceptions->active_exception == NULL) {
             runtime->exceptions->active_exception = saved_active_exception;
         } else {
-            ptn_exception_chain_previous_if_missing(
+            ptn_exception_chain_previous_at_tail(
                 runtime->exceptions->active_exception,
                 saved_active_exception
             );
@@ -30835,7 +30835,10 @@ static PtnValue ptn_array_splice_values(
     return removed;
 }
 
-static void ptn_array_splice_capture_active_exception(PtnRuntime *runtime, PtnException **primary) {
+static void ptn_array_splice_capture_active_exception(
+    PtnRuntime *runtime,
+    PtnException **primary
+) {
     if (runtime == NULL || runtime->exceptions == NULL ||
         runtime->exceptions->active_exception == NULL) {
         return;
@@ -58558,7 +58561,7 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     }
     const char *method_name = data->is_directory ? "dir_closedir" : "stream_close";
     if (data->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, method_name)) {
+        !ptn_object_has_declared_or_call_method(data->runtime, data->wrapper_object, method_name)) {
         return;
     }
     PtnValue result = data->runtime->method_dispatch(
@@ -59756,10 +59759,7 @@ static int ptn_try_open_user_stream_wrapper(
     if (wrapper == NULL) {
         return 0;
     }
-    int url_include_context = ptn_user_stream_include_callback_depth > 0 &&
-        function_name != NULL &&
-        (ptn_ascii_case_equal(function_name, "include") ||
-            ptn_ascii_case_equal(function_name, "require"));
+    int url_include_context = ptn_user_stream_include_callback_depth > 0;
     if (wrapper->is_url &&
         ((url_include_context && !ptn_runtime_allow_url_include()) ||
             (!url_include_context && !ptn_runtime_allow_url_fopen()))) {
@@ -59803,7 +59803,7 @@ static int ptn_try_open_user_stream_wrapper(
         *out = ptn_bool(0);
         return 1;
     }
-    if (!ptn_object_has_declared_method(runtime, object, "stream_open")) {
+    if (!ptn_object_has_declared_or_call_method(runtime, object, "stream_open")) {
         ptn_user_stream_emit_open_failed_warning(runtime, function_name, path, object, wrapper, 1, line);
         ptn_value_destroy(&object);
         *out = ptn_bool(0);
@@ -61774,7 +61774,7 @@ static PtnValue ptn_stream_bucket_object(PtnRuntime *runtime, const char *data, 
     }
     PtnResource *bucket_resource = ptn_resource_new_named("userfilter.bucket");
     bucket_resource->close_hook_data = bucket_moved;
-    bucket_resource->close_hook_data_free = free;
+    bucket_resource->close_hook_data_free = ptn_request_free;
     ptn_array_set_entry(
         bucket.as.object->properties,
         ptn_array_string_key("bucket"),
@@ -66166,6 +66166,7 @@ static PtnValue ptn_stream_read_remaining(
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    int user_stream_eof_seen = 0;
     for (;;) {
         size_t available = ptn_stream_filtered_read_pending_available(resource);
         if (available != 0) {
@@ -66176,6 +66177,9 @@ static PtnValue ptn_stream_read_remaining(
             size_t copied = ptn_stream_filtered_read_pending_take(resource, pending, available);
             ptn_string_buffer_append_len(&buffer, pending, copied);
             free(pending);
+        }
+        if (user_stream_eof_seen) {
+            break;
         }
         errno = 0;
         int fill_ok = 1;
@@ -66226,6 +66230,31 @@ static PtnValue ptn_stream_read_remaining(
             ptn_stream_clear_error(resource);
             free(buffer.data);
             return ptn_bool(0);
+        }
+        if (ptn_user_stream_resource_data(resource) != NULL) {
+            int user_stream_eof_handled = 0;
+            int user_stream_eof = ptn_user_stream_eof(
+                runtime,
+                resource,
+                line,
+                &user_stream_eof_handled
+            );
+            if (runtime != NULL &&
+                runtime->exceptions != NULL &&
+                runtime->exceptions->active_exception != NULL) {
+                free(buffer.data);
+                return ptn_bool(0);
+            }
+            if (user_stream_eof_handled && user_stream_eof) {
+                ptn_stream_flush_read_filters_closing(runtime, function_name, resource, line);
+                if (runtime != NULL &&
+                    runtime->exceptions != NULL &&
+                    runtime->exceptions->active_exception != NULL) {
+                    free(buffer.data);
+                    return ptn_bool(0);
+                }
+                user_stream_eof_seen = 1;
+            }
         }
     }
     return ptn_owned_string_buffer_value(&buffer);
@@ -68577,179 +68606,6 @@ static int ptn_file_get_contents_validate_context_arg(
     return 1;
 }
 
-static int ptn_file_get_contents_localhost_host(const char *start, size_t len) {
-    const char *colon = memchr(start, ':', len);
-    size_t host_len = colon == NULL ? len : (size_t)(colon - start);
-    return (host_len == 9 && ptn_ascii_case_equal_n(start, "localhost", 9)) ||
-        (host_len == 9 && strncmp(start, "127.0.0.1", 9) == 0);
-}
-
-static char *ptn_file_get_contents_runtime_source_dir(PtnRuntime *runtime, size_t *len_out) {
-    const char *source_path = runtime != NULL && runtime->source_path != NULL
-        ? runtime->source_path
-        : "";
-    const char *slash = strrchr(source_path, '/');
-    const char *backslash = strrchr(source_path, '\\');
-    const char *separator = slash != NULL && (backslash == NULL || slash > backslash)
-        ? slash
-        : backslash;
-    if (separator == NULL) {
-        *len_out = 0;
-        return ptn_duplicate_string("");
-    }
-    *len_out = separator == source_path ? 1 : (size_t)(separator - source_path);
-    return ptn_duplicate_string_len(source_path, *len_out);
-}
-
-static char *ptn_file_get_contents_loopback_target_path(PtnRuntime *runtime, const char *url) {
-    const char *prefix = "http://";
-    size_t prefix_len = strlen(prefix);
-    if (strncmp(url, prefix, prefix_len) != 0) {
-        return NULL;
-    }
-    const char *authority = url + prefix_len;
-    const char *path = strchr(authority, '/');
-    if (path == NULL || path[1] == '\0') {
-        return NULL;
-    }
-    if (!ptn_file_get_contents_localhost_host(authority, (size_t)(path - authority))) {
-        return NULL;
-    }
-    const char *query = strchr(path, '?');
-    size_t path_len = query == NULL ? strlen(path) : (size_t)(query - path);
-    if (path_len <= 1 || memchr(path, '\\', path_len) != NULL) {
-        return NULL;
-    }
-    for (size_t i = 1; i + 1 < path_len; i++) {
-        if (path[i] == '.' && path[i + 1] == '.' &&
-            (i == 1 || path[i - 1] == '/') &&
-            (i + 2 == path_len || path[i + 2] == '/')) {
-            return NULL;
-        }
-    }
-
-    size_t dir_len = 0;
-    char *dir = ptn_file_get_contents_runtime_source_dir(runtime, &dir_len);
-    size_t slash_len = dir_len > 0 && dir[dir_len - 1] == '/' ? 0 : 1;
-    size_t target_len = dir_len + slash_len + path_len - 1;
-    char *target = malloc(target_len + 1);
-    if (target == NULL) {
-        free(dir);
-        ptn_abort_out_of_memory();
-    }
-    size_t offset = 0;
-    if (dir_len != 0) {
-        memcpy(target, dir, dir_len);
-        offset = dir_len;
-        if (slash_len != 0) {
-            target[offset++] = '/';
-        }
-    }
-    memcpy(target + offset, path + 1, path_len - 1);
-    target[target_len] = '\0';
-    free(dir);
-    return target;
-}
-
-static int ptn_file_get_contents_decode_stub_escape(unsigned char byte, unsigned char *out) {
-    switch (byte) {
-        case 'n':
-            *out = '\n';
-            return 1;
-        case 'r':
-            *out = '\r';
-            return 1;
-        case 't':
-            *out = '\t';
-            return 1;
-        case '\\':
-        case '\'':
-        case '"':
-            *out = byte;
-            return 1;
-        default:
-            *out = byte;
-            return 1;
-    }
-}
-
-static int ptn_file_get_contents_phar_stub_echo_bytes(
-    const unsigned char *bytes,
-    size_t len,
-    unsigned char **data_out,
-    size_t *len_out
-) {
-    const char *halt = "__HALT_COMPILER";
-    const char *halt_at = ptn_memmem_simple((const char *)bytes, len, halt, strlen(halt));
-    size_t limit = halt_at == NULL ? len : (size_t)(halt_at - (const char *)bytes);
-    const char *echo_word = "echo";
-    const char *echo_at = ptn_memmem_simple((const char *)bytes, limit, echo_word, strlen(echo_word));
-    if (echo_at == NULL) {
-        return 0;
-    }
-    size_t cursor = (size_t)(echo_at - (const char *)bytes) + strlen(echo_word);
-    while (cursor < limit && isspace(bytes[cursor])) {
-        cursor++;
-    }
-    if (cursor >= limit || (bytes[cursor] != '\'' && bytes[cursor] != '"')) {
-        return 0;
-    }
-    unsigned char quote = bytes[cursor++];
-    unsigned char *out = malloc(limit - cursor + 1);
-    if (out == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    size_t out_len = 0;
-    while (cursor < limit) {
-        unsigned char byte = bytes[cursor++];
-        if (byte == quote) {
-            *data_out = out;
-            *len_out = out_len;
-            return 1;
-        }
-        if (byte == '\\' && cursor < limit) {
-            unsigned char decoded = 0;
-            ptn_file_get_contents_decode_stub_escape(bytes[cursor++], &decoded);
-            out[out_len++] = decoded;
-        } else {
-            out[out_len++] = byte;
-        }
-    }
-    free(out);
-    return 0;
-}
-
-static int ptn_file_get_contents_loopback_http_bytes(
-    PtnRuntime *runtime,
-    const char *path,
-    unsigned char **data_out,
-    size_t *len_out
-) {
-    char *target = ptn_file_get_contents_loopback_target_path(runtime, path);
-    if (target == NULL) {
-        return 0;
-    }
-    unsigned char *bytes = NULL;
-    size_t len = 0;
-    int read_result = ptn_read_file_bytes(target, &bytes, &len);
-    free(target);
-    if (read_result <= 0) {
-        free(bytes);
-        return 0;
-    }
-    size_t path_len = strlen(path);
-    int is_phar_front_controller = path_len >= strlen(".phar.php") &&
-        strncmp(path + path_len - strlen(".phar.php"), ".phar.php", strlen(".phar.php")) == 0;
-    if (is_phar_front_controller &&
-        ptn_file_get_contents_phar_stub_echo_bytes(bytes, len, data_out, len_out)) {
-        free(bytes);
-        return 1;
-    }
-    *data_out = bytes;
-    *len_out = len;
-    return 1;
-}
-
 static int ptn_file_get_contents_uri_parser_accepts(
     PtnRuntime *runtime,
     const char *path,
@@ -69521,9 +69377,6 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             return ptn_bool(0);
         }
         ptn_value_destroy(&user_stream);
-    }
-    if (read_result == 0) {
-        read_result = ptn_file_get_contents_loopback_http_bytes(runtime, path, &data, &data_len);
     }
     if (read_result == 0 &&
         strlen(path) >= strlen("http://") &&
@@ -70881,6 +70734,8 @@ static const char *ptn_system_temp_dir(void) {
     return ".";
 }
 
+static const char *ptn_runtime_resolved_temp_dir(PtnRuntime *runtime);
+
 static char *ptn_tempnam_prefix_basename(const char *prefix) {
     const char *start = prefix;
     for (const char *cursor = prefix; *cursor != '\0'; cursor++) {
@@ -70896,11 +70751,10 @@ static char *ptn_tempnam_prefix_basename(const char *prefix) {
 }
 
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
-    return ptn_owned_string(ptn_duplicate_string(ptn_system_temp_dir()));
+    return ptn_owned_string(ptn_duplicate_string(ptn_runtime_resolved_temp_dir(runtime)));
 }
 
 static int ptn_tempnam_directory_is_usable(const char *directory) {
@@ -70918,11 +70772,11 @@ static int ptn_tempnam_directory_is_usable(const char *directory) {
 #endif
 }
 
-static char *ptn_tempnam_template(const char *directory, const char *prefix, int *used_fallback) {
+static char *ptn_tempnam_template(PtnRuntime *runtime, const char *directory, const char *prefix, int *used_fallback) {
     *used_fallback = 0;
     const char *selected_dir = directory;
     if (!ptn_tempnam_directory_is_usable(selected_dir)) {
-        selected_dir = ptn_system_temp_dir();
+        selected_dir = ptn_runtime_resolved_temp_dir(runtime);
         *used_fallback = directory[0] != '\0';
     }
     char *resolved_dir = NULL;
@@ -70976,7 +70830,7 @@ static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_null();
     }
     int used_fallback = 0;
-    char *templ = ptn_tempnam_template(directory, prefix, &used_fallback);
+    char *templ = ptn_tempnam_template(runtime, directory, prefix, &used_fallback);
     if (used_fallback) {
         ptn_emit_notice_with_path(
             &runtime->diagnostics,
@@ -76372,6 +76226,7 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_URL 10002
 #define PTN_CURLOPT_FILE 10001
 #define PTN_CURLOPT_HEADER 42
+#define PTN_CURLOPT_HTTPHEADER 10023
 #define PTN_CURLOPT_UPLOAD 46
 #define PTN_CURLOPT_INFILE 10009
 #define PTN_CURLOPT_POST 47
@@ -76382,6 +76237,7 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_HEADERFUNCTION 20079
 #define PTN_CURLOPT_WRITEHEADER 10029
 #define PTN_CURLOPT_COOKIEFILE 10031
+#define PTN_CURLOPT_CUSTOMREQUEST 10036
 #define PTN_CURLOPT_FOLLOWLOCATION 52
 #define PTN_CURLOPT_HTTP_VERSION 84
 #define PTN_CURLOPT_PROTOCOLS 181
@@ -76399,14 +76255,41 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 #define PTN_CURLOPT_FNMATCH_FUNCTION 20200
 #define PTN_CURLINFO_HEADER_OUT 2
 #define PTN_CURLINFO_EFFECTIVE_URL 1048577
+#define PTN_CURLINFO_HTTP_CODE 2097154
 #define PTN_CURLINFO_HTTP_VERSION 2097198
 #define PTN_CURL_HTTP_VERSION_1_1 2
+#define PTN_CURL_HTTP_VERSION_1_0 1
 #define PTN_CURLM_OK 0
 #define PTN_CURLM_CALL_MULTI_PERFORM -1
 #define PTN_CURLM_BAD_HANDLE 1
 #define PTN_CURLMSG_DONE 1
 #define PTN_CURLE_OK 0
 #define PTN_CURLE_UNSUPPORTED_PROTOCOL 1
+#define PTN_CURLE_COULDNT_CONNECT 7
+
+typedef struct {
+    char *request;
+    size_t request_len;
+    char *headers;
+    size_t headers_len;
+    unsigned char *body;
+    size_t body_len;
+    int status_code;
+    int http_version;
+} PtnHttpTransportResponse;
+
+static void ptn_http_transport_response_free(PtnHttpTransportResponse *response);
+static int ptn_http_transport_request(
+    PtnRuntime *runtime,
+    const char *url,
+    const char *method,
+    const char *headers,
+    size_t headers_len,
+    const unsigned char *body,
+    size_t body_len,
+    PtnHttpTransportResponse *response,
+    size_t line
+);
 #define PTN_CURLPROTO_FILE 1024
 #define PTN_CURL_LOCK_DATA_COOKIE 2
 #define PTN_CURL_LOCK_DATA_DNS 3
@@ -76741,224 +76624,23 @@ static char *ptn_curl_file_url_path(PtnStringOperand url) {
     return NULL;
 }
 
-typedef struct {
-    char *authority;
-    char *path;
-    char *query;
-} PtnCurlHttpTarget;
-
-static void ptn_curl_http_target_free(PtnCurlHttpTarget *target) {
-    if (target == NULL) {
-        return;
+static char *ptn_curl_transport_url_alloc(const char *url, size_t url_len) {
+    if (ptn_memmem_simple(url, url_len, "://", 3) != NULL) {
+        return ptn_duplicate_string_len(url, url_len);
     }
-    free(target->authority);
-    free(target->path);
-    free(target->query);
-    target->authority = NULL;
-    target->path = NULL;
-    target->query = NULL;
-}
-
-static int ptn_curl_http_host_is_modeled(const char *host, size_t host_len) {
-    return (host_len == 9 && ptn_ascii_case_equal_n(host, "localhost", 9)) ||
-        (host_len == 9 && memcmp(host, "127.0.0.1", 9) == 0);
-}
-
-static int ptn_curl_http_target_parse(PtnStringOperand url, PtnCurlHttpTarget *target) {
-    target->authority = NULL;
-    target->path = NULL;
-    target->query = NULL;
-    if (memchr(url.data, '\0', url.len) != NULL) {
-        return 0;
-    }
-
-    size_t scheme_len = SIZE_MAX;
-    for (size_t i = 0; i + 2 < url.len; i++) {
-        if (url.data[i] == ':' && url.data[i + 1] == '/' && url.data[i + 2] == '/') {
-            scheme_len = i;
-            break;
-        }
-    }
-    if (scheme_len == SIZE_MAX ||
-        (
-            !(scheme_len == 4 && ptn_ascii_case_equal_n(url.data, "http", 4)) &&
-            !(scheme_len == 5 && ptn_ascii_case_equal_n(url.data, "https", 5))
-        )) {
-        return 0;
-    }
-
-    size_t authority_start = scheme_len + 3;
-    size_t authority_end = authority_start;
-    while (authority_end < url.len &&
-        url.data[authority_end] != '/' &&
-        url.data[authority_end] != '?' &&
-        url.data[authority_end] != '#') {
-        authority_end++;
-    }
-    if (authority_end == authority_start) {
-        return 0;
-    }
-
-    size_t host_end = authority_start;
-    while (host_end < authority_end && url.data[host_end] != ':') {
-        host_end++;
-    }
-    if (!ptn_curl_http_host_is_modeled(url.data + authority_start, host_end - authority_start)) {
-        return 0;
-    }
-
-    target->authority = ptn_duplicate_string_len(url.data + authority_start, authority_end - authority_start);
-
-    size_t cursor = authority_end;
-    size_t path_start = cursor;
-    size_t path_end = cursor;
-    if (cursor < url.len && url.data[cursor] == '/') {
-        while (path_end < url.len && url.data[path_end] != '?' && url.data[path_end] != '#') {
-            path_end++;
-        }
-        target->path = ptn_duplicate_string_len(url.data + path_start, path_end - path_start);
-        cursor = path_end;
-    } else {
-        target->path = ptn_duplicate_string("/");
-    }
-
-    if (cursor < url.len && url.data[cursor] == '?') {
-        size_t query_start = cursor + 1;
-        size_t query_end = query_start;
-        while (query_end < url.len && url.data[query_end] != '#') {
-            query_end++;
-        }
-        target->query = ptn_duplicate_string_len(url.data + query_start, query_end - query_start);
-    }
-    return 1;
-}
-
-static void ptn_curl_buffer_append_size(PtnStringBuffer *buffer, size_t value) {
-    char text[64];
-    int written = snprintf(text, sizeof(text), "%zu", value);
-    if (written < 0 || (size_t)written >= sizeof(text)) {
+    static const char http_prefix[] = "http://";
+    size_t prefix_len = sizeof(http_prefix) - 1;
+    if (url_len > SIZE_MAX - prefix_len - 1) {
         ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(buffer, text, (size_t)written);
-}
-
-static void ptn_curl_buffer_append_int64(PtnStringBuffer *buffer, int64_t value) {
-    char text[64];
-    int written = snprintf(text, sizeof(text), "%lld", (long long)value);
-    if (written < 0 || (size_t)written >= sizeof(text)) {
+    char *normalized = malloc(prefix_len + url_len + 1);
+    if (normalized == NULL) {
         ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(buffer, text, (size_t)written);
-}
-
-static int ptn_curl_append_var_dump_array_of_strings(
-    PtnRuntime *runtime,
-    PtnStringBuffer *buffer,
-    PtnValue array_value,
-    size_t line
-) {
-    PtnValue resolved = ptn_value_deref(array_value);
-    if (resolved.type != PTN_ARRAY) {
-        ptn_string_buffer_append(buffer, "array(0) {\n}\n");
-        return 1;
-    }
-
-    PtnArray *array = resolved.as.array;
-    ptn_string_buffer_append(buffer, "array(");
-    ptn_curl_buffer_append_size(buffer, array->len);
-    ptn_string_buffer_append(buffer, ") {\n");
-    for (size_t i = 0; i < array->len; i++) {
-        PtnArrayEntry *entry = &array->entries[i];
-        ptn_string_buffer_append(buffer, "  [");
-        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
-            ptn_string_buffer_append(buffer, "\"");
-            ptn_string_buffer_append_len(buffer, entry->key.as.string, entry->key.string_len);
-            ptn_string_buffer_append(buffer, "\"");
-        } else {
-            ptn_curl_buffer_append_int64(buffer, entry->key.as.integer);
-        }
-        ptn_string_buffer_append(buffer, "]=>\n");
-
-        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_string_operand_free(value);
-            return 0;
-        }
-        ptn_string_buffer_append(buffer, "  string(");
-        ptn_curl_buffer_append_size(buffer, value.len);
-        ptn_string_buffer_append(buffer, ") \"");
-        ptn_string_buffer_append_len(buffer, value.data, value.len);
-        ptn_string_buffer_append(buffer, "\"\n");
-        ptn_string_operand_free(value);
-    }
-    ptn_string_buffer_append(buffer, "}\n");
-    return 1;
-}
-
-static PtnValue ptn_curl_parse_query_string(PtnRuntime *runtime, const char *query) {
-    return ptn_parse_str_to_array_with_separators(
-        runtime,
-        query == NULL ? "" : query,
-        query == NULL ? 0 : strlen(query),
-        "&"
-    );
-}
-
-static char *ptn_curl_query_value_alloc(const char *query, const char *wanted_key) {
-    if (query == NULL) {
-        return NULL;
-    }
-    size_t query_len = strlen(query);
-    size_t wanted_len = strlen(wanted_key);
-    size_t cursor = 0;
-    while (cursor <= query_len) {
-        size_t pair_start = cursor;
-        while (cursor < query_len && query[cursor] != '&') {
-            cursor++;
-        }
-        size_t pair_len = cursor - pair_start;
-        size_t equals = 0;
-        while (equals < pair_len && query[pair_start + equals] != '=') {
-            equals++;
-        }
-        size_t key_len = equals;
-        size_t decoded_key_len = 0;
-        char *decoded_key = ptn_url_decode_bytes(query + pair_start, key_len, 1, &decoded_key_len);
-        int key_matches = decoded_key_len == wanted_len && memcmp(decoded_key, wanted_key, wanted_len) == 0;
-        free(decoded_key);
-        if (key_matches) {
-            const char *value_start = equals < pair_len ? query + pair_start + equals + 1 : "";
-            size_t value_len = equals < pair_len ? pair_len - equals - 1 : 0;
-            size_t decoded_value_len = 0;
-            char *decoded_value = ptn_url_decode_bytes(value_start, value_len, 1, &decoded_value_len);
-            (void)decoded_value_len;
-            return decoded_value;
-        }
-        if (cursor == query_len) {
-            break;
-        }
-        cursor++;
-    }
-    return NULL;
-}
-
-static PtnValue ptn_curl_post_array(PtnRuntime *runtime, PtnResource *handle, size_t line) {
-    PtnValue *postfields = ptn_curl_option_value(handle, PTN_CURLOPT_POSTFIELDS);
-    if (postfields == NULL) {
-        return ptn_array_from_literal_entries(0, NULL);
-    }
-    PtnValue resolved = ptn_value_deref(*postfields);
-    if (resolved.type == PTN_ARRAY) {
-        return ptn_array(ptn_array_clone(resolved.as.array));
-    }
-    PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, *postfields, line);
-    if (ptn_curl_runtime_has_active_exception(runtime)) {
-        ptn_string_operand_free(payload);
-        return ptn_null();
-    }
-    PtnValue result = ptn_parse_str_to_array_with_separators(runtime, payload.data, payload.len, "&");
-    ptn_string_operand_free(payload);
-    return result;
+    memcpy(normalized, http_prefix, prefix_len);
+    memcpy(normalized + prefix_len, url, url_len);
+    normalized[prefix_len + url_len] = '\0';
+    return normalized;
 }
 
 static int ptn_curl_request_is_post(PtnResource *handle) {
@@ -76967,45 +76649,23 @@ static int ptn_curl_request_is_post(PtnResource *handle) {
         ptn_curl_option_value(handle, PTN_CURLOPT_POSTFIELDS) != NULL;
 }
 
-static size_t ptn_curl_postfields_content_length(PtnResource *handle) {
-    PtnValue *postfields = ptn_curl_option_value(handle, PTN_CURLOPT_POSTFIELDS);
-    if (postfields == NULL) {
-        return 0;
-    }
-    PtnValue resolved = ptn_value_deref(*postfields);
-    if (resolved.type == PTN_STRING) {
-        return resolved.as.string.len;
-    }
-    if (resolved.type == PTN_ARRAY && resolved.as.array->len == 0) {
-        return 0;
-    }
-    return 0;
-}
-
-static void ptn_curl_store_request_header(PtnResource *handle, const PtnCurlHttpTarget *target) {
+static void ptn_curl_store_request_header(
+    PtnResource *handle,
+    const PtnHttpTransportResponse *response
+) {
     PtnValue *enabled = ptn_curl_option_value(handle, PTN_CURLINFO_HEADER_OUT);
-    if (enabled == NULL || !ptn_is_truthy(*enabled)) {
+    if (enabled == NULL || !ptn_is_truthy(*enabled) ||
+        response == NULL || response->request == NULL) {
         return;
     }
-    int post = ptn_curl_request_is_post(handle);
-    PtnStringBuffer buffer;
-    ptn_string_buffer_init(&buffer);
-    ptn_string_buffer_append(&buffer, post ? "POST " : "GET ");
-    ptn_string_buffer_append(&buffer, target->path == NULL || target->path[0] == '\0' ? "/" : target->path);
-    if (target->query != NULL) {
-        ptn_string_buffer_append(&buffer, "?");
-        ptn_string_buffer_append(&buffer, target->query);
-    }
-    ptn_string_buffer_append(&buffer, " HTTP/1.1\nHost: ");
-    ptn_string_buffer_append(&buffer, target->authority == NULL ? "localhost" : target->authority);
-    ptn_string_buffer_append(&buffer, "\nAccept: */*\n");
-    if (post) {
-        ptn_string_buffer_append(&buffer, "Content-Length: ");
-        ptn_curl_buffer_append_size(&buffer, ptn_curl_postfields_content_length(handle));
-        ptn_string_buffer_append(&buffer, "\nContent-Type: application/x-www-form-urlencoded\n");
-    }
-    ptn_string_buffer_append(&buffer, "\n");
-    ptn_curl_store_state(handle, "__request_header", ptn_owned_string_len(buffer.data, buffer.len));
+    ptn_curl_store_state(
+        handle,
+        "__request_header",
+        ptn_owned_string_len(
+            ptn_duplicate_string_len(response->request, response->request_len),
+            response->request_len
+        )
+    );
 }
 
 static int64_t ptn_curl_state_int(PtnResource *handle, const char *key_name, int64_t fallback) {
@@ -77016,9 +76676,12 @@ static int64_t ptn_curl_state_int(PtnResource *handle, const char *key_name, int
     return ptn_value_to_integer(*value);
 }
 
-static void ptn_curl_store_http_success(PtnResource *handle) {
-    ptn_curl_store_state(handle, "__http_version", ptn_int(PTN_CURL_HTTP_VERSION_1_1));
-    ptn_curl_store_state(handle, "__http_code", ptn_int(200));
+static void ptn_curl_store_http_response(
+    PtnResource *handle,
+    const PtnHttpTransportResponse *response
+) {
+    ptn_curl_store_state(handle, "__http_version", ptn_int(response->http_version));
+    ptn_curl_store_state(handle, "__http_code", ptn_int(response->status_code));
 }
 
 static int ptn_curl_invoke_header_callback(
@@ -77040,27 +76703,54 @@ static int ptn_curl_invoke_header_callback(
     return !ptn_curl_runtime_has_active_exception(runtime);
 }
 
-static int ptn_curl_deliver_header(PtnRuntime *runtime, PtnResource *handle, size_t line) {
-    PtnValue header = ptn_owned_string(ptn_duplicate_string("HTTP/1.1 200 OK\r\n"));
+static int ptn_curl_deliver_header(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    const PtnHttpTransportResponse *response,
+    size_t line
+) {
+    if (response == NULL || response->headers == NULL) {
+        return 1;
+    }
     PtnValue *callback = ptn_curl_option_value(handle, PTN_CURLOPT_HEADERFUNCTION);
-    if (callback != NULL && !ptn_curl_invoke_header_callback(runtime, handle, *callback, header, line)) {
-        ptn_value_destroy(&header);
-        return 0;
+    if (callback != NULL) {
+        size_t offset = 0;
+        while (offset < response->headers_len) {
+            size_t end = offset;
+            while (end < response->headers_len && response->headers[end] != '\n') {
+                end++;
+            }
+            size_t header_len = end < response->headers_len ? end + 1 - offset : end - offset;
+            PtnValue header = ptn_owned_string_len(
+                ptn_duplicate_string_len(response->headers + offset, header_len),
+                header_len
+            );
+            int delivered = ptn_curl_invoke_header_callback(
+                runtime,
+                handle,
+                *callback,
+                header,
+                line
+            );
+            ptn_value_destroy(&header);
+            if (!delivered) {
+                return 0;
+            }
+            offset += header_len;
+        }
     }
 
     PtnValue *writeheader = ptn_curl_option_value(handle, PTN_CURLOPT_WRITEHEADER);
     if (writeheader != NULL) {
         PtnValue resolved = ptn_value_deref(*writeheader);
         if (resolved.type == PTN_RESOURCE && ptn_stream_resource_is_open(resolved.as.resource)) {
-            PtnValue header_value = ptn_value_deref(header);
             (void)ptn_stream_write_bytes(
                 resolved.as.resource,
-                header_value.as.string.data,
-                header_value.as.string.len
+                response->headers,
+                response->headers_len
             );
         }
     }
-    ptn_value_destroy(&header);
     return 1;
 }
 
@@ -77069,172 +76759,151 @@ static void ptn_curl_emit_verbose_if_requested(PtnRuntime *runtime, PtnResource 
     if (verbose == NULL || !ptn_is_truthy(*verbose)) {
         return;
     }
-    static const char line[] = "* Trying localhost...\n";
+    const char *target = "remote host";
+    size_t target_len = strlen(target);
+    PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+    PtnStringOperand url = url_value == NULL
+        ? ptn_string_operand_borrowed_len("", 0)
+        : ptn_value_to_string_operand_with_runtime(runtime, *url_value, 0);
+    if (!ptn_curl_runtime_has_active_exception(runtime)) {
+        const char *scheme = ptn_memmem_simple(url.data, url.len, "://", 3);
+        if (scheme != NULL) {
+            const char *authority = scheme + 3;
+            const char *end = authority;
+            const char *limit = url.data + url.len;
+            while (end < limit && *end != '/' && *end != '?' && *end != '#') {
+                end++;
+            }
+            if (end > authority) {
+                target = authority;
+                target_len = (size_t)(end - authority);
+            }
+        }
+    }
+    PtnStringBuffer message;
+    ptn_string_buffer_init(&message);
+    ptn_string_buffer_append(&message, "* Trying ");
+    ptn_string_buffer_append_len(&message, target, target_len);
+    ptn_string_buffer_append(&message, "...\n");
+    ptn_string_operand_free(url);
     PtnValue *stderr_stream = ptn_curl_option_value(handle, PTN_CURLOPT_STDERR);
     if (stderr_stream != NULL) {
         PtnValue resolved = ptn_value_deref(*stderr_stream);
         if (resolved.type == PTN_RESOURCE && ptn_stream_resource_is_open(resolved.as.resource)) {
-            (void)ptn_stream_write_bytes(resolved.as.resource, line, sizeof(line) - 1);
+            (void)ptn_stream_write_bytes(resolved.as.resource, message.data, message.len);
+            free(message.data);
             return;
         }
     }
-    ptn_output_write(runtime, line, sizeof(line) - 1);
+    ptn_output_write(runtime, message.data, message.len);
+    free(message.data);
 }
 
-static PtnArrayEntry *ptn_curl_array_string_entry(PtnArray *array, const char *key_name) {
-    if (array == NULL) {
-        return NULL;
-    }
-    PtnArrayKey key = ptn_array_string_key(key_name);
-    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
-    ptn_array_key_free(key);
-    return entry;
-}
-
-static PtnArrayEntry *ptn_curl_object_property(PtnObject *object, const char *property_name) {
-    return object == NULL ? NULL : ptn_curl_array_string_entry(object->properties, property_name);
-}
-
-static const char *ptn_curl_basename_span(const char *path, size_t path_len, size_t *basename_len_out) {
-    size_t start = 0;
-    for (size_t i = 0; i < path_len; i++) {
-        if (path[i] == '/' || path[i] == '\\') {
-            start = i + 1;
-        }
-    }
-    *basename_len_out = path_len - start;
-    return path + start;
-}
-
-static PtnValue ptn_curl_file_upload_response(PtnRuntime *runtime, PtnResource *handle, size_t line) {
-    PtnValue *postfields = ptn_curl_option_value(handle, PTN_CURLOPT_POSTFIELDS);
-    PtnValue resolved = postfields == NULL ? ptn_null() : ptn_value_deref(*postfields);
-    if (resolved.type != PTN_ARRAY) {
-        return ptn_string("");
-    }
-    PtnArrayEntry *file_entry = ptn_curl_array_string_entry(resolved.as.array, "file");
-    PtnValue file_value = file_entry == NULL ? ptn_null() : ptn_value_deref(file_entry->value);
-    if (file_value.type != PTN_OBJECT || !ptn_internal_class_name_is_curl_file(file_value.as.object->class_name)) {
-        return ptn_string("");
-    }
-
-    PtnArrayEntry *name_entry = ptn_curl_object_property(file_value.as.object, "name");
-    PtnArrayEntry *mime_entry = ptn_curl_object_property(file_value.as.object, "mime");
-    PtnArrayEntry *postname_entry = ptn_curl_object_property(file_value.as.object, "postname");
-    PtnStringOperand name = name_entry == NULL
-        ? ptn_string_operand_borrowed("")
-        : ptn_value_to_string_operand_with_runtime(runtime, name_entry->value, line);
-    if (ptn_curl_runtime_has_active_exception(runtime)) {
-        ptn_string_operand_free(name);
-        return ptn_null();
-    }
-    PtnStringOperand mime = mime_entry == NULL
-        ? ptn_string_operand_borrowed("")
-        : ptn_value_to_string_operand_with_runtime(runtime, mime_entry->value, line);
-    if (ptn_curl_runtime_has_active_exception(runtime)) {
-        ptn_string_operand_free(name);
-        ptn_string_operand_free(mime);
-        return ptn_null();
-    }
-    PtnStringOperand postname = postname_entry == NULL
-        ? ptn_string_operand_borrowed("")
-        : ptn_value_to_string_operand_with_runtime(runtime, postname_entry->value, line);
-    if (ptn_curl_runtime_has_active_exception(runtime)) {
-        ptn_string_operand_free(name);
-        ptn_string_operand_free(mime);
-        ptn_string_operand_free(postname);
-        return ptn_null();
-    }
-
-    char *path = ptn_duplicate_string_len(name.data, name.len);
-    struct stat info;
-    size_t file_size = stat(path, &info) == 0 && info.st_size >= 0 ? (size_t)info.st_size : 0;
-    free(path);
-
-    size_t display_name_len = 0;
-    const char *display_name = NULL;
-    if (postname.len != 0) {
-        display_name = postname.data;
-        display_name_len = postname.len;
-    } else {
-        display_name = ptn_curl_basename_span(name.data, name.len, &display_name_len);
-    }
-    const char *display_mime = mime.len == 0 ? "application/octet-stream" : mime.data;
-    size_t display_mime_len = mime.len == 0 ? strlen(display_mime) : mime.len;
-
-    PtnStringBuffer buffer;
-    ptn_string_buffer_init(&buffer);
-    ptn_string_buffer_append_len(&buffer, display_name, display_name_len);
-    ptn_string_buffer_append(&buffer, "|");
-    ptn_string_buffer_append_len(&buffer, display_mime, display_mime_len);
-    ptn_string_buffer_append(&buffer, "|");
-    ptn_curl_buffer_append_size(&buffer, file_size);
-
-    ptn_string_operand_free(name);
-    ptn_string_operand_free(mime);
-    ptn_string_operand_free(postname);
-    return ptn_owned_string_len(buffer.data, buffer.len);
-}
-
-static PtnValue ptn_curl_http_response(
+static int ptn_curl_append_http_header_value(
     PtnRuntime *runtime,
-    PtnResource *handle,
-    const PtnCurlHttpTarget *target,
+    PtnStringBuffer *headers,
+    PtnValue value,
     size_t line
 ) {
-    char *test = ptn_curl_query_value_alloc(target->query, "test");
-    PtnValue result = ptn_null();
-    if (test != NULL && strcmp(test, "post") == 0) {
-        PtnValue post = ptn_curl_post_array(runtime, handle, line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            free(test);
-            ptn_value_destroy(&post);
-            return ptn_null();
-        }
-        PtnStringBuffer buffer;
-        ptn_string_buffer_init(&buffer);
-        if (!ptn_curl_append_var_dump_array_of_strings(runtime, &buffer, post, line)) {
-            free(test);
-            ptn_value_destroy(&post);
-            free(buffer.data);
-            return ptn_null();
-        }
-        result = ptn_owned_string_len(buffer.data, buffer.len);
-        ptn_value_destroy(&post);
-    } else if (test != NULL && strcmp(test, "getpost") == 0) {
-        PtnValue get = ptn_curl_parse_query_string(runtime, target->query);
-        PtnValue post = ptn_curl_post_array(runtime, handle, line);
-        if (ptn_curl_runtime_has_active_exception(runtime)) {
-            free(test);
-            ptn_value_destroy(&get);
-            ptn_value_destroy(&post);
-            return ptn_null();
-        }
-        PtnStringBuffer buffer;
-        ptn_string_buffer_init(&buffer);
-        if (!ptn_curl_append_var_dump_array_of_strings(runtime, &buffer, get, line) ||
-            !ptn_curl_append_var_dump_array_of_strings(runtime, &buffer, post, line)) {
-            free(test);
-            ptn_value_destroy(&get);
-            ptn_value_destroy(&post);
-            free(buffer.data);
-            return ptn_null();
-        }
-        result = ptn_owned_string_len(buffer.data, buffer.len);
-        ptn_value_destroy(&get);
-        ptn_value_destroy(&post);
-    } else if (test != NULL && strcmp(test, "httpversion") == 0) {
-        result = ptn_string("HTTP/1.1");
-    } else if (test != NULL && strcmp(test, "file") == 0) {
-        result = ptn_curl_file_upload_response(runtime, handle, line);
-    } else {
-        result = ptn_string("Hello World!\nHello World!");
+    PtnStringOperand header = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(header);
+        return 0;
     }
-    free(test);
-    return result;
+    if (header.len != 0) {
+        ptn_string_buffer_append_len(headers, header.data, header.len);
+        if (header.data[header.len - 1] != '\n') {
+            ptn_string_buffer_append(headers, "\r\n");
+        }
+    }
+    ptn_string_operand_free(header);
+    return 1;
 }
 
-static PtnValue ptn_curl_read_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+static int ptn_curl_append_configured_http_headers(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    PtnStringBuffer *headers,
+    size_t line
+) {
+    PtnValue *configured = ptn_curl_option_value(handle, PTN_CURLOPT_HTTPHEADER);
+    if (configured == NULL) {
+        return 1;
+    }
+    PtnValue value = ptn_value_deref(*configured);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return ptn_curl_append_http_header_value(runtime, headers, value, line);
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (!ptn_curl_append_http_header_value(
+                runtime,
+                headers,
+                value.as.array->entries[i].value,
+                line
+            )) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PtnStringOperand ptn_curl_request_method(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    int upload,
+    size_t line
+) {
+    PtnValue *custom = ptn_curl_option_value(handle, PTN_CURLOPT_CUSTOMREQUEST);
+    if (custom != NULL && ptn_value_deref(*custom).type != PTN_NULL) {
+        PtnStringOperand method = ptn_value_to_string_operand_with_runtime(runtime, *custom, line);
+        if (ptn_curl_runtime_has_active_exception(runtime) || method.len != 0) {
+            return method;
+        }
+        ptn_string_operand_free(method);
+    }
+    if (upload) {
+        return ptn_string_operand_borrowed_len("PUT", 3);
+    }
+    if (ptn_curl_request_is_post(handle)) {
+        return ptn_string_operand_borrowed_len("POST", 4);
+    }
+    return ptn_string_operand_borrowed_len("GET", 3);
+}
+
+static PtnStringOperand ptn_curl_request_body(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    PtnValue upload_payload,
+    int upload,
+    int *has_body_out,
+    size_t line
+) {
+    *has_body_out = 0;
+    if (upload) {
+        *has_body_out = 1;
+        return ptn_value_to_string_operand_with_runtime(runtime, upload_payload, line);
+    }
+    PtnValue *postfields = ptn_curl_option_value(handle, PTN_CURLOPT_POSTFIELDS);
+    if (postfields == NULL) {
+        if (ptn_curl_request_is_post(handle)) {
+            *has_body_out = 1;
+        }
+        return ptn_string_operand_borrowed_len("", 0);
+    }
+    *has_body_out = 1;
+    if (ptn_value_deref(*postfields).type == PTN_ARRAY) {
+        return ptn_string_operand_borrowed_len("", 0);
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, *postfields, line);
+}
+
+static PtnValue ptn_curl_read_url(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    PtnValue upload_payload,
+    int upload,
+    size_t line
+) {
     PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
     if (url_value == NULL) {
         return ptn_bool(0);
@@ -77260,22 +76929,81 @@ static PtnValue ptn_curl_read_url(PtnRuntime *runtime, PtnResource *handle, size
         }
         return ptn_owned_string_len((char *)data, len);
     }
-
-    PtnCurlHttpTarget target;
-    int modeled_http = ptn_curl_http_target_parse(url, &target);
-    ptn_string_operand_free(url);
-    if (!modeled_http) {
+    if (memchr(url.data, '\0', url.len) != NULL) {
+        ptn_string_operand_free(url);
+        ptn_curl_set_error(handle, PTN_CURLE_COULDNT_CONNECT, "URL contains null bytes");
         return ptn_bool(0);
     }
-    ptn_curl_store_request_header(handle, &target);
-    ptn_curl_store_http_success(handle);
-    if (!ptn_curl_deliver_header(runtime, handle, line)) {
-        ptn_curl_http_target_free(&target);
+    char *url_text = ptn_curl_transport_url_alloc(url.data, url.len);
+    ptn_string_operand_free(url);
+
+    PtnStringBuffer headers;
+    ptn_string_buffer_init(&headers);
+    if (!ptn_curl_append_configured_http_headers(runtime, handle, &headers, line)) {
+        free(url_text);
+        free(headers.data);
         return ptn_null();
     }
-    PtnValue response = ptn_curl_http_response(runtime, handle, &target, line);
-    ptn_curl_http_target_free(&target);
-    return response;
+    PtnStringOperand method = ptn_curl_request_method(runtime, handle, upload, line);
+    int has_body = 0;
+    PtnStringOperand body = ptn_curl_request_body(
+        runtime,
+        handle,
+        upload_payload,
+        upload,
+        &has_body,
+        line
+    );
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        free(url_text);
+        free(headers.data);
+        ptn_string_operand_free(method);
+        ptn_string_operand_free(body);
+        return ptn_null();
+    }
+
+    PtnHttpTransportResponse response = {0};
+    int transport_ok = ptn_http_transport_request(
+        runtime,
+        url_text,
+        method.data,
+        headers.data,
+        headers.len,
+        has_body ? (const unsigned char *)body.data : NULL,
+        body.len,
+        &response,
+        line
+    );
+    free(url_text);
+    free(headers.data);
+    ptn_string_operand_free(method);
+    ptn_string_operand_free(body);
+    if (!transport_ok) {
+        ptn_http_transport_response_free(&response);
+        ptn_curl_set_error(handle, PTN_CURLE_COULDNT_CONNECT, "Could not connect to server");
+        return ptn_bool(0);
+    }
+
+    ptn_curl_set_error(handle, PTN_CURLE_OK, "");
+    ptn_curl_store_request_header(handle, &response);
+    ptn_curl_store_http_response(handle, &response);
+    if (!ptn_curl_deliver_header(runtime, handle, &response, line)) {
+        ptn_http_transport_response_free(&response);
+        return ptn_null();
+    }
+    PtnValue *include_headers = ptn_curl_option_value(handle, PTN_CURLOPT_HEADER);
+    if (include_headers != NULL && ptn_is_truthy(*include_headers)) {
+        PtnStringBuffer combined;
+        ptn_string_buffer_init(&combined);
+        ptn_string_buffer_append_len(&combined, response.headers, response.headers_len);
+        ptn_string_buffer_append_len(&combined, (const char *)response.body, response.body_len);
+        ptn_http_transport_response_free(&response);
+        return ptn_owned_string_len(combined.data, combined.len);
+    }
+    PtnValue result = ptn_owned_string_len((char *)response.body, response.body_len);
+    response.body = NULL;
+    ptn_http_transport_response_free(&response);
+    return result;
 }
 
 static PtnValue ptn_curl_read_stream_payload(PtnResource *stream) {
@@ -77661,6 +77389,9 @@ static PtnValue ptn_internal_curl_getinfo(PtnRuntime *runtime, size_t argc, cons
     if (option == PTN_CURLINFO_EFFECTIVE_URL) {
         return ptn_curl_info_url(runtime, handle, line);
     }
+    if (option == PTN_CURLINFO_HTTP_CODE) {
+        return ptn_int(ptn_curl_state_int(handle, "__http_code", 0));
+    }
     if (option == PTN_CURLINFO_HTTP_VERSION) {
         return ptn_int(ptn_curl_state_int(handle, "__http_version", 0));
     }
@@ -77941,20 +77672,43 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
     ptn_curl_reset_closed_stream_options(runtime, handle, line);
     ptn_curl_emit_verbose_if_requested(runtime, handle);
     PtnValue *upload = ptn_curl_option_value(handle, PTN_CURLOPT_UPLOAD);
-    if (upload != NULL && ptn_is_truthy(*upload)) {
-        PtnValue payload = ptn_curl_read_upload_payload(runtime, handle, line);
+    PtnValue upload_payload = ptn_null();
+    int upload_enabled = upload != NULL && ptn_is_truthy(*upload);
+    if (upload_enabled) {
+        upload_payload = ptn_curl_read_upload_payload(runtime, handle, line);
         if (ptn_curl_runtime_has_active_exception(runtime)) {
-            ptn_value_destroy(&payload);
+            ptn_value_destroy(&upload_payload);
             return ptn_null();
         }
-        int uploaded = ptn_curl_write_file_url(runtime, handle, payload, line);
-        ptn_value_destroy(&payload);
+        PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+        PtnStringOperand url = url_value == NULL
+            ? ptn_string_operand_borrowed_len("", 0)
+            : ptn_value_to_string_operand_with_runtime(runtime, *url_value, line);
         if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(url);
+            ptn_value_destroy(&upload_payload);
             return ptn_null();
         }
-        return ptn_bool(uploaded);
+        char *file_path = ptn_curl_file_url_path(url);
+        ptn_string_operand_free(url);
+        if (file_path != NULL) {
+            free(file_path);
+            int uploaded = ptn_curl_write_file_url(runtime, handle, upload_payload, line);
+            ptn_value_destroy(&upload_payload);
+            if (ptn_curl_runtime_has_active_exception(runtime)) {
+                return ptn_null();
+            }
+            return ptn_bool(uploaded);
+        }
     }
-    PtnValue payload = ptn_curl_read_url(runtime, handle, line);
+    PtnValue payload = ptn_curl_read_url(
+        runtime,
+        handle,
+        upload_payload,
+        upload_enabled,
+        line
+    );
+    ptn_value_destroy(&upload_payload);
     if (ptn_curl_runtime_has_active_exception(runtime)) {
         ptn_value_destroy(&payload);
         return ptn_null();
@@ -135481,7 +135235,10 @@ static PtnValue ptn_internal_memory_get_usage(PtnRuntime *runtime, size_t argc, 
     if (argc >= 1) {
         (void)ptn_is_truthy(args[0]);
     }
-    return ptn_int(1048576);
+    size_t usage = ptn_request_allocator_is_active()
+        ? ptn_request_allocator_usage()
+        : ptn_synthetic_memory_usage();
+    return ptn_int(usage > (size_t)INT64_MAX ? INT64_MAX : (int64_t)usage);
 }
 
 static PtnValue ptn_internal_memory_get_peak_usage(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -135489,6 +135246,10 @@ static PtnValue ptn_internal_memory_get_peak_usage(PtnRuntime *runtime, size_t a
     (void)line;
     if (argc >= 1) {
         (void)ptn_is_truthy(args[0]);
+    }
+    if (ptn_request_allocator_is_active()) {
+        size_t peak = ptn_request_allocator_peak_usage();
+        return ptn_int(peak > (size_t)INT64_MAX ? INT64_MAX : (int64_t)peak);
     }
     if (ptn_synthetic_memory_peak_usage <= INT64_MAX - 1024) {
         ptn_synthetic_memory_peak_usage += 1024;
@@ -135501,6 +135262,10 @@ static PtnValue ptn_internal_memory_reset_peak_usage(PtnRuntime *runtime, size_t
     (void)argc;
     (void)args;
     (void)line;
+    if (ptn_request_allocator_is_active()) {
+        ptn_request_allocator_reset_peak_usage();
+        return ptn_null();
+    }
     ptn_synthetic_memory_peak_usage = 1048576;
     return ptn_null();
 }
@@ -135542,10 +135307,43 @@ static void ptn_gc_mark_symbol_table(PtnGcMarkStack *stack, PtnSymbolTable *symb
     }
 }
 
+static void ptn_gc_mark_exception_state(
+    PtnGcMarkStack *stack,
+    PtnExceptionState *exceptions
+) {
+    if (stack == NULL || exceptions == NULL) {
+        return;
+    }
+    if (exceptions->active_exception != NULL) {
+        ptn_gc_mark_stack_push(
+            stack,
+            ptn_exception_borrow(exceptions->active_exception)
+        );
+    }
+    if (exceptions->finally_return_suppressed_exception != NULL) {
+        ptn_gc_mark_stack_push(
+            stack,
+            ptn_exception_borrow(exceptions->finally_return_suppressed_exception)
+        );
+    }
+    if (exceptions->has_exception_handler) {
+        ptn_gc_mark_stack_push(stack, exceptions->exception_handler);
+    }
+    for (size_t i = 0; i < exceptions->exception_handler_stack_len; i++) {
+        if (exceptions->exception_handler_stack[i].has_handler) {
+            ptn_gc_mark_stack_push(
+                stack,
+                exceptions->exception_handler_stack[i].handler
+            );
+        }
+    }
+}
+
 static void ptn_gc_mark_runtime_frame_roots(PtnGcMarkStack *stack, PtnRuntime *runtime) {
     if (stack == NULL || runtime == NULL) {
         return;
     }
+    ptn_gc_mark_exception_state(stack, runtime->exceptions);
     ptn_gc_mark_symbol_table(stack, &runtime->symbols);
     if (runtime->call_frame != NULL) {
         for (size_t i = 0; i < runtime->call_frame->argc; i++) {
@@ -135558,6 +135356,8 @@ static void ptn_gc_mark_runtime_frame_roots(PtnGcMarkStack *stack, PtnRuntime *r
     for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
         ptn_gc_mark_stack_push(stack, runtime->temporary_roots[i]);
     }
+    ptn_gc_mark_stack_push(stack, runtime->deferred_yield_from_iterator_object);
+    ptn_gc_mark_stack_push(stack, runtime->gc_destructor_caller_trace);
 }
 
 static void ptn_gc_mark_trace_frame_runtime_roots(PtnGcMarkStack *stack, PtnTraceFrame *frame) {
@@ -135669,11 +135469,22 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
         ptn_gc_mark_stack_push(stack, data->suspend_value);
         ptn_gc_mark_stack_push(stack, data->resume_value);
         ptn_gc_mark_stack_push(stack, data->resume_exception);
+        ptn_gc_mark_stack_push(stack, data->internal_keepalive);
         for (size_t i = 0; i < data->entry_argc; i++) {
             ptn_gc_mark_stack_push(stack, data->entry_args[i]);
         }
 #if !defined(_WIN32)
         ptn_gc_mark_trace_frame_runtime_roots(stack, data->suspended_trace_frame);
+        ptn_gc_mark_trace_frame_runtime_roots(
+            stack,
+            data->free_suspended_trace_frame
+        );
+        ptn_gc_mark_runtime_frame_roots(stack, data->context_runtime);
+        ptn_gc_mark_runtime_frame_roots(stack, data->free_context_runtime);
+        ptn_gc_mark_runtime_frame_roots(
+            stack,
+            data->suspended_active_value_release_runtime
+        );
 #endif
         return;
     }
@@ -135744,6 +135555,20 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
             if (closure->has_wrapped_callable) {
                 ptn_gc_mark_stack_push(stack, closure->wrapped_callable);
             }
+            continue;
+        }
+        if (value.type == PTN_EXCEPTION) {
+            PtnException *exception = value.as.exception;
+            if (exception == NULL || exception->gc_mark_epoch == epoch) {
+                continue;
+            }
+            exception->gc_mark_epoch = epoch;
+            ptn_gc_mark_stack_push(stack, exception->trace);
+            ptn_gc_mark_stack_push(stack, exception->previous);
+            ptn_gc_mark_stack_push(stack, exception->dynamic_properties);
+            ptn_gc_mark_stack_push(stack, exception->errors);
+            ptn_gc_mark_stack_push(stack, exception->soap_fault_headerfault);
+            ptn_gc_mark_stack_push(stack, exception->thrown_value);
         }
     }
 }
@@ -136101,7 +135926,10 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
         }
         return count;
     }
-    PtnValue values[7] = { ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null(), ptn_null() };
+    PtnValue values[8] = {
+        ptn_null(), ptn_null(), ptn_null(), ptn_null(),
+        ptn_null(), ptn_null(), ptn_null(), ptn_null()
+    };
     size_t values_len = 0;
     size_t skip_array_count_depth = 0;
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
@@ -136112,6 +135940,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
         values[values_len++] = data->suspend_value;
         values[values_len++] = data->resume_value;
         values[values_len++] = data->resume_exception;
+        values[values_len++] = data->internal_keepalive;
     } else if (
         ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator")
@@ -136165,6 +135994,12 @@ typedef struct {
     PtnObject **objects;
     size_t len;
     size_t capacity;
+    PtnObject **active_objects;
+    size_t active_objects_len;
+    size_t active_objects_capacity;
+    PtnObject **cyclic_objects;
+    size_t cyclic_objects_len;
+    size_t cyclic_objects_capacity;
     int cyclic;
 } PtnGcObjectComponent;
 
@@ -136198,6 +136033,12 @@ static PtnGcObjectComponent *ptn_gc_object_components_push(PtnGcObjectComponents
     component->objects = NULL;
     component->len = 0;
     component->capacity = 0;
+    component->active_objects = NULL;
+    component->active_objects_len = 0;
+    component->active_objects_capacity = 0;
+    component->cyclic_objects = NULL;
+    component->cyclic_objects_len = 0;
+    component->cyclic_objects_capacity = 0;
     component->cyclic = 0;
     return component;
 }
@@ -136226,6 +136067,115 @@ static void ptn_gc_object_component_push(PtnGcObjectComponent *component, PtnObj
     component->objects[component->len++] = object;
 }
 
+static void ptn_gc_object_component_active_push(
+    PtnGcObjectComponent *component,
+    PtnObject *object
+) {
+    if (component == NULL || object == NULL) {
+        return;
+    }
+    if (component->active_objects_len == component->active_objects_capacity) {
+        size_t new_capacity = component->active_objects_capacity == 0
+            ? 8
+            : component->active_objects_capacity * 2;
+        if (new_capacity < component->active_objects_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObject **new_objects = realloc(
+            component->active_objects,
+            new_capacity * sizeof(PtnObject *)
+        );
+        if (new_objects == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        component->active_objects = new_objects;
+        component->active_objects_capacity = new_capacity;
+    }
+    component->active_objects[component->active_objects_len++] = object;
+}
+
+static size_t ptn_gc_object_component_active_index(
+    const PtnGcObjectComponent *component,
+    const PtnObject *object
+) {
+    if (component == NULL || object == NULL) {
+        return SIZE_MAX;
+    }
+    for (size_t i = 0; i < component->active_objects_len; i++) {
+        if (component->active_objects[i] == object) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static void ptn_gc_object_component_active_pop(
+    PtnGcObjectComponent *component,
+    const PtnObject *object
+) {
+    if (
+        component == NULL ||
+        component->active_objects_len == 0 ||
+        component->active_objects[component->active_objects_len - 1] != object
+    ) {
+        return;
+    }
+    component->active_objects_len--;
+}
+
+static int ptn_gc_object_component_cyclic_contains(
+    const PtnGcObjectComponent *component,
+    const PtnObject *object
+) {
+    if (component == NULL || object == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < component->cyclic_objects_len; i++) {
+        if (component->cyclic_objects[i] == object) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_gc_object_component_mark_cyclic_candidates(
+    PtnGcObjectComponent *component,
+    size_t active_start
+) {
+    if (component == NULL || active_start >= component->active_objects_len) {
+        return;
+    }
+    for (size_t i = active_start; i < component->active_objects_len; i++) {
+        PtnObject *object = component->active_objects[i];
+        if (
+            !ptn_object_has_pending_declared_destructor(object) ||
+            ptn_gc_object_component_cyclic_contains(component, object)
+        ) {
+            continue;
+        }
+        if (component->cyclic_objects_len == component->cyclic_objects_capacity) {
+            size_t new_capacity = component->cyclic_objects_capacity == 0
+                ? 4
+                : component->cyclic_objects_capacity * 2;
+            if (new_capacity < component->cyclic_objects_capacity ||
+                new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
+                ptn_abort_out_of_memory();
+            }
+            PtnObject **new_objects = realloc(
+                component->cyclic_objects,
+                new_capacity * sizeof(PtnObject *)
+            );
+            if (new_objects == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            component->cyclic_objects = new_objects;
+            component->cyclic_objects_capacity = new_capacity;
+        }
+        component->cyclic_objects[component->cyclic_objects_len++] = object;
+    }
+}
+
 static void ptn_gc_object_components_release(PtnGcObjectComponents *components) {
     if (components == NULL) {
         return;
@@ -136239,11 +136189,37 @@ static void ptn_gc_object_components_release(PtnGcObjectComponents *components) 
         component->objects = NULL;
         component->len = 0;
         component->capacity = 0;
+        free(component->active_objects);
+        component->active_objects = NULL;
+        component->active_objects_len = 0;
+        component->active_objects_capacity = 0;
+        free(component->cyclic_objects);
+        component->cyclic_objects = NULL;
+        component->cyclic_objects_len = 0;
+        component->cyclic_objects_capacity = 0;
     }
     free(components->items);
     components->items = NULL;
     components->len = 0;
     components->capacity = 0;
+}
+
+static int ptn_gc_cyclic_destructor_component_contains(
+    const PtnGcObjectComponents *components,
+    const PtnObject *object
+) {
+    if (components == NULL || object == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < components->len; i++) {
+        const PtnGcObjectComponent *component = &components->items[i];
+        for (size_t j = 0; j < component->cyclic_objects_len; j++) {
+            if (component->cyclic_objects[j] == object) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 static void ptn_gc_mark_unreachable_destructor_component_value(
@@ -136312,13 +136288,14 @@ static void ptn_gc_mark_unreachable_destructor_component_object_native_values(
     if (object == NULL || object->native_data == NULL || depth > 1024) {
         return;
     }
-    PtnValue values[3] = { ptn_null(), ptn_null(), ptn_null() };
+    PtnValue values[4] = { ptn_null(), ptn_null(), ptn_null(), ptn_null() };
     size_t values_len = 0;
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
         PtnFiberData *data = (PtnFiberData *)object->native_data;
         values[values_len++] = data->callback;
         values[values_len++] = data->return_value;
         values[values_len++] = data->suspension_trace;
+        values[values_len++] = data->internal_keepalive;
     } else if (
         ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator")
@@ -136361,8 +136338,10 @@ static void ptn_gc_mark_unreachable_destructor_component_object(
         return;
     }
     if (object->gc_mark_epoch == component_epoch) {
-        if (component != NULL) {
+        size_t active_index = ptn_gc_object_component_active_index(component, object);
+        if (active_index != SIZE_MAX) {
             component->cyclic = 1;
+            ptn_gc_object_component_mark_cyclic_candidates(component, active_index);
         }
         return;
     }
@@ -136370,6 +136349,7 @@ static void ptn_gc_mark_unreachable_destructor_component_object(
     if (ptn_object_has_pending_declared_destructor(object)) {
         ptn_gc_object_component_push(component, object);
     }
+    ptn_gc_object_component_active_push(component, object);
     ptn_gc_mark_unreachable_destructor_component_value(
         component,
         ptn_gc_borrowed_array_value(object->properties),
@@ -136398,6 +136378,7 @@ static void ptn_gc_mark_unreachable_destructor_component_object(
         component_epoch,
         depth + 1
     );
+    ptn_gc_object_component_active_pop(component, object);
 }
 
 static void ptn_gc_mark_unreachable_destructor_component_value(
@@ -136629,6 +136610,16 @@ static size_t ptn_runtime_mark_gc_roots(PtnRuntime *runtime, PtnRuntime *root) {
             ptn_gc_mark_symbol_table(&stack, runtime_globals);
         }
     }
+    ptn_gc_mark_runtime_frame_roots(
+        &stack,
+        root->active_value_release_runtime
+    );
+    ptn_gc_mark_exception_state(&stack, root->exceptions);
+    for (PtnCleanupRoot *cleanup = root->active_cleanup_roots;
+         cleanup != NULL;
+         cleanup = cleanup->next) {
+        ptn_gc_mark_stack_push(&stack, cleanup->value);
+    }
     PtnSymbolTable *static_properties = root->static_properties == NULL
         ? &root->owned_static_properties
         : root->static_properties;
@@ -136639,6 +136630,20 @@ static size_t ptn_runtime_mark_gc_roots(PtnRuntime *runtime, PtnRuntime *root) {
     }
     if (root->current_fiber != NULL) {
         ptn_gc_mark_stack_push(&stack, ptn_value_borrow(ptn_object(root->current_fiber)));
+    }
+    PtnRuntime *active_fiber_executor = root->active_fiber_executor_runtime;
+    ptn_gc_mark_runtime_frame_roots(&stack, active_fiber_executor);
+    if (
+        active_fiber_executor != NULL &&
+        active_fiber_executor->current_fiber != NULL
+    ) {
+        ptn_gc_mark_stack_push(
+            &stack,
+            ptn_value_borrow(ptn_object(active_fiber_executor->current_fiber))
+        );
+    }
+    if (root->gc_destructor_fiber != NULL) {
+        ptn_gc_mark_stack_push(&stack, ptn_value_borrow(ptn_object(root->gc_destructor_fiber)));
     }
     if (runtime != NULL && runtime != root && runtime->current_fiber != NULL) {
         ptn_gc_mark_stack_push(&stack, ptn_value_borrow(ptn_object(runtime->current_fiber)));
@@ -136738,6 +136743,34 @@ static int ptn_gc_object_pending_destructor_candidate(PtnObject *object, size_t 
         ptn_object_has_pending_declared_destructor(object);
 }
 
+static void ptn_gc_remember_pending_destructor_exception(
+    PtnRuntime *root,
+    PtnException **pending_exception
+) {
+    if (
+        root == NULL ||
+        root->exceptions == NULL ||
+        root->exceptions->active_exception == NULL ||
+        pending_exception == NULL
+    ) {
+        return;
+    }
+    PtnException *current = root->exceptions->active_exception;
+    root->exceptions->active_exception = NULL;
+    PtnException *previous_pending = *pending_exception;
+    *pending_exception = current;
+    if (previous_pending != NULL) {
+        ptn_exception_chain_previous_at_tail(current, previous_pending);
+        ptn_exception_free(previous_pending);
+    }
+}
+
+/* Returns 1 for a completed destructor, 0 for a user-retained suspension, and -1 on setup failure. */
+static int ptn_gc_run_unreachable_object_destructor_in_fiber(
+    PtnRuntime *runtime,
+    PtnObject *object
+);
+
 static void ptn_gc_run_unreachable_object_destructor(
     PtnRuntime *root,
     PtnObject *object,
@@ -136751,7 +136784,17 @@ static void ptn_gc_run_unreachable_object_destructor(
         return;
     }
     ptn_object_retain(object);
-    ptn_object_run_destructor_ex(object, 1);
+    int fiber_state = ptn_gc_run_unreachable_object_destructor_in_fiber(root, object);
+    if (fiber_state < 0) {
+        ptn_object_run_destructor_ex(object, 1);
+    } else if (fiber_state == 0) {
+        /*
+         * A destructor that retained its internal fiber may resume later.
+         * The fiber keeps the object visible to root marking until that point.
+         */
+        ptn_object_release(object);
+        return;
+    }
     size_t post_destructor_epoch = root == NULL ? 0 : ptn_runtime_mark_gc_roots(root, root);
     if (
         root == NULL ||
@@ -136779,10 +136822,73 @@ static void ptn_gc_run_unreachable_object_destructor(
     ptn_object_release(object);
 }
 
+static void ptn_gc_run_selected_unreachable_object_destructors(
+    PtnRuntime *root,
+    size_t epoch,
+    const PtnGcObjectComponents *destructor_components,
+    int cyclic_components_only,
+    PtnObject ***destructed_objects,
+    size_t *destructed_objects_len,
+    size_t *destructed_objects_capacity,
+    PtnException **pending_destructor_exception
+) {
+    if (root == NULL) {
+        return;
+    }
+    size_t initial_live_objects_len = root->live_objects_len;
+    size_t primed_destructor_index = (size_t)-1;
+    size_t reverse_index = initial_live_objects_len;
+    while (reverse_index > 0) {
+        reverse_index--;
+        PtnObject *object = root->live_objects[reverse_index];
+        if (
+            !ptn_gc_object_pending_destructor_candidate(object, epoch) ||
+            (cyclic_components_only &&
+                !ptn_gc_cyclic_destructor_component_contains(destructor_components, object))
+        ) {
+            continue;
+        }
+        primed_destructor_index = reverse_index;
+        ptn_gc_run_unreachable_object_destructor(
+            root,
+            object,
+            epoch,
+            destructed_objects,
+            destructed_objects_len,
+            destructed_objects_capacity
+        );
+        ptn_gc_remember_pending_destructor_exception(root, pending_destructor_exception);
+        break;
+    }
+    for (size_t i = 0; i < initial_live_objects_len; i++) {
+        if (i == primed_destructor_index) {
+            continue;
+        }
+        PtnObject *object = root->live_objects[i];
+        if (
+            !ptn_gc_object_pending_destructor_candidate(object, epoch) ||
+            (cyclic_components_only &&
+                !ptn_gc_cyclic_destructor_component_contains(destructor_components, object))
+        ) {
+            continue;
+        }
+        ptn_gc_run_unreachable_object_destructor(
+            root,
+            object,
+            epoch,
+            destructed_objects,
+            destructed_objects_len,
+            destructed_objects_capacity
+        );
+        ptn_gc_remember_pending_destructor_exception(root, pending_destructor_exception);
+    }
+}
+
 static size_t ptn_runtime_collect_unreachable_objects(
     PtnRuntime *runtime,
     size_t *destructor_component_epoch_out,
-    size_t *counted_object_epoch_out
+    size_t *counted_object_epoch_out,
+    PtnException **pending_destructor_exception
 ) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -136799,8 +136905,6 @@ static size_t ptn_runtime_collect_unreachable_objects(
     }
 
     size_t epoch = ptn_runtime_mark_gc_roots(runtime, root);
-    ptn_gc_close_unreachable_suspended_fibers(root, epoch);
-    epoch = ptn_runtime_mark_gc_roots(runtime, root);
     size_t collected = 0;
     PtnGcObjectComponents destructor_components = {0};
     size_t destructor_component_epoch =
@@ -136813,44 +136917,42 @@ static size_t ptn_runtime_collect_unreachable_objects(
     size_t destructed_objects_len = 0;
     size_t destructed_objects_capacity = 0;
 
-    size_t initial_live_objects_len = root->live_objects_len;
-    size_t primed_destructor_index = (size_t)-1;
-    size_t reverse_index = initial_live_objects_len;
-    while (reverse_index > 0) {
-        reverse_index--;
-        PtnObject *object = root->live_objects[reverse_index];
-        if (!ptn_gc_object_pending_destructor_candidate(object, epoch)) {
-            continue;
-        }
-        primed_destructor_index = reverse_index;
-        ptn_gc_run_unreachable_object_destructor(
-            root,
-            object,
-            epoch,
-            &destructed_objects,
-            &destructed_objects_len,
-            &destructed_objects_capacity
-        );
-        break;
-    }
-    for (size_t i = 0; i < initial_live_objects_len; i++) {
-        if (i == primed_destructor_index) {
-            continue;
-        }
-        PtnObject *object = root->live_objects[i];
-        if (!ptn_gc_object_pending_destructor_candidate(object, epoch)) {
-            continue;
-        }
-        ptn_gc_run_unreachable_object_destructor(
-            root,
-            object,
-            epoch,
-            &destructed_objects,
-            &destructed_objects_len,
-            &destructed_objects_capacity
-        );
-    }
+    /*
+     * PHP runs destructors for objects on an actual cycle before releasing
+     * paused Fiber frames. Frame-local residuals that only hang off a Fiber
+     * closure are deferred until that Fiber has executed its finally.
+     */
+    ptn_gc_run_selected_unreachable_object_destructors(
+        root,
+        epoch,
+        &destructor_components,
+        1,
+        &destructed_objects,
+        &destructed_objects_len,
+        &destructed_objects_capacity,
+        pending_destructor_exception
+    );
 
+    /* Destructors may retain a suspended Fiber in user-visible roots. */
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    ptn_gc_close_unreachable_suspended_fibers(root, epoch);
+    ptn_gc_remember_pending_destructor_exception(root, pending_destructor_exception);
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
+
+    ptn_gc_run_selected_unreachable_object_destructors(
+        root,
+        epoch,
+        &destructor_components,
+        0,
+        &destructed_objects,
+        &destructed_objects_len,
+        &destructed_objects_capacity,
+        pending_destructor_exception
+    );
+
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    ptn_gc_close_unreachable_suspended_fibers(root, epoch);
+    ptn_gc_remember_pending_destructor_exception(root, pending_destructor_exception);
     epoch = ptn_runtime_mark_gc_roots(runtime, root);
     size_t counted_destructor_epoch = ptn_runtime_next_gc_mark_epoch(root);
     collected = ptn_gc_count_destructor_components(
@@ -137009,7 +137111,7 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         reference->lifecycle_runtime = NULL;
         reference->gc_collecting = 1;
         reference->refcount = 0;
-        ptn_reference_destroy_storage(reference);
+        ptn_reference_destroy_storage_in_runtime(root, reference);
         if (collected == SIZE_MAX) {
             ptn_abort_out_of_memory();
         }
@@ -137050,7 +137152,7 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         ptn_runtime_remove_live_array_at(root, array_index);
         array->lifecycle_runtime = NULL;
         array->refcount = 1;
-        ptn_array_free(array);
+        ptn_array_free_in_runtime(root, array);
         if (collected == SIZE_MAX) {
             ptn_abort_out_of_memory();
         }
@@ -137083,23 +137185,32 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         root->gc_roots = root->live_objects_len;
         return ptn_int(0);
     }
+    PtnValue previous_gc_destructor_caller_trace =
+        root->gc_destructor_caller_trace;
+    root->gc_destructor_caller_trace = ptn_exception_capture_trace(runtime);
     root->gc_running = 1;
+    PtnException *pending_destructor_exception = NULL;
+    ptn_gc_remember_pending_destructor_exception(root, &pending_destructor_exception);
     if (ptn_gc_array_reference_auto_flushed()) {
         ptn_gc_drain_pending_destructor_array_cycles(runtime);
+        ptn_gc_remember_pending_destructor_exception(root, &pending_destructor_exception);
     }
     size_t destructor_component_epoch = 0;
     size_t counted_object_epoch = 0;
     size_t object_cycles = ptn_runtime_collect_unreachable_objects(
         runtime,
         &destructor_component_epoch,
-        &counted_object_epoch
+        &counted_object_epoch,
+        &pending_destructor_exception
     );
     size_t reference_array_cycles = ptn_runtime_collect_unreachable_references_and_arrays(
         runtime,
         destructor_component_epoch,
         counted_object_epoch
     );
+    ptn_gc_remember_pending_destructor_exception(root, &pending_destructor_exception);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
+    ptn_gc_remember_pending_destructor_exception(root, &pending_destructor_exception);
     /*
      * The object collector above already runs the Zend-style destructor rerun
      * for cycles exposed by destructors. A second broad unreferenced sweep here
@@ -137130,6 +137241,13 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         root->gc_roots = 0;
     }
     root->gc_running = 0;
+    ptn_gc_remember_pending_destructor_exception(root, &pending_destructor_exception);
+    if (pending_destructor_exception != NULL) {
+        root->exceptions->active_exception = pending_destructor_exception;
+    }
+    PtnValue gc_destructor_caller_trace = root->gc_destructor_caller_trace;
+    root->gc_destructor_caller_trace = previous_gc_destructor_caller_trace;
+    ptn_value_destroy(&gc_destructor_caller_trace);
     if (root->exceptions->active_exception != NULL) {
         ptn_rethrow_exception(root);
     }
@@ -147301,6 +147419,71 @@ static const char *ptn_runtime_default_charset(PtnRuntime *runtime) {
     return root->default_charset;
 }
 
+static const char *ptn_runtime_sys_temp_dir(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->sys_temp_dir == NULL) {
+        return "";
+    }
+    return root->sys_temp_dir;
+}
+
+static int ptn_temp_dir_has_native_trailing_separator(const char *path, size_t len) {
+    if (path == NULL || len == 0) {
+        return 0;
+    }
+#if defined(_WIN32)
+    return path[len - 1] == '\\';
+#else
+    return path[len - 1] == '/';
+#endif
+}
+
+static char *ptn_normalize_temp_dir_for_resolution(const char *path, int reject_root_separator) {
+    if (path == NULL || path[0] == '\0') {
+        return NULL;
+    }
+    size_t len = strlen(path);
+    if (ptn_temp_dir_has_native_trailing_separator(path, len)) {
+        if (len >= 2) {
+            return ptn_duplicate_string_len(path, len - 1);
+        }
+        if (reject_root_separator) {
+            return NULL;
+        }
+        /* PORT NOTE: php_get_temporary_directory() strips a fallback root
+         * separator too, caching an empty string for TMPDIR=/. */
+        return ptn_duplicate_string_len(path, len - 1);
+    }
+    return ptn_duplicate_string_len(path, len);
+}
+
+static const char *ptn_runtime_resolved_temp_dir(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        return ptn_system_temp_dir();
+    }
+    if (root->resolved_temp_dir != NULL) {
+        return root->resolved_temp_dir;
+    }
+
+    /* PORT NOTE: php_get_temporary_directory() caches this resolved value while
+     * ini_get('sys_temp_dir') continues to expose the raw directive. */
+    root->resolved_temp_dir = ptn_normalize_temp_dir_for_resolution(
+        ptn_runtime_sys_temp_dir(runtime),
+        1
+    );
+    if (root->resolved_temp_dir == NULL) {
+        root->resolved_temp_dir = ptn_normalize_temp_dir_for_resolution(
+            ptn_system_temp_dir(),
+            0
+        );
+    }
+    if (root->resolved_temp_dir == NULL) {
+        root->resolved_temp_dir = ptn_duplicate_string(".");
+    }
+    return root->resolved_temp_dir;
+}
+
 static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->arg_separator_input == NULL) {
@@ -148376,6 +148559,7 @@ static char *ptn_ini_value_to_string(PtnValue value) {
 static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
+    ptn_request_allocator_set_limit(root->memory_limit);
 }
 
 static const char *ptn_runtime_fiber_stack_size(PtnRuntime *runtime) {
@@ -148427,14 +148611,19 @@ static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requ
             runtime,
             max_value >= 0 ? ptn_runtime_max_memory_limit(runtime) : requested
         );
-    } else if ((uint64_t)requested_value < (uint64_t)ptn_synthetic_memory_usage()) {
+    } else if ((uint64_t)requested_value < (uint64_t)(ptn_request_allocator_is_active()
+            ? ptn_request_allocator_usage()
+            : ptn_synthetic_memory_usage())) {
+        size_t current_usage = ptn_request_allocator_is_active()
+            ? ptn_request_allocator_usage()
+            : ptn_synthetic_memory_usage();
         char message[192];
         snprintf(
             message,
             sizeof(message),
             "Failed to set memory limit to %lld bytes (Current memory usage is %zu bytes)",
             (long long)requested_value,
-            ptn_synthetic_memory_usage()
+            current_usage
         );
         ptn_emit_sourced_ini_warning(runtime, message, line);
     } else {
@@ -149004,6 +149193,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "upload_tmp_dir")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_upload_tmp_dir(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "sys_temp_dir")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_sys_temp_dir(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "expose_php")) {
@@ -155757,6 +155950,7 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_URL", PTN_CURLOPT_URL);
     ptn_get_defined_constants_add_int(table, "CURLOPT_FILE", PTN_CURLOPT_FILE);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADER", PTN_CURLOPT_HEADER);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_HTTPHEADER", PTN_CURLOPT_HTTPHEADER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_UPLOAD", PTN_CURLOPT_UPLOAD);
     ptn_get_defined_constants_add_int(table, "CURLOPT_INFILE", PTN_CURLOPT_INFILE);
     ptn_get_defined_constants_add_int(table, "CURLOPT_POST", PTN_CURLOPT_POST);
@@ -155767,6 +155961,7 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", PTN_CURLOPT_HEADERFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_WRITEHEADER", PTN_CURLOPT_WRITEHEADER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_COOKIEFILE", PTN_CURLOPT_COOKIEFILE);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_CUSTOMREQUEST", PTN_CURLOPT_CUSTOMREQUEST);
     ptn_get_defined_constants_add_int(table, "CURLOPT_FOLLOWLOCATION", PTN_CURLOPT_FOLLOWLOCATION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HTTP_VERSION", PTN_CURLOPT_HTTP_VERSION);
     ptn_get_defined_constants_add_int(table, "CURLOPT_PROTOCOLS", PTN_CURLOPT_PROTOCOLS);
@@ -155784,6 +155979,8 @@ static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_FNMATCH_FUNCTION", PTN_CURLOPT_FNMATCH_FUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLINFO_HEADER_OUT", PTN_CURLINFO_HEADER_OUT);
     ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
+    ptn_get_defined_constants_add_int(table, "CURLINFO_HTTP_CODE", PTN_CURLINFO_HTTP_CODE);
+    ptn_get_defined_constants_add_int(table, "CURLINFO_RESPONSE_CODE", PTN_CURLINFO_HTTP_CODE);
     ptn_get_defined_constants_add_int(table, "CURLINFO_HTTP_VERSION", PTN_CURLINFO_HTTP_VERSION);
     ptn_get_defined_constants_add_int(table, "CURL_HTTP_VERSION_1_1", PTN_CURL_HTTP_VERSION_1_1);
     ptn_get_defined_constants_add_int(table, "CURLM_OK", PTN_CURLM_OK);
@@ -156436,6 +156633,7 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_URL",
         "CURLOPT_FILE",
         "CURLOPT_HEADER",
+        "CURLOPT_HTTPHEADER",
         "CURLOPT_UPLOAD",
         "CURLOPT_INFILE",
         "CURLOPT_POST",
@@ -156446,6 +156644,7 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_HEADERFUNCTION",
         "CURLOPT_WRITEHEADER",
         "CURLOPT_COOKIEFILE",
+        "CURLOPT_CUSTOMREQUEST",
         "CURLOPT_FOLLOWLOCATION",
         "CURLOPT_HTTP_VERSION",
         "CURLOPT_PROTOCOLS",
@@ -156463,6 +156662,8 @@ static int ptn_reflection_constant_is_curl(const char *name) {
         "CURLOPT_FNMATCH_FUNCTION",
         "CURLINFO_HEADER_OUT",
         "CURLINFO_EFFECTIVE_URL",
+        "CURLINFO_HTTP_CODE",
+        "CURLINFO_RESPONSE_CODE",
         "CURLINFO_HTTP_VERSION",
         "CURL_HTTP_VERSION_1_1",
         "CURLM_OK",
@@ -159683,6 +159884,74 @@ static PtnValue ptn_internal_connection_status(PtnRuntime *runtime, size_t argc,
     return ptn_int(0);
 }
 
+static int ptn_error_log_append_file(const char *path, const char *message, size_t message_len) {
+    char timestamp[80];
+    time_t now = time(NULL);
+    struct tm local_time;
+#if defined(_WIN32)
+    if (localtime_s(&local_time, &now) != 0) {
+        return 0;
+    }
+#else
+    if (localtime_r(&now, &local_time) == NULL) {
+        return 0;
+    }
+#endif
+    size_t timestamp_len = strftime(
+        timestamp,
+        sizeof(timestamp),
+        "%d-%b-%Y %H:%M:%S %Z",
+        &local_time
+    );
+    if (timestamp_len == 0) {
+        return 0;
+    }
+
+#if defined(_WIN32)
+    FILE *stream = fopen(path, "ab");
+#else
+    mode_t mode = 0644;
+    const char *configured_mode = getenv("PTN_ERROR_LOG_MODE");
+    if (configured_mode != NULL && configured_mode[0] != '\0') {
+        char *end = NULL;
+        errno = 0;
+        long parsed = strtol(configured_mode, &end, 8);
+        while (end != NULL && isspace((unsigned char)*end)) {
+            end++;
+        }
+        if (errno == 0 && end != configured_mode && end != NULL && *end == '\0' &&
+            parsed >= 0 && parsed <= 0777) {
+            mode = (mode_t)parsed;
+        }
+    }
+    int descriptor = open(path, O_WRONLY | O_APPEND | O_CREAT, mode);
+    if (descriptor < 0) {
+        return 0;
+    }
+    FILE *stream = fdopen(descriptor, "a");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(descriptor);
+        errno = saved_errno;
+        return 0;
+    }
+#endif
+    if (stream == NULL) {
+        return 0;
+    }
+
+    int written =
+        fwrite("[", 1, 1, stream) == 1 &&
+        fwrite(timestamp, 1, timestamp_len, stream) == timestamp_len &&
+        fwrite("] ", 1, 2, stream) == 2 &&
+        fwrite(message, 1, message_len, stream) == message_len &&
+        fwrite("\n", 1, 1, stream) == 1;
+    if (fclose(stream) != 0) {
+        written = 0;
+    }
+    return written;
+}
+
 static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand message = ptn_internal_expect_string_arg(
         runtime,
@@ -159739,6 +160008,18 @@ static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const P
         fclose(stream);
         ptn_string_operand_free(message);
         return ptn_bool(1);
+    }
+    if (message_type == 0) {
+        const char *configured_log = getenv("PTN_ERROR_LOG");
+        if (configured_log != NULL && configured_log[0] != '\0') {
+            int written = ptn_error_log_append_file(
+                configured_log,
+                message.data,
+                message.len
+            );
+            ptn_string_operand_free(message);
+            return ptn_bool(written);
+        }
     }
     fwrite(message.data, 1, message.len, stderr);
     fputc('\n', stderr);
@@ -201003,7 +201284,7 @@ static PtnResource *ptn_socket_new_resource(
     ptn_resource_assign_object_id(runtime, resource);
     resource->close_hook = ptn_socket_close_hook;
     resource->close_hook_data = data;
-    resource->close_hook_data_free = free;
+    resource->close_hook_data_free = ptn_request_free;
     return resource;
 }
 
@@ -205155,6 +205436,120 @@ static int ptn_http_response_body(
     return 1;
 }
 
+static int ptn_http_header_block_has_name(
+    const char *data,
+    size_t len,
+    const char *name
+) {
+    size_t name_len = strlen(name);
+    size_t cursor = 0;
+    while (cursor < len) {
+        size_t line_end = cursor;
+        while (line_end < len && data[line_end] != '\n') {
+            line_end++;
+        }
+        size_t line_len = line_end - cursor;
+        if (line_len > 0 && data[cursor + line_len - 1] == '\r') {
+            line_len--;
+        }
+        if (line_len > name_len && data[cursor + name_len] == ':' &&
+            ptn_ascii_case_equal_n(data + cursor, name, name_len)) {
+            return 1;
+        }
+        cursor = line_end < len ? line_end + 1 : len;
+    }
+    return 0;
+}
+
+static int ptn_http_context_string_option(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *option_name,
+    char **data_out,
+    size_t *len_out,
+    size_t line
+) {
+    *data_out = NULL;
+    *len_out = 0;
+    PtnValue *option = context == NULL
+        ? NULL
+        : ptn_stream_context_option(context, "http", option_name);
+    if (option == NULL) {
+        return 1;
+    }
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, *option, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return 0;
+    }
+    *data_out = ptn_duplicate_string_len(operand.data, operand.len);
+    *len_out = operand.len;
+    ptn_string_operand_free(operand);
+    return 1;
+}
+
+static int ptn_http_context_append_header_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *headers,
+    PtnValue value,
+    int *has_content_length,
+    size_t line
+) {
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return 0;
+    }
+    if (ptn_http_header_block_has_name(operand.data, operand.len, "Content-Length")) {
+        *has_content_length = 1;
+    }
+    if (operand.len != 0) {
+        ptn_string_buffer_append_len(headers, operand.data, operand.len);
+        if (operand.data[operand.len - 1] != '\n') {
+            ptn_string_buffer_append(headers, "\r\n");
+        }
+    }
+    ptn_string_operand_free(operand);
+    return 1;
+}
+
+static int ptn_http_context_append_headers(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    PtnStringBuffer *headers,
+    int *has_content_length,
+    size_t line
+) {
+    PtnValue *option = context == NULL
+        ? NULL
+        : ptn_stream_context_option(context, "http", "header");
+    if (option == NULL) {
+        return 1;
+    }
+    PtnValue value = ptn_value_deref(*option);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return ptn_http_context_append_header_value(
+            runtime,
+            headers,
+            value,
+            has_content_length,
+            line
+        );
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (!ptn_http_context_append_header_value(
+                runtime,
+                headers,
+                value.as.array->entries[i].value,
+                has_content_length,
+                line
+            )) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ptn_file_get_contents_http_bytes(
     PtnRuntime *runtime,
     const char *path,
@@ -205176,6 +205571,67 @@ static int ptn_file_get_contents_http_bytes(
         return -2;
     }
 
+    char *method = NULL;
+    size_t method_len = 0;
+    char *content = NULL;
+    size_t content_len = 0;
+    PtnStringBuffer context_headers;
+    ptn_string_buffer_init(&context_headers);
+    int has_content_length = 0;
+    if (!ptn_http_context_string_option(
+            runtime,
+            context,
+            "method",
+            &method,
+            &method_len,
+            line
+        ) ||
+        !ptn_http_context_string_option(
+            runtime,
+            context,
+            "content",
+            &content,
+            &content_len,
+            line
+        ) ||
+        !ptn_http_context_append_headers(
+            runtime,
+            context,
+            &context_headers,
+            &has_content_length,
+            line
+        )) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        free(method);
+        free(content);
+        free(context_headers.data);
+        return -2;
+    }
+    if (method == NULL || method_len == 0) {
+        free(method);
+        method = ptn_duplicate_string("GET");
+        method_len = 3;
+    }
+    if (memchr(method, '\r', method_len) != NULL ||
+        memchr(method, '\n', method_len) != NULL ||
+        memchr(method, ' ', method_len) != NULL ||
+        memchr(method, '\t', method_len) != NULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "file_get_contents(): HTTP request method must not contain whitespace or newlines"
+        );
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        free(method);
+        free(content);
+        free(context_headers.data);
+        return -2;
+    }
+
     PtnValue tcp_args[3] = { ptn_null(), ptn_null(), ptn_null() };
     PtnStringOperand tcp_operand = {
         .data = tcp_address,
@@ -205194,24 +205650,42 @@ static int ptn_file_get_contents_http_bytes(
         free(tcp_address);
         free(request_target);
         free(host_header);
+        free(method);
+        free(content);
+        free(context_headers.data);
         ptn_value_destroy(&stream);
         return -1;
     }
 
     PtnStringBuffer request;
     ptn_string_buffer_init(&request);
+    ptn_string_buffer_append_len(&request, method, method_len);
     ptn_string_buffer_append_format(
         &request,
-        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        " %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n",
         request_target,
         host_header
     );
+    if (context_headers.len != 0) {
+        ptn_string_buffer_append_len(&request, context_headers.data, context_headers.len);
+    }
+    if (content != NULL && !has_content_length) {
+        ptn_string_buffer_append_format(&request, "Content-Length: %zu\r\n", content_len);
+    }
+    ptn_string_buffer_append(&request, "\r\n");
+    if (content != NULL && content_len != 0) {
+        ptn_string_buffer_append_len(&request, content, content_len);
+    }
     size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
+    size_t request_len = request.len;
     free(request.data);
     free(tcp_address);
     free(request_target);
     free(host_header);
-    if (written == 0 || written < request.len) {
+    free(method);
+    free(content);
+    free(context_headers.data);
+    if (written == 0 || written < request_len) {
         ptn_value_destroy(&stream);
         return -1;
     }
@@ -205239,6 +205713,214 @@ static int ptn_file_get_contents_http_bytes(
     free(response.data);
     ptn_value_destroy(&stream);
     return result;
+}
+
+static void ptn_http_transport_response_free(PtnHttpTransportResponse *response) {
+    if (response == NULL) {
+        return;
+    }
+    free(response->request);
+    free(response->headers);
+    free(response->body);
+    memset(response, 0, sizeof(*response));
+}
+
+static int ptn_http_transport_parse_status_line(
+    const char *line,
+    size_t line_len,
+    int *status_code_out,
+    int *http_version_out
+) {
+    if (line_len < strlen("HTTP/1.0 000") || memcmp(line, "HTTP/", 5) != 0) {
+        return 0;
+    }
+    const char *space = memchr(line, ' ', line_len);
+    if (space == NULL || (size_t)(line + line_len - space) < 4 ||
+        !isdigit((unsigned char)space[1]) ||
+        !isdigit((unsigned char)space[2]) ||
+        !isdigit((unsigned char)space[3])) {
+        return 0;
+    }
+    *status_code_out = (space[1] - '0') * 100 + (space[2] - '0') * 10 + (space[3] - '0');
+    *http_version_out = line_len >= 8 && memcmp(line, "HTTP/1.1", 8) == 0
+        ? PTN_CURL_HTTP_VERSION_1_1
+        : (line_len >= 8 && memcmp(line, "HTTP/1.0", 8) == 0
+            ? PTN_CURL_HTTP_VERSION_1_0
+            : 0);
+    return 1;
+}
+
+static int ptn_http_transport_request(
+    PtnRuntime *runtime,
+    const char *url,
+    const char *method,
+    const char *headers,
+    size_t headers_len,
+    const unsigned char *body,
+    size_t body_len,
+    PtnHttpTransportResponse *response,
+    size_t line
+) {
+    memset(response, 0, sizeof(*response));
+    char *tcp_address = NULL;
+    char *request_target = NULL;
+    char *host_header = NULL;
+    if (!ptn_file_get_contents_http_parse_url(
+            url,
+            &tcp_address,
+            &request_target,
+            &host_header
+        )) {
+        return 0;
+    }
+    if (method == NULL || method[0] == '\0' ||
+        strpbrk(method, " \t\r\n") != NULL ||
+        strpbrk(request_target, "\r\n") != NULL) {
+        free(tcp_address);
+        free(request_target);
+        free(host_header);
+        return 0;
+    }
+
+    int has_host = ptn_http_header_block_has_name(headers, headers_len, "Host");
+    int has_accept = ptn_http_header_block_has_name(headers, headers_len, "Accept");
+    int has_content_length = ptn_http_header_block_has_name(headers, headers_len, "Content-Length");
+    PtnStringBuffer request;
+    ptn_string_buffer_init(&request);
+    ptn_string_buffer_append_format(
+        &request,
+        "%s %s HTTP/1.1\r\n",
+        method,
+        request_target
+    );
+    if (!has_host) {
+        ptn_string_buffer_append_format(&request, "Host: %s\r\n", host_header);
+    }
+    if (!has_accept) {
+        ptn_string_buffer_append(&request, "Accept: */*\r\n");
+    }
+    ptn_string_buffer_append(&request, "Connection: close\r\n");
+    if (headers != NULL && headers_len != 0) {
+        ptn_string_buffer_append_len(&request, headers, headers_len);
+        if (headers[headers_len - 1] != '\n') {
+            ptn_string_buffer_append(&request, "\r\n");
+        }
+    }
+    if (body != NULL && !has_content_length) {
+        ptn_string_buffer_append_format(&request, "Content-Length: %zu\r\n", body_len);
+    }
+    ptn_string_buffer_append(&request, "\r\n");
+    if (body != NULL && body_len != 0) {
+        ptn_string_buffer_append_len(&request, (const char *)body, body_len);
+    }
+    response->request = ptn_duplicate_string_len(request.data, request.len);
+    response->request_len = request.len;
+
+    PtnValue tcp_args[3] = { ptn_null(), ptn_null(), ptn_null() };
+    PtnStringOperand tcp_operand = {
+        .data = tcp_address,
+        .owned = NULL,
+        .len = strlen(tcp_address),
+    };
+    PtnValue stream = ptn_stream_socket_client_open_tcp(
+        runtime,
+        "curl_exec",
+        tcp_operand,
+        tcp_args[1],
+        tcp_args[2],
+        line
+    );
+    free(tcp_address);
+    free(request_target);
+    free(host_header);
+    if (stream.type != PTN_RESOURCE || stream.as.resource == NULL) {
+        free(request.data);
+        ptn_value_destroy(&stream);
+        ptn_http_transport_response_free(response);
+        return 0;
+    }
+
+    size_t written = ptn_stream_write_bytes(stream.as.resource, request.data, request.len);
+    free(request.data);
+    if (written != response->request_len) {
+        ptn_value_destroy(&stream);
+        ptn_http_transport_response_free(response);
+        return 0;
+    }
+
+    PtnStringBuffer raw_response;
+    ptn_string_buffer_init(&raw_response);
+    unsigned char chunk[8192];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(stream.as.resource, chunk, sizeof(chunk));
+        if (read_len == 0) {
+            break;
+        }
+        ptn_string_buffer_append_len(&raw_response, (const char *)chunk, read_len);
+    }
+    ptn_value_destroy(&stream);
+
+    const char *header_line = NULL;
+    size_t header_line_len = 0;
+    size_t offset = 0;
+    if (!ptn_http_next_line(
+            raw_response.data == NULL ? "" : raw_response.data,
+            raw_response.len,
+            &offset,
+            &header_line,
+            &header_line_len
+        ) ||
+        !ptn_http_transport_parse_status_line(
+            header_line,
+            header_line_len,
+            &response->status_code,
+            &response->http_version
+        )) {
+        free(raw_response.data);
+        ptn_http_transport_response_free(response);
+        return 0;
+    }
+
+    PtnStringBuffer response_headers;
+    ptn_string_buffer_init(&response_headers);
+    ptn_string_buffer_append_len(&response_headers, header_line, header_line_len);
+    ptn_string_buffer_append(&response_headers, "\r\n");
+    int saw_header_terminator = 0;
+    while (ptn_http_next_line(
+        raw_response.data,
+        raw_response.len,
+        &offset,
+        &header_line,
+        &header_line_len
+    )) {
+        ptn_string_buffer_append_len(&response_headers, header_line, header_line_len);
+        ptn_string_buffer_append(&response_headers, "\r\n");
+        if (header_line_len == 0) {
+            saw_header_terminator = 1;
+            break;
+        }
+    }
+    if (!saw_header_terminator) {
+        free(raw_response.data);
+        free(response_headers.data);
+        ptn_http_transport_response_free(response);
+        return 0;
+    }
+    response->headers = response_headers.data;
+    response->headers_len = response_headers.len;
+    response->body_len = raw_response.len - offset;
+    response->body = malloc(response->body_len + 1);
+    if (response->body == NULL) {
+        free(raw_response.data);
+        ptn_http_transport_response_free(response);
+        ptn_abort_out_of_memory();
+    }
+    if (response->body_len != 0) {
+        memcpy(response->body, raw_response.data + offset, response->body_len);
+    }
+    response->body[response->body_len] = '\0';
+    free(raw_response.data);
+    return 1;
 }
 
 static PtnPersistentSocketEntry *ptn_persistent_socket_find(const char *key) {
@@ -219252,6 +219934,19 @@ static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_get_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static void ptn_fiber_throw_switch_context_exception(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    const char *function_name
+);
+static void ptn_fiber_throw_force_closed_suspend_exception(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static const char *ptn_pdo_driver_from_dsn(const char *dsn);
@@ -220028,6 +220723,17 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 runtime->current_generator != NULL &&
                 runtime->current_generator->executing &&
                 runtime->current_generator->values != NULL &&
+                runtime->current_fiber != NULL &&
+                !runtime->replaying_generator_send_call &&
+                ptn_generator_defer_active_fiber_suspend(runtime, argc, args, line)
+            ) {
+                return ptn_null();
+            }
+            if (
+                runtime->current_generator != NULL &&
+                runtime->current_generator->executing &&
+                runtime->current_generator->values != NULL &&
+                runtime->current_fiber == NULL &&
                 !runtime->replaying_generator_send_call
             ) {
                 ptn_generator_register_send_call(
@@ -220073,13 +220779,37 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 );
                 return ptn_null();
             }
+            if (root != NULL && root->tick_functions_running) {
+                ptn_fiber_throw_switch_context_exception(
+                    runtime,
+                    argc,
+                    args,
+                    line,
+                    "Fiber::suspend"
+                );
+                return ptn_null();
+            }
             if (
                 root != NULL &&
                 root->gc_running &&
                 root->gc_destructor_depth > 0 &&
+                current_fiber == root->gc_destructor_fiber &&
                 !root->gc_destructor_fiber_current_requested
             ) {
-                return argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
+                if (root->gc_destructor_fiber_force_closing) {
+                    ptn_fiber_throw_force_closed_suspend_exception(runtime, argc, args, line);
+                    return ptn_null();
+                }
+                /* The unreferenced internal GC fiber is immediately closed. */
+                root->gc_destructor_fiber_force_closing = 1;
+                ptn_throw_exception_at(
+                    runtime,
+                    "__PTN_FiberExit",
+                    "",
+                    runtime->source_path,
+                    line
+                );
+                return ptn_null();
             }
             return ptn_fiber_capture_suspension(runtime, argc, args, line);
         }
@@ -220294,16 +221024,92 @@ static int ptn_fiber_configured_stack_size(
     return 1;
 }
 
-static void ptn_fiber_restore_caller_runtime(PtnRuntime *runtime, PtnFiberData *data) {
-    if (runtime == NULL || data == NULL) {
+static void ptn_fiber_restore_caller_try_frame(PtnRuntime *target, PtnFiberData *data) {
+    if (target == NULL || data == NULL || target->exceptions == NULL) {
         return;
     }
-    if (runtime->exceptions != NULL) {
-        runtime->exceptions->try_frame = data->caller_try_frame;
+    target->exceptions->try_frame = data->caller_try_frame;
+}
+
+static void ptn_fiber_activate_executor_runtime(
+    PtnRuntime *caller_runtime,
+    PtnRuntime *executor_runtime,
+    PtnFiberData *data
+) {
+    if (
+        caller_runtime == NULL ||
+        executor_runtime == NULL ||
+        data == NULL ||
+        executor_runtime != data->context_runtime
+    ) {
+        return;
     }
-    runtime->trace_frame = data->caller_trace_frame;
-    runtime->current_fiber = data->caller_fiber;
-    runtime->current_generator = data->caller_generator;
+    PtnRuntime *root = ptn_runtime_root(caller_runtime);
+    if (root == NULL) {
+        return;
+    }
+    data->caller_active_fiber_executor_runtime =
+        root->active_fiber_executor_runtime;
+    data->caller_active_value_release_runtime =
+        root->active_value_release_runtime;
+    root->active_fiber_executor_runtime = executor_runtime;
+    root->active_value_release_runtime =
+        data->suspended_active_value_release_runtime;
+    data->active_root_context_installed = 1;
+}
+
+static void ptn_fiber_restore_active_executor_runtime(
+    PtnRuntime *runtime,
+    PtnFiberData *data
+) {
+    if (runtime == NULL || data == NULL || data->context_runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        data->active_root_context_installed &&
+        root != NULL &&
+        root->active_fiber_executor_runtime == data->context_runtime
+    ) {
+        root->active_fiber_executor_runtime =
+            data->caller_active_fiber_executor_runtime;
+        root->active_value_release_runtime =
+            data->caller_active_value_release_runtime;
+        data->active_root_context_installed = 0;
+    }
+}
+
+static void ptn_fiber_restore_caller_runtime(PtnRuntime *target, PtnFiberData *data) {
+    if (target == NULL || data == NULL) {
+        return;
+    }
+    ptn_fiber_restore_active_executor_runtime(target, data);
+    ptn_fiber_restore_caller_try_frame(target, data);
+    target->trace_frame = data->caller_trace_frame;
+    target->current_fiber = data->caller_fiber;
+    target->current_generator = data->caller_generator;
+    target->diagnostics.error_reporting = data->caller_error_reporting;
+    target->error_suppression_depth = data->caller_error_suppression_depth;
+    target->error_suppression_saved_reporting =
+        data->caller_error_suppression_saved_reporting;
+}
+
+static void ptn_fiber_clear_executor_runtime_aliases(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    runtime->trace_frame = NULL;
+    runtime->current_fiber = NULL;
+    runtime->current_generator = NULL;
+}
+
+static void ptn_fiber_prepare_executor_for_caller_handoff(
+    PtnRuntime *runtime,
+    PtnFiberData *data
+) {
+    ptn_fiber_restore_active_executor_runtime(runtime, data);
+    ptn_fiber_restore_caller_try_frame(runtime, data);
+    ptn_fiber_clear_executor_runtime_aliases(runtime);
 }
 
 static void ptn_fiber_detach_active_method_frame(PtnRuntime *runtime, PtnFiberData *data) {
@@ -220365,30 +221171,48 @@ static void ptn_fiber_save_suspended_runtime(PtnRuntime *runtime, PtnFiberData *
         : runtime->exceptions->try_frame;
     data->suspended_trace_frame = runtime->trace_frame;
     data->suspended_generator = runtime->current_generator;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    data->suspended_active_value_release_runtime = root == NULL
+        ? NULL
+        : root->active_value_release_runtime;
+    data->suspended_error_reporting = runtime->diagnostics.error_reporting;
+    data->suspended_error_suppression_depth = runtime->error_suppression_depth;
+    data->suspended_error_suppression_saved_reporting =
+        runtime->error_suppression_saved_reporting;
 }
 
 static void ptn_fiber_prepare_runtime_entry(
-    PtnRuntime *runtime,
+    PtnRuntime *caller_runtime,
+    PtnRuntime *executor_runtime,
     PtnFiberData *data,
     PtnTraceFrame *method_frame
 ) {
-    if (runtime == NULL || data == NULL) {
+    if (caller_runtime == NULL || executor_runtime == NULL || data == NULL) {
         return;
     }
-    data->caller_try_frame = runtime->exceptions == NULL
+    ptn_fiber_activate_executor_runtime(caller_runtime, executor_runtime, data);
+    data->caller_try_frame = caller_runtime->exceptions == NULL
         ? NULL
-        : runtime->exceptions->try_frame;
-    data->caller_trace_frame = runtime->trace_frame;
-    data->caller_fiber = runtime->current_fiber;
-    data->caller_generator = runtime->current_generator;
-    if (runtime->exceptions != NULL) {
-        runtime->exceptions->try_frame = data->suspended_try_frame;
+        : caller_runtime->exceptions->try_frame;
+    data->caller_trace_frame = caller_runtime->trace_frame;
+    data->caller_fiber = caller_runtime->current_fiber;
+    data->caller_generator = caller_runtime->current_generator;
+    data->caller_error_reporting = caller_runtime->diagnostics.error_reporting;
+    data->caller_error_suppression_depth = caller_runtime->error_suppression_depth;
+    data->caller_error_suppression_saved_reporting =
+        caller_runtime->error_suppression_saved_reporting;
+    if (executor_runtime->exceptions != NULL) {
+        executor_runtime->exceptions->try_frame = data->suspended_try_frame;
     }
-    runtime->trace_frame = data->suspended_trace_frame;
-    runtime->current_fiber = data->object;
-    runtime->current_generator = data->suspended_generator;
+    executor_runtime->trace_frame = data->suspended_trace_frame;
+    executor_runtime->current_fiber = data->object;
+    executor_runtime->current_generator = data->suspended_generator;
+    executor_runtime->diagnostics.error_reporting = data->suspended_error_reporting;
+    executor_runtime->error_suppression_depth = data->suspended_error_suppression_depth;
+    executor_runtime->error_suppression_saved_reporting =
+        data->suspended_error_suppression_saved_reporting;
     if (data->suspended_trace_frame != NULL) {
-        ptn_fiber_attach_active_method_frame(runtime, data, method_frame);
+        ptn_fiber_attach_active_method_frame(executor_runtime, data, method_frame);
     } else {
         data->active_method_frame = method_frame;
         data->active_trace_tail = NULL;
@@ -220408,6 +221232,10 @@ static void ptn_fiber_restore_suspended_runtime(PtnRuntime *runtime, PtnFiberDat
     runtime->trace_frame = data->suspended_trace_frame;
     runtime->current_fiber = data->object;
     runtime->current_generator = data->suspended_generator;
+    runtime->diagnostics.error_reporting = data->suspended_error_reporting;
+    runtime->error_suppression_depth = data->suspended_error_suppression_depth;
+    runtime->error_suppression_saved_reporting =
+        data->suspended_error_suppression_saved_reporting;
 }
 
 static int ptn_fiber_is_close_unwind_exception(PtnException *exception) {
@@ -220460,6 +221288,32 @@ static void ptn_fiber_prune_close_unwind_previous(PtnException *exception) {
         ptn_value_destroy(&exception->previous);
         exception->previous = ptn_null();
     }
+}
+
+static void ptn_fiber_throw_switch_context_exception(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    const char *function_name
+) {
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "FiberError",
+        ptn_duplicate_string("Cannot switch fibers in current execution context"),
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        function_name,
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        argc,
+        args
+    );
+}
+
+static int ptn_fiber_switch_context_is_forbidden(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL && root->tick_functions_running;
 }
 
 static void ptn_fiber_throw_force_closed_suspend_exception(
@@ -220537,15 +221391,21 @@ static int ptn_fiber_call_callback_capturing_exception(
     runtime->suppress_user_call_frame_location = 1;
     runtime->suppress_user_argument_count_location = 1;
     ptn_fiber_attach_active_method_frame(runtime, data, data->active_method_frame);
-    *result_out = ptn_call_callable_named(
-        runtime,
-        data->callback,
-        data->entry_argc,
-        data->entry_args,
-        NULL,
-        data->entry_line,
-        0
-    );
+    int callback_succeeded = 1;
+    if (data->internal_callback != NULL) {
+        *result_out = ptn_null();
+        callback_succeeded = data->internal_callback(runtime, data, result_out);
+    } else {
+        *result_out = ptn_call_callable_named(
+            runtime,
+            data->callback,
+            data->entry_argc,
+            data->entry_args,
+            NULL,
+            data->entry_line,
+            0
+        );
+    }
     ptn_fiber_detach_active_method_frame(runtime, data);
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
@@ -220556,7 +221416,7 @@ static int ptn_fiber_call_callback_capturing_exception(
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     runtime->strict_types = previous_strict_types;
-    return 1;
+    return callback_succeeded;
 }
 
 static void ptn_fiber_context_trampoline(uintptr_t runtime_word, uintptr_t data_word) {
@@ -220580,6 +221440,7 @@ static void ptn_fiber_context_trampoline(uintptr_t runtime_word, uintptr_t data_
     data->suspended_try_frame = NULL;
     data->suspended_trace_frame = NULL;
     data->suspended_generator = NULL;
+    data->suspended_active_value_release_runtime = NULL;
     ptn_fiber_clear_suspension(data);
 
     if (!callback_succeeded || runtime->exceptions->active_exception != NULL) {
@@ -220596,7 +221457,7 @@ static void ptn_fiber_context_trampoline(uintptr_t runtime_word, uintptr_t data_
         data->resume_credit = 0;
     }
 
-    ptn_fiber_restore_caller_runtime(runtime, data);
+    ptn_fiber_prepare_executor_for_caller_handoff(runtime, data);
     if (setcontext(&data->caller_context) != 0) {
         abort();
     }
@@ -220608,7 +221469,7 @@ static int ptn_fiber_prepare_context(PtnRuntime *runtime, PtnFiberData *data, si
         return 0;
     }
     if (data->context_initialized) {
-        return 1;
+        return data->context_runtime != NULL;
     }
     if (getcontext(&data->fiber_context) != 0) {
         ptn_throw_exception_at(
@@ -220631,12 +221492,17 @@ static int ptn_fiber_prepare_context(PtnRuntime *runtime, PtnFiberData *data, si
     data->fiber_context.uc_stack.ss_size = data->fiber_stack_size;
     data->fiber_context.uc_stack.ss_flags = 0;
     data->fiber_context.uc_link = &data->caller_context;
-    data->context_runtime = runtime;
+    PtnRuntime *executor_runtime = malloc(sizeof(PtnRuntime));
+    if (executor_runtime == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_runtime_init_function_frame(executor_runtime, runtime);
+    data->context_runtime = executor_runtime;
     makecontext(
         &data->fiber_context,
         (void (*)(void))ptn_fiber_context_trampoline,
         2,
-        (uintptr_t)runtime,
+        (uintptr_t)executor_runtime,
         (uintptr_t)data
     );
     data->context_initialized = 1;
@@ -220655,11 +221521,12 @@ static int ptn_fiber_enter_context(
     if (!ptn_fiber_prepare_context(runtime, data, line)) {
         return 0;
     }
-    ptn_fiber_prepare_runtime_entry(runtime, data, method_frame);
+    PtnRuntime *executor_runtime = data->context_runtime;
+    ptn_fiber_prepare_runtime_entry(runtime, executor_runtime, data, method_frame);
     data->running = 1;
     if (swapcontext(&data->caller_context, &data->fiber_context) != 0) {
         data->running = 0;
-        ptn_fiber_detach_active_method_frame(runtime, data);
+        ptn_fiber_detach_active_method_frame(executor_runtime, data);
         ptn_fiber_restore_caller_runtime(runtime, data);
         ptn_throw_exception_at(
             runtime,
@@ -220670,20 +221537,20 @@ static int ptn_fiber_enter_context(
         );
         return 0;
     }
-    ptn_fiber_detach_active_method_frame(runtime, data);
+    ptn_fiber_detach_active_method_frame(executor_runtime, data);
     ptn_fiber_restore_caller_runtime(runtime, data);
     return 1;
 }
 
 static int ptn_fiber_suspended_runtime_seen_before(
-    PtnFiberData *data,
+    PtnTraceFrame *head,
     PtnTraceFrame *stop,
     PtnRuntime *runtime
 ) {
-    if (data == NULL || runtime == NULL) {
+    if (runtime == NULL) {
         return 1;
     }
-    for (PtnTraceFrame *cursor = data->suspended_trace_frame;
+    for (PtnTraceFrame *cursor = head;
          cursor != NULL && cursor != stop;
          cursor = cursor->previous) {
         if (cursor->runtime == runtime) {
@@ -220693,31 +221560,155 @@ static int ptn_fiber_suspended_runtime_seen_before(
     return 0;
 }
 
-static void ptn_fiber_release_suspended_runtimes(PtnFiberData *data) {
+static void ptn_fiber_runtime_free_completely(
+    PtnRuntime *release_runtime,
+    PtnRuntime *runtime,
+    PtnReleaseState *state
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    if (release_runtime == NULL || release_runtime->exceptions == NULL) {
+        ptn_runtime_free(runtime);
+        return;
+    }
+    for (;;) {
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        ptn_try_frame_push(release_runtime, &frame);
+        if (setjmp(frame.jump) != 0) {
+            caught_exception = 1;
+        }
+        if (!caught_exception) {
+            ptn_runtime_free(runtime);
+        }
+        ptn_try_frame_pop(release_runtime, &frame);
+        if (release_runtime->exceptions->active_exception != NULL) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+        if (!caught_exception) {
+            return;
+        }
+    }
+}
+
+static void ptn_fiber_release_suspended_runtimes(
+    PtnRuntime *release_runtime,
+    PtnFiberData *data
+) {
     if (data == NULL) {
         return;
     }
-    for (PtnTraceFrame *cursor = data->suspended_trace_frame;
-         cursor != NULL;
-         cursor = cursor->previous) {
+    if (data->free_suspended_trace_frame == NULL) {
+        data->free_suspended_trace_frame = data->suspended_trace_frame;
+        data->free_suspended_trace_cursor = data->suspended_trace_frame;
+        data->suspended_try_frame = NULL;
+        data->suspended_trace_frame = NULL;
+        data->suspended_generator = NULL;
+        data->suspended_active_value_release_runtime = NULL;
+    }
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    if (
+        release_runtime != NULL &&
+        release_runtime->exceptions != NULL &&
+        release_runtime->exceptions->active_exception != NULL
+    ) {
+        ptn_release_state_remember_exception(release_runtime, state);
+    }
+    while (data->free_suspended_trace_cursor != NULL) {
+        PtnTraceFrame *cursor = data->free_suspended_trace_cursor;
+        PtnTraceFrame *next = cursor->previous;
         PtnRuntime *runtime = cursor->runtime;
         if (
-            runtime == NULL ||
-            runtime->lifecycle_root == runtime ||
-            runtime->current_fiber != data->object ||
-            ptn_fiber_suspended_runtime_seen_before(data, cursor, runtime)
+            runtime != NULL &&
+            runtime->lifecycle_root != runtime &&
+            runtime->current_fiber == data->object &&
+            !ptn_fiber_suspended_runtime_seen_before(
+                data->free_suspended_trace_frame,
+                cursor,
+                runtime
+            )
         ) {
-            continue;
+            ptn_runtime_drop_call_frame_arguments(runtime);
+            ptn_fiber_runtime_free_completely(release_runtime, runtime, state);
         }
-        ptn_runtime_drop_call_frame_arguments(runtime);
-        ptn_runtime_free(runtime);
+        data->free_suspended_trace_cursor = next;
     }
-    data->suspended_try_frame = NULL;
-    data->suspended_trace_frame = NULL;
-    data->suspended_generator = NULL;
+    data->free_suspended_trace_frame = NULL;
+    data->free_phase = 2;
+    if (state->pending_exception != NULL) {
+        ptn_release_state_finish(release_runtime, state);
+    } else {
+        ptn_release_state_discard(state);
+    }
 }
 
-static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
+static int ptn_fiber_drop_cleanup_value(
+    PtnRuntime *runtime,
+    PtnReleaseState *state,
+    PtnValue *value
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        ptn_value_drop_in_runtime(runtime, value);
+        return 0;
+    }
+    PtnTryFrame frame;
+    int caught_exception = 0;
+    ptn_try_frame_push(runtime, &frame);
+    if (setjmp(frame.jump) != 0) {
+        caught_exception = 1;
+    }
+    if (!caught_exception) {
+        ptn_value_drop_in_runtime(runtime, value);
+    }
+    ptn_try_frame_pop(runtime, &frame);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_release_state_remember_exception(runtime, state);
+        return 1;
+    }
+    return caught_exception;
+}
+
+typedef void (*PtnFiberExceptionCleanupStep)(PtnException *exception);
+
+static int ptn_fiber_run_exception_cleanup_step(
+    PtnRuntime *runtime,
+    PtnReleaseState *state,
+    PtnFiberExceptionCleanupStep cleanup
+) {
+    if (
+        runtime == NULL ||
+        state == NULL ||
+        cleanup == NULL ||
+        state->pending_exception == NULL
+    ) {
+        return 0;
+    }
+    if (runtime->exceptions == NULL) {
+        cleanup(state->pending_exception);
+        return 0;
+    }
+    PtnTryFrame frame;
+    int caught_exception = 0;
+    ptn_try_frame_push(runtime, &frame);
+    if (setjmp(frame.jump) != 0) {
+        caught_exception = 1;
+    }
+    if (!caught_exception) {
+        cleanup(state->pending_exception);
+    }
+    ptn_try_frame_pop(runtime, &frame);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_release_state_remember_exception(runtime, state);
+        return 1;
+    }
+    return caught_exception;
+}
+
+static void ptn_fiber_close_suspended_context(
+    PtnRuntime *caller_runtime,
+    PtnFiberData *data
+) {
     if (
         data == NULL ||
         !data->context_initialized ||
@@ -220728,57 +221719,106 @@ static void ptn_fiber_close_suspended_context(PtnFiberData *data) {
         return;
     }
     PtnRuntime *runtime = data->context_runtime;
-    PtnException *saved_active_exception =
-        runtime->exceptions == NULL ? NULL : runtime->exceptions->active_exception;
-    if (saved_active_exception != NULL) {
-        runtime->exceptions->active_exception = NULL;
+    if (caller_runtime == NULL) {
+        caller_runtime = ptn_runtime_root(runtime);
     }
-    ptn_value_destroy(&data->resume_value);
-    data->resume_value = ptn_null();
-    ptn_value_destroy(&data->resume_exception);
-    data->resume_exception = ptn_null();
+    if (caller_runtime == NULL) {
+        caller_runtime = runtime;
+    }
+    PtnException *entry_exception =
+        runtime->exceptions == NULL ? NULL : runtime->exceptions->active_exception;
+    PtnReleaseState *release_state = ptn_release_state_new(runtime);
+    if (entry_exception != NULL) {
+        ptn_release_state_remember_exception(runtime, release_state);
+    }
+    int cleanup_exception_seen = 0;
+    cleanup_exception_seen |= ptn_fiber_drop_cleanup_value(
+        runtime,
+        release_state,
+        &data->resume_value
+    );
+    cleanup_exception_seen |= ptn_fiber_drop_cleanup_value(
+        runtime,
+        release_state,
+        &data->resume_exception
+    );
     data->resume_throw = 0;
     data->resume_throw_line = 0;
+    int close_exception_cleanup_needed = 0;
     data->close_requested = 1;
-    ptn_fiber_prepare_runtime_entry(runtime, data, NULL);
+    data->suspended_active_value_release_runtime = caller_runtime;
+    ptn_fiber_prepare_runtime_entry(caller_runtime, runtime, data, NULL);
     data->running = 1;
     if (swapcontext(&data->caller_context, &data->fiber_context) != 0) {
         data->running = 0;
         data->close_requested = 0;
         ptn_fiber_detach_active_method_frame(runtime, data);
-        ptn_fiber_restore_caller_runtime(runtime, data);
-        if (saved_active_exception != NULL) {
-            runtime->exceptions->active_exception = saved_active_exception;
+        ptn_fiber_restore_caller_runtime(caller_runtime, data);
+    } else {
+        if (
+            runtime->exceptions != NULL &&
+            ptn_fiber_is_close_unwind_exception(runtime->exceptions->active_exception)
+        ) {
+            PtnException *close_unwind_exception =
+                runtime->exceptions->active_exception;
+            runtime->exceptions->active_exception = NULL;
+            PtnTryFrame discard_frame;
+            int discard_frame_active = runtime->exceptions != NULL;
+            if (discard_frame_active) {
+                ptn_try_frame_push(runtime, &discard_frame);
+            }
+            int discard_threw = discard_frame_active &&
+                setjmp(discard_frame.jump) != 0;
+            if (!discard_threw) {
+                ptn_exception_free(close_unwind_exception);
+            }
+            if (discard_frame_active) {
+                ptn_try_frame_pop(runtime, &discard_frame);
+            }
+            if (runtime->exceptions->active_exception != NULL) {
+                cleanup_exception_seen = 1;
+                close_exception_cleanup_needed = 1;
+                ptn_release_state_remember_exception(runtime, release_state);
+            }
+            data->threw = 0;
         }
+        if (
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL
+        ) {
+            cleanup_exception_seen = 1;
+            close_exception_cleanup_needed = 1;
+            ptn_release_state_remember_exception(runtime, release_state);
+        }
+        if (close_exception_cleanup_needed) {
+            cleanup_exception_seen |= ptn_fiber_run_exception_cleanup_step(
+                runtime,
+                release_state,
+                ptn_fiber_prune_close_unwind_previous
+            );
+            cleanup_exception_seen |= ptn_fiber_run_exception_cleanup_step(
+                runtime,
+                release_state,
+                ptn_generator_finalize_force_close_fiber_yield_from_trace
+            );
+        }
+        data->close_requested = 0;
+        data->resume_credit = 0;
+        data->completed = 1;
+        ptn_fiber_detach_active_method_frame(runtime, data);
+        ptn_fiber_restore_caller_runtime(caller_runtime, data);
+    }
+    if (!cleanup_exception_seen && entry_exception != NULL) {
+        release_state->pending_exception = NULL;
+        runtime->exceptions->active_exception = entry_exception;
+        ptn_release_state_discard(release_state);
         return;
     }
-    if (
-        runtime->exceptions != NULL &&
-        ptn_fiber_is_close_unwind_exception(runtime->exceptions->active_exception)
-    ) {
-        ptn_exception_free(runtime->exceptions->active_exception);
-        runtime->exceptions->active_exception = NULL;
-        data->threw = 0;
+    if (release_state->pending_exception != NULL) {
+        ptn_release_state_finish(runtime, release_state);
+    } else {
+        ptn_release_state_discard(release_state);
     }
-    if (runtime->exceptions != NULL) {
-        ptn_fiber_prune_close_unwind_previous(runtime->exceptions->active_exception);
-    }
-    if (saved_active_exception != NULL) {
-        if (runtime->exceptions->active_exception == NULL) {
-            runtime->exceptions->active_exception = saved_active_exception;
-        } else {
-            ptn_exception_chain_previous_if_missing(
-                runtime->exceptions->active_exception,
-                saved_active_exception
-            );
-            ptn_exception_free(saved_active_exception);
-        }
-    }
-    data->close_requested = 0;
-    data->resume_credit = 0;
-    data->completed = 1;
-    ptn_fiber_detach_active_method_frame(runtime, data);
-    ptn_fiber_restore_caller_runtime(runtime, data);
 }
 #endif
 
@@ -220791,10 +221831,28 @@ static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *objec
     ) {
         return;
     }
-    ptn_fiber_close_suspended_context((PtnFiberData *)object->native_data);
+    PtnRuntime *root = ptn_runtime_root(object->lifecycle_runtime);
+    if (root != NULL && root->fatal_error_shutdown) {
+        return;
+    }
+    ptn_fiber_close_suspended_context(root, (PtnFiberData *)object->native_data);
 #else
     (void)object;
 #endif
+}
+
+static void ptn_fiber_rethrow_new_cleanup_exception(
+    PtnRuntime *runtime,
+    PtnException *active_before
+) {
+    if (
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        runtime->exceptions->active_exception != active_before
+    ) {
+        ptn_rethrow_exception(runtime);
+    }
 }
 
 static void ptn_fiber_data_free(void *opaque) {
@@ -220802,17 +221860,176 @@ static void ptn_fiber_data_free(void *opaque) {
     if (data == NULL) {
         return;
     }
+    PtnRuntime *lifecycle_runtime = data->object == NULL
+        ? NULL
+        : data->object->lifecycle_runtime;
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        NULL,
+        lifecycle_runtime,
+        NULL
+    );
 #if !defined(_WIN32)
-    ptn_fiber_close_suspended_context(data);
-    ptn_fiber_release_suspended_runtimes(data);
+    PtnRuntime *root = ptn_runtime_root(
+        data->context_runtime == NULL
+            ? lifecycle_runtime
+            : data->context_runtime
+    );
+    if (data->free_phase == 0) {
+        data->free_phase = 1;
+        PtnRuntime *executor_runtime = data->context_runtime;
+        ptn_fiber_restore_active_executor_runtime(executor_runtime, data);
+        PtnRuntime *close_caller_runtime = ptn_effective_value_release_runtime(
+            NULL,
+            executor_runtime,
+            NULL
+        );
+        if (root == NULL || !root->fatal_error_shutdown) {
+            ptn_fiber_close_suspended_context(close_caller_runtime, data);
+        }
+    }
+    if (data->free_phase == 1) {
+        if (root == NULL || !root->fatal_error_shutdown) {
+            ptn_fiber_release_suspended_runtimes(release_runtime, data);
+        } else {
+            data->free_phase = 2;
+        }
+    }
+    if (data->free_phase == 2) {
+        if (data->free_context_runtime == NULL) {
+            data->free_context_runtime = data->context_runtime;
+            data->context_runtime = NULL;
+        }
+        PtnReleaseState *state = ptn_release_state_new(release_runtime);
+        if (
+            release_runtime != NULL &&
+            release_runtime->exceptions != NULL &&
+            release_runtime->exceptions->active_exception != NULL
+        ) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+        ptn_fiber_runtime_free_completely(
+            release_runtime,
+            data->free_context_runtime,
+            state
+        );
+        data->free_phase = 3;
+        if (state->pending_exception != NULL) {
+            ptn_release_state_finish(release_runtime, state);
+        } else {
+            ptn_release_state_discard(state);
+        }
+    }
+    if (data->free_phase == 3) {
+        data->free_phase = 4;
+        free(data->free_context_runtime);
+        data->free_context_runtime = NULL;
+    }
+#else
+    if (data->free_phase < 4) {
+        data->free_phase = 4;
+    }
 #endif
-    ptn_value_destroy(&data->callback);
-    ptn_value_destroy(&data->return_value);
-    ptn_value_destroy(&data->suspension_trace);
-    ptn_value_destroy(&data->suspend_value);
-    ptn_value_destroy(&data->resume_value);
-    ptn_value_destroy(&data->resume_exception);
-    ptn_fiber_clear_entry_args(data);
+    if (data->free_phase == 4) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 5;
+        ptn_value_drop_in_runtime(release_runtime, &data->callback);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 5) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 6;
+        ptn_value_drop_in_runtime(release_runtime, &data->return_value);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 6) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 7;
+        ptn_value_drop_in_runtime(release_runtime, &data->suspension_trace);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 7) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 8;
+        ptn_value_drop_in_runtime(release_runtime, &data->suspend_value);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 8) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 9;
+        ptn_value_drop_in_runtime(release_runtime, &data->resume_value);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 9) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 10;
+        ptn_value_drop_in_runtime(release_runtime, &data->resume_exception);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 10) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 11;
+        ptn_value_drop_in_runtime(release_runtime, &data->internal_keepalive);
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 11) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        data->free_phase = 12;
+        PtnFiberInternalCallbackContextFree context_free =
+            data->internal_callback_context_free;
+        void *context = data->internal_callback_context;
+        data->internal_callback_context_free = NULL;
+        data->internal_callback_context = NULL;
+        if (context_free != NULL) {
+            context_free(context);
+        }
+        ptn_fiber_rethrow_new_cleanup_exception(release_runtime, active_before);
+    }
+    if (data->free_phase == 12) {
+        while (data->free_entry_arg_index < data->entry_argc) {
+            size_t entry_arg_index = data->free_entry_arg_index++;
+            PtnException *active_before =
+                release_runtime == NULL || release_runtime->exceptions == NULL
+                    ? NULL
+                    : release_runtime->exceptions->active_exception;
+            ptn_value_drop_in_runtime(
+                release_runtime,
+                &data->entry_args[entry_arg_index]
+            );
+            ptn_fiber_rethrow_new_cleanup_exception(
+                release_runtime,
+                active_before
+            );
+        }
+        PtnValue *entry_args = data->entry_args;
+        data->entry_args = NULL;
+        data->entry_argc = 0;
+        free(entry_args);
+        data->free_phase = 13;
+    }
 #if !defined(_WIN32)
     free(data->fiber_stack);
 #endif
@@ -220940,8 +222157,11 @@ static PtnValue ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, c
 #if !defined(_WIN32)
     if (data->context_initialized && !data->context_finished) {
         data->running = 0;
+        if (runtime->current_generator != NULL) {
+            ptn_generator_flush_pending_output(runtime, runtime->current_generator);
+        }
         ptn_fiber_save_suspended_runtime(runtime, data);
-        ptn_fiber_restore_caller_runtime(runtime, data);
+        ptn_fiber_prepare_executor_for_caller_handoff(runtime, data);
         if (swapcontext(&data->fiber_context, &data->caller_context) != 0) {
             ptn_throw_exception_at(
                 runtime,
@@ -221051,6 +222271,79 @@ static void ptn_fiber_init_method_trace_frame(
     }
 }
 
+static PtnFiberData *ptn_fiber_allocate_data(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    PtnFiberData *data = malloc(sizeof(PtnFiberData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->callback = ptn_null();
+    data->return_value = ptn_null();
+    data->suspension_trace = ptn_null();
+    data->suspend_value = ptn_null();
+    data->resume_value = ptn_null();
+    data->resume_exception = ptn_null();
+    data->internal_keepalive = ptn_null();
+    data->internal_callback = NULL;
+    data->internal_callback_context = NULL;
+    data->internal_callback_context_free = NULL;
+    data->is_gc_destructor_fiber = 0;
+    data->entry_args = NULL;
+    data->entry_argc = 0;
+    data->entry_line = line;
+    data->resume_throw_line = 0;
+    data->caller_error_reporting = runtime->diagnostics.error_reporting;
+    data->caller_error_suppression_depth = runtime->error_suppression_depth;
+    data->caller_error_suppression_saved_reporting =
+        runtime->error_suppression_saved_reporting;
+    data->suspended_error_reporting = ptn_runtime_unsilenced_error_reporting(runtime);
+    data->suspended_error_suppression_depth = 0;
+    data->suspended_error_suppression_saved_reporting = data->suspended_error_reporting;
+    data->executing_file = NULL;
+    data->executing_line = 0;
+    data->object = object;
+    data->started = 0;
+    data->running = 0;
+    data->completed = 0;
+    data->threw = 0;
+    data->fatal_error = 0;
+    data->resume_credit = 0;
+    data->resume_throw = 0;
+    data->close_requested = 0;
+    data->free_phase = 0;
+    data->free_entry_arg_index = 0;
+#if !defined(_WIN32)
+    data->fiber_stack = NULL;
+    data->fiber_stack_size = 0;
+    data->context_initialized = 0;
+    data->context_finished = 0;
+    data->context_runtime = NULL;
+    data->free_context_runtime = NULL;
+    data->free_suspended_trace_frame = NULL;
+    data->free_suspended_trace_cursor = NULL;
+    data->caller_active_fiber_executor_runtime = NULL;
+    data->caller_active_value_release_runtime = NULL;
+    data->suspended_active_value_release_runtime = NULL;
+    data->active_root_context_installed = 0;
+    data->caller_try_frame = NULL;
+    data->suspended_try_frame = NULL;
+    data->caller_trace_frame = NULL;
+    data->suspended_trace_frame = NULL;
+    data->active_method_frame = NULL;
+    data->active_trace_tail = NULL;
+    data->caller_fiber = NULL;
+    data->caller_generator = NULL;
+    data->suspended_generator = NULL;
+#endif
+
+    object->native_data = data;
+    object->native_data_free = ptn_fiber_data_free;
+    return data;
+}
+
 static int ptn_fiber_init_object(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -221084,50 +222377,8 @@ static int ptn_fiber_init_object(
         );
         return 0;
     }
-    PtnFiberData *data = malloc(sizeof(PtnFiberData));
-    if (data == NULL) {
-        ptn_abort_out_of_memory();
-    }
+    PtnFiberData *data = ptn_fiber_allocate_data(runtime, object, line);
     data->callback = ptn_value_clone_deref(args[0]);
-    data->return_value = ptn_null();
-    data->suspension_trace = ptn_null();
-    data->suspend_value = ptn_null();
-    data->resume_value = ptn_null();
-    data->resume_exception = ptn_null();
-    data->entry_args = NULL;
-    data->entry_argc = 0;
-    data->entry_line = line;
-    data->resume_throw_line = 0;
-    data->executing_file = NULL;
-    data->executing_line = 0;
-    data->object = object;
-    data->started = 0;
-    data->running = 0;
-    data->completed = 0;
-    data->threw = 0;
-    data->fatal_error = 0;
-    data->resume_credit = 0;
-    data->resume_throw = 0;
-    data->close_requested = 0;
-#if !defined(_WIN32)
-    data->fiber_stack = NULL;
-    data->fiber_stack_size = 0;
-    data->context_initialized = 0;
-    data->context_finished = 0;
-    data->context_runtime = NULL;
-    data->caller_try_frame = NULL;
-    data->suspended_try_frame = NULL;
-    data->caller_trace_frame = NULL;
-    data->suspended_trace_frame = NULL;
-    data->active_method_frame = NULL;
-    data->active_trace_tail = NULL;
-    data->caller_fiber = NULL;
-    data->caller_generator = NULL;
-    data->suspended_generator = NULL;
-#endif
-
-    object->native_data = data;
-    object->native_data_free = ptn_fiber_data_free;
     return 1;
 }
 
@@ -221145,6 +222396,230 @@ static PTN_UNUSED PtnValue ptn_fiber_new(
     return object;
 }
 
+static PtnValue ptn_fiber_new_internal(
+    PtnRuntime *runtime,
+    PtnFiberInternalCallback callback,
+    void *callback_context,
+    PtnFiberInternalCallbackContextFree callback_context_free,
+    PtnValue keepalive,
+    size_t line
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "Fiber");
+    PtnFiberData *data = ptn_fiber_allocate_data(runtime, object.as.object, line);
+    data->internal_callback = callback;
+    data->internal_callback_context = callback_context;
+    data->internal_callback_context_free = callback_context_free;
+    data->internal_keepalive = ptn_value_clone_deref(keepalive);
+    return object;
+}
+
+static int ptn_fiber_start_internal(
+    PtnRuntime *runtime,
+    PtnFiberData *data,
+    size_t line
+) {
+    if (runtime == NULL || data == NULL || data->started || data->internal_callback == NULL) {
+        return 0;
+    }
+    data->started = 1;
+    data->threw = 0;
+    data->fatal_error = 0;
+    data->completed = 0;
+    data->resume_credit = 0;
+    data->entry_line = line;
+    ptn_value_destroy(&data->suspend_value);
+    data->suspend_value = ptn_null();
+    ptn_value_destroy(&data->resume_value);
+    data->resume_value = ptn_null();
+    ptn_value_destroy(&data->resume_exception);
+    data->resume_exception = ptn_null();
+    data->resume_throw = 0;
+    data->resume_throw_line = 0;
+
+    PtnTraceFrame trace_frame;
+    ptn_fiber_init_method_trace_frame(runtime, &trace_frame, data, "start", 0, NULL, line);
+    trace_frame.function_name = "gc_destructor_fiber";
+    trace_frame.file = NULL;
+    trace_frame.line = 0;
+    trace_frame.has_receiver = 0;
+    trace_frame.receiver = ptn_null();
+#if !defined(_WIN32)
+    return ptn_fiber_enter_context(runtime, data, &trace_frame, line);
+#else
+    PtnObject *caller_fiber = runtime->current_fiber;
+    runtime->current_fiber = data->object;
+    data->running = 1;
+    PtnValue result = ptn_null();
+    int callback_succeeded = data->internal_callback(runtime, data, &result);
+    ptn_value_destroy(&result);
+    data->running = 0;
+    data->completed = 1;
+    data->threw = !callback_succeeded || runtime->exceptions->active_exception != NULL;
+    runtime->current_fiber = caller_fiber;
+    return callback_succeeded;
+#endif
+}
+
+static int ptn_fiber_resume_internal(
+    PtnRuntime *runtime,
+    PtnFiberData *data,
+    size_t line
+) {
+    if (runtime == NULL || data == NULL || !data->started || !data->resume_credit) {
+        return 0;
+    }
+    ptn_value_destroy(&data->resume_value);
+    data->resume_value = ptn_null();
+    ptn_value_destroy(&data->resume_exception);
+    data->resume_exception = ptn_null();
+    data->resume_throw = 0;
+    data->resume_throw_line = 0;
+    PtnTraceFrame trace_frame;
+    ptn_fiber_init_method_trace_frame(runtime, &trace_frame, data, "resume", 0, NULL, line);
+    trace_frame.function_name = "gc_destructor_fiber";
+    trace_frame.file = NULL;
+    trace_frame.line = 0;
+    trace_frame.has_receiver = 0;
+    trace_frame.receiver = ptn_null();
+#if !defined(_WIN32)
+    return ptn_fiber_enter_context(runtime, data, &trace_frame, line);
+#else
+    return 0;
+#endif
+}
+
+typedef struct PtnGcDestructorFiberWork {
+    PtnObject *object;
+    int detached;
+    int completed;
+} PtnGcDestructorFiberWork;
+
+static void ptn_gc_destructor_fiber_work_free(void *opaque) {
+    free(opaque);
+}
+
+static int ptn_gc_destructor_fiber_callback(
+    PtnRuntime *runtime,
+    PtnFiberData *data,
+    PtnValue *result_out
+) {
+    PtnGcDestructorFiberWork *work = data == NULL
+        ? NULL
+        : (PtnGcDestructorFiberWork *)data->internal_callback_context;
+    if (runtime == NULL || work == NULL || work->object == NULL || result_out == NULL) {
+        return 0;
+    }
+    for (;;) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        int owned_by_gc = root != NULL && root->gc_destructor_fiber == data->object;
+        if (owned_by_gc) {
+            root->gc_destructor_fiber_running = 1;
+        }
+        ptn_object_run_destructor_ex_in_runtime(runtime, work->object, 1);
+        /* The private fiber no longer roots the object after its destructor returns. */
+        ptn_value_destroy(&data->internal_keepalive);
+        data->internal_keepalive = ptn_null();
+        work->object = NULL;
+        work->completed = 1;
+        if (work->detached) {
+            *result_out = ptn_null();
+            return 1;
+        }
+        if (owned_by_gc) {
+            root->gc_destructor_fiber_running = 0;
+        }
+        PtnValue resumed = ptn_fiber_capture_suspension(runtime, 0, NULL, data->entry_line);
+        ptn_value_destroy(&resumed);
+        if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+        if (work->object == NULL) {
+            return 0;
+        }
+    }
+}
+
+static int ptn_gc_run_unreachable_object_destructor_in_fiber(
+    PtnRuntime *runtime,
+    PtnObject *object
+) {
+    if (runtime == NULL || object == NULL) {
+        return -1;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    PtnObject *fiber = root->gc_destructor_fiber;
+    PtnFiberData *data = ptn_fiber_data_from_object(fiber);
+    if (
+        data == NULL ||
+        data->completed ||
+        data->internal_callback != ptn_gc_destructor_fiber_callback
+    ) {
+        if (fiber != NULL) {
+            root->gc_destructor_fiber = NULL;
+            root->gc_destructor_fiber_running = 0;
+            ptn_object_release(fiber);
+        }
+        PtnGcDestructorFiberWork *work = malloc(sizeof(PtnGcDestructorFiberWork));
+        if (work == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        work->object = NULL;
+        work->detached = 0;
+        work->completed = 0;
+        PtnValue created = ptn_fiber_new_internal(
+            root,
+            ptn_gc_destructor_fiber_callback,
+            work,
+            ptn_gc_destructor_fiber_work_free,
+            ptn_null(),
+            root->call_site_line
+        );
+        fiber = created.as.object;
+        data = ptn_fiber_data_from_object(fiber);
+        if (data == NULL) {
+            ptn_value_destroy(&created);
+            return -1;
+        }
+        data->is_gc_destructor_fiber = 1;
+        /* Transfer the creation reference to the runtime's persistent owner. */
+        root->gc_destructor_fiber = fiber;
+    }
+    PtnGcDestructorFiberWork *work =
+        (PtnGcDestructorFiberWork *)data->internal_callback_context;
+    if (work == NULL || work->object != NULL) {
+        return -1;
+    }
+    work->object = object;
+    work->detached = 0;
+    work->completed = 0;
+    ptn_value_destroy(&data->internal_keepalive);
+    data->internal_keepalive = ptn_value_clone_deref(ptn_value_borrow(ptn_object(object)));
+    int entered = data->started
+        ? ptn_fiber_resume_internal(root, data, root->call_site_line)
+        : ptn_fiber_start_internal(root, data, root->call_site_line);
+    if (!entered) {
+        work->object = NULL;
+        ptn_value_destroy(&data->internal_keepalive);
+        data->internal_keepalive = ptn_null();
+        return -1;
+    }
+    if (root->gc_destructor_fiber == fiber && root->gc_destructor_fiber_running) {
+        /* User code suspended this destructor fiber, so GC no longer owns it. */
+        work->detached = 1;
+        root->gc_destructor_fiber = NULL;
+        root->gc_destructor_fiber_running = 0;
+        ptn_object_release(fiber);
+        return 0;
+    }
+    return work->completed ? 1 : -1;
+}
+
 static PtnValue ptn_fiber_start(
     PtnRuntime *runtime,
     PtnFiberData *data,
@@ -221152,6 +222627,16 @@ static PtnValue ptn_fiber_start(
     const PtnValue *args,
     size_t line
 ) {
+    if (ptn_fiber_switch_context_is_forbidden(runtime)) {
+        ptn_fiber_throw_switch_context_exception(
+            runtime,
+            argc,
+            args,
+            line,
+            "Fiber->start"
+        );
+        return ptn_null();
+    }
     if (data->started) {
         ptn_throw_exception_owned_message_at_with_trace_frame(
             runtime,
@@ -221242,6 +222727,16 @@ static PtnValue ptn_fiber_resume(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
+    if (ptn_fiber_switch_context_is_forbidden(runtime)) {
+        ptn_fiber_throw_switch_context_exception(
+            runtime,
+            argc,
+            args,
+            line,
+            "Fiber->resume"
+        );
+        return ptn_null();
+    }
     if (data->resume_credit) {
         ptn_value_destroy(&data->resume_value);
         data->resume_value = argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
@@ -221291,6 +222786,16 @@ static PtnValue ptn_fiber_throw(
     size_t line
 ) {
     if (!ptn_fiber_check_exact_arguments(runtime, "throw", argc, 1)) {
+        return ptn_null();
+    }
+    if (ptn_fiber_switch_context_is_forbidden(runtime)) {
+        ptn_fiber_throw_switch_context_exception(
+            runtime,
+            argc,
+            args,
+            line,
+            "Fiber->throw"
+        );
         return ptn_null();
     }
     if (!data->resume_credit) {
@@ -222058,13 +223563,36 @@ static PtnWeakMapData *ptn_weak_map_data(PtnRuntime *runtime, PtnValue receiver)
     return (PtnWeakMapData *)receiver.as.object->native_data;
 }
 
-static void ptn_weak_map_prune(PtnWeakMapData *map) {
+static void ptn_weak_map_prune_in_runtime(PtnRuntime *runtime, PtnWeakMapData *map) {
     if (map == NULL) {
         return;
     }
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        runtime,
+        map->runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    size_t original_len = map->len;
+    PtnValue *removed_values = original_len == 0
+        ? NULL
+        : malloc(original_len * sizeof(PtnValue));
+    PtnResource **removed_resources = original_len == 0
+        ? NULL
+        : calloc(original_len, sizeof(PtnResource *));
+    PtnCleanupRoot *removed_roots = original_len == 0
+        ? NULL
+        : calloc(original_len, sizeof(PtnCleanupRoot));
+    if (
+        original_len != 0 &&
+        (removed_values == NULL || removed_resources == NULL || removed_roots == NULL)
+    ) {
+        ptn_abort_out_of_memory();
+    }
     size_t write = 0;
+    size_t removed_len = 0;
     size_t adjusted_index = map->index;
-    for (size_t read = 0; read < map->len; read++) {
+    for (size_t read = 0; read < original_len; read++) {
         PtnObject *live_object = NULL;
         PtnResource *live_resource = NULL;
         if (map->resources != NULL && map->resources[read] != NULL) {
@@ -222078,10 +223606,20 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
             if (read < adjusted_index && adjusted_index > 0) {
                 adjusted_index--;
             }
-            if (map->resources != NULL && map->resources[read] != NULL) {
-                ptn_resource_release(map->resources[read]);
+            removed_values[removed_len] = map->values[read];
+            map->values[read] = ptn_null();
+            if (map->resources != NULL) {
+                removed_resources[removed_len] = map->resources[read];
+                map->resources[read] = NULL;
             }
-            ptn_value_destroy(&map->values[read]);
+            removed_roots[removed_len].value = ptn_null();
+            removed_roots[removed_len].next = NULL;
+            ptn_runtime_link_cleanup_root(
+                root,
+                &removed_roots[removed_len],
+                removed_values[removed_len]
+            );
+            removed_len++;
             continue;
         }
         if (write != read) {
@@ -222092,6 +223630,9 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
                 : live_object->object_id;
             map->values[write] = map->values[read];
             map->value_reference_visible[write] = map->value_reference_visible[read];
+            map->objects[read] = NULL;
+            map->resources[read] = NULL;
+            map->values[read] = ptn_null();
         } else {
             map->objects[write] = live_object;
             map->resources[write] = live_resource;
@@ -222103,6 +223644,87 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
     }
     map->len = write;
     map->index = adjusted_index > map->len ? map->len : adjusted_index;
+    if (removed_len == 0) {
+        free(removed_values);
+        free(removed_resources);
+        free(removed_roots);
+        return;
+    }
+
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    for (size_t i = 0; i < removed_len; i++) {
+        if (removed_resources[i] != NULL) {
+            PtnResource *resource = removed_resources[i];
+            removed_resources[i] = NULL;
+            PtnException *active_before =
+                release_runtime == NULL || release_runtime->exceptions == NULL
+                    ? NULL
+                    : release_runtime->exceptions->active_exception;
+            PtnTryFrame resource_frame;
+            int resource_caught_exception = 0;
+            int resource_frame_active =
+                release_runtime != NULL && release_runtime->exceptions != NULL;
+            if (resource_frame_active) {
+                ptn_try_frame_push(release_runtime, &resource_frame);
+                if (setjmp(resource_frame.jump) != 0) {
+                    resource_caught_exception = 1;
+                }
+            }
+            if (!resource_caught_exception) {
+                ptn_resource_release(resource);
+            }
+            if (resource_frame_active) {
+                ptn_try_frame_pop(release_runtime, &resource_frame);
+            }
+            if (resource_caught_exception) {
+                ptn_release_state_remember_exception(release_runtime, state);
+            } else {
+                ptn_release_state_remember_new_active_exception(
+                    release_runtime,
+                    state,
+                    active_before
+                );
+            }
+        }
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &frame);
+            if (setjmp(frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(release_runtime, &removed_values[i]);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &frame);
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                release_runtime,
+                state,
+                active_before
+            );
+        }
+        ptn_runtime_unlink_cleanup_root(root, &removed_roots[i]);
+    }
+    free(removed_values);
+    free(removed_resources);
+    free(removed_roots);
+    ptn_release_state_finish(release_runtime, state);
+}
+
+static void ptn_weak_map_prune(PtnWeakMapData *map) {
+    ptn_weak_map_prune_in_runtime(map == NULL ? NULL : map->runtime, map);
 }
 
 static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
@@ -222129,19 +223751,80 @@ static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntim
         owners[owner_count++] = owner;
     }
 
+    PtnReleaseState *state = ptn_release_state_new(runtime);
     for (size_t i = 0; i < owner_count; i++) {
         PtnObject *owner = owners[i];
         if (owner->refcount != 0 &&
             ptn_internal_class_name_is_weak_map(owner->class_name) &&
             owner->native_data != NULL) {
-            ptn_weak_map_prune((PtnWeakMapData *)owner->native_data);
+            PtnException *active_before =
+                runtime->exceptions == NULL
+                    ? NULL
+                    : runtime->exceptions->active_exception;
+            PtnTryFrame frame;
+            int caught_exception = 0;
+            int frame_active = runtime->exceptions != NULL;
+            if (frame_active) {
+                ptn_try_frame_push(runtime, &frame);
+                if (setjmp(frame.jump) != 0) {
+                    caught_exception = 1;
+                }
+            }
+            if (!caught_exception) {
+                ptn_weak_map_prune_in_runtime(
+                    runtime,
+                    (PtnWeakMapData *)owner->native_data
+                );
+            }
+            if (frame_active) {
+                ptn_try_frame_pop(runtime, &frame);
+            }
+            if (caught_exception) {
+                ptn_release_state_remember_exception(runtime, state);
+            } else {
+                ptn_release_state_remember_new_active_exception(
+                    runtime,
+                    state,
+                    active_before
+                );
+            }
         }
     }
 
     for (size_t i = 0; i < owner_count; i++) {
-        ptn_object_release(owners[i]);
+        PtnObject *owner = owners[i];
+        owners[i] = NULL;
+        PtnException *active_before =
+            runtime->exceptions == NULL
+                ? NULL
+                : runtime->exceptions->active_exception;
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        int frame_active = runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(runtime, &frame);
+            if (setjmp(frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_object_release_in_runtime(runtime, owner);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(runtime, &frame);
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                runtime,
+                state,
+                active_before
+            );
+        }
     }
     free(owners);
+    ptn_release_state_finish(runtime, state);
 }
 
 static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
@@ -232303,338 +233986,6 @@ static int ptn_soap_client_uses_digest_auth(PtnSoapClientData *data) {
         ptn_value_to_integer(auth) == 1;
 }
 
-static char *ptn_soap_trim_ascii_range_dup(const char *start, const char *end) {
-    while (start < end && isspace((unsigned char)*start)) {
-        start++;
-    }
-    while (end > start && isspace((unsigned char)end[-1])) {
-        end--;
-    }
-    return ptn_duplicate_string_len(start, (size_t)(end - start));
-}
-
-static char *ptn_soap_php_cli_server_code_dup(PtnRuntime *runtime) {
-    if (runtime == NULL) {
-        return NULL;
-    }
-    PtnValue *slot = ptn_runtime_global_variable_slot(runtime, "__ptn_php_cli_server_code");
-    if (slot == NULL) {
-        return NULL;
-    }
-    PtnValue value = ptn_value_deref(*slot);
-    if (value.type != PTN_STRING) {
-        return NULL;
-    }
-    return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
-}
-
-static char *ptn_soap_php_header_literal_dup(const char *call, const char *end) {
-    const char *cursor = call + strlen("header");
-    while (cursor < end && isspace((unsigned char)*cursor)) {
-        cursor++;
-    }
-    if (cursor >= end || *cursor != '(') {
-        return NULL;
-    }
-    cursor++;
-    while (cursor < end && isspace((unsigned char)*cursor)) {
-        cursor++;
-    }
-    if (cursor >= end || (*cursor != '\'' && *cursor != '"')) {
-        return NULL;
-    }
-    char quote = *cursor++;
-    PtnStringBuffer literal;
-    ptn_string_buffer_init(&literal);
-    while (cursor < end) {
-        char ch = *cursor++;
-        if (ch == quote) {
-            return literal.data == NULL ? ptn_duplicate_string("") : literal.data;
-        }
-        if (ch == '\\' && cursor < end) {
-            char escaped = *cursor++;
-            switch (escaped) {
-                case 'n':
-                    ch = '\n';
-                    break;
-                case 'r':
-                    ch = '\r';
-                    break;
-                case 't':
-                    ch = '\t';
-                    break;
-                default:
-                    ch = escaped;
-                    break;
-            }
-        }
-        ptn_string_buffer_append_len(&literal, &ch, 1);
-    }
-    free(literal.data);
-    return NULL;
-}
-
-static int ptn_soap_php_header_value_offset(
-    const char *header,
-    const char *name,
-    const char **value_out
-) {
-    size_t name_len = strlen(name);
-    size_t header_len = strlen(header);
-    if (
-        header_len <= name_len ||
-        !ptn_ascii_case_equal_n(header, name, name_len) ||
-        header[name_len] != ':'
-    ) {
-        return 0;
-    }
-    const char *value = header + name_len + 1;
-    while (*value == ' ' || *value == '\t') {
-        value++;
-    }
-    *value_out = value;
-    return 1;
-}
-
-static char *ptn_soap_loopback_cookie_default_path_dup(const char *location) {
-    char *path = ptn_soap_http_path_from_location_dup(location);
-    char *query = strpbrk(path, "?#");
-    if (query != NULL) {
-        *query = '\0';
-    }
-    if (path[0] != '/') {
-        free(path);
-        return ptn_duplicate_string("/");
-    }
-    char *last_slash = strrchr(path, '/');
-    if (last_slash == NULL || last_slash == path) {
-        free(path);
-        return ptn_duplicate_string("/");
-    }
-    char *default_path = ptn_duplicate_string_len(path, (size_t)(last_slash - path));
-    free(path);
-    return default_path;
-}
-
-static void ptn_soap_client_store_cookie_header(
-    PtnSoapClientData *data,
-    const char *header_value,
-    const char *location
-) {
-    if (data == NULL || data->cookies.type != PTN_ARRAY || data->cookies.as.array == NULL) {
-        return;
-    }
-    const char *end = header_value + strlen(header_value);
-    const char *pair_end = strchr(header_value, ';');
-    if (pair_end == NULL) {
-        pair_end = end;
-    }
-    const char *equals = memchr(header_value, '=', (size_t)(pair_end - header_value));
-    if (equals == NULL || equals == header_value) {
-        return;
-    }
-
-    char *name = ptn_soap_trim_ascii_range_dup(header_value, equals);
-    char *value = ptn_soap_trim_ascii_range_dup(equals + 1, pair_end);
-    char *path = NULL;
-    char *domain = NULL;
-    const char *attr = pair_end;
-    while (attr < end) {
-        if (*attr == ';') {
-            attr++;
-        }
-        while (attr < end && isspace((unsigned char)*attr)) {
-            attr++;
-        }
-        const char *attr_end = strchr(attr, ';');
-        if (attr_end == NULL) {
-            attr_end = end;
-        }
-        const char *attr_equals = memchr(attr, '=', (size_t)(attr_end - attr));
-        if (attr_equals != NULL) {
-            char *attr_name = ptn_soap_trim_ascii_range_dup(attr, attr_equals);
-            char *attr_value = ptn_soap_trim_ascii_range_dup(attr_equals + 1, attr_end);
-            if (ptn_ascii_case_equal(attr_name, "path")) {
-                free(path);
-                path = attr_value;
-                attr_value = NULL;
-            } else if (ptn_ascii_case_equal(attr_name, "domain")) {
-                free(domain);
-                domain = attr_value;
-                attr_value = NULL;
-            }
-            free(attr_name);
-            free(attr_value);
-        }
-        attr = attr_end;
-    }
-    if (path == NULL) {
-        path = ptn_soap_loopback_cookie_default_path_dup(location);
-    }
-    if (domain == NULL) {
-        domain = ptn_duplicate_string("");
-    }
-
-    PtnValue cookie = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(cookie.as.array, ptn_array_int_key(0), ptn_owned_string(value));
-    ptn_array_set_entry(cookie.as.array, ptn_array_int_key(1), ptn_owned_string(path));
-    ptn_array_set_entry(cookie.as.array, ptn_array_int_key(2), ptn_owned_string(domain));
-    PtnValue name_value = ptn_owned_string(name);
-    PtnArrayKey key = ptn_array_key_from_value(name_value);
-    ptn_value_destroy(&name_value);
-    ptn_array_set_entry(data->cookies.as.array, key, cookie);
-}
-
-static char *ptn_soap_header_quoted_attr_dup(const char *header, const char *name) {
-    size_t name_len = strlen(name);
-    const char *cursor = header;
-    while ((cursor = strstr(cursor, name)) != NULL) {
-        if (cursor != header &&
-            (isalnum((unsigned char)cursor[-1]) || cursor[-1] == '_' || cursor[-1] == '-')) {
-            cursor += name_len;
-            continue;
-        }
-        const char *after = cursor + name_len;
-        while (*after == ' ' || *after == '\t') {
-            after++;
-        }
-        if (*after != '=') {
-            cursor += name_len;
-            continue;
-        }
-        after++;
-        while (*after == ' ' || *after == '\t') {
-            after++;
-        }
-        if (*after != '"') {
-            cursor += name_len;
-            continue;
-        }
-        const char *value_start = after + 1;
-        const char *value_end = strchr(value_start, '"');
-        if (value_end == NULL) {
-            return NULL;
-        }
-        return ptn_duplicate_string_len(value_start, (size_t)(value_end - value_start));
-    }
-    return NULL;
-}
-
-static void ptn_soap_client_append_last_request_header(
-    PtnSoapClientData *data,
-    const char *header
-) {
-    if (data == NULL || data->last_request_headers == NULL || header == NULL) {
-        return;
-    }
-    size_t base_len = data->last_request_headers_len;
-    if (base_len >= 2 &&
-        data->last_request_headers[base_len - 2] == '\r' &&
-        data->last_request_headers[base_len - 1] == '\n') {
-        base_len -= 2;
-    }
-    PtnStringBuffer buffer;
-    ptn_string_buffer_init(&buffer);
-    ptn_string_buffer_append_len(&buffer, data->last_request_headers, base_len);
-    ptn_string_buffer_append(&buffer, header);
-    if (buffer.len < 2 || buffer.data[buffer.len - 2] != '\r' || buffer.data[buffer.len - 1] != '\n') {
-        ptn_string_buffer_append(&buffer, "\r\n");
-    }
-    ptn_string_buffer_append(&buffer, "\r\n");
-    free(data->last_request_headers);
-    data->last_request_headers = buffer.data;
-    data->last_request_headers_len = buffer.len;
-}
-
-static int ptn_soap_client_apply_loopback_server_headers(
-    PtnRuntime *runtime,
-    PtnSoapClientData *data,
-    size_t line
-) {
-    char *code = ptn_soap_php_cli_server_code_dup(runtime);
-    if (code == NULL) {
-        return 1;
-    }
-    char *location = ptn_soap_client_effective_location_dup(runtime, data, ptn_null(), line);
-    if (runtime->exceptions->active_exception != NULL) {
-        free(code);
-        free(location);
-        return 0;
-    }
-    char *path = ptn_soap_http_path_from_location_dup(location);
-    const char *scan = code;
-    const char *end = code + strlen(code);
-    char *digest_challenge = NULL;
-    int unauthorized = 0;
-    while (scan < end) {
-        const char *call = ptn_memmem_simple(scan, (size_t)(end - scan), "header", strlen("header"));
-        if (call == NULL) {
-            break;
-        }
-        char *header = ptn_soap_php_header_literal_dup(call, end);
-        if (header != NULL) {
-            const char *value = NULL;
-            if (ptn_soap_php_header_value_offset(header, "Set-Cookie", &value)) {
-                ptn_soap_client_store_cookie_header(data, value, location);
-            } else if (ptn_soap_php_header_value_offset(header, "WWW-Authenticate", &value) &&
-                       ptn_ascii_case_equal_n(value, "Digest", strlen("Digest"))) {
-                free(digest_challenge);
-                digest_challenge = ptn_duplicate_string(value);
-            } else if (ptn_ascii_case_equal_n(header, "HTTP/", strlen("HTTP/")) &&
-                       strstr(header, " 401 ") != NULL) {
-                unauthorized = 1;
-            }
-            free(header);
-        }
-        scan = call + strlen("header");
-    }
-    if (digest_challenge != NULL && ptn_soap_client_uses_digest_auth(data)) {
-        char *realm = ptn_soap_header_quoted_attr_dup(digest_challenge, "realm");
-        char *nonce = ptn_soap_header_quoted_attr_dup(digest_challenge, "nonce");
-        char *opaque = ptn_soap_header_quoted_attr_dup(digest_challenge, "opaque");
-        char *login = ptn_soap_options_string_dup(runtime, data->options, "login", line);
-        if (runtime->exceptions->active_exception != NULL) {
-            free(code);
-            free(location);
-            free(path);
-            free(digest_challenge);
-            free(realm);
-            free(nonce);
-            free(opaque);
-            free(login);
-            return 0;
-        }
-        PtnStringBuffer authorization;
-        ptn_string_buffer_init(&authorization);
-        ptn_string_buffer_append_format(
-            &authorization,
-            "Authorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", qop=auth, nc=00000001, cnonce=\"ptn-cnonce\", response=\"ptn-response\"",
-            login == NULL ? "" : login,
-            realm == NULL ? "" : realm,
-            nonce == NULL ? "" : nonce,
-            path == NULL || path[0] == '\0' ? "/" : path
-        );
-        if (opaque != NULL && opaque[0] != '\0') {
-            ptn_string_buffer_append_format(&authorization, ", opaque=\"%s\"", opaque);
-        }
-        ptn_string_buffer_append(&authorization, "\r\n");
-        ptn_soap_client_append_last_request_header(data, authorization.data);
-        free(authorization.data);
-        free(realm);
-        free(nonce);
-        free(opaque);
-        free(login);
-        if (unauthorized) {
-            ptn_throw_exception_at(runtime, "SoapFault", "Unauthorized", runtime->source_path, line);
-        }
-    }
-    free(code);
-    free(location);
-    free(path);
-    free(digest_challenge);
-    return runtime->exceptions->active_exception == NULL;
-}
-
 static int ptn_soap_append_http_context_header_value(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
@@ -240297,12 +241648,6 @@ static int ptn_soap_client_record_non_wsdl_request(
     data->last_request = buffer.data;
     data->last_request_len = buffer.len;
     if (!ptn_soap_client_record_http_request_headers(runtime, data, method_name, uri, line)) {
-        free(uri);
-        free(header_xml.data);
-        ptn_soap_namespace_list_free(&namespaces);
-        return 0;
-    }
-    if (!ptn_soap_client_apply_loopback_server_headers(runtime, data, line)) {
         free(uri);
         free(header_xml.data);
         ptn_soap_namespace_list_free(&namespaces);
@@ -289489,6 +290834,7 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
 }
 
 static char *ptn_eval_source_path(PtnRuntime *runtime, size_t line);
+static void ptn_eval_throw_parse_error(PtnRuntime *runtime, char *message, size_t eval_call_line);
 
 static int ptn_eval_identifier_start(unsigned char ch) {
     return ch == '_' ||
@@ -293358,6 +294704,23 @@ static int ptn_eval_parse_primary_expression(
         *pos = cursor;
         return 1;
     }
+    if (code[cursor] == '~') {
+        cursor++;
+        PtnValue operand = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &operand)) {
+            return 0;
+        }
+        PtnValue result = ptn_bitwise_not(
+            runtime,
+            operand,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        ptn_value_destroy(&operand);
+        *out = result;
+        *pos = cursor;
+        return 1;
+    }
     if (code[cursor] == '\'' || code[cursor] == '"') {
         int parsed = ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
         if (parsed) {
@@ -293418,6 +294781,197 @@ static int ptn_eval_parse_primary_expression(
     return ptn_eval_parse_constant_expression(runtime, code, len, pos, line, out);
 }
 
+typedef enum {
+    PTN_EVAL_BINARY_ADD,
+    PTN_EVAL_BINARY_SUBTRACT,
+    PTN_EVAL_BINARY_MULTIPLY,
+    PTN_EVAL_BINARY_POWER,
+    PTN_EVAL_BINARY_DIVIDE,
+    PTN_EVAL_BINARY_MODULO,
+    PTN_EVAL_BINARY_CONCAT,
+    PTN_EVAL_BINARY_SHIFT_LEFT,
+    PTN_EVAL_BINARY_SHIFT_RIGHT,
+    PTN_EVAL_BINARY_BITWISE_AND,
+    PTN_EVAL_BINARY_BITWISE_XOR,
+    PTN_EVAL_BINARY_BITWISE_OR,
+    PTN_EVAL_BINARY_EQUAL,
+    PTN_EVAL_BINARY_NOT_EQUAL,
+    PTN_EVAL_BINARY_SPACESHIP,
+    PTN_EVAL_BINARY_IDENTICAL,
+    PTN_EVAL_BINARY_NOT_IDENTICAL,
+    PTN_EVAL_BINARY_LESS,
+    PTN_EVAL_BINARY_LESS_EQUAL,
+    PTN_EVAL_BINARY_GREATER,
+    PTN_EVAL_BINARY_GREATER_EQUAL,
+    PTN_EVAL_BINARY_LOGICAL_AND,
+    PTN_EVAL_BINARY_LOGICAL_OR,
+    PTN_EVAL_BINARY_LOGICAL_XOR
+} PtnEvalBinaryOperator;
+
+static int ptn_eval_parse_binary_expression_tail(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    int minimum_precedence,
+    PtnValue *left
+);
+static int ptn_eval_parse_expression_above_logical_xor(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+);
+
+static PtnValue ptn_eval_concat_values(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_concat(runtime, left, right, line);
+}
+
+static PtnValue ptn_eval_apply_binary_operator(
+    PtnRuntime *runtime,
+    PtnEvalBinaryOperator operation,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int compound_assignment
+) {
+    switch (operation) {
+        case PTN_EVAL_BINARY_ADD:
+            return ptn_add(runtime, left, right, line);
+        case PTN_EVAL_BINARY_SUBTRACT:
+            return ptn_subtract(runtime, left, right, line);
+        case PTN_EVAL_BINARY_MULTIPLY:
+            return compound_assignment
+                ? ptn_multiply_assign(runtime, left, right, line)
+                : ptn_multiply(runtime, left, right, line);
+        case PTN_EVAL_BINARY_POWER:
+            return ptn_power(runtime, left, right, line);
+        case PTN_EVAL_BINARY_DIVIDE:
+            return ptn_divide(runtime, left, right, line);
+        case PTN_EVAL_BINARY_MODULO:
+            return ptn_modulo(runtime, left, right, line);
+        case PTN_EVAL_BINARY_CONCAT:
+            return compound_assignment
+                ? ptn_concat_assign(runtime, left, right, line)
+                : ptn_eval_concat_values(runtime, left, right, line);
+        case PTN_EVAL_BINARY_SHIFT_LEFT:
+            return ptn_shift_left(runtime, left, right, line);
+        case PTN_EVAL_BINARY_SHIFT_RIGHT:
+            return ptn_shift_right(runtime, left, right, line);
+        case PTN_EVAL_BINARY_BITWISE_AND:
+            return compound_assignment
+                ? ptn_bitwise_and_assign(runtime, left, right, line)
+                : ptn_bitwise_and(runtime, left, right, line);
+        case PTN_EVAL_BINARY_BITWISE_XOR:
+            return compound_assignment
+                ? ptn_bitwise_xor_assign(runtime, left, right, line)
+                : ptn_bitwise_xor(runtime, left, right, line);
+        case PTN_EVAL_BINARY_BITWISE_OR:
+            return compound_assignment
+                ? ptn_bitwise_or_assign(runtime, left, right, line)
+                : ptn_bitwise_or(runtime, left, right, line);
+        case PTN_EVAL_BINARY_EQUAL:
+            return ptn_bool(ptn_compare_equal(runtime, left, right, line));
+        case PTN_EVAL_BINARY_NOT_EQUAL:
+            return ptn_bool(!ptn_compare_equal(runtime, left, right, line));
+        case PTN_EVAL_BINARY_SPACESHIP: {
+            int order = ptn_compare_order(runtime, left, right, line);
+            return ptn_int((int64_t)(
+                order == PTN_COMPARE_LESS ? -1 :
+                (order == PTN_COMPARE_GREATER ? 1 : 0)
+            ));
+        }
+        case PTN_EVAL_BINARY_IDENTICAL:
+            return ptn_bool(ptn_compare_identical(runtime, left, right, line));
+        case PTN_EVAL_BINARY_NOT_IDENTICAL:
+            return ptn_bool(ptn_compare_not_identical(runtime, left, right, line));
+        case PTN_EVAL_BINARY_LESS: {
+            int order = ptn_compare_order(runtime, left, right, line);
+            return ptn_bool(order == PTN_COMPARE_LESS);
+        }
+        case PTN_EVAL_BINARY_LESS_EQUAL: {
+            int order = ptn_compare_order(runtime, left, right, line);
+            return ptn_bool(order == PTN_COMPARE_LESS || order == PTN_COMPARE_EQUAL);
+        }
+        case PTN_EVAL_BINARY_GREATER: {
+            int order = ptn_compare_order(runtime, left, right, line);
+            return ptn_bool(order == PTN_COMPARE_GREATER);
+        }
+        case PTN_EVAL_BINARY_GREATER_EQUAL: {
+            int order = ptn_compare_order(runtime, left, right, line);
+            return ptn_bool(order == PTN_COMPARE_GREATER || order == PTN_COMPARE_EQUAL);
+        }
+        case PTN_EVAL_BINARY_LOGICAL_AND:
+            return ptn_bool(ptn_is_truthy(left) && ptn_is_truthy(right));
+        case PTN_EVAL_BINARY_LOGICAL_OR:
+            return ptn_bool(ptn_is_truthy(left) || ptn_is_truthy(right));
+        case PTN_EVAL_BINARY_LOGICAL_XOR:
+            return ptn_bool(ptn_is_truthy(left) != ptn_is_truthy(right));
+    }
+    return ptn_null();
+}
+
+static int ptn_eval_parse_assignment_operator(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    PtnEvalBinaryOperator *operation_out,
+    int *is_compound_out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    *is_compound_out = 1;
+    if (cursor + 3 <= len && memcmp(code + cursor, "**=", 3) == 0) {
+        *operation_out = PTN_EVAL_BINARY_POWER;
+        *pos = cursor + 3;
+        return 1;
+    }
+    if (cursor + 3 <= len && memcmp(code + cursor, "<<=", 3) == 0) {
+        *operation_out = PTN_EVAL_BINARY_SHIFT_LEFT;
+        *pos = cursor + 3;
+        return 1;
+    }
+    if (cursor + 3 <= len && memcmp(code + cursor, ">>=", 3) == 0) {
+        *operation_out = PTN_EVAL_BINARY_SHIFT_RIGHT;
+        *pos = cursor + 3;
+        return 1;
+    }
+    if (cursor + 2 <= len) {
+        PtnEvalBinaryOperator operation;
+        switch (code[cursor]) {
+            case '+': operation = PTN_EVAL_BINARY_ADD; break;
+            case '-': operation = PTN_EVAL_BINARY_SUBTRACT; break;
+            case '*': operation = PTN_EVAL_BINARY_MULTIPLY; break;
+            case '/': operation = PTN_EVAL_BINARY_DIVIDE; break;
+            case '%': operation = PTN_EVAL_BINARY_MODULO; break;
+            case '.': operation = PTN_EVAL_BINARY_CONCAT; break;
+            case '&': operation = PTN_EVAL_BINARY_BITWISE_AND; break;
+            case '|': operation = PTN_EVAL_BINARY_BITWISE_OR; break;
+            case '^': operation = PTN_EVAL_BINARY_BITWISE_XOR; break;
+            default: operation = PTN_EVAL_BINARY_ADD; break;
+        }
+        if (code[cursor + 1] == '=' && strchr("+-*/%.&|^", code[cursor]) != NULL) {
+            *operation_out = operation;
+            *pos = cursor + 2;
+            return 1;
+        }
+    }
+    if (cursor < len && code[cursor] == '=' &&
+        (cursor + 1 >= len || (code[cursor + 1] != '=' && code[cursor + 1] != '>'))) {
+        *is_compound_out = 0;
+        *pos = cursor + 1;
+        return 1;
+    }
+    return 0;
+}
+
 static int ptn_eval_parse_assignment_expression(
     PtnRuntime *runtime,
     const char *code,
@@ -293432,18 +294986,31 @@ static int ptn_eval_parse_assignment_expression(
         return 0;
     }
 
-    size_t operator_pos = ptn_eval_skip_ws(code, len, cursor);
-    if (operator_pos >= len || code[operator_pos] != '=' ||
-        (operator_pos + 1 < len && (code[operator_pos + 1] == '=' || code[operator_pos + 1] == '>'))) {
+    PtnEvalBinaryOperator operation = PTN_EVAL_BINARY_ADD;
+    int is_compound = 0;
+    if (!ptn_eval_parse_assignment_operator(
+            code,
+            len,
+            &cursor,
+            &operation,
+            &is_compound
+        )) {
         ptn_eval_array_path_free(&target);
         return 0;
     }
 
-    cursor = operator_pos + 1;
-    PtnValue value = ptn_null();
-    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &value)) {
+    PtnValue rhs = ptn_null();
+    if (!ptn_eval_parse_expression_above_logical_xor(runtime, code, len, &cursor, line, &rhs)) {
         ptn_eval_array_path_free(&target);
         return 0;
+    }
+
+    PtnValue value = rhs;
+    if (is_compound) {
+        PtnValue current = ptn_eval_read_array_path(runtime, &target, line);
+        value = ptn_eval_apply_binary_operator(runtime, operation, current, rhs, line, 1);
+        ptn_value_destroy(&current);
+        ptn_value_destroy(&rhs);
     }
 
     if (ptn_runtime_has_active_exception(runtime)) {
@@ -293470,6 +295037,239 @@ static int ptn_eval_parse_assignment_expression(
     ptn_value_destroy(&value);
     ptn_eval_array_path_free(&target);
     *pos = cursor;
+    return 1;
+}
+
+enum {
+    PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_XOR = 10,
+    PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_OR = 15,
+    PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_AND = 17,
+    PTN_EVAL_BINARY_PRECEDENCE_BITWISE_OR = 20,
+    PTN_EVAL_BINARY_PRECEDENCE_BITWISE_XOR = 30,
+    PTN_EVAL_BINARY_PRECEDENCE_BITWISE_AND = 40,
+    PTN_EVAL_BINARY_PRECEDENCE_COMPARISON = 50,
+    PTN_EVAL_BINARY_PRECEDENCE_CONCAT = 60,
+    PTN_EVAL_BINARY_PRECEDENCE_SHIFT = 70,
+    PTN_EVAL_BINARY_PRECEDENCE_ADDITIVE = 80,
+    PTN_EVAL_BINARY_PRECEDENCE_MULTIPLICATIVE = 90,
+    PTN_EVAL_BINARY_PRECEDENCE_POWER = 100
+};
+
+static int ptn_eval_parse_binary_operator(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    PtnEvalBinaryOperator *operation_out,
+    int *precedence_out,
+    int *right_associative_out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    PtnEvalBinaryOperator operation;
+    int precedence;
+    int right_associative = 0;
+    size_t operator_len = 0;
+
+    if (cursor + 2 <= len && memcmp(code + cursor, "**", 2) == 0) {
+        operation = PTN_EVAL_BINARY_POWER;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_POWER;
+        right_associative = 1;
+        operator_len = 2;
+    } else if (cursor + 3 <= len && memcmp(code + cursor, "===", 3) == 0) {
+        operation = PTN_EVAL_BINARY_IDENTICAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 3;
+    } else if (cursor + 3 <= len && memcmp(code + cursor, "!==", 3) == 0) {
+        operation = PTN_EVAL_BINARY_NOT_IDENTICAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 3;
+    } else if (cursor + 3 <= len && memcmp(code + cursor, "<=>", 3) == 0) {
+        operation = PTN_EVAL_BINARY_SPACESHIP;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 3;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "<<", 2) == 0) {
+        operation = PTN_EVAL_BINARY_SHIFT_LEFT;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_SHIFT;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, ">>", 2) == 0) {
+        operation = PTN_EVAL_BINARY_SHIFT_RIGHT;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_SHIFT;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "==", 2) == 0) {
+        operation = PTN_EVAL_BINARY_EQUAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "!=", 2) == 0) {
+        operation = PTN_EVAL_BINARY_NOT_EQUAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "<=", 2) == 0) {
+        operation = PTN_EVAL_BINARY_LESS_EQUAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, ">=", 2) == 0) {
+        operation = PTN_EVAL_BINARY_GREATER_EQUAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "<>", 2) == 0) {
+        operation = PTN_EVAL_BINARY_NOT_EQUAL;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "&&", 2) == 0) {
+        operation = PTN_EVAL_BINARY_LOGICAL_AND;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_AND;
+        operator_len = 2;
+    } else if (cursor + 2 <= len && memcmp(code + cursor, "||", 2) == 0) {
+        operation = PTN_EVAL_BINARY_LOGICAL_OR;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_OR;
+        operator_len = 2;
+    } else if (ptn_eval_keyword_at(code, len, cursor, "xor")) {
+        operation = PTN_EVAL_BINARY_LOGICAL_XOR;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_XOR;
+        operator_len = strlen("xor");
+    } else if (cursor < len && code[cursor] == '+' &&
+               (cursor + 1 >= len || (code[cursor + 1] != '+' && code[cursor + 1] != '='))) {
+        operation = PTN_EVAL_BINARY_ADD;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_ADDITIVE;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '-' &&
+               (cursor + 1 >= len ||
+                (code[cursor + 1] != '-' && code[cursor + 1] != '=' && code[cursor + 1] != '>'))) {
+        operation = PTN_EVAL_BINARY_SUBTRACT;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_ADDITIVE;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '*' &&
+               (cursor + 1 >= len || code[cursor + 1] != '=')) {
+        operation = PTN_EVAL_BINARY_MULTIPLY;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_MULTIPLICATIVE;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '/' &&
+               (cursor + 1 >= len || code[cursor + 1] != '=')) {
+        operation = PTN_EVAL_BINARY_DIVIDE;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_MULTIPLICATIVE;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '%' &&
+               (cursor + 1 >= len || code[cursor + 1] != '=')) {
+        operation = PTN_EVAL_BINARY_MODULO;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_MULTIPLICATIVE;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '.' &&
+               (cursor + 1 >= len || code[cursor + 1] != '=')) {
+        operation = PTN_EVAL_BINARY_CONCAT;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_CONCAT;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '&' &&
+               (cursor + 1 >= len || (code[cursor + 1] != '=' && code[cursor + 1] != '&'))) {
+        operation = PTN_EVAL_BINARY_BITWISE_AND;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_BITWISE_AND;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '^' &&
+               (cursor + 1 >= len || code[cursor + 1] != '=')) {
+        operation = PTN_EVAL_BINARY_BITWISE_XOR;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_BITWISE_XOR;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '|' &&
+               (cursor + 1 >= len || (code[cursor + 1] != '=' && code[cursor + 1] != '|'))) {
+        operation = PTN_EVAL_BINARY_BITWISE_OR;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_BITWISE_OR;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '<') {
+        operation = PTN_EVAL_BINARY_LESS;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 1;
+    } else if (cursor < len && code[cursor] == '>') {
+        operation = PTN_EVAL_BINARY_GREATER;
+        precedence = PTN_EVAL_BINARY_PRECEDENCE_COMPARISON;
+        operator_len = 1;
+    } else {
+        return 0;
+    }
+
+    *operation_out = operation;
+    *precedence_out = precedence;
+    *right_associative_out = right_associative;
+    *pos = cursor + operator_len;
+    return 1;
+}
+
+static int ptn_eval_parse_binary_expression_tail(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    int minimum_precedence,
+    PtnValue *left
+) {
+    while (1) {
+        size_t cursor = *pos;
+        PtnEvalBinaryOperator operation;
+        int precedence;
+        int right_associative;
+        if (!ptn_eval_parse_binary_operator(
+                code,
+                len,
+                &cursor,
+                &operation,
+                &precedence,
+                &right_associative
+            ) || precedence < minimum_precedence) {
+            return 1;
+        }
+
+        PtnValue right = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
+            return 0;
+        }
+        if (!ptn_eval_parse_binary_expression_tail(
+                runtime,
+                code,
+                len,
+                &cursor,
+                line,
+                precedence + (right_associative ? 0 : 1),
+                &right
+            )) {
+            ptn_value_destroy(&right);
+            return 0;
+        }
+
+        PtnValue combined =
+            ptn_eval_apply_binary_operator(runtime, operation, *left, right, line, 0);
+        ptn_value_destroy(left);
+        ptn_value_destroy(&right);
+        *left = combined;
+        *pos = cursor;
+        if (ptn_runtime_has_active_exception(runtime)) {
+            return 1;
+        }
+    }
+}
+
+static int ptn_eval_parse_expression_above_logical_xor(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    PtnValue value = ptn_null();
+    if (!ptn_eval_parse_primary_expression(runtime, code, len, pos, line, &value)) {
+        return 0;
+    }
+    if (!ptn_eval_parse_binary_expression_tail(
+            runtime,
+            code,
+            len,
+            pos,
+            line,
+            PTN_EVAL_BINARY_PRECEDENCE_LOGICAL_XOR + 1,
+            &value
+        )) {
+        ptn_value_destroy(&value);
+        return 0;
+    }
+    *out = value;
     return 1;
 }
 
@@ -293514,168 +295314,16 @@ static int ptn_eval_parse_expression(
             ptn_eval_array_path_free(&coalesce_path);
         }
     }
-    if (!have_left && ptn_eval_parse_assignment_expression(runtime, code, len, pos, line, out)) {
-        return 1;
+    if (!have_left && ptn_eval_parse_assignment_expression(runtime, code, len, pos, line, &left)) {
+        have_left = 1;
     }
     if (!have_left && !ptn_eval_parse_primary_expression(runtime, code, len, pos, line, &left)) {
         return 0;
     }
 
-    while (1) {
-        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-        if (cursor >= len || code[cursor] != '.') {
-            break;
-        }
-        cursor++;
-        PtnValue right = ptn_null();
-        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
-            ptn_value_destroy(&left);
-            return 0;
-        }
-        PtnStringOperand left_string =
-            ptn_value_to_string_operand_with_runtime(runtime, left, line);
-        PtnStringOperand right_string =
-            ptn_value_to_string_operand_with_runtime(runtime, right, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(left_string);
-            ptn_string_operand_free(right_string);
-            ptn_value_destroy(&left);
-            ptn_value_destroy(&right);
-            *out = ptn_null();
-            *pos = cursor;
-            return 1;
-        }
-        size_t total_len = left_string.len + right_string.len;
-        char *combined = malloc(total_len + 1);
-        if (combined == NULL) {
-            ptn_string_operand_free(left_string);
-            ptn_string_operand_free(right_string);
-            ptn_value_destroy(&left);
-            ptn_value_destroy(&right);
-            ptn_abort_out_of_memory();
-        }
-        memcpy(combined, left_string.data, left_string.len);
-        memcpy(combined + left_string.len, right_string.data, right_string.len);
-        combined[total_len] = '\0';
-        ptn_string_operand_free(left_string);
-        ptn_string_operand_free(right_string);
+    if (!ptn_eval_parse_binary_expression_tail(runtime, code, len, pos, line, 0, &left)) {
         ptn_value_destroy(&left);
-        ptn_value_destroy(&right);
-        left = ptn_owned_string_len((unsigned char *)combined, total_len);
-        *pos = cursor;
-    }
-
-    while (1) {
-        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-        if (cursor >= len || (code[cursor] != '+' && code[cursor] != '-')) {
-            break;
-        }
-        char operator = code[cursor];
-        cursor++;
-        PtnValue right = ptn_null();
-        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
-            ptn_value_destroy(&left);
-            return 0;
-        }
-        PtnValue result = operator == '+'
-            ? ptn_add(runtime, left, right, line)
-            : ptn_subtract(runtime, left, right, line);
-        ptn_value_destroy(&left);
-        ptn_value_destroy(&right);
-        left = result;
-        *pos = cursor;
-        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
-            *out = left;
-            return 1;
-        }
-    }
-
-    while (1) {
-        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-        if (cursor >= len || code[cursor] != '|') {
-            break;
-        }
-        cursor++;
-        PtnValue right = ptn_null();
-        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
-            ptn_value_destroy(&left);
-            return 0;
-        }
-        PtnValue combined = ptn_bitwise_or(runtime, left, right, line);
-        ptn_value_destroy(&left);
-        ptn_value_destroy(&right);
-        left = combined;
-        *pos = cursor;
-        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
-            *out = left;
-            return 1;
-        }
-    }
-
-    while (1) {
-        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-        const char *operator = NULL;
-        size_t operator_len = 0;
-        if (cursor + 3 <= len &&
-            (memcmp(code + cursor, "===", 3) == 0 ||
-                memcmp(code + cursor, "!==", 3) == 0 ||
-                memcmp(code + cursor, "<=>", 3) == 0)) {
-            operator = code + cursor;
-            operator_len = 3;
-        } else if (cursor + 2 <= len &&
-            (memcmp(code + cursor, "==", 2) == 0 ||
-                memcmp(code + cursor, "!=", 2) == 0 ||
-                memcmp(code + cursor, "<>", 2) == 0 ||
-                memcmp(code + cursor, "<=", 2) == 0 ||
-                memcmp(code + cursor, ">=", 2) == 0)) {
-            operator = code + cursor;
-            operator_len = 2;
-        } else if (cursor < len && (code[cursor] == '<' || code[cursor] == '>')) {
-            operator = code + cursor;
-            operator_len = 1;
-        } else {
-            break;
-        }
-        cursor += operator_len;
-        PtnValue right = ptn_null();
-        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
-            ptn_value_destroy(&left);
-            return 0;
-        }
-        PtnValue compared = ptn_null();
-        if (operator_len == 3 && memcmp(operator, "===", 3) == 0) {
-            compared = ptn_bool(ptn_compare_identical(runtime, left, right, line));
-        } else if (operator_len == 3 && memcmp(operator, "!==", 3) == 0) {
-            compared = ptn_bool(ptn_compare_not_identical(runtime, left, right, line));
-        } else if (operator_len == 3 && memcmp(operator, "<=>", 3) == 0) {
-            int order = ptn_compare_order(runtime, left, right, line);
-            compared = ptn_int((int64_t)(
-                order == PTN_COMPARE_LESS ? -1 :
-                (order == PTN_COMPARE_GREATER ? 1 : 0)
-            ));
-        } else if (operator_len == 2 && memcmp(operator, "==", 2) == 0) {
-            compared = ptn_bool(ptn_compare_equal(runtime, left, right, line));
-        } else if (
-            operator_len == 2 &&
-            (memcmp(operator, "!=", 2) == 0 || memcmp(operator, "<>", 2) == 0)
-        ) {
-            compared = ptn_bool(!ptn_compare_equal(runtime, left, right, line));
-        } else {
-            int order = ptn_compare_order(runtime, left, right, line);
-            if (operator_len == 2 && memcmp(operator, "<=", 2) == 0) {
-                compared = ptn_bool(order == PTN_COMPARE_LESS || order == PTN_COMPARE_EQUAL);
-            } else if (operator_len == 2 && memcmp(operator, ">=", 2) == 0) {
-                compared = ptn_bool(order == PTN_COMPARE_GREATER || order == PTN_COMPARE_EQUAL);
-            } else if (operator[0] == '<') {
-                compared = ptn_bool(order == PTN_COMPARE_LESS);
-            } else {
-                compared = ptn_bool(order == PTN_COMPARE_GREATER);
-            }
-        }
-        ptn_value_destroy(&left);
-        ptn_value_destroy(&right);
-        left = compared;
-        *pos = cursor;
+        return 0;
     }
 
     {
@@ -293714,6 +295362,34 @@ static int ptn_eval_parse_expression(
     return 1;
 }
 
+static void ptn_eval_throw_expression_parse_error(PtnRuntime *runtime, size_t line) {
+    ptn_eval_throw_parse_error(
+        runtime,
+        ptn_duplicate_string("syntax error, unexpected token"),
+        line
+    );
+}
+
+static int ptn_eval_consume_expression_terminator(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor < len && code[cursor] == ';') {
+        *pos = cursor + 1;
+        return 1;
+    }
+    if (cursor == len) {
+        *pos = cursor;
+        return 1;
+    }
+    ptn_eval_throw_expression_parse_error(runtime, line);
+    return 0;
+}
+
 static void ptn_eval_skip_statement(const char *code, size_t len, size_t *pos) {
     size_t cursor = *pos;
     while (cursor < len) {
@@ -293745,9 +295421,17 @@ static int ptn_eval_execute_return_statement(
     cursor += strlen("return");
     PtnValue result = ptn_null();
     if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &result)) {
-        return 0;
+        ptn_eval_throw_expression_parse_error(runtime, line);
+        *return_out = ptn_null();
+        *pos = len;
+        return 1;
     }
-    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    if (!ptn_eval_consume_expression_terminator(runtime, code, len, &cursor, line)) {
+        ptn_value_destroy(&result);
+        *return_out = ptn_null();
+        *pos = len;
+        return 1;
+    }
     *return_out = result;
     *pos = cursor;
     return 1;
@@ -294116,6 +295800,38 @@ static int ptn_dynamic_execute_expression_statement(
     }
     ptn_value_destroy(&value);
     *pos = cursor;
+    return 1;
+}
+
+static int ptn_dynamic_execute_throw_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (!ptn_eval_keyword_at(code, len, cursor, "throw")) {
+        return 0;
+    }
+    cursor += strlen("throw");
+    PtnValue thrown = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &thrown)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ';')) {
+        ptn_value_destroy(&thrown);
+        return 0;
+    }
+    *pos = cursor;
+    PtnValue result = ptn_throw_value(
+        runtime,
+        thrown,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&thrown);
     return 1;
 }
 
@@ -294491,41 +296207,13 @@ static int ptn_dynamic_execute_phar_static_statement(
     return 1;
 }
 
-static PtnValue ptn_dynamic_concat_values(
+static PtnValue ptn_dynamic_concat_assign_values(
     PtnRuntime *runtime,
     PtnValue left,
     PtnValue right,
     size_t line
 ) {
-    PtnStringOperand left_string = ptn_value_to_string_operand_with_runtime(runtime, left, line);
-    PtnStringOperand right_string = ptn_value_to_string_operand_with_runtime(runtime, right, line);
-    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(left_string);
-        ptn_string_operand_free(right_string);
-        return ptn_null();
-    }
-    if (left_string.len > SIZE_MAX - right_string.len) {
-        ptn_string_operand_free(left_string);
-        ptn_string_operand_free(right_string);
-        ptn_abort_out_of_memory();
-    }
-    size_t total_len = left_string.len + right_string.len;
-    char *combined = malloc(total_len + 1);
-    if (combined == NULL) {
-        ptn_string_operand_free(left_string);
-        ptn_string_operand_free(right_string);
-        ptn_abort_out_of_memory();
-    }
-    if (left_string.len != 0) {
-        memcpy(combined, left_string.data, left_string.len);
-    }
-    if (right_string.len != 0) {
-        memcpy(combined + left_string.len, right_string.data, right_string.len);
-    }
-    combined[total_len] = '\0';
-    ptn_string_operand_free(left_string);
-    ptn_string_operand_free(right_string);
-    return ptn_owned_string_len((unsigned char *)combined, total_len);
+    return ptn_concat_assign(runtime, left, right, line);
 }
 
 static int ptn_dynamic_execute_assignment_statement(
@@ -294556,7 +296244,7 @@ static int ptn_dynamic_execute_assignment_statement(
                 ptn_eval_read_variable(runtime, target.name, line)
             );
             PtnValue added = concat_assign
-                ? ptn_dynamic_concat_values(runtime, current, rhs, line)
+                ? ptn_dynamic_concat_assign_values(runtime, current, rhs, line)
                 : ptn_add(runtime, current, rhs, line);
             ptn_value_destroy(&current);
             ptn_value_destroy(&rhs);
@@ -294606,7 +296294,7 @@ static int ptn_dynamic_execute_assignment_statement(
                 )
                 : ptn_value_clone(base);
             PtnValue added = concat_assign
-                ? ptn_dynamic_concat_values(runtime, current, rhs, line)
+                ? ptn_dynamic_concat_assign_values(runtime, current, rhs, line)
                 : ptn_add(runtime, current, rhs, line);
             ptn_value_destroy(&current);
             ptn_value_destroy(&rhs);
@@ -294849,6 +296537,9 @@ static int ptn_dynamic_parse_catch_header(
         cursor++;
     }
     if (*variable_out == NULL) {
+        type_end = cursor;
+    }
+    if (type_end == type_start) {
         return 0;
     }
     while (type_end > type_start && isspace((unsigned char)code[type_end - 1])) {
@@ -294947,7 +296638,9 @@ static int ptn_dynamic_execute_try_catch_statement(
     if (ptn_runtime_has_active_exception(runtime)) {
         if (ptn_exception_matches(runtime, catch_type)) {
             catch_active = 1;
-            if (!ptn_runtime_bind_catch_variable(runtime, catch_variable, catch_line)) {
+            if (catch_variable == NULL) {
+                ptn_clear_exception(runtime);
+            } else if (!ptn_runtime_bind_catch_variable(runtime, catch_variable, catch_line)) {
                 catch_active = 0;
                 if (frame_active) {
                     ptn_try_frame_pop(runtime, &frame);
@@ -295406,12 +297099,22 @@ static int ptn_dynamic_execute_return_statement(
     size_t next = ptn_eval_skip_ws(code, len, cursor);
     if (next < len && code[next] != ';') {
         if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &result)) {
-            return 0;
+            ptn_eval_throw_expression_parse_error(runtime, line);
+            *return_out = ptn_null();
+            *returned = 1;
+            *pos = len;
+            return 1;
         }
     } else {
         cursor = next;
     }
-    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    if (!ptn_eval_consume_expression_terminator(runtime, code, len, &cursor, line)) {
+        ptn_value_destroy(&result);
+        *return_out = ptn_null();
+        *returned = 1;
+        *pos = len;
+        return 1;
+    }
     *return_out = result;
     *returned = 1;
     *pos = cursor;
@@ -295425,55 +297128,39 @@ static int ptn_dynamic_execute_assignment_expression(
     size_t *pos,
     size_t line
 ) {
-    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    size_t statement_start = ptn_eval_skip_ws(code, len, *pos);
+    size_t cursor = statement_start;
     PtnEvalArrayPath target;
     if (!ptn_eval_parse_array_path(runtime, code, len, &cursor, line, &target)) {
         return 0;
     }
-    size_t operator_pos = ptn_eval_skip_ws(code, len, cursor);
-    int add_assign =
-        operator_pos + 1 < len && code[operator_pos] == '+' && code[operator_pos + 1] == '=';
-    if (add_assign) {
-        cursor = operator_pos + 2;
-    } else if (
-        operator_pos < len &&
-        code[operator_pos] == '=' &&
-        !(operator_pos + 1 < len && code[operator_pos + 1] == '=')
-    ) {
-        cursor = operator_pos + 1;
-    } else {
+    PtnEvalBinaryOperator operation = PTN_EVAL_BINARY_ADD;
+    int is_compound = 0;
+    if (!ptn_eval_parse_assignment_operator(
+            code,
+            len,
+            &cursor,
+            &operation,
+            &is_compound
+        )) {
         ptn_eval_array_path_free(&target);
         return 0;
     }
+    ptn_eval_array_path_free(&target);
 
-    PtnValue rhs = ptn_null();
-    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &rhs)) {
-        ptn_eval_array_path_free(&target);
-        return 0;
-    }
-    PtnValue value = rhs;
-    if (add_assign) {
-        PtnValue current = ptn_eval_read_array_path(runtime, &target, line);
-        value = ptn_add(runtime, current, rhs, line);
-        ptn_value_destroy(&current);
-        ptn_value_destroy(&rhs);
-    }
-    if (!ptn_runtime_has_active_exception(runtime)) {
-        if (target.segment_count == 0) {
-            ptn_runtime_write_variable(runtime, target.name, value);
-        } else {
-            ptn_runtime_array_path_set(
-                runtime,
-                target.name,
-                target.segments,
-                target.segment_count,
-                value,
-                line
-            );
-        }
+    cursor = statement_start;
+    PtnValue value = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &value)) {
+        ptn_eval_throw_expression_parse_error(runtime, line);
+        *pos = len;
+        return 1;
     }
     ptn_value_destroy(&value);
-    ptn_eval_array_path_free(&target);
+    if (!ptn_runtime_has_active_exception(runtime) &&
+        !ptn_eval_consume_expression_terminator(runtime, code, len, &cursor, line)) {
+        *pos = len;
+        return 1;
+    }
     *pos = cursor;
     return 1;
 }
@@ -296230,6 +297917,13 @@ static int ptn_dynamic_execute_statements_range(
         *pos = statement_pos;
         if (ptn_dynamic_execute_halt_compiler_statement(code, end, pos)) {
             return 1;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_execute_throw_statement(runtime, code, end, pos, line)) {
+            if (ptn_runtime_has_active_exception(runtime)) {
+                return 1;
+            }
+            continue;
         }
         *pos = statement_pos;
         if (ptn_dynamic_execute_echo_statement(runtime, code, end, pos, line) ||
@@ -297737,6 +299431,31 @@ static int ptn_eval_parse_error_non_expression_keyword(const char *name, size_t 
     return 0;
 }
 
+static int ptn_eval_parse_error_binary_operator_keyword(const char *name, size_t len) {
+    static const char *const keywords[] = {
+        "and",
+        "or",
+        "xor",
+    };
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        const char *keyword = keywords[i];
+        if (strlen(keyword) != len) {
+            continue;
+        }
+        int equal = 1;
+        for (size_t j = 0; j < len; j++) {
+            if (ptn_ascii_lower_char(name[j]) != keyword[j]) {
+                equal = 0;
+                break;
+            }
+        }
+        if (equal) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static char *ptn_eval_unexpected_identifier_message(const char *name, size_t len) {
     char *identifier = ptn_duplicate_string_len(name, len);
     int needed = snprintf(
@@ -297764,12 +299483,27 @@ static char *ptn_eval_unexpected_identifier_message(const char *name, size_t len
     return message;
 }
 
-static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t pos) {
+typedef enum {
+    PTN_EVAL_HEREDOC_NOT_FOUND,
+    PTN_EVAL_HEREDOC_COMPLETE,
+    PTN_EVAL_HEREDOC_UNTERMINATED_EMPTY_BODY,
+    PTN_EVAL_HEREDOC_UNTERMINATED_BODY,
+} PtnEvalHeredocScan;
+
+static PtnEvalHeredocScan ptn_eval_skip_heredoc_literal(
+    const char *code,
+    size_t len,
+    size_t pos,
+    size_t *end_out,
+    int *has_statement_terminator_out
+) {
+    *end_out = pos;
+    *has_statement_terminator_out = 0;
     if (pos + 3 > len ||
         code[pos] != '<' ||
         code[pos + 1] != '<' ||
         code[pos + 2] != '<') {
-        return pos;
+        return PTN_EVAL_HEREDOC_NOT_FOUND;
     }
     size_t cursor = ptn_eval_skip_ws(code, len, pos + 3);
     size_t label_start = cursor;
@@ -297781,13 +299515,13 @@ static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t
             cursor++;
         }
         if (cursor >= len) {
-            return len;
+            return PTN_EVAL_HEREDOC_NOT_FOUND;
         }
         label_len = cursor - label_start;
         cursor++;
     } else {
         if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
-            return pos;
+            return PTN_EVAL_HEREDOC_NOT_FOUND;
         }
         label_start = cursor;
         cursor++;
@@ -297802,6 +299536,7 @@ static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t
     if (cursor < len) {
         cursor++;
     }
+    size_t body_start = cursor;
     while (cursor < len) {
         size_t line_start = cursor;
         size_t label_pos = line_start;
@@ -297815,23 +299550,27 @@ static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t
                 after++;
             }
             if (after < len && code[after] == ';') {
+                *has_statement_terminator_out = 1;
                 after++;
             }
             while (after < len && (code[after] == ' ' || code[after] == '\t')) {
                 after++;
             }
             if (after >= len) {
-                return after;
+                *end_out = after;
+                return PTN_EVAL_HEREDOC_COMPLETE;
             }
             if (code[after] == '\r') {
                 after++;
                 if (after < len && code[after] == '\n') {
                     after++;
                 }
-                return after;
+                *end_out = after;
+                return PTN_EVAL_HEREDOC_COMPLETE;
             }
             if (code[after] == '\n') {
-                return after + 1;
+                *end_out = after + 1;
+                return PTN_EVAL_HEREDOC_COMPLETE;
             }
         }
         while (cursor < len && code[cursor] != '\n') {
@@ -297841,7 +299580,11 @@ static size_t ptn_eval_skip_heredoc_literal(const char *code, size_t len, size_t
             cursor++;
         }
     }
-    return len;
+    /* PORT NOTE: php-src treats an unterminated heredoc as a lexer error;
+     * it must not become a complete expression in eval's fallback scanner. */
+    return body_start == len
+        ? PTN_EVAL_HEREDOC_UNTERMINATED_EMPTY_BODY
+        : PTN_EVAL_HEREDOC_UNTERMINATED_BODY;
 }
 
 static char *ptn_eval_dynamic_parse_error_message(const char *code) {
@@ -297864,10 +299607,27 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
         if (ch == 0x7F) {
             return ptn_duplicate_string("syntax error, unexpected character 0x7F");
         }
-        size_t heredoc_end = ptn_eval_skip_heredoc_literal(code, len, pos);
-        if (heredoc_end != pos) {
+        size_t heredoc_end = pos;
+        int heredoc_has_statement_terminator = 0;
+        PtnEvalHeredocScan heredoc_scan =
+            ptn_eval_skip_heredoc_literal(
+                code,
+                len,
+                pos,
+                &heredoc_end,
+                &heredoc_has_statement_terminator
+            );
+        if (heredoc_scan == PTN_EVAL_HEREDOC_UNTERMINATED_EMPTY_BODY) {
+            return ptn_duplicate_string("syntax error, unexpected end of file");
+        }
+        if (heredoc_scan == PTN_EVAL_HEREDOC_UNTERMINATED_BODY) {
+            return ptn_duplicate_string(
+                "syntax error, unexpected end of file, expecting variable or heredoc end or \"${\" or \"{$\""
+            );
+        }
+        if (heredoc_scan == PTN_EVAL_HEREDOC_COMPLETE) {
             pos = heredoc_end;
-            previous_can_end_expression = 1;
+            previous_can_end_expression = !heredoc_has_statement_terminator;
             continue;
         }
         if (code[pos] == '\'' || code[pos] == '"') {
@@ -297892,14 +299652,19 @@ static char *ptn_eval_dynamic_parse_error_message(const char *code) {
             while (pos < len && ptn_eval_identifier_part((unsigned char)code[pos])) {
                 pos++;
             }
-            if (previous_can_end_expression) {
+            int binary_operator_keyword = ptn_eval_parse_error_binary_operator_keyword(
+                code + name_start,
+                pos - name_start
+            );
+            if (previous_can_end_expression && !binary_operator_keyword) {
                 return ptn_eval_unexpected_identifier_message(
                     code + name_start,
                     pos - name_start
                 );
             }
-            previous_can_end_expression =
-                !ptn_eval_parse_error_non_expression_keyword(code + name_start, pos - name_start);
+            previous_can_end_expression = binary_operator_keyword
+                ? 0
+                : !ptn_eval_parse_error_non_expression_keyword(code + name_start, pos - name_start);
             continue;
         }
         if (ch >= '0' && ch <= '9') {

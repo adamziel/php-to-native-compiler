@@ -21,12 +21,22 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     free(exception);
 }
 
+static PTN_UNUSED void ptn_exception_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    (void)runtime;
+    ptn_exception_free(exception);
+}
+
 static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     PtnReference *reference = malloc(sizeof(PtnReference));
     if (reference == NULL) {
         ptn_abort_out_of_memory();
     }
     reference->refcount = 1;
+    reference->cleanup_root.value = ptn_null();
+    reference->cleanup_root.next = NULL;
     reference->value = value;
     reference->lifecycle_runtime = NULL;
     reference->live_index = 0;
@@ -704,11 +714,50 @@ static PTN_UNUSED int ptn_gc_suppresses_replaced_reference_cycle(
         ptn_replaced_reference_cycle_suppressed_reference == reference;
 }
 
-static PTN_UNUSED void ptn_reference_destroy_storage(PtnReference *reference) {
+static PTN_UNUSED void ptn_reference_destroy_storage_in_runtime(
+    PtnRuntime *runtime,
+    PtnReference *reference
+) {
     if (reference == NULL) {
         return;
     }
-    ptn_value_destroy(&reference->value);
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        runtime,
+        reference->lifecycle_runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    PtnValue cleanup_value = ptn_null();
+    cleanup_value.type = PTN_REFERENCE;
+    cleanup_value.as.reference = reference;
+    ptn_runtime_link_cleanup_root(root, &reference->cleanup_root, cleanup_value);
+    ptn_runtime_unregister_reference(reference->lifecycle_runtime, reference);
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    PtnTryFrame frame;
+    int frame_active = release_runtime != NULL && release_runtime->exceptions != NULL;
+    if (frame_active) {
+        ptn_try_frame_push(release_runtime, &frame);
+        if (setjmp(frame.jump) != 0) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+    }
+    if (state->phase == 0) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 1;
+        ptn_value_drop_in_runtime(release_runtime, &reference->value);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (frame_active) {
+        ptn_try_frame_pop(release_runtime, &frame);
+    }
+    ptn_runtime_unlink_cleanup_root(root, &reference->cleanup_root);
     free(reference->property_type_class_name);
     free(reference->property_type_text);
     free(reference->property_declaring_class);
@@ -721,9 +770,17 @@ static PTN_UNUSED void ptn_reference_destroy_storage(PtnReference *reference) {
     }
     free(reference->property_type_sources);
     free(reference);
+    ptn_release_state_finish(release_runtime, state);
 }
 
-static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
+static PTN_UNUSED void ptn_reference_destroy_storage(PtnReference *reference) {
+    ptn_reference_destroy_storage_in_runtime(NULL, reference);
+}
+
+static PTN_UNUSED void ptn_reference_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnReference *reference
+) {
     if (reference == NULL) {
         return;
     }
@@ -766,11 +823,17 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference->refcount != 0) {
         return;
     }
-    ptn_runtime_unregister_reference(reference->lifecycle_runtime, reference);
-    ptn_reference_destroy_storage(reference);
+    ptn_reference_destroy_storage_in_runtime(runtime, reference);
 }
 
-static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
+static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
+    ptn_reference_release_in_runtime(NULL, reference);
+}
+
+static PTN_UNUSED void ptn_closure_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnClosure *closure
+) {
     if (closure == NULL) {
         return;
     }
@@ -781,14 +844,98 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        runtime,
+        closure->lifecycle_runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    PtnValue cleanup_value = ptn_null();
+    cleanup_value.type = PTN_CLOSURE;
+    cleanup_value.as.closure = closure;
+    ptn_runtime_link_cleanup_root(root, &closure->cleanup_root, cleanup_value);
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    size_t capture_count = closure->captures.len;
+    while (state->phase < capture_count) {
+        size_t capture_index = state->phase++;
+        PtnSymbol *capture = &closure->captures.items[capture_index];
+        free(capture->name);
+        capture->name = NULL;
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnTryFrame capture_frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &capture_frame);
+            if (setjmp(capture_frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(release_runtime, &capture->value);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &capture_frame);
+        }
+        PtnException *active_after =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        if (caught_exception || (active_after != NULL && active_after != active_before)) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+    }
+    if (state->phase == capture_count) {
+        state->phase++;
+        free(closure->captures.index_slots);
+        free(closure->captures.items);
+        closure->captures.items = NULL;
+        closure->captures.len = 0;
+        closure->captures.capacity = 0;
+        closure->captures.index_slots = NULL;
+        closure->captures.index_capacity = 0;
+        closure->captures.mutation_epoch = 0;
+    }
+    if (state->phase == capture_count + 1) {
+        state->phase++;
+        closure->has_wrapped_callable = 0;
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnTryFrame wrapped_frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &wrapped_frame);
+            if (setjmp(wrapped_frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(release_runtime, &closure->wrapped_callable);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &wrapped_frame);
+        }
+        PtnException *active_after =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        if (caught_exception || (active_after != NULL && active_after != active_before)) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+    }
+    ptn_runtime_unlink_cleanup_root(root, &closure->cleanup_root);
     ptn_runtime_unregister_closure(closure->lifecycle_runtime, closure);
     ptn_runtime_release_object_id(closure->lifecycle_runtime, closure->object_id);
     free(closure->scope_class_name);
     free(closure->called_class_name);
-    ptn_symbols_free(&closure->captures);
-    if (closure->has_wrapped_callable) {
-        ptn_value_destroy(&closure->wrapped_callable);
-    }
     if (closure->owns_metadata_name) {
         free((char *)closure->metadata.name);
     }
@@ -809,23 +956,99 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     free(closure->origin_class_name);
     free(closure->origin_method_name);
     free(closure);
+    ptn_release_state_finish(release_runtime, state);
 }
 
-static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
+static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
+    ptn_closure_release_in_runtime(NULL, closure);
+}
+
+static PTN_UNUSED void ptn_array_destroy_storage_in_runtime(
+    PtnRuntime *runtime,
+    PtnArray *array
+) {
     if (array == NULL) {
         return;
     }
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        runtime,
+        array->lifecycle_runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    PtnValue cleanup_value = ptn_null();
+    cleanup_value.type = PTN_ARRAY;
+    cleanup_value.as.array = array;
+    ptn_runtime_link_cleanup_root(root, &array->cleanup_root, cleanup_value);
     ptn_cow_debug_note_array_free();
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
     for (size_t i = 0; i < array->len; i++) {
         ptn_array_key_free(array->entries[i].key);
-        ptn_value_destroy(&array->entries[i].value);
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        int previous_release_defer_unreferenced = release_runtime == NULL
+            ? 0
+            : release_runtime->defer_unreferenced_destructors_for_catch;
+        int previous_root_defer_unreferenced = root == NULL
+            ? 0
+            : root->defer_unreferenced_destructors_for_catch;
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &frame);
+            if (setjmp(frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            if (root != NULL) {
+                root->defer_unreferenced_destructors_for_catch = 1;
+            }
+            if (release_runtime != NULL) {
+                release_runtime->defer_unreferenced_destructors_for_catch = 1;
+            }
+            ptn_value_drop_in_runtime(
+                release_runtime,
+                &array->entries[i].value
+            );
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &frame);
+        }
+        if (release_runtime != NULL && release_runtime != root) {
+            release_runtime->defer_unreferenced_destructors_for_catch =
+                previous_release_defer_unreferenced;
+        }
+        if (root != NULL) {
+            root->defer_unreferenced_destructors_for_catch =
+                previous_root_defer_unreferenced;
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                release_runtime,
+                state,
+                active_before
+            );
+        }
     }
+    ptn_runtime_unlink_cleanup_root(root, &array->cleanup_root);
     free(array->index_slots);
     free(array->entries);
     free(array);
+    ptn_release_state_finish(release_runtime, state);
 }
 
-static PTN_UNUSED void ptn_array_free(PtnArray *array) {
+static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
+    ptn_array_destroy_storage_in_runtime(NULL, array);
+}
+
+static PTN_UNUSED void ptn_array_free_in_runtime(PtnRuntime *runtime, PtnArray *array) {
     if (array == NULL) {
         return;
     }
@@ -847,35 +1070,46 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
         array->refcount = 0;
         return;
     }
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        runtime,
+        array->lifecycle_runtime,
+        NULL
+    );
     ptn_runtime_unregister_array(array->lifecycle_runtime, array);
-    ptn_array_destroy_storage(array);
+    ptn_array_destroy_storage_in_runtime(release_runtime, array);
 }
 
-static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
+static PTN_UNUSED void ptn_array_free(PtnArray *array) {
+    ptn_array_free_in_runtime(NULL, array);
+}
+
+static PTN_UNUSED void ptn_value_drop_in_runtime(PtnRuntime *runtime, PtnValue *value) {
     if (value == NULL || !value->owned) {
         return;
     }
-    switch (value->type) {
+    PtnValue dropped = *value;
+    *value = ptn_null();
+    switch (dropped.type) {
         case PTN_STRING:
-            ptn_string_payload_release(value->as.string.payload);
+            ptn_string_payload_release(dropped.as.string.payload);
             break;
         case PTN_ARRAY:
-            ptn_array_free(value->as.array);
+            ptn_array_free_in_runtime(runtime, dropped.as.array);
             break;
         case PTN_OBJECT:
-            ptn_object_release(value->as.object);
+            ptn_object_release_in_runtime(runtime, dropped.as.object);
             break;
         case PTN_CLOSURE:
-            ptn_closure_release(value->as.closure);
+            ptn_closure_release_in_runtime(runtime, dropped.as.closure);
             break;
         case PTN_EXCEPTION:
-            ptn_exception_free(value->as.exception);
+            ptn_exception_free(dropped.as.exception);
             break;
         case PTN_RESOURCE:
-            ptn_resource_release(value->as.resource);
+            ptn_resource_release(dropped.as.resource);
             break;
         case PTN_REFERENCE:
-            ptn_reference_release(value->as.reference);
+            ptn_reference_release_in_runtime(runtime, dropped.as.reference);
             break;
         case PTN_NULL:
         case PTN_BOOL:
@@ -883,7 +1117,10 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_FLOAT:
             break;
     }
-    *value = ptn_null();
+}
+
+static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
+    ptn_value_drop_in_runtime(NULL, value);
 }
 
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
@@ -891,49 +1128,36 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
 }
 
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runtime, PtnValue *value, size_t line) {
-    PtnRuntime *root = runtime == NULL ? NULL : ptn_runtime_root(runtime);
+    PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
         ptn_value_destroy(value);
         return;
     }
-    const char *previous_scope = root->destructor_access_scope;
-    size_t previous_call_site_line = root->call_site_line;
-    PtnTraceFrame *previous_trace_frame = root->trace_frame;
-    root->destructor_access_scope = runtime->current_class_name;
-    if (runtime != root && runtime->trace_frame != NULL && line != 0) {
-        root->trace_frame = runtime->trace_frame;
-    }
+    PtnRuntime *previous_release_runtime = root->active_value_release_runtime;
+    size_t previous_call_site_line = runtime->call_site_line;
+    root->active_value_release_runtime = runtime;
     if (line != 0) {
-        root->call_site_line = line;
-    } else if (runtime != root && runtime->call_site_line != 0) {
-        root->call_site_line = runtime->call_site_line;
-    } else if (
-        runtime != root &&
-        runtime->trace_frame != NULL &&
-        runtime->trace_frame->line != 0
-    ) {
-        root->call_site_line = runtime->trace_frame->line;
+        runtime->call_site_line = line;
     }
     PtnTryFrame frame;
     int caught_exception = 0;
-    int frame_active = root->exceptions != NULL;
+    int frame_active = runtime->exceptions != NULL;
     if (frame_active) {
-        ptn_try_frame_push(root, &frame);
+        ptn_try_frame_push(runtime, &frame);
         if (setjmp(frame.jump) != 0) {
             caught_exception = 1;
         }
     }
     if (!caught_exception) {
-        ptn_value_destroy(value);
+        ptn_value_drop_in_runtime(runtime, value);
     }
     if (frame_active) {
-        ptn_try_frame_pop(root, &frame);
+        ptn_try_frame_pop(runtime, &frame);
     }
-    root->trace_frame = previous_trace_frame;
-    root->call_site_line = previous_call_site_line;
-    root->destructor_access_scope = previous_scope;
+    root->active_value_release_runtime = previous_release_runtime;
+    runtime->call_site_line = previous_call_site_line;
     if (caught_exception) {
-        ptn_rethrow_exception(root);
+        ptn_rethrow_exception(runtime);
     }
 }
 
@@ -1008,9 +1232,38 @@ static void ptn_symbols_free(PtnSymbolTable *symbols) {
 }
 
 static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime) {
+    PtnReleaseState *state = ptn_release_state_new(runtime);
     for (size_t i = 0; i < symbols->len; i++) {
         free(symbols->items[i].name);
-        ptn_value_destroy_with_runtime_scope(runtime, &symbols->items[i].value);
+        symbols->items[i].name = NULL;
+        PtnException *active_before =
+            runtime == NULL || runtime->exceptions == NULL
+                ? NULL
+                : runtime->exceptions->active_exception;
+        PtnTryFrame frame;
+        int caught_exception = 0;
+        int frame_active = runtime != NULL && runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(runtime, &frame);
+            if (setjmp(frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_destroy_with_runtime_scope(runtime, &symbols->items[i].value);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(runtime, &frame);
+        }
+        if (caught_exception) {
+            ptn_release_state_remember_exception(runtime, state);
+        } else {
+            ptn_release_state_remember_new_active_exception(
+                runtime,
+                state,
+                active_before
+            );
+        }
     }
     free(symbols->index_slots);
     free(symbols->items);
@@ -1020,6 +1273,7 @@ static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbo
     symbols->index_slots = NULL;
     symbols->index_capacity = 0;
     symbols->mutation_epoch = 0;
+    ptn_release_state_finish(runtime, state);
 }
 
 static PTN_UNUSED size_t ptn_symbol_index_capacity_for_entries(size_t expected_entries) {

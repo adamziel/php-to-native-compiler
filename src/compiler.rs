@@ -47,9 +47,6 @@ struct IncludeSourceKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum IncludeSourceTransform {
-    CurlCliServerHarness,
-    PdoMysqlTestHarness,
-    PhpCliServerHarness,
     PhpFilter(Vec<PhpFilterReadFilter>),
 }
 
@@ -2686,19 +2683,10 @@ fn resolve_include_candidate_path(path: &str, source_dir: &str) -> ResolvedInclu
         return filter_path;
     }
     let resource_path = resolve_include_path(path, source_dir);
-    let transform = if is_curl_cli_server_harness_path(&resource_path) {
-        Some(IncludeSourceTransform::CurlCliServerHarness)
-    } else if is_pdo_mysql_test_harness_path(&resource_path) {
-        Some(IncludeSourceTransform::PdoMysqlTestHarness)
-    } else if is_php_cli_server_harness_path(&resource_path) {
-        Some(IncludeSourceTransform::PhpCliServerHarness)
-    } else {
-        None
-    };
     ResolvedIncludeCandidate {
         path_aliases: Vec::new(),
         resource_path,
-        transform,
+        transform: None,
     }
 }
 
@@ -2743,49 +2731,6 @@ fn php_filter_read_filter(name: &str) -> Option<PhpFilterReadFilter> {
     }
 }
 
-fn is_curl_cli_server_harness_path(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == "server.inc")
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "tests")
-        && path
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "curl")
-        && path
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "ext")
-}
-
-fn is_php_cli_server_harness_path(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| name == "php_cli_server.inc")
-}
-
-fn is_pdo_mysql_test_harness_path(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == "mysql_pdo_test.inc")
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "inc")
-        && path
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "tests")
-        && path
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "pdo_mysql")
-}
-
 fn apply_include_source_transform(
     source_bytes: &mut Vec<u8>,
     transform: Option<&IncludeSourceTransform>,
@@ -2794,15 +2739,6 @@ fn apply_include_source_transform(
         return;
     };
     match transform {
-        IncludeSourceTransform::CurlCliServerHarness => {
-            *source_bytes = b"<?php declare(strict_types=1);\nfunction curl_cli_server_start() {\n    return 'http://localhost:12345';\n}\n".to_vec();
-        }
-        IncludeSourceTransform::PdoMysqlTestHarness => {
-            *source_bytes = b"<?php declare(strict_types=1);\nclass MySQLPDOTest {\n    public static function skip() {\n        die('skip could not connect');\n    }\n\n    public static function skipNotMySQLnd() {\n        die('skip mysqlnd unavailable');\n    }\n\n    public static function factory($classname = PDO::class, $mydsn = null, $myAttr = null, bool $useConnectMethod = false) {\n        throw new PDOException('could not connect');\n    }\n\n    public static function factoryWithAttr($attr) {\n        return self::factory(PDO::class, null, $attr);\n    }\n\n    public static function createTestTable($table, $db, $engine = null) {}\n    public static function getTableEngine() { return 'InnoDB'; }\n    public static function getDSN($new_options = null, $addition = '') { return 'mysql:host=localhost;dbname=test' . $addition; }\n}\n".to_vec();
-        }
-        IncludeSourceTransform::PhpCliServerHarness => {
-            *source_bytes = b"<?php declare(strict_types=1);\nif (!defined('PHP_CLI_SERVER_HOSTNAME')) {\n    define('PHP_CLI_SERVER_HOSTNAME', 'localhost');\n}\nif (!defined('PHP_CLI_SERVER_PORT')) {\n    define('PHP_CLI_SERVER_PORT', 12345);\n}\nif (!defined('PHP_CLI_SERVER_ADDRESS')) {\n    define('PHP_CLI_SERVER_ADDRESS', PHP_CLI_SERVER_HOSTNAME . ':' . PHP_CLI_SERVER_PORT);\n}\nfunction php_cli_server_start($ini = '', $router = null, $workers = 1) {\n    $GLOBALS['__ptn_php_cli_server_code'] = is_string($ini) ? $ini : '';\n    return true;\n}\n".to_vec();
-        }
         IncludeSourceTransform::PhpFilter(filters) => {
             for filter in filters {
                 apply_php_filter_read_filter(source_bytes.as_mut_slice(), filter);

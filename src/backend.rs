@@ -411,6 +411,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    out.push_str("    ptn_request_allocator_begin(runtime.memory_limit);\n");
     out.push_str("    ptn_runtime_startup_output_handler(&runtime);\n");
     out.push_str("    runtime.native_argc = ptn_native_argc;\n");
     out.push_str("    runtime.native_argv = ptn_native_argv;\n");
@@ -16683,7 +16684,7 @@ fn emit_class_metadata_helpers(
         out.push_str("            }\n");
         out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
         out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
-        out.push_str("            PtnValue ptn_magic_arg_value = (runtime->warn_by_ref_argument_mismatch && ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i])) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+        out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
         out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
         out.push_str("        }\n");
         let function = &functions[method.function_index];
@@ -16831,7 +16832,7 @@ fn emit_class_metadata_helpers(
             out.push_str("            }\n");
             out.push_str("            const char *ptn_trait_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_trait_magic_arg_i] : NULL;\n");
             out.push_str("            PtnArrayKey ptn_trait_magic_arg_key = ptn_trait_magic_arg_name != NULL ? ptn_array_string_key(ptn_trait_magic_arg_name) : ptn_array_int_key((int64_t)ptn_trait_magic_arg_i);\n");
-            out.push_str("            PtnValue ptn_trait_magic_arg_value = (runtime->warn_by_ref_argument_mismatch && ptn_value_is_by_ref_argument_source(args[ptn_trait_magic_arg_i])) ? ptn_value_clone(args[ptn_trait_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_trait_magic_arg_i]));\n");
+            out.push_str("            PtnValue ptn_trait_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_trait_magic_arg_i]) ? ptn_value_clone(args[ptn_trait_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_trait_magic_arg_i]));\n");
             out.push_str("            ptn_array_set_entry(ptn_trait_magic_args[1].as.array, ptn_trait_magic_arg_key, ptn_trait_magic_arg_value);\n");
             out.push_str("        }\n");
             emit_dynamic_method_deprecated_warning(
@@ -28840,7 +28841,7 @@ fn emit_scoped_instance_magic_call(
     out.push_str(indent);
     out.push_str("    PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
     out.push_str(indent);
-    out.push_str("    PtnValue ptn_magic_arg_value = (runtime->warn_by_ref_argument_mismatch && ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i])) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+    out.push_str("    PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
     out.push_str(indent);
     out.push_str("    ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
     out.push_str(indent);
@@ -30323,7 +30324,7 @@ fn emit_method_dispatch(
             out.push_str("            }\n");
             out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
             out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
-            out.push_str("            PtnValue ptn_magic_arg_value = (runtime->warn_by_ref_argument_mismatch && ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i])) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
+            out.push_str("            PtnValue ptn_magic_arg_value = ptn_value_is_by_ref_argument_source(args[ptn_magic_arg_i]) ? ptn_value_clone(args[ptn_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i]));\n");
             out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_magic_arg_value);\n");
             out.push_str("        }\n");
             let function = &functions[method.function_index];
@@ -35097,6 +35098,9 @@ fn emit_exit_instruction(
     line: usize,
 ) {
     let Some(value) = value else {
+        out.push_str("    ptn_generator_defer_active_fiber_exit(&runtime, 0, NULL, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    ptn_output_buffer_flush_all(&runtime);\n");
         out.push_str("    fflush(stdout);\n");
         out.push_str("    ptn_runtime_shutdown_before_exit(&runtime);\n");
@@ -35105,6 +35109,11 @@ fn emit_exit_instruction(
     };
 
     let value_temp = values.emit_materialized_value(out, value);
+    out.push_str("    ptn_generator_defer_active_fiber_exit(&runtime, 1, &");
+    out.push_str(&value_temp);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
     let resolved_temp = values.next_temp();
     let status_temp = values.next_temp();
     let should_exit_temp = values.next_temp();
@@ -44216,6 +44225,16 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
     }
 }
 
+fn compound_binary_runtime_function(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Multiply => "ptn_multiply_assign",
+        BinaryOp::BitwiseAnd => "ptn_bitwise_and_assign",
+        BinaryOp::BitwiseXor => "ptn_bitwise_xor_assign",
+        BinaryOp::BitwiseOr => "ptn_bitwise_or_assign",
+        _ => binary_runtime_function(op),
+    }
+}
+
 fn binary_runtime_function_uses_context(op: BinaryOp) -> bool {
     matches!(
         op,
@@ -49351,7 +49370,7 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ");
         if matches!(op, BinaryOp::Concat) {
-            out.push_str("ptn_concat(&runtime, ");
+            out.push_str("ptn_concat_assign(&runtime, ");
             out.push_str(current_temp);
             out.push_str(", ");
             out.push_str(value_temp);
@@ -49359,7 +49378,7 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
             out.push_str(")");
         } else {
-            out.push_str(binary_runtime_function(op));
+            out.push_str(compound_binary_runtime_function(op));
             out.push('(');
             if binary_runtime_function_uses_context(op) {
                 out.push_str("&runtime, ");
@@ -53977,14 +53996,10 @@ impl ValueEmitter {
 
     fn emit_error_suppressed_value(&mut self, out: &mut String, expr: &ValueExpr) -> String {
         let result_temp = self.next_temp();
-        let saved_temp = self.next_temp();
         let frame_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_null();\n");
-        out.push_str("    int64_t ");
-        out.push_str(&saved_temp);
-        out.push_str(" = runtime.diagnostics.error_reporting;\n");
         out.push_str("    PtnTryFrame ");
         out.push_str(&frame_temp);
         out.push_str(";\n");
@@ -53994,13 +54009,9 @@ impl ValueEmitter {
         out.push_str("    if (setjmp(");
         out.push_str(&frame_temp);
         out.push_str(".jump) == 0) {\n");
-        out.push_str("        runtime.diagnostics.error_reporting = 0;\n");
+        out.push_str("        ptn_runtime_enter_error_suppression(&runtime);\n");
         let expr_temp = self.emit_materialized_value(out, expr);
-        out.push_str("        if (runtime.diagnostics.error_reporting == 0) {\n");
-        out.push_str("            runtime.diagnostics.error_reporting = ");
-        out.push_str(&saved_temp);
-        out.push_str(";\n");
-        out.push_str("        }\n");
+        out.push_str("        ptn_runtime_leave_error_suppression(&runtime);\n");
         out.push_str("        ptn_try_frame_pop(&runtime, &");
         out.push_str(&frame_temp);
         out.push_str(");\n");
@@ -54010,11 +54021,7 @@ impl ValueEmitter {
         out.push_str(&expr_temp);
         out.push_str(";\n");
         out.push_str("    } else {\n");
-        out.push_str("        if (runtime.diagnostics.error_reporting == 0) {\n");
-        out.push_str("            runtime.diagnostics.error_reporting = ");
-        out.push_str(&saved_temp);
-        out.push_str(";\n");
-        out.push_str("        }\n");
+        out.push_str("        ptn_runtime_leave_error_suppression(&runtime);\n");
         out.push_str("        ptn_try_frame_pop(&runtime, &");
         out.push_str(&frame_temp);
         out.push_str(");\n");
@@ -54455,6 +54462,21 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
 
+                let overloaded_notice_temp = self.next_temp();
+                out.push_str("    int ");
+                out.push_str(&overloaded_notice_temp);
+                out.push_str(" = ptn_value_array_path_preflight_inc_dec_overloaded_element_notice(&runtime, ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path_snapshot);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
                 let old_temp = if matches!(result, IncDecResult::Post) {
                     let old_temp = self.next_temp();
                     out.push_str("    PtnValue ");
@@ -54477,7 +54499,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-                out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
+                out.push_str("    ptn_value_array_path_set_from_inc_dec_with_notice_state(&runtime, &");
                 out.push_str(&array_temp);
                 out.push_str(", ");
                 out.push_str(&path_snapshot);
@@ -54489,6 +54511,8 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(", ");
+                out.push_str(&overloaded_notice_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
                 emit_value_cleanup(out, "    ", &array_temp);

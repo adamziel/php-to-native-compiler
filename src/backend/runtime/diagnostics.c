@@ -1236,6 +1236,42 @@ static int64_t ptn_normalize_error_reporting(int64_t level) {
     return level & ~((int64_t)PTN_E_STRICT);
 }
 
+static PTN_UNUSED void ptn_runtime_enter_error_suppression(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    if (runtime->error_suppression_depth == 0) {
+        runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
+    }
+    runtime->error_suppression_depth++;
+    runtime->diagnostics.error_reporting = 0;
+}
+
+static PTN_UNUSED void ptn_runtime_leave_error_suppression(PtnRuntime *runtime) {
+    if (runtime == NULL || runtime->error_suppression_depth <= 0) {
+        return;
+    }
+    if (
+        runtime->error_suppression_depth == 1 &&
+        runtime->diagnostics.error_reporting == 0
+    ) {
+        runtime->diagnostics.error_reporting = runtime->error_suppression_saved_reporting;
+    }
+    runtime->error_suppression_depth--;
+    if (runtime->error_suppression_depth == 0) {
+        runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
+    }
+}
+
+static PTN_UNUSED int64_t ptn_runtime_unsilenced_error_reporting(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return PTN_E_ALL;
+    }
+    return runtime->error_suppression_depth > 0
+        ? runtime->error_suppression_saved_reporting
+        : runtime->diagnostics.error_reporting;
+}
+
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->runtime = NULL;
     diagnostics->stream = stream;
@@ -1407,9 +1443,10 @@ static void ptn_exception_handlers_clear_current(PtnExceptionState *state) {
     if (state == NULL || !state->has_exception_handler) {
         return;
     }
-    ptn_value_destroy(&state->exception_handler);
+    PtnValue handler = state->exception_handler;
     state->exception_handler = ptn_null();
     state->has_exception_handler = 0;
+    ptn_value_destroy(&handler);
 }
 
 static PTN_UNUSED PtnValue ptn_exception_handlers_current(PtnExceptionState *state) {
@@ -1457,9 +1494,11 @@ static PTN_UNUSED void ptn_exception_handlers_restore(PtnExceptionState *state) 
     if (state == NULL) {
         return;
     }
-    ptn_exception_free(state->finally_return_suppressed_exception);
+    PtnException *suppressed_exception =
+        state->finally_return_suppressed_exception;
     state->finally_return_suppressed_exception = NULL;
     state->finally_return_suppressed_exception_should_resume = 0;
+    ptn_exception_free(suppressed_exception);
     ptn_exception_handlers_clear_current(state);
     if (state->exception_handler_stack_len == 0) {
         return;
@@ -1477,7 +1516,10 @@ static PTN_UNUSED void ptn_exception_handlers_clear(PtnExceptionState *state) {
     ptn_exception_handlers_clear_current(state);
     for (size_t i = 0; i < state->exception_handler_stack_len; i++) {
         if (state->exception_handler_stack[i].has_handler) {
-            ptn_value_destroy(&state->exception_handler_stack[i].handler);
+            PtnValue handler = state->exception_handler_stack[i].handler;
+            state->exception_handler_stack[i].has_handler = 0;
+            state->exception_handler_stack[i].handler = ptn_null();
+            ptn_value_destroy(&handler);
         }
     }
     free(state->exception_handler_stack);
@@ -1541,7 +1583,7 @@ static int ptn_exception_handlers_try_uncaught_inner(
         }
     }
     if (detached_active && state->active_exception != exception) {
-        ptn_exception_free(exception);
+        ptn_exception_release_in_runtime(runtime, exception);
     }
     ptn_value_destroy(&handler);
     return handled;
@@ -2341,6 +2383,9 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     if (root != NULL && root->fatal_error_recovery_frame != NULL) {
         longjmp(root->fatal_error_recovery_frame->jump, 1);
     }
+    if (root != NULL) {
+        root->fatal_error_shutdown = 1;
+    }
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
@@ -2424,6 +2469,9 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
     ptn_runtime_mark_current_fiber_fatal_error(runtime);
     if (root != NULL && root->fatal_error_recovery_frame != NULL) {
         longjmp(root->fatal_error_recovery_frame->jump, 1);
+    }
+    if (root != NULL) {
+        root->fatal_error_shutdown = 1;
     }
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
@@ -3211,6 +3259,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->static_property_type_allows_null = &runtime->owned_static_property_type_allows_null;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
+    runtime->error_suppression_depth = 0;
+    runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
     if (getenv("PTN_STARTUP_WARNING_EMITTED") != NULL) {
         runtime->diagnostics.emitted_warning = 1;
     }
@@ -3258,6 +3308,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_arrays = NULL;
     runtime->live_arrays_len = 0;
     runtime->live_arrays_capacity = 0;
+    runtime->active_cleanup_roots = NULL;
     runtime->live_references = NULL;
     runtime->live_references_len = 0;
     runtime->live_references_capacity = 0;
@@ -3313,6 +3364,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
     runtime->fatal_error_recovery_frame = NULL;
+    runtime->fatal_error_shutdown = 0;
     runtime->tick_enabled = 0;
     runtime->tick_functions = NULL;
     runtime->tick_functions_len = 0;
@@ -3400,6 +3452,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->deferred_yield_from_iterator_object = ptn_null();
     runtime->suppress_generator_rewind_trace_frame = 0;
     runtime->current_fiber = NULL;
+    runtime->active_fiber_executor_runtime = NULL;
+    runtime->active_value_release_runtime = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
@@ -3531,6 +3585,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_always_populate_raw_post_data =
         getenv("PTN_ALWAYS_POPULATE_RAW_POST_DATA");
     const char *configured_upload_tmp_dir = getenv("PTN_UPLOAD_TMP_DIR");
+    const char *configured_sys_temp_dir = getenv("PTN_SYS_TEMP_DIR");
     const char *configured_expose_php = getenv("PTN_EXPOSE_PHP");
     const char *configured_user_agent = getenv("PTN_USER_AGENT");
     const char *configured_unserialize_callback_func =
@@ -3730,6 +3785,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->upload_tmp_dir = ptn_duplicate_string(
         configured_upload_tmp_dir == NULL ? "" : configured_upload_tmp_dir
     );
+    runtime->sys_temp_dir = ptn_duplicate_string(
+        configured_sys_temp_dir == NULL ? "" : configured_sys_temp_dir
+    );
+    runtime->resolved_temp_dir = NULL;
     runtime->expose_php = ptn_duplicate_string(
         configured_expose_php == NULL ? "1" : configured_expose_php
     );
@@ -3871,6 +3930,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     }
     runtime->gc_running = 0;
     runtime->gc_destructor_depth = 0;
+    runtime->gc_destructor_trace_boundary = NULL;
+    runtime->gc_destructor_caller_trace = ptn_null();
+    runtime->gc_destructor_fiber = NULL;
+    runtime->gc_destructor_fiber_running = 0;
+    runtime->gc_destructor_fiber_force_closing = 0;
     runtime->gc_destructor_fiber_current_requested = 0;
     runtime->gc_mark_epoch = 0;
     runtime->gc_runs = 0;

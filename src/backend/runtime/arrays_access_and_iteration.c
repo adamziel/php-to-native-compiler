@@ -6599,6 +6599,8 @@ static PTN_UNUSED int ptn_object_missing_dynamic_property_for_creation(
     }
     if (runtime != NULL &&
         runtime->magic_property_set != NULL &&
+        (runtime->declared_method_exists == NULL ||
+         runtime->declared_method_exists(receiver.as.object->class_name, "__set")) &&
         !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_SET)) {
         return 0;
     }
@@ -8036,11 +8038,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
     }
 #endif
     PtnValue resolved_receiver = ptn_value_deref(receiver);
-    int has_magic_get = resolved_receiver.type == PTN_OBJECT &&
+    int has_magic_set = resolved_receiver.type == PTN_OBJECT &&
         runtime != NULL &&
-        runtime->declared_method_exists != NULL &&
-        runtime->declared_method_exists(resolved_receiver.as.object->class_name, "__get");
-    if (!has_magic_get) {
+        runtime->magic_property_set != NULL &&
+        (runtime->declared_method_exists == NULL ||
+         runtime->declared_method_exists(resolved_receiver.as.object->class_name, "__set"));
+    if (!has_magic_set) {
         if (!ptn_object_preflight_dynamic_property_creation(
                 runtime,
                 receiver,
@@ -8841,10 +8844,12 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE(); \
         return ptn_object_write_result__; \
     } while (0)
+    int hook_set_deprecation_preflight_emitted = 0;
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         int lazy_set_hook_dispatch = 0;
         int lazy_magic_set_dispatch = 0;
+        const PtnObjectPropertyMetadata *lazy_set_hook_metadata = NULL;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
             runtime,
             receiver.as.object,
@@ -8876,6 +8881,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 )
             ) {
                 lazy_set_hook_dispatch = 1;
+                lazy_set_hook_metadata = lazy_metadata;
             }
             lazy_magic_set_dispatch =
                 !indirect_write &&
@@ -8909,6 +8915,33 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                     property_len,
                     PTN_MAGIC_PROPERTY_SET
                 );
+        }
+        if (lazy_set_hook_dispatch) {
+            const char *lazy_hook_declaring_class =
+                ptn_property_hook_set_declaring_class(lazy_set_hook_metadata);
+            if (runtime != NULL &&
+                runtime->property_hook_set != NULL &&
+                lazy_hook_declaring_class != NULL) {
+                ptn_declared_class_property_hook_deprecation(
+                    runtime,
+                    lazy_hook_declaring_class,
+                    lazy_set_hook_metadata->display_name,
+                    2,
+                    line
+                );
+                hook_set_deprecation_preflight_emitted = 1;
+                if (runtime->property_hook_set(
+                        runtime,
+                        receiver,
+                        lazy_hook_declaring_class,
+                        lazy_set_hook_metadata->display_name,
+                        value,
+                        line
+                    )) {
+                    PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
+                }
+            }
+            lazy_set_hook_dispatch = 0;
         }
         if (!local_lazy_slot && !lazy_set_hook_dispatch && !lazy_magic_set_dispatch) {
             preserved_lazy_write_value = ptn_value_clone_deref(value);
@@ -9092,7 +9125,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         );
         return ptn_null();
     }
-    int hook_set_deprecation_emitted = 0;
+    int hook_set_deprecation_emitted = hook_set_deprecation_preflight_emitted;
     const char *hook_declaring_class = ptn_property_hook_set_declaring_class(metadata);
     int active_same_property_hook = ptn_active_property_hook_matches(
         runtime,
@@ -11290,8 +11323,18 @@ static PTN_UNUSED void ptn_generator_flush_pending_output_at(
     PtnGenerator *generator,
     size_t line
 );
+static PTN_UNUSED void ptn_generator_flush_send_call_output_at_position(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t position
+);
 
 static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator);
+static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+);
 static PTN_UNUSED void ptn_generator_detach_delegate_sources_iterative(PtnGenerator *generator);
 
 static PTN_UNUSED void ptn_generator_clear_lazy_invocation(PtnGenerator *generator) {
@@ -11828,12 +11871,87 @@ static PTN_UNUSED int ptn_generator_ensure_initialized(
         runtime->exceptions->active_exception == NULL;
 }
 
+static PTN_UNUSED int ptn_generator_chain_is_executing(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return 0;
+    }
+    if (generator->executing) {
+        return 1;
+    }
+    if (
+        generator->delegate_sources == NULL ||
+        generator->position >= generator->delegate_sources->len ||
+        ptn_generator_from_value(
+            generator->delegate_sources->entries[generator->position].value
+        ) == NULL
+    ) {
+        return 0;
+    }
+    size_t capacity = 8;
+    size_t len = 1;
+    size_t cursor = 0;
+    PtnGenerator **chain = malloc(capacity * sizeof(PtnGenerator *));
+    if (chain == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    chain[0] = generator;
+    while (cursor < len) {
+        PtnGenerator *current = chain[cursor++];
+        if (current->executing) {
+            free(chain);
+            return 1;
+        }
+        if (
+            current->delegate_sources == NULL ||
+            current->position >= current->delegate_sources->len
+        ) {
+            continue;
+        }
+        PtnGenerator *source = ptn_generator_from_value(
+            current->delegate_sources->entries[current->position].value
+        );
+        if (source == NULL) {
+            continue;
+        }
+        int seen = 0;
+        for (size_t j = 0; j < len; j++) {
+            if (chain[j] == source) {
+                seen = 1;
+                break;
+            }
+        }
+        if (seen) {
+            continue;
+        }
+        if (len == capacity) {
+            if (capacity > SIZE_MAX / 2 ||
+                capacity * 2 > SIZE_MAX / sizeof(PtnGenerator *)) {
+                free(chain);
+                ptn_abort_out_of_memory();
+            }
+            capacity *= 2;
+            PtnGenerator **replacement = realloc(
+                chain,
+                capacity * sizeof(PtnGenerator *)
+            );
+            if (replacement == NULL) {
+                free(chain);
+                ptn_abort_out_of_memory();
+            }
+            chain = replacement;
+        }
+        chain[len++] = source;
+    }
+    free(chain);
+    return 0;
+}
+
 static PTN_UNUSED int ptn_generator_guard_not_executing(
     PtnRuntime *runtime,
     PtnGenerator *generator,
     size_t line
 ) {
-    if (generator == NULL || !generator->executing) {
+    if (!ptn_generator_chain_is_executing(generator)) {
         return 1;
     }
     ptn_throw_exception_at(
@@ -12518,7 +12636,14 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
     PtnValue resolved = ptn_value_deref(source);
     PtnGenerator *source_generator = ptn_generator_from_value(resolved);
-    if (generator == NULL || source_generator == NULL) {
+    if (generator == NULL) {
+        return ptn_null();
+    }
+    if (generator->force_closing) {
+        ptn_generator_throw_force_closed_yield_from(runtime, generator, line);
+        return ptn_null();
+    }
+    if (source_generator == NULL) {
         return ptn_null();
     }
 
@@ -12639,6 +12764,7 @@ static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtim
             runtime->exceptions->active_exception->class_name,
             "__PTN_FiberExit"
     )) {
+        ptn_generator_force_close(runtime, generator);
         ptn_generator_end_activation(generator);
         runtime->generator_aborted_after_yield = 0;
         runtime->generator_aborted_rethrow_on_rewind = 0;
@@ -12873,6 +12999,7 @@ static PTN_UNUSED int ptn_generator_flush_debug_backtrace_marker(
     size_t resume_line = line != 0 ? line : debug_line;
     int explicit_resume = resume_line != 0 && resume_line != debug_line;
     size_t generator_display_line = debug_line;
+    const char *generator_display_path = generator != NULL ? generator->source_file : NULL;
     if (
         has_parent &&
         generator != NULL &&
@@ -12881,10 +13008,28 @@ static PTN_UNUSED int ptn_generator_flush_debug_backtrace_marker(
     ) {
         generator_display_line = parent_yield_line;
     }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        generator != NULL &&
+        generator->force_closing &&
+        root != NULL &&
+        root->exceptions != NULL &&
+        root->exceptions->active_exception != NULL
+    ) {
+        /* PORT NOTE: php-src reports the active unwind location for a
+         * force-closed generator's deferred debug backtrace frame. */
+        PtnException *unwind_exception = root->exceptions->active_exception;
+        if (unwind_exception->path != NULL) {
+            generator_display_path = unwind_exception->path;
+        }
+        if (unwind_exception->line != 0) {
+            generator_display_line = unwind_exception->line;
+        }
+    }
 
     PtnValue frame = ptn_generator_trace_function_frame(
         generator,
-        explicit_resume && !has_parent ? NULL : (generator != NULL ? generator->source_file : NULL),
+        explicit_resume && !has_parent ? NULL : generator_display_path,
         explicit_resume && !has_parent ? 0 : generator_display_line
     );
     ptn_exception_append_trace_frame(
@@ -13712,6 +13857,118 @@ static PTN_UNUSED PtnValue ptn_generator_current_at_position(
     int use_delegate_last_value
 );
 
+static PTN_UNUSED int ptn_generator_force_close_fiber_trace_active(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->current_fiber == NULL ||
+        runtime->current_fiber->native_data == NULL
+    ) {
+        return 0;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root != NULL &&
+        root->shutdown_in_progress &&
+        ((PtnFiberData *)runtime->current_fiber->native_data)->close_requested;
+}
+
+static PTN_UNUSED void ptn_generator_normalize_force_close_fiber_yield_from_trace(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    PtnException *exception
+) {
+    if (
+        exception == NULL ||
+        !ptn_generator_force_close_fiber_trace_active(runtime)
+    ) {
+        return;
+    }
+    exception->force_close_yield_from_trace_pending = 1;
+    PtnValue existing = ptn_value_deref(exception->trace);
+    if (existing.type != PTN_ARRAY || existing.as.array == NULL || existing.as.array->len < 2) {
+        return;
+    }
+
+    size_t resume_index = SIZE_MAX;
+    for (size_t i = 1; i < existing.as.array->len; i++) {
+        if (ptn_generator_trace_frame_is_generator_resume(existing.as.array->entries[i].value)) {
+            resume_index = i;
+            break;
+        }
+    }
+    if (resume_index == SIZE_MAX) {
+        return;
+    }
+
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    const char *resume_method = runtime->generator_resume_method_name;
+    if (resume_method == NULL) {
+        resume_method = "current";
+    }
+    for (size_t i = 0; i < existing.as.array->len; i++) {
+        PtnValue frame = ptn_value_clone_deref(existing.as.array->entries[i].value);
+        if (i == resume_index) {
+            ptn_array_set_entry(
+                ptn_value_deref(frame).as.array,
+                ptn_array_string_key("function"),
+                ptn_string(resume_method)
+            );
+        } else if (
+            i > resume_index &&
+            (
+                ptn_generator_trace_frame_matches_generator(frame, generator) ||
+                ptn_generator_trace_frame_is_generator_resume(frame)
+            )
+        ) {
+            ptn_value_destroy(&frame);
+            continue;
+        }
+        ptn_generator_trace_append(trace, &index, frame);
+    }
+    ptn_value_destroy(&exception->trace);
+    exception->trace = trace;
+}
+
+static PTN_UNUSED void ptn_generator_finalize_force_close_fiber_yield_from_trace(
+    PtnException *exception
+) {
+    if (exception == NULL || !exception->force_close_yield_from_trace_pending) {
+        return;
+    }
+    exception->force_close_yield_from_trace_pending = 0;
+    PtnValue existing = ptn_value_deref(exception->trace);
+    if (existing.type != PTN_ARRAY || existing.as.array == NULL || existing.as.array->len < 2) {
+        return;
+    }
+
+    size_t resume_index = SIZE_MAX;
+    for (size_t i = 1; i < existing.as.array->len; i++) {
+        if (ptn_generator_trace_frame_is_generator_resume(existing.as.array->entries[i].value)) {
+            resume_index = i;
+            break;
+        }
+    }
+    if (resume_index == SIZE_MAX) {
+        return;
+    }
+
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    for (size_t i = 0; i < existing.as.array->len; i++) {
+        PtnValue frame = ptn_value_clone_deref(existing.as.array->entries[i].value);
+        if (
+            i > resume_index &&
+            ptn_generator_trace_frame_is_generator_method(frame, "next")
+        ) {
+            ptn_value_destroy(&frame);
+            continue;
+        }
+        ptn_generator_trace_append(trace, &index, frame);
+    }
+    ptn_value_destroy(&exception->trace);
+    exception->trace = trace;
+}
+
 static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -13722,18 +13979,38 @@ static PTN_UNUSED void ptn_generator_throw_force_closed_yield_from(
         ? generator->source_file
         : (runtime != NULL ? runtime->source_path : NULL);
     int internal_trace_frame = ptn_generator_force_close_uses_internal_trace_frame(runtime);
-    ptn_throw_exception_owned_message_at_with_trace_frame(
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
         runtime,
-        "Error",
-        message,
-        path,
-        line,
+        &trace_frame,
         generator != NULL && generator->function_name != NULL ? generator->function_name : "{unknown}",
         internal_trace_frame ? NULL : path,
         internal_trace_frame ? 0 : line,
         0,
         NULL
     );
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "Error",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    ptn_generator_normalize_force_close_fiber_yield_from_trace(runtime, generator, exception);
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
 }
 
 static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerator *generator) {
@@ -13763,14 +14040,18 @@ static PTN_UNUSED void ptn_generator_force_close(PtnRuntime *runtime, PtnGenerat
     ) {
         ptn_generator_force_close(runtime, source);
     }
+    int has_deferred_call = ptn_generator_has_send_call_at_position(generator, index);
     if (
         !generator->executing &&
         ptn_generator_traversable_delegate_source_value(generator, index) == NULL &&
-        !ptn_generator_has_send_call_at_position(generator, index)
+        !has_deferred_call
     ) {
         PtnValue current = ptn_generator_current_at_position(runtime, generator, index, yield_line, 0);
         ptn_value_destroy(&current);
     } else {
+        if (has_deferred_call) {
+            ptn_generator_flush_send_call_output_at_position(runtime, generator, index);
+        }
         ptn_generator_flush_output_chunk(runtime, generator, index, yield_line);
     }
     ptn_generator_release_consumed_reference(generator, index);
@@ -14627,14 +14908,24 @@ static PTN_UNUSED PtnValue ptn_generator_key_or_last(
 }
 
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    const char *previous_resume_method =
+        ptn_generator_push_resume_method(runtime, "current");
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(
+            runtime,
+            previous_resume_method,
+            ptn_null()
+        );
     }
     if (generator != NULL) {
         if (!generator->started) {
             if (!ptn_generator_skip_exhausted_delegates(runtime, generator, line)) {
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(
+                    runtime,
+                    previous_resume_method,
+                    ptn_null()
+                );
             }
         }
         generator->started = 1;
@@ -14644,10 +14935,18 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (generator != NULL && !generator->completed) {
             if (!ptn_generator_replay_send_calls(runtime, generator, ptn_null(), line)) {
-                return ptn_null();
+                return ptn_generator_restore_resume_method_and_return(
+                    runtime,
+                    previous_resume_method,
+                    ptn_null()
+                );
             }
             if (ptn_generator_position_valid(generator)) {
-                return ptn_generator_current_at_position(runtime, generator, generator->position, line, 1);
+                return ptn_generator_restore_resume_method_and_return(
+                    runtime,
+                    previous_resume_method,
+                    ptn_generator_current_at_position(runtime, generator, generator->position, line, 1)
+                );
             }
         }
 #endif
@@ -14660,12 +14959,24 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
                 "next",
                 1
             );
-            return ptn_null();
+            return ptn_generator_restore_resume_method_and_return(
+                runtime,
+                previous_resume_method,
+                ptn_null()
+            );
         }
         ptn_generator_flush_pending_output(runtime, generator);
-        return ptn_null();
+        return ptn_generator_restore_resume_method_and_return(
+            runtime,
+            previous_resume_method,
+            ptn_null()
+        );
     }
-    return ptn_generator_current_at_position(runtime, generator, generator->position, line, 1);
+    return ptn_generator_restore_resume_method_and_return(
+        runtime,
+        previous_resume_method,
+        ptn_generator_current_at_position(runtime, generator, generator->position, line, 1)
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_generator_get_collected_return(PtnRuntime *runtime, PtnValue receiver, size_t line) {
@@ -14785,6 +15096,11 @@ static PTN_UNUSED PtnValue ptn_call_declared_method(
     size_t line
 );
 #endif
+static PTN_UNUSED int ptn_generator_defer_active_fiber_delegated_next(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+);
 
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     const char *previous_resume_method =
@@ -14792,6 +15108,12 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     int direct_resume = !ptn_generator_resume_is_delegated(runtime);
     if (!ptn_generator_guard_not_executing(runtime, generator, line)) {
+        return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
+    }
+    if (
+        direct_resume &&
+        ptn_generator_defer_active_fiber_delegated_next(runtime, receiver, line)
+    ) {
         return ptn_generator_restore_resume_method_and_return(runtime, previous_resume_method, ptn_null());
     }
     if (!ptn_generator_ensure_initialized(runtime, generator, line)) {
@@ -15399,6 +15721,82 @@ static PTN_UNUSED void ptn_generator_register_send_call(
     );
 }
 
+static PTN_UNUSED int ptn_generator_has_prior_yield_for_active_fiber_deferred_call(
+    PtnRuntime *runtime,
+    PtnGenerator *generator
+) {
+    if (
+        runtime == NULL ||
+        runtime->current_fiber == NULL ||
+        generator == NULL ||
+        !generator->executing
+    ) {
+        return 0;
+    }
+    if (generator->values != NULL && generator->values->len != 0) {
+        return 1;
+    }
+    PtnGenerator *parent = runtime->generator_cleanup_parent;
+    return parent != NULL &&
+        parent->values != NULL &&
+        parent->values->len > parent->position &&
+        parent->values->len - parent->position > 1;
+}
+
+static PTN_UNUSED int ptn_generator_defer_active_fiber_suspend(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (!ptn_generator_has_prior_yield_for_active_fiber_deferred_call(runtime, generator)) {
+        return 0;
+    }
+    ptn_generator_register_send_call(
+        runtime,
+        "Fiber::suspend",
+        argc,
+        args,
+        0,
+        NULL,
+        NULL,
+        line
+    );
+    ptn_throw_exception_at(
+        runtime,
+        "__PTN_GeneratorDeferredCall",
+        "",
+        runtime->source_path,
+        line
+    );
+    return 1;
+}
+
+static PTN_UNUSED void ptn_generator_defer_active_fiber_exit(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (
+        runtime == NULL ||
+        runtime->replaying_generator_send_call ||
+        !ptn_generator_has_prior_yield_for_active_fiber_deferred_call(runtime, generator)
+    ) {
+        return;
+    }
+    ptn_generator_register_send_call(runtime, "exit", argc, args, 0, NULL, NULL, line);
+    ptn_throw_exception_at(
+        runtime,
+        "__PTN_GeneratorDeferredCall",
+        "",
+        runtime->source_path,
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_generator_register_send_callable(
     PtnRuntime *runtime,
     PtnValue callable,
@@ -15446,6 +15844,41 @@ static PTN_UNUSED void ptn_generator_register_send_method(
         yield_paths,
         line
     );
+}
+
+static PTN_UNUSED int ptn_generator_defer_active_fiber_delegated_next(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    PtnGenerator *owner = runtime == NULL ? NULL : runtime->current_generator;
+    PtnGenerator *target = ptn_generator_from_value(receiver);
+    if (
+        runtime == NULL ||
+        runtime->current_fiber == NULL ||
+        runtime->replaying_generator_send_call ||
+        !runtime->generator_aborted_after_yield ||
+        owner == NULL ||
+        target == NULL ||
+        owner == target ||
+        !owner->executing ||
+        ptn_generator_delegate_source(owner, owner->position) != target ||
+        !ptn_generator_has_prior_yield_for_active_fiber_deferred_call(runtime, owner)
+    ) {
+        return 0;
+    }
+    ptn_generator_register_send_method(
+        runtime,
+        receiver,
+        "next",
+        0,
+        NULL,
+        0,
+        NULL,
+        NULL,
+        line
+    );
+    return 1;
 }
 
 static PTN_UNUSED void ptn_generator_register_send_nested_call(
@@ -16034,6 +16467,21 @@ static PTN_UNUSED void ptn_generator_flush_send_call_output_chunk(
     entry->value = ptn_null();
 }
 
+static PTN_UNUSED void ptn_generator_flush_send_call_output_at_position(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t position
+) {
+    if (generator == NULL || generator->send_call_positions == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < generator->send_call_positions->len; i++) {
+        if (ptn_generator_entry_matches_position(generator->send_call_positions, i, position)) {
+            ptn_generator_flush_send_call_output_chunk(runtime, generator, i);
+        }
+    }
+}
+
 static PTN_UNUSED int ptn_generator_replay_send_calls(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -16107,6 +16555,17 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
         ptn_generator_mark_send_call_consumed(generator, i);
 
         PtnValue call_result = ptn_null();
+        int replaying_fiber_suspend =
+            kind == PTN_GENERATOR_SEND_CALL_FUNCTION &&
+            ptn_ascii_case_equal(function_name, "Fiber::suspend");
+        PtnGenerator *previous_current_generator =
+            runtime == NULL ? NULL : runtime->current_generator;
+        int previous_generator_executing = generator->executing;
+        if (replaying_fiber_suspend && runtime != NULL) {
+            /* A replayed suspend still executes inside this generator. */
+            runtime->current_generator = generator;
+            generator->executing = 1;
+        }
         int saved_replaying_generator_send_call =
             runtime == NULL ? 0 : runtime->replaying_generator_send_call;
         if (runtime != NULL) {
@@ -16131,6 +16590,10 @@ static PTN_UNUSED int ptn_generator_replay_send_calls(
         }
         if (runtime != NULL) {
             runtime->replaying_generator_send_call = saved_replaying_generator_send_call;
+        }
+        if (replaying_fiber_suspend && runtime != NULL) {
+            generator->executing = previous_generator_executing;
+            runtime->current_generator = previous_current_generator;
         }
         free(function_name);
         ptn_value_destroy(&call_result);
@@ -16792,7 +17255,10 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
                 ptn_value_destroy(&key);
 
                 PtnValue current = ptn_array_iterator_current_value(&iterator);
-                ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(current));
+                PtnValue argument_value = ptn_value_is_by_ref_argument_source(current)
+                    ? ptn_value_clone(current)
+                    : ptn_value_clone_deref(current);
+                ptn_call_arguments_append_named_owned(arguments, argument_name, argument_value);
                 free(argument_name);
                 ptn_value_destroy(&current);
                 ptn_array_iterator_advance(&iterator);
@@ -16813,7 +17279,10 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
         if (!ptn_call_arguments_unpack_name_from_array_key(runtime, arguments, entry->key, line, &argument_name)) {
             return;
         }
-        ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(entry->value));
+        PtnValue argument_value = ptn_value_is_by_ref_argument_source(entry->value)
+            ? ptn_value_clone(entry->value)
+            : ptn_value_clone_deref(entry->value);
+        ptn_call_arguments_append_named_owned(arguments, argument_name, argument_value);
         free(argument_name);
     }
 }
@@ -18546,6 +19015,22 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
     PtnValue source,
     size_t line
 ) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    PtnObject *fiber = runtime == NULL ? NULL : runtime->current_fiber;
+    if (
+        generator != NULL &&
+        (
+            generator->force_closing ||
+            (
+                fiber != NULL &&
+                fiber->native_data != NULL &&
+                ((PtnFiberData *)fiber->native_data)->close_requested
+            )
+        )
+    ) {
+        ptn_generator_throw_force_closed_yield_from(runtime, generator, line);
+        return ptn_null();
+    }
     PtnValue resolved = ptn_value_deref(source);
     if (
         resolved.type != PTN_ARRAY &&
@@ -18656,6 +19141,28 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         ptn_value_destroy(&yielded);
         ptn_value_destroy(&key);
         ptn_value_destroy(&value);
+        if (
+            generator != NULL &&
+            generator->values != NULL &&
+            generator->delegate_sources != NULL &&
+            generator->values->len > 0 &&
+            generator->values->len <= generator->delegate_sources->len &&
+            iterator.generator != NULL &&
+            iterator.generator->object != NULL &&
+            ptn_generator_has_send_call_at_position(iterator.generator, iterator.index)
+        ) {
+            /* Resume a deferred Traversable child through this yield on next(). */
+            size_t position = generator->values->len - 1;
+            PtnArrayEntry *entry = &generator->delegate_sources->entries[position];
+            PtnValue previous = entry->value;
+            entry->value = ptn_value_clone_deref(ptn_object(iterator.generator->object));
+            ptn_value_destroy_with_runtime_scope_at(runtime, &previous, line);
+            ptn_array_iterator_destroy_with_runtime_scope_at(&iterator, runtime, line);
+            if (yield_from_frame_active) {
+                ptn_try_frame_pop(runtime, &yield_from_frame);
+            }
+            return ptn_null();
+        }
         ptn_array_iterator_advance(&iterator);
     }
     ptn_array_iterator_destroy_with_runtime_scope_at(&iterator, runtime, line);
@@ -19347,7 +19854,10 @@ static PTN_UNUSED int ptn_array_iterator_generator_advance_iterative(PtnArrayIte
     return 1;
 }
 
-static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array);
+static PTN_UNUSED void ptn_array_iterator_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnArray *array
+);
 
 static PTN_UNUSED int ptn_array_iterator_refresh_watched_object(PtnArrayIterator *iterator) {
     if (
@@ -19390,8 +19900,8 @@ static PTN_UNUSED int ptn_array_iterator_refresh_watched_object(PtnArrayIterator
 
     ptn_array_iterator_clear_current_key(iterator);
     if (old_array != NULL) {
-        ptn_array_iterator_release(old_array);
-        ptn_array_free(old_array);
+        ptn_array_iterator_release_in_runtime(runtime, old_array);
+        ptn_array_free_in_runtime(runtime, old_array);
     }
     if (old_object != NULL) {
         PtnValue old_value = ptn_object(old_object);
@@ -19429,7 +19939,10 @@ static PTN_UNUSED int ptn_array_iterator_refresh_watched_array(PtnArrayIterator 
             iterator->line
         );
         if (iterator->array != NULL) {
-            ptn_array_iterator_release(iterator->array);
+            ptn_array_iterator_release_in_runtime(
+                iterator->runtime,
+                iterator->array
+            );
             iterator->array = NULL;
         }
         iterator->valid = 0;
@@ -19442,7 +19955,10 @@ static PTN_UNUSED int ptn_array_iterator_refresh_watched_array(PtnArrayIterator 
     }
     ptn_array_iterator_retain(array);
     if (iterator->array != NULL) {
-        ptn_array_iterator_release(iterator->array);
+        ptn_array_iterator_release_in_runtime(
+            iterator->runtime,
+            iterator->array
+        );
     }
     iterator->array = array;
     iterator->object = NULL;
@@ -19502,7 +20018,10 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
             }
             if (replacement != NULL && replacement != iterator->array) {
                 ptn_array_iterator_retain(replacement);
-                ptn_array_iterator_release(iterator->array);
+                ptn_array_iterator_release_in_runtime(
+                    iterator->runtime,
+                    iterator->array
+                );
                 iterator->array = replacement;
             }
         }
@@ -19602,7 +20121,10 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     ptn_array_iterator_remember_current_key(iterator);
 }
 
-static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array) {
+static PTN_UNUSED void ptn_array_iterator_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnArray *array
+) {
     if (array == NULL) {
         return;
     }
@@ -19611,8 +20133,13 @@ static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array) {
     }
     array->iterator_refcount--;
     if (array->iterator_refcount == 0 && array->refcount == 0) {
+        PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+            runtime,
+            array->lifecycle_runtime,
+            NULL
+        );
         ptn_runtime_unregister_array(array->lifecycle_runtime, array);
-        ptn_array_destroy_storage(array);
+        ptn_array_destroy_storage_in_runtime(release_runtime, array);
     }
 }
 
@@ -19624,10 +20151,10 @@ static PTN_UNUSED void ptn_array_iterator_destroy_with_runtime_scope_at(
     ptn_array_iterator_clear_current_key(iterator);
     if (iterator->array != NULL) {
         if (iterator->live) {
-            ptn_array_iterator_release(iterator->array);
+            ptn_array_iterator_release_in_runtime(runtime, iterator->array);
         } else {
-            ptn_array_iterator_release(iterator->array);
-            ptn_array_free(iterator->array);
+            ptn_array_iterator_release_in_runtime(runtime, iterator->array);
+            ptn_array_free_in_runtime(runtime, iterator->array);
         }
         iterator->array = NULL;
     }
@@ -20464,6 +20991,24 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_read(
     return ptn_arrayaccess_read_with_type(runtime, container, key_value, line, 0);
 }
 
+static PTN_UNUSED const char *ptn_arrayaccess_php_visible_type_name(
+    const char *type_name,
+    char *buffer,
+    size_t buffer_size
+) {
+    const char *anonymous_suffix = strstr(type_name, "@anonymous#");
+    if (anonymous_suffix == NULL) {
+        return type_name;
+    }
+    size_t visible_length = (size_t)(anonymous_suffix - type_name) + strlen("@anonymous");
+    if (visible_length >= buffer_size) {
+        return type_name;
+    }
+    memcpy(buffer, type_name, visible_length);
+    buffer[visible_length] = '\0';
+    return buffer;
+}
+
 static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     PtnRuntime *runtime,
     PtnValue container,
@@ -20473,6 +21018,12 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     const char *type_name = container.type == PTN_OBJECT
         ? container.as.object->class_name
         : ptn_offset_container_type_name(container);
+    char visible_type_name[192];
+    type_name = ptn_arrayaccess_php_visible_type_name(
+        type_name,
+        visible_type_name,
+        sizeof(visible_type_name)
+    );
     char message[192];
     int written = snprintf(
         message,
@@ -24274,14 +24825,15 @@ static PTN_UNUSED void ptn_value_array_path_set_from_overloaded_assign_op(
     }
 }
 
-static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
+static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec_with_notice_state(
     PtnRuntime *runtime,
     PtnValue *target,
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     PtnValue current,
     PtnValue value,
-    size_t line
+    size_t line,
+    int overloaded_notice_already_emitted
 ) {
     if (target == NULL || segment_count == 0) {
         ptn_value_array_path_set_from_assign_op(runtime, target, segments, segment_count, value, line);
@@ -24310,13 +24862,57 @@ static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
 #endif
         if (current.type == PTN_REFERENCE) {
             ptn_reference_assign(runtime, current.as.reference, value);
-        } else {
+        } else if (!overloaded_notice_already_emitted) {
             ptn_emit_indirect_modification_overloaded_element_notice(runtime, *target_value, line);
         }
         return;
     }
 
     ptn_value_array_path_set_from_assign_op(runtime, target, segments, segment_count, value, line);
+}
+
+static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue current,
+    PtnValue value,
+    size_t line
+) {
+    ptn_value_array_path_set_from_inc_dec_with_notice_state(
+        runtime,
+        target,
+        segments,
+        segment_count,
+        current,
+        value,
+        line,
+        0
+    );
+}
+
+static PTN_UNUSED int ptn_value_array_path_preflight_inc_dec_overloaded_element_notice(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue current,
+    size_t line
+) {
+    if (runtime == NULL ||
+        ptn_runtime_has_active_exception(runtime) ||
+        segment_count != 1 ||
+        current.type == PTN_REFERENCE ||
+        segments == NULL) {
+        return 0;
+    }
+    PtnValue target_value = ptn_value_deref(target);
+    if (!ptn_arrayaccess_can_dispatch(runtime, target_value, "offsetGet")) {
+        return 0;
+    }
+    ptn_emit_indirect_modification_overloaded_element_notice(runtime, target_value, line);
+    return 1;
 }
 
 static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(

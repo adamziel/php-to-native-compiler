@@ -98,6 +98,340 @@ extern char **_environ;
 #define PTN_ENVIRON _environ
 #endif
 
+typedef struct {
+    void *pointer;
+    size_t size;
+} PtnRequestAllocationEntry;
+
+static PtnRequestAllocationEntry *ptn_request_allocation_entries = NULL;
+static size_t ptn_request_allocation_entries_len = 0;
+static size_t ptn_request_allocation_entries_capacity = 0;
+static size_t ptn_request_allocation_usage = 0;
+static size_t ptn_request_allocation_peak = 0;
+static size_t ptn_request_allocation_limit = 0;
+static int ptn_request_allocation_tracking_active = 0;
+static int ptn_request_allocation_fatal_active = 0;
+
+static void ptn_request_memory_limit_exhausted(size_t requested);
+static void ptn_request_allocation_uncharge(size_t size);
+
+static size_t ptn_request_allocation_hash(const void *pointer) {
+    uintptr_t value = (uintptr_t)pointer;
+    value ^= value >> 33;
+    value *= UINT64_C(0xff51afd7ed558ccd);
+    value ^= value >> 33;
+    return (size_t)value;
+}
+
+static PtnRequestAllocationEntry *ptn_request_allocation_find(void *pointer) {
+    if (pointer == NULL || ptn_request_allocation_entries_capacity == 0) {
+        return NULL;
+    }
+    size_t index = ptn_request_allocation_hash(pointer) % ptn_request_allocation_entries_capacity;
+    for (;;) {
+        PtnRequestAllocationEntry *entry = &ptn_request_allocation_entries[index];
+        if (entry->pointer == NULL) {
+            return NULL;
+        }
+        if (entry->pointer == pointer) {
+            return entry;
+        }
+        index = (index + 1) % ptn_request_allocation_entries_capacity;
+    }
+}
+
+static void ptn_request_allocation_insert_raw(void *pointer, size_t size) {
+    PtnRequestAllocationEntry *existing = ptn_request_allocation_find(pointer);
+    if (existing != NULL) {
+        /* A callback may have released a tracked buffer through foreign code. */
+        ptn_request_allocation_uncharge(existing->size);
+        existing->size = size;
+        return;
+    }
+    size_t index = ptn_request_allocation_hash(pointer) % ptn_request_allocation_entries_capacity;
+    while (ptn_request_allocation_entries[index].pointer != NULL) {
+        index = (index + 1) % ptn_request_allocation_entries_capacity;
+    }
+    ptn_request_allocation_entries[index].pointer = pointer;
+    ptn_request_allocation_entries[index].size = size;
+    ptn_request_allocation_entries_len++;
+}
+
+static int ptn_request_allocation_reserve(size_t required) {
+    if (required <= ptn_request_allocation_entries_capacity * 3 / 4) {
+        return 1;
+    }
+    size_t new_capacity = ptn_request_allocation_entries_capacity == 0
+        ? 64
+        : ptn_request_allocation_entries_capacity;
+    while (required > new_capacity * 3 / 4) {
+        if (new_capacity > SIZE_MAX / 2) {
+            return 0;
+        }
+        new_capacity *= 2;
+    }
+    if (new_capacity > SIZE_MAX / sizeof(PtnRequestAllocationEntry)) {
+        return 0;
+    }
+    PtnRequestAllocationEntry *next = calloc(new_capacity, sizeof(PtnRequestAllocationEntry));
+    if (next == NULL) {
+        return 0;
+    }
+    PtnRequestAllocationEntry *previous = ptn_request_allocation_entries;
+    size_t previous_capacity = ptn_request_allocation_entries_capacity;
+    ptn_request_allocation_entries = next;
+    ptn_request_allocation_entries_capacity = new_capacity;
+    ptn_request_allocation_entries_len = 0;
+    for (size_t i = 0; i < previous_capacity; i++) {
+        if (previous[i].pointer != NULL) {
+            ptn_request_allocation_insert_raw(previous[i].pointer, previous[i].size);
+        }
+    }
+    free(previous);
+    return 1;
+}
+
+static int ptn_request_allocation_can_charge(size_t size) {
+    return ptn_request_allocation_limit == 0 ||
+        (ptn_request_allocation_usage <= ptn_request_allocation_limit &&
+            size <= ptn_request_allocation_limit - ptn_request_allocation_usage);
+}
+
+static void ptn_request_allocation_charge(size_t size) {
+    if (!ptn_request_allocation_can_charge(size)) {
+        ptn_request_memory_limit_exhausted(size);
+    }
+    ptn_request_allocation_usage += size;
+    if (ptn_request_allocation_usage > ptn_request_allocation_peak) {
+        ptn_request_allocation_peak = ptn_request_allocation_usage;
+    }
+}
+
+static void ptn_request_allocation_uncharge(size_t size) {
+    if (size >= ptn_request_allocation_usage) {
+        ptn_request_allocation_usage = 0;
+        return;
+    }
+    ptn_request_allocation_usage -= size;
+}
+
+static void ptn_request_allocation_remove(PtnRequestAllocationEntry *entry) {
+    if (entry == NULL || entry->pointer == NULL) {
+        return;
+    }
+    size_t index = (size_t)(entry - ptn_request_allocation_entries);
+    entry->pointer = NULL;
+    entry->size = 0;
+    ptn_request_allocation_entries_len--;
+    index = (index + 1) % ptn_request_allocation_entries_capacity;
+    while (ptn_request_allocation_entries[index].pointer != NULL) {
+        PtnRequestAllocationEntry displaced = ptn_request_allocation_entries[index];
+        ptn_request_allocation_entries[index].pointer = NULL;
+        ptn_request_allocation_entries[index].size = 0;
+        ptn_request_allocation_entries_len--;
+        ptn_request_allocation_insert_raw(displaced.pointer, displaced.size);
+        index = (index + 1) % ptn_request_allocation_entries_capacity;
+    }
+}
+
+static size_t ptn_request_allocation_parse_limit(const char *text) {
+    if (text == NULL) {
+        return 0;
+    }
+    while (isspace((unsigned char)*text)) {
+        text++;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(text, &end, 0);
+    if (end == text || parsed <= 0 || errno == ERANGE) {
+        return 0;
+    }
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+    uint64_t multiplier = 1;
+    if (end != NULL && *end != '\0') {
+        switch (tolower((unsigned char)*end)) {
+            case 'g':
+                multiplier = UINT64_C(1024) * 1024 * 1024;
+                break;
+            case 'm':
+                multiplier = UINT64_C(1024) * 1024;
+                break;
+            case 'k':
+                multiplier = 1024;
+                break;
+            default:
+                return 0;
+        }
+        end++;
+        if (*end == 'b' || *end == 'B') {
+            end++;
+        }
+        while (isspace((unsigned char)*end)) {
+            end++;
+        }
+        if (*end != '\0') {
+            return 0;
+        }
+    }
+    uint64_t magnitude = (uint64_t)parsed;
+    if (magnitude > (uint64_t)SIZE_MAX / multiplier) {
+        return 0;
+    }
+    return (size_t)(magnitude * multiplier);
+}
+
+static void ptn_request_allocator_set_limit(const char *memory_limit) {
+    ptn_request_allocation_limit = ptn_request_allocation_parse_limit(memory_limit);
+}
+
+static int ptn_request_allocator_is_active(void) {
+    return ptn_request_allocation_tracking_active;
+}
+
+static size_t ptn_request_allocator_usage(void) {
+    return ptn_request_allocation_usage;
+}
+
+static size_t ptn_request_allocator_peak_usage(void) {
+    return ptn_request_allocation_peak;
+}
+
+static void ptn_request_allocator_reset_peak_usage(void) {
+    ptn_request_allocation_peak = ptn_request_allocation_usage;
+}
+
+static void ptn_request_allocator_begin(const char *memory_limit) {
+    ptn_request_allocation_usage = 0;
+    ptn_request_allocation_peak = 0;
+    ptn_request_allocation_fatal_active = 0;
+    ptn_request_allocation_tracking_active = 1;
+    ptn_request_allocator_set_limit(memory_limit);
+}
+
+static void *ptn_request_malloc(size_t size) {
+    if (!ptn_request_allocation_tracking_active) {
+        return malloc(size);
+    }
+    if (size == 0) {
+        return malloc(0);
+    }
+    if (!ptn_request_allocation_reserve(ptn_request_allocation_entries_len + 1)) {
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(size);
+        }
+        return NULL;
+    }
+    ptn_request_allocation_charge(size);
+    void *pointer = malloc(size);
+    if (pointer == NULL) {
+        ptn_request_allocation_uncharge(size);
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(size);
+        }
+        return NULL;
+    }
+    ptn_request_allocation_insert_raw(pointer, size);
+    return pointer;
+}
+
+static void *ptn_request_calloc(size_t count, size_t size) {
+    if (count != 0 && size > SIZE_MAX / count) {
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(SIZE_MAX);
+        }
+        return NULL;
+    }
+    size_t total = count * size;
+    if (!ptn_request_allocation_tracking_active) {
+        return calloc(count, size);
+    }
+    if (total == 0) {
+        return calloc(count, size);
+    }
+    if (!ptn_request_allocation_reserve(ptn_request_allocation_entries_len + 1)) {
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(total);
+        }
+        return NULL;
+    }
+    ptn_request_allocation_charge(total);
+    void *pointer = calloc(count, size);
+    if (pointer == NULL) {
+        ptn_request_allocation_uncharge(total);
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(total);
+        }
+        return NULL;
+    }
+    ptn_request_allocation_insert_raw(pointer, total);
+    return pointer;
+}
+
+static void *ptn_request_realloc(void *pointer, size_t size) {
+    if (pointer == NULL) {
+        return ptn_request_malloc(size);
+    }
+    if (!ptn_request_allocation_tracking_active) {
+        return realloc(pointer, size);
+    }
+    PtnRequestAllocationEntry *entry = ptn_request_allocation_find(pointer);
+    if (entry == NULL) {
+        return realloc(pointer, size);
+    }
+    if (size == 0) {
+        ptn_request_allocation_uncharge(entry->size);
+        ptn_request_allocation_remove(entry);
+        free(pointer);
+        return NULL;
+    }
+    size_t previous_size = entry->size;
+    if (size > previous_size) {
+        ptn_request_allocation_charge(size - previous_size);
+    }
+    void *resized = realloc(pointer, size);
+    if (resized == NULL) {
+        if (size > previous_size) {
+            ptn_request_allocation_uncharge(size - previous_size);
+        }
+        if (ptn_request_allocation_limit != 0) {
+            ptn_request_memory_limit_exhausted(size);
+        }
+        return NULL;
+    }
+    if (size < previous_size) {
+        ptn_request_allocation_uncharge(previous_size - size);
+    }
+    if (resized != pointer) {
+        ptn_request_allocation_remove(entry);
+        ptn_request_allocation_insert_raw(resized, size);
+    } else {
+        entry->size = size;
+    }
+    return resized;
+}
+
+static void ptn_request_free(void *pointer) {
+    if (pointer == NULL) {
+        return;
+    }
+    if (ptn_request_allocation_tracking_active) {
+        PtnRequestAllocationEntry *entry = ptn_request_allocation_find(pointer);
+        if (entry != NULL) {
+            ptn_request_allocation_uncharge(entry->size);
+            ptn_request_allocation_remove(entry);
+        }
+    }
+    free(pointer);
+}
+
+#define malloc(size) ptn_request_malloc((size))
+#define calloc(count, size) ptn_request_calloc((count), (size))
+#define realloc(pointer, size) ptn_request_realloc((pointer), (size))
+#define free(pointer) ptn_request_free((pointer))
+
 #if defined(__GNUC__) || defined(__clang__)
 #define PTN_UNUSED __attribute__((unused))
 #else
@@ -1004,6 +1338,11 @@ typedef struct {
     } as;
 } PtnValue;
 
+typedef struct PtnCleanupRoot {
+    PtnValue value;
+    struct PtnCleanupRoot *next;
+} PtnCleanupRoot;
+
 typedef PtnValue (*PtnGeneratorLazyHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1104,6 +1443,7 @@ enum {
 
 struct PtnClosure {
     size_t refcount;
+    PtnCleanupRoot cleanup_root;
     size_t object_id;
     size_t gc_mark_epoch;
     PtnRuntime *lifecycle_runtime;
@@ -1163,6 +1503,7 @@ typedef struct {
 
 struct PtnReference {
     size_t refcount;
+    PtnCleanupRoot cleanup_root;
     PtnValue value;
     PtnRuntime *lifecycle_runtime;
     size_t live_index;
@@ -1379,6 +1720,7 @@ struct PtnGenerator {
 struct PtnArray {
     size_t refcount;
     int destructing;
+    PtnCleanupRoot cleanup_root;
     size_t gc_mark_epoch;
     PtnRuntime *lifecycle_runtime;
     size_t live_index;
@@ -1401,6 +1743,7 @@ struct PtnArray {
 
 struct PtnObject {
     size_t refcount;
+    PtnCleanupRoot cleanup_root;
     size_t debug_hidden_refcount;
     size_t object_id;
     size_t gc_mark_epoch;
@@ -1552,6 +1895,7 @@ typedef struct {
 
 struct PtnException {
     size_t refcount;
+    size_t gc_mark_epoch;
     size_t object_id;
     PtnRuntime *lifecycle_runtime;
     const char *class_name;
@@ -1564,6 +1908,7 @@ struct PtnException {
     const char *path;
     size_t line;
     int message_defined_at_location;
+    int force_close_yield_from_trace_pending;
     PtnValue trace;
     PtnValue previous;
     int64_t severity;
@@ -1918,6 +2263,8 @@ struct PtnRuntime {
     PtnSymbolTable owned_static_property_type_allows_null;
     PtnSymbolTable *static_property_type_allows_null;
     PtnDiagnosticSink diagnostics;
+    int error_suppression_depth;
+    int64_t error_suppression_saved_reporting;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
@@ -1939,6 +2286,7 @@ struct PtnRuntime {
     PtnArray **live_arrays;
     size_t live_arrays_len;
     size_t live_arrays_capacity;
+    PtnCleanupRoot *active_cleanup_roots;
     PtnReference **live_references;
     size_t live_references_len;
     size_t live_references_capacity;
@@ -1995,6 +2343,7 @@ struct PtnRuntime {
     int shutdown_functions_completed;
     int shutdown_in_progress;
     PtnTryFrame *fatal_error_recovery_frame;
+    int fatal_error_shutdown;
     int tick_enabled;
     PtnTickFunction *tick_functions;
     size_t tick_functions_len;
@@ -2076,6 +2425,10 @@ struct PtnRuntime {
     PtnValue deferred_yield_from_iterator_object;
     int suppress_generator_rewind_trace_frame;
     PtnObject *current_fiber;
+    /* Root-only transient; always NULL or a heap-owned Fiber context_runtime. */
+    PtnRuntime *active_fiber_executor_runtime;
+    /* Root-only dynamic scope; Fiber handoff preserves the stack runtime owner. */
+    PtnRuntime *active_value_release_runtime;
     int has_current_receiver;
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
@@ -2171,6 +2524,8 @@ struct PtnRuntime {
     char *post_max_size;
     char *always_populate_raw_post_data;
     char *upload_tmp_dir;
+    char *sys_temp_dir;
+    char *resolved_temp_dir;
     char *expose_php;
     char *docref_root;
     char *user_agent;
@@ -2223,6 +2578,11 @@ struct PtnRuntime {
     int gc_enabled;
     int gc_running;
     int gc_destructor_depth;
+    PtnTraceFrame *gc_destructor_trace_boundary;
+    PtnValue gc_destructor_caller_trace;
+    PtnObject *gc_destructor_fiber;
+    int gc_destructor_fiber_running;
+    int gc_destructor_fiber_force_closing;
     int gc_destructor_fiber_current_requested;
     size_t gc_mark_epoch;
     size_t gc_runs;
@@ -2266,6 +2626,8 @@ typedef struct {
 
 static PtnCowDebugCounters ptn_cow_debug_counters;
 
+typedef int64_t (*PtnIntegerOperandConverter)(PtnRuntime *runtime, PtnValue value, size_t line);
+
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static PTN_UNUSED int ptn_is_truthy_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line);
 static PTN_UNUSED PtnValue ptn_not_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line);
@@ -2280,12 +2642,33 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnRuntime *runtime, PtnValue left, P
 static PTN_UNUSED PtnValue ptn_bitwise_or(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED int ptn_integer_operator_prepare_operands(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order,
+    PtnIntegerOperandConverter convert,
+    int64_t *left_out,
+    int64_t *right_out
+);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
+static PTN_UNUSED void ptn_value_drop_in_runtime(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runtime, PtnValue *value, size_t line);
 static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime);
 static void ptn_runtime_free(PtnRuntime *runtime);
 static PTN_UNUSED int ptn_runtime_has_active_exception(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_exception_release_in_runtime(
+    PtnRuntime *runtime,
+    PtnException *exception
+);
+static void ptn_runtime_replace_active_exception(
+    PtnRuntime *runtime,
+    PtnException *replacement
+);
 static PTN_UNUSED void ptn_exception_free(PtnException *exception);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
@@ -2339,7 +2722,15 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     PtnValue value,
     size_t line
 );
+static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
+static PTN_UNUSED void ptn_runtime_enter_error_suppression(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_leave_error_suppression(PtnRuntime *runtime);
+static PTN_UNUSED int64_t ptn_runtime_unsilenced_error_reporting(PtnRuntime *runtime);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
@@ -2411,10 +2802,20 @@ static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
     PtnException *exception
 );
 static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out);
-static PTN_UNUSED void ptn_runtime_close_suspended_fibers(PtnRuntime *runtime);
+static PTN_UNUSED size_t ptn_runtime_close_suspended_fibers_once(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_force_close_root_generators(PtnRuntime *runtime);
-static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runtime);
+static PTN_UNUSED size_t ptn_runtime_force_close_live_generators_once(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+);
+static PTN_UNUSED void ptn_runtime_drain_suspended_fibers_and_generators(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object);
@@ -2627,6 +3028,8 @@ static PTN_UNUSED void ptn_runtime_shutdown_before_exit(PtnRuntime *runtime) {
     }
     if (root != NULL) {
         root->current_fiber = NULL;
+        root->active_fiber_executor_runtime = NULL;
+        root->active_value_release_runtime = NULL;
         ptn_runtime_free(root);
     }
 }
@@ -4715,6 +5118,8 @@ static PTN_UNUSED PtnValue ptn_closure(
         ptn_abort_out_of_memory();
     }
     closure->refcount = 1;
+    closure->cleanup_root.value = ptn_null();
+    closure->cleanup_root.next = NULL;
     closure->object_id = ptn_runtime_alloc_object_id(runtime);
     closure->gc_mark_epoch = 0;
     closure->lifecycle_runtime = ptn_runtime_root(runtime);
@@ -6097,7 +6502,25 @@ static PTN_UNUSED PtnLookupResult ptn_lookup_found(PtnValue value) {
 }
 
 static void ptn_abort_out_of_memory(void) {
+    if (ptn_request_allocation_tracking_active && ptn_request_allocation_limit != 0) {
+        ptn_request_memory_limit_exhausted(1);
+    }
     fputs("Fatal error: out of memory\n", stderr);
+    exit(1);
+}
+
+static void ptn_request_memory_limit_exhausted(size_t requested) {
+    if (ptn_request_allocation_fatal_active) {
+        _Exit(1);
+    }
+    ptn_request_allocation_fatal_active = 1;
+    fprintf(
+        stderr,
+        "Fatal error: Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)\n",
+        ptn_request_allocation_limit,
+        requested
+    );
+    fflush(stderr);
     exit(1);
 }
 

@@ -130,6 +130,12 @@ if [[ -n "$phpt_jobs" ]]; then
   run_tests_jobs=("-j$phpt_jobs")
 fi
 
+strict_all_pass="${PTN_PHPT_STRICT_ALL_PASS:-0}"
+if [[ "$strict_all_pass" != "0" && "$strict_all_pass" != "1" ]]; then
+  echo "PTN_PHPT_STRICT_ALL_PASS must be 0 or 1: $strict_all_pass" >&2
+  exit 2
+fi
+
 cd "$repo_root"
 if [[ -z "${PHPC_BIN:-}" ]]; then
   cargo build --bin phpc
@@ -137,18 +143,55 @@ fi
 
 start="$(date +%s)"
 
+run_pid=
+detached_check="${PTN_DETACHED_CHECK:-0}"
+
+reset_signal_traps() {
+  trap - INT TERM
+  if [[ "$detached_check" == "1" ]]; then
+    trap '' HUP
+  else
+    trap - HUP
+  fi
+}
+
+interrupted() {
+  local signal=$1
+  local code=$2
+  reset_signal_traps
+  if [[ -n "${run_pid:-}" ]]; then
+    kill -s "$signal" "$run_pid" 2>/dev/null || true
+    wait "$run_pid" 2>/dev/null || true
+  fi
+  exit "$code"
+}
+if [[ "$detached_check" == "1" ]]; then
+  # A detached tmux session can deliver HUP as part of its lifecycle. The
+  # detached wrapper owns explicit cancellation through INT and TERM instead.
+  trap '' HUP
+else
+  trap 'interrupted HUP 129' HUP
+fi
+trap 'interrupted INT 130' INT
+trap 'interrupted TERM 143' TERM
+
 set +e
 (
   cd "$php_src"
-  PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q "${run_tests_jobs[@]}" --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}"
-) 2>&1 | tee "$log"
-run_status="${PIPESTATUS[0]}"
+  exec env PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q "${run_tests_jobs[@]}" --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}"
+) > "$log" 2>&1 &
+run_pid=$!
+wait "$run_pid"
+run_status=$?
+run_pid=
 set -e
+reset_signal_traps
 
 emit_classification_summary | tee -a "$log"
 
 elapsed="$(( $(date +%s) - start ))"
 summary="$(awk '
+  function is_uint(value) { return value ~ /^[0-9]+$/ }
   /Number of tests/ { tests=$5 }
   /Tests skipped/ { skipped=$4 }
   /Tests warned/ { warned=$4 }
@@ -156,22 +199,54 @@ summary="$(awk '
   /Tests passed/ { passed=$4 }
   /Time taken/ { time=$4 }
   END {
-    if (tests != "") {
+    if (is_uint(tests) && is_uint(passed) && is_uint(failed) && is_uint(skipped) && is_uint(warned)) {
       printf "tests=%s passed=%s failed=%s skipped=%s warned=%s run_tests_time=%ss", tests, passed, failed, skipped, warned, time
     }
   }
 ' "$log")"
 
+summary_state=complete
+if [[ -z "$summary" ]]; then
+  summary_state=missing_or_malformed
+fi
+
 {
   echo
-  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows timeout_seconds=$phpt_test_timeout jobs=${phpt_jobs:-1} elapsed=${elapsed}s status=$run_status"
+  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows timeout_seconds=$phpt_test_timeout jobs=${phpt_jobs:-1} elapsed=${elapsed}s status=$run_status summary=$summary_state"
   if [[ -n "$summary" ]]; then
     echo "[ptn-patrol] $summary"
   fi
 } | tee -a "$log"
 
-if [[ -n "$summary" ]]; then
-  exit 0
+if [[ "$run_status" -ne 0 ]]; then
+  exit "$run_status"
 fi
 
-exit "$run_status"
+if [[ -z "$summary" ]]; then
+  echo "run-tests exited successfully but emitted no complete parseable summary" >&2
+  exit 2
+fi
+
+if [[ "$summary" =~ (^|[[:space:]])failed=[1-9][0-9]*($|[[:space:]]) ]]; then
+  exit 1
+fi
+
+if [[ "$strict_all_pass" == "1" ]]; then
+  declare -A metric=()
+  for field in $summary; do
+    case "$field" in
+      tests=*|passed=*|failed=*|skipped=*|warned=*)
+        key=${field%%=*}
+        metric[$key]=${field#*=}
+        ;;
+    esac
+  done
+  expected=${#paths[@]}
+  if [[ "${metric[tests]:-}" != "$expected" || "${metric[passed]:-}" != "$expected" ||
+    "${metric[failed]:-}" != "0" || "${metric[skipped]:-}" != "0" || "${metric[warned]:-}" != "0" ]]; then
+    echo "strict PHPT accounting failed: expected tests=passed=$expected and failed=skipped=warned=0; summary: $summary" >&2
+    exit 1
+  fi
+fi
+
+exit 0

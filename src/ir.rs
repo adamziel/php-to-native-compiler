@@ -5082,7 +5082,11 @@ impl<'a> LoweringContext<'a> {
                 target: self.lower_inc_dec_target(target),
                 op: lower_inc_dec_op(*op),
                 result: lower_inc_dec_result(*result),
-                line: span.line,
+                line: if matches!(*result, AstIncDecResult::Post) {
+                    span.end_line
+                } else {
+                    span.line
+                },
             },
             Expr::Assign {
                 target, op, value, ..

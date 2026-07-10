@@ -1,11 +1,12 @@
 use std::fmt;
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ptn::diagnostic::{DiagnosticNotice, DiagnosticNoticeKind};
@@ -35,9 +36,10 @@ fn run_with_compiler_stack() -> Result<i32, PhpcError> {
 }
 
 fn run() -> Result<i32, PhpcError> {
-    let invocation = Invocation::parse(std::env::args().skip(1))?;
+    let invocation = Invocation::parse(cli_invocation_arguments())?;
     let sapi = invocation.sapi;
     let ini = invocation.ini;
+    emit_configured_extension_diagnostics(&ini);
     match invocation.mode {
         Mode::Version => {
             println!(
@@ -61,10 +63,10 @@ fn run() -> Result<i32, PhpcError> {
             bind,
             doc_root,
             router,
-        } => run_cli_server(&bind, doc_root.as_deref(), router.as_deref()),
+        } => run_cli_server(&bind, doc_root.as_deref(), router.as_deref(), &ini),
         Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
         Mode::Inline { source, args } => {
-            if let Some(code) = run_inline_probe_fast_path(&source, &args) {
+            if let Some(code) = run_inline_probe_fast_path(&source, &args, &ini) {
                 return Ok(code);
             }
             let temp = TempPath::new("ptn-phpc-inline", "php");
@@ -93,10 +95,22 @@ fn run() -> Result<i32, PhpcError> {
     }
 }
 
+fn cli_invocation_arguments() -> Vec<String> {
+    std::env::args_os()
+        .skip(1)
+        .map(cli_argument_from_os)
+        .collect()
+}
+
+fn cli_argument_from_os(value: OsString) -> String {
+    value.to_string_lossy().into_owned()
+}
+
 fn run_cli_server(
     bind: &str,
-    _doc_root: Option<&Path>,
-    _router: Option<&Path>,
+    doc_root: Option<&Path>,
+    router: Option<&Path>,
+    ini: &RuntimeIni,
 ) -> Result<i32, PhpcError> {
     let (listen_addr, display_host) = cli_server_bind_address(bind);
     let listener = TcpListener::bind(&listen_addr)
@@ -106,12 +120,27 @@ fn run_cli_server(
         .map_err(|error| format!("failed to inspect CLI server address: {error}"))?
         .port();
 
-    println!("PHP 8.4.0 Development Server (http://{display_host}:{port}) started");
-    let _ = io::stdout().flush();
+    eprintln!("PHP 8.4.0 Development Server (http://{display_host}:{port}) started");
+    let _ = io::stderr().flush();
+
+    let doc_root = match doc_root {
+        Some(doc_root) => doc_root.to_path_buf(),
+        None => std::env::current_dir()
+            .map_err(|error| format!("failed to resolve CLI server document root: {error}"))?,
+    };
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => handle_cli_server_connection(&mut stream),
+            Ok(mut stream) => {
+                handle_cli_server_connection(
+                    &mut stream,
+                    &doc_root,
+                    router,
+                    ini,
+                    &display_host,
+                    port,
+                );
+            }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => return Err(format!("CLI server accept failed: {error}").into()),
         }
@@ -135,12 +164,422 @@ fn cli_server_bind_address(bind: &str) -> (String, String) {
     (format!("{listen_host}:{port}"), display_host.to_string())
 }
 
-fn handle_cli_server_connection(stream: &mut TcpStream) {
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
-    let mut request = [0_u8; 1024];
-    let _ = stream.read(&mut request);
-    let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    let _ = stream.write_all(response);
+const CLI_SERVER_MAX_HEADER_BYTES: usize = 64 * 1024;
+const CLI_SERVER_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+struct CliServerRequest {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+
+struct CliServerResponse {
+    status: u16,
+    body: Vec<u8>,
+    content_type: String,
+    headers: Vec<(String, String)>,
+}
+
+fn handle_cli_server_connection(
+    stream: &mut TcpStream,
+    doc_root: &Path,
+    router: Option<&Path>,
+    ini: &RuntimeIni,
+    server_host: &str,
+    server_port: u16,
+) {
+    let request = match read_cli_server_request(stream) {
+        Ok(Some(request)) => request,
+        Ok(None) => return,
+        Err(_) => {
+            write_cli_server_response(
+                stream,
+                &CliServerResponse {
+                    status: 400,
+                    body: b"Bad Request\n".to_vec(),
+                    content_type: "text/plain".to_string(),
+                    headers: Vec::new(),
+                },
+            );
+            return;
+        }
+    };
+
+    let response = match execute_cli_server_request(
+        &request,
+        doc_root,
+        router,
+        ini,
+        server_host,
+        server_port,
+    ) {
+        Ok(response) => response,
+        Err(error) => CliServerResponse {
+            status: 500,
+            body: format!("Internal Server Error: {error}\n").into_bytes(),
+            content_type: "text/plain".to_string(),
+            headers: Vec::new(),
+        },
+    };
+    write_cli_server_response(stream, &response);
+}
+
+fn read_cli_server_request(stream: &mut TcpStream) -> io::Result<Option<CliServerRequest>> {
+    stream.set_read_timeout(Some(Duration::from_millis(250)))?;
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    let (header_end, delimiter_len) = loop {
+        if let Some((end, delimiter_len)) = cli_server_header_end(&bytes) {
+            break (end, delimiter_len);
+        }
+        if bytes.len() >= CLI_SERVER_MAX_HEADER_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "HTTP request headers exceed the CLI server limit",
+            ));
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) if bytes.is_empty() => return Ok(None),
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "HTTP request ended before the header terminator",
+                ));
+            }
+            Ok(read) => bytes.extend_from_slice(&chunk[..read]),
+            Err(error)
+                if bytes.is_empty()
+                    && matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        }
+    };
+
+    let header_text = std::str::from_utf8(&bytes[..header_end]).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "HTTP request headers are not valid UTF-8",
+        )
+    })?;
+    let mut lines = header_text.lines().filter(|line| !line.is_empty());
+    let request_line = lines.next().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "HTTP request line is missing")
+    })?;
+    let mut request_parts = request_line.split_ascii_whitespace();
+    let method = request_parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "HTTP method is missing"))?
+        .to_string();
+    let target = request_parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "HTTP request target is missing"))?
+        .to_string();
+    if request_parts.next().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "HTTP protocol version is missing",
+        ));
+    }
+
+    let mut headers = Vec::new();
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "HTTP header is malformed",
+            ));
+        };
+        headers.push((name.trim().to_string(), value.trim().to_string()));
+    }
+    let content_length = cli_server_header(&headers, "content-length")
+        .map(|value| {
+            value.parse::<usize>().map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "HTTP Content-Length is invalid")
+            })
+        })
+        .transpose()?
+        .unwrap_or(0);
+    if content_length > CLI_SERVER_MAX_BODY_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "HTTP request body exceeds the CLI server limit",
+        ));
+    }
+
+    let body_start = header_end + delimiter_len;
+    while bytes.len().saturating_sub(body_start) < content_length {
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "HTTP request ended before the declared body length",
+            ));
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    Ok(Some(CliServerRequest {
+        method,
+        target,
+        headers,
+        body: bytes[body_start..body_start + content_length].to_vec(),
+    }))
+}
+
+fn cli_server_header_end(bytes: &[u8]) -> Option<(usize, usize)> {
+    bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| (index, 4))
+        .or_else(|| {
+            bytes
+                .windows(2)
+                .position(|window| window == b"\n\n")
+                .map(|index| (index, 2))
+        })
+}
+
+fn cli_server_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn execute_cli_server_request(
+    request: &CliServerRequest,
+    doc_root: &Path,
+    router: Option<&Path>,
+    ini: &RuntimeIni,
+    server_host: &str,
+    server_port: u16,
+) -> Result<CliServerResponse, String> {
+    let Some(script) = cli_server_request_script(request, doc_root, router) else {
+        return Ok(CliServerResponse {
+            status: 404,
+            body: b"Not Found\n".to_vec(),
+            content_type: "text/plain".to_string(),
+            headers: Vec::new(),
+        });
+    };
+
+    if router.is_none()
+        && !script
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("php"))
+    {
+        return fs::read(&script)
+            .map(|body| CliServerResponse {
+                status: 200,
+                body,
+                content_type: "application/octet-stream".to_string(),
+                headers: Vec::new(),
+            })
+            .map_err(|error| format!("failed to read static CLI server file: {error}"));
+    }
+
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("failed to resolve CLI server executable: {error}"))?;
+    let mut command = Command::new(executable);
+    if ini.ignore_default_ini {
+        command.arg("-n");
+    } else if let Some(path) = &ini.loaded_file_path {
+        command.arg("-c").arg(path);
+    }
+    for setting in &ini.command_line_ini {
+        command.arg("-d").arg(setting);
+    }
+    command
+        .arg("-C")
+        .arg("-f")
+        .arg(&script)
+        .current_dir(doc_root)
+        .env("REQUEST_METHOD", &request.method)
+        .env("REQUEST_URI", &request.target)
+        .env(
+            "QUERY_STRING",
+            request.target.split_once('?').map(|(_, query)| query).unwrap_or(""),
+        )
+        .env("SERVER_PROTOCOL", "HTTP/1.1")
+        .env("SERVER_NAME", server_host)
+        .env("SERVER_PORT", server_port.to_string())
+        .env("DOCUMENT_ROOT", doc_root)
+        .env("CONTENT_LENGTH", request.body.len().to_string())
+        .env("GATEWAY_INTERFACE", "CGI/1.1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(content_type) = cli_server_header(&request.headers, "content-type") {
+        command.env("CONTENT_TYPE", content_type);
+    }
+    for (name, value) in &request.headers {
+        let mut env_name = String::from("HTTP_");
+        env_name.extend(name.chars().map(|character| match character {
+            'a'..='z' => character.to_ascii_uppercase(),
+            'A'..='Z' | '0'..='9' => character,
+            _ => '_',
+        }));
+        command.env(env_name, value);
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to launch CLI server request: {error}"))?;
+    let body = request.body.clone();
+    let writer = child.stdin.take().map(|mut stdin| {
+        std::thread::spawn(move || stdin.write_all(&body))
+    });
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("failed to collect CLI server request output: {error}"))?;
+    if let Some(writer) = writer {
+        writer
+            .join()
+            .map_err(|_| "CLI server request writer thread panicked".to_string())?
+            .map_err(|error| format!("failed to stream CLI server request body: {error}"))?;
+    }
+    Ok(cli_server_cgi_response(
+        output.status.success(),
+        output.stdout,
+    ))
+}
+
+fn cli_server_cgi_response(success: bool, output: Vec<u8>) -> CliServerResponse {
+    let Some((header_end, delimiter_len)) = cli_server_header_end(&output) else {
+        return CliServerResponse {
+            status: if success { 200 } else { 500 },
+            body: output,
+            content_type: "text/plain".to_string(),
+            headers: Vec::new(),
+        };
+    };
+    let Ok(header_text) = std::str::from_utf8(&output[..header_end]) else {
+        return CliServerResponse {
+            status: if success { 200 } else { 500 },
+            body: output,
+            content_type: "text/plain".to_string(),
+            headers: Vec::new(),
+        };
+    };
+
+    let mut status = if success { 200 } else { 500 };
+    let mut content_type = "text/plain".to_string();
+    let mut headers = Vec::new();
+    let mut saw_header = false;
+    for line in header_text.lines().filter(|line| !line.is_empty()) {
+        let Some((name, value)) = line.split_once(':') else {
+            return CliServerResponse {
+                status: if success { 200 } else { 500 },
+                body: output,
+                content_type: "text/plain".to_string(),
+                headers: Vec::new(),
+            };
+        };
+        let name = name.trim();
+        let value = value.trim();
+        if name.is_empty()
+            || name.contains('\r')
+            || name.contains('\n')
+            || value.contains('\r')
+            || value.contains('\n')
+        {
+            return CliServerResponse {
+                status: if success { 200 } else { 500 },
+                body: output,
+                content_type: "text/plain".to_string(),
+                headers: Vec::new(),
+            };
+        }
+        saw_header = true;
+        if name.eq_ignore_ascii_case("status") {
+            if let Some(code) = value.split_ascii_whitespace().next() {
+                if let Ok(parsed) = code.parse::<u16>() {
+                    status = parsed;
+                }
+            }
+        } else if name.eq_ignore_ascii_case("content-type") {
+            content_type = value.to_string();
+        } else if !name.eq_ignore_ascii_case("content-length")
+            && !name.eq_ignore_ascii_case("connection")
+        {
+            if name.eq_ignore_ascii_case("location") && status == 200 {
+                status = 302;
+            }
+            headers.push((name.to_string(), value.to_string()));
+        }
+    }
+    if !saw_header {
+        return CliServerResponse {
+            status: if success { 200 } else { 500 },
+            body: output,
+            content_type: "text/plain".to_string(),
+            headers: Vec::new(),
+        };
+    }
+    CliServerResponse {
+        status,
+        body: output[header_end + delimiter_len..].to_vec(),
+        content_type,
+        headers,
+    }
+}
+
+fn cli_server_request_script(
+    request: &CliServerRequest,
+    doc_root: &Path,
+    router: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(router) = router {
+        let router = if router.is_absolute() {
+            router.to_path_buf()
+        } else {
+            doc_root.join(router)
+        };
+        return router.is_file().then_some(router);
+    }
+
+    let raw_path = request.target.split_once('?').map(|(path, _)| path).unwrap_or(&request.target);
+    let mut path = doc_root.to_path_buf();
+    for component in Path::new(raw_path).components() {
+        match component {
+            Component::Normal(component) => path.push(component),
+            Component::CurDir | Component::RootDir => {}
+            Component::ParentDir | Component::Prefix(_) => return None,
+        }
+    }
+    if path.is_dir() {
+        path.push("index.php");
+    }
+    path.is_file().then_some(path)
+}
+
+fn write_cli_server_response(stream: &mut TcpStream, response: &CliServerResponse) {
+    let reason = match response.status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "Internal Server Error",
+    };
+    let headers = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        response.status,
+        reason,
+        response.content_type,
+        response.body.len()
+    );
+    let _ = stream.write_all(headers.as_bytes());
+    for (name, value) in &response.headers {
+        let _ = stream.write_all(name.as_bytes());
+        let _ = stream.write_all(b": ");
+        let _ = stream.write_all(value.as_bytes());
+        let _ = stream.write_all(b"\r\n");
+    }
+    let _ = stream.write_all(b"\r\n");
+    let _ = stream.write_all(&response.body);
     let _ = stream.flush();
 }
 
@@ -193,13 +632,18 @@ const PHP_LOADED_EXTENSIONS: &[&str] = &[
 
 const PHP_ZEND_EXTENSIONS: &[&str] = &["Zend OPcache"];
 
-fn run_inline_probe_fast_path(source: &str, args: &[String]) -> Option<i32> {
+fn run_inline_probe_fast_path(source: &str, args: &[String], ini: &RuntimeIni) -> Option<i32> {
     if !args.is_empty() {
         return None;
     }
     match normalize_inline_probe_source(source).as_str() {
         "echoini_get('extension_dir');" | "echoini_get(\"extension_dir\");" => {
-            print!("{PHP_EXTENSION_DIR}");
+            print!(
+                "{}",
+                ini.extension_dir
+                    .as_deref()
+                    .unwrap_or(PHP_EXTENSION_DIR)
+            );
             Some(0)
         }
         "echoimplode(',',get_loaded_extensions());"
@@ -286,6 +730,76 @@ fn print_modules() {
     }
     println!();
     println!("[Zend Modules]");
+}
+
+fn emit_configured_extension_diagnostics(ini: &RuntimeIni) {
+    let extension_dir = ini.extension_dir.as_deref().unwrap_or(PHP_EXTENSION_DIR);
+    for extension in &ini.extensions {
+        if extension.is_empty() {
+            continue;
+        }
+        let (primary, fallback) = extension_load_candidates(extension_dir, extension);
+        let primary_detail = extension_load_failure_detail(&primary);
+        let fallback_detail = extension_load_failure_detail(&fallback);
+        if ini
+            .html_errors
+            .as_deref()
+            .is_some_and(ini_scalar_truthy)
+        {
+            eprint!(
+                "<br />\n<b>Warning</b>:  PHP Startup: Unable to load dynamic library '{}' (tried: {} ({}), {} ({})) in <b>Unknown</b> on line <b>0</b><br />\n",
+                html_escape(extension),
+                html_escape(&primary),
+                html_escape(&primary_detail),
+                html_escape(&fallback),
+                html_escape(&fallback_detail),
+            );
+        } else {
+            eprintln!(
+                "PHP Warning:  PHP Startup: Unable to load dynamic library '{}' (tried: {} ({}), {} ({})) in Unknown on line 0",
+                extension, primary, primary_detail, fallback, fallback_detail
+            );
+        }
+    }
+}
+
+fn extension_load_candidates(extension_dir: &str, extension: &str) -> (String, String) {
+    let primary = if Path::new(extension).is_absolute() {
+        extension.to_string()
+    } else if extension_dir.is_empty() || extension_dir == "." {
+        extension.to_string()
+    } else {
+        format!(
+            "{}/{}",
+            extension_dir.trim_end_matches(['/', '\\']),
+            extension
+        )
+    };
+    let fallback = format!("{primary}.so");
+    (primary, fallback)
+}
+
+fn extension_load_failure_detail(candidate: &str) -> &'static str {
+    if Path::new(candidate).exists() {
+        "native dynamic extension loading is not supported"
+    } else {
+        "cannot open shared object file: No such file or directory"
+    }
+}
+
+fn html_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\'' => escaped.push_str("&#039;"),
+            '"' => escaped.push_str("&quot;"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 fn print_reflection_info(target: &str) {
@@ -505,6 +1019,10 @@ enum Mode {
 #[derive(Debug, Default)]
 struct RuntimeIni {
     loaded_file_path: Option<PathBuf>,
+    ignore_default_ini: bool,
+    command_line_ini: Vec<String>,
+    extension_dir: Option<String>,
+    extensions: Vec<String>,
     precision: Option<i16>,
     serialize_precision: Option<String>,
     default_charset: Option<String>,
@@ -522,10 +1040,13 @@ struct RuntimeIni {
     assert_exception: Option<String>,
     assert_warning: Option<String>,
     auto_detect_line_endings: Option<String>,
+    report_memleaks: Vec<String>,
     disable_functions: Option<String>,
     display_errors: Option<String>,
     html_errors: Option<String>,
     error_append_string: Option<String>,
+    error_log: Option<String>,
+    error_log_mode: Option<String>,
     error_reporting: Option<i64>,
     ignore_repeated_errors: Option<String>,
     ignore_repeated_source: Option<String>,
@@ -580,6 +1101,7 @@ struct RuntimeIni {
     post_max_size: Option<String>,
     always_populate_raw_post_data: Option<String>,
     upload_tmp_dir: Option<String>,
+    sys_temp_dir: Option<String>,
     expose_php: Option<String>,
     user_agent: Option<String>,
     exception_ignore_args: Option<String>,
@@ -611,6 +1133,7 @@ impl Invocation {
                 "-q" => {}
                 "-n" => {
                     ini.loaded_file_path = None;
+                    ini.ignore_default_ini = true;
                 }
                 "-C" => {
                     sapi = Sapi::Cgi;
@@ -660,6 +1183,7 @@ impl Invocation {
                         .next()
                         .ok_or_else(|| format!("missing value for {arg}"))?;
                     ini.loaded_file_path = Some(PathBuf::from(path));
+                    ini.ignore_default_ini = false;
                 }
                 "-f" => {
                     let path = args
@@ -721,6 +1245,7 @@ impl Invocation {
                 _ if let Some(path) = arg.strip_prefix("-c") => {
                     if !path.is_empty() {
                         ini.loaded_file_path = Some(PathBuf::from(path));
+                        ini.ignore_default_ini = false;
                     }
                 }
                 _ if let Some(path) = arg.strip_prefix("-t") => {
@@ -776,6 +1301,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     };
     let name = name.trim();
     let raw_value = raw_value.trim();
+    ini.command_line_ini
+        .push(format!("{name}={raw_value}"));
     if name.eq_ignore_ascii_case("precision") {
         if let Ok(parsed) = raw_value.parse::<i16>() {
             if (-1..=1000).contains(&parsed) {
@@ -800,6 +1327,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.assert_warning = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("auto_detect_line_endings") {
         ini.auto_detect_line_endings = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("report_memleaks") {
+        ini.report_memleaks.push(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("disable_functions") {
         ini.disable_functions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("date.timezone") {
@@ -812,6 +1341,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.html_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_append_string") {
         ini.error_append_string = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("error_log") {
+        ini.error_log = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("error_log_mode") {
+        ini.error_log_mode = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.comment") {
         ini.highlight_comment = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.default") {
@@ -960,6 +1493,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.always_populate_raw_post_data = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("upload_tmp_dir") {
         ini.upload_tmp_dir = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("sys_temp_dir") {
+        ini.sys_temp_dir = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("expose_php") {
         ini.expose_php = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("user_agent") {
@@ -970,6 +1505,10 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.allow_url_include = Some(normalize_ini_scalar(raw_value));
         ini.allow_url_include_deprecated =
             ini.allow_url_include_deprecated || ini_scalar_truthy(raw_value);
+    } else if name.eq_ignore_ascii_case("extension_dir") {
+        ini.extension_dir = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("extension") {
+        ini.extensions.push(normalize_ini_scalar(raw_value));
     }
 }
 
@@ -982,6 +1521,41 @@ fn ini_scalar_truthy(raw_value: &str) -> bool {
         normalized.to_ascii_lowercase().as_str(),
         "0" | "off" | "false" | "no"
     )
+}
+
+fn zend_ini_parse_bool(raw_value: &str) -> bool {
+    let normalized = raw_value.trim();
+    if normalized.eq_ignore_ascii_case("true")
+        || normalized.eq_ignore_ascii_case("yes")
+        || normalized.eq_ignore_ascii_case("on")
+    {
+        return true;
+    }
+
+    let bytes = normalized.as_bytes();
+    let mut index = 0;
+    if matches!(bytes.first(), Some(b'+' | b'-')) {
+        index += 1;
+    }
+    let mut has_nonzero_digit = false;
+    while let Some(byte) = bytes.get(index) {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+        has_nonzero_digit |= *byte != b'0';
+        index += 1;
+    }
+    has_nonzero_digit
+}
+
+fn report_memleaks_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
+    ini.report_memleaks
+        .iter()
+        .filter(|value| !zend_ini_parse_bool(value))
+        .map(|_| {
+            "Deprecated: PHP Startup: Directive 'report_memleaks' is deprecated in Unknown on line 0"
+        })
+        .collect()
 }
 
 fn canonical_session_ini_name(name: &str) -> Option<&'static str> {
@@ -1664,6 +2238,10 @@ fn compile_and_run(
 ) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
         loaded_file_path: ini.loaded_file_path.clone(),
+        ignore_default_ini: ini.ignore_default_ini,
+        command_line_ini: ini.command_line_ini.clone(),
+        extension_dir: ini.extension_dir.clone(),
+        extensions: ini.extensions.clone(),
         precision: ini.precision,
         serialize_precision: ini.serialize_precision.clone(),
         default_charset: ini.default_charset.clone(),
@@ -1681,10 +2259,13 @@ fn compile_and_run(
         assert_exception: ini.assert_exception.clone(),
         assert_warning: ini.assert_warning.clone(),
         auto_detect_line_endings: ini.auto_detect_line_endings.clone(),
+        report_memleaks: ini.report_memleaks.clone(),
         disable_functions: ini.disable_functions.clone(),
         display_errors: ini.display_errors.clone(),
         html_errors: ini.html_errors.clone(),
         error_append_string: ini.error_append_string.clone(),
+        error_log: ini.error_log.clone(),
+        error_log_mode: ini.error_log_mode.clone(),
         error_reporting: ini.error_reporting,
         ignore_repeated_errors: ini.ignore_repeated_errors.clone(),
         ignore_repeated_source: ini.ignore_repeated_source.clone(),
@@ -1739,6 +2320,7 @@ fn compile_and_run(
         post_max_size: ini.post_max_size.clone(),
         always_populate_raw_post_data: ini.always_populate_raw_post_data.clone(),
         upload_tmp_dir: ini.upload_tmp_dir.clone(),
+        sys_temp_dir: ini.sys_temp_dir.clone(),
         expose_php: ini.expose_php.clone(),
         user_agent: ini.user_agent.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
@@ -1763,6 +2345,7 @@ fn compile_and_run(
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
+    let report_memleaks_startup_deprecations = report_memleaks_startup_deprecations(&ini);
     let mbstring_startup_messages = mbstring_startup_messages(&ini);
     let auto_detect_line_endings_deprecated = ini
         .auto_detect_line_endings
@@ -1915,6 +2498,12 @@ fn compile_and_run(
     }
     if let Some(error_append_string) = &ini.error_append_string {
         command.env("PTN_ERROR_APPEND_STRING", error_append_string);
+    }
+    if let Some(error_log) = &ini.error_log {
+        command.env("PTN_ERROR_LOG", error_log);
+    }
+    if let Some(error_log_mode) = &ini.error_log_mode {
+        command.env("PTN_ERROR_LOG_MODE", error_log_mode);
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
@@ -2088,6 +2677,9 @@ fn compile_and_run(
     if let Some(upload_tmp_dir) = &ini.upload_tmp_dir {
         command.env("PTN_UPLOAD_TMP_DIR", upload_tmp_dir);
     }
+    if let Some(sys_temp_dir) = &ini.sys_temp_dir {
+        command.env("PTN_SYS_TEMP_DIR", sys_temp_dir);
+    }
     if let Some(expose_php) = &ini.expose_php {
         command.env("PTN_EXPOSE_PHP", expose_php);
     }
@@ -2111,6 +2703,7 @@ fn compile_and_run(
         || session_save_handler_warning.is_some()
         || !session_startup_deprecations.is_empty()
         || !assert_startup_deprecations.is_empty()
+        || !report_memleaks_startup_deprecations.is_empty()
         || !mbstring_startup_messages.is_empty()
         || auto_detect_line_endings_deprecated
         || ini.allow_url_include_deprecated;
@@ -2138,6 +2731,12 @@ fn compile_and_run(
     for (index, warning) in assert_startup_deprecations.iter().enumerate() {
         println!("{warning}");
         if index + 1 < assert_startup_deprecations.len() {
+            println!();
+        }
+    }
+    for (index, warning) in report_memleaks_startup_deprecations.iter().enumerate() {
+        println!("{warning}");
+        if index + 1 < report_memleaks_startup_deprecations.len() {
             println!();
         }
     }

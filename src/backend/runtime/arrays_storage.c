@@ -81,8 +81,13 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key);
 static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
+static PTN_UNUSED void ptn_array_free_in_runtime(PtnRuntime *runtime, PtnArray *array);
 static PTN_UNUSED void ptn_array_retain(PtnArray *array);
 static PTN_UNUSED void ptn_object_retain(PtnObject *object);
+static PTN_UNUSED void ptn_object_release_in_runtime(
+    PtnRuntime *execution_runtime,
+    PtnObject *object
+);
 static PTN_UNUSED void ptn_object_release(PtnObject *object);
 static PTN_UNUSED void ptn_gc_attach_value_runtime(PtnRuntime *runtime, PtnValue value, size_t depth);
 static PTN_UNUSED void ptn_runtime_unregister_array(PtnRuntime *runtime, PtnArray *array);
@@ -144,6 +149,14 @@ static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntim
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 
+struct PtnFiberData;
+typedef int (*PtnFiberInternalCallback)(
+    PtnRuntime *runtime,
+    struct PtnFiberData *data,
+    PtnValue *result_out
+);
+typedef void (*PtnFiberInternalCallbackContextFree)(void *context);
+
 typedef struct PtnFiberData {
     PtnObject *object;
     PtnValue callback;
@@ -152,10 +165,22 @@ typedef struct PtnFiberData {
     PtnValue suspend_value;
     PtnValue resume_value;
     PtnValue resume_exception;
+    /* Internal fibers retain C-owned work through a normal GC-visible value. */
+    PtnValue internal_keepalive;
+    PtnFiberInternalCallback internal_callback;
+    void *internal_callback_context;
+    PtnFiberInternalCallbackContextFree internal_callback_context_free;
+    int is_gc_destructor_fiber;
     PtnValue *entry_args;
     size_t entry_argc;
     size_t entry_line;
     size_t resume_throw_line;
+    int64_t caller_error_reporting;
+    int caller_error_suppression_depth;
+    int64_t caller_error_suppression_saved_reporting;
+    int64_t suspended_error_reporting;
+    int suspended_error_suppression_depth;
+    int64_t suspended_error_suppression_saved_reporting;
     char *executing_file;
     size_t executing_line;
     int started;
@@ -166,6 +191,8 @@ typedef struct PtnFiberData {
     int resume_credit;
     int resume_throw;
     int close_requested;
+    size_t free_phase;
+    size_t free_entry_arg_index;
 #if !defined(_WIN32)
     ucontext_t caller_context;
     ucontext_t fiber_context;
@@ -173,7 +200,15 @@ typedef struct PtnFiberData {
     size_t fiber_stack_size;
     int context_initialized;
     int context_finished;
+    /* Owned executor for the Fiber stack; never borrow a caller frame here. */
     PtnRuntime *context_runtime;
+    PtnRuntime *free_context_runtime;
+    PtnTraceFrame *free_suspended_trace_frame;
+    PtnTraceFrame *free_suspended_trace_cursor;
+    PtnRuntime *caller_active_fiber_executor_runtime;
+    PtnRuntime *caller_active_value_release_runtime;
+    PtnRuntime *suspended_active_value_release_runtime;
+    int active_root_context_installed;
     PtnTryFrame *caller_try_frame;
     PtnTryFrame *suspended_try_frame;
     PtnTraceFrame *caller_trace_frame;
@@ -186,6 +221,66 @@ typedef struct PtnFiberData {
 #endif
 } PtnFiberData;
 
+static void ptn_trace_frame_chain_unlink(
+    PtnTraceFrame **head,
+    PtnTraceFrame *target
+) {
+    if (head == NULL || *head == NULL || target == NULL) {
+        return;
+    }
+    if (*head == target) {
+        *head = target->previous;
+        return;
+    }
+    PtnTraceFrame *cursor = *head;
+    for (size_t depth = 0; cursor->previous != NULL && depth < 1024; depth++) {
+        if (cursor->previous == target) {
+            cursor->previous = target->previous;
+            return;
+        }
+        cursor = cursor->previous;
+    }
+}
+
+/*
+ * A suspended Fiber retains trace frames allocated by its nested function
+ * runtimes. Remove a frame from root-owned aliases before that runtime's
+ * stack storage and local values are released.
+ */
+static void ptn_runtime_unlink_owned_trace_frame_from_external_chains(
+    PtnRuntime *runtime
+) {
+    if (runtime == NULL || runtime->owned_trace_frame.runtime != runtime) {
+        return;
+    }
+    PtnTraceFrame *owned = &runtime->owned_trace_frame;
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    ptn_trace_frame_chain_unlink(&runtime->trace_frame, owned);
+    if (root->active_value_release_runtime == runtime) {
+        root->active_value_release_runtime = NULL;
+    }
+    if (root != runtime) {
+        ptn_trace_frame_chain_unlink(&root->trace_frame, owned);
+    }
+#if !defined(_WIN32)
+    if (root == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (
+            object == NULL ||
+            object->native_data == NULL ||
+            !ptn_ascii_case_equal(object->class_name, "Fiber")
+        ) {
+            continue;
+        }
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        ptn_trace_frame_chain_unlink(&data->suspended_trace_frame, owned);
+    }
+#endif
+}
+
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *object) {
     (void)object;
@@ -195,6 +290,13 @@ static PTN_UNUSED void ptn_runtime_close_suspended_fiber_object(PtnObject *objec
 static PTN_UNUSED void ptn_runtime_mark_current_fiber_fatal_error(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     PtnObject *fiber = runtime == NULL ? NULL : runtime->current_fiber;
+    if (
+        fiber == NULL &&
+        root != NULL &&
+        root->active_fiber_executor_runtime != NULL
+    ) {
+        fiber = root->active_fiber_executor_runtime->current_fiber;
+    }
     if (fiber == NULL && root != NULL) {
         fiber = root->current_fiber;
     }
@@ -232,6 +334,18 @@ static PTN_UNUSED void ptn_runtime_mark_current_fiber_fatal_error(PtnRuntime *ru
     data->suspended_try_frame = NULL;
     data->suspended_trace_frame = NULL;
     data->suspended_generator = NULL;
+    data->suspended_active_value_release_runtime = NULL;
+    if (
+        data->active_root_context_installed &&
+        root != NULL &&
+        root->active_fiber_executor_runtime == data->context_runtime
+    ) {
+        root->active_fiber_executor_runtime =
+            data->caller_active_fiber_executor_runtime;
+        root->active_value_release_runtime =
+            data->caller_active_value_release_runtime;
+        data->active_root_context_installed = 0;
+    }
 #endif
 }
 
@@ -274,6 +388,68 @@ static void ptn_exception_chain_previous_if_missing(PtnException *exception, Ptn
     }
     ptn_value_destroy(&exception->previous);
     exception->previous = ptn_value_clone_deref(ptn_exception_borrow(previous));
+}
+
+static void ptn_exception_chain_previous_at_tail(
+    PtnException *exception,
+    PtnException *previous
+) {
+    if (exception == NULL || previous == NULL || exception == previous) {
+        return;
+    }
+    PtnException *tail = exception;
+    PtnException *slow = exception;
+    PtnException *fast = exception;
+    for (size_t depth = 0; depth < 1024; depth++) {
+        PtnException *next = ptn_exception_previous_exception(tail);
+        if (next == NULL) {
+            if (ptn_exception_previous_chain_would_recurse(previous, tail)) {
+                return;
+            }
+            ptn_value_destroy(&tail->previous);
+            tail->previous = ptn_value_clone_deref(ptn_exception_borrow(previous));
+            return;
+        }
+        tail = next;
+        slow = ptn_exception_previous_exception(slow);
+        fast = ptn_exception_previous_exception(ptn_exception_previous_exception(fast));
+        if (slow != NULL && slow == fast) {
+            return;
+        }
+    }
+}
+
+static void ptn_runtime_link_cleanup_root(
+    PtnRuntime *root,
+    PtnCleanupRoot *cleanup_root,
+    PtnValue value
+) {
+    if (root == NULL || cleanup_root == NULL) {
+        return;
+    }
+    cleanup_root->value = value;
+    cleanup_root->value.owned = 0;
+    cleanup_root->next = root->active_cleanup_roots;
+    root->active_cleanup_roots = cleanup_root;
+}
+
+static void ptn_runtime_unlink_cleanup_root(
+    PtnRuntime *root,
+    PtnCleanupRoot *cleanup_root
+) {
+    if (root == NULL || cleanup_root == NULL) {
+        return;
+    }
+    PtnCleanupRoot **link = &root->active_cleanup_roots;
+    while (*link != NULL) {
+        if (*link == cleanup_root) {
+            *link = cleanup_root->next;
+            cleanup_root->next = NULL;
+            cleanup_root->value = ptn_null();
+            return;
+        }
+        link = &(*link)->next;
+    }
 }
 static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime);
 
@@ -1192,6 +1368,8 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
     array->destructing = 0;
+    array->cleanup_root.value = ptn_null();
+    array->cleanup_root.next = NULL;
     array->gc_mark_epoch = 0;
     array->lifecycle_runtime = NULL;
     array->live_index = 0;
@@ -1450,7 +1628,72 @@ static PTN_UNUSED void ptn_runtime_clear_temporary_roots(PtnRuntime *runtime) {
     ptn_runtime_run_unreferenced_object_destructors_for_unwind(runtime);
 }
 
-static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
+static PTN_UNUSED void ptn_gc_destructor_fiber_discard_close_unwind(PtnRuntime *runtime) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        return;
+    }
+    PtnException *exception = runtime->exceptions->active_exception;
+    if (exception == NULL) {
+        return;
+    }
+    if (ptn_ascii_case_equal(exception->class_name, "__PTN_FiberExit")) {
+        runtime->exceptions->active_exception = NULL;
+        ptn_exception_free(exception);
+        return;
+    }
+    PtnValue previous = ptn_value_deref(exception->previous);
+    if (
+        previous.type == PTN_EXCEPTION &&
+        ptn_ascii_case_equal(previous.as.exception->class_name, "__PTN_FiberExit")
+    ) {
+        ptn_value_destroy(&exception->previous);
+        exception->previous = ptn_null();
+    }
+}
+
+static PtnRuntime *ptn_effective_value_release_runtime(
+    PtnRuntime *execution_runtime,
+    PtnRuntime *lifecycle_runtime,
+    int *has_execution_scope
+) {
+    PtnRuntime *lifecycle_root = ptn_runtime_root(lifecycle_runtime);
+    PtnRuntime *root = lifecycle_root;
+    if (root == NULL && execution_runtime != NULL) {
+        root = ptn_runtime_root(execution_runtime);
+    }
+    PtnRuntime *selected = execution_runtime;
+    int selected_execution_scope = selected != NULL;
+    if (selected == NULL && root != NULL) {
+        selected = root->active_value_release_runtime;
+        selected_execution_scope = selected != NULL;
+    }
+    if (selected == NULL && root != NULL) {
+        selected = root->active_fiber_executor_runtime;
+        selected_execution_scope = selected != NULL;
+    }
+    if (selected == NULL) {
+        selected = root;
+        selected_execution_scope = 0;
+    }
+    if (
+        selected != NULL &&
+        lifecycle_root != NULL &&
+        ptn_runtime_root(selected) != lifecycle_root
+    ) {
+        selected = lifecycle_root;
+        selected_execution_scope = 0;
+    }
+    if (has_execution_scope != NULL) {
+        *has_execution_scope = selected_execution_scope;
+    }
+    return selected;
+}
+
+static PTN_UNUSED void ptn_object_run_destructor_ex_in_runtime(
+    PtnRuntime *execution_runtime,
+    PtnObject *object,
+    int during_shutdown
+) {
     if (object == NULL || !object->destructor_enabled || object->destructor_called) {
         return;
     }
@@ -1461,45 +1704,70 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
         if (real.type == PTN_OBJECT && real.as.object != NULL && real.as.object != object) {
             object->destructor_called = 1;
-            ptn_object_run_destructor_ex(real.as.object, during_shutdown);
+            ptn_object_run_destructor_ex_in_runtime(
+                execution_runtime,
+                real.as.object,
+                during_shutdown
+            );
             return;
         }
     }
-    PtnRuntime *runtime = object->lifecycle_runtime;
-    if (runtime == NULL) {
+    PtnRuntime *lifecycle_runtime = object->lifecycle_runtime;
+    if (lifecycle_runtime == NULL) {
         return;
     }
-    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    PtnRuntime *root = lifecycle_runtime->lifecycle_root == NULL
+        ? lifecycle_runtime
+        : lifecycle_runtime->lifecycle_root;
+    int dispatch_has_execution_scope = 0;
+    PtnRuntime *dispatch_runtime = ptn_effective_value_release_runtime(
+        execution_runtime,
+        lifecycle_runtime,
+        &dispatch_has_execution_scope
+    );
+    const char *destructor_access_scope = dispatch_has_execution_scope
+        ? dispatch_runtime->current_class_name
+        : root->destructor_access_scope;
     PtnValue receiver = ptn_value_borrow(ptn_object(object));
-    size_t destructor_line = object->cleanup_trace_source_line != 0
-        ? object->cleanup_trace_source_line
-        : (runtime->call_site_line != 0 ? runtime->call_site_line : root->call_site_line);
+    /*
+     * A destructor runs at the operation that releases its last reference,
+     * not at the allocation that created the object.  Keep the stored cleanup
+     * location only for deferred cleanup with no active caller location.
+     */
+    size_t destructor_line = dispatch_runtime->call_site_line != 0
+        ? dispatch_runtime->call_site_line
+        : (lifecycle_runtime->call_site_line != 0
+            ? lifecycle_runtime->call_site_line
+            : (root->call_site_line != 0
+                ? root->call_site_line
+                : object->cleanup_trace_source_line));
     if (destructor_line == 0) {
         destructor_line = 1;
     }
+    int run_internal_zip_destructor = 0;
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_internal_class_name_is_zip_archive(object->class_name)) {
-        object->destructor_called = 1;
-        ptn_zip_archive_run_destructor(runtime, receiver, destructor_line);
-        return;
-    }
+    run_internal_zip_destructor =
+        ptn_internal_class_name_is_zip_archive(object->class_name);
 #endif
-    if (root->method_dispatch == NULL ||
-        root->declared_method_exists == NULL ||
-        !root->declared_method_exists(object->class_name, "__destruct")) {
+    if (!run_internal_zip_destructor &&
+        (dispatch_runtime->method_dispatch == NULL ||
+            dispatch_runtime->declared_method_exists == NULL ||
+            !dispatch_runtime->declared_method_exists(object->class_name, "__destruct"))) {
         return;
     }
-
     PtnTraceFrame cleanup_trace_frame;
     int cleanup_trace_frame_active = 0;
-    if (root->trace_frame == NULL && object->cleanup_trace_function_name != NULL) {
+    if (
+        dispatch_runtime->trace_frame == NULL &&
+        object->cleanup_trace_function_name != NULL
+    ) {
         ptn_runtime_push_trace_frame(
-            root,
+            dispatch_runtime,
             &cleanup_trace_frame,
             object->cleanup_trace_function_name,
             object->cleanup_trace_source_file != NULL
                 ? object->cleanup_trace_source_file
-                : root->source_path,
+                : dispatch_runtime->source_path,
             object->cleanup_trace_source_line,
             0,
             NULL
@@ -1508,19 +1776,33 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     }
 
     object->destructor_called = 1;
-    const char *previous_scope = root->current_class_name;
-    int previous_shutdown_phase = root->destructor_shutdown_phase;
+    const char *previous_scope = dispatch_runtime->current_class_name;
+    int previous_shutdown_phase = dispatch_runtime->destructor_shutdown_phase;
     int effective_shutdown_phase = during_shutdown || previous_shutdown_phase;
     int previous_suppress_user_call_frame_location =
-        root->suppress_user_call_frame_location;
-    root->current_class_name = root->destructor_access_scope;
-    root->destructor_shutdown_phase = effective_shutdown_phase;
+        dispatch_runtime->suppress_user_call_frame_location;
+    dispatch_runtime->current_class_name = destructor_access_scope;
+    dispatch_runtime->destructor_shutdown_phase = effective_shutdown_phase;
     if (effective_shutdown_phase) {
-        root->suppress_user_call_frame_location = 1;
+        dispatch_runtime->suppress_user_call_frame_location = 1;
     }
-    PtnException *saved_active_exception = root->exceptions == NULL
+    PtnException *saved_active_exception = dispatch_runtime->exceptions == NULL
         ? NULL
-        : root->exceptions->active_exception;
+        : dispatch_runtime->exceptions->active_exception;
+    PtnCleanupRoot *saved_active_exception_root = NULL;
+    if (saved_active_exception != NULL && root != NULL) {
+        saved_active_exception_root = malloc(sizeof(PtnCleanupRoot));
+        if (saved_active_exception_root == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        saved_active_exception_root->value = ptn_null();
+        saved_active_exception_root->next = NULL;
+        ptn_runtime_link_cleanup_root(
+            root,
+            saved_active_exception_root,
+            ptn_exception_borrow(saved_active_exception)
+        );
+    }
     PtnValue result = ptn_null();
     PtnTryFrame destructor_frame;
     int catch_gc_exception = root->gc_running;
@@ -1528,78 +1810,121 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         saved_active_exception != NULL &&
         root->defer_uncaught_exception_emit &&
         !catch_gc_exception;
-    int catch_destructor_exception =
+    int semantic_catch_destructor_exception =
         catch_gc_exception ||
         (saved_active_exception != NULL && !preserve_active_exception);
-    if (saved_active_exception != NULL && !preserve_active_exception) {
-        root->exceptions->active_exception = NULL;
+    if (saved_active_exception != NULL) {
+        if (preserve_active_exception) {
+            ptn_exception_retain(saved_active_exception);
+        } else {
+            dispatch_runtime->exceptions->active_exception = NULL;
+        }
     }
     int previous_gc_destructor_depth = root->gc_destructor_depth;
+    PtnTraceFrame *previous_gc_destructor_trace_boundary =
+        root->gc_destructor_trace_boundary;
+    int previous_gc_destructor_fiber_force_closing =
+        root->gc_destructor_fiber_force_closing;
     int previous_gc_destructor_fiber_current_requested =
         root->gc_destructor_fiber_current_requested;
     if (root->gc_running) {
         root->gc_destructor_depth++;
+        /* PORT NOTE: php-src executes GC destructors in an internal fiber. */
+        root->gc_destructor_trace_boundary = dispatch_runtime->trace_frame;
+        root->gc_destructor_fiber_force_closing = 0;
         root->gc_destructor_fiber_current_requested = 0;
     }
-    if (catch_destructor_exception) {
-        ptn_try_frame_push(root, &destructor_frame);
+    int destructor_threw = 0;
+    int destructor_frame_active = dispatch_runtime->exceptions != NULL;
+    if (destructor_frame_active) {
+        ptn_try_frame_push(dispatch_runtime, &destructor_frame);
         if (setjmp(destructor_frame.jump) != 0) {
-            ptn_try_frame_pop(root, &destructor_frame);
-            if (saved_active_exception != NULL) {
-                if (root->exceptions->active_exception != NULL) {
-                    if (!effective_shutdown_phase) {
-                        ptn_exception_chain_previous_if_missing(
-                            root->exceptions->active_exception,
-                            saved_active_exception
-                        );
-                    }
-                    ptn_exception_free(saved_active_exception);
-                } else {
-                    root->exceptions->active_exception = saved_active_exception;
-                }
-            }
-            root->suppress_user_call_frame_location =
-                previous_suppress_user_call_frame_location;
-            root->destructor_shutdown_phase = previous_shutdown_phase;
-            root->current_class_name = previous_scope;
-            root->gc_destructor_depth = previous_gc_destructor_depth;
-            root->gc_destructor_fiber_current_requested =
-                previous_gc_destructor_fiber_current_requested;
-            if (cleanup_trace_frame_active) {
-                ptn_runtime_pop_trace_frame(root, &cleanup_trace_frame);
-            }
-            ptn_value_destroy(&result);
-            return;
+            destructor_threw = 1;
         }
     }
-    result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
-    if (catch_destructor_exception) {
-        ptn_try_frame_pop(root, &destructor_frame);
+    if (!destructor_threw) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (run_internal_zip_destructor) {
+            ptn_zip_archive_run_destructor(
+                dispatch_runtime,
+                receiver,
+                destructor_line
+            );
+        } else
+#endif
+        {
+            result = dispatch_runtime->method_dispatch(
+                dispatch_runtime,
+                receiver,
+                "__destruct",
+                0,
+                NULL,
+                destructor_line
+            );
+        }
     }
-    root->suppress_user_call_frame_location =
-        previous_suppress_user_call_frame_location;
-    root->destructor_shutdown_phase = previous_shutdown_phase;
-    root->current_class_name = previous_scope;
-    root->gc_destructor_depth = previous_gc_destructor_depth;
-    root->gc_destructor_fiber_current_requested =
-        previous_gc_destructor_fiber_current_requested;
-    if (cleanup_trace_frame_active) {
-        ptn_runtime_pop_trace_frame(root, &cleanup_trace_frame);
+    if (destructor_frame_active) {
+        ptn_try_frame_pop(dispatch_runtime, &destructor_frame);
     }
-    if (saved_active_exception != NULL && !preserve_active_exception) {
-        if (root->exceptions->active_exception == NULL) {
-            root->exceptions->active_exception = saved_active_exception;
+    if (destructor_threw && root->gc_destructor_fiber_force_closing) {
+        /* PORT NOTE: internal GC fiber cancellation is not user-visible. */
+        ptn_gc_destructor_fiber_discard_close_unwind(dispatch_runtime);
+    }
+    if (saved_active_exception != NULL) {
+        if (preserve_active_exception) {
+            if (dispatch_runtime->exceptions->active_exception == NULL) {
+                dispatch_runtime->exceptions->active_exception =
+                    saved_active_exception;
+            } else {
+                if (dispatch_runtime->exceptions->active_exception !=
+                    saved_active_exception) {
+                    ptn_exception_chain_previous_at_tail(
+                        dispatch_runtime->exceptions->active_exception,
+                        saved_active_exception
+                    );
+                }
+                ptn_exception_free(saved_active_exception);
+            }
+        } else if (dispatch_runtime->exceptions->active_exception == NULL) {
+            dispatch_runtime->exceptions->active_exception = saved_active_exception;
         } else {
             if (!effective_shutdown_phase) {
-                ptn_exception_chain_previous_if_missing(
-                    root->exceptions->active_exception,
+                ptn_exception_chain_previous_at_tail(
+                    dispatch_runtime->exceptions->active_exception,
                     saved_active_exception
                 );
             }
             ptn_exception_free(saved_active_exception);
         }
     }
+    dispatch_runtime->suppress_user_call_frame_location =
+        previous_suppress_user_call_frame_location;
+    dispatch_runtime->destructor_shutdown_phase = previous_shutdown_phase;
+    dispatch_runtime->current_class_name = previous_scope;
+    root->gc_destructor_depth = previous_gc_destructor_depth;
+    root->gc_destructor_trace_boundary = previous_gc_destructor_trace_boundary;
+    root->gc_destructor_fiber_force_closing =
+        previous_gc_destructor_fiber_force_closing;
+    root->gc_destructor_fiber_current_requested =
+        previous_gc_destructor_fiber_current_requested;
+    if (cleanup_trace_frame_active) {
+        ptn_runtime_pop_trace_frame(dispatch_runtime, &cleanup_trace_frame);
+    }
+    if (saved_active_exception_root != NULL) {
+        ptn_runtime_unlink_cleanup_root(root, saved_active_exception_root);
+        free(saved_active_exception_root);
+    }
+    if (destructor_threw) {
+        if (!semantic_catch_destructor_exception) {
+            ptn_rethrow_exception(dispatch_runtime);
+        }
+        return;
+    }
     ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
+    ptn_object_run_destructor_ex_in_runtime(NULL, object, during_shutdown);
 }
 
 static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
@@ -1807,20 +2132,111 @@ static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index) {
     }
 }
 
-static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth);
+typedef struct {
+    int type;
+    const void *pointer;
+} PtnReachabilitySeenEntry;
 
-static int ptn_exception_reaches_object(PtnException *exception, PtnObject *target, size_t depth) {
+typedef struct {
+    PtnReachabilitySeenEntry *items;
+    size_t len;
+    size_t capacity;
+} PtnReachabilitySeen;
+
+enum {
+    PTN_REACHABILITY_RUNTIME = -1,
+    PTN_REACHABILITY_TRACE_FRAME = -2,
+    PTN_REACHABILITY_EXCEPTION_STATE = -3,
+    PTN_REACHABILITY_SYMBOL_TABLE = -4,
+};
+
+static int ptn_reachability_seen_add(
+    PtnReachabilitySeen *seen,
+    int type,
+    const void *pointer
+) {
+    if (seen == NULL || pointer == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < seen->len; i++) {
+        if (seen->items[i].type == type && seen->items[i].pointer == pointer) {
+            return 0;
+        }
+    }
+    if (seen->len == seen->capacity) {
+        size_t new_capacity = seen->capacity == 0 ? 16 : seen->capacity * 2;
+        if (
+            new_capacity < seen->capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnReachabilitySeenEntry)
+        ) {
+            ptn_abort_out_of_memory();
+        }
+        PtnReachabilitySeenEntry *new_items = realloc(
+            seen->items,
+            new_capacity * sizeof(PtnReachabilitySeenEntry)
+        );
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->items = new_items;
+        seen->capacity = new_capacity;
+    }
+    seen->items[seen->len++] = (PtnReachabilitySeenEntry){ type, pointer };
+    return 1;
+}
+
+static int ptn_value_reaches_object_in_graph(
+    PtnValue value,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+);
+static int ptn_trace_frame_runtimes_reach_object_in_graph(
+    PtnTraceFrame *frame,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+);
+static int ptn_runtime_frame_reaches_object_in_graph(
+    PtnRuntime *runtime,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+);
+
+static int ptn_exception_reaches_object_in_graph(
+    PtnException *exception,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
     if (exception == NULL || target == NULL || depth > 1024) {
         return 0;
     }
-    return ptn_value_reaches_object(exception->trace, target, depth + 1) ||
-        ptn_value_reaches_object(exception->previous, target, depth + 1) ||
-        ptn_value_reaches_object(exception->dynamic_properties, target, depth + 1) ||
-        ptn_value_reaches_object(exception->errors, target, depth + 1) ||
-        ptn_value_reaches_object(exception->soap_fault_headerfault, target, depth + 1);
+    return ptn_value_reaches_object_in_graph(exception->trace, target, seen, depth + 1) ||
+        ptn_value_reaches_object_in_graph(exception->previous, target, seen, depth + 1) ||
+        ptn_value_reaches_object_in_graph(exception->dynamic_properties, target, seen, depth + 1) ||
+        ptn_value_reaches_object_in_graph(exception->errors, target, seen, depth + 1) ||
+        ptn_value_reaches_object_in_graph(
+            exception->soap_fault_headerfault,
+            target,
+            seen,
+            depth + 1
+        ) ||
+        ptn_value_reaches_object_in_graph(
+            exception->thrown_value,
+            target,
+            seen,
+            depth + 1
+        );
 }
 
-static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *target, size_t depth) {
+static int ptn_object_native_values_reach_object(
+    PtnObject *object,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
     if (object == NULL || target == NULL || object->native_data == NULL || depth > 1024) {
         return 0;
     }
@@ -1830,88 +2246,510 @@ static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *t
         } PtnNativeSensitiveParameterValueData;
         PtnNativeSensitiveParameterValueData *data =
             (PtnNativeSensitiveParameterValueData *)object->native_data;
-        return ptn_value_reaches_object(data->value, target, depth + 1);
+        return ptn_value_reaches_object_in_graph(data->value, target, seen, depth + 1);
     }
     if (ptn_ascii_case_equal(object->class_name, "Fiber")) {
         PtnFiberData *data = (PtnFiberData *)object->native_data;
-        if (ptn_value_reaches_object(data->callback, target, depth + 1) ||
-            ptn_value_reaches_object(data->return_value, target, depth + 1) ||
-            ptn_value_reaches_object(data->suspension_trace, target, depth + 1) ||
-            ptn_value_reaches_object(data->suspend_value, target, depth + 1) ||
-            ptn_value_reaches_object(data->resume_value, target, depth + 1) ||
-            ptn_value_reaches_object(data->resume_exception, target, depth + 1)) {
+        if (ptn_value_reaches_object_in_graph(data->callback, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->return_value, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->suspension_trace, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->suspend_value, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->resume_value, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->resume_exception, target, seen, depth + 1) ||
+            ptn_value_reaches_object_in_graph(data->internal_keepalive, target, seen, depth + 1)) {
             return 1;
         }
         for (size_t i = 0; i < data->entry_argc; i++) {
-            if (ptn_value_reaches_object(data->entry_args[i], target, depth + 1)) {
+            if (ptn_value_reaches_object_in_graph(data->entry_args[i], target, seen, depth + 1)) {
                 return 1;
             }
         }
+#if !defined(_WIN32)
+        if (
+            ptn_trace_frame_runtimes_reach_object_in_graph(
+                data->suspended_trace_frame,
+                target,
+                seen,
+                depth + 1
+            ) ||
+            ptn_trace_frame_runtimes_reach_object_in_graph(
+                data->free_suspended_trace_frame,
+                target,
+                seen,
+                depth + 1
+            ) ||
+            ptn_runtime_frame_reaches_object_in_graph(
+                data->context_runtime,
+                target,
+                seen,
+                depth + 1
+            ) ||
+            ptn_runtime_frame_reaches_object_in_graph(
+                data->free_context_runtime,
+                target,
+                seen,
+                depth + 1
+            ) ||
+            ptn_runtime_frame_reaches_object_in_graph(
+                data->suspended_active_value_release_runtime,
+                target,
+                seen,
+                depth + 1
+            )
+        ) {
+            return 1;
+        }
+#endif
         return 0;
     }
     return 0;
 }
 
-static int ptn_array_reaches_object(PtnArray *array, PtnObject *target, size_t depth) {
+static int ptn_array_reaches_object(
+    PtnArray *array,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
     if (array == NULL || target == NULL || depth > 1024) {
         return 0;
     }
     for (size_t i = 0; i < array->len; i++) {
-        if (ptn_value_reaches_object(array->entries[i].value, target, depth + 1)) {
+        if (ptn_value_reaches_object_in_graph(
+                array->entries[i].value,
+                target,
+                seen,
+                depth + 1
+            )) {
             return 1;
         }
     }
     return 0;
 }
 
-static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth) {
-    if (target == NULL || depth > 1024) {
+static int ptn_value_reaches_object_in_graph(
+    PtnValue value,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (target == NULL || seen == NULL || depth > 1024) {
         return 0;
     }
     if (value.type == PTN_REFERENCE) {
-        return value.as.reference != NULL &&
-            ptn_value_reaches_object(value.as.reference->value, target, depth + 1);
+        if (
+            value.as.reference == NULL ||
+            !ptn_reachability_seen_add(seen, PTN_REFERENCE, value.as.reference)
+        ) {
+            return 0;
+        }
+        return ptn_value_reaches_object_in_graph(
+            value.as.reference->value,
+            target,
+            seen,
+            depth + 1
+        );
     }
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT) {
         if (value.as.object == target) {
             return 1;
         }
-        return value.as.object != NULL &&
-            (
-                ptn_array_reaches_object(value.as.object->properties, target, depth + 1) ||
-                ptn_object_native_values_reach_object(value.as.object, target, depth + 1)
-            );
+        if (
+            value.as.object == NULL ||
+            !ptn_reachability_seen_add(seen, PTN_OBJECT, value.as.object)
+        ) {
+            return 0;
+        }
+        return ptn_array_reaches_object(value.as.object->properties, target, seen, depth + 1) ||
+            ptn_object_native_values_reach_object(value.as.object, target, seen, depth + 1);
     }
     if (value.type == PTN_ARRAY) {
-        return ptn_array_reaches_object(value.as.array, target, depth + 1);
+        if (
+            value.as.array == NULL ||
+            !ptn_reachability_seen_add(seen, PTN_ARRAY, value.as.array)
+        ) {
+            return 0;
+        }
+        return ptn_array_reaches_object(value.as.array, target, seen, depth + 1);
     }
     if (value.type == PTN_CLOSURE && value.as.closure != NULL) {
         PtnClosure *closure = value.as.closure;
+        if (!ptn_reachability_seen_add(seen, PTN_CLOSURE, closure)) {
+            return 0;
+        }
         if (closure->has_wrapped_callable &&
-            ptn_value_reaches_object(closure->wrapped_callable, target, depth + 1)) {
+            ptn_value_reaches_object_in_graph(closure->wrapped_callable, target, seen, depth + 1)) {
             return 1;
         }
         for (size_t i = 0; i < closure->captures.len; i++) {
-            if (ptn_value_reaches_object(closure->captures.items[i].value, target, depth + 1)) {
+            if (ptn_value_reaches_object_in_graph(
+                    closure->captures.items[i].value,
+                    target,
+                    seen,
+                    depth + 1
+                )) {
                 return 1;
             }
         }
     }
     if (value.type == PTN_EXCEPTION) {
-        return ptn_exception_reaches_object(value.as.exception, target, depth + 1);
+        if (
+            value.as.exception == NULL ||
+            !ptn_reachability_seen_add(seen, PTN_EXCEPTION, value.as.exception)
+        ) {
+            return 0;
+        }
+        return ptn_exception_reaches_object_in_graph(
+            value.as.exception,
+            target,
+            seen,
+            depth + 1
+        );
+    }
+    return 0;
+}
+
+static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth) {
+    PtnReachabilitySeen seen = {0};
+    int reached = ptn_value_reaches_object_in_graph(value, target, &seen, depth);
+    free(seen.items);
+    return reached;
+}
+
+static int ptn_exception_pointer_reaches_object_in_graph(
+    PtnException *exception,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (
+        exception == NULL ||
+        !ptn_reachability_seen_add(seen, PTN_EXCEPTION, exception)
+    ) {
+        return 0;
+    }
+    return ptn_exception_reaches_object_in_graph(
+        exception,
+        target,
+        seen,
+        depth
+    );
+}
+
+static int ptn_exception_reaches_object(PtnException *exception, PtnObject *target, size_t depth) {
+    PtnReachabilitySeen seen = {0};
+    int reached = ptn_exception_pointer_reaches_object_in_graph(
+        exception,
+        target,
+        &seen,
+        depth
+    );
+    free(seen.items);
+    return reached;
+}
+
+static int ptn_exception_state_reaches_object_in_graph(
+    PtnExceptionState *exceptions,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (
+        exceptions == NULL ||
+        target == NULL ||
+        seen == NULL ||
+        depth > 1024 ||
+        !ptn_reachability_seen_add(
+            seen,
+            PTN_REACHABILITY_EXCEPTION_STATE,
+            exceptions
+        )
+    ) {
+        return 0;
+    }
+    if (
+        ptn_exception_pointer_reaches_object_in_graph(
+            exceptions->active_exception,
+            target,
+            seen,
+            depth + 1
+        ) ||
+        ptn_exception_pointer_reaches_object_in_graph(
+            exceptions->finally_return_suppressed_exception,
+            target,
+            seen,
+            depth + 1
+        ) ||
+        (exceptions->has_exception_handler &&
+            ptn_value_reaches_object_in_graph(
+                exceptions->exception_handler,
+                target,
+                seen,
+                depth + 1
+            ))
+    ) {
+        return 1;
+    }
+    for (size_t i = 0; i < exceptions->exception_handler_stack_len; i++) {
+        if (
+            exceptions->exception_handler_stack[i].has_handler &&
+            ptn_value_reaches_object_in_graph(
+                exceptions->exception_handler_stack[i].handler,
+                target,
+                seen,
+                depth + 1
+            )
+        ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_exception_state_reaches_object(
+    PtnExceptionState *exceptions,
+    PtnObject *target,
+    size_t depth
+) {
+    PtnReachabilitySeen seen = {0};
+    int reached = ptn_exception_state_reaches_object_in_graph(
+        exceptions,
+        target,
+        &seen,
+        depth
+    );
+    free(seen.items);
+    return reached;
+}
+
+static int ptn_symbol_table_reaches_object_in_graph(
+    PtnSymbolTable *symbols,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (
+        symbols == NULL ||
+        target == NULL ||
+        seen == NULL ||
+        depth > 1024 ||
+        !ptn_reachability_seen_add(
+            seen,
+            PTN_REACHABILITY_SYMBOL_TABLE,
+            symbols
+        )
+    ) {
+        return 0;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        if (ptn_value_reaches_object_in_graph(
+                symbols->items[i].value,
+                target,
+                seen,
+                depth + 1
+            )) {
+            return 1;
+        }
     }
     return 0;
 }
 
 static int ptn_symbol_table_reaches_object(PtnSymbolTable *symbols, PtnObject *target) {
-    if (symbols == NULL || target == NULL) {
+    PtnReachabilitySeen seen = {0};
+    int reached = ptn_symbol_table_reaches_object_in_graph(
+        symbols,
+        target,
+        &seen,
+        0
+    );
+    free(seen.items);
+    return reached;
+}
+
+static int ptn_runtime_frame_reaches_object_in_graph(
+    PtnRuntime *runtime,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (
+        runtime == NULL ||
+        target == NULL ||
+        seen == NULL ||
+        depth > 1024 ||
+        !ptn_reachability_seen_add(seen, PTN_REACHABILITY_RUNTIME, runtime)
+    ) {
         return 0;
     }
-    for (size_t i = 0; i < symbols->len; i++) {
-        if (ptn_value_reaches_object(symbols->items[i].value, target, 0)) {
+    if (
+        ptn_exception_state_reaches_object_in_graph(
+            runtime->exceptions,
+            target,
+            seen,
+            depth + 1
+        ) ||
+        ptn_symbol_table_reaches_object_in_graph(
+            &runtime->symbols,
+            target,
+            seen,
+            depth + 1
+        )
+    ) {
+        return 1;
+    }
+    if (runtime->call_frame != NULL) {
+        if (runtime->call_frame->args != NULL) {
+            for (size_t i = 0; i < runtime->call_frame->argc; i++) {
+                if (ptn_value_reaches_object_in_graph(
+                        runtime->call_frame->args[i],
+                        target,
+                        seen,
+                        depth + 1
+                    )) {
+                    return 1;
+                }
+            }
+        }
+        if (
+            runtime->call_frame->has_current_closure &&
+            ptn_value_reaches_object_in_graph(
+                runtime->call_frame->current_closure,
+                target,
+                seen,
+                depth + 1
+            )
+        ) {
             return 1;
         }
+    }
+    for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
+        if (ptn_value_reaches_object_in_graph(
+                runtime->temporary_roots[i],
+                target,
+                seen,
+                depth + 1
+            )) {
+            return 1;
+        }
+    }
+    return ptn_value_reaches_object_in_graph(
+            runtime->deferred_yield_from_iterator_object,
+            target,
+            seen,
+            depth + 1
+        ) ||
+        ptn_value_reaches_object_in_graph(
+            runtime->gc_destructor_caller_trace,
+            target,
+            seen,
+            depth + 1
+        );
+}
+
+static int ptn_trace_frame_runtimes_reach_object_in_graph(
+    PtnTraceFrame *frame,
+    PtnObject *target,
+    PtnReachabilitySeen *seen,
+    size_t depth
+) {
+    if (target == NULL || seen == NULL || depth > 1024) {
+        return 0;
+    }
+    for (PtnTraceFrame *cursor = frame; cursor != NULL; cursor = cursor->previous) {
+        if (!ptn_reachability_seen_add(
+                seen,
+                PTN_REACHABILITY_TRACE_FRAME,
+                cursor
+            )) {
+            break;
+        }
+        if (
+            (cursor->has_receiver &&
+             ptn_value_reaches_object_in_graph(
+                 cursor->receiver,
+                 target,
+                 seen,
+                 depth + 1
+             )) ||
+            ptn_runtime_frame_reaches_object_in_graph(
+                cursor->runtime,
+                target,
+                seen,
+                depth + 1
+            )
+        ) {
+            return 1;
+        }
+        if (cursor->args == NULL) {
+            continue;
+        }
+        for (size_t i = 0; i < cursor->argc; i++) {
+            if (ptn_value_reaches_object_in_graph(
+                    cursor->args[i],
+                    target,
+                    seen,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int ptn_trace_frame_runtimes_reach_object(
+    PtnTraceFrame *frame,
+    PtnObject *target,
+    size_t depth
+) {
+    PtnReachabilitySeen seen = {0};
+    int reached = ptn_trace_frame_runtimes_reach_object_in_graph(
+        frame,
+        target,
+        &seen,
+        depth
+    );
+    free(seen.items);
+    return reached;
+}
+
+static int ptn_runtime_suspended_fibers_reach_object(
+    PtnRuntime *runtime,
+    PtnObject *target
+) {
+    if (runtime == NULL || target == NULL) {
+        return 0;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *fiber = root->live_objects[i];
+        if (
+            fiber == NULL ||
+            fiber->native_data == NULL ||
+            !ptn_ascii_case_equal(fiber->class_name, "Fiber")
+        ) {
+            continue;
+        }
+        PtnFiberData *data = (PtnFiberData *)fiber->native_data;
+        if (
+            (!data->resume_credit && !data->close_requested) ||
+            data->completed ||
+            data->fatal_error
+        ) {
+            continue;
+        }
+        /*
+         * This supplemental reachability is only for values held by a paused
+         * execution frame.  Do not recurse through the Fiber callback here:
+         * a self-capturing Fiber would otherwise walk its own cycle while
+         * close-unwind cleanup is running on the Fiber stack.
+         */
+#if !defined(_WIN32)
+        if (ptn_trace_frame_runtimes_reach_object(data->suspended_trace_frame, target, 0)) {
+            return 1;
+        }
+#endif
     }
     return 0;
 }
@@ -1919,6 +2757,22 @@ static int ptn_symbol_table_reaches_object(PtnSymbolTable *symbols, PtnObject *t
 static int ptn_runtime_roots_reach_object(PtnRuntime *root, PtnObject *target) {
     if (root == NULL || target == NULL) {
         return 0;
+    }
+    if (ptn_exception_state_reaches_object(root->exceptions, target, 0)) {
+        return 1;
+    }
+    if (
+        root->gc_destructor_fiber != NULL &&
+        ptn_value_reaches_object(ptn_value_borrow(ptn_object(root->gc_destructor_fiber)), target, 0)
+    ) {
+        return 1;
+    }
+    for (PtnCleanupRoot *cleanup = root->active_cleanup_roots;
+         cleanup != NULL;
+         cleanup = cleanup->next) {
+        if (ptn_value_reaches_object(cleanup->value, target, 0)) {
+            return 1;
+        }
     }
     if (ptn_symbol_table_reaches_object(&root->symbols, target)) {
         return 1;
@@ -1939,7 +2793,8 @@ static int ptn_runtime_roots_reach_object(PtnRuntime *root, PtnObject *target) {
     PtnSymbolTable *static_properties = root->static_properties == NULL
         ? &root->owned_static_properties
         : root->static_properties;
-    return ptn_symbol_table_reaches_object(static_properties, target);
+    return ptn_symbol_table_reaches_object(static_properties, target) ||
+        ptn_runtime_suspended_fibers_reach_object(root, target);
 }
 
 static void ptn_runtime_run_object_destructors_matching(
@@ -1985,13 +2840,55 @@ static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwin
     ptn_runtime_run_object_destructors_matching(runtime, 1, 0);
 }
 
-static PTN_UNUSED void ptn_runtime_close_suspended_fibers(PtnRuntime *runtime) {
+static int ptn_runtime_shutdown_drain_should_stop(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
     if (runtime == NULL) {
-        return;
+        return 1;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    if (root->live_objects_len == 0) {
-        return;
+    return root->fatal_error_shutdown ||
+        (
+            root->exceptions != NULL &&
+            root->exceptions->active_exception != NULL &&
+            root->exceptions->active_exception != entry_exception
+        );
+}
+
+static int ptn_runtime_fiber_needs_shutdown_close(PtnObject *object) {
+#if !defined(_WIN32)
+    if (
+        object == NULL ||
+        object->refcount == 0 ||
+        object->native_data == NULL ||
+        object->class_name == NULL ||
+        !ptn_ascii_case_equal(object->class_name, "Fiber")
+    ) {
+        return 0;
+    }
+    PtnFiberData *data = (PtnFiberData *)object->native_data;
+    return data->context_initialized &&
+        !data->context_finished &&
+        data->resume_credit &&
+        data->context_runtime != NULL;
+#else
+    (void)object;
+    return 0;
+#endif
+}
+
+static PTN_UNUSED size_t ptn_runtime_close_suspended_fibers_once(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
+    if (runtime == NULL) {
+        return 0;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (ptn_runtime_shutdown_drain_should_stop(root, entry_exception) ||
+        root->live_objects_len == 0) {
+        return 0;
     }
 
     size_t len = root->live_objects_len;
@@ -2009,11 +2906,21 @@ static PTN_UNUSED void ptn_runtime_close_suspended_fibers(PtnRuntime *runtime) {
         objects[object_count++] = object;
     }
 
+    size_t closed = 0;
     for (size_t i = 0; i < object_count; i++) {
-        ptn_runtime_close_suspended_fiber_object(objects[i]);
-        ptn_object_release(objects[i]);
+        PtnObject *object = objects[i];
+        int was_suspended = !ptn_runtime_shutdown_drain_should_stop(root, entry_exception) &&
+            ptn_runtime_fiber_needs_shutdown_close(object);
+        if (was_suspended) {
+            ptn_runtime_close_suspended_fiber_object(object);
+            if (!ptn_runtime_fiber_needs_shutdown_close(object)) {
+                closed++;
+            }
+        }
+        ptn_object_release(object);
     }
     free(objects);
+    return closed;
 }
 
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime) {
@@ -2043,13 +2950,33 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
     }
 }
 
-static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runtime) {
+static int ptn_runtime_live_generator_needs_shutdown_close(PtnObject *object) {
+    if (
+        object == NULL ||
+        object->refcount == 0 ||
+        !ptn_object_is_generator(object) ||
+        object->native_data == NULL
+    ) {
+        return 0;
+    }
+    PtnGenerator *generator = (PtnGenerator *)object->native_data;
+    return generator->values != NULL &&
+        generator->started &&
+        !generator->force_closing &&
+        generator->position < generator->values->len;
+}
+
+static PTN_UNUSED size_t ptn_runtime_force_close_live_generators_once(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
     if (runtime == NULL) {
-        return;
+        return 0;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    if (root->live_objects_len == 0) {
-        return;
+    if (ptn_runtime_shutdown_drain_should_stop(root, entry_exception) ||
+        root->live_objects_len == 0) {
+        return 0;
     }
 
     size_t len = root->live_objects_len;
@@ -2067,17 +2994,24 @@ static PTN_UNUSED void ptn_runtime_force_close_live_generators(PtnRuntime *runti
         generators[generator_count++] = object;
     }
 
+    size_t closed = 0;
     for (size_t i = 0; i < generator_count; i++) {
         PtnObject *object = generators[i];
-        if (object->refcount != 0 && object->native_data != NULL) {
+        int was_suspended = !ptn_runtime_shutdown_drain_should_stop(root, entry_exception) &&
+            ptn_runtime_live_generator_needs_shutdown_close(object);
+        if (was_suspended) {
             PtnRuntime *owner = object->lifecycle_runtime == NULL
                 ? root
                 : object->lifecycle_runtime;
             ptn_generator_force_close(owner, (PtnGenerator *)object->native_data);
+            if (!ptn_runtime_live_generator_needs_shutdown_close(object)) {
+                closed++;
+            }
         }
         ptn_object_release(object);
     }
     free(generators);
+    return closed;
 }
 
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
@@ -2454,6 +3388,29 @@ static PTN_UNUSED void ptn_runtime_force_close_root_generators(PtnRuntime *runti
     ptn_shutdown_destructor_scan_free(&scan);
 }
 
+static PTN_UNUSED void ptn_runtime_drain_suspended_fibers_and_generators(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
+    while (!ptn_runtime_shutdown_drain_should_stop(runtime, entry_exception)) {
+        size_t fibers_closed = ptn_runtime_close_suspended_fibers_once(
+            runtime,
+            entry_exception
+        );
+        if (ptn_runtime_shutdown_drain_should_stop(runtime, entry_exception)) {
+            return;
+        }
+        size_t generators_closed = ptn_runtime_force_close_live_generators_once(
+            runtime,
+            entry_exception
+        );
+        if (ptn_runtime_shutdown_drain_should_stop(runtime, entry_exception) ||
+            (fibers_closed == 0 && generators_closed == 0)) {
+            return;
+        }
+    }
+}
+
 static size_t ptn_runtime_run_static_property_value_destructors_impl(
     PtnValue value,
     size_t depth,
@@ -2637,6 +3594,8 @@ static PTN_UNUSED PtnValue ptn_object_new_shell_at(
         : runtime->lifecycle_root;
     PtnValue properties = ptn_array_from_literal_entries(0, NULL);
     object->refcount = 1;
+    object->cleanup_root.value = ptn_null();
+    object->cleanup_root.next = NULL;
     object->debug_hidden_refcount = 0;
     object->object_id = ptn_runtime_alloc_object_id(root);
     object->gc_mark_epoch = 0;
@@ -3827,8 +4786,9 @@ static PTN_UNUSED const char *ptn_lazy_object_initializer_type_name(PtnValue val
     return "unknown";
 }
 
-static void ptn_lazy_object_prepare_type_error(
+static void ptn_lazy_object_prepare_exception(
     PtnRuntime *runtime,
+    const char *class_name,
     const char *message,
     size_t line
 ) {
@@ -3838,7 +4798,7 @@ static void ptn_lazy_object_prepare_type_error(
     PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
     PtnException *exception = ptn_exception_new_owned(
         runtime,
-        "TypeError",
+        class_name,
         ptn_duplicate_string(message),
         strlen(message),
         0,
@@ -3849,6 +4809,26 @@ static void ptn_lazy_object_prepare_type_error(
     );
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = exception;
+}
+
+static void ptn_lazy_object_prepare_type_error(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t line
+) {
+    ptn_lazy_object_prepare_exception(runtime, "TypeError", message, line);
+}
+
+static void ptn_lazy_object_prepare_released_during_initialization(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_lazy_object_prepare_exception(
+        runtime,
+        "Error",
+        "Lazy object was released during initialization",
+        line
+    );
 }
 
 static void ptn_lazy_object_throw_released_during_initialization(
@@ -3997,8 +4977,9 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_value_destroy(&result);
             if (object_released) {
                 ptn_lazy_object_prepare_type_error(runtime, message, line);
+                ptn_lazy_object_prepare_released_during_initialization(runtime, line);
                 ptn_object_release(object);
-                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                ptn_rethrow_exception(runtime);
                 return 0;
             }
             ptn_object_release(object);
@@ -4015,8 +4996,9 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                     "Lazy proxy factory must return a non-lazy object",
                     line
                 );
+                ptn_lazy_object_prepare_released_during_initialization(runtime, line);
                 ptn_object_release(object);
-                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                ptn_rethrow_exception(runtime);
                 return 0;
             }
             ptn_object_release(object);
@@ -4046,8 +5028,9 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_value_destroy(&result);
             if (object_released) {
                 ptn_lazy_object_prepare_type_error(runtime, message, line);
+                ptn_lazy_object_prepare_released_during_initialization(runtime, line);
                 ptn_object_release(object);
-                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                ptn_rethrow_exception(runtime);
                 return 0;
             }
             ptn_object_release(object);
@@ -4082,8 +5065,9 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
                     "Lazy object initializer must return NULL or no value",
                     line
                 );
+                ptn_lazy_object_prepare_released_during_initialization(runtime, line);
                 ptn_object_release(object);
-                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                ptn_rethrow_exception(runtime);
                 return 0;
             }
             ptn_object_release(object);
@@ -4383,6 +5367,8 @@ static PtnArray *ptn_array_clone_with_mode(PtnArray *source, int unwrap_entry_re
     ptn_cow_debug_note_array_clone();
     array->refcount = 1;
     array->destructing = 0;
+    array->cleanup_root.value = ptn_null();
+    array->cleanup_root.next = NULL;
     array->gc_mark_epoch = 0;
     array->lifecycle_runtime = NULL;
     array->live_index = 0;
@@ -4506,15 +5492,144 @@ static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnG
     if (root->gc_running) {
         return 0;
     }
-    return root->current_fiber != NULL ||
+    PtnRuntime *active_executor = root->active_fiber_executor_runtime;
+    PtnObject *active_fiber = active_executor == NULL
+        ? root->current_fiber
+        : active_executor->current_fiber;
+    return active_fiber != NULL ||
         (root->gc_enabled && ptn_generator_has_generator_delegate_source(generator));
 }
 
-static PTN_UNUSED void ptn_object_release(PtnObject *object) {
+typedef struct {
+    size_t phase;
+    PtnException *pending_exception;
+    PtnRuntime *root;
+    PtnCleanupRoot pending_exception_root;
+} PtnReleaseState;
+
+static PtnReleaseState *ptn_release_state_new(PtnRuntime *runtime) {
+    PtnReleaseState *state = malloc(sizeof(PtnReleaseState));
+    if (state == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    state->phase = 0;
+    state->pending_exception = NULL;
+    state->root = ptn_runtime_root(runtime);
+    state->pending_exception_root.value = ptn_null();
+    state->pending_exception_root.next = NULL;
+    ptn_runtime_link_cleanup_root(
+        state->root,
+        &state->pending_exception_root,
+        ptn_null()
+    );
+    return state;
+}
+
+static void ptn_release_state_discard(PtnReleaseState *state) {
+    if (state == NULL) {
+        return;
+    }
+    ptn_runtime_unlink_cleanup_root(
+        state->root,
+        &state->pending_exception_root
+    );
+    if (state->pending_exception != NULL) {
+        ptn_exception_free(state->pending_exception);
+    }
+    free(state);
+}
+
+static void ptn_release_state_remember_exception(
+    PtnRuntime *runtime,
+    PtnReleaseState *state
+) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL ||
+        state == NULL
+    ) {
+        return;
+    }
+    PtnException *current = runtime->exceptions->active_exception;
+    runtime->exceptions->active_exception = NULL;
+    PtnException *previous_pending = state->pending_exception;
+    state->pending_exception = current;
+    state->pending_exception_root.value = ptn_exception_borrow(current);
+    state->pending_exception_root.value.owned = 0;
+    if (previous_pending != NULL) {
+        ptn_exception_chain_previous_at_tail(current, previous_pending);
+        ptn_exception_free(previous_pending);
+    }
+}
+
+static void ptn_release_state_remember_new_active_exception(
+    PtnRuntime *runtime,
+    PtnReleaseState *state,
+    PtnException *active_before
+) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL ||
+        runtime->exceptions->active_exception == active_before
+    ) {
+        return;
+    }
+    ptn_release_state_remember_exception(runtime, state);
+}
+
+static void ptn_release_state_finish(
+    PtnRuntime *runtime,
+    PtnReleaseState *state
+) {
+    if (state == NULL) {
+        return;
+    }
+    PtnException *pending_exception = state->pending_exception;
+    state->pending_exception = NULL;
+    ptn_runtime_unlink_cleanup_root(
+        state->root,
+        &state->pending_exception_root
+    );
+    free(state);
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        if (pending_exception != NULL) {
+            ptn_exception_free(pending_exception);
+        }
+        return;
+    }
+    if (pending_exception != NULL) {
+        if (runtime->exceptions->active_exception == NULL) {
+            runtime->exceptions->active_exception = pending_exception;
+        } else {
+            ptn_exception_chain_previous_at_tail(
+                runtime->exceptions->active_exception,
+                pending_exception
+            );
+            ptn_exception_free(pending_exception);
+        }
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        runtime->exceptions->active_exception != NULL &&
+        !(
+            runtime->exceptions->try_frame == NULL &&
+            root != NULL &&
+            root->defer_uncaught_exception_emit
+        )
+    ) {
+        ptn_rethrow_exception(runtime);
+    }
+}
+
+static PTN_UNUSED void ptn_object_release_in_runtime(
+    PtnRuntime *execution_runtime,
+    PtnObject *object
+) {
     if (object == NULL) {
         return;
     }
-    PtnRuntime *lifecycle_runtime = object->lifecycle_runtime;
     if (object->refcount == 0) {
         return;
     }
@@ -4526,28 +5641,171 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         return;
     }
     object->refcount = 1;
-    ptn_object_run_destructor(object);
+    PtnRuntime *release_runtime = ptn_effective_value_release_runtime(
+        execution_runtime,
+        object->lifecycle_runtime,
+        NULL
+    );
+    PtnRuntime *root = ptn_runtime_root(release_runtime);
+    PtnValue cleanup_value = ptn_null();
+    cleanup_value.type = PTN_OBJECT;
+    cleanup_value.as.object = object;
+    ptn_runtime_link_cleanup_root(root, &object->cleanup_root, cleanup_value);
+    PtnReleaseState *state = ptn_release_state_new(release_runtime);
+    PtnTryFrame release_frame;
+    int frame_active = release_runtime != NULL && release_runtime->exceptions != NULL;
+    if (frame_active) {
+        ptn_try_frame_push(release_runtime, &release_frame);
+        if (setjmp(release_frame.jump) != 0) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+    }
+    if (state->phase == 0) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 1;
+        ptn_object_run_destructor_ex_in_runtime(release_runtime, object, 0);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
     if (object->refcount > 1) {
         object->refcount--;
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &release_frame);
+        }
+        ptn_runtime_unlink_cleanup_root(root, &object->cleanup_root);
+        ptn_release_state_finish(release_runtime, state);
         return;
     }
-    if (ptn_object_is_generator(object)) {
+    if (state->phase == 1) {
+        state->phase = 2;
+    }
+    if (state->phase == 2 && ptn_object_is_generator(object)) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 3;
         PtnGenerator *generator = (PtnGenerator *)object->native_data;
-        if (ptn_generator_should_defer_zero_ref_release(object->lifecycle_runtime, generator)) {
+        if (ptn_generator_should_defer_zero_ref_release(release_runtime, generator)) {
+            if (frame_active) {
+                ptn_try_frame_pop(release_runtime, &release_frame);
+            }
+            ptn_runtime_unlink_cleanup_root(root, &object->cleanup_root);
+            ptn_release_state_finish(release_runtime, state);
             return;
         }
-        ptn_generator_force_close(object->lifecycle_runtime, generator);
+        ptn_generator_force_close(release_runtime, generator);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
     }
-    object->refcount = 0;
-    ptn_runtime_unregister_object(object->lifecycle_runtime, object);
-    ptn_runtime_prune_weak_maps_for_released_object(object->lifecycle_runtime);
-    if (object->native_data_free != NULL) {
-        object->native_data_free(object->native_data);
+    if (state->phase < 3) {
+        state->phase = 3;
     }
-    ptn_object_forget_property_reference_sources(object);
-    ptn_value_destroy(&object->lazy_initializer);
-    ptn_value_destroy(&object->lazy_proxy_instance);
-    ptn_value_destroy(&object->exception_trace);
+    if (state->phase == 3) {
+        object->refcount = 0;
+        ptn_runtime_unregister_object(object->lifecycle_runtime, object);
+        ptn_object_forget_property_reference_sources(object);
+        state->phase = 4;
+    }
+    if (state->phase == 4) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        ptn_runtime_prune_weak_maps_for_released_object(release_runtime);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+        state->phase = 5;
+    }
+    if (state->phase == 5) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnObjectNativeDataFree native_data_free = object->native_data_free;
+        void *native_data = object->native_data;
+        if (native_data_free != NULL) {
+            native_data_free(native_data);
+        }
+        object->native_data_free = NULL;
+        object->native_data = NULL;
+        state->phase = 6;
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (state->phase == 6) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 7;
+        ptn_value_drop_in_runtime(release_runtime, &object->lazy_initializer);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (state->phase == 7) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 8;
+        ptn_value_drop_in_runtime(release_runtime, &object->lazy_proxy_instance);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (state->phase == 8) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 9;
+        ptn_value_drop_in_runtime(release_runtime, &object->exception_trace);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (state->phase == 9) {
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        state->phase = 10;
+        PtnArray *properties = object->properties;
+        object->properties = NULL;
+        ptn_array_free_in_runtime(release_runtime, properties);
+        ptn_release_state_remember_new_active_exception(
+            release_runtime,
+            state,
+            active_before
+        );
+    }
+    if (frame_active) {
+        ptn_try_frame_pop(release_runtime, &release_frame);
+    }
+    ptn_runtime_unlink_cleanup_root(root, &object->cleanup_root);
     free(object->cleanup_trace_function_name);
     free(object->cleanup_trace_source_file);
     free(object->class_name);
@@ -4556,7 +5814,6 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         object->property_metadata,
         object->property_metadata_len
     );
-    ptn_array_free(object->properties);
     if (object->defer_object_id_release_once) {
         ptn_runtime_release_object_id_after_next_allocation(
             object->lifecycle_runtime,
@@ -4566,14 +5823,11 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
     }
     free(object);
-    if (
-        lifecycle_runtime != NULL &&
-        lifecycle_runtime->exceptions != NULL &&
-        lifecycle_runtime->exceptions->active_exception != NULL &&
-        lifecycle_runtime->exceptions->try_frame != NULL
-    ) {
-        longjmp(lifecycle_runtime->exceptions->try_frame->jump, 1);
-    }
+    ptn_release_state_finish(release_runtime, state);
+}
+
+static PTN_UNUSED void ptn_object_release(PtnObject *object) {
+    ptn_object_release_in_runtime(NULL, object);
 }
 
 static PTN_UNUSED void ptn_array_debug_hide_ref(PtnArray *array) {

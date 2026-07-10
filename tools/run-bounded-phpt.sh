@@ -383,8 +383,8 @@ for bucket in "${bucket_order[@]}"; do
         TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
         TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
         php "$php_src/run-tests.php" "${run_tests_args[@]}" "${tests[@]}"
-    ) 2>&1 | tee "$log"
-    run_status=${PIPESTATUS[0]}
+    ) > "$log" 2>&1
+    run_status=$?
     set -e
 
     bucket_end=$(date +%s)
@@ -423,3 +423,11 @@ elapsed=$((end_epoch - start_epoch))
     echo "result: buckets=${#bucket_order[@]} selected=$selected_rows runnable=$runnable_rows excluded=$excluded_rows tests=$aggregate_total passed=$aggregate_passed failed=$aggregate_failed skipped=$aggregate_skipped warned=$aggregate_warned elapsed=${elapsed}s"
     echo "run-tests-exit: $aggregate_run_status"
 } | tee -a "$summary"
+
+if [[ "$aggregate_run_status" -ne 0 ]]; then
+    exit "$aggregate_run_status"
+fi
+
+if [[ "$aggregate_failed" -ne 0 ]]; then
+    exit 1
+fi

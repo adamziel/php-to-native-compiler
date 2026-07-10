@@ -1,8 +1,9 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, CompileWarningKind,
@@ -5941,13 +5942,13 @@ fn parser_inlines_literal_eval_assignments() {
 }
 
 #[test]
-fn parser_reports_literal_eval_parse_errors() {
-    let error = parser::parse("<?php eval('<<<\\'end\\'\n  ');").unwrap_err();
-    assert_eq!(error.kind, DiagnosticKind::ParseError);
-    assert_eq!(
-        error.message,
-        "syntax error, unexpected end of file, expecting variable or heredoc end or \"${\" or \"{$\""
-    );
+fn parser_defers_unterminated_nowdoc_eval_to_runtime() {
+    let program = parser::parse("<?php eval('<<<\\'end\\'\n  ');").unwrap();
+    let Statement::Call { name, arguments, .. } = &program.statements[0] else {
+        panic!("expected eval call");
+    };
+    assert_eq!(name, "eval");
+    assert!(matches!(&arguments[0], Expr::String(value, _) if value == "<<<'end'\n  "));
 }
 
 #[test]
@@ -14963,6 +14964,29 @@ fn parser_rejects_missing_abstract_property_hook_implementations() {
 }
 
 #[test]
+fn parser_defers_invalid_parent_property_hook_calls_in_anonymous_classes() {
+    let program = parser::parse(
+        "<?php
+$unused = new class {
+    public $prop1 { get; set; }
+    public $prop2 { get { return parent::$prop1::get(); } }
+};",
+    )
+    .unwrap();
+
+    let anonymous = program
+        .classes
+        .iter()
+        .find(|class| class.is_anonymous)
+        .unwrap();
+    assert_eq!(anonymous.declaration_fatals.len(), 1);
+    assert_eq!(
+        anonymous.declaration_fatals[0].message,
+        "Must not use parent::$prop1::get() in a different property ($prop2)"
+    );
+}
+
+#[test]
 fn parser_rejects_final_promoted_property_override() {
     let error = parser::parse(
         "<?php
@@ -16643,6 +16667,7 @@ fn parser_tracks_constructor_final_and_abstract_prototype_contracts() {
 abstract class A {
     abstract function __construct(X $x);
 }
+
 class B extends A {
     function __construct(X $x) {}
 }
@@ -16699,6 +16724,68 @@ class B extends A {
             && warning.message
                 == "Private methods cannot be final as they are never overridden by other classes"
     }));
+}
+
+#[test]
+fn parser_uses_concrete_constructor_interface_prototype_for_descendants() {
+    parser::parse(
+        "<?php
+interface A {
+    public function __construct(int|float $param);
+}
+interface B {
+    public function __construct(int $param);
+}
+class X implements A, B {
+    public function __construct(int|float $param) {}
+}
+class Y extends X {
+    public function __construct(int $param) {}
+}",
+    )
+    .unwrap();
+
+    let error = parser::parse(
+        "<?php
+interface A {
+    public function __construct(int|float $param);
+}
+class X implements A {
+    public function __construct(int|float $param) {}
+}
+class Y extends X {
+    public function __construct(int $param) {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Y::__construct(int $param) must be compatible with A::__construct(int|float $param)"
+    );
+
+    let error = parser::parse(
+        "<?php
+interface A {
+    public function __construct(int|float $param);
+}
+interface B {
+    public function __construct(int $param);
+}
+interface C {
+    public function __construct(float $param);
+}
+class X implements A, B {
+    public function __construct(int|float $param) {}
+}
+class Y extends X implements C {
+    public function __construct(float $param) {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Y::__construct(float $param) must be compatible with B::__construct(int $param)"
+    );
 }
 
 #[test]
@@ -18189,6 +18276,58 @@ var_dump(error_log(\"with both\", 1, \"default@example.test\", $headers));
         "bool(false)\nbool(true)\nbool(false)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn phpc_error_log_ini_appends_timestamped_file_with_configured_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_dir("ptn-phpc-error-log-file");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-log-file.php");
+    let log = root.join("error.log");
+    fs::write(
+        &input,
+        "<?php error_log('first entry'); error_log('second entry');",
+    )
+    .unwrap();
+
+    let configured = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&root)
+        .arg("-d")
+        .arg(format!("error_log={}", log.display()))
+        .arg("-d")
+        .arg("error_log_mode=0600")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(configured.status.success());
+    assert_eq!(String::from_utf8(configured.stdout).unwrap(), "");
+    assert_eq!(String::from_utf8(configured.stderr).unwrap(), "");
+    assert_eq!(fs::metadata(&log).unwrap().permissions().mode() & 0o777, 0o600);
+
+    let contents = fs::read_to_string(&log).unwrap();
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2, "{contents}");
+    for (line, message) in lines.iter().zip(["first entry", "second entry"]) {
+        assert!(line.starts_with('['), "{line}");
+        assert!(line.ends_with(&format!("] {message}")), "{line}");
+    }
+
+    let fallback = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&root)
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(fallback.status.success());
+    assert_eq!(String::from_utf8(fallback.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(fallback.stderr).unwrap(),
+        "first entry\nsecond entry\n"
+    );
 }
 
 #[test]
@@ -27465,6 +27604,571 @@ EOC
 }
 
 #[test]
+fn compile_eval_unary_bitwise_not_rejects_unsupported_types_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-unary-bitwise-not");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-unary-bitwise-not.php");
+    let output = root.join("eval-unary-bitwise-not-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach (["[]", "new stdClass", "STDOUT", '"foo"'] as $value) {
+    try {
+        eval("return ~$value;");
+        echo "ok\n";
+    } catch (TypeError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot perform bitwise not on array\n",
+            "Cannot perform bitwise not on stdClass\n",
+            "Cannot perform bitwise not on resource\n",
+            "ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_binary_operators_and_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-binary-operators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-binary-operators.php");
+    let output = root.join("eval-binary-operators-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo eval("return 6 * 7;"), "\n";
+echo eval("return 2 ** 3 ** 2;"), "\n";
+echo eval("return 3 << 2;"), "\n";
+echo eval("return 10 >> 1;"), "\n";
+echo eval("return 6 & 3;"), "\n";
+echo eval("return 6 ^ 3;"), "\n";
+echo eval("return 6 | 3;"), "\n";
+var_dump(eval("return true || false xor true;"));
+$x = false;
+var_dump(eval('return $x = true xor false;'));
+var_dump($x);
+$x = 3;
+eval('$x *= 4;');
+echo $x, "\n";
+eval('$x **= 2;');
+echo $x, "\n";
+eval('$x >>= 4;');
+echo $x, "\n";
+eval('$x &= 7;');
+echo $x, "\n";
+eval('$x ^= 3;');
+echo $x, "\n";
+try {
+    eval("return [] * new stdClass;");
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+foreach (["%", "<<", ">>", "&", "|", "^"] as $operator) {
+    try {
+        eval("return STDOUT $operator 2;");
+    } catch (TypeError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+$value = [];
+eval('$value .= [];');
+echo $value, "\n";
+try {
+    eval("return 1 ?? 2;");
+} catch (ParseError $exception) {
+    echo "parse error\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "42\n",
+            "512\n",
+            "12\n",
+            "5\n",
+            "2\n",
+            "5\n",
+            "7\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "12\n",
+            "144\n",
+            "9\n",
+            "1\n",
+            "2\n",
+            "Unsupported operand types: stdClass * array\n",
+            "Unsupported operand types: resource % int\n",
+            "Unsupported operand types: resource << int\n",
+            "Unsupported operand types: resource >> int\n",
+            "Unsupported operand types: resource & int\n",
+            "Unsupported operand types: resource | int\n",
+            "Unsupported operand types: resource ^ int\n",
+            "Warning: Array to string conversion\n",
+            "Warning: Array to string conversion\n",
+            "ArrayArray\n",
+            "parse error\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_function_local_dynamic_eval_preserves_concat_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-local-concat-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-local-concat-diagnostics.php");
+    let output = root.join("eval-local-concat-diagnostics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+
+function literal_eval_concat() {
+    $value = [];
+    eval('$value .= [];');
+    echo $value, "\n";
+}
+
+function variable_eval_concat() {
+    $value = [];
+    $code = '$value .= [];';
+    eval($code);
+    echo $value, "\n";
+}
+
+literal_eval_concat();
+variable_eval_concat();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: Array to string conversion\n",
+            "Warning: Array to string conversion\n",
+            "ArrayArray\n",
+            "Warning: Array to string conversion\n",
+            "Warning: Array to string conversion\n",
+            "ArrayArray\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_operator_diagnostics_distinguish_binary_and_compound_eval_to_native_binary() {
+    let root = temp_dir("ptn-native-operator-diagnostic-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("operator-diagnostic-context.php");
+    let output = root.join("operator-diagnostic-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+
+function eval_binary($op, $left, $right) {
+    try {
+        eval("return $left $op $right;");
+    } catch (Throwable $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+function eval_assign($op, $left, $right) {
+    $value = eval("return $left;");
+    try {
+        eval("\$value $op= $right;");
+    } catch (Throwable $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+eval_binary('*', '"123foo"', 'new stdClass');
+eval_binary('*', '"123foo"', '[]');
+eval_binary('*', '[]', 'new stdClass');
+eval_binary('&', '3.5', 'new stdClass');
+eval_binary('&', '3.5', '[]');
+eval_binary('|', 'true', 'STDOUT');
+eval_binary('^', 'null', 'new stdClass');
+
+eval_assign('*', '"123foo"', 'new stdClass');
+eval_assign('*', '[]', 'new stdClass');
+eval_assign('&', '3.5', 'new stdClass');
+eval_assign('|', 'true', 'STDOUT');
+eval_assign('^', 'null', 'new stdClass');
+
+$value = '123foo';
+try {
+    $value *= new stdClass;
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Unsupported operand types: stdClass * string\n",
+            "Warning: A non-numeric value encountered\n",
+            "Unsupported operand types: string * array\n",
+            "Unsupported operand types: stdClass * array\n",
+            "Unsupported operand types: stdClass & float\n",
+            "Warning: Implicit conversion from float 3.5 to int loses precision\n",
+            "Unsupported operand types: float & array\n",
+            "Unsupported operand types: resource | bool\n",
+            "Unsupported operand types: stdClass ^ null\n",
+            "Warning: A non-numeric value encountered\n",
+            "Unsupported operand types: string * stdClass\n",
+            "Unsupported operand types: array * stdClass\n",
+            "Warning: Implicit conversion from float 3.5 to int loses precision\n",
+            "Unsupported operand types: float & stdClass\n",
+            "Unsupported operand types: bool | resource\n",
+            "Unsupported operand types: null ^ stdClass\n",
+            "Warning: A non-numeric value encountered\n",
+            "Unsupported operand types: string * stdClass\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_concat_emits_array_warning_before_object_conversion_error_to_native_binary() {
+    let root = temp_dir("ptn-native-concat-array-warning-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concat-array-warning-order.php");
+    let output = root.join("concat-array-warning-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+
+function dynamic_concat($left, $right) {
+    try {
+        eval("return $left . $right;");
+    } catch (Throwable $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+function dynamic_concat_assign($left, $right) {
+    $value = eval("return $left;");
+    try {
+        $code = "\$value .= $right;";
+        eval($code);
+    } catch (Throwable $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+dynamic_concat('new stdClass', '[]');
+dynamic_concat_assign('new stdClass', '[]');
+dynamic_concat_assign('[]', 'new stdClass');
+
+try {
+    $value = new stdClass . [];
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    $value = [] . new stdClass;
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    $value = new stdClass . [] . [];
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$value = new stdClass;
+try {
+    $value .= [];
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$value = [];
+try {
+    $value .= new stdClass;
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Warning: Array to string conversion\n",
+            "Object of class stdClass could not be converted to string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_catches_type_error_inside_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-function-catch-in-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-catch-in-foreach.php");
+    let output = root.join("function-catch-in-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function catch_type_error() {
+    try {
+        $left = [];
+        $right = new stdClass;
+        $unused = $left + $right;
+    } catch (Throwable $exception) {
+        echo "caught\n";
+    }
+}
+
+foreach ([1, 2, 3] as $ignored) {
+    catch_type_error();
+}
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        execution.status.success(),
+        "status:{}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        execution.status
+    );
+    assert_eq!(
+        stdout,
+        "caught\ncaught\ncaught\nafter\n"
+    );
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn compile_user_function_caught_type_error_clears_temporary_roots_to_native_binary() {
+    let root = temp_dir("ptn-native-function-catch-temporary-roots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-catch-temporary-roots.php");
+    let output = root.join("function-catch-temporary-roots-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function catch_type_error() {
+    try {
+        $left = [];
+        $right = new stdClass;
+        $unused = $left + $right;
+    } catch (Throwable $exception) {
+        echo "caught\n";
+    }
+}
+
+catch_type_error();
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success(), "status:{}", execution.status);
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "caught\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_integer_operator_diagnostics_are_left_to_right_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-integer-operator-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-integer-operator-diagnostics.php");
+    let output = root.join("eval-integer-operator-diagnostics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+foreach ([
+    "3.5 % []",
+    '"123foo" << STDOUT',
+    "3.5 & STDOUT",
+    "[] * new stdClass",
+    "[] & new stdClass",
+    'new stdClass * "123foo"',
+] as $expression) {
+    try {
+        eval("return $expression;");
+    } catch (TypeError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: Implicit conversion from float 3.5 to int loses precision\n",
+            "Unsupported operand types: float % array\n",
+            "Warning: A non-numeric value encountered\n",
+            "Unsupported operand types: string << resource\n",
+            "Warning: Implicit conversion from float 3.5 to int loses precision\n",
+            "Unsupported operand types: float & resource\n",
+            "Unsupported operand types: stdClass * array\n",
+            "Unsupported operand types: stdClass & array\n",
+            "Unsupported operand types: stdClass * string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_variable_code_in_function_preserves_concat_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-variable-code-concat-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-variable-code-concat-diagnostics.php");
+    let output = root.join("eval-variable-code-concat-diagnostics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "Warning: $message\n";
+});
+function append_array_from_eval_variable() {
+    $value = [];
+    $code = '$value .= [];';
+    eval($code);
+    echo $value, "\n";
+}
+append_array_from_eval_variable();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: Array to string conversion\n",
+            "Warning: Array to string conversion\n",
+            "ArrayArray\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_unterminated_nowdoc_reports_heredoc_eof_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-unterminated-nowdoc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-unterminated-nowdoc.php");
+    let output = root.join("eval-unterminated-nowdoc-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval('<<<\'end\'
+  ');
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Parse error: syntax error, unexpected end of file, expecting variable or heredoc end or \"${\" or \"{$\" in "
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("eval-unterminated-nowdoc.php(2) : eval()'d code on line 1"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();
@@ -28790,6 +29494,226 @@ print "F\n";
 }
 
 #[test]
+fn compile_generator_yield_from_suspends_and_resumes_inside_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-suspend-resume-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-suspend-resume-fiber.php");
+    let output = root.join("generator-yield-from-suspend-resume-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$gen = (function() {
+    yield from (function() {
+        print "Before suspend\n";
+        Fiber::suspend();
+        print "After suspend\n";
+        yield;
+    })();
+    yield from (function() {
+        print "Before exit\n";
+        exit;
+        yield;
+    })();
+    yield;
+})();
+
+$fiber = new Fiber(function() use ($gen) {
+    $gen->current();
+    print "Fiber return\n";
+});
+
+$fiber->start();
+$fiber->resume();
+$gen->next();
+$gen->current();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Before suspend\nAfter suspend\nFiber return\nBefore exit\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_yield_from"));
+    assert!(c_source.contains("ptn_generator_defer_active_fiber_exit"));
+    assert!(c_source.contains("Fiber::suspend"));
+}
+
+#[test]
+fn compile_generator_delegated_yield_defers_fiber_suspend_until_next_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-delegated-yield-fiber-suspend-next");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-delegated-yield-fiber-suspend-next.php");
+    let output = root.join("generator-delegated-yield-fiber-suspend-next-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$gen = (function() {
+    print "Before yield\n";
+    $from = (function() {
+        print "Before yield 2\n";
+        yield;
+        print "Before suspend\n";
+        Fiber::suspend();
+        print "Not executed\n";
+        yield;
+    })();
+    try {
+        yield from $from;
+    } finally {
+        $from->next();
+    }
+})();
+
+$fiber = new Fiber(function() use ($gen) {
+    print "Before current\n";
+    $gen->current();
+    print "Before next\n";
+    $gen->next();
+    print "Not executed\n";
+});
+
+$fiber->start();
+print "==DONE==\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Before current\nBefore yield\nBefore yield 2\nBefore next\nBefore suspend\n==DONE==\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_defer_active_fiber_suspend"));
+    assert!(c_source.contains("ptn_generator_defer_active_fiber_delegated_next"));
+    assert!(c_source.contains("Fiber::suspend"));
+}
+
+#[test]
+fn compile_generator_deferred_fiber_suspend_keeps_user_finally_pending_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-deferred-fiber-suspend-pending-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-deferred-fiber-suspend-pending-finally.php");
+    let output = root.join("generator-deferred-fiber-suspend-pending-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    try {
+        throw new Exception();
+    } finally {
+        print "Normal finally\n";
+    }
+} catch (Exception $exception) {
+    print "Normal catch\n";
+}
+
+$gen = (function() {
+    $from = (function() {
+        print "Before yield\n";
+        yield;
+        print "Before suspend\n";
+        Fiber::suspend();
+        print "Not executed\n";
+        yield;
+    })();
+    try {
+        yield from $from;
+    } finally {
+        print "Finally\n";
+        $from->next();
+    }
+})();
+
+$fiber = new Fiber(function() use ($gen) {
+    print "Before current\n";
+    $gen->current();
+    print "Before next\n";
+    $gen->next();
+    print "Not executed\n";
+});
+
+$fiber->start();
+print "==DONE==\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Normal finally\nNormal catch\nBefore current\nBefore yield\nBefore next\nBefore suspend\n==DONE==\nFinally\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_error_suppression_isolated_from_caller_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-error-suppression-isolated");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-error-suppression-isolated.php");
+    let output = root.join("fiber-error-suppression-isolated-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = @new Fiber(function (): void {
+    @trigger_error("Hidden fiber", E_USER_WARNING);
+    trigger_error("Warning A", E_USER_WARNING);
+    Fiber::suspend();
+    trigger_error("Warning C", E_USER_WARNING);
+});
+
+@$fiber->start();
+trigger_error("Warning B", E_USER_WARNING);
+@$fiber->resume();
+trigger_error("Warning D", E_USER_WARNING);
+
+@(@trigger_error("Hidden nested", E_USER_WARNING));
+try {
+    @(function (): void { throw new Exception(); })();
+} catch (Exception $exception) {
+}
+trigger_error("Warning E", E_USER_WARNING);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let mut previous = 0;
+    for warning in ["Warning A", "Warning B", "Warning C", "Warning D", "Warning E"] {
+        let position = stdout[previous..]
+            .find(warning)
+            .map(|offset| previous + offset)
+            .expect("visible warning missing");
+        previous = position + warning.len();
+    }
+    assert_eq!(stdout.matches("Warning: Warning ").count(), 5, "{stdout}");
+    assert!(!stdout.contains("Hidden fiber"), "{stdout}");
+    assert!(!stdout.contains("Hidden nested"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_shared_delegate_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-shared-delegate");
     fs::create_dir_all(&root).unwrap();
@@ -28888,6 +29812,60 @@ var_dump($gen2->current());
     assert!(stdout.ends_with("int(2)\n"), "{stdout}");
     assert!(!stdout.ends_with("NULL\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_finally_eval_catch_without_variable_preserves_backtrace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-finally-eval-catch-without-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-finally-eval-catch-without-variable.php");
+    let output = root.join("generator-finally-eval-catch-without-variable-bin");
+    fs::write(
+        &input,
+        r#"<?php
+
+function gen() {
+    try {
+        yield 1;
+    } finally {
+        eval('try { throw new Error(); } catch (Error) {}');
+        debug_print_backtrace();
+    }
+}
+
+class A {
+    private $gen;
+    function __construct() {
+        $this->gen = gen();
+        $this->gen->rewind();
+    }
+}
+
+B::$a = new A();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    let path = input.display();
+    assert!(!execution.status.success(), "native unexpectedly succeeded\n{combined}");
+    assert!(combined.contains(&format!("#0 {path}(20): gen()\n")), "{combined}");
+    assert!(
+        combined.contains(&format!("Fatal error: Uncaught Error: Class \"B\" not found in {path}:20")),
+        "{combined}"
+    );
+    assert!(!combined.contains("PTN_DEBUG_PRINT_BACKTRACE"), "{combined}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_execute_throw_statement"));
+    assert!(c_source.contains("ptn_dynamic_parse_catch_header"));
 }
 
 #[test]
@@ -29239,6 +30217,254 @@ $fiber->start();
 }
 
 #[test]
+fn compile_generator_nested_yield_from_iteratoraggregate_closes_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-nested-iteratoraggregate-fiber-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-nested-iteratoraggregate-fiber-close.php");
+    let output = root.join("generator-nested-iteratoraggregate-fiber-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate {
+    public function getIterator(): Generator {
+        yield 'foo';
+        try {
+            Fiber::suspend();
+        } finally {
+            var_dump(__METHOD__);
+        }
+        var_dump("not executed");
+    }
+}
+
+function f() {
+    try {
+        var_dump(new stdClass, yield from new It());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+function g() {
+    try {
+        var_dump(new stdClass, yield from f());
+    } finally {
+        var_dump(__FUNCTION__);
+    }
+}
+
+$generator = g();
+$fiber = new Fiber(function () use ($generator) {
+    var_dump($generator->current());
+    $generator->next();
+    var_dump("not executed");
+});
+$reference = $fiber;
+$fiber->start();
+gc_collect_cycles();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"foo\"\n",
+            "==DONE==\n",
+            "string(15) \"It::getIterator\"\n",
+            "string(1) \"f\"\n",
+            "string(1) \"g\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_fiber_cycle_gc_closes_finally_in_destructor_order_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-fiber-cycle-gc-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-fiber-cycle-gc-order.php");
+    let output = root.join("generator-fiber-cycle-gc-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Canary {
+    public function __construct(public mixed $value) {}
+    public function __destruct() {
+        printf("%s\n", __METHOD__);
+    }
+}
+
+function g() {
+    Fiber::suspend();
+}
+
+function f($canary) {
+    try {
+        var_dump(yield from g());
+    } finally {
+        print "Generator finally\n";
+    }
+}
+
+$canary = new Canary(null);
+$iterable = f($canary);
+$fiber = new Fiber(function () use ($iterable, $canary) {
+    try {
+        $iterable->next();
+    } finally {
+        print "Fiber finally\n";
+    }
+});
+$canary->value = $fiber;
+$fiber->start();
+gc_collect_cycles();
+
+$fiber = $iterable = $canary = null;
+print "Collect cycles\n";
+gc_collect_cycles();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Collect cycles\n",
+            "Canary::__destruct\n",
+            "Generator finally\n",
+            "Fiber finally\n",
+            "==DONE==\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_runs_only_self_cyclic_fiber_callback_destructor_before_fiber_close_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-self-cyclic-fiber-callback-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-self-cyclic-fiber-callback-order.php");
+    let output = root.join("gc-self-cyclic-fiber-callback-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Ordinary {
+    public mixed $fiber = null;
+    public mixed $residual = null;
+    public function __destruct() {
+        echo "Ordinary\n";
+    }
+}
+
+class Residual {
+    public function __destruct() {
+        echo "Residual\n";
+    }
+}
+
+$ordinary = new Ordinary();
+$residual = new Residual();
+$fiber = new Fiber(function () use ($ordinary, $residual) {
+    try {
+        Fiber::suspend();
+    } finally {
+        echo "Fiber finally\n";
+    }
+});
+$ordinary->fiber = $fiber;
+$ordinary->residual = $residual;
+$fiber->start();
+
+$ordinary = $residual = $fiber = null;
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Ordinary\nFiber finally\nResidual\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_yield_from_iteratoraggregate_rejects_reentry_while_fiber_suspended_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-iteratoraggregate-fiber-reentry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-iteratoraggregate-fiber-reentry.php");
+    let output = root.join("generator-iteratoraggregate-fiber-reentry-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class It implements IteratorAggregate
+{
+    public function getIterator(): Generator
+    {
+        yield "";
+        Fiber::suspend();
+    }
+}
+function g()
+{
+    yield from new It();
+}
+$a = g();
+$fiber = new Fiber(function () use ($a) {
+    echo "Fiber start\n";
+    $a->next();
+    echo "Fiber return\n";
+});
+$fiber->start();
+echo "Fiber suspended\n";
+try {
+    $a->next();
+} catch (Throwable $t) {
+    echo $t->getMessage(), "\n";
+}
+echo "Destroying fiber\n";
+$fiber = null;
+echo "Shutdown\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Fiber start\n",
+            "Fiber suspended\n",
+            "Cannot resume an already running generator\n",
+            "Destroying fiber\n",
+            "Shutdown\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_force_close_nested_yield_from_suspended_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-generator-force-close-suspended-fiber");
     fs::create_dir_all(&root).unwrap();
@@ -29287,6 +30513,2465 @@ $fiber->start();
         "Before suspend\n==DONE==\nFinally (inner)\nFinally\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_force_close_yield_from_finally_in_suspended_fiber_is_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-yield-from-finally-suspended-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-yield-from-finally-suspended-fiber.php");
+    let output = root.join("generator-force-close-yield-from-finally-suspended-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$gen = (function() {
+    $x = new stdClass;
+    try {
+        print "Before suspend\n";
+        Fiber::suspend();
+        print "Not executed\n";
+    } finally {
+        print "Finally\n";
+        yield from ['foo' => new stdClass];
+        print "Not executed\n";
+    }
+})();
+$fiber = new Fiber(function() use ($gen, &$fiber) {
+    $gen->current();
+    print "Not executed\n";
+});
+$fiber->start();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(!execution.status.success(), "native unexpectedly succeeded\n{combined}");
+    let path = input.display();
+    assert_eq!(
+        combined,
+        format!(
+            concat!(
+                "Before suspend\n",
+                "==DONE==\n",
+                "Finally\n",
+                "\nFatal error: Uncaught Error: Cannot use \"yield from\" in a force-closed generator in {path}:10\n",
+                "Stack trace:\n",
+                "#0 [internal function]: {{closure:{path}:2}}()\n",
+                "#1 {path}(13): Generator->current()\n",
+                "#2 [internal function]: {{closure:{path}:14}}()\n",
+                "#3 {{main}}\n",
+                "  thrown in {path} on line 10\n",
+            ),
+            path = path,
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_throw_force_closed_yield_from"));
+}
+
+#[test]
+fn compile_generator_force_close_traversable_yield_from_finally_in_suspended_fiber_is_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-force-close-traversable-yield-from-finally-suspended-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-force-close-traversable-yield-from-finally-suspended-fiber.php");
+    let output = root.join("generator-force-close-traversable-yield-from-finally-suspended-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$delegate = (function () {
+    yield 'foo' => new stdClass;
+})();
+$gen = (function () use ($delegate) {
+    try {
+        print "Before suspend\n";
+        Fiber::suspend();
+        print "Not executed\n";
+    } finally {
+        print "Finally\n";
+        yield from $delegate;
+        print "Not executed\n";
+    }
+})();
+$fiber = new Fiber(function () use ($gen) {
+    $gen->current();
+    print "Not executed\n";
+});
+$fiber->start();
+?>
+==DONE==
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(!execution.status.success(), "native unexpectedly succeeded\n{combined}");
+    assert!(combined.contains("Before suspend\n==DONE==\nFinally\n"), "{combined}");
+    assert!(
+        combined.contains("Cannot use \"yield from\" in a force-closed generator"),
+        "{combined}"
+    );
+    assert!(combined.contains("Generator->current()"), "{combined}");
+    assert!(!combined.contains("Not executed"), "{combined}");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_uses_internal_trace_boundary_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-trace.php");
+    let output = root.join("gc-destructor-fiber-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        try {
+            Fiber::suspend();
+        } finally {
+            throw new Exception();
+        }
+    }
+}
+
+$fiber = new Fiber(function () {
+    new Cycle();
+    gc_collect_cycles();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert_eq!(execution.status.code(), Some(255), "{combined}");
+    assert!(
+        combined.contains(
+            "Stack trace:\n#0 [internal function]: Cycle->__destruct()\n#1 [internal function]: gc_destructor_fiber()\n#2 {main}\n"
+        ),
+        "{combined}"
+    );
+    assert!(!combined.contains("Fiber->start()"), "{combined}");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_force_close_rejects_second_suspend_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-force-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-force-close.php");
+    let output = root.join("gc-destructor-fiber-force-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        try {
+            Fiber::suspend();
+        } finally {
+            Fiber::suspend();
+        }
+    }
+}
+
+$fiber = new Fiber(function () {
+    new Cycle();
+    gc_collect_cycles();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert_eq!(execution.status.code(), Some(255), "{combined}");
+    let path = input.display();
+    assert_eq!(
+        combined,
+        format!(
+            concat!(
+                "\nFatal error: Uncaught FiberError: Cannot suspend in a force-closed fiber in {path}:11\n",
+                "Stack trace:\n",
+                "#0 {path}(11): Fiber::suspend()\n",
+                "#1 [internal function]: Cycle->__destruct()\n",
+                "#2 [internal function]: gc_destructor_fiber()\n",
+                "#3 {{main}}\n",
+                "  thrown in {path} on line 11\n",
+            ),
+            path = path,
+        )
+    );
+}
+
+#[test]
+fn compile_gc_destructor_fiber_suspension_keeps_collection_moving_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-suspension-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-suspension-order.php");
+    let output = root.join("gc-destructor-fiber-suspension-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+register_shutdown_function(function () {
+    echo "Shutdown\n";
+});
+
+class Cycle {
+    public static $counter = 0;
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        $id = self::$counter++;
+        echo "$id: Start destruct\n";
+        if ($id === 0) {
+            global $destructorFiber;
+            $destructorFiber = Fiber::getCurrent();
+            Fiber::suspend(new stdClass);
+        }
+        echo "$id: End destruct\n";
+    }
+}
+
+$fiber = new Fiber(function () {
+    global $destructorFiber;
+    new Cycle();
+    new Cycle();
+    new Cycle();
+    new Cycle();
+    new Cycle();
+    gc_collect_cycles();
+    $destructorFiber->resume();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0: Start destruct\n",
+            "1: Start destruct\n",
+            "1: End destruct\n",
+            "2: Start destruct\n",
+            "2: End destruct\n",
+            "3: Start destruct\n",
+            "3: End destruct\n",
+            "4: Start destruct\n",
+            "4: End destruct\n",
+            "0: End destruct\n",
+            "Shutdown\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_nested_user_resume_returns_to_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-nested-user-resume");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-nested-user-resume.php");
+    let output = root.join("gc-destructor-fiber-nested-user-resume-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public static $counter = 0;
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        $id = self::$counter++;
+        echo "$id: Start destruct\n";
+        global $fiber;
+        $fiber->resume();
+        echo "$id: End destruct\n";
+    }
+}
+
+$fiber = new Fiber(function () {
+    while (true) {
+        Fiber::suspend();
+    }
+});
+$fiber->start();
+
+new Cycle();
+new Cycle();
+gc_collect_cycles();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0: Start destruct\n",
+            "0: End destruct\n",
+            "1: Start destruct\n",
+            "1: End destruct\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_chains_peer_exceptions_with_internal_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-exception-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-exception-chain.php");
+    let output = root.join("gc-destructor-fiber-exception-chain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public static $counter = 0;
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        $id = self::$counter++;
+        echo "$id: Start destruct\n";
+        if ($id === 0) {
+            global $destructorFiber;
+            $destructorFiber = Fiber::getCurrent();
+            Fiber::suspend(new stdClass);
+        }
+        echo "$id: End destruct\n";
+        throw new Exception("$id exception");
+    }
+}
+
+$fiber = new Fiber(function () {
+    global $destructorFiber;
+    new Cycle();
+    new Cycle();
+    new Cycle();
+    try {
+        gc_collect_cycles();
+    } catch (Exception $exception) {
+        echo $exception, "\n";
+    }
+    $destructorFiber->resume();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Exception: 1 exception in "), "{stdout}");
+    assert!(stdout.contains("Next Exception: 2 exception in "), "{stdout}");
+    let fatal = stdout
+        .find("Fatal error: Uncaught Exception: 0 exception in ")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let first_peer_start = stdout.find("Exception: 1 exception in ").unwrap();
+    let second_peer_start = stdout.find("Next Exception: 2 exception in ").unwrap();
+    for peer_exception in [
+        &stdout[first_peer_start..second_peer_start],
+        &stdout[second_peer_start..fatal],
+    ] {
+        assert!(
+            peer_exception.contains("#1 [internal function]: gc_destructor_fiber()"),
+            "{stdout}"
+        );
+        assert!(peer_exception.contains("gc_collect_cycles()"), "{stdout}");
+        assert!(peer_exception.contains("Fiber->start()"), "{stdout}");
+    }
+    let resumed_exception = &stdout[fatal..];
+    assert!(
+        resumed_exception.contains("#1 [internal function]: gc_destructor_fiber()"),
+        "{stdout}"
+    );
+    assert!(resumed_exception.contains("Fiber->resume()"), "{stdout}");
+    assert!(resumed_exception.contains("Fiber->start()"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_reuses_identity_for_peer_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-reuse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-reuse.php");
+    let output = root.join("gc-destructor-fiber-reuse-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$first = null;
+$same = true;
+class Cycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        global $first, $same;
+        $current = Fiber::getCurrent();
+        if ($first === null) {
+            $first = $current;
+        } else {
+            $same = $same && $first === $current;
+        }
+    }
+}
+new Cycle();
+new Cycle();
+new Cycle();
+gc_collect_cycles();
+var_dump($same);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_replaces_externally_suspended_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-replacement.php");
+    let output = root.join("gc-destructor-fiber-replacement-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public static $id = 0;
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        $id = self::$id++;
+        global $first, $replacement;
+        if ($id === 0) {
+            $first = Fiber::getCurrent();
+            Fiber::suspend();
+        } else {
+            $replacement = Fiber::getCurrent();
+        }
+    }
+}
+$fiber = new Fiber(function () {
+    global $first, $replacement;
+    new Cycle();
+    new Cycle();
+    gc_collect_cycles();
+    var_dump($first === $replacement);
+    var_dump($first->isSuspended());
+    $first->resume();
+});
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_get_current_keeps_returned_fiber_suspended_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-get-current-retain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-get-current-retain.php");
+    let output = root.join("fiber-get-current-retain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$current = null;
+$fiber = new Fiber(function () {
+    global $current;
+    $current = Fiber::getCurrent();
+    Fiber::suspend();
+    echo "resumed\n";
+});
+$fiber->start();
+$fiber = null;
+var_dump($current->isSuspended());
+$current->resume();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nresumed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_fatal_does_not_unwind_other_suspended_fibers_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-fatal-other-suspended");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-fatal-other-suspended.php");
+    let output = root.join("fiber-fatal-other-suspended-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber1 = new Fiber(function (): void {
+    try {
+        Fiber::suspend(1);
+    } finally {
+        echo "other finally\n";
+    }
+});
+$fiber2 = new Fiber(function (): void {
+    Fiber::suspend(2);
+    trigger_error("fatal from fiber", E_USER_ERROR);
+});
+
+var_dump($fiber1->start());
+var_dump($fiber2->start());
+$fiber2->resume();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(stdout.contains("int(1)\nint(2)\n"), "{stdout}");
+    assert!(combined.contains("Fatal error: fatal from fiber in "), "{combined}");
+    assert!(!combined.contains("other finally"), "{combined}");
+}
+
+#[test]
+fn compile_fiber_normal_shutdown_closes_suspended_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-normal-shutdown-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-normal-shutdown-close.php");
+    let output = root.join("fiber-normal-shutdown-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    try {
+        Fiber::suspend();
+    } finally {
+        echo "normal finally\n";
+    }
+});
+$fiber->start();
+echo "main\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "main\nnormal finally\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_destructor_held_suspended_fiber_closes_after_creator_frame_returns_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-held-suspended-fiber");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-held-suspended-fiber.php");
+    let output = root.join("destructor-held-suspended-fiber-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Holder {
+    public function __destruct() {
+        $fiber = new Fiber(function () use (&$fiber): void {
+            try {
+                Fiber::suspend();
+            } finally {
+                echo "fiber finally\n";
+            }
+        });
+        $fiber->start();
+        echo "destructor returned\n";
+    }
+}
+
+new Holder();
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "destructor returned\nfiber finally\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_returned_suspended_fiber_resumes_after_creator_frame_returns_to_native_binary() {
+    let root = temp_dir("ptn-native-returned-suspended-fiber-resume");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("returned-suspended-fiber-resume.php");
+    let output = root.join("returned-suspended-fiber-resume-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function makeFiber(): Fiber {
+    $fiber = new Fiber(function (): void {
+        echo "started\n";
+        $value = Fiber::suspend("pause");
+        echo "resumed:$value\n";
+    });
+    echo "suspended:", $fiber->start(), "\n";
+    return $fiber;
+}
+
+$fiber = makeFiber();
+$fiber->resume("go");
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "suspended:started\npause\nresumed:go\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_shutdown_drain_closes_fibers_created_by_generator_close_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-drain-fiber-generator-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-drain-fiber-generator-chain.php");
+    let output = root.join("shutdown-drain-fiber-generator-chain-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Node {
+    public static int $remaining = 5;
+
+    public function __destruct() {
+        $id = self::$remaining--;
+        echo "D$id\n";
+        if ($id === 0) {
+            return;
+        }
+        $gen = (function () {
+            $from = (function () {
+                $cv = [new Node];
+                Fiber::suspend();
+            })();
+            yield from $from;
+        })();
+        $fiber = new Fiber(function () use ($gen, &$fiber) {
+            $gen->current();
+        });
+        $fiber->start();
+    }
+}
+
+new Node;
+echo "BODY\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "D5\nBODY\nD4\nD3\nD2\nD1\nD0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_uncaught_exception_shutdown_closes_suspended_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-uncaught-shutdown-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-uncaught-shutdown-close.php");
+    let output = root.join("fiber-uncaught-shutdown-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    try {
+        Fiber::suspend();
+    } finally {
+        echo "uncaught finally\n";
+    }
+});
+$fiber->start();
+throw new Exception("uncaught from main");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(combined.contains("Fatal error: Uncaught Exception: uncaught from main"), "{combined}");
+    assert!(combined.contains("uncaught finally\n"), "{combined}");
+}
+
+#[test]
+fn compile_suspended_self_referential_fiber_gc_closes_by_ref_local_in_order_to_native_binary() {
+    let root = temp_dir("ptn-native-suspended-self-fiber-gc-by-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("suspended-self-fiber-gc-by-ref.php");
+    let output = root.join("suspended-self-fiber-gc-by-ref-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function assignLocal(&$ref): void {
+    $ref = new class {
+        public function __destruct() {
+            echo "Dtor\n";
+        }
+    };
+}
+function suspendValue($value): void {
+    Fiber::suspend();
+}
+
+$fiber = new Fiber(function () use (&$fiber): void {
+    try {
+        assignLocal($value);
+        suspendValue(1);
+    } finally {
+        echo "Cleaned\n";
+    }
+});
+$fiber->start();
+unset($fiber);
+gc_collect_cycles();
+echo "Collected\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Cleaned\nDtor\nCollected\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_suspended_fiber_without_cycle_closes_by_ref_local_on_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-suspended-fiber-unset-by-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("suspended-fiber-unset-by-ref.php");
+    let output = root.join("suspended-fiber-unset-by-ref-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function assignLocal(&$ref): void {
+    $ref = new class {
+        public function __destruct() {
+            echo "Dtor\n";
+        }
+    };
+}
+
+$fiber = new Fiber(function (): void {
+    try {
+        assignLocal($value);
+        Fiber::suspend();
+    } finally {
+        echo "Cleaned\n";
+    }
+});
+$fiber->start();
+unset($fiber);
+echo "After unset\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cleaned\nDtor\nAfter unset\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_suspended_self_fiber_closes_nested_suspend_frame_before_local_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-suspended-self-fiber-nested-suspend-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("suspended-self-fiber-nested-suspend-close.php");
+    let output = root.join("suspended-self-fiber-nested-suspend-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function x(&$ref) {
+    $ref = new class() {
+        function __destruct() {
+            print "Dtor x()\n";
+        }
+    };
+}
+function suspend($x) {
+    Fiber::suspend();
+}
+$f = new Fiber(function() use (&$f) {
+    try {
+        x($var);
+        \ord(suspend(1));
+    } finally {
+        print "Cleaned\n";
+    }
+});
+$f->start();
+unset($f);
+gc_collect_cycles();
+print "Collected\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cleaned\nDtor x()\nCollected\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_suspended_fiber_resumes_after_trace_frame_unlink_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-suspend-resume-trace-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-suspend-resume-trace-frame.php");
+    let output = root.join("nested-suspend-resume-trace-frame-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function suspendNested() {
+    Fiber::suspend("paused");
+    return "resumed";
+}
+$fiber = new Fiber(function() {
+    return suspendNested();
+});
+echo $fiber->start(), "\n";
+$fiber->resume();
+echo $fiber->getReturn(), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "paused\nresumed\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_outer_suspended_fiber_local_destructor_keeps_resume_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-outer-fiber-local-resume-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("outer-fiber-local-resume-trace.php");
+    let output = root.join("outer-fiber-local-resume-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function() {
+    $value = new class {
+        function __destruct() {
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+            echo $trace[0]["function"], "\n";
+            echo $trace[1]["function"], "\n";
+        }
+    };
+    Fiber::suspend();
+    echo "resumed\n";
+});
+$fiber->start();
+$fiber->resume();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "resumed\n__destruct\nresume\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_suspended_fiber_local_destructor_keeps_closure_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-fiber-local-closure-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-fiber-local-closure-trace.php");
+    let output = root.join("nested-fiber-local-closure-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function suspendNested() {
+    $value = new class {
+        function __destruct() {
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+            echo $trace[0]["function"], "\n";
+            $caller = $trace[1]["function"];
+            echo substr($caller, 0, 9) === "{closure:" ? "closure" : $caller, "\n";
+        }
+    };
+    Fiber::suspend();
+    echo "resumed\n";
+}
+$fiber = new Fiber(function() {
+    suspendNested();
+});
+$fiber->start();
+$fiber->resume();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "resumed\n__destruct\nclosure\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_without_retention_is_force_closed_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-unretained");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-unretained.php");
+    let output = root.join("gc-destructor-fiber-unretained-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        Fiber::getCurrent();
+        Fiber::suspend();
+        echo "not reached\n";
+    }
+}
+new Cycle();
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_fiber_self_suspension_shuts_down_cleanly_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-fiber-shutdown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-fiber-shutdown.php");
+    let output = root.join("gc-destructor-fiber-shutdown-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Cycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+}
+new Cycle();
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_force_close_state_does_not_change_ordinary_fibers_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-ordinary-force-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-ordinary-force-close.php");
+    let output = root.join("gc-destructor-ordinary-force-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    (function () {
+        $fiber = new Fiber(function () {
+            try {
+                Fiber::suspend();
+            } finally {
+                Fiber::suspend();
+            }
+        });
+        $fiber->start();
+    })();
+} catch (FiberError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot suspend in a force-closed fiber\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ordinary_fiber_zero_ref_destructor_uses_active_executor_to_native_binary() {
+    let root = temp_dir("ptn-native-ordinary-fiber-zero-ref-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ordinary-fiber-zero-ref-destructor.php");
+    let output = root.join("ordinary-fiber-zero-ref-destructor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ReleasedInFiber {
+    public function __destruct() {
+        global $destructorFiber;
+        echo "destructor start\n";
+        $destructorFiber = Fiber::getCurrent();
+        echo $destructorFiber === null ? "missing\n" : "current\n";
+        Fiber::suspend("paused");
+        echo "destructor end\n";
+    }
+}
+
+$fiber = new Fiber(function () {
+    $value = new ReleasedInFiber();
+    unset($value);
+    echo "after unset\n";
+});
+
+echo $fiber->start(), "\n";
+echo $destructorFiber === $fiber ? "identity\n" : "different\n";
+$fiber->resume();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "destructor start\n",
+            "current\n",
+            "paused\n",
+            "identity\n",
+            "destructor end\n",
+            "after unset\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_fiber_restores_outer_destructor_executor_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-fiber-destructor-executor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-fiber-destructor-executor.php");
+    let output = root.join("nested-fiber-destructor-executor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class NestedReleasedInFiber {
+    public function __construct(public string $label) {}
+    public function __destruct() {
+        global $destructorFibers;
+        $destructorFibers[$this->label] = Fiber::getCurrent();
+        echo $this->label, " destructor start\n";
+        Fiber::suspend($this->label . " paused");
+        echo $this->label, " destructor end\n";
+    }
+}
+
+$inner = new Fiber(function () {
+    $value = new NestedReleasedInFiber("inner");
+    unset($value);
+    echo "inner after unset\n";
+});
+
+$outer = new Fiber(function () use ($inner) {
+    echo $inner->start(), "\n";
+    $value = new NestedReleasedInFiber("outer");
+    unset($value);
+    echo "outer after unset\n";
+    $inner->resume();
+    echo "outer done\n";
+});
+
+echo $outer->start(), "\n";
+echo $destructorFibers["inner"] === $inner ? "inner identity\n" : "inner wrong\n";
+echo $destructorFibers["outer"] === $outer ? "outer identity\n" : "outer wrong\n";
+$outer->resume();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "inner destructor start\n",
+            "inner paused\n",
+            "outer destructor start\n",
+            "outer paused\n",
+            "inner identity\n",
+            "outer identity\n",
+            "outer destructor end\n",
+            "outer after unset\n",
+            "inner destructor end\n",
+            "inner after unset\n",
+            "outer done\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_function_fiber_destructor_preserves_trace_and_cycle_root_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-function-fiber-destructor-trace-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-function-fiber-destructor-trace-root.php");
+    let output = root.join("nested-function-fiber-destructor-trace-root-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class NestedFrameCycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        echo "cycle destruct\n";
+    }
+}
+
+class NestedFrameSuspender {
+    public function __destruct() {
+        echo "suspender start\n";
+        Fiber::suspend("paused");
+        $found = false;
+        foreach (debug_backtrace() as $frame) {
+            if (($frame["function"] ?? "") === "releaseFromNestedFrame") {
+                $found = true;
+            }
+        }
+        echo $found ? "nested trace\n" : "missing trace\n";
+        echo "suspender end\n";
+    }
+}
+
+function releaseFromNestedFrame() {
+    $cycle = new NestedFrameCycle();
+    $value = new NestedFrameSuspender();
+    unset($value);
+    echo "nested resumed\n";
+}
+
+$fiber = new Fiber(function () {
+    releaseFromNestedFrame();
+});
+
+echo $fiber->start(), "\n";
+echo "main before gc\n";
+gc_collect_cycles();
+echo "main after gc\n";
+$fiber->resume();
+gc_collect_cycles();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "suspender start\n",
+            "paused\n",
+            "main before gc\n",
+            "main after gc\n",
+            "nested trace\n",
+            "suspender end\n",
+            "nested resumed\n",
+            "cycle destruct\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_release_fiber_destructor_preserves_trace_and_cycle_root_to_native_binary() {
+    let root = temp_dir("ptn-native-array-release-fiber-destructor-trace-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-release-fiber-destructor-trace-root.php");
+    let output = root.join("array-release-fiber-destructor-trace-root-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ArrayFrameCycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        echo "array cycle destruct\n";
+    }
+}
+
+class ArrayFrameSuspender {
+    public function __destruct() {
+        echo "array suspender start\n";
+        Fiber::suspend("array paused");
+        $found = false;
+        foreach (debug_backtrace() as $frame) {
+            if (($frame["function"] ?? "") === "releaseArrayFromNestedFrame") {
+                $found = true;
+            }
+        }
+        echo $found ? "array nested trace\n" : "array missing trace\n";
+        echo "array suspender end\n";
+    }
+}
+
+function releaseArrayFromNestedFrame() {
+    $cycle = new ArrayFrameCycle();
+    $values = [new ArrayFrameSuspender()];
+    unset($values);
+    echo "array nested resumed\n";
+}
+
+$fiber = new Fiber(function () {
+    releaseArrayFromNestedFrame();
+});
+
+echo $fiber->start(), "\n";
+echo "array main before gc\n";
+gc_collect_cycles();
+echo "array main after gc\n";
+$fiber->resume();
+gc_collect_cycles();
+echo "array done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array suspender start\n",
+            "array paused\n",
+            "array main before gc\n",
+            "array main after gc\n",
+            "array nested trace\n",
+            "array suspender end\n",
+            "array nested resumed\n",
+            "array cycle destruct\n",
+            "array done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_container_release_frees_inner_fiber_without_clobbering_outer_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-container-release-inner-fiber-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("container-release-inner-fiber-scope.php");
+    let output = root.join("container-release-inner-fiber-scope-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ContainerNestedSuspender {
+    public function __destruct() {
+        global $outerFiber;
+        echo "nested suspender start\n";
+        echo Fiber::getCurrent() === $outerFiber ? "outer fiber current\n" : "wrong fiber current\n";
+        $found = false;
+        foreach (debug_backtrace() as $frame) {
+            if (($frame["function"] ?? "") === "freeInnerFiberAndReleaseArray") {
+                $found = true;
+            }
+        }
+        echo $found ? "container nested trace\n" : "container missing trace\n";
+        echo "nested suspender end\n";
+    }
+}
+
+function freeInnerFiberAndReleaseArray(&$inner) {
+    $values = [$inner, new ContainerNestedSuspender()];
+    $inner = null;
+    unset($values);
+    echo "container release done\n";
+}
+
+class ContainerOuterRelease {
+    public mixed $inner;
+    public function __destruct() {
+        echo "outer destructor start\n";
+        freeInnerFiberAndReleaseArray($this->inner);
+        echo "outer destructor end\n";
+    }
+}
+
+function releaseContainerOuter() {
+    $inner = new Fiber(function () {
+        Fiber::suspend("inner paused");
+    });
+    echo $inner->start(), "\n";
+    $value = new ContainerOuterRelease();
+    $value->inner = $inner;
+    unset($inner);
+    unset($value);
+}
+
+$fiber = new Fiber(function () {
+    releaseContainerOuter();
+});
+
+$outerFiber = $fiber;
+$fiber->start();
+echo "container done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "inner paused\n",
+            "outer destructor start\n",
+            "nested suspender start\n",
+            "outer fiber current\n",
+            "container nested trace\n",
+            "nested suspender end\n",
+            "container release done\n",
+            "outer destructor end\n",
+            "container done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_started_fiber_destructor_resumes_after_creator_returns_to_native_binary() {
+    let root = temp_dir("ptn-native-started-fiber-destructor-creator-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("started-fiber-destructor-creator-return.php");
+    let output = root.join("started-fiber-destructor-creator-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class CreatorFrameSuspender {
+    public function __destruct() {
+        echo "creator suspender start\n";
+        Fiber::suspend("creator paused");
+        $resume = false;
+        $creator = false;
+        foreach (debug_backtrace() as $frame) {
+            $resume = $resume || (($frame["function"] ?? "") === "resume");
+            $creator = $creator || (($frame["function"] ?? "") === "createStartedFiber");
+        }
+        echo $resume ? "creator resume trace\n" : "creator missing resume\n";
+        echo $creator ? "creator stale frame\n" : "creator frame gone\n";
+        echo "creator suspender end\n";
+    }
+}
+
+function createStartedFiber() {
+    $fiber = new Fiber(function () {
+        $value = new CreatorFrameSuspender();
+        unset($value);
+        echo "creator callback done\n";
+    });
+    echo $fiber->start(), "\n";
+    return $fiber;
+}
+
+$fiber = createStartedFiber();
+echo "creator returned\n";
+$fiber->resume();
+echo "creator done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "creator suspender start\n",
+            "creator paused\n",
+            "creator returned\n",
+            "creator resume trace\n",
+            "creator frame gone\n",
+            "creator suspender end\n",
+            "creator callback done\n",
+            "creator done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_closure_reference_array_release_preserves_fiber_destructor_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-reference-array-fiber-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-reference-array-fiber-release.php");
+    let output = root.join("closure-reference-array-fiber-release-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class CompositeReleaseCycle {
+    public $self;
+    public function __construct() {
+        $this->self = $this;
+    }
+    public function __destruct() {
+        echo "composite cycle destruct\n";
+    }
+}
+
+class CompositeReleaseSuspender {
+    public function __destruct() {
+        echo "composite suspender start\n";
+        Fiber::suspend("composite paused");
+        $found = false;
+        foreach (debug_backtrace() as $frame) {
+            if (($frame["function"] ?? "") === "releaseCompositeFromNestedFrame") {
+                $found = true;
+            }
+        }
+        echo $found ? "composite nested trace\n" : "composite missing trace\n";
+        echo "composite suspender end\n";
+    }
+}
+
+function releaseCompositeFromNestedFrame() {
+    $cycle = new CompositeReleaseCycle();
+    $values = [new CompositeReleaseSuspender()];
+    $reference =& $values;
+    $closure = function () use (&$reference) {};
+    unset($values);
+    unset($reference);
+    unset($closure);
+    echo "composite nested resumed\n";
+}
+
+$fiber = new Fiber(function () {
+    releaseCompositeFromNestedFrame();
+});
+
+echo $fiber->start(), "\n";
+echo "composite main before gc\n";
+gc_collect_cycles();
+echo "composite main after gc\n";
+$fiber->resume();
+gc_collect_cycles();
+echo "composite done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "composite suspender start\n",
+            "composite paused\n",
+            "composite main before gc\n",
+            "composite main after gc\n",
+            "composite nested trace\n",
+            "composite suspender end\n",
+            "composite nested resumed\n",
+            "composite cycle destruct\n",
+            "composite done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_array_generator_release_uses_current_fiber_runtime_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-array-generator-fiber-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-array-generator-fiber-release.php");
+    let output = root.join("nested-array-generator-fiber-release-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function generatorForCompositeRelease() {
+    try {
+        yield 1;
+    } finally {
+        echo Fiber::getCurrent() === null ? "generator missing fiber\n" : "generator current fiber\n";
+        $found = false;
+        foreach (debug_backtrace() as $frame) {
+            if (($frame["function"] ?? "") === "releaseGeneratorComposite") {
+                $found = true;
+            }
+        }
+        echo $found ? "generator release trace\n" : "generator missing trace\n";
+        echo "generator finally\n";
+    }
+}
+
+function releaseGeneratorComposite() {
+    $generator = generatorForCompositeRelease();
+    $generator->current();
+    $values = [[$generator]];
+    unset($generator);
+    unset($values);
+    echo "generator release done\n";
+}
+
+$fiber = new Fiber(function () {
+    releaseGeneratorComposite();
+});
+$fiber->start();
+echo "generator done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "generator current fiber\n",
+            "generator release trace\n",
+            "generator finally\n",
+            "generator release done\n",
+            "generator done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_release_continues_after_element_destructor_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-array-release-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-release-destructor-exception.php");
+    let output = root.join("array-release-destructor-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ArrayThrowingDestructor {
+    public function __destruct() {
+        echo "array throwing\n";
+        throw new Exception("boom");
+    }
+}
+
+class ArrayLaterDestructor {
+    public function __construct(public string $label) {}
+    public function __destruct() {
+        echo $this->label, "\n";
+    }
+}
+
+try {
+    $throwing = new ArrayThrowingDestructor();
+    $innerLater = new ArrayLaterDestructor("array inner later");
+    $inner = [
+        $throwing,
+        $innerLater,
+    ];
+    unset($throwing, $innerLater);
+    $outerLater = new ArrayLaterDestructor("array outer later");
+    $values = [$inner, $outerLater];
+    unset($inner);
+    unset($outerLater);
+    unset($values);
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), " caught\n";
+}
+echo "array exception done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array throwing\n",
+            "array inner later\n",
+            "array outer later\n",
+            "boom caught\n",
+            "array exception done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_closure_release_continues_after_capture_destructor_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-capture-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-capture-destructor-exception.php");
+    let output = root.join("closure-capture-destructor-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ClosureThrowingCapture {
+    public function __destruct() {
+        echo "closure capture throwing\n";
+        throw new Exception("closure capture boom");
+    }
+}
+
+class ClosureLaterCapture {
+    public function __destruct() {
+        echo "closure capture later\n";
+    }
+}
+
+$throwing = new ClosureThrowingCapture();
+$later = new ClosureLaterCapture();
+$closure = function () use ($throwing, $later) {};
+unset($throwing, $later);
+try {
+    unset($closure);
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), " caught\n";
+}
+echo "closure capture done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "closure capture throwing\n",
+            "closure capture later\n",
+            "closure capture boom caught\n",
+            "closure capture done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_callback_release_continues_after_capture_destructor_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-callback-capture-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-callback-capture-destructor-exception.php");
+    let output = root.join("fiber-callback-capture-destructor-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class FiberThrowingCapture {
+    public function __destruct() {
+        echo "fiber capture throwing\n";
+        throw new Exception("fiber capture boom");
+    }
+}
+
+class FiberLaterCapture {
+    public function __destruct() {
+        echo "fiber capture later\n";
+    }
+}
+
+$throwing = new FiberThrowingCapture();
+$later = new FiberLaterCapture();
+$fiber = new Fiber(function () use ($throwing, $later) {});
+unset($throwing, $later);
+try {
+    unset($fiber);
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), " caught\n";
+}
+echo "fiber capture done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "fiber capture throwing\n",
+            "fiber capture later\n",
+            "fiber capture boom caught\n",
+            "fiber capture done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_pending_cleanup_exception_remains_rooted_while_next_destructor_suspends_to_native_binary() {
+    let root = temp_dir("ptn-native-pending-cleanup-exception-suspended");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pending-cleanup-exception-suspended.php");
+    let output = root.join("pending-cleanup-exception-suspended-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class PendingCleanupGuard {
+    public function __destruct() {
+        echo "pending guard destruct\n";
+    }
+}
+
+#[AllowDynamicProperties]
+class PendingCleanupException extends Exception {}
+
+class PendingCleanupThrower {
+    public function __destruct() {
+        echo "pending cleanup throwing\n";
+        $exception = new PendingCleanupException("pending cleanup boom");
+        $exception->guard = new PendingCleanupGuard();
+        throw $exception;
+    }
+}
+
+class PendingCleanupSuspender {
+    public function __destruct() {
+        echo "pending cleanup suspending\n";
+        Fiber::suspend("pending cleanup paused");
+        echo "pending cleanup resumed\n";
+    }
+}
+
+$fiber = new Fiber(function () {
+    try {
+        $throwing = new PendingCleanupThrower();
+        $suspending = new PendingCleanupSuspender();
+        $values = [$throwing, $suspending];
+        unset($throwing, $suspending, $values);
+    } catch (Throwable $exception) {
+        echo $exception->getMessage(), " caught\n";
+    }
+    echo "pending cleanup fiber done\n";
+});
+
+echo $fiber->start(), "\n";
+echo "pending cleanup main before gc\n";
+gc_collect_cycles();
+echo "pending cleanup main after gc\n";
+$fiber->resume();
+gc_collect_cycles();
+echo "pending cleanup done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "pending cleanup throwing\n",
+            "pending cleanup suspending\n",
+            "pending cleanup paused\n",
+            "pending cleanup main before gc\n",
+            "pending cleanup main after gc\n",
+            "pending cleanup resumed\n",
+            "pending cleanup boom caught\n",
+            "pending cleanup fiber done\n",
+            "pending guard destruct\n",
+            "pending cleanup done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_throwing_destructor_finishes_property_cleanup_before_catch_to_native_binary() {
+    let root = temp_dir("ptn-native-throwing-destructor-property-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("throwing-destructor-property-cleanup.php");
+    let output = root.join("throwing-destructor-property-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ThrowCleanupProperty {
+    public function __destruct() {
+        echo "property cleanup\n";
+    }
+}
+
+class ThrowCleanupOwner {
+    public mixed $property;
+    public function __destruct() {
+        echo "owner throwing\n";
+        throw new Exception("owner boom");
+    }
+}
+
+try {
+    $owner = new ThrowCleanupOwner();
+    $owner->property = new ThrowCleanupProperty();
+    unset($owner);
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), " caught\n";
+}
+echo "throw cleanup done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "owner throwing\n",
+            "property cleanup\n",
+            "owner boom caught\n",
+            "throw cleanup done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_throwing_destructor_resurrection_defers_property_cleanup_to_final_release_to_native_binary() {
+    let root = temp_dir("ptn-native-throwing-destructor-resurrection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("throwing-destructor-resurrection.php");
+    let output = root.join("throwing-destructor-resurrection-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ResurrectedProperty {
+    public function __destruct() {
+        echo "resurrected property cleanup\n";
+    }
+}
+
+class ThrowingResurrector {
+    public mixed $property;
+    public function __destruct() {
+        global $resurrected;
+        echo "resurrector throwing\n";
+        $resurrected = $this;
+        throw new Exception("resurrection boom");
+    }
+}
+
+try {
+    $owner = new ThrowingResurrector();
+    $owner->property = new ResurrectedProperty();
+    unset($owner);
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), " caught\n";
+}
+echo $resurrected instanceof ThrowingResurrector ? "resurrected alive\n" : "resurrected lost\n";
+unset($resurrected);
+echo "resurrection done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "resurrector throwing\n",
+            "resurrection boom caught\n",
+            "resurrected alive\n",
+            "resurrected property cleanup\n",
+            "resurrection done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_cleanup_exception_chain_appends_pending_owner_at_explicit_previous_tail_to_native_binary() {
+    let root = temp_dir("ptn-native-cleanup-exception-chain-tail");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cleanup-exception-chain-tail.php");
+    let output = root.join("cleanup-exception-chain-tail-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ChainThrower {
+    public function __construct(public string $label, public bool $explicitPrevious = false) {}
+    public function __destruct() {
+        echo $this->label, " throwing\n";
+        if ($this->explicitPrevious) {
+            throw new Exception($this->label, 0, new Exception("explicit previous"));
+        }
+        throw new Exception($this->label);
+    }
+}
+
+class ChainOwner {
+    public mixed $first;
+    public mixed $second;
+    public function __destruct() {
+        echo "owner chain throwing\n";
+        throw new Exception("owner chain");
+    }
+}
+
+try {
+    $owner = new ChainOwner();
+    $owner->first = new ChainThrower("first chain", true);
+    $owner->second = new ChainThrower("second chain");
+    unset($owner);
+} catch (Throwable $exception) {
+    for ($cursor = $exception; $cursor !== null; $cursor = $cursor->getPrevious()) {
+        echo $cursor->getMessage(), "\n";
+    }
+}
+echo "chain cleanup done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "owner chain throwing\n",
+            "first chain throwing\n",
+            "second chain throwing\n",
+            "second chain\n",
+            "first chain\n",
+            "explicit previous\n",
+            "owner chain\n",
+            "chain cleanup done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_suspended_array_releases_resume_out_of_order_without_losing_roots_to_native_binary() {
+    let root = temp_dir("ptn-native-suspended-array-release-non-lifo");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("suspended-array-release-non-lifo.php");
+    let output = root.join("suspended-array-release-non-lifo-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class NonLifoArraySuspender {
+    public function __construct(public string $label) {}
+    public function __destruct() {
+        echo $this->label, " suspender start\n";
+        Fiber::suspend($this->label . " paused");
+        echo $this->label, " suspender end\n";
+    }
+}
+
+class NonLifoArrayLater {
+    public function __construct(public string $label) {}
+    public function __destruct() {
+        echo $this->label, " later\n";
+    }
+}
+
+function makeArrayReleaseFiber(string $label): Fiber {
+    return new Fiber(function () use ($label) {
+        $values = [
+            new NonLifoArraySuspender($label),
+            new NonLifoArrayLater($label),
+        ];
+        unset($values);
+        echo $label, " released\n";
+    });
+}
+
+$fiberA = makeArrayReleaseFiber("A");
+$fiberB = makeArrayReleaseFiber("B");
+echo $fiberA->start(), "\n";
+echo $fiberB->start(), "\n";
+gc_collect_cycles();
+echo "between releases\n";
+$fiberA->resume();
+gc_collect_cycles();
+echo "after A\n";
+$fiberB->resume();
+gc_collect_cycles();
+echo "non-lifo done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "A suspender start\n",
+            "A paused\n",
+            "B suspender start\n",
+            "B paused\n",
+            "between releases\n",
+            "A suspender end\n",
+            "A later\n",
+            "A released\n",
+            "after A\n",
+            "B suspender end\n",
+            "B later\n",
+            "B released\n",
+            "non-lifo done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_tick_callback_rejects_fiber_switch_to_native_binary() {
+    let root = temp_dir("ptn-native-tick-fiber-switch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tick-fiber-switch.php");
+    let output = root.join("tick-fiber-switch-bin");
+    fs::write(
+        &input,
+        r#"<?php
+
+declare(ticks=1);
+
+register_tick_function(function (): void {
+    if (Fiber::getCurrent() !== null) {
+        Fiber::suspend();
+    }
+});
+
+$fiber = new Fiber(function (): void {
+    echo "1\n";
+    echo "2\n";
+    echo "3\n";
+});
+
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert_eq!(execution.status.code(), Some(255), "{combined}");
+    let path = input.display();
+    assert_eq!(
+        combined,
+        format!(
+            concat!(
+                "1\n",
+                "\nFatal error: Uncaught FiberError: Cannot switch fibers in current execution context in {path}:7\n",
+                "Stack trace:\n",
+                "#0 {path}(7): Fiber::suspend()\n",
+                "#1 {path}(12): {{closure:{path}:5}}()\n",
+                "#2 [internal function]: {{closure:{path}:11}}()\n",
+                "#3 {path}(17): Fiber->start()\n",
+                "#4 {{main}}\n",
+                "  thrown in {path} on line 7\n",
+            ),
+            path = path,
+        )
+    );
+}
+
+#[test]
+fn compile_fiber_switch_outside_tick_callback_remains_allowed_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-switch-outside-tick");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-switch-outside-tick.php");
+    let output = root.join("fiber-switch-outside-tick-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    echo "before\n";
+    Fiber::suspend();
+    echo "after\n";
+});
+$fiber->start();
+$fiber->resume();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\nafter\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ordinary_destructor_keeps_user_fiber_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-ordinary-destructor-fiber-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ordinary-destructor-fiber-trace.php");
+    let output = root.join("ordinary-destructor-fiber-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Ordinary {
+    public function __destruct() {
+        throw new Exception();
+    }
+}
+
+try {
+    $fiber = new Fiber(function () {
+        new Ordinary();
+    });
+    $fiber->start();
+} catch (Exception $exception) {
+    echo $exception->getTraceAsString(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(combined.contains("Ordinary->__destruct()"), "{combined}");
+    assert!(combined.contains("Fiber->start()"), "{combined}");
+    assert!(!combined.contains("gc_destructor_fiber"), "{combined}");
 }
 
 #[test]
@@ -41073,6 +44758,63 @@ try {
 }
 
 #[test]
+fn compile_user_stream_wrapper_open_and_close_dispatch_magic_call_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-wrapper-open-close-magic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-wrapper-open-close-magic.php");
+    let output = root.join("user-stream-wrapper-open-close-magic-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ForwardedStreamWrapper {
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool {
+        return true;
+    }
+
+    public function stream_close(): void {
+    }
+}
+
+class MagicStreamWrapper {
+    public $context;
+    private $wrapper;
+
+    public function __call($name, $arguments) {
+        if (!$this->wrapper) {
+            $this->wrapper = new ForwardedStreamWrapper();
+        }
+        echo "Trampoline for ", $name, "\n";
+        return $this->wrapper->$name(...$arguments);
+    }
+}
+
+stream_wrapper_register("magicstream", MagicStreamWrapper::class);
+$stream = fopen("magicstream://path", "r+");
+fclose($stream);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(execution.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert_eq!(
+        stdout,
+        "Trampoline for stream_open\nTrampoline for stream_close\n"
+    );
+    assert_eq!(stderr, "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_has_declared_or_call_method"));
+    assert!(c_source.contains("ptn_user_stream_close_hook"));
+}
+
+#[test]
 fn compile_user_stream_wrapper_filesystem_operations_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-user-stream-wrapper-filesystem-ops");
     fs::create_dir_all(&root).unwrap();
@@ -41562,6 +45304,63 @@ include('bail://test.php');
 }
 
 #[test]
+fn compile_user_stream_include_checks_eof_after_nonempty_read_to_native_binary() {
+    let root = temp_dir("ptn-native-user-stream-include-eof-after-read");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-stream-include-eof-after-read.php");
+    let output = root.join("user-stream-include-eof-after-read-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EofBailWrapper {
+    public $context;
+    private static $nested = false;
+
+    public function stream_open() { return true; }
+    public function stream_read() { return '.'; }
+    public function stream_set_option() {}
+    public function stream_stat() {}
+
+    public function stream_eof() {
+        if (!self::$nested) {
+            self::$nested = true;
+            include 'eofbail://';
+        }
+        @trigger_error('Bail', E_USER_ERROR);
+    }
+
+    public function stream_close() {
+        @trigger_error('Bail', E_USER_ERROR);
+    }
+}
+
+stream_wrapper_register('eofbail', EofBailWrapper::class);
+include 'eofbail://';
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert_eq!(
+        combined.matches("Fatal error: Bail in ").count(),
+        3,
+        "{combined}"
+    );
+    assert!(!combined.contains("Maximum execution time"), "{combined}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("user_stream_eof_seen"));
+}
+
+#[test]
 fn compile_proc_pipe_blocking_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-proc-pipe-blocking-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -41661,6 +45460,60 @@ socket=sock-out\n"
     assert!(c_source.contains("ptn_internal_proc_open"));
     assert!(c_source.contains("ptn_process_open_null_descriptor"));
     assert!(c_source.contains("socketpair"));
+}
+
+#[test]
+fn compile_cli_server_startup_is_available_on_proc_open_stderr_to_native_binary() {
+    let root = temp_dir("ptn-native-cli-server-proc-open-stderr");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-server-proc-open-stderr.php");
+    let output = root.join("cli-server-proc-open-stderr-bin");
+    let phpc = php_string_literal(&phpc_bin());
+    fs::write(
+        &input,
+        r#"<?php
+$server = proc_open(
+    [__PHPC__, '-n', '-S', '127.0.0.1:0', '-t', __DIR__],
+    [0 => STDIN, 1 => STDOUT, 2 => ['pipe', 'w']],
+    $pipes
+);
+stream_set_blocking($pipes[2], false);
+$startup = '';
+for ($i = 0; $i < 60; $i++) {
+    $line = fgets($pipes[2]);
+    if ($line === false) {
+        usleep(50000);
+        continue;
+    }
+    $startup .= $line;
+    if (preg_match('@^PHP \S+ Development Server \(http://127\.0\.0\.1:\d+\) started$@', trim($line))) {
+        break;
+    }
+}
+echo preg_match('@PHP \S+ Development Server \(http://127\.0\.0\.1:\d+\) started@', $startup)
+    ? "startup=stderr\n"
+    : "startup=missing\n";
+fclose($pipes[2]);
+proc_terminate($server);
+proc_close($server);
+"#
+        .replace("__PHPC__", &phpc),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "startup=stderr\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_proc_open"));
+    assert!(c_source.contains("ptn_internal_proc_terminate"));
 }
 
 #[test]
@@ -64706,6 +68559,110 @@ fn phpc_dash_d_max_execution_time_reaches_ini_get() {
 }
 
 #[test]
+fn compile_sys_temp_dir_runtime_configuration_preserves_ini_and_resolves_tempnam_fallback() {
+    let root = temp_dir("ptn-native-sys-temp-dir-runtime-configuration");
+    let configured = root.join("configured-temp");
+    fs::create_dir_all(&configured).unwrap();
+    let input = root.join("sys-temp-dir-runtime-configuration.php");
+    let output = root.join("sys-temp-dir-runtime-configuration-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('sys_temp_dir'));\n\
+echo sys_get_temp_dir(), \"\\n\";\n\
+var_dump(ini_set('sys_temp_dir', __DIR__ . '/changed'));\n\
+echo sys_get_temp_dir(), \"\\n\";\n\
+$path = @tempnam(__DIR__ . '/missing', 'ptn');\n\
+echo dirname($path), \"\\n\";\n\
+unlink($path);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let raw_configured = format!("{}/", configured.display());
+    let execution = Command::new(&output)
+        .env("PTN_SYS_TEMP_DIR", &raw_configured)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "string({}) \"{}\"\n{}\nbool(false)\n{}\n{}\n",
+            raw_configured.len(),
+            raw_configured,
+            configured.display(),
+            configured.display(),
+            configured.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn compile_sys_temp_dir_strips_root_tmpdir_fallback_and_configured_root_falls_back() {
+    let root = temp_dir("ptn-native-sys-temp-dir-root-tmpdir");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sys-temp-dir-root-tmpdir.php");
+    let output = root.join("sys-temp-dir-root-tmpdir-bin");
+    fs::write(&input, "<?php var_dump(sys_get_temp_dir());\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let root_fallback = Command::new(&output).env("TMPDIR", "/").output().unwrap();
+    assert!(root_fallback.status.success());
+    assert_eq!(String::from_utf8(root_fallback.stdout).unwrap(), "string(0) \"\"\n");
+    assert_eq!(String::from_utf8(root_fallback.stderr).unwrap(), "");
+
+    let configured_root_fallback = Command::new(&output)
+        .env("PTN_SYS_TEMP_DIR", "/")
+        .env("TMPDIR", &root)
+        .output()
+        .unwrap();
+    assert!(configured_root_fallback.status.success());
+    assert_eq!(
+        String::from_utf8(configured_root_fallback.stdout).unwrap(),
+        format!("string({}) \"{}\"\n", root.to_string_lossy().len(), root.display())
+    );
+    assert_eq!(String::from_utf8(configured_root_fallback.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_dash_d_sys_temp_dir_reaches_ini_get_and_temp_dir_resolver() {
+    let root = temp_dir("ptn-phpc-sys-temp-dir");
+    let configured = root.join("configured-temp");
+    fs::create_dir_all(&configured).unwrap();
+    let input = root.join("sys-temp-dir.php");
+    fs::write(
+        &input,
+        "<?php\nvar_dump(ini_get('sys_temp_dir'));\necho sys_get_temp_dir(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let raw_configured = format!("{}/", configured.display());
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg(format!("sys_temp_dir={raw_configured}"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "string({}) \"{}\"\n{}\n",
+            raw_configured.len(),
+            raw_configured,
+            configured.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_reflection_and_extension_info_cli_modes() {
     let phpinfo = Command::new(phpc_bin())
         .args(["-n", "--rf", "phpinfo"])
@@ -74850,126 +78807,147 @@ var_dump(curl_exec($download));\n",
 }
 
 #[test]
-fn compile_curl_modeled_localhost_server_harness_to_native_binary() {
-    let root = temp_dir("ptn-native-curl-localhost-harness");
-    let source_dir = root.join("ext/curl/tests");
-    fs::create_dir_all(&source_dir).unwrap();
-    fs::write(source_dir.join("upload.txt"), "Test.").unwrap();
-    fs::write(source_dir.join("readonly.txt"), "readonly").unwrap();
-    fs::write(
-        source_dir.join("server.inc"),
-        "<?php function curl_cli_server_start() { echo \"Server is not running\\n\"; exit(1); }\n",
-    )
-    .unwrap();
-    let input = source_dir.join("curl-localhost-harness.php");
-    let output = root.join("curl-localhost-harness-bin");
+fn compile_curl_uses_real_http_transport_to_native_binary() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        for request_index in 0..2 {
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "loopback curl server was not contacted"
+                        );
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("loopback curl server accept failed: {error}"),
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut request = Vec::new();
+            let mut read_buffer = [0_u8; 1024];
+            loop {
+                let read = stream.read(&mut read_buffer).unwrap();
+                assert!(read != 0, "loopback curl client closed before its request completed");
+                request.extend_from_slice(&read_buffer[..read]);
+                let Some(header_end) = request
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let header_text = std::str::from_utf8(&request[..header_end]).unwrap();
+                let content_length = header_text
+                    .lines()
+                    .find_map(|header| {
+                        header
+                            .strip_prefix("Content-Length:")
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+            let request = String::from_utf8(request).unwrap();
+            match request_index {
+                0 => {
+                    assert!(
+                        request.starts_with("GET /inspect?one=1 HTTP/1.1\r\n"),
+                        "{request}"
+                    );
+                    assert!(
+                        request.contains(&format!("Host: 127.0.0.1:{port}\r\n")),
+                        "{request}"
+                    );
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 201 Created\r\nX-Reply: one\r\nContent-Length: 8\r\nConnection: close\r\n\r\nGET-body",
+                        )
+                        .unwrap();
+                }
+                1 => {
+                    assert!(
+                        request.starts_with("PATCH /submit HTTP/1.1\r\n"),
+                        "{request}"
+                    );
+                    assert!(request.contains("X-Client: integration\r\n"), "{request}");
+                    assert!(request.contains("Content-Type: text/plain\r\n"), "{request}");
+                    assert!(request.contains("Content-Length: 7\r\n"), "{request}");
+                    assert!(request.ends_with("\r\n\r\npayload"), "{request}");
+                    stream
+                        .write_all(
+                            b"HTTP/1.0 202 Accepted\r\nX-Reply: two\r\nContent-Length: 9\r\nConnection: close\r\n\r\nPOST-body",
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+        }
+    });
+
+    let root = temp_dir("ptn-native-curl-real-http");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-real-http.php");
+    let output = root.join("curl-real-http-bin");
     fs::write(
         &input,
-        "<?php\n\
-function ptn_header($handle, $line) { echo $line; }\n\
-function ptn_closed_stream_option($host, $option) {\n\
-    $fp = fopen(__DIR__ . '/closed.tmp', 'w+');\n\
-    $ch = curl_init($host);\n\
-    if ($option === CURLOPT_STDERR) { curl_setopt($ch, CURLOPT_VERBOSE, 1); }\n\
-    if ($option === CURLOPT_INFILE) { curl_setopt($ch, CURLOPT_UPLOAD, 1); }\n\
-    curl_setopt($ch, $option, $fp);\n\
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);\n\
-    fclose($fp);\n\
-    curl_exec($ch);\n\
-}\n\
-include 'server.inc';\n\
-$host = curl_cli_server_start();\n\
-$post = curl_init();\n\
-curl_setopt_array($post, [\n\
-    CURLOPT_URL => $host . '/get.inc?test=post',\n\
-    CURLOPT_POST => true,\n\
-    CURLOPT_POSTFIELDS => [],\n\
-    CURLINFO_HEADER_OUT => true,\n\
-    CURLOPT_RETURNTRANSFER => true,\n\
-]);\n\
-var_dump(curl_exec($post));\n\
-var_dump(curl_getinfo($post)['request_header']);\n\
-var_dump(curl_getinfo($post, CURLINFO_HTTP_VERSION) === CURL_HTTP_VERSION_1_1);\n\
-$getpost = curl_init($host . '/get.inc?test=getpost&get_param=Hello%20World');\n\
-curl_setopt($getpost, CURLOPT_RETURNTRANSFER, 1);\n\
-curl_setopt($getpost, CURLOPT_POST, 1);\n\
-curl_setopt($getpost, CURLOPT_POSTFIELDS, 'Hello=World&Foo=Bar&Person=John%20Doe');\n\
-echo curl_exec($getpost);\n\
-$version = curl_init($host . '/get.inc?test=httpversion');\n\
-curl_setopt($version, CURLOPT_RETURNTRANSFER, 1);\n\
-curl_setopt($version, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);\n\
-var_dump(curl_exec($version));\n\
-$upload = curl_init($host . '/get.php?test=file');\n\
-curl_setopt($upload, CURLOPT_RETURNTRANSFER, 1);\n\
-curl_setopt($upload, CURLOPT_POSTFIELDS, ['file' => curl_file_create(__DIR__ . '/upload.txt')]);\n\
-var_dump(curl_exec($upload));\n\
-$base = curl_init($host);\n\
-curl_setopt($base, CURLOPT_RETURNTRANSFER, 1);\n\
-curl_exec($base);\n\
-$cloned = clone $base;\n\
-curl_setopt($cloned, CURLOPT_RETURNTRANSFER, 0);\n\
-var_dump(curl_getinfo($base, CURLINFO_EFFECTIVE_URL) === curl_getinfo($cloned, CURLINFO_EFFECTIVE_URL));\n\
-curl_exec($cloned);\n\
-$header = curl_init($host);\n\
-curl_setopt($header, CURLOPT_RETURNTRANSFER, 1);\n\
-curl_setopt($header, CURLOPT_HEADERFUNCTION, 'ptn_header');\n\
-curl_exec($header);\n\
-$fp = fopen(__DIR__ . '/readonly.txt', 'r');\n\
-try { curl_setopt($header, CURLOPT_FILE, $fp); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-ptn_closed_stream_option($host, CURLOPT_STDERR);\n\
-ptn_closed_stream_option($host, CURLOPT_WRITEHEADER);\n\
-ptn_closed_stream_option($host, CURLOPT_FILE);\n\
-ptn_closed_stream_option($host, CURLOPT_INFILE);\n",
+        r#"<?php
+$base = '127.0.0.1:__PORT__';
+$headers = '';
+$get = curl_init($base . '/inspect?one=1');
+curl_setopt($get, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($get, CURLOPT_HEADERFUNCTION, function($handle, $header) use (&$headers) {
+    $headers .= $header;
+    return strlen($header);
+});
+$get_body = curl_exec($get);
+$get_info = curl_getinfo($get);
+echo $get_body, '|', $get_info['http_code'], '|', $get_info['http_version'], '|',
+    curl_getinfo($get, CURLINFO_HTTP_CODE), '|',
+    curl_getinfo($get, CURLINFO_RESPONSE_CODE), '|',
+    (strpos($headers, 'X-Reply: one') !== false ? 1 : 0), "\n";
+
+$written = '';
+$post = curl_init($base . '/submit');
+curl_setopt_array($post, [
+    CURLOPT_CUSTOMREQUEST => 'PATCH',
+    CURLOPT_POSTFIELDS => 'payload',
+    CURLOPT_HTTPHEADER => ['X-Client: integration', 'Content-Type: text/plain'],
+    CURLOPT_WRITEFUNCTION => function($handle, $body) use (&$written) {
+        $written .= $body;
+        return strlen($body);
+    },
+    CURLINFO_HEADER_OUT => true,
+]);
+$post_ok = curl_exec($post);
+$post_info = curl_getinfo($post);
+echo $written, '|', ($post_ok ? 1 : 0), '|', $post_info['http_code'], '|',
+    $post_info['http_version'], '|',
+    (strpos($post_info['request_header'], 'X-Client: integration') !== false ? 1 : 0), "\n";
+"#
+        .replace("__PORT__", &port.to_string()),
     )
     .unwrap();
 
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
-
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
     let execution = Command::new(&output).output().unwrap();
+    assert!(
+        server.join().is_ok(),
+        "loopback curl server failed; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
     assert!(execution.status.success());
-    let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(
-        stdout.contains("string(13) \"array(0) {\n}\n\"\n"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("POST /get.inc?test=post HTTP/1.1\nHost: localhost:12345\nAccept: */*\nContent-Length: 0\nContent-Type: application/x-www-form-urlencoded\n\n"), "{stdout}");
-    assert!(stdout.contains("bool(true)\narray(2) {\n  [\"test\"]=>\n  string(7) \"getpost\"\n  [\"get_param\"]=>\n  string(11) \"Hello World\"\n}\narray(3) {\n  [\"Hello\"]=>\n  string(5) \"World\"\n  [\"Foo\"]=>\n  string(3) \"Bar\"\n  [\"Person\"]=>\n  string(8) \"John Doe\"\n}\n"), "{stdout}");
-    assert!(stdout.contains("string(8) \"HTTP/1.1\"\n"), "{stdout}");
-    assert!(
-        stdout.contains("string(37) \"upload.txt|application/octet-stream|5\"\n"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("bool(true)\nHello World!\nHello World!"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("HTTP/1.1 200 OK\r\n"), "{stdout}");
-    assert!(
-        stdout.contains("curl_setopt(): The provided file handle must be writable\n"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("curl_exec(): CURLOPT_STDERR resource has gone away, resetting to stderr"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains(
-            "curl_exec(): CURLOPT_WRITEHEADER resource has gone away, resetting to default"
-        ),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("curl_exec(): CURLOPT_FILE resource has gone away, resetting to default"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("curl_exec(): CURLOPT_INFILE resource has gone away, resetting to default"),
-        "{stdout}"
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "GET-body|201|2|201|201|1\nPOST-body|1|202|1|1\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_curl_http_response"));
-    assert!(c_source.contains("CURLINFO_HEADER_OUT"));
 }
 
 #[test]
@@ -81334,101 +85312,87 @@ $empty->call(1.1);
 }
 
 #[test]
-fn compile_soap_loopback_headers_and_wsdl_import_diagnostics_to_native_binary() {
-    let root = temp_dir("ptn-native-soap-loopback-headers-wsdl-imports");
+fn compile_include_preserves_user_source() {
+    let root = temp_dir("ptn-native-include-preserves-source");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("soap-loopback-headers-wsdl-imports.php");
-    let output = root.join("soap-loopback-headers-wsdl-imports-bin");
+    let input = root.join("include-preserves-source.php");
+    let output = root.join("include-preserves-source-bin");
     fs::write(
-        root.join("php_cli_server.inc"),
-        "<?php die('real cli server harness should be transformed');",
+        root.join("helper.inc"),
+        "<?php\nfunction included_marker() { echo \"preserved\\n\"; }\n",
     )
     .unwrap();
     fs::write(
         &input,
-        r#"<?php
-include __DIR__ . '/php_cli_server.inc';
-
-php_cli_server_start(<<<'PHP'
-<?php
-header("Set-Cookie: sessionkey=path=/evil;domain=good.com");
-PHP);
-$client = new SoapClient(null, [
-    'location' => 'http://' . PHP_CLI_SERVER_ADDRESS . '/test/endpoint',
-    'uri' => 'test-uri',
-    'trace' => true,
-]);
-$client->__soapCall('test', []);
-$cookies = $client->__getCookies();
-echo "cookie:", $cookies['sessionkey'][0], ':', $cookies['sessionkey'][1], ':', $cookies['sessionkey'][2], "\n";
-
-php_cli_server_start(<<<'PHP'
-<?php
-header('HTTP/1.0 401 Unauthorized');
-header('WWW-Authenticate: Digest realm="realm", qop="auth,auth-int", nonce="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", opaque="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"');
-PHP);
-$digest = new SoapClient(null, [
-    'location' => 'http://' . PHP_CLI_SERVER_ADDRESS,
-    'uri' => 'misc-uri',
-    'authentication' => SOAP_AUTHENTICATION_DIGEST,
-    'login' => 'user',
-    'password' => 'pass',
-    'trace' => true,
-]);
-try {
-    $digest->__soapCall('foo', []);
-} catch (Throwable $e) {
-    echo "digest:", $e->getMessage(), "\n";
-}
-$headers = $digest->__getLastRequestHeaders();
-echo str_contains($headers, "Connection: Keep-Alive\r\n") ? "keepalive\n" : "missing-keepalive\n";
-echo str_contains($headers, 'Authorization: Digest username="user", realm="realm", nonce="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", uri="/"') ? "authorization\n" : "missing-authorization\n";
-
-file_put_contents(__DIR__ . '/bug62900.wsdl', <<<'XML'
-<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri">
-    <types>
-        <xs:schema targetNamespace="http://test-uri" elementFormDefault="qualified">
-            <xs:import namespace="http://www.w3.org/XML/1998/namespace" schemaLocation="bug62900.xsd" />
-        </xs:schema>
-    </types>
-</definitions>
-XML);
-file_put_contents(__DIR__ . '/bug62900.xsd', <<<'XML'
-<xs:schema targetNamespace="http://www.w3.org/XML/1998/namespacex" xmlns:xs="http://www.w3.org/2001/XMLSchema" xml:lang="en"/>
-XML);
-new SoapClient(__DIR__ . '/bug62900.wsdl');
-"#,
+        "<?php\ninclude __DIR__ . \"/helper.inc\";\nincluded_marker();\n",
     )
     .unwrap();
 
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
-
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
     let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(
-        stdout.contains("cookie:path=/evil:/test:good.com\n"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("digest:Unauthorized\n"), "{stdout}");
-    assert!(stdout.contains("keepalive\nauthorization\n"), "{stdout}");
-    assert!(
-        stdout.contains("Fatal error: Uncaught SoapFault exception: [WSDL] SOAP-ERROR: Parsing Schema: can't import schema from '"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("unexpected 'targetNamespace'='http://www.w3.org/XML/1998/namespacex', expected 'http://www.w3.org/XML/1998/namespace'"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("#0 ") && stdout.contains(": SoapClient->__construct("),
-        "{stdout}"
-    );
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "preserved\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
 
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_soap_client_apply_loopback_server_headers"));
-    assert!(c_source.contains("ptn_soap_validate_wsdl_schema_imports"));
+#[test]
+fn compile_file_get_contents_uses_loopback_http_not_source_directory_file() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                    let mut request = [0_u8; 1024];
+                    let read = stream.read(&mut request).unwrap();
+                    assert!(
+                        std::str::from_utf8(&request[..read])
+                            .unwrap()
+                            .starts_with("GET /shadow.txt HTTP/1.0\r\n")
+                    );
+                    stream
+                        .write_all(
+                            b"HTTP/1.0 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\nnetwork response",
+                        )
+                        .unwrap();
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(std::time::Instant::now() < deadline, "loopback server was not contacted");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("loopback server accept failed: {error}"),
+            }
+        }
+    });
+
+    let root = temp_dir("ptn-native-file-get-contents-loopback");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("shadow.txt"), "local shadow").unwrap();
+    let input = root.join("loopback-http.php");
+    let output = root.join("loopback-http-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php echo file_get_contents('http://127.0.0.1:{port}/shadow.txt');"
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        server.join().is_ok(),
+        "loopback server failed; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "network response");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -83986,6 +87950,68 @@ foreach ([1, 2] as $case) {
             "\n",
             "})\n",
             "--\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_short_circuited_anonymous_property_hook_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-anonymous-property-hook-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-anonymous-property-hook-fatal.php");
+    let output = root.join("assert-anonymous-property-hook-fatal-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    assert(false && new class {
+        public $prop1 { get; set; }
+        public $prop2 {
+            get {
+                return parent::$prop1::get();
+            }
+            final set {
+                echo 'Foo';
+                $this->prop1 = 42;
+            }
+        }
+        public $prop3 = 1 {
+            get => 42;
+        }
+    });
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(false && new class {\n",
+            "    public $prop1 {\n",
+            "        get;\n",
+            "        set;\n",
+            "    }\n",
+            "    public $prop2 {\n",
+            "        get {\n",
+            "            return parent::$prop1::get();\n",
+            "        }\n",
+            "        final set {\n",
+            "            echo 'Foo';\n",
+            "            $this->prop1 = 42;\n",
+            "        }\n",
+            "    }\n",
+            "    public $prop3 = 1 {\n",
+            "        get => 42;\n",
+            "    }\n",
+            "})\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -87252,7 +91278,7 @@ echo \"unreachable\\n\";\n",
     let stderr = String::from_utf8(execution.stderr).unwrap();
     assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
     assert!(stderr.contains("tried to allocate "));
-    assert!(stderr.contains("array-append-memory-limit.php on line 3"));
+    assert!(!stderr.contains("Fatal error: out of memory"), "{stderr}");
 }
 
 #[test]
@@ -103584,6 +107610,44 @@ fn phpc_auto_detect_line_endings_startup_ini_emits_deprecation() {
 }
 
 #[test]
+fn phpc_report_memleaks_startup_ini_emits_deprecation_for_false_values() {
+    let root = temp_dir("ptn-phpc-report-memleaks-startup-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("report-memleaks-startup-ini.php");
+    fs::write(&input, "<?php echo \"script\\n\";").unwrap();
+
+    for value in ["0", "Off"] {
+        let execution = Command::new(phpc_bin())
+            .arg("-d")
+            .arg(format!("report_memleaks={value}"))
+            .arg("-f")
+            .arg(&input)
+            .output()
+            .unwrap();
+        assert!(execution.status.success());
+        assert_eq!(
+            String::from_utf8(execution.stdout).unwrap(),
+            concat!(
+                "Deprecated: PHP Startup: Directive 'report_memleaks' is deprecated in Unknown on line 0\n",
+                "script\n"
+            )
+        );
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    }
+
+    for setting in [None, Some("report_memleaks=1")] {
+        let mut command = Command::new(phpc_bin());
+        if let Some(setting) = setting {
+            command.arg("-d").arg(setting);
+        }
+        let execution = command.arg("-f").arg(&input).output().unwrap();
+        assert!(execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "script\n");
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    }
+}
+
+#[test]
 fn phpc_session_ini_upload_progress_trans_sid_and_lazy_write_are_runtime_visible() {
     let root = temp_dir("ptn-phpc-session-ini-upload-trans-sid");
     fs::create_dir_all(&root).unwrap();
@@ -104517,40 +108581,26 @@ class SomeClass extends \\DatePeriod {\n\
 }
 
 #[test]
-fn compile_php_cli_server_include_transform_reads_loopback_phar_stub() {
-    let root = temp_dir("ptn-native-php-cli-server-loopback-phar-stub");
+fn compile_include_keeps_user_defined_constant_and_helper() {
+    let root = temp_dir("ptn-native-include-user-helper");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("issue0149.php");
-    let output = root.join("issue0149-bin");
-    let include = root.join("php_cli_server.inc");
+    let input = root.join("include-user-helper.php");
+    let output = root.join("include-user-helper-bin");
     fs::write(
-        &include,
-        "<?php die('real server harness should be transformed');",
+        root.join("helper.inc"),
+        "<?php\nconst HELPER_PORT = 45678;\nfunction included_helper() { return \"helper\"; }\n",
     )
     .unwrap();
     fs::write(
         &input,
-        "<?php\n\
-$archive = __DIR__ . '/issue0149.phar.php';\n\
-file_put_contents($archive, \"<?php header('Content-Type: text/plain;');\\nPhar::mount('this.file', 'source.php');\\necho 'OK\\\\n';\\n__HALT_COMPILER(); ?>\");\n\
-include \"php_cli_server.inc\";\n\
-php_cli_server_start('-d opcache.enable=1');\n\
-echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php');\n\
-echo file_get_contents('http://' . PHP_CLI_SERVER_ADDRESS . '/issue0149.phar.php');\n\
-@unlink($archive);\n",
+        "<?php\ninclude \"helper.inc\";\necho included_helper(), \":\", HELPER_PORT, \"\\n\";\n",
     )
     .unwrap();
 
     compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
-
     let execution = Command::new(&output).output().unwrap();
-    assert!(
-        execution.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&execution.stdout),
-        String::from_utf8_lossy(&execution.stderr)
-    );
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\nOK\n");
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "helper:45678\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -106292,14 +110342,20 @@ foreach (new Bar as $y) {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    let stderr = String::from_utf8(execution.stderr).unwrap();
-    assert!(stderr.contains("Fatal error: Uncaught Error: Undefined constant \"y\""));
-    assert!(
-        stderr.contains(&format!("#0 {}(10): Bar->__destruct()", input.display())),
-        "{stderr}"
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_path = input.display();
+    assert_eq!(
+        stdout,
+        format!(
+            "\nFatal error: Uncaught Error: Undefined constant \"y\" in {input_path}:5\n\
+Stack trace:\n\
+#0 {input_path}(10): Bar->__destruct()\n\
+#1 {{main}}\n\
+\x20\x20thrown in {input_path} on line 5\n"
+        )
     );
-    assert!(!stderr.contains(&format!("#0 {}(1): Bar->__destruct()", input.display())));
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(stderr, "");
 }
 
 #[test]
@@ -114836,6 +118892,97 @@ echo $evalBag->dyn, \"\\n\";
 }
 
 #[test]
+fn compile_magic_get_increment_preflights_dynamic_property_creation() {
+    let root = temp_dir("ptn-native-magic-get-increment-dynamic-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-get-increment-dynamic-property.php");
+    let output = root.join("magic-get-increment-dynamic-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class WritesElsewhere {
+    function __set($name, $value) {}
+}
+$magic = new WritesElsewhere;
+$object = new class {
+    public $bar;
+    function __construct() { $this->bar = new stdClass; }
+    function &__get($name) { return $this->bar; }
+};
+try {
+    $object->foo++;
+} catch (TypeError $e) {
+    echo "caught\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nDeprecated: Creation of dynamic property class@anonymous::$foo is deprecated in {} on line 12\ncaught\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_preflight_dynamic_property_creation"));
+}
+
+#[test]
+fn compile_temporary_arrayaccess_increment_notices_before_cleanup() {
+    let root = temp_dir("ptn-native-temporary-arrayaccess-increment-notice");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("temporary-arrayaccess-increment-notice.php");
+    let output = root.join("temporary-arrayaccess-increment-notice-bin");
+    fs::write(
+        &input,
+        r#"<?php
+new class implements ArrayAccess { function offsetGet($x): mixed { return null; } function offsetSet($x, $y): void {} function offsetExists($x): bool { return false; } function offsetUnset($x): void {} };
+new class implements ArrayAccess { function offsetGet($x): mixed { return null; } function offsetSet($x, $y): void {} function offsetExists($x): bool { return false; } function offsetUnset($x): void {} };
+try {
+    var_dump((function() {
+        return new class implements ArrayAccess {
+            function offsetGet($x): mixed { return [new stdClass]; }
+            function offsetSet($x, $y): void {}
+            function offsetExists($x): bool { return true; }
+            function offsetUnset($x): void {}
+            function __destruct() { throw new Exception; }
+        };
+    })()[0]++);
+} catch (Exception $e) {
+    echo "caught\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Indirect modification of overloaded element of ArrayAccess@anonymous has no effect in {} on line 13\ncaught\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(
+        "ptn_value_array_path_preflight_inc_dec_overloaded_element_notice"
+    ));
+}
+
+#[test]
 fn compile_user_dynamic_property_write_in_static_method_to_native_binary() {
     let root = temp_dir("ptn-native-user-dynamic-property-static-method");
     fs::create_dir_all(&root).unwrap();
@@ -120049,6 +124196,63 @@ report_lazy_hooked_isset('proxy', $reflector, $proxy);
 }
 
 #[test]
+fn compile_lazy_proxy_identity_set_hook_initializes_before_backing_write_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-identity-set-hook");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-identity-set-hook.php");
+    let output = root.join("lazy-proxy-identity-set-hook-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyIdentitySetter {
+    public $prop {
+        set => $value;
+    }
+}
+
+class OtherRuntimeSetter {
+    public $prop {
+        set => $value * 2;
+    }
+}
+
+function write_lazy_identity_setter(LazyIdentitySetter $object): void {
+    $object->prop = 1;
+    var_dump($object->prop);
+}
+
+$non_lazy = new LazyIdentitySetter();
+$lazy = (new ReflectionClass(LazyIdentitySetter::class))->newLazyProxy(function () {
+    echo \"init\\n\";
+    return new LazyIdentitySetter();
+});
+
+write_lazy_identity_setter($non_lazy);
+write_lazy_identity_setter($lazy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\ninit\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_set"));
+}
+
+#[test]
 fn compile_lazy_reference_source_unset_cleanup_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-reference-source-unset-cleanup");
     fs::create_dir_all(&root).unwrap();
@@ -120260,6 +124464,18 @@ try {
     dump_error_chain($e);
 }
 
+echo \"# Nested proxy\\n\";
+$o = $releaseReflector->newLazyProxy(function ($obj) {
+    global $o;
+    $o = null;
+    return new stdClass();
+});
+try {
+    $o->s = new stdClass;
+} catch (Error $e) {
+    dump_error_chain($e);
+}
+
 $assignmentReflector = new ReflectionClass(LazyAssignmentBox::class);
 
 echo \"# Assign ghost\\n\";
@@ -120309,6 +124525,9 @@ var_dump($o->s === $q);
             "# Nested ghost\n",
             "Error: Lazy object was released during initialization\n",
             "TypeError: Lazy object initializer must return NULL or no value\n",
+            "# Nested proxy\n",
+            "Error: Lazy object was released during initialization\n",
+            "TypeError: The real instance class stdClass is not compatible with the proxy class LazyReleasedBox. The proxy must be a instance of the same class as the real instance, or a sub-class with no additional properties, and no overrides of the __destructor or __clone methods.\n",
             "# Assign ghost\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -132803,6 +137022,270 @@ new Bravo();
         "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cli_server_routes_post_body_through_compiled_router() {
+    let root = temp_dir("ptn-phpc-cli-server-post-router");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("router.php"),
+        "<?php echo file_get_contents('php://input');\n",
+    )
+    .unwrap();
+
+    let mut server = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .arg("-d")
+        .arg("enable_post_data_reading=Off")
+        .arg("-t")
+        .arg(&root)
+        .arg("-S")
+        .arg("127.0.0.1:0")
+        .arg("router.php")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let result = (|| -> Result<(Vec<u8>, Vec<u8>), String> {
+        let stdout = server
+            .stdout
+            .take()
+            .ok_or_else(|| "CLI server stdout was not piped".to_string())?;
+        let mut startup = String::new();
+        BufReader::new(stdout)
+            .read_line(&mut startup)
+            .map_err(|error| format!("failed to read CLI server startup line: {error}"))?;
+        let marker = "(http://";
+        let start = startup
+            .find(marker)
+            .ok_or_else(|| format!("unexpected CLI server startup line: {startup:?}"))?;
+        let address = startup[start + marker.len()..]
+            .split(')')
+            .next()
+            .filter(|address| !address.is_empty())
+            .ok_or_else(|| format!("missing CLI server address: {startup:?}"))?;
+
+        let mut client = TcpStream::connect(address)
+            .map_err(|error| format!("failed to connect to CLI server: {error}"))?;
+        client
+            .set_read_timeout(Some(Duration::from_secs(120)))
+            .map_err(|error| format!("failed to set CLI server client timeout: {error}"))?;
+        client
+            .write_all(
+                b"POST /payload?source=integration HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPASS",
+            )
+            .map_err(|error| format!("failed to send CLI server request: {error}"))?;
+        let mut response = Vec::new();
+        client
+            .read_to_end(&mut response)
+            .map_err(|error| format!("failed to read CLI server response: {error}"))?;
+
+        let client_source = root.join("client.php");
+        fs::write(
+            &client_source,
+            format!(
+                "<?php\n\
+$context = stream_context_create(['http' => ['method' => 'POST', 'header' => \"Content-Type: text/plain\\r\\n\", 'content' => 'PASS']]);\n\
+var_dump(file_get_contents('http://{address}/via-context', false, $context));\n"
+            ),
+        )
+        .map_err(|error| format!("failed to write CLI server context client: {error}"))?;
+        let client_execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+            .arg("-n")
+            .arg(&client_source)
+            .output()
+            .map_err(|error| format!("failed to run CLI server context client: {error}"))?;
+        if !client_execution.status.success() {
+            return Err(format!(
+                "CLI server context client exited with {:?}: {}",
+                client_execution.status.code(),
+                String::from_utf8_lossy(&client_execution.stderr)
+            ));
+        }
+        Ok((response, client_execution.stdout))
+    })();
+
+    let _ = server.kill();
+    let _ = server.wait();
+    let (response, client_stdout) = result.unwrap();
+    let response_text = String::from_utf8_lossy(&response);
+    assert!(
+        response.starts_with(b"HTTP/1.1 200 OK\r\n"),
+        "unexpected CLI server response: {response_text}"
+    );
+    assert!(
+        response.ends_with(b"\r\n\r\nPASS"),
+        "router did not receive the POST body: {response_text}"
+    );
+    assert_eq!(
+        String::from_utf8(client_stdout).unwrap(),
+        "string(4) \"PASS\"\n"
+    );
+}
+
+#[test]
+fn phpc_reports_dynamic_extension_lookup_paths() {
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .arg("-d")
+        .arg("html_errors=on")
+        .arg("-d")
+        .arg("extension_dir=relative/extensions")
+        .arg("-d")
+        .arg("extension=missing_extension.dll")
+        .arg("-v")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let output = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        output.contains("Unable to load dynamic library 'missing_extension.dll'"),
+        "{output}"
+    );
+    assert!(
+        output.contains("relative/extensions/missing_extension.dll"),
+        "{output}"
+    );
+    assert!(
+        output.contains("relative/extensions/missing_extension.dll.so"),
+        "{output}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn phpc_reports_extension_load_failure_for_non_utf8_cli_path() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let invalid_extension_dir = OsString::from_vec(b"extension_dir=a/\xe4/w".to_vec());
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .arg("-d")
+        .arg("html_errors=on")
+        .arg("-d")
+        .arg(invalid_extension_dir)
+        .arg("-d")
+        .arg("extension=missing_extension.dll")
+        .arg("-v")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(
+        output.contains("Unable to load dynamic library 'missing_extension.dll'"),
+        "{output}"
+    );
+    assert!(output.contains("a/"), "{output}");
+    assert!(output.contains("/w/missing_extension.dll"), "{output}");
+}
+
+#[test]
+fn compile_request_allocator_enforces_runtime_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-request-allocator-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("request-allocator-memory-limit.php");
+    let output = root.join("request-allocator-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('memory_limit', '2M');\n\
+$chunks = [];\n\
+for ($i = 0; $i < 4096; $i++) {\n\
+    $chunks[] = str_repeat('x', 1024);\n\
+}\n\
+echo \"unreachable\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("30s")
+        .arg(&output)
+        .env("PTN_MEMORY_LIMIT", "8M")
+        .output()
+        .unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded: {execution:?}"
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(!stdout.contains("unreachable"), "{stdout}");
+    assert!(
+        stderr.contains("Fatal error: Allowed memory size of 2097152 bytes exhausted"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("tried to allocate "), "{stderr}");
+    assert!(!stderr.contains("Fatal error: out of memory"), "{stderr}");
+}
+
+#[test]
+fn compile_request_allocator_reports_usage_peak_and_rejects_lower_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-request-allocator-usage");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("request-allocator-usage.php");
+    let output = root.join("request-allocator-usage-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$before = memory_get_usage();\n\
+$chunks = [];\n\
+for ($i = 0; $i < 64; $i++) {\n\
+    $chunks[] = str_repeat('x', 1024);\n\
+}\n\
+$after = memory_get_usage();\n\
+$transient = str_repeat('y', 256 * 1024);\n\
+$peak = memory_get_peak_usage();\n\
+unset($transient);\n\
+$beforeReset = memory_get_usage();\n\
+memory_reset_peak_usage();\n\
+$reset = memory_get_peak_usage();\n\
+echo \"USAGE:$before,$after,$peak,$beforeReset,$reset\\n\";\n\
+var_dump(ini_set('memory_limit', '1K'));\n\
+echo \"LIMIT:\", ini_get('memory_limit'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "8M")
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let usage_line = stdout
+        .lines()
+        .find(|line| line.starts_with("USAGE:"))
+        .expect("usage output");
+    let usage = usage_line[6..]
+        .split(',')
+        .map(|value| value.parse::<u64>().expect("usage value"))
+        .collect::<Vec<_>>();
+    assert_eq!(usage.len(), 5, "{stdout}");
+    assert!(usage[1] > usage[0], "{stdout}");
+    assert!(usage[2] > usage[1], "{stdout}");
+    assert!(usage[3] >= usage[1], "{stdout}");
+    assert!(usage[4] <= usage[3] + 4096, "{stdout}");
+    assert!(usage[4] < usage[2], "{stdout}");
+    assert!(
+        stdout.contains("Warning: Failed to set memory limit to 1024 bytes (Current memory usage is "),
+        "{stdout}"
+    );
+    assert!(stdout.contains("LIMIT:8M"), "{stdout}");
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

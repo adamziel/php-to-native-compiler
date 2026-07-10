@@ -57,6 +57,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
+    runtime->error_suppression_depth = caller_runtime->error_suppression_depth;
+    runtime->error_suppression_saved_reporting =
+        caller_runtime->error_suppression_saved_reporting;
     runtime->diagnostics.emitted_deprecation = caller_runtime->diagnostics.emitted_deprecation;
     runtime->diagnostics.emitted_warning = caller_runtime->diagnostics.emitted_warning;
     runtime->diagnostics.suppressed = caller_runtime->diagnostics.suppressed;
@@ -109,6 +112,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_arrays = NULL;
     runtime->live_arrays_len = 0;
     runtime->live_arrays_capacity = 0;
+    runtime->active_cleanup_roots = NULL;
     runtime->live_references = NULL;
     runtime->live_references_len = 0;
     runtime->live_references_capacity = 0;
@@ -164,6 +168,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
     runtime->fatal_error_recovery_frame = caller_runtime->fatal_error_recovery_frame;
+    runtime->fatal_error_shutdown = caller_runtime->fatal_error_shutdown;
     runtime->tick_enabled = caller_runtime->tick_enabled;
     runtime->tick_functions = NULL;
     runtime->tick_functions_len = 0;
@@ -281,6 +286,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->suppress_generator_rewind_trace_frame =
         caller_runtime->suppress_generator_rewind_trace_frame;
     runtime->current_fiber = caller_runtime->current_fiber;
+    runtime->active_fiber_executor_runtime = NULL;
+    runtime->active_value_release_runtime = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
@@ -395,6 +402,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
     runtime->gc_enabled = caller_runtime->gc_enabled;
     runtime->gc_running = caller_runtime->gc_running;
+    runtime->gc_destructor_depth = 0;
+    runtime->gc_destructor_trace_boundary = NULL;
+    runtime->gc_destructor_caller_trace = ptn_null();
+    runtime->gc_destructor_fiber = NULL;
+    runtime->gc_destructor_fiber_running = 0;
+    runtime->gc_destructor_fiber_force_closing = 0;
+    runtime->gc_destructor_fiber_current_requested = 0;
     runtime->gc_mark_epoch = caller_runtime->gc_mark_epoch;
     runtime->gc_runs = caller_runtime->gc_runs;
     runtime->gc_collected = caller_runtime->gc_collected;
@@ -689,7 +703,8 @@ static PTN_UNUSED void ptn_runtime_tick(PtnRuntime *runtime, size_t line) {
     ) {
         return;
     }
-    root->tick_functions_running = 1;
+    int previous_tick_functions_running = root->tick_functions_running;
+    root->tick_functions_running = previous_tick_functions_running + 1;
     size_t limit = root->tick_functions_len;
     for (size_t i = 0; i < limit && i < root->tick_functions_len; i++) {
         PtnTickFunction *function = &root->tick_functions[i];
@@ -730,10 +745,10 @@ static PTN_UNUSED void ptn_runtime_tick(PtnRuntime *runtime, size_t line) {
             }
             free(call_args);
             ptn_value_destroy(&callback);
-            root->tick_functions_running = 0;
+            root->tick_functions_running = previous_tick_functions_running;
             ptn_rethrow_exception(runtime);
         }
-        runtime->suppress_user_call_frame_location = 1;
+        runtime->suppress_user_call_frame_location = 0;
         runtime->warn_by_ref_argument_mismatch = 1;
         runtime->throw_argument_count_errors = 1;
         result = ptn_call_callable(
@@ -759,11 +774,11 @@ static PTN_UNUSED void ptn_runtime_tick(PtnRuntime *runtime, size_t line) {
         ptn_value_destroy(&callback);
         ptn_value_destroy(&result);
         if (runtime->exceptions->active_exception != NULL) {
-            root->tick_functions_running = 0;
+            root->tick_functions_running = previous_tick_functions_running;
             ptn_rethrow_exception(runtime);
         }
     }
-    root->tick_functions_running = 0;
+    root->tick_functions_running = previous_tick_functions_running;
 #else
     (void)runtime;
     (void)line;
@@ -1068,6 +1083,7 @@ static int ptn_runtime_has_new_active_exception(
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    ptn_runtime_unlink_owned_trace_frame_from_external_chains(runtime);
     if (runtime->lifecycle_root == runtime) {
         if (runtime->shutdown_in_progress) {
             return;
@@ -1105,15 +1121,25 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }
-        ptn_runtime_close_suspended_fibers(runtime);
+        ptn_runtime_close_suspended_fibers_once(runtime, shutdown_entry_exception);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
+        }
+        if (runtime->gc_destructor_fiber != NULL) {
+            PtnObject *gc_destructor_fiber = runtime->gc_destructor_fiber;
+            runtime->gc_destructor_fiber = NULL;
+            runtime->gc_destructor_fiber_running = 0;
+            ptn_object_release(gc_destructor_fiber);
         }
         ptn_runtime_force_close_root_generators(runtime);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }
-        ptn_runtime_force_close_live_generators(runtime);
+        ptn_runtime_force_close_live_generators_once(runtime, shutdown_entry_exception);
+        if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
+            ptn_rethrow_exception(runtime);
+        }
+        ptn_runtime_drain_suspended_fibers_and_generators(runtime, shutdown_entry_exception);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }
@@ -1161,6 +1187,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
     ptn_value_destroy_with_runtime_scope(runtime, &runtime->deferred_yield_from_iterator_object);
+    ptn_value_destroy_with_runtime_scope(runtime, &runtime->gc_destructor_caller_trace);
     if (runtime->lifecycle_root == runtime && runtime->last_opened_directory != NULL) {
         ptn_resource_release(runtime->last_opened_directory);
         runtime->last_opened_directory = NULL;
@@ -1340,6 +1367,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->always_populate_raw_post_data = NULL;
         free(runtime->upload_tmp_dir);
         runtime->upload_tmp_dir = NULL;
+        free(runtime->sys_temp_dir);
+        runtime->sys_temp_dir = NULL;
+        free(runtime->resolved_temp_dir);
+        runtime->resolved_temp_dir = NULL;
         free(runtime->expose_php);
         runtime->expose_php = NULL;
         free(runtime->docref_root);
@@ -1771,6 +1802,15 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
         has_parameter_name ? parameter_name : ""
     );
     exit(255);
+}
+
+static void ptn_runtime_replace_active_exception(
+    PtnRuntime *runtime,
+    PtnException *replacement
+) {
+    PtnException *previous = runtime->exceptions->active_exception;
+    runtime->exceptions->active_exception = replacement;
+    ptn_exception_release_in_runtime(runtime, previous);
 }
 
 static PTN_UNUSED void ptn_throw_exception_at(
@@ -2972,6 +3012,24 @@ static PTN_UNUSED void ptn_exception_trace_append_value_frame(
     (*index)++;
 }
 
+static PTN_UNUSED void ptn_exception_trace_append_stored_frames(
+    PtnValue trace,
+    size_t *index,
+    PtnValue stored_trace
+) {
+    stored_trace = ptn_value_deref(stored_trace);
+    if (stored_trace.type != PTN_ARRAY || stored_trace.as.array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < stored_trace.as.array->len; i++) {
+        ptn_exception_trace_append_value_frame(
+            trace,
+            index,
+            ptn_value_clone_deref(stored_trace.as.array->entries[i].value)
+        );
+    }
+}
+
 static PTN_UNUSED void ptn_exception_trace_copy_location(PtnValue target, PtnValue source) {
     source = ptn_value_deref(source);
     if (source.type != PTN_ARRAY || source.as.array == NULL) {
@@ -3075,6 +3133,42 @@ static PTN_UNUSED PtnValue ptn_exception_capture_deferred_destructor_trace(PtnRu
     return trace;
 }
 
+static PTN_UNUSED int ptn_exception_gc_destructor_trace_active(
+    PtnRuntime *runtime,
+    PtnTraceFrame **boundary_out
+) {
+    if (boundary_out != NULL) {
+        *boundary_out = NULL;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        root == NULL ||
+        !root->gc_running ||
+        root->gc_destructor_depth == 0
+    ) {
+        return 0;
+    }
+    if (boundary_out != NULL) {
+        *boundary_out = root->gc_destructor_trace_boundary;
+    }
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_gc_destructor_fiber_trace_frame(void) {
+    PtnValue frame = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("function"),
+        ptn_string("gc_destructor_fiber")
+    );
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("args"),
+        ptn_array_from_literal_entries(0, NULL)
+    );
+    return frame;
+}
+
 static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     PtnValue deferred_destructor_trace = ptn_exception_capture_deferred_destructor_trace(runtime);
     if (ptn_value_deref(deferred_destructor_trace).type == PTN_ARRAY) {
@@ -3169,9 +3263,23 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     }
     size_t index = 0;
     PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+    PtnTraceFrame *gc_destructor_boundary = NULL;
+    int gc_destructor_trace = ptn_exception_gc_destructor_trace_active(
+        runtime,
+        &gc_destructor_boundary
+    );
+    PtnRuntime *gc_destructor_root = ptn_runtime_root(runtime);
+    PtnValue gc_destructor_caller_trace =
+        gc_destructor_root == NULL
+            ? ptn_null()
+            : gc_destructor_root->gc_destructor_caller_trace;
+    int gc_destructor_force_closing =
+        gc_destructor_root != NULL &&
+        gc_destructor_root->gc_destructor_fiber_force_closing;
 #if !defined(_WIN32)
     PtnTraceFrame *fiber_method_frame = NULL;
     PtnTraceFrame *fiber_caller_trace_frame = NULL;
+    int gc_destructor_fiber_trace = 0;
     if (
         runtime != NULL &&
         runtime->current_generator == NULL &&
@@ -3181,9 +3289,62 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
         PtnFiberData *fiber_data = (PtnFiberData *)runtime->current_fiber->native_data;
         fiber_method_frame = fiber_data->active_method_frame;
         fiber_caller_trace_frame = fiber_data->caller_trace_frame;
+        gc_destructor_fiber_trace = fiber_data->is_gc_destructor_fiber;
     }
 #endif
     while (frame != NULL) {
+        int gc_destructor_boundary_frame =
+            gc_destructor_trace && frame == gc_destructor_boundary;
+#if !defined(_WIN32)
+        int gc_destructor_fiber_method_frame =
+            gc_destructor_fiber_trace && frame == fiber_method_frame;
+#endif
+        if (gc_destructor_boundary_frame) {
+            ptn_exception_trace_append_value_frame(
+                trace,
+                &index,
+                ptn_exception_gc_destructor_fiber_trace_frame()
+            );
+#if !defined(_WIN32)
+            if (!gc_destructor_force_closing) {
+                PtnValue saved_caller_trace = ptn_value_deref(gc_destructor_caller_trace);
+                if (
+                    saved_caller_trace.type == PTN_ARRAY &&
+                    saved_caller_trace.as.array != NULL &&
+                    saved_caller_trace.as.array->len > 0
+                ) {
+                    ptn_exception_trace_append_stored_frames(
+                        trace,
+                        &index,
+                        saved_caller_trace
+                    );
+                    return trace;
+                }
+            }
+#endif
+            return trace;
+        }
+#if !defined(_WIN32)
+        if (gc_destructor_fiber_method_frame) {
+            ptn_exception_trace_append_value_frame(
+                trace,
+                &index,
+                ptn_exception_gc_destructor_fiber_trace_frame()
+            );
+            if (
+                frame->function_name != NULL &&
+                !ptn_ascii_case_equal(frame->function_name, "gc_destructor_fiber")
+            ) {
+                ptn_exception_trace_append_frame(trace, frame, &index);
+            }
+            if (fiber_caller_trace_frame != NULL) {
+                frame = fiber_caller_trace_frame;
+                gc_destructor_fiber_trace = 0;
+                continue;
+            }
+            return trace;
+        }
+#endif
         if (
             frame->previous != NULL &&
             frame->previous->function_name != NULL &&
@@ -3206,6 +3367,38 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
         }
 #endif
         frame = frame->previous;
+    }
+    if (
+        gc_destructor_trace
+#if !defined(_WIN32)
+        || gc_destructor_fiber_trace
+#endif
+    ) {
+        ptn_exception_trace_append_value_frame(
+            trace,
+            &index,
+            ptn_exception_gc_destructor_fiber_trace_frame()
+        );
+#if !defined(_WIN32)
+        if (
+            gc_destructor_root != NULL &&
+            gc_destructor_root->gc_running &&
+            !gc_destructor_force_closing
+        ) {
+            PtnValue saved_caller_trace = ptn_value_deref(gc_destructor_caller_trace);
+            if (
+                saved_caller_trace.type == PTN_ARRAY &&
+                saved_caller_trace.as.array != NULL &&
+                saved_caller_trace.as.array->len > 0
+            ) {
+                ptn_exception_trace_append_stored_frames(
+                    trace,
+                    &index,
+                    saved_caller_trace
+                );
+            }
+        }
+#endif
     }
     return trace;
 }
@@ -3233,6 +3426,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
         ptn_abort_out_of_memory();
     }
     exception->refcount = 1;
+    exception->gc_mark_epoch = 0;
     exception->object_id = ptn_runtime_alloc_object_id(runtime);
     exception->lifecycle_runtime = ptn_runtime_root(runtime);
     exception->class_name = class_name;
@@ -3245,6 +3439,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->path = path;
     exception->line = line;
     exception->message_defined_at_location = 0;
+    exception->force_close_yield_from_trace_pending = 0;
     exception->trace = ptn_exception_capture_trace(runtime);
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
@@ -3353,10 +3548,12 @@ static PTN_UNUSED void ptn_runtime_release_finally_return_suppressed_exception(P
     ) {
         return;
     }
-    ptn_exception_free(runtime->exceptions->finally_return_suppressed_exception);
+    PtnException *exception =
+        runtime->exceptions->finally_return_suppressed_exception;
     runtime->exceptions->finally_return_suppressed_exception = NULL;
     runtime->exceptions->finally_return_suppressed_exception_should_resume = 0;
     runtime->owns_finally_return_suppressed_exception = 0;
+    ptn_exception_release_in_runtime(runtime, exception);
 }
 
 static PTN_UNUSED void ptn_runtime_release_owned_finally_return_suppressed_exception(
@@ -4072,8 +4269,7 @@ static PTN_UNUSED void ptn_throw_exception_at(
         path,
         line
     );
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4106,8 +4302,7 @@ static PTN_UNUSED void ptn_throw_exception_at_without_current_trace_frame(
         line
     );
     runtime->trace_frame = saved_trace_frame;
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4148,8 +4343,7 @@ static PTN_UNUSED void ptn_throw_exception_to_string_conversion_error(
         0
     );
     runtime->trace_frame = saved_trace_frame;
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4179,8 +4373,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
         NULL,
         0
     );
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4208,8 +4401,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
         path,
         line
     );
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4237,9 +4429,8 @@ static PTN_UNUSED void ptn_throw_return_type_exception_owned_message_at(
         path,
         line
     );
+    ptn_runtime_replace_active_exception(runtime, exception);
     ptn_runtime_release_owned_finally_return_suppressed_exception(runtime);
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4268,8 +4459,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_defined_location(
         line
     );
     ptn_exception_mark_message_defined_at_location(exception);
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4305,8 +4495,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame(
         line
     );
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -4352,8 +4541,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame_met
         line
     );
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = exception;
+    ptn_runtime_replace_active_exception(runtime, exception);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -5285,8 +5473,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
                 has_uncaught_text = runtime->exceptions->active_exception == NULL;
             }
         }
-        ptn_exception_free(runtime->exceptions->active_exception);
-        runtime->exceptions->active_exception = ptn_exception_new_owned(
+        PtnException *exception = ptn_exception_new_owned(
             runtime,
             resolved.as.object->class_name,
             message.owned,
@@ -5297,16 +5484,13 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
         );
-        runtime->exceptions->active_exception->thrown_value = ptn_value_clone_deref(resolved);
-        ptn_value_destroy(&resolved.as.object->exception_trace);
-        resolved.as.object->exception_trace =
-            ptn_value_clone(runtime->exceptions->active_exception->trace);
+        exception->thrown_value = ptn_value_clone_deref(resolved);
         if (has_uncaught_text) {
-            runtime->exceptions->active_exception->uncaught_text_len = uncaught_text.len;
+            exception->uncaught_text_len = uncaught_text.len;
             if (uncaught_text.owned != NULL) {
-                runtime->exceptions->active_exception->uncaught_text = uncaught_text.owned;
+                exception->uncaught_text = uncaught_text.owned;
             } else {
-                runtime->exceptions->active_exception->uncaught_text =
+                exception->uncaught_text =
                     ptn_duplicate_string_len(uncaught_text.data, uncaught_text.len);
             }
         } else {
@@ -5314,10 +5498,13 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         }
         ptn_exception_copy_soap_fault_code_from_throwable(
             runtime,
-            runtime->exceptions->active_exception,
+            exception,
             resolved,
             line
         );
+        ptn_runtime_replace_active_exception(runtime, exception);
+        ptn_value_destroy(&resolved.as.object->exception_trace);
+        resolved.as.object->exception_trace = ptn_value_clone(exception->trace);
         ptn_value_destroy(&previous);
         if (runtime->exceptions->try_frame != NULL) {
             longjmp(runtime->exceptions->try_frame->jump, 1);
@@ -5364,9 +5551,8 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         ptn_value_destroy(&resolved.as.exception->previous);
         resolved.as.exception->previous = ptn_value_clone_deref(chained_previous);
     }
-    ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = resolved.as.exception;
-    ptn_exception_retain(runtime->exceptions->active_exception);
+    ptn_exception_retain(resolved.as.exception);
+    ptn_runtime_replace_active_exception(runtime, resolved.as.exception);
     if (runtime->exceptions->active_exception->path == NULL) {
         runtime->exceptions->active_exception->path = path;
         runtime->exceptions->active_exception->line = line;
@@ -10335,7 +10521,7 @@ static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
     PtnException *exception = runtime->exceptions->active_exception;
     ptn_runtime_note_caught_finally_return_suppressed_exception(runtime, exception);
     runtime->exceptions->active_exception = NULL;
-    ptn_exception_free(exception);
+    ptn_exception_release_in_runtime(runtime, exception);
     if (runtime->exceptions->active_exception == NULL) {
         runtime->generator_chained_exception_during_unwind = 0;
     }
@@ -10353,7 +10539,7 @@ static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const
     ptn_runtime_note_caught_finally_return_suppressed_exception(runtime, caught_exception);
     ptn_exception_retain(caught_exception);
     runtime->exceptions->active_exception = NULL;
-    ptn_exception_free(caught_exception);
+    ptn_exception_release_in_runtime(runtime, caught_exception);
 
     PtnTryFrame frame;
     int ok = 1;
@@ -10370,7 +10556,7 @@ static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const
         ok = 0;
         ptn_try_frame_pop(runtime, &frame);
     }
-    ptn_exception_free(caught_exception);
+    ptn_exception_release_in_runtime(runtime, caught_exception);
     return ok && runtime->exceptions->active_exception == NULL;
 }
 

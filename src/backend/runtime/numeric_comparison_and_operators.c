@@ -1372,6 +1372,9 @@ static PTN_UNUSED int ptn_numeric_operator_rejects_operand(PtnValue value) {
 
 static PTN_UNUSED int ptn_integer_operator_rejects_operand(PtnValue value) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_RESOURCE) {
+        return 1;
+    }
     if (ptn_numeric_operator_rejects_operand(value)) {
         return 1;
     }
@@ -1388,15 +1391,51 @@ static PTN_UNUSED int ptn_integer_operator_rejects_operand(PtnValue value) {
     );
 }
 
-static PTN_UNUSED void ptn_throw_unsupported_operand_types(
+static PTN_UNUSED int ptn_operator_hard_invalid_object_or_resource(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_RESOURCE) {
+        return 1;
+    }
+    if (value.type != PTN_OBJECT &&
+        value.type != PTN_CLOSURE &&
+        value.type != PTN_EXCEPTION) {
+        return 0;
+    }
+    return ptn_numeric_operator_rejects_operand(value);
+}
+
+static PTN_UNUSED void ptn_throw_unsupported_operand_types_with_order(
     PtnRuntime *runtime,
     PtnValue left,
     const char *operator,
     PtnValue right,
-    size_t line
+    size_t line,
+    int normalize_right_hard_operand
 ) {
     const char *left_type = ptn_arithmetic_operand_type_name(left);
     const char *right_type = ptn_arithmetic_operand_type_name(right);
+    PtnValue resolved_left = ptn_value_deref(left);
+    PtnValue resolved_right = ptn_value_deref(right);
+    int left_is_object_or_resource =
+        resolved_left.type == PTN_OBJECT ||
+        resolved_left.type == PTN_CLOSURE ||
+        resolved_left.type == PTN_EXCEPTION ||
+        resolved_left.type == PTN_RESOURCE;
+    int right_is_object_or_resource =
+        resolved_right.type == PTN_OBJECT ||
+        resolved_right.type == PTN_CLOSURE ||
+        resolved_right.type == PTN_EXCEPTION ||
+        resolved_right.type == PTN_RESOURCE;
+    int normalizable_operator = operator[1] == '\0' &&
+        (operator[0] == '*' || operator[0] == '&' || operator[0] == '|' || operator[0] == '^');
+    int prefer_right_type = normalize_right_hard_operand &&
+        normalizable_operator &&
+        !left_is_object_or_resource;
+    if (prefer_right_type && right_is_object_or_resource) {
+        const char *swapped = left_type;
+        left_type = right_type;
+        right_type = swapped;
+    }
     int needed = snprintf(
         NULL,
         0,
@@ -1428,21 +1467,113 @@ static PTN_UNUSED void ptn_throw_unsupported_operand_types(
     free(message);
 }
 
-static PTN_UNUSED void ptn_arithmetic_operands(
+static PTN_UNUSED void ptn_throw_unsupported_operand_types(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line
+) {
+    ptn_throw_unsupported_operand_types_with_order(runtime, left, operator, right, line, 1);
+}
+
+static PTN_UNUSED void ptn_throw_unsupported_operand_types_preserving_order(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line
+) {
+    ptn_throw_unsupported_operand_types_with_order(runtime, left, operator, right, line, 0);
+}
+
+static PTN_UNUSED int ptn_integer_operator_prepare_operands(
     PtnRuntime *runtime,
     PtnValue left,
     const char *operator,
     PtnValue right,
     size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order,
+    PtnIntegerOperandConverter convert,
+    int64_t *left_out,
+    int64_t *right_out
+) {
+    if (preempt_right_hard_invalid &&
+        ptn_operator_hard_invalid_object_or_resource(right)) {
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            operator,
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return 0;
+    }
+    if (ptn_integer_operator_rejects_operand(left)) {
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            operator,
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return 0;
+    }
+    *left_out = convert(runtime, left, line);
+    if (ptn_runtime_has_active_exception(runtime)) {
+        return 0;
+    }
+    if (ptn_integer_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            operator,
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return 0;
+    }
+    *right_out = convert(runtime, right, line);
+    return !ptn_runtime_has_active_exception(runtime);
+}
+
+static PTN_UNUSED int ptn_arithmetic_operands(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line,
+    int preserve_operand_order,
     PtnNumber *left_number,
     PtnNumber *right_number
 ) {
     if (!ptn_arithmetic_number(runtime, left, line, left_number)) {
-        ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            operator,
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return 0;
     }
     if (!ptn_arithmetic_number(runtime, right, line, right_number)) {
-        ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            operator,
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return 0;
     }
+    return 1;
 }
 
 static PTN_UNUSED PtnValue ptn_positive(PtnRuntime *runtime, PtnValue value, size_t line) {
@@ -1609,7 +1740,9 @@ static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue 
 
     PtnNumber left_number;
     PtnNumber right_number;
-    ptn_arithmetic_operands(runtime, left, "+", right, line, &left_number, &right_number);
+    if (!ptn_arithmetic_operands(runtime, left, "+", right, line, 0, &left_number, &right_number)) {
+        return ptn_null();
+    }
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating + right_number.floating);
     }
@@ -1649,7 +1782,9 @@ static PTN_UNUSED PtnValue ptn_subtract(PtnRuntime *runtime, PtnValue left, PtnV
 
     PtnNumber left_number;
     PtnNumber right_number;
-    ptn_arithmetic_operands(runtime, left, "-", right, line, &left_number, &right_number);
+    if (!ptn_arithmetic_operands(runtime, left, "-", right, line, 0, &left_number, &right_number)) {
+        return ptn_null();
+    }
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating - right_number.floating);
     }
@@ -1680,7 +1815,14 @@ static PTN_UNUSED PtnValue ptn_multiply_integers(int64_t left, int64_t right) {
     return ptn_int(left * right);
 }
 
-static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+static PTN_UNUSED PtnValue ptn_multiply_with_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -1692,6 +1834,19 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnV
         return internal_result;
     }
 #endif
+
+    if (preempt_right_hard_invalid &&
+        ptn_operator_hard_invalid_object_or_resource(right)) {
+        ptn_throw_unsupported_operand_types_with_order(
+            runtime,
+            left,
+            "*",
+            right,
+            line,
+            !preserve_operand_order
+        );
+        return ptn_null();
+    }
 
     int64_t left_integer = 0;
     int64_t right_integer = 0;
@@ -1707,12 +1862,36 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnV
 
     PtnNumber left_number;
     PtnNumber right_number;
-    ptn_arithmetic_operands(runtime, left, "*", right, line, &left_number, &right_number);
+    if (!ptn_arithmetic_operands(
+            runtime,
+            left,
+            "*",
+            right,
+            line,
+            preserve_operand_order,
+            &left_number,
+            &right_number
+        )) {
+        return ptn_null();
+    }
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating * right_number.floating);
     }
 
     return ptn_multiply_integers(left_number.integer, right_number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    return ptn_multiply_with_diagnostics(runtime, left, right, line, 1, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_multiply_assign(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_multiply_with_diagnostics(runtime, left, right, line, 0, 1);
 }
 
 static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int64_t *out) {
@@ -1792,7 +1971,9 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
 
     PtnNumber left_number;
     PtnNumber right_number;
-    ptn_arithmetic_operands(runtime, left, "**", right, line, &left_number, &right_number);
+    if (!ptn_arithmetic_operands(runtime, left, "**", right, line, 0, &left_number, &right_number)) {
+        return ptn_null();
+    }
     if (left_number.floating == 0.0 && right_number.floating < 0.0) {
         ptn_emit_deprecation(
             &runtime->diagnostics,
@@ -1848,7 +2029,9 @@ static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnVal
 
     PtnNumber left_number;
     PtnNumber right_number;
-    ptn_arithmetic_operands(runtime, left, "/", right, line, &left_number, &right_number);
+    if (!ptn_arithmetic_operands(runtime, left, "/", right, line, 0, &left_number, &right_number)) {
+        return ptn_null();
+    }
     if (right_number.floating == 0.0) {
         ptn_throw_exception_at(runtime, "DivisionByZeroError", "Division by zero", runtime->source_path, line);
         return ptn_null();
@@ -2151,28 +2334,22 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnVal
         return internal_result;
     }
 #endif
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, "%", right, line);
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            "%",
+            right,
+            line,
+            0,
+            0,
+            ptn_value_to_modulo_integer,
+            &left_integer,
+            &right_integer
+        )) {
         return ptn_null();
     }
-
-    int64_t left_fast_integer = 0;
-    int64_t right_fast_integer = 0;
-    if (ptn_fast_integer_value(left, &left_fast_integer) &&
-        ptn_fast_integer_value(right, &right_fast_integer)) {
-        if (right_fast_integer == 0) {
-            ptn_throw_exception_at(runtime, "DivisionByZeroError", "Modulo by zero", runtime->source_path, line);
-            return ptn_null();
-        }
-        if (left_fast_integer == INT64_MIN && right_fast_integer == -1) {
-            return ptn_int(0);
-        }
-        return ptn_int(left_fast_integer % right_fast_integer);
-    }
-
-    int64_t left_integer = ptn_value_to_modulo_integer(runtime, left, line);
-    int64_t right_integer = ptn_value_to_modulo_integer(runtime, right, line);
     if (right_integer == 0) {
         ptn_throw_exception_at(runtime, "DivisionByZeroError", "Modulo by zero", runtime->source_path, line);
         return ptn_null();
@@ -2924,11 +3101,13 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand_checked(
     );
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_and(
+static PTN_UNUSED PtnValue ptn_bitwise_and_with_diagnostics(
     PtnRuntime *runtime,
     PtnValue left,
     PtnValue right,
-    size_t line
+    size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order
 ) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -2945,22 +3124,50 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(
         };
         return ptn_bitwise_string_and(left_string, right_string);
     }
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, "&", right, line);
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            "&",
+            right,
+            line,
+            preempt_right_hard_invalid,
+            preserve_operand_order,
+            ptn_bitwise_integer_operand_checked,
+            &left_integer,
+            &right_integer
+        )) {
         return ptn_null();
     }
-    return ptn_int(
-        ptn_bitwise_integer_operand_checked(runtime, left, line) &
-        ptn_bitwise_integer_operand_checked(runtime, right, line)
-    );
+    return ptn_int(left_integer & right_integer);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_or(
+static PTN_UNUSED PtnValue ptn_bitwise_and(
     PtnRuntime *runtime,
     PtnValue left,
     PtnValue right,
     size_t line
+) {
+    return ptn_bitwise_and_with_diagnostics(runtime, left, right, line, 1, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_and_assign(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_and_with_diagnostics(runtime, left, right, line, 0, 1);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_or_with_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order
 ) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -2977,22 +3184,50 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(
         };
         return ptn_bitwise_string_or(left_string, right_string);
     }
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, "|", right, line);
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            "|",
+            right,
+            line,
+            preempt_right_hard_invalid,
+            preserve_operand_order,
+            ptn_bitwise_integer_operand_checked,
+            &left_integer,
+            &right_integer
+        )) {
         return ptn_null();
     }
-    return ptn_int(
-        ptn_bitwise_integer_operand_checked(runtime, left, line) |
-        ptn_bitwise_integer_operand_checked(runtime, right, line)
-    );
+    return ptn_int(left_integer | right_integer);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_xor(
+static PTN_UNUSED PtnValue ptn_bitwise_or(
     PtnRuntime *runtime,
     PtnValue left,
     PtnValue right,
     size_t line
+) {
+    return ptn_bitwise_or_with_diagnostics(runtime, left, right, line, 1, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_or_assign(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_or_with_diagnostics(runtime, left, right, line, 0, 1);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_xor_with_diagnostics(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int preempt_right_hard_invalid,
+    int preserve_operand_order
 ) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -3009,13 +3244,39 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(
         };
         return ptn_bitwise_string_xor(left_string, right_string);
     }
-    if (ptn_integer_operator_rejects_operand(left) ||
-        ptn_integer_operator_rejects_operand(right)) {
-        ptn_throw_unsupported_operand_types(runtime, left, "^", right, line);
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (!ptn_integer_operator_prepare_operands(
+            runtime,
+            left,
+            "^",
+            right,
+            line,
+            preempt_right_hard_invalid,
+            preserve_operand_order,
+            ptn_bitwise_integer_operand_checked,
+            &left_integer,
+            &right_integer
+        )) {
         return ptn_null();
     }
-    return ptn_int(
-        ptn_bitwise_integer_operand_checked(runtime, left, line) ^
-        ptn_bitwise_integer_operand_checked(runtime, right, line)
-    );
+    return ptn_int(left_integer ^ right_integer);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_xor(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_xor_with_diagnostics(runtime, left, right, line, 1, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_xor_assign(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_xor_with_diagnostics(runtime, left, right, line, 0, 1);
 }

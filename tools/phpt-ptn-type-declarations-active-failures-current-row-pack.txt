@@ -1,0 +1,10 @@
+Zend/tests/type_declarations/variance/class_order_autoload_error5.phpt
+Zend/tests/type_declarations/variance/class_order_autoload_error8.phpt
+Zend/tests/type_declarations/variance/class_order_autoload_error9.phpt
+Zend/tests/type_declarations/intersection_types/variance/valid7.phpt
+Zend/tests/type_declarations/intersection_types/variance/valid8.phpt
+Zend/tests/type_declarations/variance/trait_error.phpt
+Zend/tests/type_declarations/variance/class_order_autoload6.phpt
+Zend/tests/type_declarations/dnf_types/variance/valid7.phpt
+Zend/tests/type_declarations/dnf_types/variance/valid8.phpt
+Zend/tests/type_declarations/dnf_types/variance/valid9.phpt

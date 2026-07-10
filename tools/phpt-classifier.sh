@@ -2760,7 +2760,7 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+fiber([^[:alnum:]_]|$)/) {
                 return line !~ /(^|[^[:alnum:]_$])function[[:space:]]*&/
             }
-            return line ~ /(^|[^[:alnum:]_$])fiber[[:space:]]*::[[:space:]]*getcurrent[[:space:]]*\(/
+            return line ~ /(^|[^[:alnum:]_$])fiber[[:space:]]*::[[:space:]]*(getcurrent|suspend)[[:space:]]*\(/
         }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
@@ -2861,8 +2861,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 override_interface_methods[method_match[1]] = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/ &&
-                !ptn_supported_fiber_surface_line(line) &&
-                !ptn_supported_generator_fiber_lifecycle_row()) {
+                !ptn_supported_fiber_surface_line(line)) {
                 print "unsupported-generator-reference-boundary\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit

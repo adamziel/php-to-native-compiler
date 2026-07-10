@@ -1,0 +1,12 @@
+tests/basic/timeout_variation_0.phpt
+tests/basic/timeout_variation_7.phpt
+tests/basic/timeout_variation_8.phpt
+tests/basic/bug20539.phpt
+tests/basic/bug31875.phpt
+tests/basic/bug54514.phpt
+tests/basic/bug67198.phpt
+tests/basic/bug71273.phpt
+tests/basic/build_date.phpt
+tests/basic/errorlog_permission.phpt
+tests/basic/ini_directive_deprecated_report_memleaks.phpt
+tests/basic/req60524.phpt

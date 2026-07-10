@@ -1,0 +1,17 @@
+Zend/tests/fibers/gh9916-006.phpt
+Zend/tests/fibers/gh9916-009.phpt
+Zend/tests/fibers/gh9916-011.phpt
+Zend/tests/fibers/oss-fuzz-471533782-001.phpt
+Zend/tests/fibers/oss-fuzz-471533782-002.phpt
+Zend/tests/fibers/out-of-memory-in-recursive-fiber.phpt
+Zend/tests/fibers/silence-operator-outside-fiber.phpt
+Zend/tests/fibers/ticks.phpt
+Zend/tests/fibers/destructors_001.phpt
+Zend/tests/fibers/destructors_003.phpt
+Zend/tests/fibers/destructors_004.phpt
+Zend/tests/fibers/destructors_006.phpt
+Zend/tests/fibers/fatal-error-with-multiple-fibers.phpt
+Zend/tests/fibers/gh10496-001.phpt
+Zend/tests/fibers/gh10496-002.phpt
+Zend/tests/fibers/gh15108-004.phpt
+Zend/tests/fibers/gh19983.phpt
