@@ -69407,6 +69407,36 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
 }
 
 #[test]
+fn compile_get_extension_funcs_zend_core_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-get-extension-funcs-zend-core-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-extension-funcs-zend-core-alias.php");
+    let output = root.join("get-extension-funcs-zend-core-alias-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$core = get_extension_funcs('Core');\n\
+$zend = get_extension_funcs('zend');\n\
+var_dump(is_array($zend));\n\
+var_dump($zend === $core);\n\
+var_dump(in_array('zend_version', $zend, true));\n\
+var_dump(extension_loaded('zend'));\n\
+var_dump(get_extension_funcs(true));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_create_functions_reject_non_string_locale_objects() {
     let root = temp_dir("ptn-native-intl-create-locale-types");
     fs::create_dir_all(&root).unwrap();

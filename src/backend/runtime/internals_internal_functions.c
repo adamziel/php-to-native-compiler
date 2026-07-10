@@ -245382,7 +245382,8 @@ static PtnValue ptn_internal_get_extension_funcs(PtnRuntime *runtime, size_t arg
     (void)argc;
     (void)line;
     PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
-    if (!ptn_is_modeled_extension_operand(extension)) {
+    int zend_core_alias = ptn_string_operand_ascii_case_equal(extension, "zend");
+    if (!zend_core_alias && !ptn_is_modeled_extension_operand(extension)) {
         ptn_string_operand_free(extension);
         return ptn_bool(0);
     }
@@ -245396,7 +245397,10 @@ static PtnValue ptn_internal_get_extension_funcs(PtnRuntime *runtime, size_t arg
         if (strncmp(name, "_ptn_", 5) == 0 || strstr(name, "::") != NULL) {
             continue;
         }
-        if (!ptn_string_operand_ascii_case_equal(extension, ptn_internal_function_extension_name(name))) {
+        const char *extension_name = ptn_internal_function_extension_name(name);
+        if (zend_core_alias
+            ? !ptn_ascii_case_equal(extension_name, "Core")
+            : !ptn_string_operand_ascii_case_equal(extension, extension_name)) {
             continue;
         }
         ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(name));
