@@ -106579,6 +106579,23 @@ fn phpc_version_banner_matches_php_cli_shape() {
 }
 
 #[test]
+fn phpc_interactive_mode_requires_readline_extension() {
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .arg("-a")
+        .arg("ignored.php")
+        .output()
+        .unwrap();
+
+    assert_eq!(execution.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Interactive shell (-a) requires the readline extension.\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cli_request_context_populates_argc_argv() {
     let root = temp_dir("ptn-phpc-cli-request-argv");
     fs::create_dir_all(&root).unwrap();

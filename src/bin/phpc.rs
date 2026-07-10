@@ -59,6 +59,10 @@ fn run() -> Result<i32, PhpcError> {
             print_extension_info(&extension);
             Ok(0)
         }
+        Mode::InteractiveUnavailable => {
+            println!("Interactive shell (-a) requires the readline extension.");
+            Ok(1)
+        }
         Mode::Server {
             bind,
             doc_root,
@@ -994,6 +998,7 @@ enum Sapi {
 enum Mode {
     Version,
     Modules,
+    InteractiveUnavailable,
     ReflectionInfo {
         target: String,
     },
@@ -1148,6 +1153,13 @@ impl Invocation {
                 "-m" => {
                     return Ok(Self {
                         mode: Mode::Modules,
+                        ini,
+                        sapi,
+                    });
+                }
+                "-a" => {
+                    return Ok(Self {
+                        mode: Mode::InteractiveUnavailable,
                         ini,
                         sapi,
                     });
