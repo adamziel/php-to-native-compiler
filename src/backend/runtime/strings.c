@@ -1712,6 +1712,16 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("IMAGETYPE_COUNT", 22)
     PTN_BUILTIN_INT_CONSTANT("ICONV_MIME_DECODE_STRICT", PTN_ICONV_MIME_DECODE_STRICT)
     PTN_BUILTIN_INT_CONSTANT("ICONV_MIME_DECODE_CONTINUE_ON_ERROR", PTN_ICONV_MIME_DECODE_CONTINUE_ON_ERROR)
+    if (strcmp(name, "ICONV_IMPL") == 0) {
+#if defined(_LIBICONV_VERSION)
+        *out = ptn_string("libiconv");
+#elif defined(__GLIBC__)
+        *out = ptn_string("glibc");
+#else
+        *out = ptn_string("unknown");
+#endif
+        return 1;
+    }
     if (strcmp(name, "INTL_ICU_VERSION") == 0) {
         *out = ptn_string(PTN_INTL_ICU_VERSION);
         return 1;

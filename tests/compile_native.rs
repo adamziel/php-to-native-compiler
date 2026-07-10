@@ -49714,6 +49714,25 @@ var_dump(iconv_mime_decode_headers($headers, 0, 'UTF-8'));\n",
 }
 
 #[test]
+fn compile_iconv_implementation_constant_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-implementation-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-implementation-constant.php");
+    let output = root.join("iconv-implementation-constant-bin");
+    fs::write(&input, "<?php var_dump(defined('ICONV_IMPL'), ICONV_IMPL);").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nstring(5) \"glibc\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iconv_mime_decode_malformed_words_to_native_binary() {
     let root = temp_dir("ptn-native-iconv-mime-decode-malformed");
     fs::create_dir_all(&root).unwrap();
