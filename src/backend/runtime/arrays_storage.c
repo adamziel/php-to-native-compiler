@@ -1185,7 +1185,17 @@ static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray 
     if (root == NULL) {
         return;
     }
+    size_t live_index = root->live_arrays_len;
     if (root->live_arrays_len == root->live_arrays_capacity) {
+        for (size_t i = 0; i < root->live_arrays_len; i++) {
+            if (root->live_arrays[i] == NULL) {
+                live_index = i;
+                break;
+            }
+        }
+    }
+    if (live_index == root->live_arrays_len &&
+        root->live_arrays_len == root->live_arrays_capacity) {
         size_t new_capacity = root->live_arrays_capacity == 0
             ? 16
             : root->live_arrays_capacity * 2;
@@ -1200,8 +1210,11 @@ static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray 
         root->live_arrays = new_arrays;
         root->live_arrays_capacity = new_capacity;
     }
-    array->live_index = root->live_arrays_len;
-    root->live_arrays[root->live_arrays_len++] = array;
+    array->live_index = live_index;
+    root->live_arrays[live_index] = array;
+    if (live_index == root->live_arrays_len) {
+        root->live_arrays_len++;
+    }
     array->lifecycle_runtime = root;
     ptn_runtime_note_gc_root(root);
 }
@@ -1239,7 +1252,17 @@ static PTN_UNUSED void ptn_runtime_register_reference(PtnRuntime *runtime, PtnRe
     if (root == NULL) {
         return;
     }
+    size_t live_index = root->live_references_len;
     if (root->live_references_len == root->live_references_capacity) {
+        for (size_t i = 0; i < root->live_references_len; i++) {
+            if (root->live_references[i] == NULL) {
+                live_index = i;
+                break;
+            }
+        }
+    }
+    if (live_index == root->live_references_len &&
+        root->live_references_len == root->live_references_capacity) {
         size_t new_capacity = root->live_references_capacity == 0
             ? 16
             : root->live_references_capacity * 2;
@@ -1257,8 +1280,11 @@ static PTN_UNUSED void ptn_runtime_register_reference(PtnRuntime *runtime, PtnRe
         root->live_references = new_references;
         root->live_references_capacity = new_capacity;
     }
-    reference->live_index = root->live_references_len;
-    root->live_references[root->live_references_len++] = reference;
+    reference->live_index = live_index;
+    root->live_references[live_index] = reference;
+    if (live_index == root->live_references_len) {
+        root->live_references_len++;
+    }
     reference->lifecycle_runtime = root;
     ptn_runtime_note_gc_root(root);
 }
@@ -1448,7 +1474,17 @@ static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObjec
         return;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    size_t live_index = root->live_objects_len;
     if (root->live_objects_len == root->live_objects_capacity) {
+        for (size_t i = 0; i < root->live_objects_len; i++) {
+            if (root->live_objects[i] == NULL) {
+                live_index = i;
+                break;
+            }
+        }
+    }
+    if (live_index == root->live_objects_len &&
+        root->live_objects_len == root->live_objects_capacity) {
         size_t new_capacity = root->live_objects_capacity == 0
             ? 8
             : root->live_objects_capacity * 2;
@@ -1466,8 +1502,11 @@ static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObjec
         root->live_objects = new_objects;
         root->live_objects_capacity = new_capacity;
     }
-    object->live_index = root->live_objects_len;
-    root->live_objects[root->live_objects_len++] = object;
+    object->live_index = live_index;
+    root->live_objects[live_index] = object;
+    if (live_index == root->live_objects_len) {
+        root->live_objects_len++;
+    }
     ptn_runtime_note_gc_root(root);
 }
 

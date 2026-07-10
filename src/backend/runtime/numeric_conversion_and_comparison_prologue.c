@@ -1167,9 +1167,9 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
             ptn_rethrow_exception(runtime);
         }
         ptn_standard_streams_shutdown();
-        ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
-        ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
+    ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
+    ptn_exception_handlers_clear(&runtime->owned_exceptions);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_allows_null, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_text, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_class_name, runtime);
