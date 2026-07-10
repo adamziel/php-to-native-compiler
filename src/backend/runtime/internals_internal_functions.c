@@ -301114,7 +301114,7 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
 }
 
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
+    runtime->call_site_line = line;
     int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
     if (argc >= 3 && args[2].type == PTN_REFERENCE) {
         PtnValue callable_name = ptn_callable_output_name_value(args[0]);

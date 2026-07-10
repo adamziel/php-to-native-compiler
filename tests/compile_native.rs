@@ -97607,13 +97607,16 @@ B::test();
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "\nDeprecated: Use of \"self\" in callables is deprecated in ptn on line 11\n",
-            "bool(true)\n",
-            "\nDeprecated: Use of \"parent\" in callables is deprecated in ptn on line 11\n",
-            "bool(true)\n",
-            "\nDeprecated: Use of \"static\" in callables is deprecated in ptn on line 11\n",
-            "bool(true)\n",
+        format!(
+            "\nDeprecated: Use of \"self\" in callables is deprecated in {} on line 6\n\
+bool(true)\n\
+\nDeprecated: Use of \"parent\" in callables is deprecated in {} on line 7\n\
+bool(true)\n\
+\nDeprecated: Use of \"static\" in callables is deprecated in {} on line 8\n\
+bool(true)\n",
+            input.display(),
+            input.display(),
+            input.display(),
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -97621,6 +97624,52 @@ B::test();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_callable_is_valid"));
     assert!(c_source.contains("Use of \\\"parent\\\" in callables is deprecated"));
+}
+
+#[test]
+fn compile_is_callable_scoped_object_callable_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-is-callable-scoped-object-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-callable-scoped-object-callable.php");
+    let output = root.join("is-callable-scoped-object-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+
+class ParentClass { }
+
+class ChildClass extends ParentClass {
+    public function testIsCallable() {
+        var_dump(is_callable([$this, 'parent::testIsCallable']));
+    }
+    public function testIsCallable2() {
+        var_dump(is_callable([$this, 'static::testIsCallable2']));
+    }
+}
+
+$child = new ChildClass();
+$child->testIsCallable();
+$child->testIsCallable2();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nDeprecated: Callables of the form [\"ChildClass\", \"parent::testIsCallable\"] are deprecated in {} on line 7\n\
+bool(false)\n\
+\nDeprecated: Callables of the form [\"ChildClass\", \"static::testIsCallable2\"] are deprecated in {} on line 10\n\
+bool(true)\n",
+            input.display(),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

@@ -29698,7 +29698,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        if (!ptn_scoped_object_callable_inaccessible) {\n");
     out.push_str("            valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
     out.push_str("        }\n");
-    out.push_str("        if (runtime != NULL && !valid && ptn_scoped_object_callable_class_compatible && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
+    out.push_str("        if (runtime != NULL && ptn_scoped_object_callable_class_compatible && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
     out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line, capture_callable_deprecation_exception);\n");
     out.push_str("        }\n");
     out.push_str("        free(method_name);\n");
