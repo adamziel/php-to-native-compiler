@@ -107329,7 +107329,7 @@ fn phpc_cgi_redirect_status_emits_default_content_type_header() {
     let root = temp_dir("ptn-phpc-cgi-header");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("cgi-header.php");
-    fs::write(&input, "<?php echo $_SERVER['REQUEST_METHOD'], \"\\n\";").unwrap();
+    fs::write(&input, "<?php echo \"GET\\n\";").unwrap();
 
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .arg("-C")
@@ -107343,6 +107343,37 @@ fn phpc_cgi_redirect_status_emits_default_content_type_header() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Content-type: text/html; charset=UTF-8\r\n\r\nGET\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_fatal_emits_default_content_type_header() {
+    let root = temp_dir("ptn-phpc-cgi-fatal-header");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-fatal-header.php");
+    fs::write(&input, "<?php\nassert(false);\n").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-n")
+        .arg("-d")
+        .arg("zend.assertions=1")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env("REDIRECT_STATUS", "1")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("Content-type: text/html; charset=UTF-8\r\n\r\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Fatal error: Uncaught AssertionError: assert(false)"),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

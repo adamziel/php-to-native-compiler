@@ -3235,6 +3235,33 @@ static int ptn_opcache_max_wasted_percentage_invalid(int64_t value) {
     return value < 1 || value > 50;
 }
 
+static int ptn_request_should_emit_cgi_header(void) {
+    const char *mode = getenv("PTN_REQUEST_MODE");
+    if (mode == NULL || !ptn_ascii_case_equal(mode, "cgi")) {
+        return 0;
+    }
+    const char *redirect_status = getenv("REDIRECT_STATUS");
+    if (redirect_status != NULL && redirect_status[0] != '\0') {
+        return 1;
+    }
+    const char *gateway_interface = getenv("GATEWAY_INTERFACE");
+    return gateway_interface != NULL && gateway_interface[0] != '\0';
+}
+
+static void ptn_request_emit_cgi_default_header(PtnRuntime *runtime) {
+    if (!ptn_request_should_emit_cgi_header()) {
+        return;
+    }
+    const char *charset = runtime == NULL ? NULL : runtime->default_charset;
+    if (charset != NULL && charset[0] != '\0') {
+        fputs("Content-type: text/html; charset=", stdout);
+        fputs(charset, stdout);
+        fputs("\r\n\r\n", stdout);
+        return;
+    }
+    fputs("Content-type: text/html\r\n\r\n", stdout);
+}
+
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     runtime->global_symbols = &runtime->symbols;

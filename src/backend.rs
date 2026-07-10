@@ -415,6 +415,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_startup_output_handler(&runtime);\n");
     out.push_str("    runtime.native_argc = ptn_native_argc;\n");
     out.push_str("    runtime.native_argv = ptn_native_argv;\n");
+    out.push_str("    ptn_request_emit_cgi_default_header(&runtime);\n");
     if runtime_requirements.zend_test_observer_execute_internal {
         out.push_str("    runtime.zend_test_observer_execute_internal = 1;\n");
     }

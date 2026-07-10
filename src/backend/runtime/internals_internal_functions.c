@@ -40281,29 +40281,6 @@ static void ptn_emit_request_startup_warning(
     );
 }
 
-static int ptn_request_should_emit_cgi_header(void) {
-    const char *redirect_status = getenv("REDIRECT_STATUS");
-    if (redirect_status != NULL && redirect_status[0] != '\0') {
-        return 1;
-    }
-    const char *gateway_interface = getenv("GATEWAY_INTERFACE");
-    return gateway_interface != NULL && gateway_interface[0] != '\0';
-}
-
-static void ptn_request_emit_cgi_default_header(PtnRuntime *runtime) {
-    if (!ptn_request_should_emit_cgi_header()) {
-        return;
-    }
-    const char *charset = ptn_runtime_default_charset(runtime);
-    if (charset != NULL && charset[0] != '\0') {
-        fputs("Content-type: text/html; charset=", stdout);
-        fputs(charset, stdout);
-        fputs("\r\n\r\n", stdout);
-        return;
-    }
-    fputs("Content-type: text/html\r\n\r\n", stdout);
-}
-
 static char *ptn_request_read_stdin(size_t *len_out) {
     *len_out = 0;
     const char *content_length = getenv("CONTENT_LENGTH");
@@ -41586,7 +41563,6 @@ static PTN_UNUSED void ptn_initialize_request_context(PtnRuntime *runtime, int a
     ptn_request_seed_request_time(runtime, server);
 
     if (cgi_mode) {
-        ptn_request_emit_cgi_default_header(runtime);
         const char *query = getenv("QUERY_STRING");
         if (ptn_request_order_contains(runtime, 'G') && query != NULL) {
             ptn_value_destroy(&get);
