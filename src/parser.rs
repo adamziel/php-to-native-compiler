@@ -11220,6 +11220,8 @@ impl Parser<'_> {
                 | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
+                | TokenKind::PlusPlus
+                | TokenKind::MinusMinus
                 | TokenKind::Bang
                 | TokenKind::Tilde
                 | TokenKind::At

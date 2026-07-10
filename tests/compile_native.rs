@@ -6109,6 +6109,32 @@ fn parser_preserves_yield_precedence_for_unary_and_binary_operators() {
 }
 
 #[test]
+fn parser_accepts_prefix_increment_as_a_yield_value() {
+    let program = parser::parse("<?php function gen() { yield ++$value; }").unwrap();
+    let function = &program.functions[0];
+
+    assert!(matches!(
+        &function.body[0],
+        Statement::Expression {
+            expression:
+                Expr::Yield {
+                    value: Some(value),
+                    ..
+                },
+            ..
+        } if matches!(
+            value.as_ref(),
+            Expr::IncDec {
+                target: IncDecTarget::Variable { name, .. },
+                op: IncDecOp::Increment,
+                result: IncDecResult::Pre,
+                ..
+            } if name == "value"
+        )
+    ));
+}
+
+#[test]
 fn parser_accepts_power_as_right_associative_above_unary() {
     let program = parser::parse("<?php echo -3 ** 2, 2 ** 3 ** 2;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
