@@ -110766,6 +110766,48 @@ zend_test_zend_ini_parse_quantity('0g10');\n",
 }
 
 #[test]
+fn phpc_zend_test_ini_quantity_preserves_signed_overflow_results() {
+    let root = temp_dir("ptn-phpc-zend-test-ini-quantity-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-ini-quantity-overflow.php");
+    fs::write(
+        &input,
+        "<?php
+foreach (['9223372036854775808', '-9223372036854775809', '9223372036854775807K', '-9223372036854775808K'] as $value) {
+    var_dump(zend_test_zend_ini_parse_quantity($value));
+}
+",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg("error_reporting=E_ALL")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let path = input.display();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nWarning: Invalid quantity \"9223372036854775808\": value is out of range, using overflow result for backwards compatibility in {path} on line 3\n",
+                "int(-9223372036854775808)\n",
+                "\nWarning: Invalid quantity \"-9223372036854775809\": value is out of range, using overflow result for backwards compatibility in {path} on line 3\n",
+                "int(9223372036854775807)\n",
+                "\nWarning: Invalid quantity \"9223372036854775807K\": value is out of range, using overflow result for backwards compatibility in {path} on line 3\n",
+                "int(-1024)\n",
+                "\nWarning: Invalid quantity \"-9223372036854775808K\": value is out of range, using overflow result for backwards compatibility in {path} on line 3\n",
+                "int(0)\n",
+            ),
+            path = path,
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_memory_limit_runtime_changes_to_native_binary() {
     let root = temp_dir("ptn-native-memory-limit-runtime-changes");
     fs::create_dir_all(&root).unwrap();

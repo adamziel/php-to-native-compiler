@@ -148192,18 +148192,16 @@ static int64_t ptn_parse_ini_quantity_operand(
     unsigned long long limit = sign < 0
         ? (unsigned long long)INT64_MAX + 1ULL
         : (unsigned long long)INT64_MAX;
-    if (subject_overflow || (multiplier > 0 && magnitude > limit / (unsigned long long)multiplier)) {
-        free(text);
-        return sign < 0 ? INT64_MIN : INT64_MAX;
+    int overflow = subject_overflow ||
+        (multiplier > 0 && magnitude > limit / (unsigned long long)multiplier);
+    uint64_t signed_value = sign < 0
+        ? 0ULL - (uint64_t)magnitude
+        : (uint64_t)magnitude;
+    uint64_t multiplied = signed_value * (uint64_t)multiplier;
+    if (overflow) {
+        ptn_ini_quantity_warning_out_of_range(runtime, start, line);
     }
-    uint64_t multiplied = (uint64_t)(magnitude * (unsigned long long)multiplier);
     free(text);
-    if (sign < 0) {
-        if (multiplied == (uint64_t)INT64_MAX + 1ULL) {
-            return INT64_MIN;
-        }
-        return -(int64_t)multiplied;
-    }
     return (int64_t)multiplied;
 }
 
