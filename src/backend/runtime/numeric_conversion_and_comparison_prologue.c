@@ -58,6 +58,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->diagnostics.runtime = runtime;
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
     runtime->error_suppression_depth = caller_runtime->error_suppression_depth;
+    runtime->error_suppression_restore_depth =
+        caller_runtime->error_suppression_restore_depth;
     runtime->error_suppression_saved_reporting =
         caller_runtime->error_suppression_saved_reporting;
     runtime->diagnostics.emitted_deprecation = caller_runtime->diagnostics.emitted_deprecation;

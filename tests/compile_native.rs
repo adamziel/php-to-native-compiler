@@ -97774,6 +97774,38 @@ echo \"lift final: \", error_reporting(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_error_reporting_change_survives_nested_suppression_to_native_binary() {
+    let root = temp_dir("ptn-native-error-reporting-nested-suppression-change");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-reporting-nested-suppression-change.php");
+    let output = root.join("error-reporting-nested-suppression-change-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function nested_bar() { echo @$suppressed_bar; echo $visible_bar; }\n\
+function nested_foo() { echo @$suppressed_foo; error_reporting(E_ALL); echo $visible_foo; return nested_bar(); }\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+@nested_foo();\n\
+echo \"final:\", error_reporting(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}{}final:30719\n",
+            undefined_variable_warning(&input, "visible_foo", 3),
+            undefined_variable_warning(&input, "visible_bar", 2),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_error_suppression_masks_user_function_foreach_warning_to_native_binary() {
     let root = temp_dir("ptn-native-error-suppressed-user-foreach");
     fs::create_dir_all(&root).unwrap();

@@ -1236,14 +1236,37 @@ static int64_t ptn_normalize_error_reporting(int64_t level) {
     return level & ~((int64_t)PTN_E_STRICT);
 }
 
+static void ptn_runtime_set_error_reporting(PtnRuntime *runtime, int64_t level) {
+    if (runtime == NULL) {
+        return;
+    }
+    int64_t normalized = ptn_normalize_error_reporting(level);
+    runtime->diagnostics.error_reporting = normalized;
+    if (runtime->error_suppression_depth > 0) {
+        runtime->error_suppression_saved_reporting = normalized;
+        runtime->error_suppression_restore_depth = runtime->error_suppression_depth;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root != runtime && root->error_suppression_depth > 0) {
+        root->error_suppression_saved_reporting = normalized;
+        root->error_suppression_restore_depth = root->error_suppression_depth;
+    }
+}
+
 static PTN_UNUSED void ptn_runtime_enter_error_suppression(PtnRuntime *runtime) {
     if (runtime == NULL) {
         return;
     }
-    if (runtime->error_suppression_depth == 0) {
+    int next_depth = runtime->error_suppression_depth + 1;
+    /* PORT NOTE: A nested @ may begin after error_reporting() re-enabled diagnostics. */
+    if (
+        runtime->error_suppression_depth == 0 ||
+        runtime->diagnostics.error_reporting != 0
+    ) {
         runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
+        runtime->error_suppression_restore_depth = next_depth;
     }
-    runtime->error_suppression_depth++;
+    runtime->error_suppression_depth = next_depth;
     runtime->diagnostics.error_reporting = 0;
 }
 
@@ -1252,7 +1275,7 @@ static PTN_UNUSED void ptn_runtime_leave_error_suppression(PtnRuntime *runtime) 
         return;
     }
     if (
-        runtime->error_suppression_depth == 1 &&
+        runtime->error_suppression_depth == runtime->error_suppression_restore_depth &&
         runtime->diagnostics.error_reporting == 0
     ) {
         runtime->diagnostics.error_reporting = runtime->error_suppression_saved_reporting;
@@ -1260,6 +1283,7 @@ static PTN_UNUSED void ptn_runtime_leave_error_suppression(PtnRuntime *runtime) 
     runtime->error_suppression_depth--;
     if (runtime->error_suppression_depth == 0) {
         runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
+        runtime->error_suppression_restore_depth = 0;
     }
 }
 
@@ -3260,6 +3284,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
     runtime->error_suppression_depth = 0;
+    runtime->error_suppression_restore_depth = 0;
     runtime->error_suppression_saved_reporting = runtime->diagnostics.error_reporting;
     if (getenv("PTN_STARTUP_WARNING_EMITTED") != NULL) {
         runtime->diagnostics.emitted_warning = 1;

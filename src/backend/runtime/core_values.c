@@ -2264,6 +2264,7 @@ struct PtnRuntime {
     PtnSymbolTable *static_property_type_allows_null;
     PtnDiagnosticSink diagnostics;
     int error_suppression_depth;
+    int error_suppression_restore_depth;
     int64_t error_suppression_saved_reporting;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;

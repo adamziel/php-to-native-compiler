@@ -149924,7 +149924,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (ptn_string_operand_ascii_case_equal(option, "error_reporting")) {
         PtnValue previous = ptn_ini_int_string(runtime->diagnostics.error_reporting);
-        runtime->diagnostics.error_reporting = ptn_normalize_error_reporting(ptn_value_to_integer(args[1]));
+        ptn_runtime_set_error_reporting(runtime, ptn_value_to_integer(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
@@ -159428,7 +159428,7 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
             ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
             return ptn_null();
         }
-        runtime->diagnostics.error_reporting = ptn_normalize_error_reporting(error_level.as.integer);
+        ptn_runtime_set_error_reporting(runtime, error_level.as.integer);
     }
     return ptn_int(previous_level);
 }
@@ -221005,6 +221005,8 @@ static void ptn_fiber_restore_caller_runtime(PtnRuntime *target, PtnFiberData *d
     target->current_generator = data->caller_generator;
     target->diagnostics.error_reporting = data->caller_error_reporting;
     target->error_suppression_depth = data->caller_error_suppression_depth;
+    target->error_suppression_restore_depth =
+        data->caller_error_suppression_restore_depth;
     target->error_suppression_saved_reporting =
         data->caller_error_suppression_saved_reporting;
 }
@@ -221092,6 +221094,8 @@ static void ptn_fiber_save_suspended_runtime(PtnRuntime *runtime, PtnFiberData *
         : root->active_value_release_runtime;
     data->suspended_error_reporting = runtime->diagnostics.error_reporting;
     data->suspended_error_suppression_depth = runtime->error_suppression_depth;
+    data->suspended_error_suppression_restore_depth =
+        runtime->error_suppression_restore_depth;
     data->suspended_error_suppression_saved_reporting =
         runtime->error_suppression_saved_reporting;
 }
@@ -221114,6 +221118,8 @@ static void ptn_fiber_prepare_runtime_entry(
     data->caller_generator = caller_runtime->current_generator;
     data->caller_error_reporting = caller_runtime->diagnostics.error_reporting;
     data->caller_error_suppression_depth = caller_runtime->error_suppression_depth;
+    data->caller_error_suppression_restore_depth =
+        caller_runtime->error_suppression_restore_depth;
     data->caller_error_suppression_saved_reporting =
         caller_runtime->error_suppression_saved_reporting;
     if (executor_runtime->exceptions != NULL) {
@@ -221124,6 +221130,8 @@ static void ptn_fiber_prepare_runtime_entry(
     executor_runtime->current_generator = data->suspended_generator;
     executor_runtime->diagnostics.error_reporting = data->suspended_error_reporting;
     executor_runtime->error_suppression_depth = data->suspended_error_suppression_depth;
+    executor_runtime->error_suppression_restore_depth =
+        data->suspended_error_suppression_restore_depth;
     executor_runtime->error_suppression_saved_reporting =
         data->suspended_error_suppression_saved_reporting;
     if (data->suspended_trace_frame != NULL) {
@@ -221149,6 +221157,8 @@ static void ptn_fiber_restore_suspended_runtime(PtnRuntime *runtime, PtnFiberDat
     runtime->current_generator = data->suspended_generator;
     runtime->diagnostics.error_reporting = data->suspended_error_reporting;
     runtime->error_suppression_depth = data->suspended_error_suppression_depth;
+    runtime->error_suppression_restore_depth =
+        data->suspended_error_suppression_restore_depth;
     runtime->error_suppression_saved_reporting =
         data->suspended_error_suppression_saved_reporting;
 }
@@ -222212,10 +222222,13 @@ static PtnFiberData *ptn_fiber_allocate_data(
     data->resume_throw_line = 0;
     data->caller_error_reporting = runtime->diagnostics.error_reporting;
     data->caller_error_suppression_depth = runtime->error_suppression_depth;
+    data->caller_error_suppression_restore_depth =
+        runtime->error_suppression_restore_depth;
     data->caller_error_suppression_saved_reporting =
         runtime->error_suppression_saved_reporting;
     data->suspended_error_reporting = ptn_runtime_unsilenced_error_reporting(runtime);
     data->suspended_error_suppression_depth = 0;
+    data->suspended_error_suppression_restore_depth = 0;
     data->suspended_error_suppression_saved_reporting = data->suspended_error_reporting;
     data->executing_file = NULL;
     data->executing_line = 0;

@@ -176,9 +176,11 @@ typedef struct PtnFiberData {
     size_t resume_throw_line;
     int64_t caller_error_reporting;
     int caller_error_suppression_depth;
+    int caller_error_suppression_restore_depth;
     int64_t caller_error_suppression_saved_reporting;
     int64_t suspended_error_reporting;
     int suspended_error_suppression_depth;
+    int suspended_error_suppression_restore_depth;
     int64_t suspended_error_suppression_saved_reporting;
     char *executing_file;
     size_t executing_line;
