@@ -2051,6 +2051,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
                 return NULL;
         }
     }
+    if (ptn_ascii_case_equal(name, "zend_test_deprecated")) {
+        return index == 0 ? "arg" : NULL;
+    }
     if (ptn_ascii_case_equal(name, "mail")) {
         switch (index) {
             case 0:
@@ -243355,6 +243358,17 @@ static PtnValue ptn_internal_zend_test_nodiscard(PtnRuntime *runtime, size_t arg
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_zend_test_deprecated(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Function zend_test_deprecated() is deprecated",
+        line
+    );
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_zend_test_deprecated_nodiscard(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -245046,6 +245060,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zend_test_call_with_consumed_args", 3, 3, ptn_internal_zend_test_call_with_consumed_args },
         { "zend_test_attribute_with_named_argument", 0, 0, ptn_internal_zend_test_attribute_with_named_argument },
         { "zend_test_compile_to_ast", 1, 1, ptn_internal_zend_test_compile_to_ast },
+        { "zend_test_deprecated", 0, 1, ptn_internal_zend_test_deprecated },
         { "zend_test_deprecated_nodiscard", 0, 0, ptn_internal_zend_test_deprecated_nodiscard },
         { "zend_test_gh18756", 0, 0, ptn_internal_zend_test_gh18756 },
         { "zend_test_parameter_with_attribute", 1, 1, ptn_internal_zend_test_parameter_with_attribute },
@@ -245118,6 +245133,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_call_with_consumed_args") ||
         ptn_ascii_case_equal(name, "zend_test_attribute_with_named_argument") ||
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
+        ptn_ascii_case_equal(name, "zend_test_deprecated") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
         ptn_ascii_case_equal(name, "zend_test_parameter_with_attribute") ||

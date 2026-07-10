@@ -60947,6 +60947,47 @@ var_dump(DEPRECATED_COPY);\n",
 }
 
 #[test]
+fn compile_zend_test_deprecated_function_direct_and_dynamic_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-deprecated-function-calls");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-deprecated-function-calls.php");
+    let output = root.join("zend-test-deprecated-function-calls-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($level, $message) {\n\
+    throw new Error($message);\n\
+});\n\
+foreach ([false, true] as $dynamic) {\n\
+    foreach ([false, true] as $assign) {\n\
+        try {\n\
+            $function = $dynamic ? 'zend_test_deprecated' : null;\n\
+            $value = $dynamic\n\
+                ? $function(new stdClass())\n\
+                : zend_test_deprecated(new stdClass());\n\
+            if ($assign) {\n\
+                $result = $value;\n\
+            }\n\
+        } catch (Error $error) {\n\
+            echo $error->getMessage(), \"\\n\";\n\
+        }\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Function zend_test_deprecated() is deprecated\n".repeat(4)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zend_test_gh18756_helper_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-gh18756-helper");
     fs::create_dir_all(&root).unwrap();
