@@ -156678,6 +156678,15 @@ static void ptn_defined_constants_add_sockets(PtnValue table) {
 #if defined(IP_MULTICAST_IF)
     ptn_get_defined_constants_add_int(table, "IP_MULTICAST_IF", IP_MULTICAST_IF);
 #endif
+#if defined(IPV6_MULTICAST_IF)
+    ptn_get_defined_constants_add_int(table, "IPV6_MULTICAST_IF", IPV6_MULTICAST_IF);
+#endif
+#if defined(IPV6_MULTICAST_HOPS)
+    ptn_get_defined_constants_add_int(table, "IPV6_MULTICAST_HOPS", IPV6_MULTICAST_HOPS);
+#endif
+#if defined(IPV6_MULTICAST_LOOP)
+    ptn_get_defined_constants_add_int(table, "IPV6_MULTICAST_LOOP", IPV6_MULTICAST_LOOP);
+#endif
     ptn_get_defined_constants_add_int(table, "AI_PASSIVE", AI_PASSIVE);
     ptn_get_defined_constants_add_int(table, "AI_CANONNAME", AI_CANONNAME);
     ptn_get_defined_constants_add_int(table, "AI_NUMERICHOST", AI_NUMERICHOST);
@@ -157363,6 +157372,15 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
 #endif
 #if defined(IP_MULTICAST_IF)
         "IP_MULTICAST_IF",
+#endif
+#if defined(IPV6_MULTICAST_IF)
+        "IPV6_MULTICAST_IF",
+#endif
+#if defined(IPV6_MULTICAST_HOPS)
+        "IPV6_MULTICAST_HOPS",
+#endif
+#if defined(IPV6_MULTICAST_LOOP)
+        "IPV6_MULTICAST_LOOP",
 #endif
         "AI_PASSIVE",
         "AI_CANONNAME",

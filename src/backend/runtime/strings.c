@@ -2482,6 +2482,24 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
 #endif
+#if defined(IPV6_MULTICAST_IF)
+    if (strcmp(name, "IPV6_MULTICAST_IF") == 0) {
+        *out = ptn_int(IPV6_MULTICAST_IF);
+        return 1;
+    }
+#endif
+#if defined(IPV6_MULTICAST_HOPS)
+    if (strcmp(name, "IPV6_MULTICAST_HOPS") == 0) {
+        *out = ptn_int(IPV6_MULTICAST_HOPS);
+        return 1;
+    }
+#endif
+#if defined(IPV6_MULTICAST_LOOP)
+    if (strcmp(name, "IPV6_MULTICAST_LOOP") == 0) {
+        *out = ptn_int(IPV6_MULTICAST_LOOP);
+        return 1;
+    }
+#endif
     if (strcmp(name, "AI_PASSIVE") == 0) {
         *out = ptn_int(AI_PASSIVE);
         return 1;

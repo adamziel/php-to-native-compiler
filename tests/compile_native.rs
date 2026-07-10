@@ -47331,6 +47331,97 @@ var_dump(socket_set_option($socket, IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn compile_socket_ipv6_multicast_constants_and_options_to_native_binary() {
+    let root = temp_dir("ptn-native-socket-ipv6-multicast-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("socket-ipv6-multicast-options.php");
+    let output = root.join("socket-ipv6-multicast-options-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace SocketIpv6Probe {
+    function hops() {
+        return IPV6_MULTICAST_HOPS;
+    }
+}
+
+namespace {
+$names = [
+    'IPV6_MULTICAST_IF',
+    'IPV6_MULTICAST_HOPS',
+    'IPV6_MULTICAST_LOOP',
+];
+$groups = get_defined_constants(true);
+$all = get_defined_constants(false);
+$reflection = (new ReflectionExtension('sockets'))->getConstants();
+foreach ($names as $name) {
+    $constantReflection = new ReflectionConstant($name);
+    echo $name, ':', (int) defined($name), ':';
+    echo (int) ($groups['sockets'][$name] === constant($name)), ':';
+    echo (int) ($reflection[$name] === constant($name)), ':';
+    echo (int) ($all[$name] === constant($name)), ':';
+    echo $constantReflection->getExtensionName(), ':';
+    echo $constantReflection->getExtension()->getName(), "\n";
+}
+echo 'values:', IPV6_MULTICAST_IF, ':', IPV6_MULTICAST_HOPS, ':';
+echo IPV6_MULTICAST_LOOP, ':', \SocketIpv6Probe\hops(), "\n";
+
+$socket = socket_create(AF_INET6, SOCK_DGRAM, SOL_UDP);
+var_dump($socket !== false);
+foreach ([
+    [IPV6_MULTICAST_HOPS, 9],
+    [IPV6_MULTICAST_LOOP, 0],
+    [IPV6_MULTICAST_LOOP, 1],
+    [IPV6_MULTICAST_IF, 0],
+] as [$option, $value]) {
+    var_dump(socket_set_option($socket, IPPROTO_IPV6, $option, $value));
+    var_dump(socket_get_option($socket, IPPROTO_IPV6, $option));
+}
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "IPV6_MULTICAST_IF:1:1:1:1:sockets:sockets\n",
+            "IPV6_MULTICAST_HOPS:1:1:1:1:sockets:sockets\n",
+            "IPV6_MULTICAST_LOOP:1:1:1:1:sockets:sockets\n",
+            "values:17:18:19:18\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(9)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("IPV6_MULTICAST_IF"));
+    assert!(c_source.contains("IPV6_MULTICAST_HOPS"));
+    assert!(c_source.contains("IPV6_MULTICAST_LOOP"));
+    assert!(c_source.contains("setsockopt"));
+    assert!(c_source.contains("getsockopt"));
+}
+
+#[test]
 fn compile_socket_pair_export_and_timeval_options_to_native_binary() {
     let root = temp_dir("ptn-native-socket-pair-export-timeval-options");
     fs::create_dir_all(&root).unwrap();
