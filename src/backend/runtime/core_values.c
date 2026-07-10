@@ -492,16 +492,16 @@ typedef struct {
 } regmatch_t;
 #endif
 
-#define PTN_PHP_VERSION "8.4.0"
+#define PTN_PHP_VERSION "8.6.0-dev"
 #define PTN_PHP_MAJOR_VERSION 8
-#define PTN_PHP_MINOR_VERSION 4
+#define PTN_PHP_MINOR_VERSION 6
 #define PTN_PHP_RELEASE_VERSION 0
-#define PTN_PHP_EXTRA_VERSION ""
-#define PTN_PHP_VERSION_ID 80400
+#define PTN_PHP_EXTRA_VERSION "-dev"
+#define PTN_PHP_VERSION_ID 80600
 #define PTN_PHP_ZTS 0
 #define PTN_PHP_DEBUG 0
 #define PTN_PHP_SAPI_NAME "cli"
-#define PTN_ZEND_VERSION "4.4.0"
+#define PTN_ZEND_VERSION "4.6.0-dev"
 #define PTN_PHP_EXTENSION_DIR "."
 #define PTN_PHP_BINARY "phpc"
 #define PTN_PHP_BUILD_DATE __DATE__ " " __TIME__
@@ -690,8 +690,8 @@ typedef struct {
 #define PTN_MYSQLI_REPORT_STRICT 2
 #define PTN_MYSQLI_REPORT_INDEX 4
 #define PTN_MYSQLI_REPORT_ALL 255
-#define PTN_MYSQLI_CLIENT_VERSION 80000
-#define PTN_MYSQLI_CLIENT_INFO "mysqlnd 8.4.0"
+#define PTN_MYSQLI_CLIENT_VERSION PTN_PHP_VERSION_ID
+#define PTN_MYSQLI_CLIENT_INFO "mysqlnd " PTN_PHP_VERSION
 #define PTN_FNM_NOESCAPE 1
 #define PTN_FNM_PATHNAME 2
 #define PTN_FNM_PERIOD 4

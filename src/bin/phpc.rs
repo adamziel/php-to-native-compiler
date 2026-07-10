@@ -43,7 +43,7 @@ fn run() -> Result<i32, PhpcError> {
     match invocation.mode {
         Mode::Version => {
             println!(
-                "PHP 8.4.0 (cli) (built: ptn) (NTS)\nCopyright \u{00a9} The PHP Group and Contributors\nZend Engine v4.4.0, Copyright \u{00a9} Zend by Perforce"
+                "PHP 8.6.0-dev (cli) (built: ptn) (NTS)\nCopyright \u{00a9} The PHP Group and Contributors\nZend Engine v4.6.0-dev, Copyright \u{00a9} Zend by Perforce"
             );
             Ok(0)
         }
@@ -120,7 +120,7 @@ fn run_cli_server(
         .map_err(|error| format!("failed to inspect CLI server address: {error}"))?
         .port();
 
-    eprintln!("PHP 8.4.0 Development Server (http://{display_host}:{port}) started");
+    eprintln!("PHP 8.6.0-dev Development Server (http://{display_host}:{port}) started");
     let _ = io::stderr().flush();
 
     let doc_root = match doc_root {

@@ -24325,6 +24325,7 @@ echo '<form action=\"\" method=\"get\">x</form>', \"\\n\";\n\
         .env("PTN_SESSION_SAVE_PATH", &root)
         .env("PTN_SESSION_USE_COOKIES", "0")
         .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_STRICT_MODE", "0")
         .env("PTN_SESSION_USE_TRANS_SID", "1")
         .output()
         .unwrap();
@@ -24379,6 +24380,7 @@ echo \"\\n<a href=\\\"/\\\">\\n<form action=\\\"\\\" method=\\\"post\\\">\\n</fo
     let execution = Command::new(&output)
         .env("PTN_SESSION_SAVE_PATH", &root)
         .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_STRICT_MODE", "0")
         .env("PTN_SESSION_USE_TRANS_SID", "1")
         .output()
         .unwrap();
@@ -24427,6 +24429,7 @@ echo '<a href=\"next.php?a=b\">link</a>', \"\\n\";\n"
         .env("PTN_SESSION_SAVE_PATH", &root)
         .env("PTN_SESSION_USE_COOKIES", "0")
         .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_STRICT_MODE", "0")
         .env("PTN_SESSION_USE_TRANS_SID", "1")
         .env("PTN_ARG_SEPARATOR_OUTPUT", "&amp;")
         .output()
@@ -24468,6 +24471,7 @@ session_destroy();\n",
         .env("PTN_SESSION_SAVE_PATH", &root)
         .env("PTN_SESSION_USE_COOKIES", "0")
         .env("PTN_SESSION_USE_ONLY_COOKIES", "0")
+        .env("PTN_SESSION_USE_STRICT_MODE", "0")
         .env("PTN_SESSION_USE_TRANS_SID", "1")
         .output()
         .unwrap();
@@ -45578,11 +45582,11 @@ for ($i = 0; $i < 60; $i++) {
         continue;
     }
     $startup .= $line;
-    if (preg_match('@^PHP \S+ Development Server \(http://127\.0\.0\.1:\d+\) started$@', trim($line))) {
+    if (preg_match('@^PHP 8\.6\.0-dev Development Server \(http://127\.0\.0\.1:\d+\) started$@', trim($line))) {
         break;
     }
 }
-echo preg_match('@PHP \S+ Development Server \(http://127\.0\.0\.1:\d+\) started@', $startup)
+echo preg_match('@PHP 8\.6\.0-dev Development Server \(http://127\.0\.0\.1:\d+\) started@', $startup)
     ? "startup=stderr\n"
     : "startup=missing\n";
 fclose($pipes[2]);
@@ -68978,7 +68982,10 @@ print phpversion('standard');\n\
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "8.4.0\n8.4.0");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "8.6.0-dev\n8.6.0-dev"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -69054,11 +69061,16 @@ var_dump(phpinfo(INFO_LICENSE));\n",
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(stdout.starts_with("phpinfo()\nPHP Version => 8.4.0\n\nSystem => "));
+    assert!(stdout.starts_with("phpinfo()\nPHP Version => 8.6.0-dev\n\nSystem => "));
     assert!(stdout.contains("Server API => Command Line Interface\n"));
     assert!(stdout.contains("Registered PHP Streams => "));
     assert!(stdout.contains("\n _______________________________________________________________________\n\n\nConfiguration\n"));
-    assert!(stdout.contains("\nCore\n\nPHP Version => 8.4.0\n"));
+    assert!(stdout.contains("PHP API => 20250926\n"));
+    assert!(stdout.contains("PHP Extension => 20250926\n"));
+    assert!(stdout.contains("Zend Extension => 420250926\n"));
+    assert!(stdout.contains("Zend Extension Build => API420250926,NTS\n"));
+    assert!(stdout.contains("PHP Extension Build => API20250926,NTS\n"));
+    assert!(stdout.contains("\nCore\n\nPHP Version => 8.6.0-dev\n"));
     assert!(stdout.contains("\nAdditional Modules\n"));
     let expected_pcre_jit = if discover_pcre2_library().is_some() {
         "enabled"
@@ -69292,7 +69304,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     let output = root.join("versioning-registry-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), function_exists(\"get_loaded_extensions\"), PHP_SAPI, PHP_VERSION, defined(\"PHP_SAPI\"), constant(\"PHP_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"Reflection\"), phpversion(\"missing_extension\"), zend_version()); echo implode(',', get_loaded_extensions()), \"\\n\"; var_dump(get_loaded_extensions(true));",
+        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), function_exists(\"get_loaded_extensions\"), PHP_SAPI, PHP_VERSION, defined(\"PHP_SAPI\"), constant(\"PHP_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"Reflection\"), phpversion(\"missing_extension\"), zend_version(), mysqli_get_client_version(), mysqli_get_client_info()); echo implode(',', get_loaded_extensions()), \"\\n\"; var_dump(get_loaded_extensions(true));",
     )
     .unwrap();
 
@@ -69302,7 +69314,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zend_test,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache,session,simplexml\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(9) \"8.6.0-dev\"\nbool(true)\nstring(9) \"8.6.0-dev\"\nstring(9) \"8.6.0-dev\"\nstring(9) \"8.6.0-dev\"\nbool(false)\nstring(9) \"4.6.0-dev\"\nint(80600)\nstring(17) \"mysqlnd 8.6.0-dev\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zend_test,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache,session,simplexml\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -82934,6 +82946,21 @@ function dump_headers($contentType) {
 
 dump_headers('Multipart/Related');
 dump_headers('');
+$defaultClient = new SoapClient(NULL, [
+    'location' => 'http://localhost:1234/path',
+    'uri' => 'misc-uri',
+    'trace' => true,
+]);
+$defaultClient->__soapCall('foo', []);
+echo $defaultClient->__getLastRequestHeaders();
+$emptyClient = new SoapClient(NULL, [
+    'location' => 'http://localhost:1234/path',
+    'uri' => 'misc-uri',
+    'user_agent' => '',
+    'trace' => true,
+]);
+$emptyClient->__soapCall('foo', []);
+var_dump(str_contains($emptyClient->__getLastRequestHeaders(), 'User-Agent:'));
 var_dump(method_exists('SoapClient', '__getLastRequestHeaders'));
 "#,
     )
@@ -82954,6 +82981,10 @@ var_dump(method_exists('SoapClient', '__getLastRequestHeaders'));
         stdout.contains("User-Agent: Vincent JARDIN, test headers\r\n"),
         "{stdout}"
     );
+    assert!(
+        stdout.contains("User-Agent: PHP-SOAP/8.6.0-dev\r\n"),
+        "{stdout}"
+    );
     assert!(stdout.contains("MIME-Version: 1.0\r\n"), "{stdout}");
     assert!(
         stdout.contains("Content-Type: Multipart/Related; action=\"misc-uri#foo\"\r\n"),
@@ -82965,7 +82996,7 @@ var_dump(method_exists('SoapClient', '__getLastRequestHeaders'));
         ),
         "{stdout}"
     );
-    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert!(stdout.ends_with("bool(false)\nbool(true)\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
@@ -87365,7 +87396,7 @@ var_dump(defined('PHP_BUILD_DATE'), PHP_BUILD_DATE === constant('PHP_BUILD_DATE'
     assert_eq!(
         stdout,
         format!(
-            "int(8)\nint(4)\nint(0)\nstring(0) \"\"\nint(80400)\nint(0)\nint(0)\nstring({}) \"{}\"\nbool(true)\nbool(true)\nstring(0) \"\"\nstring({}) \"{}\"\n20\nbool(true)\nbool(true)\n",
+            "int(8)\nint(6)\nint(0)\nstring(4) \"-dev\"\nint(80600)\nint(0)\nint(0)\nstring({}) \"{}\"\nbool(true)\nbool(true)\nstring(4) \"-dev\"\nstring({}) \"{}\"\n20\nbool(true)\nbool(true)\n",
             php_os_family.len(),
             php_os_family,
             php_os_family.len(),
@@ -87427,7 +87458,7 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "cli\n8.4.0\n{php_os}\n{shlib_suffix}\n{php_os}\n4.4.0\nUTC\n.\nbool(false)\n\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nab\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+            "cli\n8.6.0-dev\n{php_os}\n{shlib_suffix}\n{php_os}\n4.6.0-dev\nUTC\n.\nbool(false)\n\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nab\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -106369,9 +106400,9 @@ fn phpc_version_banner_matches_php_cli_shape() {
 
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(stdout.starts_with("PHP 8.4.0 (cli) (built: ptn) (NTS)\n"));
+    assert!(stdout.starts_with("PHP 8.6.0-dev (cli) (built: ptn) (NTS)\n"));
     assert!(stdout.contains("Copyright \u{00a9} The PHP Group and Contributors\n"));
-    assert!(stdout.contains("Zend Engine v4.4.0, Copyright \u{00a9} Zend by Perforce\n"));
+    assert!(stdout.contains("Zend Engine v4.6.0-dev, Copyright \u{00a9} Zend by Perforce\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -107865,6 +107896,44 @@ fn phpc_auto_detect_line_endings_startup_ini_emits_deprecation() {
             "Deprecated: auto_detect_line_endings is deprecated in Unknown on line 0\n",
             "string(1) \"1\"\n"
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_86_session_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-php-86-session-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-86-session-defaults.php");
+    let output = root.join("php-86-session-defaults-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('session.cookie_httponly'));\n\
+var_dump(ini_get('session.cookie_samesite'));\n\
+var_dump(ini_get('session.use_strict_mode'));\n\
+$params = session_get_cookie_params();\n\
+var_dump($params['httponly'], $params['samesite']);\n\
+session_id('untrusted');\n\
+var_dump(session_start());\n\
+var_dump(session_id() !== 'untrusted');\n\
+session_destroy();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", &root)
+        .env_remove("PTN_SESSION_COOKIE_HTTPONLY")
+        .env_remove("PTN_SESSION_COOKIE_SAMESITE")
+        .env_remove("PTN_SESSION_USE_STRICT_MODE")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"1\"\nstring(3) \"Lax\"\nstring(1) \"1\"\nbool(true)\nstring(3) \"Lax\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

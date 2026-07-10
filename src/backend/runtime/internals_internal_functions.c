@@ -148671,11 +148671,11 @@ static const PtnSessionIniDefinition PTN_SESSION_INI_DEFINITIONS[] = {
     { "session.cache_expire", "PTN_SESSION_CACHE_EXPIRE", "180" },
     { "session.cache_limiter", "PTN_SESSION_CACHE_LIMITER", "nocache" },
     { "session.cookie_domain", "PTN_SESSION_COOKIE_DOMAIN", "" },
-    { "session.cookie_httponly", "PTN_SESSION_COOKIE_HTTPONLY", "0" },
+    { "session.cookie_httponly", "PTN_SESSION_COOKIE_HTTPONLY", "1" },
     { "session.cookie_lifetime", "PTN_SESSION_COOKIE_LIFETIME", "0" },
     { "session.cookie_partitioned", "PTN_SESSION_COOKIE_PARTITIONED", "0" },
     { "session.cookie_path", "PTN_SESSION_COOKIE_PATH", "/" },
-    { "session.cookie_samesite", "PTN_SESSION_COOKIE_SAMESITE", "" },
+    { "session.cookie_samesite", "PTN_SESSION_COOKIE_SAMESITE", "Lax" },
     { "session.cookie_secure", "PTN_SESSION_COOKIE_SECURE", "0" },
     { "session.gc_divisor", "PTN_SESSION_GC_DIVISOR", "100" },
     { "session.gc_maxlifetime", "PTN_SESSION_GC_MAXLIFETIME", "1440" },
@@ -148697,7 +148697,7 @@ static const PtnSessionIniDefinition PTN_SESSION_INI_DEFINITIONS[] = {
     { "session.upload_progress.prefix", "PTN_SESSION_UPLOAD_PROGRESS_PREFIX", "upload_progress_" },
     { "session.use_cookies", "PTN_SESSION_USE_COOKIES", "1" },
     { "session.use_only_cookies", "PTN_SESSION_USE_ONLY_COOKIES", "1" },
-    { "session.use_strict_mode", "PTN_SESSION_USE_STRICT_MODE", "0" },
+    { "session.use_strict_mode", "PTN_SESSION_USE_STRICT_MODE", "1" },
     { "session.use_trans_sid", "PTN_SESSION_USE_TRANS_SID", "0" },
 };
 
@@ -150749,11 +150749,11 @@ static void ptn_phpinfo_write_general(PtnRuntime *runtime) {
     ptn_output_write_cstr(runtime, "Loaded Configuration File => (none)\n");
     ptn_output_write_cstr(runtime, "Scan this dir for additional .ini files => (none)\n");
     ptn_output_write_cstr(runtime, "Additional .ini files parsed => (none)\n");
-    ptn_output_write_cstr(runtime, "PHP API => 20240924\n");
-    ptn_output_write_cstr(runtime, "PHP Extension => 20240924\n");
-    ptn_output_write_cstr(runtime, "Zend Extension => 420240924\n");
-    ptn_output_write_cstr(runtime, "Zend Extension Build => API420240924,NTS\n");
-    ptn_output_write_cstr(runtime, "PHP Extension Build => API20240924,NTS\n");
+    ptn_output_write_cstr(runtime, "PHP API => 20250926\n");
+    ptn_output_write_cstr(runtime, "PHP Extension => 20250926\n");
+    ptn_output_write_cstr(runtime, "Zend Extension => 420250926\n");
+    ptn_output_write_cstr(runtime, "Zend Extension Build => API420250926,NTS\n");
+    ptn_output_write_cstr(runtime, "PHP Extension Build => API20250926,NTS\n");
     ptn_output_write_cstr(runtime, "PHP Integer Size => 64 bits\n");
     ptn_output_write_cstr(runtime, "Debug Build => no\n");
     ptn_output_write_cstr(runtime, "Thread Safety => disabled\n");
@@ -153659,7 +153659,7 @@ static void ptn_session_choose_start_id(PtnRuntime *runtime, size_t line) {
     }
     if (ptn_session_has_user_handler(runtime)) {
         if (current[0] != '\0' &&
-            ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 0) &&
+            ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 1) &&
             !ptn_session_user_validate_sid(runtime, current, line)) {
             char *generated = ptn_session_user_create_sid(runtime, line);
             ptn_session_id_set(runtime, generated);
@@ -153674,7 +153674,7 @@ static void ptn_session_choose_start_id(PtnRuntime *runtime, size_t line) {
         return;
     }
     if (current[0] != '\0' &&
-        ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 0) &&
+        ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 1) &&
         !ptn_session_file_exists(runtime, current)) {
         char *generated = ptn_session_create_id_string(runtime, "");
         ptn_session_id_set(runtime, generated);
@@ -154126,7 +154126,7 @@ static PtnValue ptn_internal_session_get_cookie_params(PtnRuntime *runtime, size
     ptn_array_set_entry(result.as.array, ptn_array_string_key("domain"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cookie_domain"))));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("secure"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_secure"), 0)));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("partitioned"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_partitioned"), 0)));
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("httponly"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_httponly"), 0)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("httponly"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_httponly"), 1)));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("samesite"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cookie_samesite"))));
     return result;
 }
@@ -233964,10 +233964,12 @@ static int ptn_soap_client_record_http_request_headers(
     if (digest_auth) {
         ptn_string_buffer_append(&headers, "Connection: Keep-Alive\r\n");
     }
-    if (user_agent != NULL && user_agent[0] != '\0') {
-        ptn_string_buffer_append_format(&headers, "User-Agent: %s\r\n", user_agent);
-    } else if (digest_auth) {
-        ptn_string_buffer_append(&headers, "User-Agent: PHP-SOAP/8.4.0\r\n");
+    if (user_agent != NULL) {
+        if (user_agent[0] != '\0') {
+            ptn_string_buffer_append_format(&headers, "User-Agent: %s\r\n", user_agent);
+        }
+    } else {
+        ptn_string_buffer_append(&headers, "User-Agent: PHP-SOAP/" PTN_PHP_VERSION "\r\n");
     }
     PtnValue *context_header = ptn_soap_http_stream_context_option(data, "header");
     if (context_header != NULL &&
