@@ -1465,6 +1465,7 @@ struct PtnClosure {
     int is_static;
     int uses_this;
     PtnSymbolTable captures;
+    PtnSymbolTable static_locals;
     int has_wrapped_callable;
     int suppress_wrapped_callable_deprecation;
     PtnValue wrapped_callable;
@@ -5145,6 +5146,13 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->captures.capacity = 0;
     closure->captures.index_slots = NULL;
     closure->captures.index_capacity = 0;
+    closure->captures.mutation_epoch = 0;
+    closure->static_locals.items = NULL;
+    closure->static_locals.len = 0;
+    closure->static_locals.capacity = 0;
+    closure->static_locals.index_slots = NULL;
+    closure->static_locals.index_capacity = 0;
+    closure->static_locals.mutation_epoch = 0;
     closure->has_wrapped_callable = 0;
     closure->suppress_wrapped_callable_deprecation = 0;
     closure->wrapped_callable = ptn_null();

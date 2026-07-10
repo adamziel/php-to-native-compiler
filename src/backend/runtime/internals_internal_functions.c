@@ -7522,7 +7522,9 @@ static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *clo
     }
     PtnFunctionMetadata metadata = closure->metadata;
     return metadata.static_variables_provider != NULL ||
-        ptn_runtime_static_local_count(runtime, closure->function_index) > 0;
+        closure->static_locals.len > 0 ||
+        (closure->has_wrapped_callable &&
+            ptn_runtime_static_local_count(runtime, closure->function_index) > 0);
 }
 
 static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *closure) {
@@ -7542,8 +7544,11 @@ static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *cl
         );
     }
 
-    PtnValue static_locals =
-        ptn_runtime_static_local_values(runtime, closure->function_index, closure->metadata);
+    PtnValue static_locals = closure->has_wrapped_callable
+        ? ptn_runtime_static_local_values(runtime, closure->function_index, closure->metadata)
+        : (closure->metadata.static_variables_provider == NULL
+            ? ptn_array_from_literal_entries(0, NULL)
+            : closure->metadata.static_variables_provider(runtime));
     PtnValue resolved_static_locals = ptn_value_deref(static_locals);
     if (resolved_static_locals.type == PTN_ARRAY) {
         PtnArray *array = resolved_static_locals.as.array;
@@ -7557,6 +7562,16 @@ static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *cl
         }
     }
     ptn_value_destroy(&static_locals);
+    if (!closure->has_wrapped_callable) {
+        for (size_t i = 0; i < closure->static_locals.len; i++) {
+            PtnSymbol *static_local = &closure->static_locals.items[i];
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key(static_local->name),
+                ptn_value_clone_deref(static_local->value)
+            );
+        }
+    }
     return result;
 }
 
@@ -135486,6 +135501,7 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
             }
             closure->gc_mark_epoch = epoch;
             ptn_gc_mark_symbol_table(stack, &closure->captures);
+            ptn_gc_mark_symbol_table(stack, &closure->static_locals);
             if (closure->has_wrapped_callable) {
                 ptn_gc_mark_stack_push(stack, closure->wrapped_callable);
             }
@@ -135695,6 +135711,16 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value_ex(
         ptn_abort_out_of_memory();
     }
     count += captures;
+    size_t static_locals = ptn_gc_count_unreachable_contained_values_in_symbol_table(
+        &closure->static_locals,
+        root_epoch,
+        counted_epoch,
+        depth + 1
+    );
+    if (count > SIZE_MAX - static_locals) {
+        ptn_abort_out_of_memory();
+    }
+    count += static_locals;
     if (closure->has_wrapped_callable) {
         size_t wrapped = ptn_gc_count_unreachable_contained_values_in_value_ex(
             closure->wrapped_callable,
@@ -136379,6 +136405,13 @@ static void ptn_gc_mark_unreachable_destructor_component_value(
     ptn_gc_mark_unreachable_destructor_component_symbol_table(
         component,
         &closure->captures,
+        root_epoch,
+        component_epoch,
+        depth + 1
+    );
+    ptn_gc_mark_unreachable_destructor_component_symbol_table(
+        component,
+        &closure->static_locals,
         root_epoch,
         component_epoch,
         depth + 1

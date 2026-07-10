@@ -33033,59 +33033,88 @@ fn emit_instruction(
         }
         Instruction::BindStatic { name, value, .. } => {
             let slot = values.next_static_local();
-            let function_index = values
-                .current_function_index
-                .map(|index| index.to_string())
-                .unwrap_or_else(|| "((size_t)-1)".to_string());
-            let opcache_reflection_deref =
-                if static_local_initializer_uses_opcache_reflection_preview(value.as_ref()) {
-                    "1"
-                } else {
-                    "0"
-                };
-            out.push_str("    static PtnReference *");
-            out.push_str(&slot);
-            out.push_str(" = NULL;\n");
-            out.push_str("    if (");
-            out.push_str(&slot);
-            out.push_str(" == NULL) {\n");
-            if let Some(value) = value {
-                let initial_value = values.emit_materialized_value(out, value);
-                out.push_str("        ");
-                out.push_str("if (");
+            if values.current_function_is_anonymous {
+                out.push_str("    PtnReference *");
+                out.push_str(&slot);
+                out.push_str(" = ptn_runtime_closure_static_local_reference(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                out.push_str("    if (");
                 out.push_str(&slot);
                 out.push_str(" == NULL) {\n");
-                out.push_str("            ");
-                out.push_str(&slot);
-                out.push_str(" = ptn_reference_new_owned(ptn_value_clone_deref(");
-                out.push_str(&initial_value);
-                out.push_str("));\n");
-                out.push_str("            ptn_runtime_register_static_local(&runtime, ");
-                out.push_str(&function_index);
-                out.push_str(", \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
-                out.push_str(&slot);
-                out.push_str(", ");
-                out.push_str(opcache_reflection_deref);
-                out.push_str(");\n");
-                out.push_str("        }\n");
-                emit_value_cleanup(out, "        ", &initial_value);
+                if let Some(value) = value {
+                    let initial_value = values.emit_materialized_value(out, value);
+                    out.push_str("        ");
+                    out.push_str(&slot);
+                    out.push_str(" = ptn_runtime_register_closure_static_local(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&initial_value);
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "        ", &initial_value);
+                } else {
+                    out.push_str("        ");
+                    out.push_str(&slot);
+                    out.push_str(" = ptn_runtime_register_closure_static_local(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ptn_null());\n");
+                }
+                out.push_str("    }\n");
             } else {
-                out.push_str("        ");
+                let function_index = values
+                    .current_function_index
+                    .map(|index| index.to_string())
+                    .unwrap_or_else(|| "((size_t)-1)".to_string());
+                let opcache_reflection_deref =
+                    if static_local_initializer_uses_opcache_reflection_preview(value.as_ref()) {
+                        "1"
+                    } else {
+                        "0"
+                    };
+                out.push_str("    static PtnReference *");
                 out.push_str(&slot);
-                out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
-                out.push_str("        ptn_runtime_register_static_local(&runtime, ");
-                out.push_str(&function_index);
-                out.push_str(", \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
+                out.push_str(" = NULL;\n");
+                out.push_str("    if (");
                 out.push_str(&slot);
-                out.push_str(", ");
-                out.push_str(opcache_reflection_deref);
-                out.push_str(");\n");
+                out.push_str(" == NULL) {\n");
+                if let Some(value) = value {
+                    let initial_value = values.emit_materialized_value(out, value);
+                    out.push_str("        ");
+                    out.push_str("if (");
+                    out.push_str(&slot);
+                    out.push_str(" == NULL) {\n");
+                    out.push_str("            ");
+                    out.push_str(&slot);
+                    out.push_str(" = ptn_reference_new_owned(ptn_value_clone_deref(");
+                    out.push_str(&initial_value);
+                    out.push_str("));\n");
+                    out.push_str("            ptn_runtime_register_static_local(&runtime, ");
+                    out.push_str(&function_index);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&slot);
+                    out.push_str(", ");
+                    out.push_str(opcache_reflection_deref);
+                    out.push_str(");\n");
+                    out.push_str("        }\n");
+                    emit_value_cleanup(out, "        ", &initial_value);
+                } else {
+                    out.push_str("        ");
+                    out.push_str(&slot);
+                    out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
+                    out.push_str("        ptn_runtime_register_static_local(&runtime, ");
+                    out.push_str(&function_index);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&slot);
+                    out.push_str(", ");
+                    out.push_str(opcache_reflection_deref);
+                    out.push_str(");\n");
+                }
+                out.push_str("    }\n");
             }
-            out.push_str("    }\n");
             out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ptn_reference_value(");

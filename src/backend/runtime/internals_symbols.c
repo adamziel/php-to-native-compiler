@@ -431,6 +431,15 @@ static int ptn_value_contains_pending_destructor_impl(
                 return 1;
             }
         }
+        for (size_t i = 0; i < value.as.closure->static_locals.len; i++) {
+            if (ptn_value_contains_pending_destructor_impl(
+                value.as.closure->static_locals.items[i].value,
+                depth + 1,
+                scan
+            )) {
+                return 1;
+            }
+        }
         return 0;
     }
     if (value.type != PTN_OBJECT || value.as.object == NULL) {
@@ -856,6 +865,7 @@ static PTN_UNUSED void ptn_closure_release_in_runtime(
     ptn_runtime_link_cleanup_root(root, &closure->cleanup_root, cleanup_value);
     PtnReleaseState *state = ptn_release_state_new(release_runtime);
     size_t capture_count = closure->captures.len;
+    size_t static_local_count = closure->static_locals.len;
     while (state->phase < capture_count) {
         size_t capture_index = state->phase++;
         PtnSymbol *capture = &closure->captures.items[capture_index];
@@ -900,7 +910,54 @@ static PTN_UNUSED void ptn_closure_release_in_runtime(
         closure->captures.index_capacity = 0;
         closure->captures.mutation_epoch = 0;
     }
-    if (state->phase == capture_count + 1) {
+    while (
+        state->phase >= capture_count + 1 &&
+        state->phase < capture_count + 1 + static_local_count
+    ) {
+        size_t static_local_index = state->phase++ - (capture_count + 1);
+        PtnSymbol *static_local = &closure->static_locals.items[static_local_index];
+        free(static_local->name);
+        static_local->name = NULL;
+        PtnException *active_before =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        PtnTryFrame static_local_frame;
+        int caught_exception = 0;
+        int frame_active =
+            release_runtime != NULL && release_runtime->exceptions != NULL;
+        if (frame_active) {
+            ptn_try_frame_push(release_runtime, &static_local_frame);
+            if (setjmp(static_local_frame.jump) != 0) {
+                caught_exception = 1;
+            }
+        }
+        if (!caught_exception) {
+            ptn_value_drop_in_runtime(release_runtime, &static_local->value);
+        }
+        if (frame_active) {
+            ptn_try_frame_pop(release_runtime, &static_local_frame);
+        }
+        PtnException *active_after =
+            release_runtime == NULL || release_runtime->exceptions == NULL
+                ? NULL
+                : release_runtime->exceptions->active_exception;
+        if (caught_exception || (active_after != NULL && active_after != active_before)) {
+            ptn_release_state_remember_exception(release_runtime, state);
+        }
+    }
+    if (state->phase == capture_count + 1 + static_local_count) {
+        state->phase++;
+        free(closure->static_locals.index_slots);
+        free(closure->static_locals.items);
+        closure->static_locals.items = NULL;
+        closure->static_locals.len = 0;
+        closure->static_locals.capacity = 0;
+        closure->static_locals.index_slots = NULL;
+        closure->static_locals.index_capacity = 0;
+        closure->static_locals.mutation_epoch = 0;
+    }
+    if (state->phase == capture_count + static_local_count + 2) {
         state->phase++;
         closure->has_wrapped_callable = 0;
         PtnException *active_before =

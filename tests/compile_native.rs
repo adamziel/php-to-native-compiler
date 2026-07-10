@@ -97543,6 +97543,142 @@ var_dump(next_value());
 }
 
 #[test]
+fn zend_bug_64979_closure_generator_static_locals_are_per_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-bug-64979");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bug64979.php");
+    let output = root.join("bug64979-bin");
+    fs::write(
+        &input,
+        "<?php
+function new_closure_gen() {
+    return function() {
+        static $foo = 0;
+        yield ++$foo;
+    };
+}
+
+$closure1 = new_closure_gen();
+$closure2 = new_closure_gen();
+
+$gen1 = $closure1();
+$gen2 = $closure1();
+$gen3 = $closure2();
+
+foreach (array($gen1, $gen2, $gen3) as $gen) {
+    foreach ($gen as $val) {
+        var_dump($val);
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_closure_static_local_reference(&runtime, \"foo\")"));
+    assert!(c_source.contains("ptn_runtime_register_closure_static_local(&runtime, \"foo\""));
+}
+
+#[test]
+fn compile_closure_static_locals_clone_bind_and_reflect_per_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-static-locals-per-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-static-locals-per-instance.php");
+    let output = root.join("closure-static-locals-per-instance-bin");
+    fs::write(
+        &input,
+        "<?php
+$make = function () {
+    return function () {
+        static $value = 0;
+        return ++$value;
+    };
+};
+
+$first = $make();
+$second = $make();
+var_dump($first(), $first(), $second());
+
+$cloned = clone $first;
+var_dump($first(), $cloned());
+$bound = $first->bindTo(null);
+var_dump($first(), $bound());
+
+var_dump((new ReflectionFunction($first))->getStaticVariables()['value']);
+var_dump((new ReflectionFunction($cloned))->getStaticVariables()['value']);
+var_dump((new ReflectionFunction($bound))->getStaticVariables()['value']);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\nint(2)\nint(1)\n",
+            "int(3)\nint(3)\n",
+            "int(4)\nint(4)\n",
+            "int(4)\nint(3)\nint(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_closure_static_local_cycle_runs_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-static-local-cycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-static-local-cycle.php");
+    let output = root.join("closure-static-local-cycle-bin");
+    fs::write(
+        &input,
+        "<?php
+class StaticCycleProbe {
+    public $closure;
+    public function __destruct() {
+        echo \"cycle\\n\";
+    }
+}
+
+$closure = null;
+$closure = function () use (&$closure) {
+    static $probe;
+    $probe = new StaticCycleProbe;
+    $probe->closure = $closure;
+};
+$closure();
+$closure = null;
+gc_collect_cycles();
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "cycle\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_closure_var_dump_shows_static_locals_to_native_binary() {
     let root = temp_dir("ptn-native-closure-var-dump-static-locals");
     fs::create_dir_all(&root).unwrap();
@@ -97580,9 +97716,12 @@ var_dump($factory);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_runtime_static_local_values"));
-    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
-    assert!(c_source.contains("\"instance\""));
+    assert!(c_source.contains(
+        "ptn_runtime_closure_static_local_reference(&runtime, \"instance\")"
+    ));
+    assert!(c_source.contains(
+        "ptn_runtime_register_closure_static_local(&runtime, \"instance\""
+    ));
 }
 
 #[test]

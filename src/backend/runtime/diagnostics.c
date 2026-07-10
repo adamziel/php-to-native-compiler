@@ -350,6 +350,56 @@ static PTN_UNUSED void ptn_closure_bind_capture_reference(PtnValue closure, cons
     ptn_symbols_bind_reference(&resolved->captures, name, reference);
 }
 
+static PtnClosure *ptn_runtime_current_closure(PtnRuntime *runtime) {
+    if (
+        runtime == NULL ||
+        runtime->call_frame == NULL ||
+        !runtime->call_frame->has_current_closure
+    ) {
+        return NULL;
+    }
+    PtnValue current = ptn_value_deref(runtime->call_frame->current_closure);
+    return current.type == PTN_CLOSURE ? current.as.closure : NULL;
+}
+
+static PTN_UNUSED PtnReference *ptn_runtime_closure_static_local_reference(
+    PtnRuntime *runtime,
+    const char *name
+) {
+    PtnClosure *closure = ptn_runtime_current_closure(runtime);
+    PtnValue stored;
+    if (
+        closure == NULL ||
+        !ptn_symbols_get(&closure->static_locals, name, &stored) ||
+        stored.type != PTN_REFERENCE
+    ) {
+        return NULL;
+    }
+    return stored.as.reference;
+}
+
+static PTN_UNUSED PtnReference *ptn_runtime_register_closure_static_local(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue initial
+) {
+    PtnClosure *closure = ptn_runtime_current_closure(runtime);
+    if (closure == NULL) {
+        return NULL;
+    }
+    PtnReference *existing = ptn_runtime_closure_static_local_reference(runtime, name);
+    if (existing != NULL) {
+        return existing;
+    }
+
+    PtnReference *reference = ptn_reference_new_owned(ptn_value_clone_deref(initial));
+    PtnValue reference_value = ptn_reference_value(reference);
+    ptn_gc_attach_value_runtime(runtime, reference_value, 0);
+    ptn_symbols_set(&closure->static_locals, name, reference_value);
+    ptn_value_destroy(&reference_value);
+    return ptn_runtime_closure_static_local_reference(runtime, name);
+}
+
 static PTN_UNUSED void ptn_runtime_import_closure_captures(PtnRuntime *runtime, PtnValue closure) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
     if (!resolved->is_static) {
@@ -422,6 +472,16 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
         } else {
             ptn_closure_set_capture(copy, capture->name, capture->value);
         }
+    }
+    for (size_t i = 0; i < source->static_locals.len; i++) {
+        PtnSymbol *static_local = &source->static_locals.items[i];
+        PtnReference *reference = ptn_reference_new_owned(
+            ptn_value_clone_deref(static_local->value)
+        );
+        PtnValue reference_value = ptn_reference_value(reference);
+        ptn_gc_attach_value_runtime(runtime, reference_value, 0);
+        ptn_symbols_set(&copy.as.closure->static_locals, static_local->name, reference_value);
+        ptn_value_destroy(&reference_value);
     }
     if (source->has_wrapped_callable) {
         copy.as.closure->has_wrapped_callable = 1;

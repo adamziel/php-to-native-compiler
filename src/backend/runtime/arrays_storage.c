@@ -1367,6 +1367,7 @@ static PTN_UNUSED void ptn_gc_attach_value_runtime(PtnRuntime *runtime, PtnValue
             return;
         }
         ptn_gc_attach_symbol_table_runtime(root, &closure->captures, depth + 1);
+        ptn_gc_attach_symbol_table_runtime(root, &closure->static_locals, depth + 1);
         if (closure->has_wrapped_callable) {
             ptn_gc_attach_value_runtime(root, closure->wrapped_callable, depth + 1);
         }
@@ -2432,6 +2433,16 @@ static int ptn_value_reaches_object_in_graph(
                 return 1;
             }
         }
+        for (size_t i = 0; i < closure->static_locals.len; i++) {
+            if (ptn_value_reaches_object_in_graph(
+                    closure->static_locals.items[i].value,
+                    target,
+                    seen,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
     }
     if (value.type == PTN_EXCEPTION) {
         if (
@@ -3354,6 +3365,12 @@ static void ptn_runtime_force_close_generator_value_impl(
         ptn_runtime_force_close_generator_symbol_table_impl(
             runtime,
             &closure->captures,
+            depth + 1,
+            scan
+        );
+        ptn_runtime_force_close_generator_symbol_table_impl(
+            runtime,
+            &closure->static_locals,
             depth + 1,
             scan
         );
