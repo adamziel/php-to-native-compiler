@@ -41040,6 +41040,237 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_stringify_fetches_normalizes_cells_across_fetch_modes() {
+    let root = temp_dir("ptn-native-pdo-stringify-fetches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-stringify-fetches.php");
+    let output = root.join("pdo-stringify-fetches-bin");
+    fs::write(
+        &input,
+r#"<?php
+class PdoStringifyRow {}
+class PdoStringifyFetchesAttributeValueWithAnIntentionallyLongRuntimeClassNameThatExceedsTheFormerFixedDiagnosticBufferCapacityByQuiteSomeDistance {}
+
+function show_cell($label, $value) {
+    echo $label, ':', gettype($value), ':';
+    if (is_string($value)) {
+        echo bin2hex($value);
+    } elseif ($value === null) {
+        echo 'null';
+    } elseif (is_bool($value)) {
+        echo $value ? 'true' : 'false';
+    } else {
+        echo $value;
+    }
+    echo "\n";
+}
+
+try {
+    new PDO('sqlite::memory:', null, null, [PDO::ATTR_STRINGIFY_FETCHES => 'invalid']);
+} catch (TypeError $e) {
+    echo 'ctor-attr-error:', $e->getMessage(), "\n";
+}
+
+$db = new PDO('sqlite::memory:');
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
+foreach ([
+    null,
+    'invalid',
+    new PdoStringifyFetchesAttributeValueWithAnIntentionallyLongRuntimeClassNameThatExceedsTheFormerFixedDiagnosticBufferCapacityByQuiteSomeDistance(),
+] as $invalid) {
+    try {
+        $db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, $invalid);
+    } catch (TypeError $e) {
+        echo 'attr-error:', $e->getMessage(), "\n";
+    }
+}
+show_cell('attr-after-errors', $db->getAttribute(PDO::ATTR_STRINGIFY_FETCHES));
+show_cell('attr-int', $db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, 1));
+show_cell('attr-after-int', $db->getAttribute(PDO::ATTR_STRINGIFY_FETCHES));
+$db->exec('CREATE TABLE values_table (id INTEGER, ratio REAL, label TEXT, missing TEXT)');
+$db->exec("INSERT INTO values_table VALUES (7, 1.5, 'x', NULL), (8, 2.5, 'y', NULL)");
+
+foreach ([false, true] as $stringify) {
+    $prefix = $stringify ? 'on' : 'off';
+    $db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, $stringify);
+
+    $row = $db->query('SELECT id FROM values_table WHERE id = 7')->fetch(PDO::FETCH_ASSOC);
+    show_cell("$prefix-assoc", $row['id']);
+    $row = $db->query('SELECT id FROM values_table WHERE id = 7')->fetch(PDO::FETCH_NUM);
+    show_cell("$prefix-num", $row[0]);
+    $row = $db->query('SELECT id FROM values_table WHERE id = 7')->fetch(PDO::FETCH_BOTH);
+    show_cell("$prefix-both-assoc", $row['id']);
+    show_cell("$prefix-both-num", $row[0]);
+    $row = $db->query('SELECT id FROM values_table WHERE id = 7')->fetch(PDO::FETCH_OBJ);
+    show_cell("$prefix-obj", $row->id);
+    $stmt = $db->query('SELECT id FROM values_table WHERE id = 7');
+    $stmt->setFetchMode(PDO::FETCH_CLASS, PdoStringifyRow::class);
+    $row = $stmt->fetch();
+    show_cell("$prefix-class", $row->id);
+    show_cell(
+        "$prefix-column",
+        $db->query('SELECT id FROM values_table WHERE id = 7')->fetchColumn()
+    );
+}
+
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
+$stmt = $db->query('SELECT id FROM values_table ORDER BY id');
+show_cell('live-off', $stmt->fetchColumn());
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
+show_cell('live-on', $stmt->fetchColumn());
+
+$row = $db->query('SELECT ratio, label, missing FROM values_table WHERE id = 7')->fetch(PDO::FETCH_ASSOC);
+show_cell('float', $row['ratio']);
+show_cell('text', $row['label']);
+show_cell('null', $row['missing']);
+
+$db->exec('CREATE TABLE precision_table (value REAL)');
+$db->exec('INSERT INTO precision_table VALUES (1.2345678901234567), (1.2345678901234567)');
+$stmt = $db->query('SELECT value FROM precision_table');
+ini_set('precision', '17');
+show_cell('precision-17', $stmt->fetchColumn());
+ini_set('precision', '5');
+show_cell('precision-5', $stmt->fetchColumn());
+
+foreach ([false, true] as $stringify) {
+    $db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, $stringify);
+    foreach ([false, true] as $boolean) {
+        $stmt = $db->prepare('SELECT :value AS value');
+        $stmt->bindValue(':value', $boolean, PDO::PARAM_BOOL);
+        $stmt->execute();
+        show_cell(
+            ($stringify ? 'bool-on-' : 'bool-off-') . ($boolean ? 'true' : 'false'),
+            $stmt->fetchColumn()
+        );
+    }
+}
+
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
+$stmt = $db->prepare('SELECT :value');
+$stmt->bindValue(':value', false, PDO::PARAM_BOOL);
+$stmt->execute(['value' => 'foo']);
+show_cell('execute-overrides-type', $stmt->fetchColumn());
+
+$stmt = $db->prepare('SELECT :left, :right');
+$stmt->bindValue(':left', 5, PDO::PARAM_INT);
+$stmt->execute(['right' => '6']);
+$row = $stmt->fetch(PDO::FETCH_NUM);
+show_cell('execute-omits-old-value', $row[0]);
+show_cell('execute-default-type', $row[1]);
+
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
+foreach ([PDO::PARAM_BOOL => 'bool-null', PDO::PARAM_INT => 'int-null'] as $type => $label) {
+    $stmt = $db->prepare('SELECT :value AS value');
+    $stmt->bindValue(':value', null, $type);
+    $stmt->execute();
+    show_cell($label, $stmt->fetchColumn());
+}
+
+$text = "x\0y";
+$stmt = $db->prepare('SELECT :value AS value');
+$stmt->bindValue(':value', $text, PDO::PARAM_STR);
+$stmt->execute();
+show_cell('text-nul', $stmt->fetchColumn());
+
+$db->exec('CREATE TABLE lob_table (payload BLOB)');
+$lob = tmpfile();
+fwrite($lob, "abcdef");
+fseek($lob, 2);
+$stmt = $db->prepare('INSERT INTO lob_table VALUES (:payload)');
+$stmt->bindValue(':payload', $lob, PDO::PARAM_LOB);
+$stmt->execute();
+show_cell('lob-position-after-execute', ftell($lob));
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
+show_cell('lob-off-first', $db->query('SELECT payload FROM lob_table')->fetchColumn());
+show_cell('lob-off-repeat', $db->query('SELECT payload FROM lob_table')->fetchColumn());
+fclose($lob);
+show_cell('lob-off-after-close', $db->query('SELECT payload FROM lob_table')->fetchColumn());
+$db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
+show_cell('lob-on', $db->query('SELECT payload FROM lob_table')->fetchColumn());
+
+$lob_reference = tmpfile();
+fwrite($lob_reference, "A\0B");
+rewind($lob_reference);
+$stmt = $db->prepare('INSERT INTO lob_table VALUES (:payload)');
+$stmt->bindParam(':payload', $lob_reference, PDO::PARAM_LOB);
+$stmt->execute();
+show_cell('lob-reference', $lob_reference);
+
+$closed_lob = tmpfile();
+$stmt = $db->prepare('INSERT INTO lob_table VALUES (:payload)');
+$stmt->bindValue(':payload', $closed_lob, PDO::PARAM_LOB);
+fclose($closed_lob);
+try {
+    $stmt->execute();
+} catch (PDOException $e) {
+    echo 'lob-closed-error:', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ctor-attr-error:Attribute value must be of type bool for selected attribute, string given\n\
+attr-error:Attribute value must be of type bool for selected attribute, null given\n\
+attr-error:Attribute value must be of type bool for selected attribute, string given\n\
+attr-error:Attribute value must be of type bool for selected attribute, PdoStringifyFetchesAttributeValueWithAnIntentionallyLongRuntimeClassNameThatExceedsTheFormerFixedDiagnosticBufferCapacityByQuiteSomeDistance given\n\
+attr-after-errors:boolean:false\n\
+attr-int:boolean:true\n\
+attr-after-int:boolean:true\n\
+off-assoc:integer:7\n\
+off-num:integer:7\n\
+off-both-assoc:integer:7\n\
+off-both-num:integer:7\n\
+off-obj:integer:7\n\
+off-class:integer:7\n\
+off-column:integer:7\n\
+on-assoc:string:37\n\
+on-num:string:37\n\
+on-both-assoc:string:37\n\
+on-both-num:string:37\n\
+on-obj:string:37\n\
+on-class:string:37\n\
+on-column:string:37\n\
+live-off:integer:7\n\
+live-on:string:38\n\
+float:string:312e35\n\
+text:string:78\n\
+null:NULL:null\n\
+precision-17:string:312e32333435363738393031323334353637\n\
+precision-5:string:312e32333436\n\
+bool-off-false:integer:0\n\
+bool-off-true:integer:1\n\
+bool-on-false:string:30\n\
+bool-on-true:string:31\n\
+execute-overrides-type:string:666f6f\n\
+execute-omits-old-value:NULL:null\n\
+execute-default-type:string:36\n\
+bool-null:NULL:null\n\
+int-null:NULL:null\n\
+text-nul:string:780079\n\
+lob-position-after-execute:integer:6\n\
+lob-off-first:string:63646566\n\
+lob-off-repeat:string:63646566\n\
+lob-off-after-close:string:63646566\n\
+lob-on:string:63646566\n\
+lob-reference:string:410042\n\
+lob-closed-error:SQLSTATE[HY105]: Invalid parameter type: Expected a stream resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sqlite3_result_fetch_all_modes_to_native_binary() {
     let root = temp_dir("ptn-native-sqlite3-result-fetch-all");
     fs::create_dir_all(&root).unwrap();

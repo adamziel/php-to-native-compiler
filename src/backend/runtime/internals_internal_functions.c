@@ -265270,6 +265270,7 @@ enum {
     PTN_PDO_PARAM_INT = 1,
     PTN_PDO_PARAM_STR = 2,
     PTN_PDO_PARAM_LOB = 3,
+    PTN_PDO_PARAM_BOOL = 5,
     PTN_PDO_FETCH_LAZY = 1,
     PTN_PDO_FETCH_ASSOC = 2,
     PTN_PDO_FETCH_NUM = 3,
@@ -267383,8 +267384,60 @@ static PtnValue ptn_pdo_drivers_value(void) {
     return result;
 }
 
+static PtnValue ptn_pdo_copy_lob_resource(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    size_t line
+) {
+    PtnValue contents = ptn_stream_read_remaining(
+        runtime,
+        "PDOStatement::execute",
+        resource,
+        -1,
+        line
+    );
+    if (ptn_runtime_has_active_exception(runtime) || contents.type == PTN_STRING) {
+        return contents;
+    }
+    ptn_value_destroy(&contents);
+    return ptn_string("");
+}
+
+static PtnValue ptn_pdo_normalize_fetched_cell(
+    PtnRuntime *runtime,
+    PtnPdoStatementData *statement,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    PtnDbConnectionData *db = statement == NULL
+        ? NULL
+        : ptn_pdo_connection_data(statement->connection);
+    if (db == NULL || !db->stringify_fetches) {
+        return ptn_value_clone_deref(resolved);
+    }
+
+    switch (resolved.type) {
+        case PTN_NULL:
+        case PTN_STRING:
+            return ptn_value_clone_deref(resolved);
+        case PTN_BOOL:
+            return ptn_string(resolved.as.boolean ? "1" : "0");
+        case PTN_INT:
+        case PTN_FLOAT: {
+            PtnStringOperand string =
+                ptn_value_to_string_operand_with_runtime(runtime, resolved, line);
+            char *copy = ptn_duplicate_string_len(string.data, string.len);
+            size_t len = string.len;
+            ptn_string_operand_free(string);
+            return ptn_owned_string_len(copy, len);
+        }
+        default:
+            return ptn_value_clone_deref(resolved);
+    }
+}
+
 static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value, int mode, int column_index, const char *class_name, PtnValue into, size_t line) {
-    (void)line;
     PtnPdoStatementData *statement = ptn_pdo_statement_data(statement_value);
     if (statement == NULL || statement->rows.type != PTN_ARRAY || statement->cursor >= statement->rows.as.array->len) {
         return ptn_bool(0);
@@ -267401,7 +267454,9 @@ static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value,
         PtnArrayEntry *entry = column_index >= 0 && (size_t)column_index < row.as.array->len
             ? &row.as.array->entries[column_index]
             : NULL;
-        return entry != NULL ? ptn_value_clone_deref(entry->value) : ptn_bool(0);
+        return entry != NULL
+            ? ptn_pdo_normalize_fetched_cell(runtime, statement, entry->value, line)
+            : ptn_bool(0);
     }
     if (base_mode == PTN_PDO_FETCH_OBJ || base_mode == PTN_PDO_FETCH_CLASS || base_mode == PTN_PDO_FETCH_INTO || base_mode == PTN_PDO_FETCH_LAZY) {
         const char *object_class = "stdClass";
@@ -267419,10 +267474,18 @@ static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value,
         for (size_t i = 0; i < row.as.array->len; i++) {
             PtnArrayEntry *entry = &row.as.array->entries[i];
             if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+                PtnValue value = base_mode == PTN_PDO_FETCH_LAZY
+                    ? ptn_value_clone_deref(entry->value)
+                    : ptn_pdo_normalize_fetched_cell(
+                        runtime,
+                        statement,
+                        entry->value,
+                        line
+                    );
                 ptn_array_set_entry(
                     object.as.object->properties,
                     ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
-                    ptn_value_clone_deref(entry->value)
+                    value
                 );
             }
         }
@@ -267431,16 +267494,30 @@ static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value,
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < row.as.array->len; i++) {
         PtnArrayEntry *entry = &row.as.array->entries[i];
-        if (entry->key.type == PTN_ARRAY_KEY_STRING && (base_mode == PTN_PDO_FETCH_ASSOC || base_mode == PTN_PDO_FETCH_BOTH)) {
+        int include_assoc = entry->key.type == PTN_ARRAY_KEY_STRING &&
+            (base_mode == PTN_PDO_FETCH_ASSOC || base_mode == PTN_PDO_FETCH_BOTH);
+        int include_numeric =
+            base_mode == PTN_PDO_FETCH_NUM || base_mode == PTN_PDO_FETCH_BOTH;
+        if (!include_assoc && !include_numeric) {
+            continue;
+        }
+        PtnValue value =
+            ptn_pdo_normalize_fetched_cell(runtime, statement, entry->value, line);
+        if (include_assoc) {
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
-                ptn_value_clone_deref(entry->value)
+                ptn_value_clone_deref(value)
             );
         }
-        if (base_mode == PTN_PDO_FETCH_NUM || base_mode == PTN_PDO_FETCH_BOTH) {
-            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_value_clone_deref(entry->value));
+        if (include_numeric) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_value_clone_deref(value)
+            );
         }
+        ptn_value_destroy(&value);
     }
     return result;
 }
@@ -267475,7 +267552,11 @@ static PTN_UNUSED PtnValue ptn_pdo_statement_foreach_row_value(PtnValue row_valu
                 ptn_value_clone_deref(entry->value)
             );
         }
-        ptn_array_set_entry(result.as.array, ptn_array_int_key(numeric_index++), ptn_value_clone_deref(entry->value));
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(numeric_index++),
+            ptn_value_clone_deref(entry->value)
+        );
     }
     return result;
 }
@@ -267491,7 +267572,9 @@ static PTN_UNUSED PtnArrayIterator ptn_pdo_statement_array_iterator(PtnRuntime *
     PtnValue rows = ptn_array_from_literal_entries(0, NULL);
     int64_t iterator_index = 0;
     for (size_t i = statement->cursor; i < statement->rows.as.array->len; i++) {
-        PtnValue row = ptn_pdo_statement_foreach_row_value(statement->rows.as.array->entries[i].value);
+        PtnValue row = ptn_pdo_statement_foreach_row_value(
+            statement->rows.as.array->entries[i].value
+        );
         ptn_array_set_entry(rows.as.array, ptn_array_int_key(iterator_index++), row);
     }
     statement->cursor = statement->rows.as.array->len;
@@ -267567,6 +267650,12 @@ static void ptn_pdo_apply_execute_params(PtnPdoStatementData *statement, PtnValu
     if (params.type != PTN_ARRAY) {
         return;
     }
+    PtnValue previous_bound_values = statement->bound_values;
+    PtnValue previous_bound_types = statement->bound_types;
+    statement->bound_values = ptn_array_from_literal_entries(0, NULL);
+    statement->bound_types = ptn_array_from_literal_entries(0, NULL);
+    ptn_value_destroy(&previous_bound_values);
+    ptn_value_destroy(&previous_bound_types);
     for (size_t i = 0; i < params.as.array->len; i++) {
         PtnArrayEntry *entry = &params.as.array->entries[i];
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
@@ -267591,6 +267680,89 @@ static void ptn_pdo_apply_execute_params(PtnPdoStatementData *statement, PtnValu
     }
 }
 
+static int64_t ptn_pdo_bound_value_type(
+    PtnPdoStatementData *statement,
+    const PtnArrayEntry *entry
+) {
+    if (statement == NULL || statement->bound_types.type != PTN_ARRAY || entry == NULL) {
+        return PTN_PDO_PARAM_STR;
+    }
+    PtnArrayEntry *type_entry = entry->key.type == PTN_ARRAY_KEY_STRING
+        ? ptn_db_array_entry_string(statement->bound_types, entry->key.as.string)
+        : ptn_db_array_entry_int(statement->bound_types, entry->key.as.integer);
+    if (type_entry == NULL) {
+        return PTN_PDO_PARAM_STR;
+    }
+    PtnValue type = ptn_value_deref(type_entry->value);
+    return type.type == PTN_INT ? type.as.integer : PTN_PDO_PARAM_STR;
+}
+
+static int ptn_pdo_replace_bound_value(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    PtnValue value
+) {
+    if (entry->value.type == PTN_REFERENCE && entry->value.as.reference != NULL) {
+        int assigned = ptn_reference_assign(runtime, entry->value.as.reference, value);
+        ptn_value_destroy(&value);
+        return assigned;
+    }
+    PtnValue previous = entry->value;
+    entry->value = value;
+    ptn_value_destroy(&previous);
+    return 1;
+}
+
+static int ptn_pdo_materialize_bound_values(
+    PtnRuntime *runtime,
+    PtnPdoStatementData *statement,
+    size_t line
+) {
+    if (statement == NULL || statement->bound_values.type != PTN_ARRAY) {
+        return 1;
+    }
+    for (size_t i = 0; i < statement->bound_values.as.array->len; i++) {
+        PtnArrayEntry *entry = &statement->bound_values.as.array->entries[i];
+        int64_t type = ptn_pdo_bound_value_type(statement, entry);
+        PtnValue value = ptn_value_deref(entry->value);
+        PtnValue materialized = ptn_null();
+        int replace = 0;
+
+        if (value.type == PTN_NULL) {
+            continue;
+        }
+        if (type == PTN_PDO_PARAM_BOOL) {
+            materialized = ptn_int(ptn_is_truthy(value) ? 1 : 0);
+            replace = 1;
+        } else if (type == PTN_PDO_PARAM_INT) {
+            materialized = ptn_int(ptn_value_to_integer(value));
+            replace = 1;
+        } else if (type == PTN_PDO_PARAM_LOB && value.type == PTN_RESOURCE) {
+            if (value.as.resource == NULL ||
+                !ptn_stream_resource_is_open(value.as.resource)) {
+                ptn_throw_exception(
+                    runtime,
+                    "PDOException",
+                    "SQLSTATE[HY105]: Invalid parameter type: Expected a stream resource"
+                );
+                return 0;
+            }
+            materialized =
+                ptn_pdo_copy_lob_resource(runtime, value.as.resource, line);
+            if (ptn_runtime_has_active_exception(runtime)) {
+                ptn_value_destroy(&materialized);
+                return 0;
+            }
+            replace = 1;
+        }
+
+        if (replace && !ptn_pdo_replace_bound_value(runtime, entry, materialized)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PtnValue ptn_pdo_execute_statement(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     PtnPdoStatementData *statement = ptn_pdo_statement_data(receiver);
     if (statement == NULL) {
@@ -267599,6 +267771,9 @@ static PtnValue ptn_pdo_execute_statement(PtnRuntime *runtime, PtnValue receiver
     }
     if (argc >= 1) {
         ptn_pdo_apply_execute_params(statement, args[0]);
+    }
+    if (!ptn_pdo_materialize_bound_values(runtime, statement, line)) {
+        return ptn_bool(0);
     }
     PtnDbConnectionData *db = ptn_pdo_connection_data(statement->connection);
     if (db == NULL) {
@@ -267890,6 +268065,12 @@ static void ptn_db_initialize_connection(PtnDbConnectionData *data, const char *
     ptn_pdo_touch_sqlite_file(data->dsn);
 }
 
+static int ptn_pdo_attribute_bool_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int *result_out
+);
+
 static void ptn_pdo_apply_options(PtnRuntime *runtime, PtnDbConnectionData *data, PtnValue options, size_t line) {
     options = ptn_value_deref(options);
     if (options.type != PTN_ARRAY) {
@@ -267907,7 +268088,11 @@ static void ptn_pdo_apply_options(PtnRuntime *runtime, PtnDbConnectionData *data
         } else if (attr == 1001) {
             data->extended_result_codes = ptn_is_truthy(value);
         } else if (attr == 17) {
-            data->stringify_fetches = ptn_is_truthy(value);
+            int stringify_fetches = 0;
+            if (!ptn_pdo_attribute_bool_value(runtime, value, &stringify_fetches)) {
+                return;
+            }
+            data->stringify_fetches = stringify_fetches;
         } else if (attr == 13 && value.type == PTN_ARRAY && value.as.array->len >= 1) {
             PtnValue class_value = ptn_value_deref(value.as.array->entries[0].value);
             if (class_value.type == PTN_STRING) {
@@ -267916,6 +268101,48 @@ static void ptn_pdo_apply_options(PtnRuntime *runtime, PtnDbConnectionData *data
             }
         }
     }
+}
+
+static int ptn_pdo_attribute_bool_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int *result_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        *result_out = value.as.boolean;
+        return 1;
+    }
+    if (value.type == PTN_INT) {
+        *result_out = value.as.integer != 0;
+        return 1;
+    }
+    const char *type_name = ptn_direct_internal_string_arg_type_name(value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "Attribute value must be of type bool for selected attribute, %s given",
+        type_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Attribute value must be of type bool for selected attribute, %s given",
+        type_name
+    );
+    if (written < 0 || written > needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+    return 0;
 }
 
 static PtnValue ptn_pdo_set_attribute(PtnRuntime *runtime, PtnDbConnectionData *data, PtnValue attr_value, PtnValue value, size_t line) {
@@ -267928,7 +268155,11 @@ static PtnValue ptn_pdo_set_attribute(PtnRuntime *runtime, PtnDbConnectionData *
     } else if (attr == 1001) {
         data->extended_result_codes = ptn_is_truthy(value);
     } else if (attr == 17) {
-        data->stringify_fetches = ptn_is_truthy(value);
+        int stringify_fetches = 0;
+        if (!ptn_pdo_attribute_bool_value(runtime, value, &stringify_fetches)) {
+            return ptn_bool(0);
+        }
+        data->stringify_fetches = stringify_fetches;
     } else if (attr == 13) {
         value = ptn_value_deref(value);
         if (value.type == PTN_ARRAY && value.as.array->len >= 1) {
