@@ -7672,6 +7672,10 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(1);
             return 1;
         }
+        if (strcmp(constant, "DEFAULT_LOCALE") == 0) {
+            *out = ptn_null();
+            return 1;
+        }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Normalizer")) {
         if (strcmp(constant, "FORM_D") == 0 || strcmp(constant, "NFD") == 0) {

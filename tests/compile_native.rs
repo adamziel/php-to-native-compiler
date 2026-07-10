@@ -71602,6 +71602,193 @@ TypeError: IntlDateFormatter::setTimeZone(): Argument #1 ($timezone) Object of c
 }
 
 #[test]
+fn compile_intl_dateformatter_state_accessors_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-dateformatter-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("intl-dateformatter-state-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fmt = new IntlDateFormatter('de-DE', IntlDateFormatter::FULL, IntlDateFormatter::NONE, 'UTC', IntlDateFormatter::GREGORIAN);\n\
+echo $fmt->getDateType(), ',', datefmt_get_datetype($fmt), \"\\n\";\n\
+echo $fmt->getTimeType(), ',', datefmt_get_timetype($fmt), \"\\n\";\n\
+echo $fmt->getLocale(), ',', $fmt->getLocale(1), ',', datefmt_get_locale($fmt, 1), \"\\n\";\n\
+foreach (['sl-IT-nedis', 'en_UK', 'hi'] as $locale) {\n\
+    $localeFmt = datefmt_create($locale, 3, 3, 'UTC', 1);\n\
+    echo datefmt_get_locale($localeFmt, 1), \"\\n\";\n\
+}\n\
+$patternFmt = new IntlDateFormatter('ru_RU', 0, 0, 'UTC', null, 'd MMM');\n\
+echo $patternFmt->getLocale(), \"\\n\";\n\
+var_dump($fmt->isLenient());\n\
+var_dump($fmt->setLenient(false));\n\
+var_dump(datefmt_is_lenient($fmt));\n\
+var_dump(datefmt_set_lenient($fmt, true));\n\
+var_dump($fmt->isLenient());\n\
+var_dump($fmt->getLocale(100));\n\
+foreach ([\n\
+    fn() => $fmt->getDateType(1),\n\
+    fn() => $fmt->getLocale(0, 1),\n\
+    fn() => $fmt->setLenient(),\n\
+    fn() => datefmt_get_timetype(),\n\
+    fn() => datefmt_get_locale($fmt, 0, 1),\n\
+    fn() => datefmt_set_lenient($fmt),\n\
+] as $call) {\n\
+    try { $call(); } catch (Throwable $e) { echo get_class($e), \"\\n\"; }\n\
+}\n\
+echo 'constants:', ULOC_ACTUAL_LOCALE, ',', ULOC_VALID_LOCALE, ',';\n\
+var_export(Locale::DEFAULT_LOCALE);\n\
+echo \"\\n\";\n\
+$groups = get_defined_constants(true);\n\
+echo 'intl-group:', $groups['intl']['ULOC_ACTUAL_LOCALE'], ',', $groups['intl']['ULOC_VALID_LOCALE'], \"\\n\";\n\
+$function = new ReflectionFunction('datefmt_get_locale');\n\
+$functionParameter = $function->getParameters()[1];\n\
+echo 'function-meta:', $function->getNumberOfRequiredParameters(), '/', $function->getNumberOfParameters(), ',';\n\
+echo $functionParameter->getName(), ':', $functionParameter->getType(), ':';\n\
+echo $functionParameter->getDefaultValueConstantName(), ':', $functionParameter->getDefaultValue(), ':';\n\
+echo $function->getReturnType(), \"\\n\";\n\
+$method = new ReflectionMethod(IntlDateFormatter::class, 'getLocale');\n\
+$methodParameter = $method->getParameters()[0];\n\
+echo 'method-meta:', $method->getNumberOfRequiredParameters(), '/', $method->getNumberOfParameters(), ',';\n\
+echo $methodParameter->getName(), ':', $methodParameter->getDefaultValueConstantName(), ':';\n\
+echo (int) $method->hasReturnType(), ':', (int) $method->hasTentativeReturnType(), ':';\n\
+echo $method->getTentativeReturnType(), \"\\n\";\n\
+echo 'methods:', (int) method_exists($fmt, 'getDateType'), (int) method_exists($fmt, 'getTimeType'), (int) method_exists($fmt, 'getLocale'), (int) method_exists($fmt, 'isLenient'), (int) method_exists($fmt, 'setLenient'), \"\\n\";\n\
+$scriptFmt = new IntlDateFormatter('zh-Hant-TW', 2, 3, 'UTC', 1);\n\
+echo 'script:', $scriptFmt->getLocale(), ',', $scriptFmt->getLocale(ULOC_VALID_LOCALE), \"\\n\";\n\
+$noneFmt = new IntlDateFormatter('de-DE', -1, -1, 'UTC', 1);\n\
+echo 'none-locale:', strlen($noneFmt->getLocale()), \"\\n\";\n\
+Locale::setDefault('en_US');\n\
+$frozenLocaleFmt = new IntlDateFormatter(null, 2, 3, 'UTC', 1);\n\
+Locale::setDefault('fr_FR');\n\
+echo 'frozen-locale:', $frozenLocaleFmt->getLocale(ULOC_VALID_LOCALE), \"\\n\";\n\
+$fmt->getLocale(100);\n\
+echo 'invalid:', intl_get_error_code(), ':', intl_get_error_message(), \"\\n\";\n\
+set_error_handler(function (int $errno, string $message): bool {\n\
+    echo 'warning:', $message, \"\\n\";\n\
+    return true;\n\
+});\n\
+@ini_set('intl.error_level', (string) E_WARNING);\n\
+$fmt->getLocale(100);\n\
+restore_error_handler();\n\
+ini_set('intl.error_level', '0');\n\
+ini_set('intl.use_exceptions', '1');\n\
+try { $fmt->getLocale(100); } catch (Throwable $e) { echo get_class($e), ': ', $e->getMessage(), \"\\n\"; }\n\
+ini_set('intl.use_exceptions', '0');\n\
+$resetters = [\n\
+    fn() => $fmt->getDateType(),\n\
+    fn() => $fmt->getTimeType(),\n\
+    fn() => $fmt->getLocale(),\n\
+    fn() => $fmt->isLenient(),\n\
+    fn() => $fmt->setLenient(true),\n\
+];\n\
+echo 'reset:';\n\
+foreach ($resetters as $reset) {\n\
+    $fmt->getLocale(100);\n\
+    $reset();\n\
+    echo intl_get_error_code();\n\
+}\n\
+echo \"\\n\";\n\
+class DateFormatterChild extends IntlDateFormatter {\n\
+    public bool $cloned = false;\n\
+    public function __clone(): void { $this->cloned = true; }\n\
+    public function __serialize(): array { return []; }\n\
+}\n\
+$child = new DateFormatterChild('zh-Hant-TW', 2, 3, 'UTC', 1, 'yyyy-MM-dd');\n\
+$child->setLenient(false);\n\
+echo 'child:', $child->getDateType(), ',', datefmt_get_timetype($child), ',';\n\
+echo $child->getLocale(1), ',', (int) $child->isLenient(), \"\\n\";\n\
+$copy = clone $child;\n\
+echo 'clone:', $copy->getDateType(), ',', $copy->getTimeType(), ',';\n\
+echo $copy->getLocale(1), ',', (int) $copy->isLenient(), ',', (int) $copy->cloned, \"\\n\";\n\
+$copy->setLenient(true);\n\
+echo 'independent:', (int) $child->isLenient(), ',', (int) $copy->isLenient(), \"\\n\";\n\
+class UnconstructedDateFormatter extends IntlDateFormatter {\n\
+    public function __construct() {}\n\
+}\n\
+$unconstructed = new UnconstructedDateFormatter();\n\
+function show_datefmt_throwable(callable $call): void {\n\
+    try {\n\
+        $call();\n\
+        echo \"none\\n\";\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+show_datefmt_throwable(fn() => $unconstructed->getLocale());\n\
+show_datefmt_throwable(fn() => datefmt_get_locale($unconstructed));\n\
+show_datefmt_throwable(fn() => $unconstructed->getDateType(1));\n\
+show_datefmt_throwable(fn() => $unconstructed->getLocale([]));\n\
+show_datefmt_throwable(fn() => datefmt_get_locale($unconstructed, []));\n\
+show_datefmt_throwable(fn() => $unconstructed->setLenient([]));\n\
+show_datefmt_throwable(fn() => $unconstructed->getPattern(1));\n\
+show_datefmt_throwable(fn() => serialize($fmt));\n\
+show_datefmt_throwable(fn() => serialize($child));\n\
+show_datefmt_throwable(fn() => serialize($unconstructed));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0,0\n\
+-1,-1\n\
+de,de_DE,de_DE\n\
+sl\n\
+en\n\
+hi\n\
+ru\n\
+bool(true)\n\
+NULL\n\
+bool(false)\n\
+NULL\n\
+bool(true)\n\
+bool(false)\n\
+ArgumentCountError\n\
+ArgumentCountError\n\
+ArgumentCountError\n\
+ArgumentCountError\n\
+ArgumentCountError\n\
+ArgumentCountError\n\
+constants:0,1,NULL\n\
+intl-group:0,1\n\
+function-meta:1/2,type:int:ULOC_ACTUAL_LOCALE:0:string|false\n\
+method-meta:0/1,type:ULOC_ACTUAL_LOCALE:0:1:string|false\n\
+methods:11111\n\
+script:zh_Hant,zh_Hant_TW\n\
+none-locale:0\n\
+frozen-locale:en_US\n\
+invalid:1:Error getting locale: U_ILLEGAL_ARGUMENT_ERROR\n\
+warning:IntlDateFormatter::getLocale(): Error getting locale\n\
+IntlException: Error getting locale\n\
+reset:00000\n\
+child:2,3,zh_Hant_TW,0\n\
+clone:0,0,zh_Hant_TW,0,1\n\
+independent:0,1\n\
+Error: Found unconstructed IntlDateFormatter\n\
+Error: Found unconstructed IntlDateFormatter\n\
+ArgumentCountError: IntlDateFormatter::getDateType() expects exactly 0 arguments, 1 given\n\
+TypeError: IntlDateFormatter::getLocale(): Argument #1 ($type) must be of type int, array given\n\
+TypeError: datefmt_get_locale(): Argument #2 ($type) must be of type int, array given\n\
+TypeError: IntlDateFormatter::setLenient(): Argument #1 ($lenient) must be of type bool, array given\n\
+ArgumentCountError: IntlDateFormatter::getPattern() expects exactly 0 arguments\n\
+Exception: Serialization of 'IntlDateFormatter' is not allowed\n\
+Exception: Serialization of 'DateFormatterChild' is not allowed\n\
+Exception: Serialization of 'UnconstructedDateFormatter' is not allowed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_dateformatter_calendar_timezone_errors_to_native_binary() {
     let root = temp_dir("ptn-native-intl-dateformatter-calendar-timezone-errors");
     fs::create_dir_all(&root).unwrap();

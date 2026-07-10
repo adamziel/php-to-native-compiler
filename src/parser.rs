@@ -27103,6 +27103,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "MB_ONIGURUMA_VERSION"
             | "HASH_HMAC"
             | "INTL_ICU_VERSION"
+            | "ULOC_ACTUAL_LOCALE"
+            | "ULOC_VALID_LOCALE"
             | "GRAPHEME_EXTR_COUNT"
             | "GRAPHEME_EXTR_MAXBYTES"
             | "GRAPHEME_EXTR_MAXCHARS"

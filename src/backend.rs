@@ -30456,7 +30456,7 @@ fn emit_method_dispatch(
         "        return ptn_php_token_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {\n");
+    out.push_str("    if (ptn_object_is_internal_or_descendant(resolved, \"IntlDateFormatter\")) {\n");
     out.push_str(
         "        return ptn_intl_date_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
@@ -40590,6 +40590,14 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             .find(|(constant_name, _)| name.eq_ignore_ascii_case(constant_name))
         {
             return Some(value);
+        }
+    }
+    if class_name.eq_ignore_ascii_case("Locale") {
+        if name.eq_ignore_ascii_case("ACTUAL_LOCALE") {
+            return Some("0");
+        }
+        if name.eq_ignore_ascii_case("VALID_LOCALE") {
+            return Some("1");
         }
     }
     if class_name.eq_ignore_ascii_case("Normalizer") {
