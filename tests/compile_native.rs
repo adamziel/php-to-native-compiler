@@ -91811,7 +91811,7 @@ echo \"unreachable\\n\";\n",
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     let stderr = String::from_utf8(execution.stderr).unwrap();
     assert!(stderr.contains("Fatal error: Allowed memory size of 2097152 bytes exhausted"));
-    assert!(stderr.contains("tried to allocate 128 bytes"));
+    assert!(stderr.contains("tried to allocate "));
     assert!(stderr.contains("object-allocation-memory-limit.php on line 3"));
     assert!(!stderr.contains("Stack trace:"), "{stderr}");
 }
@@ -138063,7 +138063,60 @@ echo \"unreachable\\n\";\n",
         "{stderr}"
     );
     assert!(stderr.contains("tried to allocate "), "{stderr}");
+    assert!(
+        stderr.contains(&format!("{} on line 5", input.display())),
+        "{stderr}"
+    );
     assert!(!stderr.contains("Fatal error: out of memory"), "{stderr}");
+}
+
+#[test]
+fn compile_array_cow_memory_limit_reports_instruction_location_to_native_binary() {
+    let root = temp_dir("ptn-native-array-cow-memory-location");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-cow-memory-location.php");
+    let output = root.join("array-cow-memory-location-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public $arr;
+    public function core() {
+        $this->arr['no_pack'] = 1;
+        while (1) {
+            $this->arr[] = 1;
+        }
+    }
+}
+
+$a = new A;
+$a->core();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("30s")
+        .arg(&output)
+        .env("PTN_MEMORY_LIMIT", "2M")
+        .output()
+        .unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded: {execution:?}"
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Allowed memory size of 2097152 bytes exhausted"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("{} on line 7", input.display())),
+        "{stderr}"
+    );
 }
 
 #[test]

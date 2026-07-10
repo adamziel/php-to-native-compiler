@@ -111,6 +111,8 @@ static size_t ptn_request_allocation_peak = 0;
 static size_t ptn_request_allocation_limit = 0;
 static int ptn_request_allocation_tracking_active = 0;
 static int ptn_request_allocation_fatal_active = 0;
+static const char *ptn_request_execution_source_path = NULL;
+static size_t ptn_request_execution_line = 0;
 
 static void ptn_request_memory_limit_exhausted(size_t requested);
 static void ptn_request_allocation_uncharge(size_t size);
@@ -287,6 +289,11 @@ static void ptn_request_allocator_set_limit(const char *memory_limit) {
     ptn_request_allocation_limit = ptn_request_allocation_parse_limit(memory_limit);
 }
 
+static void ptn_request_allocator_set_execution_location(const char *source_path, size_t line) {
+    ptn_request_execution_source_path = source_path;
+    ptn_request_execution_line = line;
+}
+
 static int ptn_request_allocator_is_active(void) {
     return ptn_request_allocation_tracking_active;
 }
@@ -307,6 +314,7 @@ static void ptn_request_allocator_begin(const char *memory_limit) {
     ptn_request_allocation_usage = 0;
     ptn_request_allocation_peak = 0;
     ptn_request_allocation_fatal_active = 0;
+    ptn_request_allocator_set_execution_location(NULL, 0);
     ptn_request_allocation_tracking_active = 1;
     ptn_request_allocator_set_limit(memory_limit);
 }
@@ -6514,12 +6522,27 @@ static void ptn_request_memory_limit_exhausted(size_t requested) {
         _Exit(1);
     }
     ptn_request_allocation_fatal_active = 1;
-    fprintf(
-        stderr,
-        "Fatal error: Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)\n",
-        ptn_request_allocation_limit,
-        requested
-    );
+    if (
+        ptn_request_execution_source_path != NULL &&
+        ptn_request_execution_source_path[0] != '\0' &&
+        ptn_request_execution_line != 0
+    ) {
+        fprintf(
+            stderr,
+            "Fatal error: Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes) in %s on line %zu\n",
+            ptn_request_allocation_limit,
+            requested,
+            ptn_request_execution_source_path,
+            ptn_request_execution_line
+        );
+    } else {
+        fprintf(
+            stderr,
+            "Fatal error: Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)\n",
+            ptn_request_allocation_limit,
+            requested
+        );
+    }
     fflush(stderr);
     exit(1);
 }

@@ -571,6 +571,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    if (ptn_runtime_source_path_override != NULL && ptn_runtime_source_path_override[0] != '\\0') {\n");
     out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
     out.push_str("    }\n");
+    out.push_str("    ptn_request_allocator_set_execution_location(runtime.source_path, 0);\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
     if runtime_requirements.internal_function_dispatch && !module.includes.is_empty() {
         out.push_str("    if (ptn_opcache_enabled(&runtime)) {\n");
@@ -33001,6 +33002,11 @@ fn emit_instruction(
     return_target: Option<&str>,
     label_scope: Option<&LabelScope<'_>>,
 ) {
+    if let Some(line) = instruction_runtime_line(instruction) {
+        out.push_str("    ptn_request_allocator_set_execution_location(runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
     match instruction {
         Instruction::Store { name, value, .. } => {
             values.update_generator_yield_assignment_variable(name, value);
