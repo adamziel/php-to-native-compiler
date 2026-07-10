@@ -78962,6 +78962,98 @@ echo $dom->saveXml(), "\n";
 }
 
 #[test]
+fn compile_dom_xpath_quote_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xpath-quote");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xpath-quote.php");
+    let output = root.join("dom-xpath-quote-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xpath = new DOMXPath(new DOMDocument());
+$tests = [
+    '' => "''",
+    'foo' => "'foo'",
+    '"foo' => '\'"foo\'',
+    '\'foo' => '"\'foo"',
+    '\'foo"bar' => 'concat("\'foo",\'"bar\')',
+    '\'foo"bar"baz' => 'concat("\'foo",\'"bar"baz\')',
+    '\'foo"' => 'concat("\'foo",\'"\')',
+    '\'foo""' => 'concat("\'foo",\'""\')',
+    '"\'foo' => 'concat(\'"\',"\'foo")',
+    '""\'foo' => 'concat(\'""\',"\'foo")',
+    '\'foo""bar' => 'concat("\'foo",\'""bar\')',
+];
+foreach ($tests as $value => $expected) {
+    $actual = $xpath->quote($value);
+    echo $actual === $expected ? "Pass: {$value} => {$actual}\n" : "FAIL\n";
+}
+
+var_dump(method_exists(DOMXPath::class, 'quote'));
+var_dump(is_callable([DOMXPath::class, 'quote']));
+echo DOMXPath::quote(12), "\n";
+echo $xpath->quote("a'b\"c"), "\n";
+echo Dom\XPath::quote("'foo\"bar"), "\n";
+try {
+    DOMXPath::quote("a\0b");
+} catch (ValueError $exception) {
+    echo get_class($exception), ': ', $exception->getMessage(), "\n";
+}
+try {
+    DOMXPath::quote();
+} catch (ArgumentCountError $exception) {
+    echo get_class($exception), ': ', $exception->getMessage(), "\n";
+}
+try {
+    DOMXPath::quote('x', 'y');
+} catch (ArgumentCountError $exception) {
+    echo get_class($exception), ': ', $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Pass:  => ''\n",
+            "Pass: foo => 'foo'\n",
+            "Pass: \"foo => '\"foo'\n",
+            "Pass: 'foo => \"'foo\"\n",
+            "Pass: 'foo\"bar => concat(\"'foo\",'\"bar')\n",
+            "Pass: 'foo\"bar\"baz => concat(\"'foo\",'\"bar\"baz')\n",
+            "Pass: 'foo\" => concat(\"'foo\",'\"')\n",
+            "Pass: 'foo\"\" => concat(\"'foo\",'\"\"')\n",
+            "Pass: \"'foo => concat('\"',\"'foo\")\n",
+            "Pass: \"\"'foo => concat('\"\"',\"'foo\")\n",
+            "Pass: 'foo\"\"bar => concat(\"'foo\",'\"\"bar')\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "'12'\n",
+            "concat(\"a'b\",'\"c')\n",
+            "concat(\"'foo\",'\"bar')\n",
+            "ValueError: DOMXPath::quote(): Argument #1 ($str) must not contain any null bytes\n",
+            "ArgumentCountError: DOMXPath::quote() expects exactly 1 argument, 0 given\n",
+            "ArgumentCountError: DOMXPath::quote() expects exactly 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_xpath_quote_method"));
+}
+
+#[test]
 fn compile_dom_xpath_nodelist_handle_sequence_to_native_binary() {
     let root = temp_dir("ptn-native-dom-xpath-nodelist-handles");
     fs::create_dir_all(&root).unwrap();

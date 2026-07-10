@@ -187678,6 +187678,95 @@ static void ptn_dom_xpath_throw_count(PtnRuntime *runtime, const char *method, c
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static const char *ptn_dom_xpath_quote_function_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Dom\\XPath") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\XPath")
+        ? "Dom\\XPath::quote"
+        : "DOMXPath::quote";
+}
+
+static PtnValue ptn_dom_xpath_quote_method(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    const char *function_name = ptn_dom_xpath_quote_function_name(class_name);
+    if (argc != 1) {
+        ptn_dom_xpath_throw_count(runtime, function_name, "exactly 1 argument", argc);
+        return ptn_null();
+    }
+
+    PtnStringOperand input = ptn_internal_expect_string_arg(
+        runtime,
+        function_name,
+        1,
+        "str",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    if (memchr(input.data, '\0', input.len) != NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($str) must not contain any null bytes",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_operand_free(input);
+        ptn_throw_exception_at(runtime, "ValueError", message, runtime->source_path, line);
+        return ptn_null();
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (memchr(input.data, '\'', input.len) == NULL) {
+        ptn_string_buffer_append_char(&output, '\'');
+        ptn_string_buffer_append_len(&output, input.data, input.len);
+        ptn_string_buffer_append_char(&output, '\'');
+    } else if (memchr(input.data, '"', input.len) == NULL) {
+        ptn_string_buffer_append_char(&output, '"');
+        ptn_string_buffer_append_len(&output, input.data, input.len);
+        ptn_string_buffer_append_char(&output, '"');
+    } else {
+        ptn_string_buffer_append(&output, "concat(");
+        size_t cursor = 0;
+        while (cursor < input.len) {
+            const char *remaining = input.data + cursor;
+            size_t remaining_len = input.len - cursor;
+            const char *single_quote = memchr(remaining, '\'', remaining_len);
+            const char *double_quote = memchr(remaining, '"', remaining_len);
+            size_t distance_to_single = single_quote == NULL
+                ? remaining_len
+                : (size_t)(single_quote - remaining);
+            size_t distance_to_double = double_quote == NULL
+                ? remaining_len
+                : (size_t)(double_quote - remaining);
+            size_t bytes_until_quote = distance_to_single > distance_to_double
+                ? distance_to_single
+                : distance_to_double;
+            char quote_method = distance_to_single > distance_to_double ? '\'' : '"';
+            ptn_string_buffer_append_char(&output, quote_method);
+            ptn_string_buffer_append_len(&output, remaining, bytes_until_quote);
+            ptn_string_buffer_append_char(&output, quote_method);
+            ptn_string_buffer_append_char(&output, ',');
+            cursor += bytes_until_quote;
+        }
+        output.data[output.len - 1] = ')';
+    }
+
+    ptn_string_operand_free(input);
+    return ptn_owned_string_buffer_value(&output);
+}
+
 static void ptn_dom_xpath_throw_restrict_message(PtnRuntime *runtime, const char *suffix) {
     int needed = snprintf(
         NULL,
@@ -193542,6 +193631,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (ptn_ascii_case_equal(name, "registerPHPFunctionNS")) {
             return ptn_dom_xpath_register_php_function_ns_method(runtime, receiver, argc, args, line);
         }
+        if (ptn_ascii_case_equal(name, "quote")) {
+            return ptn_dom_xpath_quote_method(runtime, object_class_name, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "evaluate")) {
             return ptn_dom_xpath_evaluate_method(runtime, receiver, argc, args, line);
         }
@@ -195888,6 +195980,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "registerNamespace")
             || ptn_ascii_case_equal(method_name, "registerPhpFunctions")
             || ptn_ascii_case_equal(method_name, "registerPHPFunctionNS")
+            || ptn_ascii_case_equal(method_name, "quote")
             || ptn_ascii_case_equal(method_name, "evaluate")
             || ptn_ascii_case_equal(method_name, "query");
     }
@@ -219969,6 +220062,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    if (ptn_ascii_case_equal(ptn_dom_effective_class_name(class_name), "DOMXPath") &&
+        ptn_ascii_case_equal(name, "quote")) {
+        return ptn_dom_xpath_quote_method(runtime, class_name, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "Closure")) {
         if (ptn_ascii_case_equal(name, "bind")) {
             return ptn_internal_closure_bind(runtime, argc, args, line);
@@ -250057,6 +250154,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
 }
 
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name) {
+    if (ptn_ascii_case_equal(ptn_dom_effective_class_name(class_name), "DOMXPath")) {
+        return ptn_ascii_case_equal(method_name, "quote");
+    }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_ascii_case_equal(method_name, "bind")
             || ptn_ascii_case_equal(method_name, "fromCallable")
