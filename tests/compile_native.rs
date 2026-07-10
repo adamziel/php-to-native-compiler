@@ -16541,6 +16541,7 @@ try {
             assert!(stdout.contains("object(Y)#"), "{stdout}");
         }
         if name.starts_with("autoload-variance-loading-exception-") {
+            assert_eq!(stdout, format!("{required_stdout}\n"), "{name}");
             assert!(
                 stderr.contains(&format!("#0 {}(", input.display()))
                     && stderr.contains(": {closure:"),
