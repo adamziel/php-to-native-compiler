@@ -149448,12 +149448,20 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         return ptn_null();
     }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
-        ptn_runtime_set_arg_separator_input(runtime, "&");
+        const char *configured = getenv("PTN_ARG_SEPARATOR_INPUT");
+        ptn_runtime_set_arg_separator_input(
+            runtime,
+            configured == NULL || configured[0] == '\0' ? "&" : configured
+        );
         ptn_string_operand_free(option);
         return ptn_null();
     }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.output")) {
-        ptn_runtime_set_arg_separator_output(runtime, "&");
+        const char *configured = getenv("PTN_ARG_SEPARATOR_OUTPUT");
+        ptn_runtime_set_arg_separator_output(
+            runtime,
+            configured == NULL || configured[0] == '\0' ? "&" : configured
+        );
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -149833,18 +149841,17 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
-        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
-        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
-        char *next = ptn_duplicate_string_len(value.data, value.len);
-        ptn_runtime_set_arg_separator_input(runtime, next);
-        free(next);
-        ptn_string_operand_free(value);
         ptn_string_operand_free(option);
-        return previous;
+        return ptn_bool(0);
     }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.output")) {
-        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_output(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        if (value.len == 0) {
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_output(runtime)));
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_arg_separator_output(runtime, next);
         free(next);

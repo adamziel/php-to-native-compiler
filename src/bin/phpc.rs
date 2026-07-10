@@ -1378,9 +1378,15 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     } else if name.eq_ignore_ascii_case("ignore_repeated_source") {
         ini.ignore_repeated_source = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("arg_separator.input") {
-        ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
+        let value = normalize_ini_scalar(raw_value);
+        if !value.is_empty() {
+            ini.arg_separator_input = Some(value);
+        }
     } else if name.eq_ignore_ascii_case("arg_separator.output") {
-        ini.arg_separator_output = Some(normalize_ini_scalar(raw_value));
+        let value = normalize_ini_scalar(raw_value);
+        if !value.is_empty() {
+            ini.arg_separator_output = Some(value);
+        }
     } else if name.eq_ignore_ascii_case("filter.default") {
         ini.filter_default = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.backtrack_limit") {

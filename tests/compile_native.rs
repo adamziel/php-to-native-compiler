@@ -109928,6 +109928,83 @@ var_dump(ini_get('phar.readonly'));",
 }
 
 #[test]
+fn compile_arg_separator_ini_update_handlers_to_native_binary() {
+    let root = temp_dir("ptn-native-arg-separator-ini-handlers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arg-separator-ini-handlers.php");
+    let output = root.join("arg-separator-ini-handlers-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(ini_set('arg_separator.output', ''));
+var_dump(ini_get('arg_separator.output'));
+var_dump(ini_set('arg_separator.output', false));
+var_dump(ini_get('arg_separator.output'));
+var_dump(ini_set('arg_separator.output', 0));
+var_dump(ini_get('arg_separator.output'));
+ini_restore('arg_separator.output');
+var_dump(ini_get('arg_separator.output'));
+var_dump(ini_set('arg_separator.input', '/'));
+var_dump(ini_get('arg_separator.input'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "string(1) \"&\"\n",
+            "bool(false)\n",
+            "string(1) \"&\"\n",
+            "string(1) \"&\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"&\"\n",
+            "bool(false)\n",
+            "string(1) \"&\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_arg_separator_startup_rejects_empty_values() {
+    let root = temp_dir("ptn-phpc-arg-separator-empty-startup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arg-separator-empty-startup.php");
+    fs::write(
+        &input,
+        "<?php var_dump(ini_get('arg_separator.output'), ini_get('arg_separator.input'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .arg("-d")
+        .arg("arg_separator.output=;")
+        .arg("-d")
+        .arg("arg_separator.output=")
+        .arg("-d")
+        .arg("arg_separator.input=/")
+        .arg("-d")
+        .arg("arg_separator.input=")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \";\"\nstring(1) \"/\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_string_ini_controls_default_charset_and_parse_str_separator() {
     let root = temp_dir("ptn-phpc-string-ini");
     fs::create_dir_all(&root).unwrap();
@@ -109992,12 +110069,10 @@ echo ini_get('arg_separator.input'), \"\\n\";",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
-            "string(1) \"/\"\n",
-            "array(2) {\n",
+            "bool(false)\n",
+            "array(1) {\n",
             "  [\"left\"]=>\n",
-            "  string(1) \"1\"\n",
-            "  [\"right\"]=>\n",
-            "  string(1) \"2\"\n",
+            "  string(9) \"1&right=2\"\n",
             "}\n",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
@@ -110008,7 +110083,7 @@ echo ini_get('arg_separator.input'), \"\\n\";",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
-            "&\n"
+            "/\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

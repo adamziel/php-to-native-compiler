@@ -3622,10 +3622,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         configured_default_charset == NULL ? "UTF-8" : configured_default_charset
     );
     runtime->arg_separator_input = ptn_duplicate_string(
-        configured_arg_separator_input == NULL ? "&" : configured_arg_separator_input
+        configured_arg_separator_input == NULL || configured_arg_separator_input[0] == '\0'
+            ? "&"
+            : configured_arg_separator_input
     );
     runtime->arg_separator_output = ptn_duplicate_string(
-        configured_arg_separator_output == NULL ? "&" : configured_arg_separator_output
+        configured_arg_separator_output == NULL || configured_arg_separator_output[0] == '\0'
+            ? "&"
+            : configured_arg_separator_output
     );
     runtime->highlight_comment = ptn_duplicate_string(
         configured_highlight_comment == NULL ? "#FF8000" : configured_highlight_comment
