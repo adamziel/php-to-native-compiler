@@ -44002,6 +44002,232 @@ try {
 }
 
 #[test]
+fn compile_spl_file_object_user_stream_capabilities_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-user-stream-capabilities");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-user-stream-capabilities.php");
+    let output = root.join("spl-user-stream-capabilities-bin");
+    fs::write(
+        &input,
+        r#"<?php
+abstract class CapabilityBase {
+    public $context;
+    protected $path = '';
+
+    public function stream_open($path, $mode, $options, &$openedPath): bool {
+        $this->path = $path;
+        return true;
+    }
+
+    public function stream_write($data): int {
+        return strlen($data);
+    }
+
+    public function url_stat($path, $flags): array {
+        return [2 => 0100666, 'mode' => 0100666, 7 => 0, 'size' => 0];
+    }
+}
+
+class MissingCapability extends CapabilityBase {}
+
+class DeclaredCapability extends CapabilityBase {
+    public function stream_flush() {
+        if (strpos($this->path, 'truthy') !== false) return 'yes';
+        if (strpos($this->path, 'null') !== false) return null;
+        if (strpos($this->path, 'throw') !== false) throw new RuntimeException('flush boom');
+        return false;
+    }
+
+    public function stream_truncate($size) {
+        if (strpos($this->path, 'bad') !== false) return 'bad';
+        if (strpos($this->path, 'throw') !== false) throw new RuntimeException('truncate boom');
+        if (strpos($this->path, 'true') !== false) return true;
+        return false;
+    }
+}
+
+class MagicCapability extends CapabilityBase {
+    public function __call($name, $args) {
+        if ($name === 'stream_flush' || $name === 'stream_truncate') {
+            echo "magic:$name\n";
+        }
+        return $name === 'stream_flush' ? 'yes' : true;
+    }
+}
+
+stream_wrapper_register('missingcap', MissingCapability::class);
+stream_wrapper_register('declaredcap', DeclaredCapability::class);
+stream_wrapper_register('magiccap', MagicCapability::class);
+
+function direct_stream(string $url) {
+    return fopen($url, 'r+');
+}
+
+function spl_stream(string $url): SplFileObject {
+    return new SplFileObject($url, 'r+');
+}
+
+set_error_handler(function($level, $message) {
+    echo "warn:$message\n";
+    return true;
+});
+
+echo "missing-flush\n";
+$missing = direct_stream('missingcap://direct');
+var_dump(fflush($missing), fflush($missing), fwrite($missing, 'ok'), get_resource_type($missing));
+$missingSpl = spl_stream('missingcap://spl');
+var_dump($missingSpl->fflush(), $missingSpl->fflush(), $missingSpl->fwrite('ok'));
+
+echo "false-flush\n";
+$false = direct_stream('declaredcap://false');
+var_dump(fflush($false), fflush($false), fwrite($false, 'ok'), get_resource_type($false));
+$falseSpl = spl_stream('declaredcap://false');
+var_dump($falseSpl->fflush(), $falseSpl->fflush(), $falseSpl->fwrite('ok'));
+
+echo "declared-flush\n";
+foreach (['null', 'truthy'] as $kind) {
+    var_dump(
+        fflush(direct_stream("declaredcap://$kind")),
+        spl_stream("declaredcap://$kind")->fflush()
+    );
+}
+foreach ([direct_stream('declaredcap://throw'), spl_stream('declaredcap://throw')] as $stream) {
+    try {
+        $stream instanceof SplFileObject ? $stream->fflush() : fflush($stream);
+    } catch (RuntimeException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+echo "magic\n";
+var_dump(
+    fflush(direct_stream('magiccap://direct')),
+    spl_stream('magiccap://spl')->fflush()
+);
+var_dump(
+    ftruncate(direct_stream('magiccap://direct'), 3),
+    spl_stream('magiccap://spl')->ftruncate(3)
+);
+
+echo "truncate\n";
+var_dump(
+    ftruncate(direct_stream('declaredcap://false'), 1),
+    spl_stream('declaredcap://false')->ftruncate(1)
+);
+var_dump(
+    ftruncate(direct_stream('declaredcap://true'), 2),
+    spl_stream('declaredcap://true')->ftruncate(2)
+);
+var_dump(
+    ftruncate(direct_stream('declaredcap://bad'), 3),
+    spl_stream('declaredcap://bad')->ftruncate(3)
+);
+foreach ([direct_stream('declaredcap://throw'), spl_stream('declaredcap://throw')] as $stream) {
+    try {
+        $stream instanceof SplFileObject ? $stream->ftruncate(4) : ftruncate($stream, 4);
+    } catch (RuntimeException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+var_dump(ftruncate(direct_stream('missingcap://direct'), 0));
+try {
+    spl_stream('missingcap://multi///')->ftruncate(0);
+} catch (LogicException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$unsupported = spl_stream('missingcap://validate');
+foreach ([
+    fn() => $unsupported->ftruncate(),
+    fn() => $unsupported->ftruncate(1, 2),
+    fn() => $unsupported->ftruncate([]),
+    fn() => $unsupported->ftruncate(-1),
+] as $case) {
+    try {
+        $case();
+    } catch (Throwable $e) {
+        echo $e::class, ':', $e->getMessage(), "\n";
+    }
+}
+
+$temp = new SplTempFileObject();
+var_dump($temp->ftruncate(0));
+restore_error_handler();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(execution.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert_eq!(
+        stdout,
+        concat!(
+            "missing-flush\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "string(6) \"stream\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "false-flush\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "string(6) \"stream\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "declared-flush\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "flush boom\n",
+            "flush boom\n",
+            "magic\n",
+            "magic:stream_flush\n",
+            "magic:stream_flush\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "magic:stream_truncate\n",
+            "magic:stream_truncate\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "truncate\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "warn:ftruncate(): DeclaredCapability::stream_truncate value must be of type bool, string given\n",
+            "warn:SplFileObject::ftruncate(): DeclaredCapability::stream_truncate value must be of type bool, string given\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "truncate boom\n",
+            "truncate boom\n",
+            "warn:ftruncate(): Can't truncate this stream!\n",
+            "bool(false)\n",
+            "Can't truncate file missingcap://multi//\n",
+            "ArgumentCountError:SplFileObject::ftruncate() expects exactly 1 argument, 0 given\n",
+            "ArgumentCountError:SplFileObject::ftruncate() expects exactly 1 argument, 2 given\n",
+            "TypeError:SplFileObject::ftruncate(): Argument #1 ($size) must be of type int, array given\n",
+            "ValueError:SplFileObject::ftruncate(): Argument #1 ($size) must be greater than or equal to 0\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(stderr, "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_truncate_operation"));
+    assert!(c_source.contains("ptn_object_has_declared_or_call_method"));
+    assert!(c_source.contains("SplFileObject::ftruncate"));
+}
+
+#[test]
 fn compile_standard_uri_stream_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-standard-uri-stream-wrappers");
     fs::create_dir_all(&root).unwrap();
@@ -46574,7 +46800,7 @@ try {
                 "fclose(): cannot close the provided stream, as it must not be manually closed"
             )
             .count(),
-        6,
+        7,
         "{stdout}"
     );
     assert_eq!(
@@ -46588,10 +46814,7 @@ try {
         stdout.contains("No stream arrays were passed\n"),
         "{stdout}"
     );
-    assert!(
-        stdout.contains("fclose(): Argument #1 ($stream) must be an open stream resource\n"),
-        "{stdout}"
-    );
+    assert!(!stdout.contains("fclose(): Argument #1 ($stream) must be an open stream resource"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();

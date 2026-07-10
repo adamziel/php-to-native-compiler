@@ -10212,6 +10212,7 @@ typedef struct {
 typedef struct {
     PtnSplFileInfoData info;
     PtnValue stream;
+    char *file_name;
     char *open_mode;
     int64_t flags;
     int64_t key;
@@ -64508,12 +64509,19 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
-    if (user_stream != NULL &&
-        user_stream->runtime != NULL &&
-        user_stream->runtime->method_dispatch != NULL &&
-        ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_flush")) {
+    if (user_stream != NULL) {
+        if (user_stream->runtime == NULL ||
+            user_stream->runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_or_call_method(
+                user_stream->runtime,
+                user_stream->wrapper_object,
+                "stream_flush"
+            )) {
+            return ptn_bool(0);
+        }
         PtnRuntime *callback_runtime = user_stream->runtime;
-        PtnValue wrapper_object = user_stream->wrapper_object;
+        PtnValue wrapper_object = ptn_value_clone_deref(user_stream->wrapper_object);
+        int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
         PtnValue flush_result = callback_runtime->method_dispatch(
             callback_runtime,
             wrapper_object,
@@ -64522,15 +64530,15 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
             NULL,
             line
         );
+        ptn_user_stream_end_callback(resource, manual_close_forbidden);
         if (callback_runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&flush_result);
+            ptn_value_destroy(&wrapper_object);
             return ptn_null();
         }
         int ok = ptn_is_truthy(flush_result);
         ptn_value_destroy(&flush_result);
-        if (!ok && ptn_stream_resource_is_open(resource)) {
-            ptn_resource_close(resource);
-        }
+        ptn_value_destroy(&wrapper_object);
         return ptn_bool(ok);
     }
     if (ptn_stream_flush(resource) == 0) {
@@ -64874,6 +64882,104 @@ static int ptn_stream_file_descriptor(FILE *stream) {
 #endif
 }
 
+static PtnValue ptn_stream_truncate_operation(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    int64_t size,
+    const char *operation_name,
+    size_t line,
+    int *supported
+) {
+    *supported = 1;
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
+    if (user_stream != NULL) {
+        if (user_stream->runtime == NULL ||
+            user_stream->runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_or_call_method(
+                user_stream->runtime,
+                user_stream->wrapper_object,
+                "stream_truncate"
+            )) {
+            *supported = 0;
+            return ptn_bool(0);
+        }
+
+        PtnRuntime *callback_runtime = user_stream->runtime;
+        PtnValue wrapper_object = ptn_value_clone_deref(user_stream->wrapper_object);
+        PtnValue truncate_arg = ptn_int(size);
+        int manual_close_forbidden = ptn_user_stream_begin_callback(resource);
+        PtnValue truncate_result = callback_runtime->method_dispatch(
+            callback_runtime,
+            wrapper_object,
+            "stream_truncate",
+            1,
+            &truncate_arg,
+            line
+        );
+        ptn_user_stream_end_callback(resource, manual_close_forbidden);
+        ptn_value_destroy(&truncate_arg);
+        if (callback_runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&truncate_result);
+            ptn_value_destroy(&wrapper_object);
+            return ptn_null();
+        }
+        PtnValue resolved = ptn_value_deref(truncate_result);
+        if (resolved.type != PTN_BOOL) {
+            PtnValue resolved_wrapper = ptn_value_deref(wrapper_object);
+            const char *class_name = resolved_wrapper.type == PTN_OBJECT && resolved_wrapper.as.object != NULL
+                ? resolved_wrapper.as.object->class_name
+                : "user-space";
+            int needed = snprintf(
+                NULL,
+                0,
+                "%s(): %s::stream_truncate value must be of type bool, %s given",
+                operation_name,
+                class_name == NULL ? "user-space" : class_name,
+                ptn_offset_container_type_name(resolved)
+            );
+            if (needed < 0) {
+                ptn_value_destroy(&truncate_result);
+                ptn_value_destroy(&wrapper_object);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_value_destroy(&truncate_result);
+                ptn_value_destroy(&wrapper_object);
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "%s(): %s::stream_truncate value must be of type bool, %s given",
+                operation_name,
+                class_name == NULL ? "user-space" : class_name,
+                ptn_offset_container_type_name(resolved)
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                ptn_value_destroy(&truncate_result);
+                ptn_value_destroy(&wrapper_object);
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            free(message);
+            ptn_value_destroy(&truncate_result);
+            ptn_value_destroy(&wrapper_object);
+            return ptn_bool(0);
+        }
+        int ok = resolved.as.boolean;
+        ptn_value_destroy(&truncate_result);
+        ptn_value_destroy(&wrapper_object);
+        return ptn_bool(ok);
+    }
+    if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+        *supported = 0;
+        return ptn_bool(0);
+    }
+    return ptn_bool(ptn_stream_truncate(resource, size));
+}
+
 static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "ftruncate", args[0], line);
@@ -64892,60 +64998,22 @@ static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const P
         );
         return ptn_null();
     }
-    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
-    if (user_stream != NULL) {
-        if (user_stream->runtime == NULL ||
-            user_stream->runtime->method_dispatch == NULL ||
-            !ptn_object_has_declared_method(user_stream->runtime, user_stream->wrapper_object, "stream_truncate")) {
-            ptn_emit_warning(&runtime->diagnostics, "ftruncate(): Can't truncate this stream!", line);
-            return ptn_bool(0);
-        }
-
-        PtnValue truncate_arg = ptn_int(size);
-        PtnValue truncate_result = user_stream->runtime->method_dispatch(
-            user_stream->runtime,
-            user_stream->wrapper_object,
-            "stream_truncate",
-            1,
-            &truncate_arg,
-            line
-        );
-        ptn_value_destroy(&truncate_arg);
-        if (user_stream->runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&truncate_result);
-            return ptn_null();
-        }
-        PtnValue resolved = ptn_value_deref(truncate_result);
-        if (resolved.type != PTN_BOOL) {
-            PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
-            const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
-                ? wrapper_object.as.object->class_name
-                : "user-space";
-            char message[224];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "ftruncate(): %s::stream_truncate value must be of type bool, %s given",
-                class_name == NULL ? "user-space" : class_name,
-                ptn_offset_container_type_name(resolved)
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_value_destroy(&truncate_result);
-                ptn_abort_out_of_memory();
-            }
-            ptn_emit_warning(&runtime->diagnostics, message, line);
-            ptn_value_destroy(&truncate_result);
-            return ptn_bool(0);
-        }
-        int ok = resolved.as.boolean;
-        ptn_value_destroy(&truncate_result);
-        return ptn_bool(ok);
+    int supported = 0;
+    PtnValue result = ptn_stream_truncate_operation(
+        runtime,
+        resource,
+        size,
+        "ftruncate",
+        line,
+        &supported
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return result;
     }
-    if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+    if (!supported) {
         ptn_emit_warning(&runtime->diagnostics, "ftruncate(): Can't truncate this stream!", line);
-        return ptn_bool(0);
     }
-    return ptn_bool(ptn_stream_truncate(resource, size));
+    return result;
 }
 
 static int ptn_flock_platform_operation(int64_t operation, int *platform_operation) {
@@ -269693,6 +269761,7 @@ static void ptn_spl_file_object_data_free(void *data) {
     }
     ptn_spl_file_info_data_clear(&file_data->info);
     ptn_value_destroy(&file_data->stream);
+    free(file_data->file_name);
     free(file_data->open_mode);
     ptn_value_destroy(&file_data->current);
     free(file_data);
@@ -285669,6 +285738,18 @@ static void ptn_spl_file_object_seek_to_line(
     }
 }
 
+static char *ptn_spl_file_object_filename_alloc(const char *path) {
+    size_t len = path == NULL ? 0 : strlen(path);
+    int trailing_separator = len > 1 && path[len - 1] == '/';
+#if defined(_WIN32)
+    trailing_separator = trailing_separator || (len > 1 && path[len - 1] == '\\');
+#endif
+    if (trailing_separator) {
+        len--;
+    }
+    return ptn_duplicate_string_len(path == NULL ? "" : path, len);
+}
+
 static PtnValue ptn_spl_file_object_new_for_class(
     PtnRuntime *runtime,
     const char *class_name,
@@ -285707,6 +285788,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
         return ptn_null();
     }
     char *path = NULL;
+    char *file_name = NULL;
     PtnValue stream = ptn_null();
     char *open_mode = NULL;
     if (is_temp_file_object) {
@@ -285763,6 +285845,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
             free(path);
             return ptn_null();
         }
+        file_name = ptn_spl_file_object_filename_alloc(path);
         int use_include_path = argc >= 3 && ptn_is_truthy(args[2]);
         if (use_include_path) {
             char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
@@ -285776,6 +285859,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
             mode_operand = ptn_internal_expect_string_arg(runtime, "SplFileObject::__construct", 2, "mode", args[1], line);
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(mode_operand);
+                free(file_name);
                 free(path);
                 return ptn_null();
             }
@@ -285786,6 +285870,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
         }
         if (ptn_path_is_directory_c(path)) {
             free(open_mode);
+            free(file_name);
             free(path);
             ptn_throw_exception(runtime, "LogicException", "Cannot use SplFileObject with directories");
             return ptn_null();
@@ -285797,10 +285882,14 @@ static PtnValue ptn_spl_file_object_new_for_class(
         ptn_value_destroy(&fopen_args[1]);
         if (runtime->exceptions->active_exception != NULL) {
             free(open_mode);
+            free(file_name);
             free(path);
             ptn_value_destroy(&stream);
             return ptn_null();
         }
+    }
+    if (file_name == NULL) {
+        file_name = ptn_spl_file_object_filename_alloc(path);
     }
     PtnValue resolved_stream = ptn_value_deref(stream);
     if (resolved_stream.type != PTN_RESOURCE) {
@@ -285814,6 +285903,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
             path
         );
         free(open_mode);
+        free(file_name);
         free(path);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
@@ -285825,11 +285915,13 @@ static PtnValue ptn_spl_file_object_new_for_class(
     if (data == NULL) {
         ptn_value_destroy(&stream);
         free(open_mode);
+        free(file_name);
         free(path);
         ptn_abort_out_of_memory();
     }
     ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
     data->stream = stream;
+    data->file_name = file_name;
     data->open_mode = open_mode;
     data->flags = 0;
     data->key = 0;
@@ -285948,6 +286040,10 @@ static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
     }
     PtnSplFileObjectData *clone_data = ptn_spl_file_object_data_from_value(clone);
     clone_data->flags = source_data->flags;
+    free(clone_data->file_name);
+    clone_data->file_name = ptn_duplicate_string(
+        source_data->file_name == NULL ? "" : source_data->file_name
+    );
     free(clone_data->open_mode);
     clone_data->open_mode = ptn_duplicate_string(source_data->open_mode == NULL ? "r" : source_data->open_mode);
     clone_data->delimiter = source_data->delimiter;
@@ -286293,10 +286389,76 @@ static PtnValue ptn_spl_file_object_call_method(
     }
     if (ptn_ascii_case_equal(name, "ftruncate")) {
         if (argc != 1) {
-            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::ftruncate() expects exactly 1 argument");
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplFileObject::ftruncate() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
-        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_ftruncate, argc, args, line);
+        int64_t size = ptn_internal_expect_integer_arg(
+            runtime,
+            "SplFileObject::ftruncate",
+            1,
+            "size",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (size < 0) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "SplFileObject::ftruncate(): Argument #1 ($size) must be greater than or equal to 0"
+            );
+            return ptn_null();
+        }
+        PtnResource *resource = ptn_internal_expect_open_stream_arg(
+            runtime,
+            "SplFileObject::ftruncate",
+            data->stream,
+            line
+        );
+        if (resource == NULL) {
+            return ptn_null();
+        }
+        int supported = 0;
+        PtnValue result = ptn_stream_truncate_operation(
+            runtime,
+            resource,
+            size,
+            "SplFileObject::ftruncate",
+            line,
+            &supported
+        );
+        if (runtime->exceptions->active_exception != NULL || supported) {
+            return result;
+        }
+        ptn_value_destroy(&result);
+        const char *file_name = data->file_name == NULL ? "" : data->file_name;
+        int needed = snprintf(NULL, 0, "Can't truncate file %s", file_name);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "Can't truncate file %s", file_name);
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_owned_message(runtime, "LogicException", message);
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "fstat")) {
         ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
